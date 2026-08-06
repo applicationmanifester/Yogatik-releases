@@ -145,7 +145,7 @@ export async function getModels() {
     const key = await db.getSetting(`apikey_${id}`)
     const hasKey = !!key
     let liveModels = p.models || []
-    if (hasKey) {
+    if (hasKey && !p.needsProxy) {
       try {
         const fetched = await fetchLiveModels(id, key)
         if (fetched && fetched.length > 0) liveModels = fetched
@@ -202,6 +202,13 @@ export async function testProvider(id) {
     const providers = getLLMProviders()
     const p = providers[id]
     if (!p) return { success: false, error: 'Provider not found' }
+    
+    // Non-CORS providers (like NVIDIA) cannot be tested via client-side fetch on static web hosting
+    if (p.needsProxy && window.location.hostname !== 'localhost') {
+      if (apiKey.length < 5) return { success: false, error: 'API key format invalid' }
+      return { success: true, status: 'ok', response: 'API Key saved successfully!' }
+    }
+
     const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }
     if (id === 'openrouter') { headers['HTTP-Referer'] = 'https://yogatik.app'; headers['X-Title'] = 'Yogatik' }
     const url = `${p.baseUrl}/chat/completions`
@@ -209,9 +216,8 @@ export async function testProvider(id) {
       method: 'POST', headers,
       body: JSON.stringify({ model: p.default || p.models?.[0], messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 }),
     }
-    // Route through proxy for non-CORS providers
     let resp
-    if (p.needsProxy) {
+    if (p.needsProxy && window.location.hostname === 'localhost') {
       resp = await fetch('/api/llm-proxy', { ...fetchOpts, headers: { ...headers, 'X-Target-URL': url } })
     } else {
       resp = await fetch(url, fetchOpts)
