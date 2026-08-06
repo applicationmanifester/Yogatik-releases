@@ -1,25 +1,41 @@
 /**
- * Browser-native LLM client — calls Groq/OpenRouter/OpenAI directly.
- * Supports streaming (SSE) + function calling (tool_use).
+ * Browser-native LLM client — calls Gemini/Groq/OpenRouter/OpenAI directly,
+ * proxies non-CORS providers (NVIDIA etc.) through /api/llm-proxy.
  * API key stored in IndexedDB, never sent to any backend.
  */
 
 const PROVIDERS = {
+  nvidia: {
+    name: 'NVIDIA (Free)',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    models: ['meta/llama-3.3-70b-instruct', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1', 'google/gemma-2-27b-it', 'deepseek-ai/deepseek-r1'],
+    default: 'meta/llama-3.3-70b-instruct',
+    keyUrl: 'https://build.nvidia.com',
+    needsProxy: true,
+  },
+  gemini: {
+    name: 'Gemini (Free)',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+    default: 'gemini-2.5-flash',
+    keyUrl: 'https://aistudio.google.com/apikey',
+  },
   groq: {
     name: 'Groq (Free)',
     baseUrl: 'https://api.groq.com/openai/v1',
-    models: ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
+    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
     default: 'llama-3.3-70b-versatile',
     keyUrl: 'https://console.groq.com',
   },
   openrouter: {
-    name: 'OpenRouter',
+    name: 'OpenRouter (100+ models)',
     baseUrl: 'https://openrouter.ai/api/v1',
     models: [
       'google/gemini-2.5-flash', 'google/gemini-2.5-pro',
       'anthropic/claude-sonnet-4', 'anthropic/claude-haiku-4',
       'openai/gpt-4o', 'openai/gpt-4o-mini',
-      'meta-llama/llama-3.1-70b-instruct', 'deepseek/deepseek-chat',
+      'meta-llama/llama-3.3-70b-instruct', 'deepseek/deepseek-chat',
+      'nvidia/llama-3.1-nemotron-70b-instruct',
       'mistralai/mistral-large', 'qwen/qwen-2.5-72b-instruct',
     ],
     default: 'google/gemini-2.5-flash',
@@ -34,30 +50,30 @@ const PROVIDERS = {
   },
 }
 
-export function getProviders() { return PROVIDERS }
-export function getProviderModels(providerId) { return PROVIDERS[providerId]?.models || [] }
-export function getDefaultModel(providerId) { return PROVIDERS[providerId]?.default || '' }
+// Custom providers merged at runtime
+let _customProviders = {}
+export function registerCustomProviders(custom) { _customProviders = custom || {} }
+export function getProviders() { return { ...PROVIDERS, ..._customProviders } }
+export function getProviderModels(providerId) { return getProviders()[providerId]?.models || [] }
+export function getDefaultModel(providerId) { return getProviders()[providerId]?.default || '' }
 
 /**
- * Stream a chat completion with optional function calling.
- * @param {Object} opts
- * @param {string} opts.provider - Provider ID
- * @param {string} opts.apiKey - API key
- * @param {string} opts.model - Model ID
- * @param {Array} opts.messages - [{role, content}]
- * @param {Array} opts.tools - Function schemas for tool calling
- * @param {number} opts.temperature
- * @param {AbortSignal} opts.signal - For cancellation
- * @param {Function} opts.onToken - Called with each text delta
- * @param {Function} opts.onToolCall - Called with {name, arguments} when LLM wants a tool
- * @param {Function} opts.onDone - Called when stream completes
- * @param {Function} opts.onError - Called on error
+ * Smart fetch — direct for CORS-friendly providers, proxied for others.
+ * Proxy: sends real URL in X-Target-URL header, request goes to /api/llm-proxy.
  */
+async function smartFetch(url, options, prov) {
+  if (prov?.needsProxy) {
+    const proxyHeaders = { ...options.headers, 'X-Target-URL': url }
+    return fetch('/api/llm-proxy', { ...options, headers: proxyHeaders })
+  }
+  return fetch(url, options)
+}
+
 export async function streamChat({
   provider, apiKey, model, messages, tools = null,
   temperature = 0.7, signal, onToken, onToolCall, onDone, onError
 }) {
-  const prov = PROVIDERS[provider]
+  const prov = getProviders()[provider]
   if (!prov) throw new Error(`Unknown provider: ${provider}`)
 
   const headers = {
@@ -81,9 +97,9 @@ export async function streamChat({
   }
 
   try {
-    const resp = await fetch(`${prov.baseUrl}/chat/completions`, {
+    const resp = await smartFetch(`${prov.baseUrl}/chat/completions`, {
       method: 'POST', headers, body: JSON.stringify(body), signal,
-    })
+    }, prov)
 
     if (!resp.ok) {
       const err = await resp.text()
@@ -111,10 +127,8 @@ export async function streamChat({
           const delta = data.choices?.[0]?.delta
           if (!delta) continue
 
-          // Text content
           if (delta.content) onToken?.(delta.content)
 
-          // Tool calls (accumulated across chunks)
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               const idx = tc.index ?? 0
@@ -125,14 +139,10 @@ export async function streamChat({
             }
           }
 
-          // Check finish reason
           if (data.choices?.[0]?.finish_reason === 'tool_calls' ||
               data.choices?.[0]?.finish_reason === 'function_call') {
-            // Emit all accumulated tool calls
             for (const tc of Object.values(toolCalls)) {
-              try {
-                tc.parsedArgs = JSON.parse(tc.arguments)
-              } catch { tc.parsedArgs = {} }
+              try { tc.parsedArgs = JSON.parse(tc.arguments) } catch { tc.parsedArgs = {} }
               onToolCall?.(tc)
             }
             toolCalls = {}
@@ -141,7 +151,6 @@ export async function streamChat({
       }
     }
 
-    // Handle any remaining tool calls
     const remaining = Object.values(toolCalls).filter(tc => tc.name)
     for (const tc of remaining) {
       try { tc.parsedArgs = JSON.parse(tc.arguments) } catch { tc.parsedArgs = {} }
@@ -156,7 +165,7 @@ export async function streamChat({
 
 /** Non-streaming completion (for tool result processing) */
 export async function chatComplete({ provider, apiKey, model, messages, tools, temperature = 0.7 }) {
-  const prov = PROVIDERS[provider]
+  const prov = getProviders()[provider]
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${apiKey}`,
@@ -168,9 +177,9 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
   const body = { model: model || prov.default, messages, temperature }
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto' }
 
-  const resp = await fetch(`${prov.baseUrl}/chat/completions`, {
+  const resp = await smartFetch(`${prov.baseUrl}/chat/completions`, {
     method: 'POST', headers, body: JSON.stringify(body),
-  })
+  }, prov)
   if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`)
   return resp.json()
 }

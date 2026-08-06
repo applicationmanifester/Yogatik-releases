@@ -45,7 +45,21 @@ const TOOL_ICONS = {
   md_to_pdf: FileDown,
 }
 
-
+// ─── Logo ───
+function YogatikLogo({ size = 24 }) {
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light'
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width={size} height={size} style={{ flexShrink: 0 }}>
+      {!isDark ? <rect width="192" height="192" rx="40" fill="#ffffff"/> : null}
+      <circle cx="96" cy="80" r="36" fill="none" stroke="#ff6b35" strokeWidth="6"/>
+      <circle cx="82" cy="72" r="5" fill="#ff6b35"/>
+      <circle cx="110" cy="72" r="5" fill="#ff6b35"/>
+      <path d="M78 90 q18 16 36 0" fill="none" stroke="#ff6b35" strokeWidth="4" strokeLinecap="round"/>
+      <rect x="60" y="130" width="72" height="8" rx="4" fill="#ff6b35" opacity="0.6"/>
+      <rect x="72" y="146" width="48" height="6" rx="3" fill="#ff6b35" opacity="0.3"/>
+    </svg>
+  )
+}
 
 // ─── Tool Result Display ───
 function ToolResultCard({ tool, result }) {
@@ -355,15 +369,28 @@ function AuthModal({ onClose, onAuth }) {
 }
 
 // ─── Provider Modal ───
-function ProviderModal({ onClose, onSaved, templates }) {
-  const [mode, setMode] = useState('template')
-  const [selectedTemplate, setSelectedTemplate] = useState('')
-  const [form, setForm] = useState({ id: '', name: '', base_url: '', api_key: '', default_model: '', models: '' })
+const QUICK_TEMPLATES = {
+  together: { name: 'Together AI', baseUrl: 'https://api.together.xyz/v1', models: ['meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', 'mistralai/Mixtral-8x7B-Instruct-v0.1'], default: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', keyUrl: 'https://api.together.xyz/settings/api-keys' },
+  deepseek: { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-coder'], default: 'deepseek-chat', keyUrl: 'https://platform.deepseek.com/api_keys' },
+  mistral: { name: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', models: ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'], default: 'mistral-large-latest', keyUrl: 'https://console.mistral.ai/api-keys' },
+  anthropic_or: { name: 'Anthropic (via OpenRouter)', baseUrl: 'https://openrouter.ai/api/v1', models: ['anthropic/claude-sonnet-4', 'anthropic/claude-haiku-4'], default: 'anthropic/claude-sonnet-4', keyUrl: 'https://openrouter.ai/keys' },
+  gemini: { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', models: ['gemini-2.5-flash', 'gemini-2.5-pro'], default: 'gemini-2.5-flash', keyUrl: 'https://aistudio.google.com/apikey' },
+}
+
+function ProviderModal({ onClose, onSaved, editProvider }) {
+  const isEdit = !!editProvider
+  const [mode, setMode] = useState(isEdit ? 'custom' : 'template')
+  const [form, setForm] = useState(() => {
+    if (editProvider) {
+      return { id: editProvider.id, name: editProvider.name || '', base_url: editProvider.base_url || editProvider.baseUrl || '', api_key: '', default_model: editProvider.default_model || editProvider.default || '', models: (editProvider.models || []).join(', ') }
+    }
+    return { id: '', name: '', base_url: '', api_key: '', default_model: '', models: '' }
+  })
 
   const selectTemplate = (key) => {
-    const t = templates[key]
-    setSelectedTemplate(key)
-    setForm({ id: key, name: t.name, base_url: t.base_url, api_key: '', default_model: t.default_model, models: (t.models || []).join(', ') })
+    const t = QUICK_TEMPLATES[key]
+    setForm({ id: key, name: t.name, base_url: t.baseUrl, api_key: '', default_model: t.default, models: t.models.join(', ') })
+    setMode('custom')
   }
 
   const handleSave = async () => {
@@ -374,7 +401,6 @@ function ProviderModal({ onClose, onSaved, templates }) {
         name: form.name, base_url: form.base_url, api_key: form.api_key,
         default_model: form.default_model,
         models: form.models ? form.models.split(',').map(s => s.trim()).filter(Boolean) : [],
-        template: selectedTemplate || undefined,
       })
       onSaved()
       onClose()
@@ -385,40 +411,91 @@ function ProviderModal({ onClose, onSaved, templates }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2><Plug size={18} /> Add Provider</h2>
+          <h2><Plug size={18} /> {isEdit ? 'Edit Provider' : 'Add Custom Provider'}</h2>
           <button className="icon-btn" onClick={onClose}><X size={18} /></button>
         </div>
-        <div className="modal-tabs">
-          <button className={mode === 'template' ? 'active' : ''} onClick={() => setMode('template')}>Quick Add</button>
-          <button className={mode === 'custom' ? 'active' : ''} onClick={() => setMode('custom')}>Custom API</button>
-        </div>
+        {!isEdit && (
+          <div className="modal-tabs">
+            <button className={mode === 'template' ? 'active' : ''} onClick={() => setMode('template')}>Quick Add</button>
+            <button className={mode === 'custom' ? 'active' : ''} onClick={() => setMode('custom')}>Custom API</button>
+          </div>
+        )}
         {mode === 'template' && (
           <div className="template-grid">
-            {Object.entries(templates || {}).map(([key, t]) => (
-              <div key={key} className={`template-card ${selectedTemplate === key ? 'selected' : ''}`} onClick={() => selectTemplate(key)}>
+            {Object.entries(QUICK_TEMPLATES).map(([key, t]) => (
+              <div key={key} className="template-card" onClick={() => selectTemplate(key)}>
                 <div className="template-name">{t.name}</div>
-                <div className="template-url">{t.base_url}</div>
+                <div className="template-url">{t.baseUrl}</div>
               </div>
             ))}
           </div>
         )}
-        <div className="modal-form">
-          <label>Provider ID</label>
-          <input value={form.id} onChange={e => setForm({ ...form, id: e.target.value })} placeholder="e.g. groq" />
-          <label>Display Name</label>
-          <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Groq Cloud" />
-          <label>Base URL</label>
-          <input value={form.base_url} onChange={e => setForm({ ...form, base_url: e.target.value })} placeholder="https://api.example.com/v1" />
-          <label>API Key</label>
-          <input type="password" value={form.api_key} onChange={e => setForm({ ...form, api_key: e.target.value })} placeholder="sk-..." />
-          <label>Default Model</label>
-          <input value={form.default_model} onChange={e => setForm({ ...form, default_model: e.target.value })} placeholder="e.g. llama-3.1-70b" />
-          <label>Models (comma-separated)</label>
-          <input value={form.models} onChange={e => setForm({ ...form, models: e.target.value })} placeholder="model-a, model-b" />
-        </div>
+        {mode === 'custom' && (
+          <div className="modal-form">
+            <label>Provider ID</label>
+            <input value={form.id} onChange={e => setForm({ ...form, id: e.target.value })} placeholder="e.g. my-api" disabled={isEdit} style={isEdit ? { opacity: 0.5 } : {}} />
+            <label>Display Name</label>
+            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. My LLM Server" />
+            <label>Base URL (OpenAI-compatible)</label>
+            <input value={form.base_url} onChange={e => setForm({ ...form, base_url: e.target.value })} placeholder="https://api.example.com/v1" />
+            <label>API Key</label>
+            <input type="password" value={form.api_key} onChange={e => setForm({ ...form, api_key: e.target.value })} placeholder="sk-..." />
+            <label>Default Model</label>
+            <input value={form.default_model} onChange={e => setForm({ ...form, default_model: e.target.value })} placeholder="e.g. llama-3.1-70b" />
+            <label>Models (comma-separated)</label>
+            <input value={form.models} onChange={e => setForm({ ...form, models: e.target.value })} placeholder="model-a, model-b" />
+          </div>
+        )}
         <div className="modal-actions">
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={handleSave} disabled={!form.id || !form.name || !form.base_url}>Add Provider</button>
+          <button className="btn-primary" onClick={handleSave} disabled={!form.id || !form.name || !form.base_url}>{isEdit ? 'Save Changes' : 'Add Provider'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Ad Modal (Google AdSense interstitial) ───
+function AdModal({ onClose }) {
+  const [countdown, setCountdown] = useState(5)
+  const adRef = useRef(null)
+
+  useEffect(() => {
+    // Push ad to AdSense slot
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}) } catch {}
+  }, [])
+
+  useEffect(() => {
+    if (countdown <= 0) return
+    const t = setTimeout(() => setCountdown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [countdown])
+
+  return (
+    <div className="modal-overlay" style={{ zIndex: 10000 }} onClick={countdown <= 0 ? onClose : undefined}>
+      <div className="modal ad-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480, textAlign: 'center' }}>
+        <div className="modal-header" style={{ justifyContent: 'center', borderBottom: 'none', padding: '16px 16px 4px' }}>
+          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Yogatik is free — ads keep it running</span>
+        </div>
+        <div style={{ padding: '8px 16px 16px', minHeight: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* Google AdSense Ad Unit — replace data-ad-slot with your slot ID */}
+          <ins className="adsbygoogle"
+            ref={adRef}
+            style={{ display: 'block', width: '100%', minHeight: 250 }}
+            data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+            data-ad-slot="XXXXXXXXXX"
+            data-ad-format="auto"
+            data-full-width-responsive="true" />
+        </div>
+        <div style={{ padding: '0 16px 16px' }}>
+          <button
+            className="btn-primary"
+            onClick={onClose}
+            disabled={countdown > 0}
+            style={{ width: '100%', padding: '10px', fontSize: 14, opacity: countdown > 0 ? 0.5 : 1 }}
+          >
+            {countdown > 0 ? `Continue in ${countdown}s` : 'Continue Chatting'}
+          </button>
         </div>
       </div>
     </div>
@@ -437,7 +514,7 @@ export default function App() {
   const [currentStreamId, setCurrentStreamId] = useState(null)
   const [theme, setTheme] = useState(localStorage.getItem('bgkai_theme') || 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
-  const [provider, setProvider] = useState('ollama')
+  const [provider, setProvider] = useState('nvidia')
   const [model, setModel] = useState('')
   const [webSearch, setWebSearch] = useState(true)
   const [rag, setRag] = useState(true)
@@ -456,8 +533,11 @@ export default function App() {
   const [pendingToolResults, setPendingToolResults] = useState({})
   const [ttsPlaying, setTtsPlaying] = useState(false)
   const [attachedFile, setAttachedFile] = useState(null)
+  const [editingProvider, setEditingProvider] = useState(null)
   const [pwaPrompt, setPwaPrompt] = useState(null)
   const [showPwaInstall, setShowPwaInstall] = useState(false)
+  const [showAd, setShowAd] = useState(false)
+  const chatCountRef = useRef(0)
   const messagesEnd = useRef(null)
   const textareaRef = useRef(null)
   const [isEnhancing, setIsEnhancing] = useState(false)
@@ -610,7 +690,7 @@ export default function App() {
 
   const handleRemoveProvider = async (pid) => {
     if (!confirm(`Remove "${pid}"?`)) return
-    try { await removeProvider(pid); refreshModels(); if (provider === pid) setProvider('ollama') }
+    try { await removeProvider(pid); refreshModels(); if (provider === pid) setProvider('gemini') }
     catch (e) { alert(e.message) }
   }
 
@@ -695,6 +775,9 @@ export default function App() {
         setStreamingContent('')
         setActiveTools([])
         setPendingToolResults({})
+        // Show ad after every chat except the first
+        chatCountRef.current++
+        if (chatCountRef.current > 1) setShowAd(true)
       },
       (err) => {
         setStatusText('')
@@ -768,7 +851,7 @@ export default function App() {
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
       <aside className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
         <div className="sidebar-header">
-          <h2>Yogatik</h2>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><YogatikLogo size={28} /> Yogatik</h2>
           <button className="icon-btn" onClick={() => setSidebarOpen(false)}><X size={16} /></button>
         </div>
 
@@ -811,11 +894,14 @@ export default function App() {
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
             <label style={{ margin: 0 }}>Provider</label>
+            <button className="small-btn" onClick={() => setShowProviderModal(true)} title="Add custom API">
+              <Plus size={11} /> Custom
+            </button>
           </div>
           <select value={provider} onChange={e => { setProvider(e.target.value); setModel('') }}>
             {providerEntries.map(([key, val]) => (
               <option key={key} value={key}>
-                {val.name || key}{!val.available ? ' — needs key' : ''}
+                {val.name || key}
               </option>
             ))}
           </select>
@@ -832,10 +918,20 @@ export default function App() {
             }}
           />
 
-          <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
             <button className="small-btn" onClick={() => handleTest(provider)} disabled={testingProvider === provider}>
               <TestTube size={11} /> {testingProvider === provider ? '...' : 'Test'}
             </button>
+            {models[provider] && !models[provider].builtin && (
+              <>
+                <button className="small-btn" onClick={() => { setShowProviderModal(true); setEditingProvider(provider) }} title="Edit provider">
+                  <Plug size={11} /> Edit
+                </button>
+                <button className="small-btn" onClick={() => handleRemoveProvider(provider)} title="Remove provider" style={{ color: '#ff4444' }}>
+                  <Trash2 size={11} /> Remove
+                </button>
+              </>
+            )}
           </div>
 
           <label>Model</label>
@@ -873,7 +969,7 @@ export default function App() {
         <div className="messages">
           {conv?.messages.length === 0 && !streamingContent ? (
             <div className="welcome">
-              <h1>Yogatik</h1>
+              <h1 style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center' }}><YogatikLogo size={48} /> Yogatik</h1>
               <p>AI-powered assistant with web search, RAG, image generation, code execution, weather, translation, TTS, and 28 free tools.</p>
               {showPwaInstall && (
                 <button className="pwa-install-btn" onClick={installPwa}>
@@ -967,9 +1063,14 @@ export default function App() {
         </div>
       </main>
 
-      {showProviderModal && <ProviderModal onClose={() => setShowProviderModal(false)} onSaved={refreshModels} templates={providerTemplates} />}
+      {showProviderModal && <ProviderModal
+        onClose={() => { setShowProviderModal(false); setEditingProvider(null) }}
+        onSaved={() => { refreshModels(); setEditingProvider(null) }}
+        editProvider={editingProvider ? { id: editingProvider, ...models[editingProvider] } : null}
+      />}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={handleAuth} />}
       {activeArtifact && <ArtifactPanel artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />}
+      {showAd && <AdModal onClose={() => setShowAd(false)} />}
     </div>
   )
 }

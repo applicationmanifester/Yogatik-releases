@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bgk-ai-v1';
+const CACHE_NAME = 'yogatik-v2';
 const STATIC_ASSETS = ['/', '/index.html', '/icon-192.svg', '/icon-512.svg'];
 
 self.addEventListener('install', (e) => {
@@ -32,7 +32,8 @@ self.addEventListener('fetch', (e) => {
   } else {
     e.respondWith(
       caches.match(e.request).then(r => r || fetch(e.request).then(resp => {
-        if (resp.ok && url.protocol.startsWith('http')) {
+        const reqUrl = new URL(e.request.url);
+        if (resp.ok && reqUrl.protocol.startsWith('http')) {
           const clone = resp.clone();
           caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
         }
