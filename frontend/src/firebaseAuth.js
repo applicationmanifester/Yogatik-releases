@@ -3,12 +3,12 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore'
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDummyKeyForDevelopment12345",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyCEaU6MKLAGNnWtexPj3GMcqRFKEeqI-D4",
   authDomain: "yogatik.firebaseapp.com",
   projectId: "yogatik",
-  storageBucket: "yogatik.appspot.com",
-  messagingSenderId: "306907002467",
-  appId: "1:306907002467:web:yogatikAppId"
+  storageBucket: "yogatik.firebasestorage.app",
+  messagingSenderId: "1024966461660",
+  appId: "1:1024966461660:web:3d87c9ac725132418ccc19"
 }
 
 const app = initializeApp(firebaseConfig)
