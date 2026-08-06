@@ -145,7 +145,7 @@ export async function getModels() {
     const key = await db.getSetting(`apikey_${id}`)
     const hasKey = !!key
     let liveModels = p.models || []
-    if (hasKey && !p.needsProxy) {
+    if (hasKey) {
       try {
         const fetched = await fetchLiveModels(id, key)
         if (fetched && fetched.length > 0) liveModels = fetched
