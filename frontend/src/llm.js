@@ -188,8 +188,8 @@ export async function fetchLiveModels(providerId, apiKey) {
   const prov = getProviders()[providerId]
   if (!prov || !apiKey) return prov?.models || []
 
-  // Skip direct client-side fetch for CORS-blocked providers on web hosting
-  if (prov.needsProxy && window.location.hostname !== 'localhost') {
+  // Skip direct client-side fetch for CORS-blocked providers (e.g. NVIDIA)
+  if (prov.needsProxy) {
     return prov.models || []
   }
 
