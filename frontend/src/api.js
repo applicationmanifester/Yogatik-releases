@@ -6,7 +6,7 @@
 
 import * as db from './db'
 import { runAgent } from './agent'
-import { getProviders as getLLMProviders, getProviderModels, registerCustomProviders } from './llm'
+import { getProviders as getLLMProviders, getProviderModels, registerCustomProviders, fetchLiveModels } from './llm'
 import { getToolNames } from './tools/index'
 
 import { signInWithGoogle, logOutGoogle, saveUserApiKey, getUserApiKeys } from './firebaseAuth'
@@ -129,7 +129,7 @@ export async function uploadDocument() {
   return { message: 'Document upload not available in browser-only mode. Paste text directly in chat.' }
 }
 
-// ─── Models & Providers (from llm.js + custom from IndexedDB) ───
+// ─── Models & Providers (dynamically fetched per provider) ───
 async function loadCustomProviders() {
   const custom = await db.getSetting('custom_providers', {})
   registerCustomProviders(custom)
@@ -142,11 +142,19 @@ export async function getModels() {
   const custom = await db.getSetting('custom_providers', {})
   const result = {}
   for (const [id, p] of Object.entries(providers)) {
-    const hasKey = !!(await db.getSetting(`apikey_${id}`))
+    const key = await db.getSetting(`apikey_${id}`)
+    const hasKey = !!key
+    let liveModels = p.models || []
+    if (hasKey) {
+      try {
+        const fetched = await fetchLiveModels(id, key)
+        if (fetched && fetched.length > 0) liveModels = fetched
+      } catch {}
+    }
     result[id] = {
       name: p.name, type: 'openai_compatible',
-      available: hasKey, models: p.models || [],
-      default_model: p.default || '', needs_key: !hasKey,
+      available: hasKey, models: liveModels,
+      default_model: p.default || liveModels[0] || '', needs_key: !hasKey,
       builtin: !custom[id], base_url: p.baseUrl, key_url: p.keyUrl,
     }
   }

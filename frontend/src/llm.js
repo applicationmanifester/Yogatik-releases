@@ -183,3 +183,27 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
   if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`)
   return resp.json()
 }
+
+/** Fetch available models dynamically from provider's /v1/models endpoint */
+export async function fetchLiveModels(providerId, apiKey) {
+  const prov = getProviders()[providerId]
+  if (!prov || !apiKey) return prov?.models || []
+
+  try {
+    const headers = { 'Authorization': `Bearer ${apiKey}` }
+    if (providerId === 'openrouter') {
+      headers['HTTP-Referer'] = 'https://yogatik.app'
+      headers['X-Title'] = 'Yogatik'
+    }
+    const resp = await smartFetch(`${prov.baseUrl}/models`, { method: 'GET', headers }, prov)
+    if (!resp.ok) return prov?.models || []
+
+    const data = await resp.json()
+    const modelList = data.data || data.models || []
+    const ids = modelList.map(m => (m.id || m.name || m)).filter(Boolean)
+    return ids.length > 0 ? ids : (prov?.models || [])
+  } catch (err) {
+    console.warn(`Failed to fetch live models for ${providerId}:`, err)
+    return prov?.models || []
+  }
+}
