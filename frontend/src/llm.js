@@ -51,7 +51,7 @@ export function getProviderModels(providerId) { return getProviders()[providerId
 export function getDefaultModel(providerId) { return getProviders()[providerId]?.default || '' }
 
 /**
- * Smart fetch — direct for CORS-friendly providers, proxied via corsproxy for non-CORS APIs on web.
+ * Smart fetch — direct for CORS-friendly providers, multi-proxy fallback for non-CORS APIs on web.
  */
 async function smartFetch(url, options, prov) {
   if (prov?.needsProxy) {
@@ -59,8 +59,18 @@ async function smartFetch(url, options, prov) {
       const proxyHeaders = { ...options.headers, 'X-Target-URL': url }
       return fetch('/api/llm-proxy', { ...options, headers: proxyHeaders })
     }
-    const corsProxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`
-    return fetch(corsProxyUrl, options)
+    // Web hosting fallback proxy: Try direct proxy endpoint first
+    try {
+      const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+      const resp = await fetch(corsProxyUrl, options)
+      if (resp.ok) return resp
+    } catch {}
+    
+    // Backup CORS proxy
+    try {
+      const backupProxy = `https://corsproxy.io/?${encodeURIComponent(url)}`
+      return fetch(backupProxy, options)
+    } catch {}
   }
   return fetch(url, options)
 }
