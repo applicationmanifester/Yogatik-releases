@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import {
   streamMessage, stopGeneration, uploadDocument, getModels, getProviders,
-  addProvider, removeProvider, testProvider, login, register, logout,
+  addProvider, removeProvider, testProvider, loginWithGoogle, saveProviderApiKey, logout,
   isLoggedIn, getMe, getConversations, getConversation, deleteConversation,
   exportConversation, getTemplates, requestTTS, getTools
 } from './api'
@@ -318,22 +318,19 @@ function MessageBubble({ msg, onTTS, onOpenArtifact }) {
 
 // ─── Auth Modal ───
 function AuthModal({ onClose, onAuth }) {
-  const [mode, setMode] = useState('login')
-  const [email, setEmail] = useState('')
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  const handleGoogleSignIn = async () => {
     setError('')
     setLoading(true)
     try {
-      const data = mode === 'login' ? await login(email, password) : await register(email, username, password)
-      onAuth(data.user)
+      const user = await loginWithGoogle()
+      onAuth(user)
       onClose()
-    } catch (err) { setError(err.message) }
+    } catch (err) {
+      setError(err.message || 'Google Sign-In failed')
+    }
     setLoading(false)
   }
 
@@ -341,28 +338,29 @@ function AuthModal({ onClose, onAuth }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2><User size={18} /> {mode === 'login' ? 'Sign In' : 'Create Account'}</h2>
+          <h2><User size={18} /> Sign In to Yogatik</h2>
           <button className="icon-btn" onClick={onClose}><X size={18} /></button>
         </div>
-        <form onSubmit={handleSubmit} className="modal-form">
-          <label>Email</label>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required />
-          {mode === 'register' && <>
-            <label>Username</label>
-            <input value={username} onChange={e => setUsername(e.target.value)} placeholder="username" required />
-          </>}
-          <label>Password</label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••" required minLength={6} />
-        </form>
-        {error && <div className="test-result error">{error}</div>}
-        <div className="modal-actions">
-          <button type="button" className="btn-secondary" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
-            {mode === 'login' ? 'Need an account?' : 'Already have one?'}
-          </button>
-          <button className="btn-primary" onClick={handleSubmit} disabled={loading}>
-            {loading ? '...' : mode === 'login' ? 'Sign In' : 'Register'}
+        <div className="modal-body" style={{ textAlign: 'center', padding: '16px 0' }}>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+            Sign in with Google to sync your conversation history and back up your custom Provider API Keys to your account.
+          </p>
+          <button
+            className="new-chat-btn"
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '10px', width: '100%' }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24">
+              <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.3 9 5 12 5z"/>
+              <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"/>
+              <path fill="#FBBC05" d="M5.6 14.8c-.3-.8-.4-1.8-.4-2.8s.1-2 .4-2.8L1.9 6.3C.7 8.7 0 10.3 0 12s.7 3.3 1.9 5.7l3.7-2.9z"/>
+              <path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.3-6.4-5.2L1.9 16C3.7 19.7 7.5 23 12 23z"/>
+            </svg>
+            {loading ? 'Signing in...' : 'Sign in with Google'}
           </button>
         </div>
+        {error && <div className="test-result error">{error}</div>}
       </div>
     </div>
   )
@@ -858,7 +856,12 @@ export default function App() {
         <div className="auth-section">
           {user ? (
             <div className="user-info">
-              <User size={14} /> <span>{user.username}</span>
+              {user.photoURL ? (
+                <img src={user.photoURL} alt="" style={{ width: 20, height: 20, borderRadius: '50%' }} />
+              ) : (
+                <User size={14} />
+              )}
+              <span>{user.displayName || user.email}</span>
               <button className="icon-btn" onClick={() => { logout(); setUser(null); setConversations([{ id: null, title: 'New Chat', messages: [] }]); setActiveIdx(0) }} title="Sign out">
                 <LogOut size={14} />
               </button>
@@ -911,8 +914,8 @@ export default function App() {
             style={{ width:'100%',padding:'6px 8px',background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-primary)',fontSize:'12px',marginBottom:'8px' }}
             onBlur={async (e) => {
               if (e.target.value) {
-                const { addProvider } = await import('./api')
-                await addProvider({ provider_id: provider, id: provider, api_key: e.target.value })
+                const { saveProviderApiKey } = await import('./api')
+                await saveProviderApiKey(provider, e.target.value)
                 refreshModels()
               }
             }}

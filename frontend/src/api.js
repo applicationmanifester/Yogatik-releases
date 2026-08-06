@@ -9,26 +9,33 @@ import { runAgent } from './agent'
 import { getProviders as getLLMProviders, getProviderModels, registerCustomProviders } from './llm'
 import { getToolNames } from './tools/index'
 
-// ─── Auth (local-only, no server) ───
-export async function register(email, username, password) {
-  await db.setSetting('user', { email, username })
-  await db.setSetting('auth_hash', btoa(email + ':' + password))
-  return { email, username }
+import { signInWithGoogle, logOutGoogle, saveUserApiKey, getUserApiKeys } from './firebaseAuth'
+
+// ─── Auth (Google Sign-In & Firestore API Key Vault) ───
+export async function loginWithGoogle() {
+  const user = await signInWithGoogle()
+  await db.setSetting('user', user)
+  // Restore saved cloud API keys to IndexedDB
+  const keys = await getUserApiKeys()
+  for (const [provider, key] of Object.entries(keys)) {
+    if (key) await db.setSetting(`apikey_${provider}`, key)
+  }
+  return user
 }
 
-export async function login(email, password) {
-  const stored = await db.getSetting('auth_hash')
-  if (stored && stored !== btoa(email + ':' + password)) throw new Error('Invalid credentials')
-  const user = await db.getSetting('user')
-  if (!user) throw new Error('No account found. Please register first.')
-  return user
+export async function saveProviderApiKey(provider, apiKey) {
+  await db.setSetting(`apikey_${provider}`, apiKey)
+  await saveUserApiKey(provider, apiKey)
 }
 
 export async function getMe() {
   return db.getSetting('user')
 }
 
-export function logout() { db.setSetting('user', null) }
+export async function logout() {
+  await logOutGoogle()
+  await db.setSetting('user', null)
+}
 export async function isLoggedIn() { return !!(await db.getSetting('user')) }
 
 // ─── Chat (via browser agent) ───
