@@ -1,0 +1,186 @@
+/**
+ * API shim — replaces all backend calls with browser-native equivalents.
+ * Uses IndexedDB for storage, direct LLM API calls, browser tools.
+ * Drop-in compatible with existing App.jsx interface.
+ */
+
+import * as db from './db'
+import { runAgent } from './agent'
+import { getProviders as getLLMProviders, getProviderModels } from './llm'
+import { getToolNames } from './tools/index'
+
+// ─── Auth (local-only, no server) ───
+export async function register(email, username, password) {
+  await db.setSetting('user', { email, username })
+  await db.setSetting('auth_hash', btoa(email + ':' + password))
+  return { email, username }
+}
+
+export async function login(email, password) {
+  const stored = await db.getSetting('auth_hash')
+  if (stored && stored !== btoa(email + ':' + password)) throw new Error('Invalid credentials')
+  const user = await db.getSetting('user')
+  if (!user) throw new Error('No account found. Please register first.')
+  return user
+}
+
+export async function getMe() {
+  return db.getSetting('user')
+}
+
+export function logout() { db.setSetting('user', null) }
+export async function isLoggedIn() { return !!(await db.getSetting('user')) }
+
+// ─── Chat (via browser agent) ───
+let currentAbort = null
+
+export async function streamMessage(body, onToken, onSources, onDone, onError, onStatus, onStreamId, onToolsDetected, onToolResult) {
+  const provider = await db.getSetting('provider', 'groq')
+  const apiKey = await db.getSetting(`apikey_${provider}`)
+  const model = body.model || await db.getSetting(`model_${provider}`, '')
+
+  if (!apiKey) {
+    onError?.('API key not set. Go to Settings → enter your API key.')
+    return
+  }
+
+  currentAbort = new AbortController()
+  onStreamId?.('local-' + Date.now())
+
+  try {
+    await runAgent({
+      provider, apiKey, model,
+      history: body.messages || [],
+      userMessage: body.message || body.messages?.[body.messages.length - 1]?.content || '',
+      toolsEnabled: body.tools !== false,
+      temperature: body.temperature || 0.7,
+      signal: currentAbort.signal,
+      onToken,
+      onStatus,
+      onToolStart: (name) => onToolsDetected?.([name]),
+      onToolResult: (name, result) => onToolResult?.(name, result),
+      onDone: ({ content, toolResults }) => {
+        onDone?.(content)
+      },
+      onError: (err) => onError?.(err.message),
+    })
+  } catch (err) {
+    onError?.(err.message)
+  }
+}
+
+export async function stopGeneration() {
+  currentAbort?.abort()
+  currentAbort = null
+}
+
+// ─── Conversations (IndexedDB) ───
+export async function getConversations() {
+  return db.getConversations()
+}
+
+export async function getConversation(id) {
+  return db.getConversation(id)
+}
+
+export async function deleteConversation(id) {
+  return db.deleteConversation(id)
+}
+
+export async function exportConversation(id) {
+  const md = await db.exportConversation(id)
+  return { content: md, format: 'markdown' }
+}
+
+// ─── Templates (stored in IndexedDB) ───
+const DEFAULT_TEMPLATES = [
+  { id: 'default', name: 'Default', system_prompt: 'You are a helpful AI assistant.' },
+  { id: 'coder', name: 'Coder', system_prompt: 'You are an expert programmer. Write clean, efficient code with explanations.' },
+  { id: 'writer', name: 'Writer', system_prompt: 'You are a creative writer. Write engaging, well-structured content.' },
+]
+
+export async function getTemplates() {
+  const custom = await db.getSetting('templates', [])
+  return [...DEFAULT_TEMPLATES, ...custom]
+}
+
+export async function createTemplate(data) {
+  const templates = await db.getSetting('templates', [])
+  const t = { id: 'tmpl-' + Date.now(), ...data }
+  templates.push(t)
+  await db.setSetting('templates', templates)
+  return t
+}
+
+export async function deleteTemplate(id) {
+  const templates = await db.getSetting('templates', [])
+  await db.setSetting('templates', templates.filter(t => t.id !== id))
+}
+
+// ─── Documents (no-op, RAG not available in browser mode) ───
+export async function uploadDocument() {
+  return { message: 'Document upload not available in browser-only mode. Paste text directly in chat.' }
+}
+
+// ─── Models & Providers (from llm.js) ───
+export async function getModels() {
+  const providers = getLLMProviders()
+  const result = {}
+  for (const [id, p] of Object.entries(providers)) {
+    const hasKey = !!(await db.getSetting(`apikey_${id}`))
+    result[id] = {
+      name: p.name, type: 'openai_compatible',
+      available: hasKey, models: p.models,
+      default_model: p.default, needs_key: !hasKey,
+      builtin: true, base_url: p.baseUrl, key_url: p.keyUrl,
+    }
+  }
+  return result
+}
+
+export async function getProviders() {
+  return getModels()
+}
+
+export async function addProvider(data) {
+  await db.setSetting(`apikey_${data.provider_id || data.id}`, data.api_key)
+  return { success: true }
+}
+
+export async function removeProvider(id) {
+  await db.setSetting(`apikey_${id}`, null)
+  return { success: true }
+}
+
+export async function testProvider(id) {
+  const apiKey = await db.getSetting(`apikey_${id}`)
+  if (!apiKey) return { success: false, error: 'No API key set' }
+  try {
+    const providers = getLLMProviders()
+    const p = providers[id]
+    const resp = await fetch(`${p.baseUrl}/models`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    })
+    return { success: resp.ok, models: resp.ok ? (await resp.json()).data?.length : 0 }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+}
+
+// ─── AI Tools (browser-native) ───
+export async function getTools() {
+  return getToolNames().map(name => ({ name, enabled: true }))
+}
+
+// ─── TTS (Web Speech API) ───
+export async function requestTTS(text) {
+  if (!('speechSynthesis' in window)) throw new Error('TTS not supported')
+  const utter = new SpeechSynthesisUtterance(text)
+  window.speechSynthesis.cancel()
+  window.speechSynthesis.speak(utter)
+  return { success: true }
+}
+
+export async function getTTSVoices() {
+  return window.speechSynthesis?.getVoices?.()?.map(v => ({ name: v.name, lang: v.lang })) || []
+}

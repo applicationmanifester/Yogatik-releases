@@ -1,0 +1,17 @@
+{
+  "name": "Yogatik",
+  "short_name": "Yogatik",
+  "description": "AI chatbot with 28 free tools — image gen, code exec, TTS, weather, translation & more",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0e14",
+  "theme_color": "#ff6b35",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    { "src": "/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
+}

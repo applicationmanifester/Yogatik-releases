@@ -1,0 +1,25 @@
+# Node / Dependencies
+node_modules/
+dist/
+.vite/
+
+# Python / Environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+searxng-venv/
+searxng-src/
+data/
+chroma_data/
+
+# Environment Variables & Secrets
+.env
+*.env.local
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
