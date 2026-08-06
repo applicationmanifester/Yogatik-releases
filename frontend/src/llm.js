@@ -8,37 +8,44 @@ const PROVIDERS = {
   nvidia: {
     name: 'NVIDIA (Free)',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
-    models: [],
-    default: '',
+    models: ['meta/llama-3.3-70b-instruct', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1', 'google/gemma-2-27b-it', 'deepseek-ai/deepseek-r1'],
+    default: 'meta/llama-3.3-70b-instruct',
     keyUrl: 'https://build.nvidia.com',
     needsProxy: true,
   },
   gemini: {
     name: 'Gemini (Free)',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    models: [],
-    default: '',
+    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+    default: 'gemini-2.5-flash',
     keyUrl: 'https://aistudio.google.com/apikey',
   },
   groq: {
     name: 'Groq (Free)',
     baseUrl: 'https://api.groq.com/openai/v1',
-    models: [],
-    default: '',
+    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
+    default: 'llama-3.3-70b-versatile',
     keyUrl: 'https://console.groq.com',
   },
   openrouter: {
     name: 'OpenRouter (100+ models)',
     baseUrl: 'https://openrouter.ai/api/v1',
-    models: [],
-    default: '',
+    models: [
+      'google/gemini-2.5-flash', 'google/gemini-2.5-pro',
+      'anthropic/claude-sonnet-4', 'anthropic/claude-haiku-4',
+      'openai/gpt-4o', 'openai/gpt-4o-mini',
+      'meta-llama/llama-3.3-70b-instruct', 'deepseek/deepseek-chat',
+      'nvidia/llama-3.1-nemotron-70b-instruct',
+      'mistralai/mistral-large', 'qwen/qwen-2.5-72b-instruct',
+    ],
+    default: 'google/gemini-2.5-flash',
     keyUrl: 'https://openrouter.ai/keys',
   },
   openai: {
     name: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
-    models: [],
-    default: '',
+    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini'],
+    default: 'gpt-4o',
     keyUrl: 'https://platform.openai.com/api-keys',
   },
 }
@@ -52,10 +59,9 @@ export function getDefaultModel(providerId) { return getProviders()[providerId]?
 
 /**
  * Smart fetch — direct for CORS-friendly providers, proxied for others.
- * Proxy: sends real URL in X-Target-URL header, request goes to /api/llm-proxy.
  */
 async function smartFetch(url, options, prov) {
-  if (prov?.needsProxy) {
+  if (prov?.needsProxy && window.location.hostname === 'localhost') {
     const proxyHeaders = { ...options.headers, 'X-Target-URL': url }
     return fetch('/api/llm-proxy', { ...options, headers: proxyHeaders })
   }
@@ -180,7 +186,12 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
 /** Fetch available models dynamically from provider's /v1/models endpoint */
 export async function fetchLiveModels(providerId, apiKey) {
   const prov = getProviders()[providerId]
-  if (!prov || !apiKey) return []
+  if (!prov || !apiKey) return prov?.models || []
+
+  // Skip direct client-side fetch for CORS-blocked providers on web hosting
+  if (prov.needsProxy && window.location.hostname !== 'localhost') {
+    return prov.models || []
+  }
 
   try {
     const headers = { 'Authorization': `Bearer ${apiKey}` }
@@ -189,19 +200,18 @@ export async function fetchLiveModels(providerId, apiKey) {
       headers['X-Title'] = 'Yogatik'
     }
     
-    // Gemini OpenAI endpoint for models is /models
     const targetUrl = `${prov.baseUrl}/models`
     const resp = await smartFetch(targetUrl, { method: 'GET', headers }, prov)
-    if (!resp.ok) return []
+    if (!resp.ok) return prov.models || []
 
     const contentType = resp.headers.get('content-type') || ''
-    if (!contentType.includes('application/json')) return []
+    if (!contentType.includes('application/json')) return prov.models || []
 
     const data = await resp.json()
     const modelList = data.data || data.models || []
     const ids = modelList.map(m => (m.id || m.name || m)).filter(Boolean)
-    return ids
+    return ids.length > 0 ? ids : (prov.models || [])
   } catch (err) {
-    return []
+    return prov?.models || []
   }
 }
