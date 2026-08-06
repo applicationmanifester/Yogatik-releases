@@ -683,11 +683,30 @@ export default function App() {
     if (currentStreamId) { await stopGeneration(currentStreamId); setCurrentStreamId(null) }
   }
 
-  const handleTest = async (pid) => {
-    setTestingProvider(pid)
-    const result = await testProvider(pid)
-    setTestingProvider(null)
-    alert(result.status === 'ok' ? `Connected! "${result.response}"` : `Failed: ${result.error}`)
+  const [apiKeyInput, setApiKeyInput] = useState({})
+  const [savingApiKey, setSavingApiKey] = useState(null)
+  const [errorModalMsg, setErrorModalMsg] = useState(null)
+
+  const handleAddApiKey = async (pid) => {
+    const keyToSave = apiKeyInput[pid]
+    if (!keyToSave || !keyToSave.trim()) {
+      setErrorModalMsg(`Please enter a valid API Key for ${models[pid]?.name || pid}.`)
+      return
+    }
+    setSavingApiKey(pid)
+    try {
+      await saveProviderApiKey(pid, keyToSave.trim())
+      const testRes = await testProvider(pid)
+      setSavingApiKey(null)
+      if (testRes.status === 'ok' || testRes.success) {
+        refreshModels()
+      } else {
+        setErrorModalMsg(`API Key connection failed for ${models[pid]?.name || pid}:\n${testRes.error || 'Invalid API Key or Provider unreachable'}`)
+      }
+    } catch (err) {
+      setSavingApiKey(null)
+      setErrorModalMsg(`Failed to save API Key for ${models[pid]?.name || pid}:\n${err.message}`)
+    }
   }
 
   const handleRemoveProvider = async (pid) => {
@@ -915,19 +934,14 @@ export default function App() {
 
           <label>API Key {models[provider]?.key_url && <a href={models[provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get free key)</a>}</label>
           <input type="password" placeholder="Enter API key..."
+            value={apiKeyInput[provider] !== undefined ? apiKeyInput[provider] : ''}
+            onChange={e => setApiKeyInput({ ...apiKeyInput, [provider]: e.target.value })}
             style={{ width:'100%',padding:'6px 8px',background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-primary)',fontSize:'12px',marginBottom:'8px' }}
-            onBlur={async (e) => {
-              if (e.target.value) {
-                const { saveProviderApiKey } = await import('./api')
-                await saveProviderApiKey(provider, e.target.value)
-                refreshModels()
-              }
-            }}
           />
 
           <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-            <button className="small-btn" onClick={() => handleTest(provider)} disabled={testingProvider === provider}>
-              <TestTube size={11} /> {testingProvider === provider ? '...' : 'Test'}
+            <button className="small-btn btn-primary" onClick={() => handleAddApiKey(provider)} disabled={savingApiKey === provider}>
+              <Plus size={11} /> {savingApiKey === provider ? 'Verifying...' : 'Add Key'}
             </button>
             <button className="small-btn" onClick={() => { setShowProviderModal(true); setEditingProvider(provider) }} title="Edit provider details">
               <Plug size={11} /> Edit
@@ -1074,6 +1088,22 @@ export default function App() {
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={handleAuth} />}
       {activeArtifact && <ArtifactPanel artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />}
       {showAd && <AdModal onClose={() => setShowAd(false)} />}
+      {errorModalMsg && (
+        <div className="modal-overlay" onClick={() => setErrorModalMsg(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <h2 style={{ color: '#ff4444' }}><AlertTriangle size={18} /> API Key Error</h2>
+              <button className="icon-btn" onClick={() => setErrorModalMsg(null)}><X size={18} /></button>
+            </div>
+            <div style={{ padding: '16px 0', fontSize: 13, lineHeight: 1.5, color: 'var(--text-primary)', whitespace: 'pre-wrap' }}>
+              {errorModalMsg}
+            </div>
+            <div className="modal-actions">
+              <button className="btn-primary" onClick={() => setErrorModalMsg(null)}>Got It</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
