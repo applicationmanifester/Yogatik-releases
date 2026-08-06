@@ -58,12 +58,17 @@ export function getProviderModels(providerId) { return getProviders()[providerId
 export function getDefaultModel(providerId) { return getProviders()[providerId]?.default || '' }
 
 /**
- * Smart fetch — direct for CORS-friendly providers, proxied for others.
+ * Smart fetch — direct for CORS-friendly providers, proxied via corsproxy for non-CORS APIs on web.
  */
 async function smartFetch(url, options, prov) {
-  if (prov?.needsProxy && window.location.hostname === 'localhost') {
-    const proxyHeaders = { ...options.headers, 'X-Target-URL': url }
-    return fetch('/api/llm-proxy', { ...options, headers: proxyHeaders })
+  if (prov?.needsProxy) {
+    if (window.location.hostname === 'localhost') {
+      const proxyHeaders = { ...options.headers, 'X-Target-URL': url }
+      return fetch('/api/llm-proxy', { ...options, headers: proxyHeaders })
+    }
+    // Use free public CORS proxy when hosted on web
+    const corsProxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`
+    return fetch(corsProxyUrl, options)
   }
   return fetch(url, options)
 }
