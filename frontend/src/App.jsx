@@ -925,16 +925,12 @@ export default function App() {
             <button className="small-btn" onClick={() => handleTest(provider)} disabled={testingProvider === provider}>
               <TestTube size={11} /> {testingProvider === provider ? '...' : 'Test'}
             </button>
-            {models[provider] && !models[provider].builtin && (
-              <>
-                <button className="small-btn" onClick={() => { setShowProviderModal(true); setEditingProvider(provider) }} title="Edit provider">
-                  <Plug size={11} /> Edit
-                </button>
-                <button className="small-btn" onClick={() => handleRemoveProvider(provider)} title="Remove provider" style={{ color: '#ff4444' }}>
-                  <Trash2 size={11} /> Remove
-                </button>
-              </>
-            )}
+            <button className="small-btn" onClick={() => { setShowProviderModal(true); setEditingProvider(provider) }} title="Edit provider details">
+              <Plug size={11} /> Edit
+            </button>
+            <button className="small-btn" onClick={() => handleRemoveProvider(provider)} title="Remove provider" style={{ color: '#ff4444' }}>
+              <Trash2 size={11} /> Remove
+            </button>
           </div>
 
           <label>Model</label>
