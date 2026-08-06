@@ -8,8 +8,113 @@ const PROVIDERS = {
   nvidia: {
     name: 'NVIDIA (Free)',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
-    models: [],
-    default: '',
+    models: [
+      // Chat / Instruct models
+      'meta/llama-3.3-70b-instruct',
+      'meta/llama-3.1-70b-instruct',
+      'meta/llama-3.1-8b-instruct',
+      'meta/llama-3.2-3b-instruct',
+      'meta/llama-3.2-1b-instruct',
+      'meta/llama-3.2-11b-vision-instruct',
+      'meta/llama-3.2-90b-vision-instruct',
+      'meta/codellama-70b',
+      'meta/llama2-70b',
+      'nvidia/llama-3.1-nemotron-70b-instruct',
+      'nvidia/llama-3.1-nemotron-51b-instruct',
+      'nvidia/llama-3.1-nemotron-ultra-253b-v1',
+      'nvidia/llama-3.3-nemotron-super-49b-v1',
+      'nvidia/llama-3.3-nemotron-super-49b-v1.5',
+      'nvidia/llama-3.1-nemotron-nano-8b-v1',
+      'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
+      'nvidia/nvidia-nemotron-nano-9b-v2',
+      'nvidia/nemotron-nano-12b-v2-vl',
+      'nvidia/nemotron-nano-3-30b-a3b',
+      'nvidia/nemotron-3-nano-30b-a3b',
+      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+      'nvidia/nemotron-3-super-120b-a12b',
+      'nvidia/nemotron-3-ultra-550b-a55b',
+      'nvidia/nemotron-4-340b-instruct',
+      'nvidia/nemotron-mini-4b-instruct',
+      'nvidia/cosmos-reason2-8b',
+      'nvidia/mistral-nemo-minitron-8b-8k-instruct',
+      'nvidia/ising-calibration-1.5-31b',
+      'nvidia/riva-translate-4b-instruct-v2',
+      'nvidia/riva-translate-4b-instruct-v1.1',
+      'nvidia/riva-translate-4b-instruct',
+      'mistralai/mistral-large',
+      'mistralai/mistral-large-2-instruct',
+      'mistralai/mistral-medium-3.5-128b',
+      'mistralai/mistral-nemotron',
+      'mistralai/mistral-7b-instruct-v0.3',
+      'mistralai/codestral-22b-instruct-v0.1',
+      'mistralai/mixtral-8x22b-v0.1',
+      'nv-mistralai/mistral-nemo-12b-instruct',
+      'deepseek-ai/deepseek-v4-flash',
+      'deepseek-ai/deepseek-v4-pro',
+      'deepseek-ai/deepseek-coder-6.7b-instruct',
+      'google/gemma-4-31b-it',
+      'google/gemma-3-12b-it',
+      'google/gemma-3-4b-it',
+      'google/gemma-2b',
+      'google/codegemma-1.1-7b',
+      'google/codegemma-7b',
+      'google/diffusiongemma-26b-a4b-it',
+      'google/recurrentgemma-2b',
+      'microsoft/phi-3-vision-128k-instruct',
+      'microsoft/phi-3.5-moe-instruct',
+      'ibm/granite-3.0-8b-instruct',
+      'ibm/granite-3.0-3b-a800m-instruct',
+      'ibm/granite-34b-code-instruct',
+      'ibm/granite-8b-code-instruct',
+      'ai21labs/jamba-1.5-large-instruct',
+      '01-ai/yi-large',
+      'aisingapore/sea-lion-7b-instruct',
+      'databricks/dbrx-instruct',
+      'writer/palmyra-creative-122b',
+      'writer/palmyra-fin-70b-32k',
+      'writer/palmyra-med-70b',
+      'writer/palmyra-med-70b-32k',
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'moonshotai/kimi-k2.6',
+      'stepfun-ai/step-3.7-flash',
+      'minimaxai/minimax-m3',
+      'z-ai/glm-5.2',
+      'poolside/laguna-xs-2.1',
+      'thinkingmachines/inkling',
+      'zyphra/zamba2-7b-instruct',
+      'nvidia/llama3-chatqa-1.5-70b',
+      'bigcode/starcoder2-15b',
+      // Embedding / Safety / Special (available but not typical chat)
+      'nvidia/nv-embed-v1',
+      'nvidia/nv-embedqa-e5-v5',
+      'nvidia/nv-embedqa-mistral-7b-v2',
+      'nvidia/nv-embedcode-7b-v1',
+      'nvidia/embed-qa-4',
+      'nvidia/nemotron-3-embed-1b',
+      'nvidia/llama-nemotron-embed-1b-v2',
+      'nvidia/llama-nemotron-embed-vl-1b-v2',
+      'nvidia/llama-3.2-nv-embedqa-1b-v1',
+      'nvidia/llama-3.2-nemoretriever-1b-vlm-embed-v1',
+      'nvidia/nvclip',
+      'nvidia/neva-22b',
+      'nvidia/vila',
+      'nvidia/nemotron-4-340b-reward',
+      'nvidia/nemotron-3.5-content-safety',
+      'nvidia/llama-3.1-nemoguard-8b-content-safety',
+      'nvidia/llama-3.1-nemoguard-8b-topic-control',
+      'nvidia/llama-3.1-nemotron-safety-guard-8b-v3',
+      'meta/llama-guard-4-12b',
+      'nvidia/ai-synthetic-video-detector',
+      'nvidia/nemoretriever-parse',
+      'nvidia/nemotron-parse',
+      'google/deplot',
+      'microsoft/kosmos-2',
+      'adept/fuyu-8b',
+      'snowflake/arctic-embed-l',
+      'baai/bge-m3',
+    ],
+    default: 'meta/llama-3.3-70b-instruct',
     keyUrl: 'https://build.nvidia.com',
     needsProxy: true,
   },
@@ -51,26 +156,14 @@ export function getProviderModels(providerId) { return getProviders()[providerId
 export function getDefaultModel(providerId) { return getProviders()[providerId]?.default || '' }
 
 /**
- * Smart fetch — direct for CORS-friendly providers, multi-proxy fallback for non-CORS APIs on web.
+ * Smart fetch — direct for CORS-friendly providers, proxied via /api/llm-proxy for others.
+ * On localhost: Vite dev server proxy handles /api/llm-proxy.
+ * On production: Firebase Cloud Function handles /api/llm-proxy.
  */
 async function smartFetch(url, options, prov) {
   if (prov?.needsProxy) {
-    if (window.location.hostname === 'localhost') {
-      const proxyHeaders = { ...options.headers, 'X-Target-URL': url }
-      return fetch('/api/llm-proxy', { ...options, headers: proxyHeaders })
-    }
-    // Web hosting fallback proxy: Try direct proxy endpoint first
-    try {
-      const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-      const resp = await fetch(corsProxyUrl, options)
-      if (resp.ok) return resp
-    } catch {}
-    
-    // Backup CORS proxy
-    try {
-      const backupProxy = `https://corsproxy.io/?${encodeURIComponent(url)}`
-      return fetch(backupProxy, options)
-    } catch {}
+    const proxyHeaders = { ...options.headers, 'X-Target-URL': url }
+    return fetch('/api/llm-proxy', { ...options, headers: proxyHeaders })
   }
   return fetch(url, options)
 }
