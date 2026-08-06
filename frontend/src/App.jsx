@@ -9,7 +9,7 @@ import {
   Wrench, Image, Code, CloudSun, Calculator, Languages, Youtube, Link,
   ScanLine, QrCode, FileText, AudioLines, Hash, Regex, ArrowLeftRight,
   Palette, Search, GitCompare, Ruler, MapPin, Rss, Eye, FileDown,
-  Smartphone
+  Smartphone, AlertTriangle
 } from 'lucide-react'
 import {
   streamMessage, stopGeneration, uploadDocument, getModels, getProviders,
