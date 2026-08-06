@@ -567,6 +567,10 @@ export default function App() {
 
   useEffect(() => {
     refreshModels()
+  }, [provider])
+
+  useEffect(() => {
+    refreshModels()
     refreshTemplates()
     if (isLoggedIn()) {
       getMe().then(u => {

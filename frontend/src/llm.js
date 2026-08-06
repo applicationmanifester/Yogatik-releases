@@ -8,44 +8,37 @@ const PROVIDERS = {
   nvidia: {
     name: 'NVIDIA (Free)',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
-    models: ['meta/llama-3.3-70b-instruct', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1', 'google/gemma-2-27b-it', 'deepseek-ai/deepseek-r1'],
-    default: 'meta/llama-3.3-70b-instruct',
+    models: [],
+    default: '',
     keyUrl: 'https://build.nvidia.com',
     needsProxy: true,
   },
   gemini: {
     name: 'Gemini (Free)',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
-    default: 'gemini-2.5-flash',
+    models: [],
+    default: '',
     keyUrl: 'https://aistudio.google.com/apikey',
   },
   groq: {
     name: 'Groq (Free)',
     baseUrl: 'https://api.groq.com/openai/v1',
-    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
-    default: 'llama-3.3-70b-versatile',
+    models: [],
+    default: '',
     keyUrl: 'https://console.groq.com',
   },
   openrouter: {
     name: 'OpenRouter (100+ models)',
     baseUrl: 'https://openrouter.ai/api/v1',
-    models: [
-      'google/gemini-2.5-flash', 'google/gemini-2.5-pro',
-      'anthropic/claude-sonnet-4', 'anthropic/claude-haiku-4',
-      'openai/gpt-4o', 'openai/gpt-4o-mini',
-      'meta-llama/llama-3.3-70b-instruct', 'deepseek/deepseek-chat',
-      'nvidia/llama-3.1-nemotron-70b-instruct',
-      'mistralai/mistral-large', 'qwen/qwen-2.5-72b-instruct',
-    ],
-    default: 'google/gemini-2.5-flash',
+    models: [],
+    default: '',
     keyUrl: 'https://openrouter.ai/keys',
   },
   openai: {
     name: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
-    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini'],
-    default: 'gpt-4o',
+    models: [],
+    default: '',
     keyUrl: 'https://platform.openai.com/api-keys',
   },
 }
@@ -187,7 +180,7 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
 /** Fetch available models dynamically from provider's /v1/models endpoint */
 export async function fetchLiveModels(providerId, apiKey) {
   const prov = getProviders()[providerId]
-  if (!prov || !apiKey) return prov?.models || []
+  if (!prov || !apiKey) return []
 
   try {
     const headers = { 'Authorization': `Bearer ${apiKey}` }
@@ -195,19 +188,20 @@ export async function fetchLiveModels(providerId, apiKey) {
       headers['HTTP-Referer'] = 'https://yogatik.app'
       headers['X-Title'] = 'Yogatik'
     }
-    const resp = await smartFetch(`${prov.baseUrl}/models`, { method: 'GET', headers }, prov)
-    if (!resp.ok) return prov?.models || []
+    
+    // Gemini OpenAI endpoint for models is /models
+    const targetUrl = `${prov.baseUrl}/models`
+    const resp = await smartFetch(targetUrl, { method: 'GET', headers }, prov)
+    if (!resp.ok) return []
 
     const contentType = resp.headers.get('content-type') || ''
-    if (!contentType.includes('application/json')) {
-      return prov?.models || []
-    }
+    if (!contentType.includes('application/json')) return []
 
     const data = await resp.json()
     const modelList = data.data || data.models || []
     const ids = modelList.map(m => (m.id || m.name || m)).filter(Boolean)
-    return ids.length > 0 ? ids : (prov?.models || [])
+    return ids
   } catch (err) {
-    return prov?.models || []
+    return []
   }
 }
