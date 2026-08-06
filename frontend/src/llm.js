@@ -198,12 +198,16 @@ export async function fetchLiveModels(providerId, apiKey) {
     const resp = await smartFetch(`${prov.baseUrl}/models`, { method: 'GET', headers }, prov)
     if (!resp.ok) return prov?.models || []
 
+    const contentType = resp.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      return prov?.models || []
+    }
+
     const data = await resp.json()
     const modelList = data.data || data.models || []
     const ids = modelList.map(m => (m.id || m.name || m)).filter(Boolean)
     return ids.length > 0 ? ids : (prov?.models || [])
   } catch (err) {
-    console.warn(`Failed to fetch live models for ${providerId}:`, err)
     return prov?.models || []
   }
 }
