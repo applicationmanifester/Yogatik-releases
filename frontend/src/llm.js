@@ -181,7 +181,7 @@ async function smartFetch(url, options, prov) {
       return fetch('/api/llm-proxy', { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
     }
     if (PROXY_BASE) {
-      return fetch(PROXY_BASE, { ...options.headers, 'X-Target-URL': url })
+      return fetch(PROXY_BASE, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
     }
     // Fallback to corsproxy.io on web host if worker URL not set
     const corsProxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`
