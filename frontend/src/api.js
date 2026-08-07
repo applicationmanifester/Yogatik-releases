@@ -334,6 +334,10 @@ export async function removeProvider(id) {
   return { success: true }
 }
 
+// A connection check must fail fast. Inheriting the chat budget (120s x 3
+// retries) left the UI sitting on "Verifying…" for minutes against a slow model.
+const TEST_TIMEOUT = 20_000
+
 /** Status is per provider AND per model — a pass only vouches for one model. */
 const statusKey = (id, model) => `status_${id}::${model || 'default'}`
 const STATUS_TTL = 30 * 60 * 1000
@@ -370,6 +374,8 @@ export async function testProvider(id, modelOverride) {
       messages: [{ role: 'user', content: 'ping' }],
       temperature: 0,
       maxTokens: 1,
+      timeoutMs: TEST_TIMEOUT,
+      retries: 0,          // a test that needs retries has already failed
     })
     return remember({
       success: true,
@@ -379,9 +385,14 @@ export async function testProvider(id, modelOverride) {
       response: 'Connected',
     })
   } catch (e) {
+    // A retired model must not linger in the picker or stay selected.
+    if (isRetiredModelError(e.message)) await pruneRetiredModel(id, model)
+    const timedOut = e.name === 'TimeoutError' || /timeout/i.test(e.message || '')
     return remember({
       success: false,
-      error: friendlyProviderError(e.message),
+      error: timedOut
+        ? `No response in ${TEST_TIMEOUT / 1000}s — this model is too slow to use for chat. Pick a smaller one.`
+        : friendlyProviderError(e.message),
       latencyMs: Math.round(performance.now() - started),
     })
   }
@@ -394,8 +405,34 @@ export async function ensureTested(id, model) {
   return testProvider(id, model)
 }
 
+/** Providers retire models without warning; 410 means this one is gone. */
+export function isRetiredModelError(msg = '') {
+  return /\b410\b/.test(msg) || /end of life|no longer available/i.test(msg)
+}
+
+/**
+ * Forget a retired model: drop the cached catalog so the next fetch is fresh,
+ * and clear the selection so the app falls back to a model that still exists.
+ */
+export async function pruneRetiredModel(providerId, model) {
+  const cache = await db.getSetting(`models_${providerId}`)
+  if (cache?.list?.length) {
+    await db.setSetting(`models_${providerId}`, { ts: 0, list: cache.list.filter(m => m !== model) })
+  }
+  if (await db.getSetting(`model_${providerId}`) === model) {
+    await db.setSetting(`model_${providerId}`, '')
+  }
+  await db.setSetting(statusKey(providerId, model), null)
+}
+
 /** Turn raw provider HTTP errors into something a user can act on. */
 function friendlyProviderError(msg = '') {
+  if (isRetiredModelError(msg)) {
+    const detail = msg.match(/"detail":"([^"]+)"/)?.[1]
+    return detail
+      ? `${detail} Pick a different model.`
+      : 'This model has been retired by the provider. Pick a different model.'
+  }
   if (/\b401\b|invalid api key|unauthorized/i.test(msg)) return 'Invalid API key — check you pasted the whole key.'
   if (/\b403\b/i.test(msg)) return 'Key rejected (403). It may lack permission or be from the wrong account.'
   if (/\b404\b|model.*not found/i.test(msg)) return 'Model not found for this provider — pick a different model.'

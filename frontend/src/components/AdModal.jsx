@@ -1,12 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react'
 
+// Configure in frontend/.env to enable ads:
+//   VITE_ADSENSE_CLIENT=ca-pub-1234567890123456
+//   VITE_ADSENSE_SLOT=1234567890
+// Left unset, the interstitial never renders. Requesting a placeholder slot
+// made AdSense return 410 Gone and showed the user an empty box.
+const AD_CLIENT = import.meta.env.VITE_ADSENSE_CLIENT || ''
+const AD_SLOT = import.meta.env.VITE_ADSENSE_SLOT || ''
+export const adsConfigured = !!(AD_CLIENT && AD_SLOT)
+
 // ─── Ad Modal (Google AdSense interstitial) ───
 function AdModal({ onClose }) {
   const [countdown, setCountdown] = useState(5)
   const adRef = useRef(null)
 
   useEffect(() => {
-    // Push ad to AdSense slot
+    if (!adsConfigured) return
     try { (window.adsbygoogle = window.adsbygoogle || []).push({}) } catch {}
   }, [])
 
@@ -15,6 +24,10 @@ function AdModal({ onClose }) {
     const t = setTimeout(() => setCountdown(c => c - 1), 1000)
     return () => clearTimeout(t)
   }, [countdown])
+
+  // Nothing to show without a real slot. Guard sits after the hooks so the
+  // hook order stays identical on every render.
+  if (!adsConfigured) return null
 
   return (
     <div className="modal-overlay" style={{ zIndex: 10000 }} onClick={countdown <= 0 ? onClose : undefined}>
@@ -27,8 +40,8 @@ function AdModal({ onClose }) {
           <ins className="adsbygoogle"
             ref={adRef}
             style={{ display: 'block', width: '100%', minHeight: 250 }}
-            data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
-            data-ad-slot="XXXXXXXXXX"
+            data-ad-client={AD_CLIENT}
+            data-ad-slot={AD_SLOT}
             data-ad-format="auto"
             data-full-width-responsive="true" />
         </div>

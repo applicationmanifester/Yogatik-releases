@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref } from './api'
+import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, isRetiredModelError, pruneRetiredModel } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
 import { MessageBubble } from './components/MessageBubble'
 import { AuthModal } from './components/AuthModal'
 import { ProviderModal } from './components/ProviderModal'
-import { AdModal } from './components/AdModal'
+import { AdModal, adsConfigured } from './components/AdModal'
 import { Modal } from './components/Modal'
 
 // Messages rendered at once; older turns load on demand.
@@ -495,11 +495,18 @@ export default function App() {
         setPendingToolResults({})
         // Show ad every 3 chats
         chatCountRef.current++
-        if (chatCountRef.current % 10 === 0) setShowAd(true)
+        if (adsConfigured && chatCountRef.current % 10 === 0) setShowAd(true)
       },
       (err) => {
         setStatusText('')
         setCurrentStreamId(null)
+        if (isRetiredModelError(err)) {
+          pruneRetiredModel(provider, model).then(() => {
+            setModel('')
+            refreshModels()
+            getAllProviderStatus().then(setProviderStatus)
+          })
+        }
         const errMsg = { role: 'assistant', content: `Error: ${err}`, sources: [] }
         saveMessage(convId, errMsg).catch(() => {})
         setConversations(prev => prev.map((c, i) =>

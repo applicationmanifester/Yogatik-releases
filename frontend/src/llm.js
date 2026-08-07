@@ -49,7 +49,6 @@ const PROVIDERS = {
       'mistralai/codestral-22b-instruct-v0.1',
       'mistralai/mixtral-8x22b-v0.1',
       'nv-mistralai/mistral-nemo-12b-instruct',
-      'deepseek-ai/deepseek-v4-flash',
       'deepseek-ai/deepseek-v4-pro',
       'deepseek-ai/deepseek-coder-6.7b-instruct',
       'google/gemma-4-31b-it',
@@ -180,16 +179,16 @@ const PUBLIC_RELAY = 'https://corsproxy.io/?'
 // UI on "Connecting…" with no way out but the Stop button.
 const REQUEST_TIMEOUT = 120_000
 
-function withTimeout(options) {
-  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT)
+function withTimeout(options, ms = REQUEST_TIMEOUT) {
+  const timeout = AbortSignal.timeout(ms)
   const signal = options?.signal
     ? (AbortSignal.any ? AbortSignal.any([options.signal, timeout]) : options.signal)
     : timeout
   return { ...options, signal }
 }
 
-async function smartFetch(url, rawOptions, prov) {
-  const options = withTimeout(rawOptions)
+async function smartFetch(url, rawOptions, prov, timeoutMs) {
+  const options = withTimeout(rawOptions, timeoutMs)
   if (!prov?.needsProxy) return fetch(url, options)
 
   const endpoint = getProxyEndpoint()
@@ -394,7 +393,7 @@ export async function streamChat({
 }
 
 /** Non-streaming completion (for tool result processing) */
-export async function chatComplete({ provider, apiKey, model, messages, tools, temperature = 0.7, maxTokens }) {
+export async function chatComplete({ provider, apiKey, model, messages, tools, temperature = 0.7, maxTokens, timeoutMs, retries }) {
   const prov = getProviders()[provider]
   const headers = {
     'Content-Type': 'application/json',
@@ -410,7 +409,7 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
 
   const resp = await fetchWithRetry(`${prov.baseUrl}/chat/completions`, {
     method: 'POST', headers, body: JSON.stringify(body),
-  }, prov)
+  }, prov, { timeoutMs, retries })
   if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`)
   return resp.json()
 }
