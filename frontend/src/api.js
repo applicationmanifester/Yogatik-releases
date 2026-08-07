@@ -407,14 +407,25 @@ export async function getAllProviderStatus() {
   for (const id of Object.keys(getLLMProviders())) {
     const hasKey = !!(await db.getSetting(`apikey_${id}`))
     const status = await db.getSetting(`status_${id}`)
+    const selected = await db.getSetting(`model_${id}`, '')
+
+    // A pass only vouches for the model it was run against. Selecting a
+    // different model makes the result stale — reporting it as "Connected"
+    // implied the new model was verified when it had never been called.
+    const testedModel = status?.model
+    const stale = !!(status?.success && selected && testedModel && selected !== testedModel)
+
     out[id] = {
       hasKey,
-      // "verified" only counts if the successful test happened after the
-      // current key was saved; otherwise it's stale and we say "untested".
-      state: !hasKey ? 'no-key' : status?.success ? 'connected' : status ? 'failed' : 'untested',
+      state: !hasKey ? 'no-key'
+        : stale ? 'stale'
+        : status?.success ? 'connected'
+        : status ? 'failed' : 'untested',
       error: status?.success ? null : status?.error || null,
       latencyMs: status?.latencyMs,
-      model: status?.model,
+      model: testedModel,
+      selected,
+      stale,
       at: status?.at,
     }
   }

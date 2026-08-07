@@ -220,30 +220,52 @@ async function smartFetch(url, rawOptions, prov) {
 // routinely blow past the 100s edge timeout on the first request of the day.
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504, 520, 522, 524])
 
-async function fetchWithRetry(url, options, prov, { retries = 3, onStatus } = {}) {
+async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeoutMs = 180000 } = {}) {
   let attempt = 0
   for (;;) {
-    const resp = await smartFetch(url, options, prov)
-    if (!RETRY_STATUS.has(resp.status) || attempt >= retries || options?.signal?.aborted) return resp
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(new DOMException('Timeout', 'TimeoutError')), timeoutMs)
 
-    const header = Number(resp.headers.get('retry-after'))
-    const backoff = Number.isFinite(header) && header > 0
-      ? Math.min(header * 1000, 30000)
-      : Math.min(2 ** attempt * 1000, 8000) + Math.random() * 500
+    // Combine caller signal + timeout signal
+    let combinedSignal = controller.signal
+    if (options?.signal) {
+      if (options.signal.aborted) { clearTimeout(timer); throw options.signal.reason }
+      combinedSignal = AbortSignal.any([options.signal, controller.signal])
+    }
 
-    attempt++
-    onStatus?.(resp.status === 429
-      ? `Rate limited — retrying in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})`
-      : `Provider error ${resp.status} — retrying (${attempt}/${retries})`)
+    try {
+      const resp = await smartFetch(url, { ...options, signal: combinedSignal }, prov)
+      clearTimeout(timer)
+      if (!RETRY_STATUS.has(resp.status) || attempt >= retries || options?.signal?.aborted) return resp
 
-    await new Promise((resolve, reject) => {
-      const t = setTimeout(resolve, backoff)
-      options?.signal?.addEventListener(
-        'abort',
-        () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) },
-        { once: true },
-      )
-    })
+      const header = Number(resp.headers.get('retry-after'))
+      const backoff = Number.isFinite(header) && header > 0
+        ? Math.min(header * 1000, 30000)
+        : Math.min(2 ** attempt * 1000, 8000) + Math.random() * 500
+
+      attempt++
+      onStatus?.(resp.status === 429
+        ? `Rate limited — retrying in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})`
+        : `Provider error ${resp.status} — retrying (${attempt}/${retries})`)
+
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(resolve, backoff)
+        options?.signal?.addEventListener(
+          'abort',
+          () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) },
+          { once: true },
+        )
+      })
+    } catch (err) {
+      clearTimeout(timer)
+      if (err.name === 'TimeoutError') {
+        if (attempt >= retries) throw err
+        attempt++
+        onStatus?.(`Connection timed out — retrying (${attempt}/${retries})...`)
+        continue
+      }
+      throw err
+    }
   }
 }
 

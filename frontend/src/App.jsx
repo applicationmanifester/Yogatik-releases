@@ -14,6 +14,14 @@ import { Modal } from './components/Modal'
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
 
+/** 329189ms is unreadable; 5m 29s is not. */
+function formatLatency(ms) {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  const m = Math.floor(ms / 60000)
+  return `${m}m ${Math.round((ms % 60000) / 1000)}s`
+}
+
 const SUGGESTIONS = [
   "What's the weather in New York?",
   "Generate an image of a futuristic city",
@@ -82,7 +90,10 @@ export default function App() {
   }, [])
   const chooseModel = useCallback((m) => {
     setModel(m)
-    setActiveModel(provider, m).catch(() => {})
+    setActiveModel(provider, m)
+      .then(getAllProviderStatus)
+      .then(setProviderStatus)
+      .catch(() => {})
   }, [provider])
 
   // Chat preferences persist across reloads like provider and model do.
@@ -690,6 +701,7 @@ export default function App() {
             const st = providerStatus[provider] || {}
             const label = {
               connected: 'Connected', failed: 'Not connected',
+              stale: 'Not tested with this model',
               untested: 'Key saved — not verified', 'no-key': 'No API key',
             }[st.state] || 'No API key'
             return (
@@ -697,7 +709,10 @@ export default function App() {
                 <span className="conn-dot" />
                 <span className="conn-label">{label}</span>
                 {st.state === 'connected' && st.latencyMs != null && (
-                  <span className="conn-meta">{st.model} · {st.latencyMs}ms</span>
+                  <span className="conn-meta">{st.model} · {formatLatency(st.latencyMs)}</span>
+                )}
+                {st.state === 'stale' && (
+                  <span className="conn-meta">last tested: {st.model}</span>
                 )}
                 {st.hasKey && (
                   <button className="small-btn" onClick={() => retestProvider(provider)}
