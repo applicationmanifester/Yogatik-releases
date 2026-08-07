@@ -166,14 +166,26 @@ export function getDefaultModel(providerId) { return getProviders()[providerId]?
 const PROXY_BASE = (import.meta.env.VITE_LLM_PROXY_BASE || '').replace(/\/+$/, '')
 const isLocalhost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
 
-export function getProxyEndpoint() {
-  return (!isLocalhost && PROXY_BASE) ? PROXY_BASE : '/api/llm-proxy'
+export function getProxyEndpoint(url) {
+  if (isLocalhost) return '/api/llm-proxy'
+  if (PROXY_BASE) return PROXY_BASE
+  if (url) return `https://corsproxy.io/?${encodeURIComponent(url)}`
+  return '/api/llm-proxy'
 }
 
 async function smartFetch(url, options, prov) {
   if (prov?.needsProxy) {
-    const proxyHeaders = { ...options.headers, 'X-Target-URL': url }
-    return fetch(getProxyEndpoint(), { ...options, headers: proxyHeaders })
+    if (isLocalhost) {
+      const proxyHeaders = { ...options.headers, 'X-Target-URL': url }
+      return fetch('/api/llm-proxy', { ...options, headers: proxyHeaders })
+    }
+    if (PROXY_BASE) {
+      const proxyHeaders = { ...options.headers, 'X-Target-URL': url }
+      return fetch(PROXY_BASE, { ...options, headers: proxyHeaders })
+    }
+    // Fallback for web host when custom worker is not deployed yet
+    const corsProxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`
+    return fetch(corsProxyUrl, options)
   }
   return fetch(url, options)
 }
@@ -220,7 +232,7 @@ export async function streamChat({
     // instead of silently yielding an empty answer.
     const ctype = resp.headers.get('content-type') || ''
     if (ctype.includes('text/html')) {
-      onError?.(new Error(`LLM proxy misconfigured — ${getProxyEndpoint()} returned HTML instead of a stream. Deploy the Cloudflare Worker and set VITE_LLM_PROXY_BASE.`))
+      onError?.(new Error(`LLM proxy misconfigured — ${getProxyEndpoint(`${prov.baseUrl}/chat/completions`)} returned HTML instead of a stream.`))
       return
     }
     if (!resp.body) { onError?.(new Error('Empty response body from provider')); return }
