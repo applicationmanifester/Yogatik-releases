@@ -992,3 +992,35 @@ body {
 .conn-stale .conn-dot { background: #f1c40f; }
 .conn-testing .conn-dot { background: #4aa3ff; animation: conn-pulse 1s ease-in-out infinite; }
 @keyframes conn-pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+
+/* ── Stored API key visibility ── */
+.key-saved {
+  margin: 4px 0 8px; padding: 6px 8px;
+  border: 1px solid var(--border, #333); border-radius: var(--radius, 8px);
+  background: var(--bg-input, #1e1e1e);
+}
+.key-saved-row { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.key-saved-row code {
+  font-family: var(--font-mono, monospace); letter-spacing: .02em;
+  color: var(--text-primary, #eee); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
+.key-where {
+  display: flex; gap: 10px; margin-top: 5px;
+  font-size: 10px; color: var(--text-muted, #888);
+}
+.key-where span { display: flex; align-items: center; gap: 3px; }
+.key-none { font-size: 11px; color: var(--text-muted, #888); margin: 4px 0 8px; }
+
+/* ── Cloud sync ── */
+.cloud-sync {
+  margin: 8px 0; padding: 8px; border-radius: var(--radius, 8px);
+  background: var(--bg-input, #1e1e1e); border: 1px solid var(--border, #333);
+}
+.cloud-hint { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary, #aaa); }
+.cloud-row { display: flex; gap: 4px; margin-top: 6px; }
+.cloud-row input {
+  flex: 1; min-width: 0; padding: 5px 7px; font-size: 11px;
+  background: var(--bg, #111); color: var(--text-primary, #eee);
+  border: 1px solid var(--border, #333); border-radius: 6px;
+}
+.cloud-note { display: block; margin-top: 6px; font-size: 10px; line-height: 1.4; color: var(--text-muted, #888); }

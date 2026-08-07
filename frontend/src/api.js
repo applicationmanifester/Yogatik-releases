@@ -40,9 +40,63 @@ export async function saveProviderApiKey(provider, apiKey) {
   await db.setSetting(`apikey_${provider}`, apiKey)
   // Cloud sync is opt-in and encrypted; without a passphrase the key stays local.
   if (_passphrase && await db.getSetting('user')) {
-    return saveUserApiKey(provider, apiKey, _passphrase)
+    const res = await saveUserApiKey(provider, apiKey, _passphrase)
+    if (res?.synced) await db.setSetting(`synced_${provider}`, Date.now())
+    return res
   }
+  await db.setSetting(`synced_${provider}`, null)
   return { synced: false, reason: _passphrase ? 'signed-out' : 'no-passphrase' }
+}
+
+/** What the user can be told about a stored key, without revealing it. */
+export async function getKeyInfo(providerId) {
+  const key = await db.getSetting(`apikey_${providerId}`)
+  if (!key) return { saved: false, masked: '', syncedAt: null }
+  return {
+    saved: true,
+    // Enough to recognise which key it is, not enough to use it.
+    masked: key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : '••••',
+    syncedAt: await db.getSetting(`synced_${providerId}`),
+  }
+}
+
+export async function getAllKeyInfo() {
+  await loadCustomProviders()
+  const out = {}
+  for (const id of Object.keys(getLLMProviders())) out[id] = await getKeyInfo(id)
+  return out
+}
+
+/**
+ * Turn on cloud sync: hold the passphrase for this session and push every key
+ * already stored on this device, encrypted.
+ */
+export async function enableCloudSync(passphrase) {
+  if (!passphrase) throw new Error('A passphrase is required — it is what encrypts your keys.')
+  if (!(await db.getSetting('user'))) throw new Error('Sign in first to sync keys to the cloud.')
+  _passphrase = passphrase
+
+  await loadCustomProviders()
+  let synced = 0
+  for (const id of Object.keys(getLLMProviders())) {
+    const key = await db.getSetting(`apikey_${id}`)
+    if (!key) continue
+    const res = await saveUserApiKey(id, key, passphrase)
+    if (res?.synced) { await db.setSetting(`synced_${id}`, Date.now()); synced++ }
+  }
+  await db.setSetting('cloud_sync_on', true)
+  return { synced }
+}
+
+export async function disableCloudSync() {
+  _passphrase = null
+  await db.setSetting('cloud_sync_on', false)
+  await loadCustomProviders()
+  for (const id of Object.keys(getLLMProviders())) await db.setSetting(`synced_${id}`, null)
+}
+
+export async function isCloudSyncOn() {
+  return !!(await db.getSetting('cloud_sync_on')) && hasKeyPassphrase()
 }
 
 export async function getMe() {
@@ -321,6 +375,11 @@ export async function addProvider(data) {
     registerCustomProviders(custom)
   }
   return { success: true }
+}
+
+export async function forgetApiKey(providerId) {
+  await db.setSetting(`apikey_${providerId}`, null)
+  await db.setSetting(`synced_${providerId}`, null)
 }
 
 export async function removeProvider(id) {

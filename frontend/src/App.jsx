@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, isRetiredModelError, pruneRetiredModel } from './api'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff } from 'lucide-react'
+import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, enableCloudSync, disableCloudSync, isCloudSyncOn } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
@@ -64,6 +64,10 @@ export default function App() {
   const [convQuery, setConvQuery] = useState('')
   const [providerStatus, setProviderStatus] = useState({})
   const [verifying, setVerifying] = useState(false)
+  const [keyInfo, setKeyInfo] = useState({})
+  const [cloudSync, setCloudSync] = useState(false)
+  const [passphrase, setPassphrase] = useState('')
+  const [syncing, setSyncing] = useState(false)
   const [toolPrefs, setToolPrefs] = useState([])
   const [showToolPicker, setShowToolPicker] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(() => window.innerWidth > 900)
@@ -209,6 +213,7 @@ export default function App() {
       if (pref.persona) setActiveTemplate(pref.persona)
     }).catch(() => {})
     refreshToolPrefs()
+    refreshKeys()
     // Init Web Speech API
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -254,6 +259,39 @@ export default function App() {
   const refreshDocs = useCallback(() => {
     listDocuments().then(setDocs).catch(() => {})
   }, [])
+
+  const refreshKeys = useCallback(() => {
+    getAllKeyInfo().then(setKeyInfo).catch(() => {})
+    isCloudSyncOn().then(setCloudSync).catch(() => {})
+  }, [])
+
+  const forgetKey = async (pid) => {
+    await forgetApiKey(pid)
+    refreshKeys()
+    refreshModels()
+    setProviderStatus(await getAllProviderStatus())
+  }
+
+  const handleEnableSync = async () => {
+    setSyncing(true)
+    try {
+      const { synced } = await enableCloudSync(passphrase)
+      setPassphrase('')
+      setCloudSync(true)
+      refreshKeys()
+      setErrorModalMsg(`${synced} key${synced === 1 ? '' : 's'} encrypted and synced. Enter the same passphrase on another device to restore them.`)
+    } catch (e) {
+      setErrorModalMsg(e.message)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const handleDisableSync = async () => {
+    await disableCloudSync()
+    setCloudSync(false)
+    refreshKeys()
+  }
 
   const refreshToolPrefs = useCallback(() => {
     getTools().then(setToolPrefs).catch(() => {})
@@ -362,6 +400,7 @@ export default function App() {
       const testRes = await testProvider(pid)
       setSavingApiKey(null)
       setProviderStatus(await getAllProviderStatus())
+      refreshKeys()
       if (testRes.success) {
         refreshModels()
         setApiKeyInput(prev => ({ ...prev, [pid]: '' }))
@@ -754,7 +793,32 @@ export default function App() {
           )}
 
           <label>API Key {models[provider]?.key_url && <a href={models[provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get free key)</a>}</label>
-          <input type="password" placeholder="Enter API key..."
+
+          {keyInfo[provider]?.saved ? (
+            <div className="key-saved">
+              <div className="key-saved-row">
+                <Key size={12} />
+                <code>{keyInfo[provider].masked}</code>
+                <button className="link-btn" onClick={() => forgetKey(provider)}>Forget</button>
+              </div>
+              <div className="key-where">
+                <span title="Stored in this browser's IndexedDB">
+                  <Smartphone size={10} /> This device
+                </span>
+                <span title={keyInfo[provider].syncedAt
+                  ? 'Encrypted with your passphrase and stored in Firestore'
+                  : 'Not uploaded anywhere'}>
+                  {keyInfo[provider].syncedAt
+                    ? <><Cloud size={10} /> Cloud (encrypted)</>
+                    : <><CloudOff size={10} /> Not in cloud</>}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="key-none">No key stored for this provider.</div>
+          )}
+
+          <input type="password" placeholder={keyInfo[provider]?.saved ? 'Replace key…' : 'Enter API key...'}
             value={apiKeyInput[provider] !== undefined ? apiKeyInput[provider] : ''}
             onChange={e => setApiKeyInput({ ...apiKeyInput, [provider]: e.target.value })}
             style={{ width:'100%',padding:'6px 8px',background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-primary)',fontSize:'12px',marginBottom:'8px' }}
@@ -770,6 +834,34 @@ export default function App() {
             <button className="small-btn" onClick={() => handleRemoveProvider(provider)} title="Remove provider" style={{ color: '#ff4444' }}>
               <Trash2 size={11} /> Remove
             </button>
+          </div>
+
+          <div className="cloud-sync">
+            {!user ? (
+              <span className="cloud-hint">Keys stay on this device. <button className="link-btn" onClick={() => setShowAuthModal(true)}>Sign in</button> to sync them, encrypted.</span>
+            ) : cloudSync ? (
+              <span className="cloud-hint">
+                <Cloud size={11} /> Cloud sync on
+                <button className="link-btn" onClick={handleDisableSync}>Turn off</button>
+              </span>
+            ) : (
+              <>
+                <span className="cloud-hint">
+                  <CloudOff size={11} /> Keys are on this device only.
+                </span>
+                <div className="cloud-row">
+                  <input type="password" placeholder="Passphrase to encrypt keys…"
+                    value={passphrase} onChange={e => setPassphrase(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleEnableSync()} />
+                  <button className="small-btn btn-primary" onClick={handleEnableSync}
+                    disabled={!passphrase || syncing}>{syncing ? 'Syncing…' : 'Sync'}</button>
+                </div>
+                <span className="cloud-note">
+                  Only you know this passphrase — it never leaves the browser, and without it the
+                  uploaded keys cannot be read by anyone, including Firebase.
+                </span>
+              </>
+            )}
           </div>
 
           <label>Model {providerModels.length > 0 && <span style={{opacity:.6}}>({providerModels.length})</span>}</label>

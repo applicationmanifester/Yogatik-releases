@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react'
 // made AdSense return 410 Gone and showed the user an empty box.
 const AD_CLIENT = import.meta.env.VITE_ADSENSE_CLIENT || ''
 const AD_SLOT = import.meta.env.VITE_ADSENSE_SLOT || ''
-export const adsConfigured = !!(AD_CLIENT && AD_SLOT)
+export const adsConfigured = !!AD_CLIENT
 
 // ─── Ad Modal (Google AdSense interstitial) ───
 function AdModal({ onClose }) {
