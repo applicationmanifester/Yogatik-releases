@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, getProviders, removeProvider, testProvider, saveProviderApiKey, logout, isLoggedIn, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument } from './api'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw } from 'lucide-react'
+import { streamMessage, stopGeneration, uploadDocument, getModels, getProviders, removeProvider, testProvider, saveProviderApiKey, logout, isLoggedIn, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
@@ -8,6 +8,9 @@ import { MessageBubble } from './components/MessageBubble'
 import { AuthModal } from './components/AuthModal'
 import { ProviderModal } from './components/ProviderModal'
 import { AdModal } from './components/AdModal'
+
+// Messages rendered at once; older turns load on demand.
+const WINDOW_STEP = 40
 
 const SUGGESTIONS = [
   "What's the weather in New York?",
@@ -49,6 +52,10 @@ export default function App() {
   const [ttsPlaying, setTtsPlaying] = useState(false)
   const [attachedFile, setAttachedFile] = useState(null)
   const [docs, setDocs] = useState([])
+  const [convQuery, setConvQuery] = useState('')
+  const [renamingIdx, setRenamingIdx] = useState(null)
+  const [renameText, setRenameText] = useState('')
+  const [visibleCount, setVisibleCount] = useState(WINDOW_STEP)
   const [editingProvider, setEditingProvider] = useState(null)
   const [pwaPrompt, setPwaPrompt] = useState(null)
   const [showPwaInstall, setShowPwaInstall] = useState(false)
@@ -61,6 +68,15 @@ export default function App() {
   const audioRef = useRef(null)
 
   const conv = conversations[activeIdx]
+
+  // Only the tail of a long conversation is mounted; older turns stay in state
+  // (and IndexedDB) but are not rendered until asked for. Keeps a 500-message
+  // chat as cheap to paint as a fresh one.
+  const allMessages = conv?.messages || []
+  const shownMessages = allMessages.length > visibleCount
+    ? allMessages.slice(-visibleCount)
+    : allMessages
+  const hiddenCount = allMessages.length - shownMessages.length
 
   // Streaming tokens arrive faster than the browser can paint. Coalesce them
   // into one state update per animation frame instead of one per token.
@@ -105,12 +121,10 @@ export default function App() {
     refreshModels()
     refreshTemplates()
     refreshDocs()
-    if (isLoggedIn()) {
-      getMe().then(u => {
-        if (u) { setUser(u); loadConversations() }
-        else logout()
-      })
-    }
+    // Conversations live in IndexedDB and belong to this device, not to an
+    // account — load them whether or not the user has signed in.
+    loadConversations()
+    getMe().then(u => { if (u) setUser(u) }).catch(() => {})
     // Init Web Speech API
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -156,17 +170,22 @@ export default function App() {
     listDocuments().then(setDocs).catch(() => {})
   }, [])
 
+  const hydrate = (m) => ({
+    role: m.role, content: m.content,
+    sources: m.sources || [],
+    toolResults: m.toolResults || undefined,
+  })
+
   const loadConversations = async () => {
     const convs = await getConversations()
-    if (convs.length > 0) {
-      const first = await getConversation(convs[0].id)
-      const mapped = convs.map((c, i) => ({
-        id: c.id, title: c.title,
-        messages: i === 0 && first ? first.messages.map(m => ({ role: m.role, content: m.content, sources: m.sources || [] })) : []
-      }))
-      setConversations([...mapped, { id: null, title: 'New Chat', messages: [] }])
-      setActiveIdx(0)
-    }
+    if (!convs.length) return
+    const first = await getConversation(convs[0].id)
+    const mapped = convs.map((c, i) => ({
+      id: c.id, title: c.title,
+      messages: i === 0 && first ? first.messages.map(hydrate) : [],
+    }))
+    setConversations([...mapped, { id: null, title: 'New Chat', messages: [] }])
+    setActiveIdx(0)
   }
 
   const handleAuth = (userData) => { setUser(userData); loadConversations() }
@@ -177,18 +196,20 @@ export default function App() {
   }, [])
 
   const newChat = () => {
+    setVisibleCount(WINDOW_STEP)
     setConversations(prev => [...prev, { id: null, title: 'New Chat', messages: [] }])
     setActiveIdx(conversations.length)
   }
 
   const switchChat = async (idx) => {
     setActiveIdx(idx)
+    setVisibleCount(WINDOW_STEP)
     const c = conversations[idx]
-    if (c.id && c.messages.length === 0 && user) {
+    if (c.id && c.messages.length === 0) {
       const full = await getConversation(c.id)
       if (full) {
         setConversations(prev => prev.map((conv, i) =>
-          i === idx ? { ...conv, messages: full.messages.map(m => ({ role: m.role, content: m.content, sources: m.sources || [] })) } : conv
+          i === idx ? { ...conv, messages: full.messages.map(hydrate) } : conv
         ))
       }
     }
@@ -196,14 +217,14 @@ export default function App() {
 
   const deleteChat = async (idx) => {
     const c = conversations[idx]
-    if (c.id && user) { try { await deleteConversation(c.id) } catch {} }
+    if (c.id) { try { await deleteConversation(c.id) } catch {} }
     if (conversations.length === 1) { newChat(); return }
     setConversations(prev => prev.filter((_, i) => i !== idx))
     setActiveIdx(prev => prev >= idx ? Math.max(0, prev - 1) : prev)
   }
 
   const handleExport = async () => {
-    if (!conv.id || !user) {
+    if (!conv.id) {
       const md = conv.messages.map(m => `**${m.role === 'user' ? 'You' : 'Yogatik'}**:\n\n${m.content}`).join('\n\n---\n\n')
       const blob = new Blob([md], { type: 'text/markdown' })
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${conv.title}.md`; a.click()
@@ -310,13 +331,25 @@ export default function App() {
     const displayText = msgText || (attachedFile ? `📎 ${attachedFile.name}` : '')
     const userMsg = { role: 'user', content: displayText, sources: [] }
     const updated = { ...conv, messages: [...conv.messages, userMsg] }
-    if (updated.title === 'New Chat') updated.title = text.trim().slice(0, 40)
+    const isNewTitle = updated.title === 'New Chat'
+    if (isNewTitle) updated.title = (msgText || displayText).trim().slice(0, 40) || 'New Chat'
+
+    // Persist as we go — a refresh mid-answer must not lose the exchange.
+    let convId = conv.id
+    try {
+      if (!convId) {
+        convId = await createConversation(updated.title)
+        updated.id = convId
+      } else if (isNewTitle) {
+        await renameConversation(convId, updated.title)
+      }
+      await saveMessage(convId, userMsg)
+    } catch (e) { console.error('Failed to persist message', e) }
+
     setConversations(prev => prev.map((c, i) => i === activeIdx ? updated : c))
 
     let content = ''
     let sources = []
-    let convId = conv.id
-    let toolResults = {}
     let toolsUsed = []
 
     await streamMessage(
@@ -327,22 +360,24 @@ export default function App() {
         setStatusText('')
         setCurrentStreamId(null)
         const assistantMsg = { role: 'assistant', content, sources, toolResults: { ...pendingToolResults }, toolsUsed }
+        saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
         setConversations(prev => prev.map((c, i) =>
-          i === activeIdx ? { ...c, messages: [...updated.messages, assistantMsg] } : c
+          i === activeIdx ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
         ))
         setStreamingContent('')
         setActiveTools([])
         setPendingToolResults({})
         // Show ad every 3 chats
         chatCountRef.current++
-        if (chatCountRef.current % 3 === 0) setShowAd(true)
+        if (chatCountRef.current % 10 === 0) setShowAd(true)
       },
       (err) => {
         setStatusText('')
         setCurrentStreamId(null)
         const errMsg = { role: 'assistant', content: `Error: ${err}`, sources: [] }
+        saveMessage(convId, errMsg).catch(() => {})
         setConversations(prev => prev.map((c, i) =>
-          i === activeIdx ? { ...c, messages: [...updated.messages, errMsg] } : c
+          i === activeIdx ? { ...c, id: convId, messages: [...updated.messages, errMsg] } : c
         ))
         setStreamingContent('')
       },
@@ -402,7 +437,48 @@ export default function App() {
     }
   }
 
+  const regenerate = async () => {
+    if (loading) return
+    const msgs = conv?.messages || []
+    let lastUser = -1
+    for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'user') { lastUser = i; break } }
+    if (lastUser < 0) return
+    const prompt = msgs[lastUser].content
+    // Rewind local state to just before that turn; the stored rows are rebuilt
+    // on the next save, and stale trailing rows are pruned here.
+    const kept = msgs.slice(0, lastUser)
+    setConversations(prev => prev.map((c, i) => i === activeIdx ? { ...c, messages: kept } : c))
+    if (conv?.id) { try { await trimConversationFrom(conv.id, lastUser) } catch {} }
+    send(prompt)
+  }
+
+  const startRename = (idx) => {
+    setRenamingIdx(idx)
+    setRenameText(conversations[idx].title)
+  }
+
+  const commitRename = async () => {
+    const idx = renamingIdx
+    const title = renameText.trim()
+    setRenamingIdx(null)
+    if (idx == null || !title) return
+    setConversations(prev => prev.map((c, i) => i === idx ? { ...c, title } : c))
+    const id = conversations[idx]?.id
+    if (id) { try { await renameConversation(id, title) } catch {} }
+  }
+
   const providerEntries = Object.entries(models)
+  const providerModels = models[provider]?.models || []
+
+  // Conversation filter — matches title and message text
+  const visibleConvs = conversations
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => {
+      if (!convQuery.trim()) return true
+      const q = convQuery.toLowerCase()
+      return c.title.toLowerCase().includes(q) ||
+        c.messages.some(m => (m.content || '').toLowerCase().includes(q))
+    })
 
   return (
     <div className="app">
@@ -434,17 +510,49 @@ export default function App() {
         </div>
 
         <button className="new-chat-btn" onClick={newChat} aria-label="New chat"><Plus size={14} /> New Chat</button>
+
+        {conversations.length > 3 && (
+          <div className="conv-search">
+            <Search size={12} />
+            <input value={convQuery} onChange={e => setConvQuery(e.target.value)}
+              placeholder="Search chats..." aria-label="Search conversations" />
+            {convQuery && (
+              <button className="icon-btn" onClick={() => setConvQuery('')} aria-label="Clear search"><X size={11} /></button>
+            )}
+          </div>
+        )}
+
         <div className="conversation-list">
-          {conversations.map((c, i) => (
-            <div key={i} className={`conversation-item ${i === activeIdx ? 'active' : ''}`} onClick={() => switchChat(i)}>
-              <span className="conv-title">{c.title}</span>
-              {i === activeIdx && (
-                <button className="icon-btn conv-delete" onClick={e => { e.stopPropagation(); deleteChat(i) }} aria-label="Delete conversation">
-                  <Trash2 size={12} />
-                </button>
+          {visibleConvs.map(({ c, i }) => (
+            <div key={i} className={`conversation-item ${i === activeIdx ? 'active' : ''}`}
+              onClick={() => switchChat(i)} onDoubleClick={() => startRename(i)}>
+              {renamingIdx === i ? (
+                <input className="conv-rename" autoFocus value={renameText}
+                  onChange={e => setRenameText(e.target.value)}
+                  onBlur={commitRename}
+                  onClick={e => e.stopPropagation()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') commitRename()
+                    if (e.key === 'Escape') setRenamingIdx(null)
+                  }} />
+              ) : (
+                <span className="conv-title" title={c.title}>{c.title}</span>
+              )}
+              {i === activeIdx && renamingIdx !== i && (
+                <span className="conv-actions">
+                  <button className="icon-btn" onClick={e => { e.stopPropagation(); startRename(i) }} aria-label="Rename conversation">
+                    <Pencil size={11} />
+                  </button>
+                  <button className="icon-btn conv-delete" onClick={e => { e.stopPropagation(); deleteChat(i) }} aria-label="Delete conversation">
+                    <Trash2 size={12} />
+                  </button>
+                </span>
               )}
             </div>
           ))}
+          {convQuery && visibleConvs.length === 0 && (
+            <div className="conv-empty">No chats match "{convQuery}"</div>
+          )}
         </div>
 
         <div className="settings">
@@ -488,13 +596,20 @@ export default function App() {
             </button>
           </div>
 
-          <label>Model</label>
-          <select value={model} onChange={e => setModel(e.target.value)}
+          <label>Model {providerModels.length > 0 && <span style={{opacity:.6}}>({providerModels.length})</span>}</label>
+          <input list="model-options" value={model} onChange={e => setModel(e.target.value)}
+            placeholder={`Auto (${models[provider]?.default_model || 'default'}) — type to filter`}
             style={{ width: '100%', padding: '6px 8px', background: 'var(--bg-input)', border: '1px solid var(--border)',
-              borderRadius: '6px', color: 'var(--text-primary)', fontSize: '12px', marginBottom: '8px' }}>
-            <option value="">Auto ({models[provider]?.default_model || 'default'})</option>
-            {(models[provider]?.models || []).map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
+              borderRadius: '6px', color: 'var(--text-primary)', fontSize: '12px', marginBottom: '8px' }} />
+          <datalist id="model-options">
+            {providerModels.map(m => <option key={m} value={m} />)}
+          </datalist>
+          {model && !providerModels.includes(model) && (
+            <div style={{ fontSize: 10, color: 'var(--accent)', marginTop: -4, marginBottom: 8 }}>
+              Not in this provider's catalog — will be sent as-is.
+              <button className="small-btn" style={{ marginLeft: 6 }} onClick={() => setModel('')}>Reset</button>
+            </div>
+          )}
 
           <label>Temperature: {temperature}</label>
           <input type="range" min="0" max="1" step="0.1" value={temperature} onChange={e => setTemperature(parseFloat(e.target.value))} />
@@ -541,10 +656,10 @@ export default function App() {
         </header>
 
         <div className="messages">
-          {conv?.messages.length === 0 && !streamingContent ? (
+          {allMessages.length === 0 && !streamingContent ? (
             <div className="welcome">
               <h1 style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center' }}><YogatikLogo size={48} /> Yogatik</h1>
-              <p>AI-powered assistant with web search, RAG, image generation, code execution, weather, translation, TTS, and 28 free tools.</p>
+              <p>AI assistant with live web research, document Q&A, image generation, code execution, weather, translation, TTS and 32 free tools — all running in your browser.</p>
               {showPwaInstall && (
                 <button className="pwa-install-btn" onClick={installPwa}>
                   <Smartphone size={16} /> Install App
@@ -562,8 +677,15 @@ export default function App() {
             </div>
           ) : (
             <>
-              {conv?.messages.map((m, i) => (
-                <MessageBubble key={i} msg={m} onTTS={handleTTS} onOpenArtifact={(art) => setActiveArtifact(art)} />
+              {hiddenCount > 0 && (
+                <button className="load-earlier" onClick={() => setVisibleCount(v => v + WINDOW_STEP)}>
+                  Load {Math.min(hiddenCount, WINDOW_STEP)} earlier message{Math.min(hiddenCount, WINDOW_STEP) === 1 ? '' : 's'}
+                  <span className="load-earlier-count"> · {hiddenCount} hidden</span>
+                </button>
+              )}
+              {shownMessages.map((m, i) => (
+                <MessageBubble key={i + (conv.messages.length - shownMessages.length)} msg={m}
+                  onTTS={handleTTS} onOpenArtifact={(art) => setActiveArtifact(art)} />
               ))}
               {/* Show pending tool results while streaming */}
               {loading && Object.keys(pendingToolResults).length > 0 && (
@@ -618,6 +740,12 @@ export default function App() {
             {loading && (
               <button className="stop-btn" onClick={handleStop} title="Stop generation (Esc)" aria-label="Stop generation (Esc)">
                 <Square size={12} /> Stop (Esc)
+              </button>
+            )}
+            {!loading && conv?.messages?.some(m => m.role === 'assistant') && (
+              <button className="small-btn" onClick={regenerate}
+                title="Regenerate last response" aria-label="Regenerate last response">
+                <RefreshCw size={12} /> Regenerate
               </button>
             )}
           </div>

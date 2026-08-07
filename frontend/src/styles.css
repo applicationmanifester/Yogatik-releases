@@ -811,3 +811,32 @@ body {
   padding: 4px 6px; border-radius: 6px; background: var(--bg-input, #1e1e1e); font-size: 11px;
 }
 .doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Conversation search / rename ── */
+.conv-search {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0 8px 6px; padding: 5px 8px;
+  border: 1px solid var(--border, #333); border-radius: 8px;
+  background: var(--bg-input, #1e1e1e); color: var(--text-secondary, #999);
+}
+.conv-search input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+  color: var(--text-primary, #eee); font-size: 12px;
+}
+.conv-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.conv-rename {
+  flex: 1; min-width: 0; padding: 2px 4px; font-size: 12px;
+  border: 1px solid var(--accent, #ff6b35); border-radius: 4px;
+  background: var(--bg, #111); color: var(--text-primary, #eee);
+}
+.conv-empty { padding: 10px 12px; font-size: 11px; color: var(--text-secondary, #888); }
+
+/* ── Windowed message list ── */
+.load-earlier {
+  display: block; width: fit-content; margin: 8px auto 16px;
+  padding: 6px 14px; font-size: 12px; cursor: pointer;
+  border: 1px solid var(--border, #333); border-radius: 999px;
+  background: var(--bg-secondary, #1a1a1a); color: var(--text-primary, #eee);
+}
+.load-earlier:hover { border-color: var(--accent, #ff6b35); }
+.load-earlier-count { opacity: .6; }

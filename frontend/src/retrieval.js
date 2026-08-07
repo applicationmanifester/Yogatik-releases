@@ -20,13 +20,22 @@ const B = 0.75
  */
 function stem(t) {
   if (t.length <= 4) return t
-  return t
-    .replace(/(ies)$/, 'y')
+  let w = t
+    .replace(/ies$/, 'y')
     .replace(/(ements?|ments?)$/, '')
     .replace(/(ations?|ions?)$/, '')
     .replace(/(edly|ingly)$/, '')
-    .replace(/(ing|ed|es|s)$/, '')
-    || t
+
+  // "ss" is part of the word (express, address), not a plural marker
+  if (!/ss$/.test(w)) w = w.replace(/(ing|ed|es|s)$/, '')
+
+  // Undo the doubled consonant English adds before -ing/-ed: shipping → ship
+  if (/([bdfglmnprt])\1$/.test(w) && w.length > 3) w = w.slice(0, -1)
+
+  // Drop a silent trailing -e so "expense" and "expenses" land on one stem
+  if (w.length > 4 && /[^aeiou]e$/.test(w)) w = w.slice(0, -1)
+
+  return w.length >= 3 ? w : t
 }
 
 export function tokenize(text) {

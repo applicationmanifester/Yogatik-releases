@@ -40,6 +40,38 @@ Format with markdown when it aids clarity. Be concise.
 If a tool fails, explain what happened and suggest an alternative.`
 }
 
+/**
+ * Build the history window under a character budget, newest-first.
+ *
+ * The old rule cut every message to 3000 chars, which silently shredded
+ * inlined document text on the second turn. Instead we keep recent messages
+ * whole and stop once the budget is spent, truncating only the single oldest
+ * message that straddles the limit.
+ */
+const HISTORY_BUDGET = 24000
+const MAX_TURNS = 20
+
+function windowHistory(history, budget = HISTORY_BUDGET) {
+  const out = []
+  let used = 0
+
+  for (const m of history.slice(-MAX_TURNS).reverse()) {
+    const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')
+    if (used + content.length <= budget) {
+      out.push({ role: m.role, content })
+      used += content.length
+    } else {
+      const room = budget - used
+      // Only worth keeping a partial message if a useful amount survives.
+      if (room > 500) {
+        out.push({ role: m.role, content: '…' + content.slice(-room) })
+      }
+      break
+    }
+  }
+  return out.reverse()
+}
+
 /** Tools that surface citable web sources */
 const SOURCE_TOOLS = new Set(['deep_research', 'web_search', 'web_extract', 'link_preview'])
 
@@ -80,10 +112,7 @@ export async function runAgent({
 }) {
   const messages = [
     { role: 'system', content: buildSystemPrompt({ webEnabled: toolsEnabled && webEnabled }) },
-    // Sliding window: last 20 messages, max ~6k chars
-    ...history.slice(-20).map(m => ({
-      role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 3000) : m.content,
-    })),
+    ...windowHistory(history),
     { role: 'user', content: userMessage },
   ]
 

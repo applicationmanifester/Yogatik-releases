@@ -75,6 +75,14 @@ export async function getMessages(conversationId) {
     .toArray()
 }
 
+/** Delete messages at or after `from` (chronological position) in a conversation. */
+export async function trimMessages(conversationId, from) {
+  const msgs = await getMessages(conversationId)
+  const doomed = msgs.slice(from).map(m => m.id).filter(id => id != null)
+  if (doomed.length) await db.messages.bulkDelete(doomed)
+  return doomed.length
+}
+
 // ─── Documents (local retrieval corpus) ───
 export async function addDocument(doc) {
   const id = await db.documents.add({ ...doc, createdAt: Date.now() })

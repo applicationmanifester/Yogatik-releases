@@ -56,8 +56,6 @@ AI ChatBot/
 │   ├── package.json
 │   └── vite.config.js
 ├── cors-proxy/            # Cloudflare Worker (wrangler deploy)
-├── functions/             # Firebase Fn proxy — unused (needs Blaze), kept as fallback
-├── backend/               # Legacy — kept for reference, not required
 └── CLAUDE.md
 ```
 
@@ -85,6 +83,7 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 
 ## Run
 - Dev: `cd frontend && npm install && npm run dev`
+- Test: `cd frontend && npm test` (vitest: retrieval + search parsers, 24 tests)
 - Build: `cd frontend && npm run build` (static files in dist/)
 - Deploy: Upload `dist/` to Vercel/Netlify/GitHub Pages
 
@@ -98,3 +97,11 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - Public CORS relays only for credential-free requests — never with Authorization
 - 429/5xx retried w/ backoff + Retry-After in llm.js fetchWithRetry
 - Lint: npx eslint@9 w/ no-undef catches extraction mistakes vite build won't
+
+## Persistence
+- Conversations/messages saved to IndexedDB as they stream (createConversation/saveMessage
+  in api.js). Local-device storage — NOT gated on sign-in.
+- Regenerate rewinds via trimConversationFrom(id, index) then re-sends the last user msg.
+- Context window: budget-based (24k chars / 20 turns), keeps recent msgs whole.
+  Never blanket-truncate — that shredded inlined docs on turn 2.
+- Message list renders last 40 turns; "Load earlier" pages back.

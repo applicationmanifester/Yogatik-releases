@@ -107,6 +107,29 @@ export async function getConversations() {
   return db.getConversations()
 }
 
+/** Create a conversation row and return its id. */
+export async function createConversation(title) {
+  const c = await db.createConversation(title)
+  return c.id
+}
+
+/** Append a message to a stored conversation. */
+export async function saveMessage(conversationId, msg) {
+  if (!conversationId) return null
+  return db.addMessage(conversationId, msg.role, msg.content, msg.toolResults || null, msg.sources || null)
+}
+
+export async function renameConversation(id, title) {
+  if (!id) return
+  return db.updateConversationTitle(id, title)
+}
+
+/** Drop stored messages from index `from` onward (used by regenerate). */
+export async function trimConversationFrom(id, from) {
+  if (!id) return
+  return db.trimMessages(id, from)
+}
+
 export async function getConversation(id) {
   return db.getConversation(id)
 }
