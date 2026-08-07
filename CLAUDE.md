@@ -144,8 +144,49 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - Mode cached in `toolmode_<provider>::<model>` so the rejected request is paid once.
 - onToolsRejected MUST still fire onDone, else the agent's promise hangs.
 
-## Tests (npm test — 70)
-- retrieval (18), agent loop (24), search parsers (6), routing (11), crypto (11)
+## Vision — provider-independent (vision/, tools/see.js)
+- Three paths, tried in order: (1) active model if it takes images, (2) on-device VLM,
+  (3) honest error. Vision is an app capability, not one vendor's feature.
+- capability.js: name heuristic (YES/NO regex, NO wins) + real 1x1-pixel probe via
+  chatComplete; verdict cached `vision_<p>::<m>` 7d. Only a 400 is evidence of "cannot
+  see" — 429/network must NOT poison the cache.
+- localVLM.js: SmolVLM-256M/500M ONNX via Transformers.js @esm.run, WebGPU (wasm+q8
+  fallback). ~230MB, consent-gated download. Zero key, offline after first load.
+- tools/see.js: one shared camera (2nd getUserMedia fails on phones), 60s idle release.
+  Returns `{image}` when the model can see (agent attaches it as an image_url part) or
+  `{observation}` from the local VLM when it cannot.
+- agent.js: `stripImage()` before JSON.stringify (else ~50KB base64 becomes prompt text);
+  `pruneOldImages()` keeps 1 frame (~1.1k tokens each); windowHistory must NOT stringify
+  array content.
+
+## Live mode — face-to-face (live/)
+- Two engines, one UI (components/LiveView.jsx picks via `engine`):
+  **gemini** — realtime WSS, native audio, ~0.8s, server-side barge-in.
+  **cascade** (live/cascade.js) — Web Speech recognition -> runAgent -> speechSynthesis
+  for ANY other provider incl. on-device. ~1.5-2.5s; barge-in is manual (cancel + abort).
+  Sentence-chunked TTS, else nothing is spoken until the whole reply lands.
+  recog.onend MUST restart it — it self-stops on silence and the call goes deaf.
+- getLiveConfig() picks: gemini key -> realtime, else active provider -> cascade.
+- protocol.js: pure wire layer (setup/audio/video/toolResponse builders, decodeServerMessage).
+  audio.js: AudioWorklet capture @16k PCM16 -> base64; 24k scheduled playback queue + flush.
+  video.js: JPEG <=1fps, 768px, aHash-gated (skips unchanged scenes; forced frame every 5s).
+  session.js: socket + mic + cam + tool bridge. components/LiveView.jsx: full-screen call UI.
+- Barge-in is server-side (START_OF_ACTIVITY_INTERRUPTS) -> `interrupted` flushes playback.
+  Do NOT build STT->LLM->TTS; it cannot interrupt and lands ~2.5s vs ~0.8s.
+- echoCancellation is mandatory: without it the session hears its own voice and loops.
+- Gemini 400s on JSON-Schema extras (additionalProperties/$schema/default/title) and on
+  `parameters` with zero properties — toGeminiTools() strips them, recursively.
+- goAway/close -> reconnect on `sessionResumptionUpdate.newHandle`; contextWindowCompression
+  slidingWindow keeps sessions open-ended.
+- Transcripts (input+output) saved to their own conversation, `Live — <time>`.
+- Entry: composer "Live" button, `/?live=1`, PWA shortcut. Never streams video to a
+  chat-completions model — 1 frame ~1.1k tokens.
+- No face recognition by design: identity claims are prompted against; the model describes
+  people, never names them (BIPA/GDPR Art.9 — a bystander cannot consent via the T&C).
+
+## Tests (npm test — 98)
+- retrieval (18), agent loop (29), live protocol (19), vision heuristic (4), tools (26),
+  search parsers (6), routing (11), crypto (11)
 - Run with pool:forks singleFork — parallel jsdom envs starve the runner.
 - `npm run lint` uses react/jsx-no-undef: plain no-undef does NOT catch `<Foo/>` with no
   import, which is how a ReactMarkdown crash reached production.

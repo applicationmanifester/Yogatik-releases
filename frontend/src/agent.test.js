@@ -335,3 +335,79 @@ describe('prompted tool calling (models without native tools)', () => {
     expect(onDone.mock.calls[0][0].content).toBe('Paris is the capital.')
   })
 })
+
+describe('vision plumbing', () => {
+  const seeSchema = [{ type: 'function', function: { name: 'see', description: 'Look.', parameters: { type: 'object', properties: { question: { type: 'string' } }, required: ['question'] } } }]
+  const IMG = 'data:image/jpeg;base64,AAAAAAAA'
+
+  it('shows the frame to the model as a real image part', async () => {
+    getToolSchemas.mockReturnValue(seeSchema)
+    executeTool.mockResolvedValue({ success: true, image: IMG, question: 'what is this' })
+    scriptRounds([
+      { toolCalls: [{ name: 'see', parsedArgs: { question: 'what is this' } }] },
+      { tokens: ['A mug.'] },
+    ])
+    await runAgent({ ...base, modelCanSee: true })
+
+    const msgs = streamChat.mock.calls[1][0].messages
+    const imgMsg = msgs.find(m => Array.isArray(m.content) && m.content.some(p => p.type === 'image_url'))
+    expect(imgMsg.role).toBe('user')
+    expect(imgMsg.content.find(p => p.type === 'image_url').image_url.url).toBe(IMG)
+  })
+
+  it('never inlines base64 into the tool message as text', async () => {
+    getToolSchemas.mockReturnValue(seeSchema)
+    executeTool.mockResolvedValue({ success: true, image: IMG, observation: 'a mug' })
+    scriptRounds([
+      { toolCalls: [{ name: 'see', parsedArgs: {} }] },
+      { tokens: ['ok'] },
+    ])
+    await runAgent({ ...base, modelCanSee: true })
+
+    const toolMsg = streamChat.mock.calls[1][0].messages.find(m => m.role === 'tool')
+    expect(toolMsg.content).not.toContain('base64')
+    expect(toolMsg.content).toContain('observation')   // the useful part survives
+  })
+
+  it('passes only text when the model cannot see', async () => {
+    getToolSchemas.mockReturnValue(seeSchema)
+    executeTool.mockResolvedValue({ success: true, image: IMG, observation: 'a mug on a desk', via: 'local-vlm' })
+    scriptRounds([
+      { toolCalls: [{ name: 'see', parsedArgs: {} }] },
+      { tokens: ['A mug.'] },
+    ])
+    await runAgent({ ...base, modelCanSee: false })
+
+    const msgs = streamChat.mock.calls[1][0].messages
+    expect(msgs.some(m => Array.isArray(m.content))).toBe(false)
+    expect(msgs.find(m => m.role === 'tool').content).toContain('a mug on a desk')
+  })
+
+  it('keeps only the newest frame in context', async () => {
+    getToolSchemas.mockReturnValue(seeSchema)
+    executeTool.mockResolvedValue({ success: true, image: IMG })
+    scriptRounds([
+      { toolCalls: [{ name: 'see', parsedArgs: {} }] },
+      { toolCalls: [{ name: 'see', parsedArgs: {} }] },
+      { tokens: ['done'] },
+    ])
+    await runAgent({ ...base, modelCanSee: true })
+
+    const msgs = streamChat.mock.calls[2][0].messages
+    const withImages = msgs.filter(m => Array.isArray(m.content) && m.content.some(p => p.type === 'image_url'))
+    expect(withImages).toHaveLength(1)
+    // The superseded one degrades to a text note rather than vanishing.
+    expect(msgs.some(m => typeof m.content === 'string' && m.content.includes('earlier camera frame'))).toBe(true)
+  })
+
+  it('does not stringify multimodal history turns', async () => {
+    getToolSchemas.mockReturnValue([])
+    scriptRounds([{ tokens: ['ok'] }])
+    const history = [{ role: 'user', content: [{ type: 'text', text: 'look' }, { type: 'image_url', image_url: { url: IMG } }] }]
+    await runAgent({ ...base, history })
+
+    const sent = streamChat.mock.calls[0][0].messages[1]
+    expect(Array.isArray(sent.content)).toBe(true)
+    expect(sent.content[1].image_url.url).toBe(IMG)
+  })
+})

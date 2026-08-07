@@ -41,6 +41,7 @@ import {
   packageTool, gutenbergTool, geocodeTool, currencyTool, earthquakeTool,
 } from './opendata'
 import { youtubeTool } from './youtube'
+import { seeTool } from './see'
 
 const ALL_TOOLS = {
   weather: weatherTool,
@@ -88,6 +89,7 @@ const ALL_TOOLS = {
   earthquake: earthquakeTool,
   web_extract: webExtractTool,
   youtube: youtubeTool,
+  see: seeTool,
 }
 
 /** Get OpenAI function schemas, optionally excluding user-disabled tools */

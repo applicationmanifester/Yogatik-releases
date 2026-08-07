@@ -7,6 +7,7 @@
 import { streamChat } from './llm'
 import { getToolSchemas, executeTool } from './tools/index'
 import { buildToolPrompt, parseToolCalls, formatToolResults } from './promptedTools'
+import { setVisionContext } from './tools/see'
 
 function buildSystemPrompt({ webEnabled, persona }) {
   const today = new Date().toLocaleDateString('en-US', {
@@ -78,6 +79,15 @@ function windowHistory(history, budget = HISTORY_BUDGET) {
   let used = 0
 
   for (const m of history.slice(-MAX_TURNS).reverse()) {
+    // Multimodal turns are arrays of parts. Stringifying them inlines a whole
+    // base64 image into the prompt as text — megabytes of garbage tokens.
+    if (Array.isArray(m.content)) {
+      const textLen = m.content.reduce((n, p) => n + (p.text?.length || 0), 0)
+      if (used + textLen > budget) break
+      out.push({ role: m.role, content: m.content })
+      used += textLen
+      continue
+    }
     const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')
     if (used + content.length <= budget) {
       out.push({ role: m.role, content })
@@ -93,6 +103,29 @@ function windowHistory(history, budget = HISTORY_BUDGET) {
     }
   }
   return out.reverse()
+}
+
+/** Drop raw image data before a result is serialized into the prompt. */
+function stripImage(result) {
+  if (!result || typeof result !== 'object' || !result.image) return result
+  const { image, ...rest } = result   // eslint-disable-line no-unused-vars
+  return rest
+}
+
+/**
+ * Keep only the most recent image in context.
+ * Frames are ~1.1k tokens each; three turns of looking otherwise evicts the
+ * entire conversation, and stale frames make the model answer about the past.
+ */
+const MAX_IMAGES_IN_CONTEXT = 1
+function pruneOldImages(messages) {
+  const withImages = messages
+    .map((m, i) => (Array.isArray(m.content) && m.content.some(p => p.type === 'image_url') ? i : -1))
+    .filter(i => i >= 0)
+  for (const i of withImages.slice(0, -MAX_IMAGES_IN_CONTEXT)) {
+    const text = messages[i].content.filter(p => p.type === 'text').map(p => p.text).join(' ')
+    messages[i] = { role: messages[i].role, content: `${text} [earlier camera frame, no longer shown]` }
+  }
 }
 
 /** Tools that surface citable web sources */
@@ -131,6 +164,7 @@ function collectSources(result) {
 export async function runAgent({
   provider, apiKey, model, history = [], userMessage,
   toolsEnabled = true, webEnabled = true, disabledTools = [], persona = null, temperature = 0.7, signal,
+  modelCanSee = false, localVisionEnabled = true,
   onToken, onStatus, onToolStart, onToolResult, onDone, onError, onSources,
   initialToolMode = null, onToolModeChange = null,
 }) {
@@ -144,6 +178,10 @@ export async function runAgent({
     ...windowHistory(history),
     { role: 'user', content: userMessage },
   ]
+
+  // Tells the `see` tool whether to hand back pixels (this model can look) or
+  // a text observation from the on-device VLM (it cannot).
+  setVisionContext({ modelCanSee, allowLocal: localVisionEnabled })
 
   const schemas = toolsEnabled ? getToolSchemas(disabledTools) : null
 
@@ -266,7 +304,9 @@ export async function runAgent({
           messages.push({
             role: 'tool', tool_call_id: tc.id, name: tc.name,
             // Research payloads are large but valuable; give them more room.
-            content: JSON.stringify(result).slice(0, tc.name === 'deep_research' ? 24000 : 12000),
+            // `image` is stripped: JSON.stringify would inline ~50KB of base64
+            // as plain text, which the model cannot read and pays for anyway.
+            content: JSON.stringify(stripImage(result)).slice(0, tc.name === 'deep_research' ? 24000 : 12000),
           })
         }
       })
@@ -274,8 +314,22 @@ export async function runAgent({
       if (toolMode === 'prompted') {
         messages.push({
           role: 'user',
-          content: formatToolResults(round.map((tc, i) => ({ name: tc.name, result: results[i] }))),
+          content: formatToolResults(round.map((tc, i) => ({ name: tc.name, result: stripImage(results[i]) }))),
         })
+      }
+
+      // Any tool that produced a frame gets it shown to the model as an actual
+      // image part — the only way a vision model can read it.
+      const frames = results.filter(r => r?.image && modelCanSee)
+      if (frames.length) {
+        messages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Here is what the camera sees right now. Answer from this image.' },
+            ...frames.map(r => ({ type: 'image_url', image_url: { url: r.image } })),
+          ],
+        })
+        pruneOldImages(messages)
       }
 
       if (sources.length) onSources?.(sources)

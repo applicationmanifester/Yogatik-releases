@@ -43,6 +43,11 @@
       "description": "Start a fresh conversation"
     },
     {
+      "name": "Live conversation",
+      "url": "/?live=1",
+      "description": "Talk face to face with voice and video"
+    },
+    {
       "name": "Research something",
       "url": "/?intent=research",
       "description": "Search the live web and read the sources"

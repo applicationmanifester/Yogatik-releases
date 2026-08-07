@@ -10,6 +10,8 @@ import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveMode
 import { getToolNames } from './tools/index'
 import { chunkText } from './retrieval'
 import { invalidateDocIndex } from './tools/documents'
+import { LIVE_MODELS } from './live/protocol'
+import { getCachedVision, looksVisionCapable, probeVision } from './vision/capability'
 
 import { signInWithGoogle, logOutGoogle, saveUserApiKey, getUserApiKeys, purgePlaintextKeys } from './firebaseAuth'
 
@@ -191,6 +193,10 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         webEnabled: !getLLMProviders()[pid]?.isLocal && body.use_web_search !== false,
         disabledTools: await getDisabledTools(),
         persona: body.system_prompt || null,
+        // Probing costs a round-trip, so per message we trust the cache and
+        // fall back to the name heuristic; the probe runs when a key is verified.
+        modelCanSee: (await getCachedVision(pid, mdl)) ?? looksVisionCapable(mdl),
+        localVisionEnabled: prefs2.local_vision !== false,
         initialToolMode: await getToolMode(pid, mdl),
         onToolModeChange: (mode) => { setToolMode(pid, mdl, mode).catch(() => {}) },
         temperature: body.temperature || 0.7,
@@ -251,6 +257,61 @@ export async function hasAcceptedTerms(version) {
   const rec = await db.getSetting('terms_accepted')
   return rec?.version === version
 }
+
+// ─── Live (face-to-face) ───
+// Realtime voice+video runs on Gemini's Live API over a websocket, which is a
+// different protocol from chat — hence its own config path.
+
+/** Confirm (once, cached) whether a model really accepts images. */
+export async function checkVision(providerId, model) {
+  const apiKey = await db.getSetting(`apikey_${providerId}`)
+  if (!model) return false
+  if (!looksVisionCapable(model)) return false
+  return probeVision({ provider: providerId, apiKey, model })
+}
+
+export async function getVisionStatus(providerId, model) {
+  return {
+    cached: await getCachedVision(providerId, model),
+    guessed: looksVisionCapable(model),
+  }
+}
+
+/**
+ * Pick the best live engine available.
+ * Gemini's realtime socket when there is a Gemini key (true duplex, ~0.8s);
+ * otherwise the cascade on the active provider, which needs no special API.
+ */
+export async function getLiveConfig() {
+  const prefs = await db.getSetting('chat_prefs', {})
+  const geminiKey = await db.getSetting('apikey_gemini')
+  const disabledTools = await getDisabledTools()
+
+  if (geminiKey && prefs.live_engine !== 'cascade') {
+    return {
+      available: true, engine: 'gemini', provider: 'gemini', apiKey: geminiKey,
+      model: prefs.live_model || LIVE_MODELS[0],
+      voice: prefs.live_voice || 'Puck',
+      modelCanSee: true, disabledTools,
+    }
+  }
+
+  const provider = await getActiveProvider()
+  const apiKey = await db.getSetting(`apikey_${provider}`)
+  const model = await db.getSetting(`model_${provider}`, '')
+  const isLocal = !!getLLMProviders()[provider]?.isLocal
+  if (!apiKey && !isLocal) {
+    return { available: false, reason: 'no-key' }
+  }
+  return {
+    available: true, engine: 'cascade', provider, apiKey, model,
+    voice: prefs.live_voice_name || null,
+    modelCanSee: (await getCachedVision(provider, model)) ?? looksVisionCapable(model),
+    disabledTools,
+  }
+}
+
+export const LIVE_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr']
 
 // ─── Tool-calling mode per model ───
 // Learned once: a model that rejects a tools array keeps using the text

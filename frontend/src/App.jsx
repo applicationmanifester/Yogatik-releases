@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, enableCloudSync, disableCloudSync, isCloudSyncOn } from './api'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio } from 'lucide-react'
+import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, enableCloudSync, disableCloudSync, isCloudSyncOn } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
@@ -15,6 +15,7 @@ import { LocalModelPanel } from './components/LocalModelPanel'
 import { CommandPalette } from './components/CommandPalette'
 import { ModelPicker } from './components/ModelPicker'
 import { ArenaView } from './components/ArenaView'
+import { LiveView } from './components/LiveView'
 import { DEFAULT_LOCAL_MODEL } from './localLLM'
 
 // Messages rendered at once; older turns load on demand.
@@ -78,6 +79,8 @@ export default function App() {
   const [arena, setArena] = useState(null)
   const [comparing, setComparing] = useState(false)
   const [compareMode, setCompareMode] = useState(false)
+  const [liveConfig, setLiveConfig] = useState(null)   // non-null = call in progress
+  const liveConvRef = useRef(null)                     // transcript's own conversation
   const [compareModels, setCompareModels] = useState(['', ''])
   const [projects, setProjects] = useState([])
   const [activeProject, setActiveProjectState] = useState(null)
@@ -280,7 +283,10 @@ export default function App() {
       setTimeout(() => textareaRef.current?.focus(), 0)
     }
     if (params.get('intent') === 'research' && !shared) setInput('Research ')
-    if (shared || params.get('new') || params.get('intent')) {
+    // Live is a standalone mode: launched from a PWA shortcut it opens the
+    // call directly, without needing a conversation or a chat provider.
+    if (params.get('live')) startLive()
+    if (shared || params.get('new') || params.get('intent') || params.get('live')) {
       history.replaceState(null, '', location.pathname)   // don't re-fire on reload
     }
     // Init Web Speech API
@@ -768,6 +774,34 @@ export default function App() {
     }
   }
 
+  /**
+   * Start a face-to-face call. Live is a websocket protocol only Gemini speaks,
+   * so it is gated on a Gemini key rather than the active chat provider.
+   */
+  const startLive = async () => {
+    const cfg = await getLiveConfig()
+    if (!cfg.available) {
+      setErrorModalMsg('Live needs a model to talk to.\n\nAdd a key for any provider in Settings, or add a Gemini key for the realtime engine (lowest latency, true interruption). Free Gemini keys: aistudio.google.com/apikey')
+      return
+    }
+    setLiveConfig({ ...cfg, persona: getSystemPrompt() })
+  }
+
+  /** Write each completed spoken turn into the current conversation. */
+  const saveLiveTurn = useCallback(async (role, text) => {
+    const msg = { role, content: text, sources: [], createdAt: Date.now(), live: true }
+    try {
+      // A call owns its own conversation — it must not depend on, or write
+      // into, whatever chat happens to be open.
+      let id = liveConvRef.current
+      if (!id) {
+        id = await createConversation(`Live \u2014 ${new Date().toLocaleString()}`)
+        liveConvRef.current = id
+      }
+      await saveMessage(id, msg)
+    } catch (e) { console.error('Failed to persist live turn', e) }
+  }, [])
+
   const regenerate = async () => {
     if (loading) return
     const msgs = conv?.messages || []
@@ -1062,15 +1096,15 @@ export default function App() {
             <div className="conn-error">{providerStatus[provider].error}</div>
           )}
 
-          {provider !== 'local' && <>
-          <label>API Key {models[provider]?.key_url && <a href={models[provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get free key)</a>}</label>
-
           {provider === 'local' ? (
             <LocalModelPanel
               model={model || DEFAULT_LOCAL_MODEL}
               onModelChange={chooseModel}
               onReady={(m) => { chooseModel(m); refreshModels() }} />
-          ) : keyInfo[provider]?.saved ? (
+          ) : (
+            <>
+              <label>API Key {models[provider]?.key_url && <a href={models[provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get free key)</a>}</label>
+              {keyInfo[provider]?.saved ? (
             <div className="key-saved">
               <div className="key-saved-row">
                 <Key size={12} />
@@ -1112,7 +1146,8 @@ export default function App() {
             </button>
           </div>
 
-          </>}
+          </>
+          )}
 
           <div className="cloud-sync" hidden={provider === 'local'}>
             {!user ? (
@@ -1425,6 +1460,10 @@ export default function App() {
               onClick={() => setCompareMode(v => !v)} title="Send one prompt to two models">
               <GitCompare size={12} /> Compare
             </button>
+            <button className="small-btn live-start" onClick={startLive}
+              title="Talk face to face — live voice and video">
+              <Radio size={12} /> Live
+            </button>
             {!loading && conv?.messages?.some(m => m.role === 'assistant') && (
               <button className="small-btn" onClick={regenerate}
                 title="Regenerate last response" aria-label="Regenerate last response">
@@ -1482,6 +1521,24 @@ export default function App() {
         onSaved={() => { refreshModels(); setEditingProvider(null) }}
         editProvider={editingProvider ? { id: editingProvider, ...models[editingProvider] } : null}
       />}
+      {liveConfig && (
+        <LiveView
+          engine={liveConfig.engine}
+          provider={liveConfig.provider}
+          modelCanSee={liveConfig.modelCanSee}
+          apiKey={liveConfig.apiKey}
+          model={liveConfig.model}
+          voice={liveConfig.voice}
+          persona={liveConfig.persona}
+          disabledTools={liveConfig.disabledTools}
+          onTranscript={saveLiveTurn}
+          onEnd={() => {
+            setLiveConfig(null)
+            liveConvRef.current = null
+            loadConversations()
+          }}
+        />
+      )}
       {showPalette && <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} />}
       {showTerms && (
         <TermsModal onAccept={handleAcceptTerms} onDecline={() => setShowTerms(false)} />
