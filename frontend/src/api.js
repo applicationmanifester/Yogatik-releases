@@ -110,6 +110,28 @@ export async function logout() {
 }
 export async function isLoggedIn() { return !!(await db.getSetting('user')) }
 
+/**
+ * Providers that could serve this message, best first: the chosen one, then any
+ * other with a key that does not need a proxy. Free tiers fail often enough
+ * that a second option is worth more than a perfect first choice.
+ */
+export async function getFallbackChain(primary) {
+  await loadCustomProviders()
+  const chain = [primary]
+  for (const [id, p] of Object.entries(getLLMProviders())) {
+    if (id === primary) continue
+    if (p.needsProxy && !proxyAvailable()) continue
+    if (await db.getSetting(`apikey_${id}`)) chain.push(id)
+  }
+  return chain
+}
+
+/** Errors worth trying a different provider for. */
+function isProviderFailure(msg = '') {
+  return /\b(429|500|502|503|504|520|522|524)\b/.test(msg) ||
+    /timeout|no response|not responding|overloaded|rate limit/i.test(msg)
+}
+
 // ─── Chat (via browser agent) ───
 // Keyed so that a side task (prompt enhancement) cannot have its handle
 // clobbered by — or clobber — the main chat stream.
@@ -118,7 +140,17 @@ const aborters = new Map()
 export async function streamMessage(body, onToken, onSources, onDone, onError, onStatus, onStreamId, onToolsDetected, onToolResult) {
   const provider = body.provider || await getActiveProvider()
   const apiKey = await db.getSetting(`apikey_${provider}`)
-  const model = body.model || await db.getSetting(`model_${provider}`, '')
+  let model = body.model || await db.getSetting(`model_${provider}`, '')
+
+  // Auto-route: choose per message from models measured as working.
+  const prefs = await db.getSetting('chat_prefs', {})
+  if (prefs.auto_route && !body.model) {
+    const routed = await routeModel(provider, body.message || '')
+    if (routed) {
+      model = routed.model
+      onStatus?.(`Routing ${routed.kind} → ${routed.model}`)
+    }
+  }
 
   if (!apiKey) {
     const p = getLLMProviders()[provider]
@@ -132,28 +164,55 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
   aborters.set(channel, controller)
   onStreamId?.('local-' + Date.now())
 
+  const prefs2 = await db.getSetting('chat_prefs', {})
+  const chain = prefs2.fallback === false || channel !== 'chat'
+    ? [provider]
+    : await getFallbackChain(provider)
+
   try {
-    await runAgent({
-      provider, apiKey, model,
-      history: body.messages || [],
-      userMessage: body.message || body.messages?.[body.messages.length - 1]?.content || '',
-      toolsEnabled: body.tools !== false && body.use_tools !== false,
-      webEnabled: body.use_web_search !== false,
-      disabledTools: await getDisabledTools(),
-      persona: body.system_prompt || null,
-      temperature: body.temperature || 0.7,
-      signal: controller.signal,
-      onToken,
-      onStatus,
-      onSources,
-      onToolStart: (name) => onToolsDetected?.([name]),
-      onToolResult: (name, result) => onToolResult?.(name, result),
-      onDone: ({ content, sources, aborted }) => {
-        if (sources?.length) onSources?.(sources)
-        onDone?.(content, { aborted })
-      },
-      onError: (err) => onError?.(err.message),
-    })
+    for (let i = 0; i < chain.length; i++) {
+      const pid = chain[i]
+      const key = i === 0 ? apiKey : await db.getSetting(`apikey_${pid}`)
+      if (!key) continue
+      const mdl = i === 0 ? model : await db.getSetting(`model_${pid}`, '')
+
+      let failure = null
+      let produced = false
+
+      await runAgent({
+        provider: pid, apiKey: key, model: mdl,
+        history: body.messages || [],
+        userMessage: body.message || body.messages?.[body.messages.length - 1]?.content || '',
+        toolsEnabled: body.tools !== false && body.use_tools !== false,
+        webEnabled: body.use_web_search !== false,
+        disabledTools: await getDisabledTools(),
+        persona: body.system_prompt || null,
+        temperature: body.temperature || 0.7,
+        signal: controller.signal,
+        onToken: (t) => { produced = true; onToken?.(t) },
+        onStatus,
+        onSources,
+        onToolStart: (name) => onToolsDetected?.([name]),
+        onToolResult: (name, result) => onToolResult?.(name, result),
+        onDone: ({ content, sources, aborted }) => {
+          if (sources?.length) onSources?.(sources)
+          onDone?.(content, { aborted, provider: pid })
+        },
+        onError: (err) => { failure = err?.message || String(err) },
+      })
+
+      if (!failure) return
+
+      // Only switch provider if nothing was shown yet — swapping mid-answer
+      // would splice two different models' text together.
+      const next = chain[i + 1]
+      if (produced || controller.signal.aborted || !isProviderFailure(failure) || !next) {
+        onError?.(failure)
+        return
+      }
+      onStatus?.(`${getLLMProviders()[pid]?.name || pid} failed — trying ${getLLMProviders()[next]?.name || next}…`)
+    }
+    onError?.('No provider with a working key could answer.')
   } catch (err) {
     onError?.(err.message)
   } finally {
@@ -217,6 +276,31 @@ export async function deleteConversation(id) {
 export async function exportConversation(id) {
   const md = await db.exportConversation(id)
   return { content: md, format: 'markdown' }
+}
+
+// ─── Backup / restore ───
+export async function downloadBackup() {
+  const data = await db.exportAll()
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `yogatik-backup-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(a.href)
+  return {
+    conversations: data.conversations.length,
+    messages: data.messages.length,
+    documents: data.documents.length,
+  }
+}
+
+export async function restoreBackup(file, mode = 'merge') {
+  const text = await file.text()
+  let data
+  try { data = JSON.parse(text) } catch { throw new Error('That file is not valid JSON.') }
+  const counts = await db.importAll(data, mode)
+  invalidateDocIndex()          // retrieval indexes are stale after a restore
+  return counts
 }
 
 // ─── Templates (stored in IndexedDB) ───
@@ -455,6 +539,148 @@ export async function testProvider(id, modelOverride) {
       latencyMs: Math.round(performance.now() - started),
     })
   }
+}
+
+/**
+ * Rank models by how likely they are to be a fast, general chat model.
+ * Name heuristics only — providers expose no capability metadata, and this is
+ * just an ordering for probing, not a claim about quality.
+ */
+function candidateScore(id) {
+  const m = id.toLowerCase()
+  let score = 0
+  if (/instruct|chat|-it$|turbo/.test(m)) score += 3
+  if (/flash|nano|mini|lite|small|fast|8b|7b|9b|4b|3b|2b|1b/.test(m)) score += 4   // responsive
+  if (/70b|72b|90b|120b|123b|253b|340b|405b|550b|large|ultra|pro\b/.test(m)) score -= 4  // slow to first token
+  if (/vision|vl|omni|audio|video|reason/.test(m)) score -= 2                       // specialised
+  if (/preview|alpha|beta|experimental|deprecated/.test(m)) score -= 2
+  return score
+}
+
+/**
+ * Probe a handful of promising models and select the fastest one that actually
+ * answers. Beats making the user guess from a list of 79 names, most of which
+ * are unusable on a free tier.
+ */
+export async function autoPickModel(providerId, { max = 4, timeoutMs = 10_000, onProgress } = {}) {
+  const apiKey = await db.getSetting(`apikey_${providerId}`)
+  if (!apiKey) throw new Error('Add an API key first.')
+
+  await loadCustomProviders()
+  const prov = getLLMProviders()[providerId]
+  if (!prov) throw new Error('Unknown provider')
+
+  // Prefer the live catalog; fall back to the built-in list.
+  const cached = await db.getSetting(`models_${providerId}`)
+  const all = (cached?.list?.length ? cached.list : prov.models) || []
+  const ranked = [...all].sort((a, b) => candidateScore(b) - candidateScore(a)).slice(0, max)
+  if (!ranked.length) throw new Error('No models available for this provider.')
+
+  onProgress?.(`Testing ${ranked.length} models…`)
+
+  const results = await Promise.all(ranked.map(async (model) => {
+    const started = performance.now()
+    try {
+      await chatComplete({
+        provider: providerId, apiKey, model,
+        messages: [{ role: 'user', content: 'ping' }],
+        temperature: 0, maxTokens: 1,
+        timeoutMs, retries: 0,
+      })
+      return { model, latencyMs: Math.round(performance.now() - started), ok: true }
+    } catch (e) {
+      if (isRetiredModelError(e.message)) await pruneRetiredModel(providerId, model)
+      return { model, ok: false, error: e.message }
+    }
+  }))
+
+  // Remember every probe so the picker can show what was measured.
+  for (const r of results) {
+    await db.setSetting(statusKey(providerId, r.model), {
+      success: r.ok, model: r.model, latencyMs: r.latencyMs,
+      error: r.ok ? null : friendlyProviderError(r.error || ''),
+      at: Date.now(),
+    })
+  }
+
+  const winner = results.filter(r => r.ok).sort((a, b) => a.latencyMs - b.latencyMs)[0]
+  if (!winner) {
+    const reason = friendlyProviderError(results[0]?.error || '')
+    throw new Error(`None of the ${ranked.length} models responded within ${timeoutMs / 1000}s. ${reason}`)
+  }
+
+  await db.setSetting(`model_${providerId}`, winner.model)
+  return { ...winner, tried: results }
+}
+
+/**
+ * Classify a prompt cheaply, with keywords — no extra LLM call, no latency.
+ * Deliberately coarse: it only has to be right often enough to beat "always
+ * use the same model".
+ */
+export function classifyQuery(text = '') {
+  const t = text.toLowerCase()
+  const long = text.length > 400
+
+  if (/```|\bcode\b|function |def |class |bug|refactor|regex|sql|typescript|javascript|python|compile|stack trace|error:/.test(t))
+    return 'code'
+  if (/prove|derive|calculate|solve|equation|theorem|step by step|reason|why does|analy[sz]e|trade-?off|compare in detail/.test(t) || long)
+    return 'reasoning'
+  if (/write|essay|story|poem|draft|blog|email|summar/.test(t))
+    return 'writing'
+  return 'quick'
+}
+
+/** Which model names suit each class. Again: name heuristics, not metadata. */
+const ROUTE_PREFS = {
+  code:      { prefer: /coder|code|codestral|starcoder|codegemma|devstral|granite.*code/, minSize: 0 },
+  reasoning: { prefer: /reason|think|r1|nemotron|70b|72b|120b|large|pro\b|ultra/, minSize: 0 },
+  writing:   { prefer: /instruct|chat|creative|palmyra|writer/, minSize: 0 },
+  quick:     { prefer: /flash|nano|mini|lite|small|fast|8b|7b|9b|4b|3b|1b|instant/, minSize: 0 },
+}
+
+/**
+ * Pick a model for one specific message, preferring models we have MEASURED
+ * as working. Falls back to the user's selection when nothing qualifies.
+ */
+export async function routeModel(providerId, message) {
+  await loadCustomProviders()
+  const prov = getLLMProviders()[providerId]
+  if (!prov) return null
+
+  const cached = await db.getSetting(`models_${providerId}`)
+  const all = (cached?.list?.length ? cached.list : prov.models) || []
+  if (!all.length) return null
+
+  // Only consider models with a recent successful probe; an unmeasured model
+  // could be the 5-minute one.
+  const measured = []
+  for (const m of all) {
+    const st = await db.getSetting(statusKey(providerId, m))
+    if (st?.success) measured.push({ model: m, latencyMs: st.latencyMs ?? 9e9 })
+  }
+  if (!measured.length) return null
+
+  const kind = classifyQuery(message)
+  const { prefer } = ROUTE_PREFS[kind] || ROUTE_PREFS.quick
+
+  const matching = measured.filter(m => prefer.test(m.model.toLowerCase()))
+  const pool = matching.length ? matching : measured
+
+  // Within the right category, fastest wins.
+  const pick = pool.sort((a, b) => a.latencyMs - b.latencyMs)[0]
+  return pick ? { model: pick.model, kind, latencyMs: pick.latencyMs } : null
+}
+
+/** Every model we have timed for a provider, for the picker. */
+export async function getMeasuredModels(providerId) {
+  const all = await db.getAllSettings()
+  const prefix = `status_${providerId}::`
+  const out = {}
+  for (const [k, v] of Object.entries(all)) {
+    if (k.startsWith(prefix) && v) out[k.slice(prefix.length)] = v
+  }
+  return out
 }
 
 /** Test only if we have no fresh result for this exact provider+model. */

@@ -98,6 +98,66 @@ export async function deleteDocument(id) {
   return db.documents.delete(id)
 }
 
+// ─── Whole-database backup ───
+// No backend means no sync: a cleared browser profile is total data loss.
+export async function exportAll() {
+  const [conversations, messages, documents, settings] = await Promise.all([
+    db.conversations.toArray(),
+    db.messages.toArray(),
+    db.documents.toArray(),
+    db.settings.toArray(),
+  ])
+  return {
+    format: 'yogatik-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    conversations, messages, documents,
+    // API keys are deliberately excluded — a backup file is not an encrypted
+    // store, and users share these without thinking.
+    settings: settings.filter(r => !/^apikey_|^synced_|^user$/.test(r.key)),
+  }
+}
+
+/** @param {'merge'|'replace'} mode */
+export async function importAll(data, mode = 'merge') {
+  if (data?.format !== 'yogatik-backup') throw new Error('Not a Yogatik backup file.')
+  if (data.version > 1) throw new Error('This backup was made by a newer version of Yogatik.')
+
+  return db.transaction('rw', db.conversations, db.messages, db.documents, db.settings, async () => {
+    if (mode === 'replace') {
+      await Promise.all([db.conversations.clear(), db.messages.clear(), db.documents.clear()])
+    }
+
+    // Conversation ids are auto-increment and will collide on merge, so remap.
+    const idMap = new Map()
+    for (const c of data.conversations || []) {
+      const { id, ...rest } = c
+      const newId = await db.conversations.add(rest)
+      idMap.set(id, newId)
+    }
+    for (const m of data.messages || []) {
+      const { id, conversationId, ...rest } = m
+      const mapped = idMap.get(conversationId)
+      if (mapped == null) continue        // orphaned message
+      await db.messages.add({ ...rest, conversationId: mapped })
+    }
+    for (const d of data.documents || []) {
+      const { id, ...rest } = d
+      await db.documents.add(rest)
+    }
+    for (const row of data.settings || []) {
+      if (/^apikey_|^synced_|^user$/.test(row.key)) continue   // never restore secrets
+      await db.settings.put(row)
+    }
+
+    return {
+      conversations: (data.conversations || []).length,
+      messages: (data.messages || []).length,
+      documents: (data.documents || []).length,
+    }
+  })
+}
+
 // ─── Export ───
 export async function exportConversation(id) {
   const conv = await getConversation(id)

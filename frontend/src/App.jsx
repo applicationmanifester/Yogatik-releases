@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, enableCloudSync, disableCloudSync, isCloudSyncOn } from './api'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap } from 'lucide-react'
+import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, enableCloudSync, disableCloudSync, isCloudSyncOn } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
@@ -65,9 +65,15 @@ export default function App() {
   const [providerStatus, setProviderStatus] = useState({})
   const [verifying, setVerifying] = useState(false)
   const [keyInfo, setKeyInfo] = useState({})
+  const [measuredModels, setMeasuredModels] = useState({})
   const [cloudSync, setCloudSync] = useState(false)
   const [passphrase, setPassphrase] = useState('')
   const [syncing, setSyncing] = useState(false)
+  const [autoPicking, setAutoPicking] = useState(false)
+  const [autoPickMsg, setAutoPickMsg] = useState('')
+  const [autoRoute, setAutoRouteState] = useState(false)
+  const [fallback, setFallbackState] = useState(true)
+  const backupInput = useRef(null)
   const [toolPrefs, setToolPrefs] = useState([])
   const [showToolPicker, setShowToolPicker] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(() => window.innerWidth > 900)
@@ -107,6 +113,14 @@ export default function App() {
     setWebSearchState(v)
     setPref('web_search', v).catch(() => {})
   }, [])
+  const setAutoRoute = useCallback((v) => {
+    setAutoRouteState(v)
+    setPref('auto_route', v).catch(() => {})
+  }, [])
+  const setFallback = useCallback((v) => {
+    setFallbackState(v)
+    setPref('fallback', v).catch(() => {})
+  }, [])
   const setToolsEnabled = useCallback((v) => {
     setToolsEnabledState(v)
     setPref('tools_enabled', v).catch(() => {})
@@ -142,7 +156,26 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('bgkai_theme', theme)
   }, [theme])
-  useEffect(() => { if (isStreamingHere || !loading) messagesEnd.current?.scrollIntoView({ behavior: streamingContent ? 'auto' : 'smooth' }) }, [conv?.messages, streamingContent, isStreamingHere, loading])
+  // Follow the stream only while the user is already at the bottom. Yanking
+  // someone back mid-read is the most annoying thing a chat UI can do.
+  const scrollerRef = useRef(null)
+  const [atBottom, setAtBottom] = useState(true)
+
+  const onScroll = useCallback(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 120)
+  }, [])
+
+  const scrollToBottom = useCallback((behavior = 'smooth') => {
+    messagesEnd.current?.scrollIntoView({ behavior })
+    setAtBottom(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isStreamingHere && loading) return
+    if (atBottom) scrollToBottom(streamingContent ? 'auto' : 'smooth')
+  }, [conv?.messages, streamingContent, isStreamingHere, loading, atBottom, scrollToBottom])
 
   useEffect(() => {
     const on = () => setOnline(true)
@@ -184,7 +217,10 @@ export default function App() {
       setVerifying(true)
       try {
         await ensureTested(provider, target)   // cached for 30 min per model
-        if (!cancelled) setProviderStatus(await getAllProviderStatus())
+        if (!cancelled) {
+          setProviderStatus(await getAllProviderStatus())
+          setMeasuredModels(await getMeasuredModels(provider))
+        }
       } finally {
         if (!cancelled) setVerifying(false)
       }
@@ -211,6 +247,8 @@ export default function App() {
       if (pref.web_search != null) setWebSearchState(pref.web_search)
       if (pref.tools_enabled != null) setToolsEnabledState(pref.tools_enabled)
       if (pref.persona) setActiveTemplate(pref.persona)
+      if (pref.auto_route != null) setAutoRouteState(pref.auto_route)
+      if (pref.fallback != null) setFallbackState(pref.fallback)
     }).catch(() => {})
     refreshToolPrefs()
     refreshKeys()
@@ -312,6 +350,7 @@ export default function App() {
     role: m.role, content: m.content,
     sources: m.sources || [],
     toolResults: m.toolResults || undefined,
+    createdAt: m.createdAt,
   })
 
   const loadConversations = async () => {
@@ -404,12 +443,39 @@ export default function App() {
       if (testRes.success) {
         refreshModels()
         setApiKeyInput(prev => ({ ...prev, [pid]: '' }))
+        // The user has no way to know which of 79 models is usable — measure
+        // and choose for them, unless they already picked one.
+        if (!(await getActiveModel(pid))) handleAutoPick(pid)
       } else {
         setErrorModalMsg(`Could not connect to ${models[pid]?.name || pid}:\n\n${testRes.error}`)
       }
     } catch (err) {
       setSavingApiKey(null)
       setErrorModalMsg(`Failed to save API Key for ${models[pid]?.name || pid}:\n${err.message}`)
+    }
+  }
+
+  const handleAutoPick = async (pid = provider) => {
+    setAutoPicking(true)
+    setStatusText('')
+    try {
+      const res = await autoPickModel(pid, { onProgress: setAutoPickMsg })
+      setModel(res.model)
+      setProviderStatus(await getAllProviderStatus())
+      setMeasuredModels(await getMeasuredModels(pid))
+      const others = res.tried.filter(t => t.model !== res.model && t.ok)
+        .sort((a, b) => a.latencyMs - b.latencyMs)
+        .map(t => `${t.model} (${formatLatency(t.latencyMs)})`)
+      setErrorModalMsg(
+        `Selected ${res.model} — responded in ${formatLatency(res.latencyMs)}.` +
+        (others.length ? `\n\nAlso working: ${others.join(', ')}` : '') +
+        `\n\nChange it any time in the Model box.`
+      )
+    } catch (e) {
+      setErrorModalMsg(e.message)
+    } finally {
+      setAutoPicking(false)
+      setAutoPickMsg('')
     }
   }
 
@@ -488,7 +554,7 @@ export default function App() {
 
     const finalText = fileContext + (msgText || 'Process the attached file')
     const displayText = msgText || (attachedFile ? `📎 ${attachedFile.name}` : '')
-    const userMsg = { role: 'user', content: displayText, sources: [] }
+    const userMsg = { role: 'user', content: displayText, sources: [], createdAt: Date.now() }
     const updated = { ...conv, messages: [...conv.messages, userMsg] }
     const isNewTitle = updated.title === 'New Chat'
     if (isNewTitle) updated.title = (msgText || displayText).trim().slice(0, 40) || 'New Chat'
@@ -521,6 +587,7 @@ export default function App() {
         setCurrentStreamId(null)
         if (!content.trim() && meta?.aborted) { setStreamingContent(''); setActiveTools([]); setPendingToolResults({}); return }
         const assistantMsg = {
+          createdAt: Date.now(),
           role: 'assistant',
           content: meta?.aborted ? content + '\n\n_[stopped]_' : content,
           sources, toolResults: { ...pendingToolResults }, toolsUsed,
@@ -546,10 +613,12 @@ export default function App() {
             getAllProviderStatus().then(setProviderStatus)
           })
         }
-        const errMsg = { role: 'assistant', content: `Error: ${err}`, sources: [] }
-        saveMessage(convId, errMsg).catch(() => {})
+        // Errors are UI state attached to the turn — never persisted and never
+        // replayed to the model as something the assistant said.
         setConversations(prev => prev.map((c, i) =>
-          i === activeIdx ? { ...c, id: convId, messages: [...updated.messages, errMsg] } : c
+          i === activeIdx
+            ? { ...c, id: convId, messages: [...updated.messages, { role: 'assistant', error: String(err), content: '' }] }
+            : c
         ))
         setStreamingContent('')
       },
@@ -625,6 +694,31 @@ export default function App() {
     send(prompt)
   }
 
+  const handleBackup = async () => {
+    try {
+      const c = await downloadBackup()
+      setErrorModalMsg(`Exported ${c.conversations} conversations, ${c.messages} messages and ${c.documents} documents.\n\nAPI keys are not included — add them again after restoring.`)
+    } catch (e) { setErrorModalMsg(e.message) }
+  }
+
+  const handleRestore = async (file) => {
+    const replace = confirm(
+      'Replace everything currently stored?\n\nOK = replace (current chats are deleted)\nCancel = merge (keep both)'
+    )
+    try {
+      const c = await restoreBackup(file, replace ? 'replace' : 'merge')
+      await loadConversations()
+      refreshDocs()
+      setErrorModalMsg(`Restored ${c.conversations} conversations, ${c.messages} messages and ${c.documents} documents.`)
+    } catch (e) { setErrorModalMsg(e.message) }
+  }
+
+  const editAndResend = (text) => {
+    setInput(text)
+    textareaRef.current?.focus()
+    autoResize()
+  }
+
   const startRename = (idx) => {
     setRenamingIdx(idx)
     setRenameText(conversations[idx].title)
@@ -642,6 +736,12 @@ export default function App() {
 
   const providerEntries = Object.entries(models)
   const providerModels = models[provider]?.models || []
+  // Models we have actually timed, fastest first — better than guessing from
+  // a list of 79 names.
+  const measured = Object.entries(measuredModels)
+    .filter(([, v]) => v.success)
+    .map(([m, v]) => ({ model: m, latencyMs: v.latencyMs ?? 0 }))
+    .sort((a, b) => a.latencyMs - b.latencyMs)
 
   // Conversation filter — matches title and message text
   const visibleConvs = conversations
@@ -869,9 +969,26 @@ export default function App() {
             placeholder={`Auto (${models[provider]?.default_model || 'default'}) — type to filter`}
             style={{ width: '100%', padding: '6px 8px', background: 'var(--bg-input)', border: '1px solid var(--border)',
               borderRadius: '6px', color: 'var(--text-primary)', fontSize: '12px', marginBottom: '8px' }} />
+          <button className="small-btn auto-pick" onClick={() => handleAutoPick()}
+            disabled={autoPicking || !models[provider]?.available}
+            title="Measure a few models and select the fastest that works">
+            <Zap size={11} /> {autoPicking ? (autoPickMsg || 'Testing…') : 'Auto-pick fastest'}
+          </button>
           <datalist id="model-options">
             {providerModels.map(m => <option key={m} value={m} />)}
           </datalist>
+          {measured.length > 0 && (
+            <div className="measured-models">
+              {measured.slice(0, 5).map(m => (
+                <button key={m.model} className={`measured-chip ${m.model === model ? 'active' : ''}`}
+                  onClick={() => chooseModel(m.model)} title={`Measured ${formatLatency(m.latencyMs)}`}>
+                  {m.latencyMs < 2000 ? '⚡' : m.latencyMs > 15000 ? '🐌' : '•'}
+                  <span className="measured-name">{m.model.split('/').pop()}</span>
+                  <span className="measured-ms">{formatLatency(m.latencyMs)}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {model && !providerModels.includes(model) && (
             <div style={{ fontSize: 10, color: 'var(--accent)', marginTop: -4, marginBottom: 8 }}>
               Not in this provider's catalog — will be sent as-is.
@@ -923,12 +1040,48 @@ export default function App() {
             </>
           )}
           <div className="toggle-row">
+            <label title="Pick a model per message from those measured as working">
+              <Zap size={12} /> Auto-route models
+            </label>
+            <label className="toggle" aria-label="Toggle per-message model routing">
+              <input type="checkbox" checked={autoRoute} onChange={e => setAutoRoute(e.target.checked)} /><span className="slider" />
+            </label>
+          </div>
+          {autoRoute && (
+            <div className="route-note">
+              Code questions go to a code model, quick questions to a fast one. Only models that
+              passed a speed check are used — run Auto-pick to measure more.
+            </div>
+          )}
+          <div className="toggle-row">
             <label><Globe size={12} /> Web Research</label>
             <label className="toggle" aria-label="Toggle web research">
               <input type="checkbox" checked={webSearch} disabled={!tools}
                 onChange={e => setWebSearch(e.target.checked)} /><span className="slider" />
             </label>
           </div>
+          <div className="toggle-row">
+            <label title="If a provider times out or rate-limits, retry on another provider that has a key">
+              <RefreshCw size={12} /> Provider fallback
+            </label>
+            <label className="toggle" aria-label="Toggle provider fallback">
+              <input type="checkbox" checked={fallback} onChange={e => setFallback(e.target.checked)} /><span className="slider" />
+            </label>
+          </div>
+
+          <div className="backup-row">
+            <label><Download size={12} /> Backup</label>
+            <div className="backup-actions">
+              <button className="small-btn" onClick={handleBackup}>Export all</button>
+              <button className="small-btn" onClick={() => backupInput.current?.click()}>Import</button>
+              <input ref={backupInput} type="file" accept="application/json" hidden
+                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleRestore(f) }} />
+            </div>
+            <span className="backup-note">
+              Chats, documents and settings — everything except API keys, which never go in a file.
+            </span>
+          </div>
+
           {docs.length > 0 && (
             <div className="doc-list">
               <label><FileText size={12} /> Documents ({docs.length})</label>
@@ -959,7 +1112,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="messages">
+        <div className="messages" ref={scrollerRef} onScroll={onScroll}>
           {allMessages.length === 0 && !isStreamingHere ? (
             <div className="welcome">
               <h1 style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center' }}><YogatikLogo size={48} /> Yogatik</h1>
@@ -975,9 +1128,29 @@ export default function App() {
                 ))}
               </div>
               {!user && <p className="welcome-hint">Sign in to save your chat history across sessions.</p>}
-              <div className="suggestions">
-                {SUGGESTIONS.map((s, i) => <div key={i} className="suggestion" onClick={() => send(s)}>{s}</div>)}
-              </div>
+              {!models[provider]?.available ? (
+                <div className="setup-card">
+                  <Key size={18} />
+                  <h3>Add an API key to start</h3>
+                  <p>
+                    Yogatik runs entirely in your browser and talks to the model provider directly,
+                    so it needs your own key. Nothing is sent anywhere else.
+                  </p>
+                  <div className="setup-actions">
+                    <a className="btn-primary setup-btn" href="https://console.groq.com" target="_blank" rel="noopener">
+                      Get a free Groq key
+                    </a>
+                    <button className="small-btn" onClick={() => { setSidebarOpen(true); setSettingsOpen(true) }}>
+                      I have a key — open settings
+                    </button>
+                  </div>
+                  <span className="setup-note">Groq is free and needs no proxy. NVIDIA, Gemini, OpenRouter and OpenAI also work.</span>
+                </div>
+              ) : (
+                <div className="suggestions">
+                  {SUGGESTIONS.map((s, i) => <div key={i} className="suggestion" onClick={() => send(s)}>{s}</div>)}
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -987,10 +1160,18 @@ export default function App() {
                   <span className="load-earlier-count"> · {hiddenCount} hidden</span>
                 </button>
               )}
-              {shownMessages.map((m, i) => (
-                <MessageBubble key={i + (conv.messages.length - shownMessages.length)} msg={m}
-                  onTTS={handleTTS} onOpenArtifact={(art) => setActiveArtifact(art)} />
-              ))}
+              {shownMessages.map((m, i) => {
+                const absolute = i + (allMessages.length - shownMessages.length)
+                const isLastAssistant = absolute === allMessages.length - 1 && m.role === 'assistant'
+                return (
+                  <MessageBubble key={absolute} msg={m}
+                    onTTS={handleTTS}
+                    onOpenArtifact={(art) => setActiveArtifact(art)}
+                    onRegenerate={isLastAssistant && !loading ? regenerate : undefined}
+                    onEdit={!loading ? editAndResend : undefined}
+                    onRetry={m.error && !loading ? regenerate : undefined} />
+                )
+              })}
               {/* Show pending tool results while streaming */}
               {loading && Object.keys(pendingToolResults).length > 0 && (
                 <div className="message assistant">
@@ -1024,6 +1205,11 @@ export default function App() {
             </>
           )}
           <div ref={messagesEnd} />
+          {!atBottom && (
+            <button className="scroll-bottom" onClick={() => scrollToBottom()} aria-label="Scroll to latest">
+              <ChevronDown size={14} /> {loading ? 'Streaming…' : 'Latest'}
+            </button>
+          )}
         </div>
 
         <div className="input-area">

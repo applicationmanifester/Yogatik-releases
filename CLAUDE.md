@@ -114,3 +114,29 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   (incl. proxy) and stores `status_<id>`; UI shows dot + latency + friendly error.
 - Per-tool on/off in `disabled_tools` (stores DISABLED names so new tools default on);
   getToolSchemas(disabled) filters what the model ever sees.
+
+## Model selection (v3.1)
+- `status_<provider>::<model>` — per-MODEL probe result (success, latencyMs, at). 30 min TTL.
+- `autoPickModel(p)` probes top-4 candidates in parallel (name heuristics: flash/nano/8b up,
+  70b/large/ultra down), picks fastest that answers. Runs automatically after a key verifies.
+- `routeModel(p, msg)` per-message routing when `chat_prefs.auto_route`: classifyQuery →
+  code|reasoning|writing|quick, picks fastest MEASURED-OK model in that class. Never routes
+  to an unmeasured model (that's how you land on a 5-minute one).
+- `getFallbackChain(p)` — on 429/5xx/timeout the chat retries the next provider that has a key
+  and needs no proxy. Only before any token is shown (never splices two models' output).
+- Model probes use timeoutMs 20s + retries 0 — chat budget (120s x3) made "Verifying…" hang.
+- Providers retire models without notice: 410 → `pruneRetiredModel` drops it from cache +
+  clears selection (deepseek-v4-flash EOL'd mid-session on 2026-08-07).
+
+## Keys & backup
+- Key UI shows masked value (first4…last4) + where it lives (device / cloud).
+- Cloud sync is opt-in: `enableCloudSync(passphrase)` AES-GCM encrypts every stored key.
+  Passphrase is memory-only. NOTE: before this, sync silently never ran (no UI set it).
+- `downloadBackup()` / `restoreBackup(file, 'merge'|'replace')` — chats + docs + settings.
+  API keys are excluded from backup files by design.
+
+## Tests (npm test — 65)
+- retrieval (18), agent loop (19), search parsers (6), routing (11), crypto (11)
+- Run with pool:forks singleFork — parallel jsdom envs starve the runner.
+- `npm run lint` uses react/jsx-no-undef: plain no-undef does NOT catch `<Foo/>` with no
+  import, which is how a ReactMarkdown crash reached production.

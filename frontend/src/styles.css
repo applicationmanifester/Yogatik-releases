@@ -1024,3 +1024,62 @@ body {
   border: 1px solid var(--border, #333); border-radius: 6px;
 }
 .cloud-note { display: block; margin-top: 6px; font-size: 10px; line-height: 1.4; color: var(--text-muted, #888); }
+
+/* ── Message actions, timestamps, failed turns ── */
+.message-role { display: flex; align-items: center; gap: 8px; }
+.message-who { font-weight: 600; }
+.message-time { font-size: 10px; color: var(--text-muted, #888); font-weight: 400; }
+.message-actions { display: flex; gap: 1px; margin-left: auto; opacity: 0; transition: opacity var(--transition, .15s); }
+.message:hover .message-actions, .message-actions:focus-within { opacity: 1; }
+@media (hover: none) { .message-actions { opacity: .65; } }
+
+.message-failed .message-error {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: var(--radius, 8px);
+  background: rgba(255, 68, 68, .08); border: 1px solid rgba(255, 68, 68, .3);
+  color: #ff8080; font-size: 12px; line-height: 1.45;
+}
+.message-error-text { flex: 1; min-width: 0; }
+
+/* ── Scroll to latest ── */
+.messages { position: relative; }
+.scroll-bottom {
+  position: sticky; bottom: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 14px; border-radius: 999px; cursor: pointer; font-size: 12px;
+  background: var(--bg-secondary, #1a1a1a); color: var(--text-primary, #eee);
+  border: 1px solid var(--border, #333); box-shadow: 0 4px 14px rgba(0,0,0,.35);
+}
+.scroll-bottom:hover { border-color: var(--accent, #ff6b35); }
+
+/* ── First-run setup card ── */
+.setup-card {
+  max-width: 420px; margin: 8px auto 0; padding: 20px;
+  border: 1px solid var(--border, #333); border-radius: 12px;
+  background: var(--bg-secondary, #1a1a1a); text-align: center;
+}
+.setup-card h3 { margin: 8px 0 6px; font-size: 15px; }
+.setup-card p { font-size: 12px; line-height: 1.6; color: var(--text-secondary, #aaa); margin: 0 0 14px; }
+.setup-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.setup-btn { padding: 8px 14px; border-radius: var(--radius, 8px); text-decoration: none; font-size: 12px; }
+.setup-note { display: block; margin-top: 12px; font-size: 10px; color: var(--text-muted, #888); }
+.auto-pick { width: 100%; justify-content: center; margin-bottom: 8px; }
+.route-note { font-size: 10px; line-height: 1.45; color: var(--text-muted, #888); margin: -2px 0 8px; }
+
+/* ── Measured model chips ── */
+.measured-models { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.measured-chip {
+  display: flex; align-items: center; gap: 4px; max-width: 100%;
+  padding: 3px 7px; font-size: 10px; cursor: pointer;
+  border: 1px solid var(--border, #333); border-radius: 999px;
+  background: var(--bg-input, #1e1e1e); color: var(--text-secondary, #aaa);
+}
+.measured-chip:hover { border-color: var(--accent, #ff6b35); }
+.measured-chip.active { border-color: var(--accent, #ff6b35); color: var(--text-primary, #eee); }
+.measured-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+.measured-ms { opacity: .6; }
+
+/* ── Backup ── */
+.backup-row { margin: 10px 0; }
+.backup-actions { display: flex; gap: 6px; }
+.backup-note { display: block; margin-top: 5px; font-size: 10px; line-height: 1.4; color: var(--text-muted, #888); }
