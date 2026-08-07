@@ -43,13 +43,11 @@ const PROVIDERS = {
       'nvidia/riva-translate-4b-instruct',
       'mistralai/mistral-large',
       'mistralai/mistral-large-2-instruct',
-      'mistralai/mistral-medium-3.5-128b',
       'mistralai/mistral-nemotron',
       'mistralai/mistral-7b-instruct-v0.3',
       'mistralai/codestral-22b-instruct-v0.1',
       'mistralai/mixtral-8x22b-v0.1',
       'nv-mistralai/mistral-nemo-12b-instruct',
-      'deepseek-ai/deepseek-v4-pro',
       'deepseek-ai/deepseek-coder-6.7b-instruct',
       'google/gemma-4-31b-it',
       'google/gemma-3-12b-it',
@@ -117,6 +115,15 @@ const PROVIDERS = {
     keyUrl: 'https://build.nvidia.com',
     needsProxy: true,
     publicModels: true, // /v1/models is unauthenticated — live catalog without a key
+  },
+  local: {
+    name: 'On-device (no key)',
+    baseUrl: '',            // never leaves the browser
+    models: [],             // filled from localLLM at runtime
+    default: '',
+    keyUrl: '',
+    isLocal: true,
+    noKey: true,
   },
   gemini: {
     name: 'Gemini (Free)',
@@ -274,6 +281,12 @@ export async function streamChat({
 }) {
   const prov = getProviders()[provider]
   if (!prov) throw new Error(`Unknown provider: ${provider}`)
+
+  // On-device inference never touches the network or a key.
+  if (prov.isLocal) {
+    const { streamLocal } = await import('./localLLM')
+    return streamLocal({ messages, temperature, signal, onToken, onDone, onError })
+  }
 
   const headers = {
     'Content-Type': 'application/json',

@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, enableCloudSync, disableCloudSync, isCloudSyncOn } from './api'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare } from 'lucide-react'
+import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, enableCloudSync, disableCloudSync, isCloudSyncOn } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
@@ -11,6 +11,10 @@ import { ProviderModal } from './components/ProviderModal'
 import { AdModal, adsConfigured } from './components/AdModal'
 import { Modal } from './components/Modal'
 import { TermsModal, TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
+import { LocalModelPanel } from './components/LocalModelPanel'
+import { CommandPalette } from './components/CommandPalette'
+import { ArenaView } from './components/ArenaView'
+import { DEFAULT_LOCAL_MODEL } from './localLLM'
 
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
@@ -54,6 +58,7 @@ export default function App() {
   const [showProviderModal, setShowProviderModal] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showTerms, setShowTerms] = useState(false)
+  const [showPalette, setShowPalette] = useState(false)
   const [user, setUser] = useState(null)
   const [promptTemplates, setPromptTemplates] = useState([])
   const [activeTemplate, setActiveTemplate] = useState('default')
@@ -68,6 +73,13 @@ export default function App() {
   const [verifying, setVerifying] = useState(false)
   const [keyInfo, setKeyInfo] = useState({})
   const [measuredModels, setMeasuredModels] = useState({})
+  const [usage, setUsage] = useState({})
+  const [arena, setArena] = useState(null)
+  const [comparing, setComparing] = useState(false)
+  const [compareMode, setCompareMode] = useState(false)
+  const [compareModels, setCompareModels] = useState(['', ''])
+  const [projects, setProjects] = useState([])
+  const [activeProject, setActiveProjectState] = useState(null)
   const [cloudSync, setCloudSync] = useState(false)
   const [passphrase, setPassphrase] = useState('')
   const [syncing, setSyncing] = useState(false)
@@ -238,7 +250,8 @@ export default function App() {
     refreshDocs()
     // Conversations live in IndexedDB and belong to this device, not to an
     // account — load them whether or not the user has signed in.
-    loadConversations()
+    getActiveProject().then(pid => { setActiveProjectState(pid); loadConversations(pid) })
+    refreshProjects()
     getMe().then(u => { if (u) setUser(u) }).catch(() => {})
     getActiveProvider().then(async (p) => {
       setProviderState(p)
@@ -255,6 +268,20 @@ export default function App() {
     }).catch(() => {})
     refreshToolPrefs()
     refreshKeys()
+    getTodayUsage().then(setUsage).catch(() => {})
+
+    // Android share sheet / app shortcuts land here as query params.
+    const params = new URLSearchParams(location.search)
+    const shared = [params.get('title'), params.get('text'), params.get('url')]
+      .filter(Boolean).join('\n').trim()
+    if (shared) {
+      setInput(params.get('intent') === 'research' ? `Research this:\n${shared}` : shared)
+      setTimeout(() => textareaRef.current?.focus(), 0)
+    }
+    if (params.get('intent') === 'research' && !shared) setInput('Research ')
+    if (shared || params.get('new') || params.get('intent')) {
+      history.replaceState(null, '', location.pathname)   // don't re-fire on reload
+    }
     // Init Web Speech API
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -272,6 +299,11 @@ export default function App() {
     }
     // Global Keyboard Shortcuts
     const handleGlobalKeyDown = (e) => {
+      // Ctrl/Cmd+K -> command palette
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        setShowPalette(v => !v)
+      }
       // Ctrl+Shift+O or Cmd+Shift+O -> New Chat
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'O' || e.key === 'o')) {
         e.preventDefault()
@@ -298,8 +330,34 @@ export default function App() {
   }
 
   const refreshDocs = useCallback(() => {
-    listDocuments().then(setDocs).catch(() => {})
+    getActiveProject().then(pid => listDocuments(pid)).then(setDocs).catch(() => {})
   }, [])
+
+  const refreshProjects = useCallback(() => {
+    getProjects().then(setProjects).catch(() => {})
+  }, [])
+
+  const chooseProject = async (pid) => {
+    setActiveProjectState(pid)
+    await setActiveProject(pid)
+    await loadConversations(pid)
+    refreshDocs()
+  }
+
+  const addProject = async () => {
+    const name = prompt('Project name')?.trim()
+    if (!name) return
+    const p = await createProject(name)
+    refreshProjects()
+    chooseProject(p.id)
+  }
+
+  const removeProject = async (pid) => {
+    if (!confirm('Delete this project? Its chats and documents are kept and moved out of the project.')) return
+    await deleteProject(pid)
+    refreshProjects()
+    chooseProject(null)
+  }
 
   const refreshKeys = useCallback(() => {
     getAllKeyInfo().then(setKeyInfo).catch(() => {})
@@ -356,8 +414,8 @@ export default function App() {
     createdAt: m.createdAt,
   })
 
-  const loadConversations = async () => {
-    const convs = await getConversations()
+  const loadConversations = async (projectId = activeProject) => {
+    const convs = await getConversations(projectId ?? null)
     if (!convs.length) return
     const first = await getConversation(convs[0].id)
     const mapped = convs.map((c, i) => ({
@@ -623,6 +681,7 @@ export default function App() {
         setActiveTools([])
         setPendingToolResults({})
         // Show ad every 3 chats
+        getTodayUsage().then(setUsage).catch(() => {})
         chatCountRef.current++
         if (adsConfigured && chatCountRef.current % 10 === 0) setShowAd(true)
       },
@@ -742,6 +801,40 @@ export default function App() {
     } catch (e) { setErrorModalMsg(e.message) }
   }
 
+  /**
+   * Compare mode: send the same prompt to two models at once. Useful when
+   * choosing between models that only differ under real use.
+   */
+  const runCompare = async (text = input) => {
+    const prompt = text.trim()
+    if (!prompt || comparing) return
+    const [a, b] = compareModels
+    if (!a || !b) { setErrorModalMsg('Pick two models to compare.'); return }
+
+    setComparing(true)
+    setInput('')
+    setArena({ modelA: a, modelB: b, responseA: '', responseB: '', streamingA: true, streamingB: true })
+
+    const run = (mdl, side) => new Promise(resolve => {
+      let out = ''
+      streamMessage(
+        { message: prompt, messages: [], model: mdl, use_tools: false, use_web_search: false,
+          temperature, channel: `compare-${side}` },
+        (t) => { out += t; setArena(prev => ({ ...prev, [`response${side}`]: out })) },
+        () => {},
+        () => { setArena(prev => ({ ...prev, [`streaming${side}`]: false })); resolve() },
+        (err) => {
+          setArena(prev => ({ ...prev, [`response${side}`]: `Error: ${err}`, [`streaming${side}`]: false }))
+          resolve()
+        },
+        () => {}, () => {}, () => {}, () => {},
+      )
+    })
+
+    await Promise.all([run(a, 'A'), run(b, 'B')])
+    setComparing(false)
+  }
+
   const editAndResend = (text) => {
     setInput(text)
     textareaRef.current?.focus()
@@ -762,6 +855,41 @@ export default function App() {
     const id = conversations[idx]?.id
     if (id) { try { await renameConversation(id, title) } catch {} }
   }
+
+  const paletteCommands = useMemo(() => {
+    const cmds = [
+      { id: 'new', group: 'Chat', label: 'New chat', hint: 'Ctrl+Shift+O', run: newChat },
+      { id: 'regen', group: 'Chat', label: 'Regenerate last reply', run: regenerate },
+      { id: 'export', group: 'Chat', label: 'Export this chat as markdown', run: handleExport },
+      { id: 'backup', group: 'Data', label: 'Export all data (backup)', run: handleBackup },
+      { id: 'import', group: 'Data', label: 'Import a backup file', run: () => backupInput.current?.click() },
+      { id: 'theme', group: 'View', label: `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`, run: () => setTheme(t => t === 'dark' ? 'light' : 'dark') },
+      { id: 'settings', group: 'View', label: 'Open settings', run: () => { setSidebarOpen(true); setSettingsOpen(true) } },
+      { id: 'tools', group: 'Settings', label: `${tools ? 'Disable' : 'Enable'} AI tools`, run: () => setToolsEnabled(!tools) },
+      { id: 'web', group: 'Settings', label: `${webSearch ? 'Disable' : 'Enable'} web research`, run: () => setWebSearch(!webSearch) },
+      { id: 'route', group: 'Settings', label: `${autoRoute ? 'Disable' : 'Enable'} auto-routing`, run: () => setAutoRoute(!autoRoute) },
+      { id: 'autopick', group: 'Models', label: 'Auto-pick the fastest model', run: () => handleAutoPick() },
+    ]
+    for (const [id, p] of Object.entries(models)) {
+      cmds.push({
+        id: `prov-${id}`, group: 'Provider', label: `Switch to ${p.name}`,
+        hint: p.available ? undefined : 'no key', run: () => setProvider(id),
+      })
+    }
+    for (const m of (models[provider]?.models || []).slice(0, 100)) {
+      const ms = measuredModels[m]
+      cmds.push({
+        id: `model-${m}`, group: 'Model', label: m,
+        hint: ms?.success ? formatLatency(ms.latencyMs) : undefined,
+        run: () => chooseModel(m),
+      })
+    }
+    conversations.forEach((c, i) => {
+      if (!c.messages.length) return
+      cmds.push({ id: `conv-${i}`, group: 'Chat', label: c.title, hint: `${c.messages.length} messages`, run: () => switchChat(i) })
+    })
+    return cmds
+  }, [models, provider, measuredModels, conversations, theme, tools, webSearch, autoRoute])
 
   const providerEntries = Object.entries(models)
   const providerModels = models[provider]?.models || []
@@ -808,6 +936,18 @@ export default function App() {
             <button className="auth-btn" onClick={requestSignIn} aria-label="Sign in">
               <LogIn size={14} /> Sign In
             </button>
+          )}
+        </div>
+
+        <div className="project-bar">
+          <select value={activeProject ?? ''} aria-label="Project"
+            onChange={e => chooseProject(e.target.value ? Number(e.target.value) : null)}>
+            <option value="">All chats</option>
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button className="icon-btn" onClick={addProject} aria-label="New project" title="New project"><Plus size={13} /></button>
+          {activeProject && (
+            <button className="icon-btn" onClick={() => removeProject(activeProject)} aria-label="Delete project" title="Delete project"><Trash2 size={12} /></button>
           )}
         </div>
 
@@ -921,9 +1061,15 @@ export default function App() {
             <div className="conn-error">{providerStatus[provider].error}</div>
           )}
 
+          {provider !== 'local' && <>
           <label>API Key {models[provider]?.key_url && <a href={models[provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get free key)</a>}</label>
 
-          {keyInfo[provider]?.saved ? (
+          {provider === 'local' ? (
+            <LocalModelPanel
+              model={model || DEFAULT_LOCAL_MODEL}
+              onModelChange={chooseModel}
+              onReady={(m) => { chooseModel(m); refreshModels() }} />
+          ) : keyInfo[provider]?.saved ? (
             <div className="key-saved">
               <div className="key-saved-row">
                 <Key size={12} />
@@ -965,7 +1111,9 @@ export default function App() {
             </button>
           </div>
 
-          <div className="cloud-sync">
+          </>}
+
+          <div className="cloud-sync" hidden={provider === 'local'}>
             {!user ? (
               <span className="cloud-hint">Keys stay on this device. <button className="link-btn" onClick={requestSignIn}>Sign in</button> to sync them, encrypted.</span>
             ) : cloudSync ? (
@@ -1098,6 +1246,20 @@ export default function App() {
             </label>
           </div>
 
+          {Object.keys(usage).length > 0 && (
+            <div className="usage-row">
+              <label><Zap size={12} /> Today's usage <span className="usage-approx">(approx.)</span></label>
+              {Object.entries(usage).map(([pid, u]) => (
+                <div key={pid} className="usage-item">
+                  <span className="usage-provider">{models[pid]?.name || pid}</span>
+                  <span className="usage-nums">
+                    {u.messages} msg · {((u.in + u.out) / 1000).toFixed(1)}k tokens
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="backup-row">
             <label><Download size={12} /> Backup</label>
             <div className="backup-actions">
@@ -1172,6 +1334,11 @@ export default function App() {
                     <button className="small-btn" onClick={() => { setSidebarOpen(true); setSettingsOpen(true) }}>
                       I have a key — open settings
                     </button>
+                    <button className="small-btn" onClick={() => {
+                      setProvider('local'); setSidebarOpen(true); setSettingsOpen(true)
+                    }}>
+                      Or run a model on this device
+                    </button>
                   </div>
                   <span className="setup-note">Groq is free and needs no proxy. NVIDIA, Gemini, OpenRouter and OpenAI also work.</span>
                 </div>
@@ -1183,6 +1350,7 @@ export default function App() {
             </div>
           ) : (
             <>
+              {arena && <ArenaView arenaData={arena} onOpenArtifact={setActiveArtifact} />}
               {hiddenCount > 0 && (
                 <button className="load-earlier" onClick={() => setVisibleCount(v => v + WINDOW_STEP)}>
                   Load {Math.min(hiddenCount, WINDOW_STEP)} earlier message{Math.min(hiddenCount, WINDOW_STEP) === 1 ? '' : 's'}
@@ -1261,6 +1429,10 @@ export default function App() {
                 <Square size={12} /> Stop (Esc)
               </button>
             )}
+            <button className={`small-btn ${compareMode ? 'active' : ''}`}
+              onClick={() => setCompareMode(v => !v)} title="Send one prompt to two models">
+              <GitCompare size={12} /> Compare
+            </button>
             {!loading && conv?.messages?.some(m => m.role === 'assistant') && (
               <button className="small-btn" onClick={regenerate}
                 title="Regenerate last response" aria-label="Regenerate last response">
@@ -1268,6 +1440,21 @@ export default function App() {
               </button>
             )}
           </div>
+          {compareMode && (
+            <div className="compare-bar">
+              <select value={compareModels[0]} onChange={e => setCompareModels([e.target.value, compareModels[1]])} aria-label="Model A">
+                <option value="">Model A…</option>
+                {(models[provider]?.models || []).map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <select value={compareModels[1]} onChange={e => setCompareModels([compareModels[0], e.target.value])} aria-label="Model B">
+                <option value="">Model B…</option>
+                {(models[provider]?.models || []).map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <button className="small-btn btn-primary" onClick={() => runCompare()} disabled={comparing || !input.trim()}>
+                {comparing ? 'Running…' : 'Run both'}
+              </button>
+            </div>
+          )}
           {!online && (
             <div className="offline-banner" role="status">
               <AlertTriangle size={12} /> Offline — messages will fail until the connection returns.
@@ -1303,6 +1490,7 @@ export default function App() {
         onSaved={() => { refreshModels(); setEditingProvider(null) }}
         editProvider={editingProvider ? { id: editingProvider, ...models[editingProvider] } : null}
       />}
+      {showPalette && <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} />}
       {showTerms && (
         <TermsModal onAccept={handleAcceptTerms} onDecline={() => setShowTerms(false)} />
       )}

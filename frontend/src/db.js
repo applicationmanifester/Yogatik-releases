@@ -14,6 +14,15 @@ db.version(2).stores({
   settings: 'key',
   documents: '++id, name, createdAt',
 })
+// v3: projects group conversations and documents, each with its own persona
+// and tool selection.
+db.version(3).stores({
+  conversations: '++id, title, updatedAt, projectId',
+  messages: '++id, conversationId, role, createdAt, [conversationId+createdAt]',
+  settings: 'key',
+  documents: '++id, name, createdAt, projectId',
+  projects: '++id, name, createdAt',
+})
 
 // ─── Settings (API keys, provider, theme, etc.) ───
 export async function getSetting(key, fallback = null) {
@@ -29,14 +38,15 @@ export async function getAllSettings() {
 }
 
 // ─── Conversations ───
-export async function createConversation(title = 'New Chat') {
-  const id = await db.conversations.add({ title, updatedAt: Date.now() })
-  return { id, title, messages: [] }
+export async function createConversation(title = 'New Chat', projectId = null) {
+  const id = await db.conversations.add({ title, updatedAt: Date.now(), projectId })
+  return { id, title, projectId, messages: [] }
 }
 
-export async function getConversations() {
+export async function getConversations(projectId) {
   const convs = await db.conversations.orderBy('updatedAt').reverse().toArray()
-  return convs
+  if (projectId === undefined) return convs
+  return convs.filter(c => (c.projectId ?? null) === (projectId ?? null))
 }
 
 export async function getConversation(id) {
@@ -88,8 +98,12 @@ export async function addDocument(doc) {
   const id = await db.documents.add({ ...doc, createdAt: Date.now() })
   return { id, ...doc }
 }
-export async function getDocuments() {
-  return db.documents.orderBy('createdAt').reverse().toArray()
+export async function getDocuments(projectId) {
+  const all = await db.documents.orderBy('createdAt').reverse().toArray()
+  // Project scoping keeps retrieval focused: a work PDF should not answer a
+  // question asked inside a personal project.
+  if (projectId === undefined) return all
+  return all.filter(d => (d.projectId ?? null) === (projectId ?? null))
 }
 export async function getDocument(id) {
   return db.documents.get(id)
@@ -98,20 +112,42 @@ export async function deleteDocument(id) {
   return db.documents.delete(id)
 }
 
+// ─── Projects ───
+export async function createProject(name, opts = {}) {
+  const id = await db.projects.add({ name, createdAt: Date.now(), ...opts })
+  return { id, name, ...opts }
+}
+export async function getProjects() {
+  return db.projects.orderBy('createdAt').reverse().toArray()
+}
+export async function updateProject(id, patch) {
+  return db.projects.update(id, patch)
+}
+/** Deleting a project keeps its chats and documents; they return to "no project". */
+export async function deleteProject(id) {
+  await db.conversations.where('projectId').equals(id).modify({ projectId: null })
+  await db.documents.where('projectId').equals(id).modify({ projectId: null })
+  return db.projects.delete(id)
+}
+export async function assignConversation(conversationId, projectId) {
+  return db.conversations.update(conversationId, { projectId: projectId ?? null })
+}
+
 // ─── Whole-database backup ───
 // No backend means no sync: a cleared browser profile is total data loss.
 export async function exportAll() {
-  const [conversations, messages, documents, settings] = await Promise.all([
+  const [conversations, messages, documents, settings, projects] = await Promise.all([
     db.conversations.toArray(),
     db.messages.toArray(),
     db.documents.toArray(),
     db.settings.toArray(),
+    db.projects.toArray(),
   ])
   return {
     format: 'yogatik-backup',
     version: 1,
     exportedAt: new Date().toISOString(),
-    conversations, messages, documents,
+    conversations, messages, documents, projects,
     // API keys are deliberately excluded — a backup file is not an encrypted
     // store, and users share these without thinking.
     settings: settings.filter(r => !/^apikey_|^synced_|^user$/.test(r.key)),
@@ -123,16 +159,22 @@ export async function importAll(data, mode = 'merge') {
   if (data?.format !== 'yogatik-backup') throw new Error('Not a Yogatik backup file.')
   if (data.version > 1) throw new Error('This backup was made by a newer version of Yogatik.')
 
-  return db.transaction('rw', db.conversations, db.messages, db.documents, db.settings, async () => {
+  return db.transaction('rw', db.conversations, db.messages, db.documents, db.settings, db.projects, async () => {
     if (mode === 'replace') {
-      await Promise.all([db.conversations.clear(), db.messages.clear(), db.documents.clear()])
+      await Promise.all([db.conversations.clear(), db.messages.clear(), db.documents.clear(), db.projects.clear()])
+    }
+
+    const projectMap = new Map()
+    for (const pr of data.projects || []) {
+      const { id, ...rest } = pr
+      projectMap.set(id, await db.projects.add(rest))
     }
 
     // Conversation ids are auto-increment and will collide on merge, so remap.
     const idMap = new Map()
     for (const c of data.conversations || []) {
-      const { id, ...rest } = c
-      const newId = await db.conversations.add(rest)
+      const { id, projectId, ...rest } = c
+      const newId = await db.conversations.add({ ...rest, projectId: projectMap.get(projectId) ?? null })
       idMap.set(id, newId)
     }
     for (const m of data.messages || []) {
@@ -142,8 +184,8 @@ export async function importAll(data, mode = 'merge') {
       await db.messages.add({ ...rest, conversationId: mapped })
     }
     for (const d of data.documents || []) {
-      const { id, ...rest } = d
-      await db.documents.add(rest)
+      const { id, projectId, ...rest } = d
+      await db.documents.add({ ...rest, projectId: projectMap.get(projectId) ?? null })
     }
     for (const row of data.settings || []) {
       if (/^apikey_|^synced_|^user$/.test(row.key)) continue   // never restore secrets

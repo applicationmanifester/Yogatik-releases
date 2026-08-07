@@ -1,5 +1,5 @@
 /**
- * Browser-native tool registry — all 32 tools, zero backend.
+ * Browser-native tool registry — all 44 tools, zero backend.
  * Each tool: { schema (OpenAI function schema), execute(args) → result }
  */
 
@@ -33,6 +33,13 @@ import { webExtractTool } from './webExtract'
 import { webSearchTool } from './webSearch'
 import { researchTool } from './research'
 import { docSearchTool, docListTool } from './documents'
+import {
+  wikipediaTool, scholarTool, stackOverflowTool, hackerNewsTool,
+  archiveTool, dictionaryTool, booksTool,
+} from './knowledge'
+import {
+  packageTool, gutenbergTool, geocodeTool, currencyTool, earthquakeTool,
+} from './opendata'
 import { youtubeTool } from './youtube'
 
 const ALL_TOOLS = {
@@ -67,6 +74,18 @@ const ALL_TOOLS = {
   deep_research: researchTool,
   doc_search: docSearchTool,
   doc_list: docListTool,
+  wikipedia: wikipediaTool,
+  scholar: scholarTool,
+  stackoverflow: stackOverflowTool,
+  hackernews: hackerNewsTool,
+  archive: archiveTool,
+  dictionary: dictionaryTool,
+  books: booksTool,
+  package_info: packageTool,
+  gutenberg: gutenbergTool,
+  geocode: geocodeTool,
+  currency: currencyTool,
+  earthquake: earthquakeTool,
   web_extract: webExtractTool,
   youtube: youtubeTool,
 }

@@ -13,15 +13,18 @@ Instead of forcing you into monthly paywalls or storing your private chats on th
 ⚡ **No Subscriptions, Pay Only for What You Use**
 Bring your own API key (Gemini, Groq, NVIDIA, OpenRouter, OpenAI) and pay raw API rates — pennies instead of $20/month.
 
+🧠 **Or Use No Key At All**
+Download a small model once (~750MB) and it runs on your own GPU via WebGPU — no key, no network, no data leaving the device. Genuinely offline AI in a browser tab.
+
 💻 **Desktop Powerhouse**
-Multi-window split interface, keyboard shortcuts (`Ctrl+Shift+O` for new chat), side-by-side artifact rendering, code execution sandbox, and instant document Q&A.
+Command palette (`Ctrl+K`), keyboard shortcuts, side-by-side model comparison, artifact preview panel, WASM code sandbox, and instant document Q&A.
 
 📱 **Native Mobile Experience (PWA)**
 No 200MB app store downloads required. Install directly to your iOS or Android home screen in seconds (under 600KB). Fully responsive with touch-first controls.
 
 🛠️ **32 Free Built-in Client-Side Tools**
 - Live Web Research & Deep Investigation
-- Image Generation & Canvas Editing
+- Image Generation & Canvas Chart Rendering
 - Python WASM Code Execution
 - Real-time Document Analysis (PDF & Text RAG)
 - Browser-native Voice Input & Read-Aloud TTS

@@ -121,6 +121,7 @@ export async function getFallbackChain(primary) {
   for (const [id, p] of Object.entries(getLLMProviders())) {
     if (id === primary) continue
     if (p.needsProxy && !proxyAvailable()) continue
+    if (p.isLocal) continue          // loading 750MB is not a fallback
     if (await db.getSetting(`apikey_${id}`)) chain.push(id)
   }
   return chain
@@ -152,9 +153,9 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
     }
   }
 
-  if (!apiKey) {
-    const p = getLLMProviders()[provider]
-    onError?.(`No API key for ${p?.name || provider}. Open Settings and add one${p?.keyUrl ? ` — free key at ${p.keyUrl}` : ''}.`)
+  const provDef = getLLMProviders()[provider]
+  if (!apiKey && !provDef?.noKey) {
+    onError?.(`No API key for ${provDef?.name || provider}. Open Settings and add one${provDef?.keyUrl ? ` — free key at ${provDef.keyUrl}` : ''}.`)
     return
   }
 
@@ -173,7 +174,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
     for (let i = 0; i < chain.length; i++) {
       const pid = chain[i]
       const key = i === 0 ? apiKey : await db.getSetting(`apikey_${pid}`)
-      if (!key) continue
+      if (!key && !getLLMProviders()[pid]?.isLocal) continue
       const mdl = i === 0 ? model : await db.getSetting(`model_${pid}`, '')
 
       let failure = null
@@ -183,8 +184,11 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         provider: pid, apiKey: key, model: mdl,
         history: body.messages || [],
         userMessage: body.message || body.messages?.[body.messages.length - 1]?.content || '',
-        toolsEnabled: body.tools !== false && body.use_tools !== false,
-        webEnabled: body.use_web_search !== false,
+        // 1B-class on-device models call tools unreliably; a wrong call costs
+        // the user more than the missing capability.
+        toolsEnabled: !getLLMProviders()[pid]?.isLocal &&
+          body.tools !== false && body.use_tools !== false,
+        webEnabled: !getLLMProviders()[pid]?.isLocal && body.use_web_search !== false,
         disabledTools: await getDisabledTools(),
         persona: body.system_prompt || null,
         temperature: body.temperature || 0.7,
@@ -196,6 +200,10 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         onToolResult: (name, result) => onToolResult?.(name, result),
         onDone: ({ content, sources, aborted }) => {
           if (sources?.length) onSources?.(sources)
+          recordUsage(pid, mdl, {
+            inTokens: estimateTokens(body.message || ''),
+            outTokens: estimateTokens(content || ''),
+          }).catch(() => {})
           onDone?.(content, { aborted, provider: pid })
         },
         onError: (err) => { failure = err?.message || String(err) },
@@ -242,6 +250,44 @@ export async function hasAcceptedTerms(version) {
   return rec?.version === version
 }
 
+// ─── Usage meter ───
+// Providers rarely return usage on streamed responses, so this is an estimate
+// from characters. Labelled as approximate everywhere it is shown.
+const CHARS_PER_TOKEN = 4
+
+export function estimateTokens(text = '') {
+  return Math.max(1, Math.round(String(text).length / CHARS_PER_TOKEN))
+}
+
+const today = () => new Date().toISOString().slice(0, 10)
+
+export async function recordUsage(providerId, model, { inTokens = 0, outTokens = 0 } = {}) {
+  const key = `usage_${today()}`
+  const day = await db.getSetting(key, {})
+  const bucket = day[providerId] || { in: 0, out: 0, messages: 0, models: {} }
+  bucket.in += inTokens
+  bucket.out += outTokens
+  bucket.messages += 1
+  if (model) bucket.models[model] = (bucket.models[model] || 0) + 1
+  day[providerId] = bucket
+  await db.setSetting(key, day)
+  return bucket
+}
+
+export async function getUsage(days = 7) {
+  const out = []
+  for (let i = 0; i < days; i++) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+    const day = await db.getSetting(`usage_${d}`, {})
+    if (Object.keys(day).length) out.push({ date: d, providers: day })
+  }
+  return out
+}
+
+export async function getTodayUsage() {
+  return db.getSetting(`usage_${today()}`, {})
+}
+
 // ─── Chat preferences (persisted) ───
 export async function getPrefs() {
   return db.getSetting('chat_prefs', {})
@@ -254,14 +300,24 @@ export async function setPref(key, value) {
   return prefs
 }
 
+// ─── Projects ───
+export async function getProjects() { return db.getProjects() }
+export async function createProject(name, opts) { return db.createProject(name, opts) }
+export async function updateProject(id, patch) { return db.updateProject(id, patch) }
+export async function deleteProject(id) { return db.deleteProject(id) }
+export async function assignConversation(cid, pid) { return db.assignConversation(cid, pid) }
+
+export async function getActiveProject() { return db.getSetting('active_project', null) }
+export async function setActiveProject(id) { return db.setSetting('active_project', id ?? null) }
+
 // ─── Conversations (IndexedDB) ───
-export async function getConversations() {
-  return db.getConversations()
+export async function getConversations(projectId) {
+  return db.getConversations(projectId)
 }
 
 /** Create a conversation row and return its id. */
-export async function createConversation(title) {
-  const c = await db.createConversation(title)
+export async function createConversation(title, projectId) {
+  const c = await db.createConversation(title, projectId ?? await getActiveProject())
   return c.id
 }
 
@@ -402,7 +458,7 @@ export async function uploadDocument(file) {
   }
 }
 
-export async function listDocuments() { return db.getDocuments() }
+export async function listDocuments(projectId) { return db.getDocuments(projectId) }
 
 export async function removeDocument(id) {
   await db.deleteDocument(id)
@@ -441,9 +497,14 @@ export async function getModels() {
   const result = {}
   for (const [id, p] of Object.entries(providers)) {
     const key = await db.getSetting(`apikey_${id}`)
-    const hasKey = !!key
+    const hasKey = !!key || !!p.noKey
     let liveModels = p.models || []
-    if (hasKey || p.publicModels) liveModels = await cachedModels(id, key, liveModels)
+    if (p.isLocal) {
+      const { LOCAL_MODELS } = await import('./localLLM')
+      liveModels = Object.keys(LOCAL_MODELS)
+    } else if (hasKey || p.publicModels) {
+      liveModels = await cachedModels(id, key, liveModels)
+    }
     result[id] = {
       name: p.name, type: 'openai_compatible',
       available: hasKey, models: liveModels,
@@ -587,8 +648,16 @@ export async function autoPickModel(providerId, { max = 4, timeoutMs = 10_000, o
   const prov = getLLMProviders()[providerId]
   if (!prov) throw new Error('Unknown provider')
 
-  // Prefer the live catalog; fall back to the built-in list.
-  const cached = await db.getSetting(`models_${providerId}`)
+  // Probe only models the provider currently serves. The built-in list ages
+  // out — probing it produced 404s for models NVIDIA has since removed.
+  let cached = await db.getSetting(`models_${providerId}`)
+  if (!cached?.list?.length) {
+    const live = await fetchLiveModels(providerId, apiKey).catch(() => [])
+    if (live.length) {
+      cached = { ts: Date.now(), list: live }
+      await db.setSetting(`models_${providerId}`, cached)
+    }
+  }
   const all = (cached?.list?.length ? cached.list : prov.models) || []
   const ranked = [...all].sort((a, b) => candidateScore(b) - candidateScore(a)).slice(0, max)
   if (!ranked.length) throw new Error('No models available for this provider.')
@@ -709,7 +778,10 @@ export async function ensureTested(id, model) {
 
 /** Providers retire models without warning; 410 means this one is gone. */
 export function isRetiredModelError(msg = '') {
-  return /\b410\b/.test(msg) || /end of life|no longer available/i.test(msg)
+  return /\b410\b/.test(msg) ||
+    /end of life|no longer available/i.test(msg) ||
+    // NVIDIA answers 404 "page not found" for a model it does not serve.
+    (/\b404\b/.test(msg) && /not found/i.test(msg))
 }
 
 /**
@@ -780,6 +852,7 @@ export async function getActiveProvider() {
   const providers = getLLMProviders()
   for (const [id, p] of Object.entries(providers)) {
     if (p.needsProxy && !proxyAvailable()) continue
+    if (p.isLocal) continue
     if (await db.getSetting(`apikey_${id}`)) return id
   }
   return 'groq'
@@ -845,6 +918,9 @@ export async function getTools() {
 export const TOOL_GROUPS = {
   web_search: 'Web', deep_research: 'Web', web_extract: 'Web', link_preview: 'Web',
   rss_feed: 'Web', youtube: 'Web', whois: 'Web', ip_lookup: 'Web',
+  wikipedia: 'Knowledge', scholar: 'Knowledge', stackoverflow: 'Knowledge',
+  hackernews: 'Knowledge', archive: 'Knowledge', dictionary: 'Knowledge', books: 'Knowledge',
+  package_info: 'Data', gutenberg: 'Data', geocode: 'Data', currency: 'Data', earthquake: 'Data',
   doc_search: 'Documents', doc_list: 'Documents', pdf_extract: 'Documents',
   ocr: 'Documents', summarize: 'Documents', md_to_pdf: 'Documents',
   code_execute: 'Compute', calculator: 'Compute', data_convert: 'Compute',

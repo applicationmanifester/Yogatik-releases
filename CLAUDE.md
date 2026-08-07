@@ -140,3 +140,18 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - Run with pool:forks singleFork — parallel jsdom envs starve the runner.
 - `npm run lint` uses react/jsx-no-undef: plain no-undef does NOT catch `<Foo/>` with no
   import, which is how a ReactMarkdown crash reached production.
+
+## v3.2 — on-device + workspace
+- localLLM.js: WebLLM via esm.run CDN (no npm dep). Models: Llama-3.2-1B/3B, Qwen2.5-1.5B.
+  Weights (~750MB+) download ONLY after explicit consent in LocalModelPanel. Cached by the
+  browser => later sessions are offline. Provider id `local` (isLocal/noKey flags).
+  Tools + web are force-disabled for local: 1B models call tools badly.
+- Never in the fallback chain and never auto-selected (a 750MB download is not a fallback).
+- Projects (db v3): conversations + documents carry projectId; doc_search scopes to the
+  active project so a work PDF can't answer inside a personal project.
+- Compare mode revives ArenaView: one prompt, two models, channels `compare-A`/`compare-B`.
+- Command palette Ctrl+K (fuzzy subsequence match over commands/models/chats).
+- PWA share_target: Android share sheet -> query params consumed on startup; app shortcuts.
+- Usage meter: `usage_<YYYY-MM-DD>` per provider; estimated from chars (~4/token), labelled
+  approximate because streamed responses rarely carry usage data.
+- Terms gate: TERMS_VERSION in TermsModal; sign-in blocked until accepted (scroll + tick).

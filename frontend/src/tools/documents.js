@@ -3,7 +3,7 @@
  * Chunks are indexed with BM25 at query time; indexes are memoised per document.
  */
 
-import { getDocuments } from '../db'
+import { getDocuments, getSetting } from '../db'
 import { buildIndex, search } from '../retrieval'
 
 const indexCache = new Map() // docId -> { index, chunks, updatedAt }
@@ -40,7 +40,8 @@ export const docSearchTool = {
 
   async execute({ query, document, top_k = 5 }) {
     const k = Math.min(Math.max(1, top_k | 0), 10)
-    let docs = await getDocuments()
+    // Scope retrieval to the active project so unrelated files cannot answer.
+    let docs = await getDocuments(await getSetting('active_project', null))
     if (!docs.length) return { error: 'No documents uploaded yet. Ask the user to attach a file first.' }
     if (document) {
       const needle = document.toLowerCase()

@@ -41,7 +41,15 @@ ${webEnabled ? `RESEARCH — you have live internet access:
   rather than your priors, and quote figures and dates exactly as they appear.
 - Cite sources inline as [n] matching the numbered pages you were given, and note when
   sources disagree or when the information looks outdated.
-- If research returns nothing useful, say so plainly instead of guessing.`
+- If research returns nothing useful, say so plainly instead of guessing.
+- Prefer the specialised source over a general search when one fits: wikipedia for
+  definitions and background, scholar for research claims and evidence, stackoverflow
+  for error messages and API usage, hackernews for practitioner opinion, archive for
+  dead or paywalled links, books for literature, dictionary for word meanings.
+  They return structured, attributable data instead of scraped page text.
+- Live data that cannot come from memory: package_info for library versions and whether
+  a project is still maintained, currency for exchange rates, geocode for coordinates,
+  earthquake for recent seismic events, gutenberg for public-domain full texts.`
     : `Web access is currently disabled by the user. Answer from your own knowledge, and
 say clearly when something may be out of date or when you are unsure.`}
 

@@ -4,6 +4,8 @@ import {
   ScanLine, QrCode, FileText, AudioLines, Hash, Regex, ArrowLeftRight,
   Palette, Search, GitCompare, Ruler, MapPin, Rss, Eye, FileDown, Volume2,
   Telescope, FileSearch, Files, ExternalLink,
+  BookOpen, GraduationCap, MessageSquare, Archive, BookA, Library,
+  Package, BookMarked, Banknote, Activity,
 } from 'lucide-react'
 
 export const TOOL_ICONS = {
@@ -11,6 +13,10 @@ export const TOOL_ICONS = {
   calculator: Calculator, translate: Languages, youtube: Youtube,
   web_extract: Link, web_search: Search, deep_research: Telescope,
   doc_search: FileSearch, doc_list: Files, chart: Image, tts: Volume2,
+  package_info: Package, gutenberg: BookMarked, geocode: MapPin,
+  currency: Banknote, earthquake: Activity,
+  wikipedia: BookOpen, scholar: GraduationCap, stackoverflow: Code,
+  hackernews: MessageSquare, archive: Archive, dictionary: BookA, books: Library,
   ocr: ScanLine, qr_generate: QrCode, qr_read: QrCode,
   pdf_extract: FileText, stt: AudioLines, summarize: FileText,
   rss_feed: Rss, hash: Hash, regex: Regex, data_convert: ArrowLeftRight,
