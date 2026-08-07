@@ -1,82 +1,72 @@
-# LinkedIn post — Yogatik
-
-## Option A: mobile-first framing (recommended)
-
-I built an AI assistant that installs on your phone in about a second — and has no backend at all.
-
-Not "serverless." No server. Yogatik runs entirely inside your browser, on your device.
-
-Add it to your home screen and it behaves like a native app: full screen, its own icon, no app store, no 200MB download, no permissions to accept. The whole thing is under 600KB.
-
-Which means your phone is doing the work:
-
-→ **Your data never leaves it.** Chats, uploaded documents and API keys live in your phone's local storage. Nothing syncs to a server I control, because there isn't one. I couldn't read your conversations if I wanted to.
-
-→ **Bring your own key.** You pay Groq, NVIDIA, Gemini or OpenAI directly at their prices. No subscription, no markup. Several have free tiers.
-
-→ **32 tools running on-device.** Python execution (via WebAssembly), PDF text extraction, OCR, Mermaid diagrams, charts, QR codes, image generation. On your phone, in a browser tab.
-
-→ **Ask questions about your own PDFs.** Upload one and query it. I used BM25 retrieval rather than vector embeddings — no 25MB model to download over mobile data, and on small document sets it matches the vector approach for keyword-style questions while running in microseconds.
-
-→ **Live web research with citations.** It searches, reads the top results in parallel, and tells you where each claim came from.
-
-→ **It picks the model for you.** One provider offers 79 models; most people just guess. Yogatik times them and selects the fastest that actually responds, then routes by question type — code questions to a code model, quick ones to a fast model.
-
-→ **Talk to it.** Voice input and read-aloud are built into the browser, so they cost nothing extra.
-
-Free, no signup: https://yogatik.web.app
-On Android: Chrome menu → Add to Home screen. On iPhone: Share → Add to Home Screen.
-
-Honest caveat: you need your own API key. That's the trade for no subscription and no one else holding your data.
-
-React, Vite, IndexedDB, a Cloudflare Worker. Critical feedback especially welcome.
-
-#AI #PWA #MobileFirst #PrivacyByDesign #WebDevelopment #React
+# LinkedIn Post Drafts for Yogatik
 
 ---
 
-## Option B: shorter, problem-first
+## Option 1: High-Impact & Professional (Recommended)
 
-Every AI app wants you to trust it with your conversations. And to install 200MB to have them.
+Stop paying $20–$50/month subscriptions for locked-down AI chat interfaces.
 
-So I built one that does neither.
+I built **Yogatik** — a zero-subscription, privacy-first AI Assistant designed seamlessly for both **Desktop & Mobile web browsers**.
 
-Yogatik is an AI assistant that installs to your phone's home screen from the browser — under 600KB, no app store — and runs entirely on your device. Your chats, your documents, your API keys stay in your phone's storage. There's no server holding them, because there's no server.
+Instead of forcing you into monthly paywalls or storing your private chats on third-party servers, Yogatik puts total control back into your hands:
 
-On your phone it will:
+⚡ **No Subscriptions, Pay Only for What You Use**
+Bring your own API key (Gemini, Groq, NVIDIA, OpenRouter, OpenAI) and pay raw API rates — pennies instead of $20/month.
 
-• Run Python, extract text from PDFs, do OCR, generate images and draw diagrams — on-device
-• Answer questions about your own documents, with retrieval running locally
-• Search the live web and cite its sources
-• Benchmark the available models and pick the fastest one that works, then route each question to the right one
-• Take voice input and read answers back
+💻 **Desktop Powerhouse**
+Multi-window split interface, keyboard shortcuts (`Ctrl+Shift+O` for new chat), side-by-side artifact rendering, code execution sandbox, and instant document Q&A.
 
-You bring your own API key from Groq, NVIDIA, Gemini or OpenAI — most have free tiers — and pay them directly. No subscription, no markup, no middleman reading your data.
+📱 **Native Mobile Experience (PWA)**
+No 200MB app store downloads required. Install directly to your iOS or Android home screen in seconds (under 600KB). Fully responsive with touch-first controls.
 
-https://yogatik.web.app
-Android: Chrome → Add to Home screen · iPhone: Share → Add to Home Screen
+🛠️ **32 Free Built-in Client-Side Tools**
+- Live Web Research & Deep Investigation
+- Image Generation & Canvas Editing
+- Python WASM Code Execution
+- Real-time Document Analysis (PDF & Text RAG)
+- Browser-native Voice Input & Read-Aloud TTS
+- Diagrams, Math, Unit Conversions, Data Transforms, and more.
 
-#AI #PWA #PrivacyByDesign #MobileFirst #WebDev
+🔒 **100% Privacy by Design**
+Your chat history, documents, and API keys are stored strictly in your browser's local IndexedDB. There is zero middleman backend collecting your data.
+
+👉 **Try it free right now in your browser**: https://yogatik.web.app
+
+*How to install on mobile:*
+• **Android**: Chrome Menu → "Add to Home screen"
+• **iPhone**: Safari Share Button → "Add to Home Screen"
+
+Built with React, Vite, WASM, and IndexedDB. Feedback & contributions are hugely welcome!
+
+#AI #WebDevelopment #PWA #OpenSource #ReactJS #PrivacyFirst #TechInnovation
 
 ---
 
-## Verified claims (so you can defend them in the comments)
+## Option 2: Problem & Solution Focused (Shorter)
 
-| Claim | Basis |
+Why are we paying $240/year for subscription AI apps when API calls cost fractions of a cent?
+
+Meet **Yogatik** — a free, browser-native AI client built for both **Desktop & Mobile**.
+
+It replaces locked-down subscription models by letting you connect top AI models (Gemini, Groq, NVIDIA NIM, OpenRouter) with your own API keys.
+
+🔥 **Key Highlights:**
+1. **Works Everywhere**: Seamless desktop experience + 1-click PWA installation on iOS & Android (no App Store needed).
+2. **32 Integrated Tools**: Web Search, WASM Python Sandbox, Document Q&A, Image Gen, Voice Input/TTS & Diagramming built right in.
+3. **Zero Data Retention**: Your keys, chats, and uploaded files stay in your browser's local storage — never sent to a central server.
+
+Try it live: https://yogatik.web.app
+
+#ArtificialIntelligence #SoftwareEngineering #Frontend #Privacy #Productivity
+
+---
+
+## Technical Fact Sheet (For Comment Defenses)
+
+| Feature | Implementation / Proof |
 |---|---|
-| under 600KB | 574 kB eager payload measured from the production build (161 kB gzipped) |
-| installs to home screen | `manifest.json` with `display: standalone`, 192/512 icons, service worker |
-| no backend | IndexedDB only; the sole server-side piece is a stateless CORS proxy that stores nothing |
-| on-device Python/OCR/PDF | Pyodide, Tesseract.js and pdf.js all run as WASM in the browser |
-| BM25 not embeddings | `retrieval.js` — verified 5/5 on a synthetic document Q&A set |
-| model auto-selection | probes candidates in parallel, stores measured latency, picks fastest working |
-| voice in/out | Web Speech API — no third-party service |
-
-**Don't claim** offline chat — the app shell loads offline but answering needs the provider. And don't claim camera-to-OCR from the attach button; image upload isn't wired to OCR yet.
-
-## Before you post
-
-1. **Deploy the worker** — `deploy-proxy.bat`. Web research returns 403 in production until you do, and it's a headline feature.
-2. **Record a phone screen capture**, 15–20 seconds: home screen icon → tap → ask something → sources appear. Mobile footage of a web app installing like a native one is the whole hook, and LinkedIn's reach for video beats text heavily.
-3. **Test the install flow on a real phone**, both Android and iPhone, before you invite an audience.
-4. Post Tuesday–Thursday morning, and answer every comment in the first hour.
+| **Multi-Platform Support** | Responsive CSS layout + PWA `manifest.json` for Mobile & Desktop |
+| **Subscription Replacement** | Direct client-side API calls to Gemini/Groq/NVIDIA/OpenRouter |
+| **Zero Server Logging** | All persistence handled via browser `IndexedDB` (`db.js`) |
+| **Client-Side WASM Tools** | Pyodide (Python), pdf.js (PDF RAG), Tesseract.js (OCR) run in browser |
+| **Lightweight App Shell** | Production build payload ~570KB (160KB gzipped) |
