@@ -315,6 +315,13 @@ export async function streamChat({
 
     if (!resp.ok) {
       const err = await resp.text()
+      if (resp.status === 404) {
+        onError?.(new Error(
+          `The provider does not serve "${model || prov.default}" on its chat endpoint (404). ` +
+          `It may be a base (non-chat) model or recently withdrawn. Pick another model.`
+        ))
+        return
+      }
       if ([504, 520, 522, 524].includes(resp.status)) {
         onError?.(new Error(
           `The provider did not respond in time (${resp.status}). Large models on free tiers ` +

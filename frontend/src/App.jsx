@@ -13,6 +13,7 @@ import { Modal } from './components/Modal'
 import { TermsModal, TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 import { LocalModelPanel } from './components/LocalModelPanel'
 import { CommandPalette } from './components/CommandPalette'
+import { ModelPicker } from './components/ModelPicker'
 import { ArenaView } from './components/ArenaView'
 import { DEFAULT_LOCAL_MODEL } from './localLLM'
 
@@ -1142,36 +1143,19 @@ export default function App() {
           </div>
 
           <label>Model {providerModels.length > 0 && <span style={{opacity:.6}}>({providerModels.length})</span>}</label>
-          <input list="model-options" value={model} onChange={e => chooseModel(e.target.value)}
-            placeholder={`Auto (${models[provider]?.default_model || 'default'}) — type to filter`}
-            style={{ width: '100%', padding: '6px 8px', background: 'var(--bg-input)', border: '1px solid var(--border)',
-              borderRadius: '6px', color: 'var(--text-primary)', fontSize: '12px', marginBottom: '8px' }} />
+          <ModelPicker
+            models={providerModels}
+            value={model}
+            measured={measuredModels}
+            formatLatency={formatLatency}
+            disabled={!models[provider]?.available}
+            onChange={chooseModel} />
+
           <button className="small-btn auto-pick" onClick={() => handleAutoPick()}
             disabled={autoPicking || !models[provider]?.available}
             title="Measure a few models and select the fastest that works">
             <Zap size={11} /> {autoPicking ? (autoPickMsg || 'Testing…') : 'Auto-pick fastest'}
           </button>
-          <datalist id="model-options">
-            {providerModels.map(m => <option key={m} value={m} />)}
-          </datalist>
-          {measured.length > 0 && (
-            <div className="measured-models">
-              {measured.slice(0, 5).map(m => (
-                <button key={m.model} className={`measured-chip ${m.model === model ? 'active' : ''}`}
-                  onClick={() => chooseModel(m.model)} title={`Measured ${formatLatency(m.latencyMs)}`}>
-                  {m.latencyMs < 2000 ? '⚡' : m.latencyMs > 15000 ? '🐌' : '•'}
-                  <span className="measured-name">{m.model.split('/').pop()}</span>
-                  <span className="measured-ms">{formatLatency(m.latencyMs)}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {model && !providerModels.includes(model) && (
-            <div style={{ fontSize: 10, color: 'var(--accent)', marginTop: -4, marginBottom: 8 }}>
-              Not in this provider's catalog — will be sent as-is.
-              <button className="small-btn" style={{ marginLeft: 6 }} onClick={() => chooseModel('')}>Reset</button>
-            </div>
-          )}
 
           <label>Temperature: {temperature}</label>
           <input type="range" min="0" max="1" step="0.1" value={temperature} onChange={e => setTemperature(parseFloat(e.target.value))} />

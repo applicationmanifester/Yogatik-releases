@@ -446,10 +446,19 @@ body {
 .auth-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* Conversation item with delete */
-.conversation-item { display: flex; align-items: center; position: relative; }
-.conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv-delete { opacity: 0; position: absolute; right: 4px; }
-.conversation-item:hover .conv-delete, .conversation-item.active .conv-delete { opacity: 1; }
+.conversation-item { display: flex; align-items: center; gap: 6px; }
+.conv-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Both actions live in the flex row — no absolute positioning, so they cannot
+   overlap each other or the title. */
+.conv-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; opacity: 0; }
+.conversation-item:hover .conv-actions,
+.conversation-item.active .conv-actions,
+.conv-actions:focus-within { opacity: 1; }
+@media (hover: none) { .conv-actions { opacity: .7; } }
+.conv-actions .icon-btn { padding: 3px; border-radius: 5px; line-height: 0; }
+.conv-actions .icon-btn:hover { background: var(--bg-input, #262626); }
+/* Rename input must not push the buttons out of the row. */
+.conv-rename { flex: 1 1 auto; min-width: 0; }
 
 /* Stop button */
 .stop-btn {
@@ -866,7 +875,7 @@ body {
   flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
   color: var(--text-primary, #eee); font-size: 12px;
 }
-.conv-actions { display: flex; gap: 2px; flex-shrink: 0; }
+
 .conv-rename {
   flex: 1; min-width: 0; padding: 2px 4px; font-size: 12px;
   border: 1px solid var(--accent, #ff6b35); border-radius: 4px;
@@ -929,7 +938,11 @@ body {
 .conversation-item {
   display: flex; align-items: center; gap: 6px;
 }
-.conversation-item .conv-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-item .conv-title {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 .conversation-item.active { border-left: 3px solid var(--accent); padding-left: 9px; }
 
 /* Thin, unobtrusive scrollbars that only show on hover */
@@ -1217,3 +1230,55 @@ body {
   border: 1px solid var(--border, #333); border-radius: 6px;
 }
 .small-btn.active { border-color: var(--accent, #ff6b35); color: var(--accent, #ff6b35); }
+
+/* ── Model picker ── */
+.model-picker { position: relative; margin-bottom: 8px; }
+.model-trigger {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 7px 9px; font-size: 12px; cursor: pointer; text-align: left;
+  background: var(--bg-input, #1e1e1e); color: var(--text-primary, #eee);
+  border: 1px solid var(--border, #333); border-radius: 6px;
+}
+.model-trigger:hover:not(:disabled) { border-color: var(--accent, #ff6b35); }
+.model-trigger:disabled { opacity: .5; cursor: not-allowed; }
+.model-current { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-trigger .chev { flex-shrink: 0; transition: transform var(--transition, .15s); }
+.model-trigger .chev.open { transform: rotate(180deg); }
+
+.model-panel {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 60;
+  display: flex; flex-direction: column; max-height: 320px;
+  background: var(--bg-secondary, #1a1a1a); border: 1px solid var(--border, #333);
+  border-radius: 8px; box-shadow: 0 10px 32px rgba(0,0,0,.45); overflow: hidden;
+}
+.model-search {
+  display: flex; align-items: center; gap: 6px; padding: 7px 9px;
+  border-bottom: 1px solid var(--border, #333); color: var(--text-muted, #888);
+}
+.model-search input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+  color: var(--text-primary, #eee); font-size: 12px;
+}
+.model-list { overflow-y: auto; padding: 4px; overscroll-behavior: contain; }
+.model-option {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 6px 7px; border: 0; border-radius: 6px; cursor: pointer;
+  background: transparent; color: var(--text-secondary, #bbb);
+  font-size: 11.5px; text-align: left;
+}
+.model-option.hover { background: var(--bg-tertiary, #2a2a2a); }
+.model-option.active { color: var(--text-primary, #eee); }
+.model-tick { width: 11px; flex-shrink: 0; color: var(--accent, #ff6b35); }
+.model-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-ms {
+  display: flex; align-items: center; gap: 2px; flex-shrink: 0;
+  font-size: 9.5px; color: var(--text-muted, #888);
+}
+.model-ms.fast { color: #2ecc71; }
+.model-ms.slow { color: #ffb26b; }
+.model-ms.failed { color: #ff6b6b; }
+.model-empty { padding: 14px 10px; font-size: 11px; color: var(--text-muted, #888); text-align: center; }
+.model-foot {
+  padding: 5px 9px; border-top: 1px solid var(--border, #333);
+  font-size: 9.5px; color: var(--text-muted, #888);
+}
