@@ -781,7 +781,7 @@ export default function App() {
   const startLive = async () => {
     const cfg = await getLiveConfig()
     if (!cfg.available) {
-      setErrorModalMsg('Live needs a model to talk to.\n\nAdd a key for any provider in Settings, or add a Gemini key for the realtime engine (lowest latency, true interruption). Free Gemini keys: aistudio.google.com/apikey')
+      setErrorModalMsg('Live needs a model to talk to.\n\nSelect a provider with a saved API key in Settings, or use the On-device model (no key needed). Live works with any provider — Groq, NVIDIA, OpenRouter, OpenAI, Gemini, or local.')
       return
     }
     setLiveConfig({ ...cfg, persona: getSystemPrompt() })

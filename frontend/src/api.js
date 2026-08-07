@@ -278,31 +278,35 @@ export async function getVisionStatus(providerId, model) {
 }
 
 /**
- * Pick the best live engine available.
- * Gemini's realtime socket when there is a Gemini key (true duplex, ~0.8s);
- * otherwise the cascade on the active provider, which needs no special API.
+ * Pick the live engine based on the user's active provider.
+ * If the active provider is Gemini, use the native realtime socket (true duplex, ~0.8s);
+ * otherwise use the cascade engine (recognition → agent → synthesis) which works
+ * with every provider including on-device local models.
  */
 export async function getLiveConfig() {
   const prefs = await db.getSetting('chat_prefs', {})
-  const geminiKey = await db.getSetting('apikey_gemini')
   const disabledTools = await getDisabledTools()
 
-  if (geminiKey && prefs.live_engine !== 'cascade') {
+  const provider = await getActiveProvider()
+  const apiKey = await db.getSetting(`apikey_${provider}`)
+  const model = await db.getSetting(`model_${provider}`, '')
+  const isLocal = !!getLLMProviders()[provider]?.isLocal
+
+  if (!apiKey && !isLocal) {
+    return { available: false, reason: 'no-key' }
+  }
+
+  // Gemini native realtime: only when the user has actively chosen Gemini.
+  if (provider === 'gemini' && apiKey && prefs.live_engine !== 'cascade') {
     return {
-      available: true, engine: 'gemini', provider: 'gemini', apiKey: geminiKey,
+      available: true, engine: 'gemini', provider: 'gemini', apiKey,
       model: prefs.live_model || LIVE_MODELS[0],
       voice: prefs.live_voice || 'Puck',
       modelCanSee: true, disabledTools,
     }
   }
 
-  const provider = await getActiveProvider()
-  const apiKey = await db.getSetting(`apikey_${provider}`)
-  const model = await db.getSetting(`model_${provider}`, '')
-  const isLocal = !!getLLMProviders()[provider]?.isLocal
-  if (!apiKey && !isLocal) {
-    return { available: false, reason: 'no-key' }
-  }
+  // Universal cascade: works with Groq, NVIDIA, OpenRouter, OpenAI, on-device, and custom providers.
   return {
     available: true, engine: 'cascade', provider, apiKey, model,
     voice: prefs.live_voice_name || null,
