@@ -334,56 +334,64 @@ export async function removeProvider(id) {
   return { success: true }
 }
 
+/** Status is per provider AND per model — a pass only vouches for one model. */
+const statusKey = (id, model) => `status_${id}::${model || 'default'}`
+const STATUS_TTL = 30 * 60 * 1000
+
 /**
  * Real connection test: a 1-token completion through the same path chat uses,
- * so a pass genuinely means "chat will work" — including the proxy hop.
- * Result is persisted so the UI can show connection state after a reload.
+ * so a pass genuinely means "chat will work with this model" — proxy included.
  */
-export async function testProvider(id) {
+export async function testProvider(id, modelOverride) {
   const apiKey = await db.getSetting(`apikey_${id}`)
-  if (!apiKey) {
-    const res = { success: false, error: 'No API key set' }
-    await db.setSetting(`status_${id}`, { ...res, at: Date.now() })
+  await loadCustomProviders()
+  const p = getLLMProviders()[id]
+  const model = modelOverride || await db.getSetting(`model_${id}`) || p?.default || p?.models?.[0]
+
+  const remember = async (res) => {
+    await db.setSetting(statusKey(id, model), { ...res, model, at: Date.now() })
     return res
   }
 
-  await loadCustomProviders()
-  const p = getLLMProviders()[id]
+  if (!apiKey) return remember({ success: false, error: 'No API key set' })
   if (!p) return { success: false, error: 'Provider not found' }
 
-  // Needs a proxy but none is configured — say so instead of faking success.
   if (p.needsProxy && !proxyAvailable()) {
-    const res = {
+    return remember({
       success: false,
       error: 'This provider needs a CORS proxy. Deploy the Cloudflare Worker and set VITE_LLM_PROXY_BASE, or pick a provider that works directly from the browser.',
-    }
-    await db.setSetting(`status_${id}`, { ...res, at: Date.now() })
-    return res
+    })
   }
 
   const started = performance.now()
   try {
-    const model = await db.getSetting(`model_${id}`) || p.default || p.models?.[0]
     const out = await chatComplete({
       provider: id, apiKey, model,
       messages: [{ role: 'user', content: 'ping' }],
       temperature: 0,
       maxTokens: 1,
     })
-    const res = {
+    return remember({
       success: true,
       status: 'ok',
       model: out?.model || model,
       latencyMs: Math.round(performance.now() - started),
       response: 'Connected',
-    }
-    await db.setSetting(`status_${id}`, { ...res, at: Date.now() })
-    return res
+    })
   } catch (e) {
-    const res = { success: false, error: friendlyProviderError(e.message) }
-    await db.setSetting(`status_${id}`, { ...res, at: Date.now() })
-    return res
+    return remember({
+      success: false,
+      error: friendlyProviderError(e.message),
+      latencyMs: Math.round(performance.now() - started),
+    })
   }
+}
+
+/** Test only if we have no fresh result for this exact provider+model. */
+export async function ensureTested(id, model) {
+  const cached = await db.getSetting(statusKey(id, model))
+  if (cached && Date.now() - cached.at < STATUS_TTL) return cached
+  return testProvider(id, model)
 }
 
 /** Turn raw provider HTTP errors into something a user can act on. */
@@ -396,36 +404,27 @@ function friendlyProviderError(msg = '') {
   return msg.slice(0, 200)
 }
 
-export async function getProviderStatus(id) {
-  return db.getSetting(`status_${id}`)
+export async function getProviderStatus(id, model) {
+  return db.getSetting(statusKey(id, model))
 }
 
-/** Connection state for every known provider, for the settings UI. */
+/** Connection state for every provider, scoped to its currently selected model. */
 export async function getAllProviderStatus() {
   await loadCustomProviders()
   const out = {}
-  for (const id of Object.keys(getLLMProviders())) {
+  for (const [id, p] of Object.entries(getLLMProviders())) {
     const hasKey = !!(await db.getSetting(`apikey_${id}`))
-    const status = await db.getSetting(`status_${id}`)
-    const selected = await db.getSetting(`model_${id}`, '')
-
-    // A pass only vouches for the model it was run against. Selecting a
-    // different model makes the result stale — reporting it as "Connected"
-    // implied the new model was verified when it had never been called.
-    const testedModel = status?.model
-    const stale = !!(status?.success && selected && testedModel && selected !== testedModel)
-
+    const selected = await db.getSetting(`model_${id}`) || p.default || p.models?.[0] || ''
+    const status = await db.getSetting(statusKey(id, selected))
     out[id] = {
       hasKey,
+      selected,
       state: !hasKey ? 'no-key'
-        : stale ? 'stale'
-        : status?.success ? 'connected'
-        : status ? 'failed' : 'untested',
+        : !status ? 'untested'
+        : status.success ? 'connected' : 'failed',
       error: status?.success ? null : status?.error || null,
       latencyMs: status?.latencyMs,
-      model: testedModel,
-      selected,
-      stale,
+      model: status?.model || selected,
       at: status?.at,
     }
   }

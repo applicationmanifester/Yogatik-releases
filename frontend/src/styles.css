@@ -990,3 +990,5 @@ body {
   border: 1px solid rgba(255, 178, 107, .3); font-size: 11px;
 }
 .conn-stale .conn-dot { background: #f1c40f; }
+.conn-testing .conn-dot { background: #4aa3ff; animation: conn-pulse 1s ease-in-out infinite; }
+@keyframes conn-pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }

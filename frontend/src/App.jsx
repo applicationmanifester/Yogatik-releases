@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref } from './api'
+import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
@@ -63,6 +63,7 @@ export default function App() {
   const [docs, setDocs] = useState([])
   const [convQuery, setConvQuery] = useState('')
   const [providerStatus, setProviderStatus] = useState({})
+  const [verifying, setVerifying] = useState(false)
   const [toolPrefs, setToolPrefs] = useState([])
   const [showToolPicker, setShowToolPicker] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(() => window.innerWidth > 900)
@@ -90,10 +91,7 @@ export default function App() {
   }, [])
   const chooseModel = useCallback((m) => {
     setModel(m)
-    setActiveModel(provider, m)
-      .then(getAllProviderStatus)
-      .then(setProviderStatus)
-      .catch(() => {})
+    setActiveModel(provider, m).catch(() => {})
   }, [provider])
 
   // Chat preferences persist across reloads like provider and model do.
@@ -168,6 +166,28 @@ export default function App() {
   useEffect(() => {
     refreshModels()
   }, [provider])
+
+  // Verify the *selected* model automatically. Asking the user to remember a
+  // Test button meant a green badge could describe a model they had since
+  // changed away from.
+  useEffect(() => {
+    if (!models[provider]?.available) return
+    const target = model || models[provider]?.default_model
+    if (!target) return
+
+    let cancelled = false
+    const t = setTimeout(async () => {
+      setVerifying(true)
+      try {
+        await ensureTested(provider, target)   // cached for 30 min per model
+        if (!cancelled) setProviderStatus(await getAllProviderStatus())
+      } finally {
+        if (!cancelled) setVerifying(false)
+      }
+    }, 500)   // debounce: typing in the model box shouldn't fire a test per keystroke
+
+    return () => { cancelled = true; clearTimeout(t); setVerifying(false) }
+  }, [provider, model, models[provider]?.available, models[provider]?.default_model])
 
   useEffect(() => {
     refreshModels()
@@ -356,7 +376,7 @@ export default function App() {
 
   const retestProvider = async (pid) => {
     setSavingApiKey(pid)
-    await testProvider(pid).catch(() => {})
+    await testProvider(pid, model || undefined).catch(() => {})
     setProviderStatus(await getAllProviderStatus())
     setSavingApiKey(null)
     refreshModels()
@@ -699,25 +719,24 @@ export default function App() {
 
           {(() => {
             const st = providerStatus[provider] || {}
-            const label = {
-              connected: 'Connected', failed: 'Not connected',
-              stale: 'Not tested with this model',
-              untested: 'Key saved — not verified', 'no-key': 'No API key',
-            }[st.state] || 'No API key'
+            const label = verifying ? 'Checking model…' : ({
+              connected: 'Ready', failed: 'Not working',
+              untested: 'Key saved — checking…', 'no-key': 'No API key',
+            }[st.state] || 'No API key')
             return (
-              <div className={`conn-status conn-${st.state || 'no-key'}`}>
+              <div className={`conn-status conn-${verifying ? 'testing' : (st.state || 'no-key')}`}>
                 <span className="conn-dot" />
                 <span className="conn-label">{label}</span>
-                {st.state === 'connected' && st.latencyMs != null && (
-                  <span className="conn-meta">{st.model} · {formatLatency(st.latencyMs)}</span>
-                )}
-                {st.state === 'stale' && (
-                  <span className="conn-meta">last tested: {st.model}</span>
+                {!verifying && st.state === 'connected' && st.latencyMs != null && (
+                  <span className="conn-meta">
+                    {formatLatency(st.latencyMs)}
+                    {st.latencyMs > 15000 ? ' — very slow' : ''}
+                  </span>
                 )}
                 {st.hasKey && (
                   <button className="small-btn" onClick={() => retestProvider(provider)}
-                    disabled={savingApiKey === provider} aria-label="Test connection">
-                    {savingApiKey === provider ? 'Testing…' : 'Test'}
+                    disabled={savingApiKey === provider || verifying} aria-label="Re-check this model">
+                    Retest
                   </button>
                 )}
               </div>
