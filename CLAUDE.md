@@ -1,13 +1,15 @@
 # Yogatik — Project Knowledge
 
-## Architecture (v2 — Serverless)
+## Architecture (v3 — Serverless + edge proxy)
 - **Frontend-only**: React 18 + Vite (PWA, mobile-first, zero backend)
 - **DB**: IndexedDB via Dexie (conversations, settings, API keys — all in browser)
 - **LLM**: Direct API calls to Groq/OpenRouter/OpenAI from browser
 - **Agent**: OpenAI function-calling loop — LLM decides tools → browser executes → results → final answer
 - **Tools**: 28 browser-native tools (Pyodide, Tesseract.js, Mermaid, Web Speech API, Canvas, etc.)
 - **PWA**: Service worker, manifest, installable on mobile + desktop
-- **Deploy**: Static site — Vercel/Netlify/GitHub Pages (free)
+- **Proxy**: Cloudflare Worker (cors-proxy/) for non-CORS providers (NVIDIA only). Vite plugin serves /api/llm-proxy in dev. Client picks via VITE_LLM_PROXY_BASE.
+- **Auth**: Firebase (lazy-loaded). API keys sync to Firestore AES-GCM encrypted (crypto.js, PBKDF2 passphrase, in-memory only). No passphrase = local-only.
+- **Deploy**: Firebase Hosting. `deploy-proxy.bat` (worker) then `deploy.bat` (build + hosting + rules)
 
 ## File Structure
 ```
@@ -18,7 +20,8 @@ AI ChatBot/
 │   │   ├── sw.js              # Service worker
 │   │   └── icon-*.svg         # App icons
 │   ├── src/
-│   │   ├── App.jsx            # UI: chat, tools, voice, TTS, PWA install
+│   │   ├── App.jsx            # Shell only (~630 lines) — chat, voice, PWA
+│   │   ├── crypto.js          # AES-GCM key encryption (WebCrypto)
 │   │   ├── api.js             # API shim (IndexedDB + agent, no backend)
 │   │   ├── db.js              # IndexedDB via Dexie
 │   │   ├── llm.js             # Direct LLM API client (streaming + function calling)
@@ -40,23 +43,36 @@ AI ChatBot/
 │   │   │   ├── pdfExtract.js  # pdf.js
 │   │   │   ├── diagram.js     # Mermaid.js
 │   │   │   ├── mdToPdf.js     # html2pdf.js
-│   │   │   ├── webExtract.js  # CORS proxy
+│   │   │   ├── webExtract.js  # via tools/http.js proxyFetch
+│   │   │   ├── webSearch.js   # Brave / DuckDuckGo
+│   │   │   ├── http.js        # shared proxyFetch (never relays credentials publicly)
 │   │   │   └── ... (28 total)
 │   │   └── components/
-│   │       ├── CodeBlock.jsx
-│   │       ├── ArtifactPanel.jsx
-│   │       └── ArenaView.jsx
+│   │       ├── CodeBlock.jsx, ArtifactPanel.jsx, ArenaView.jsx
+│   │       ├── ErrorBoundary.jsx, YogatikLogo.jsx
+│   │       ├── ToolResultCard.jsx (+ TOOL_ICONS), MessageBubble.jsx
+│   │       └── AuthModal.jsx, ProviderModal.jsx, AdModal.jsx
 │   ├── index.html
 │   ├── package.json
 │   └── vite.config.js
+├── cors-proxy/            # Cloudflare Worker (wrangler deploy)
+├── functions/             # Firebase Fn proxy — unused (needs Blaze), kept as fallback
 ├── backend/               # Legacy — kept for reference, not required
 └── CLAUDE.md
 ```
 
 ## Agent Pipeline (browser-native)
-User message → LLM (function calling) → tool execution (browser) → LLM (with results) → final response
-- Max 5 tool rounds per message
-- Sliding window context (20 msgs)
+User message → LLM (function calling) → tools run **in parallel** per round → LLM (with results) → final response
+- Max 5 tool rounds; system prompt injects today's date + research rules
+- Sliding window context (20 msgs); sources deduped & surfaced via onSources
+- webEnabled=false → prompt tells model web is off (UI toggle: Web Research)
+
+## Retrieval (RAG replacement)
+- retrieval.js: BM25 + light stemmer + boundary-aware chunking (1200/200). No embeddings —
+  no 25MB model download; beats vectors on small keyword-y corpora, runs in µs
+- Upload → extractText (pdf.js / text) → chunk → Dexie `documents` table
+- ≤12k chars: injected inline into the prompt. >12k: doc_search retrieves top-k passages
+- Verified 5/5 on a synthetic handbook Q&A set
 
 ## LLM Providers (browser-direct)
 - **groq**: Free tier, blazing fast — console.groq.com
@@ -64,8 +80,8 @@ User message → LLM (function calling) → tool execution (browser) → LLM (wi
 - **openai**: GPT-4o etc — platform.openai.com
 - API key stored in IndexedDB (never leaves browser)
 
-## Browser-Native Tools (28 — all free, no backend)
-weather (Open-Meteo), calculator (Math.*), image_generate (Pollinations), code_execute (Pyodide WASM), tts (Web Speech), stt (Web Speech), translate (MyMemory), chart (Canvas), ocr (Tesseract.js), qr_generate/qr_read (qrcode/jsQR), pdf_extract (pdf.js), summarize (extractive), rss_feed (CORS proxy), hash (Web Crypto), regex (native), data_convert (native), color_palette (Canvas), whois (RDAP), diagram (Mermaid), audio_edit (Web Audio), image_info (Canvas), link_preview (CORS proxy), diff (native), unit_convert (native), ip_lookup (ip-api), md_to_pdf (html2pdf), web_extract (CORS proxy), youtube (noembed)
+## Browser-Native Tools (32 — all free, no backend)
+web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_research (search + parallel page reads, 1 call), doc_search/doc_list (BM25 over uploaded files), weather (Open-Meteo), calculator (Math.*), image_generate (Pollinations), code_execute (Pyodide WASM), tts (Web Speech), stt (Web Speech), translate (MyMemory), chart (Canvas), ocr (Tesseract.js), qr_generate/qr_read (qrcode/jsQR), pdf_extract (pdf.js), summarize (extractive), rss_feed (CORS proxy), hash (Web Crypto), regex (native), data_convert (native), color_palette (Canvas), whois (RDAP), diagram (Mermaid), audio_edit (Web Audio), image_info (Canvas), link_preview (CORS proxy), diff (native), unit_convert (native), ip_lookup (ip-api), md_to_pdf (html2pdf), web_extract (CORS proxy), youtube (noembed)
 
 ## Run
 - Dev: `cd frontend && npm install && npm run dev`
@@ -73,3 +89,12 @@ weather (Open-Meteo), calculator (Math.*), image_generate (Pollinations), code_e
 - Deploy: Upload `dist/` to Vercel/Netlify/GitHub Pages
 
 ## No backend required. No API keys required to start — user enters their own key in settings.
+
+## Gotchas (learned the hard way)
+- sw.js must skip non-GET + cross-origin, else it caches POSTs and fakes 408s
+- Never copy upstream content-length when re-streaming (truncates SSE)
+- Agent: ONE assistant msg with all tool_calls, then tool msgs (NVIDIA 400s otherwise)
+- NVIDIA /v1/models is public (no key); models cached 6h in IndexedDB, SWR
+- Public CORS relays only for credential-free requests — never with Authorization
+- 429/5xx retried w/ backoff + Retry-After in llm.js fetchWithRetry
+- Lint: npx eslint@9 w/ no-undef catches extraction mistakes vite build won't

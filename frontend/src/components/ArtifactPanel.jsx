@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Eye, Code as CodeIcon, X, Play, Download, Copy, Check } from 'lucide-react'
+import { Eye, Code as CodeIcon, X, Download, Copy, Check } from 'lucide-react'
 
 export function ArtifactPanel({ artifact, onClose }) {
   const [activeTab, setActiveTab] = useState('preview')

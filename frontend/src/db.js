@@ -6,6 +6,14 @@ db.version(1).stores({
   messages: '++id, conversationId, role, createdAt',
   settings: 'key',
 })
+// v2: documents for retrieval + compound index so message loads use an index
+// instead of scanning and sorting in memory.
+db.version(2).stores({
+  conversations: '++id, title, updatedAt',
+  messages: '++id, conversationId, role, createdAt, [conversationId+createdAt]',
+  settings: 'key',
+  documents: '++id, name, createdAt',
+})
 
 // ─── Settings (API keys, provider, theme, etc.) ───
 export async function getSetting(key, fallback = null) {
@@ -34,7 +42,7 @@ export async function getConversations() {
 export async function getConversation(id) {
   const conv = await db.conversations.get(id)
   if (!conv) return null
-  const messages = await db.messages.where('conversationId').equals(id).sortBy('createdAt')
+  const messages = await getMessages(id)
   return { ...conv, messages }
 }
 
@@ -61,7 +69,25 @@ export async function addMessage(conversationId, role, content, toolResults = nu
 }
 
 export async function getMessages(conversationId) {
-  return db.messages.where('conversationId').equals(conversationId).sortBy('createdAt')
+  return db.messages
+    .where('[conversationId+createdAt]')
+    .between([conversationId, Dexie.minKey], [conversationId, Dexie.maxKey])
+    .toArray()
+}
+
+// ─── Documents (local retrieval corpus) ───
+export async function addDocument(doc) {
+  const id = await db.documents.add({ ...doc, createdAt: Date.now() })
+  return { id, ...doc }
+}
+export async function getDocuments() {
+  return db.documents.orderBy('createdAt').reverse().toArray()
+}
+export async function getDocument(id) {
+  return db.documents.get(id)
+}
+export async function deleteDocument(id) {
+  return db.documents.delete(id)
 }
 
 // ─── Export ───

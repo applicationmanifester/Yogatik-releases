@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import SyntaxHighlighter from 'react-syntax-highlighter/dist/esm/prism-async'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Copy, Check, Play, Eye, Download } from 'lucide-react'
+import { Copy, Check, Eye } from 'lucide-react'
 
 export function CodeBlock({ children, className, onOpenArtifact }) {
   const [copied, setCopied] = useState(false)

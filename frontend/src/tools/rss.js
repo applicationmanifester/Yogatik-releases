@@ -1,4 +1,6 @@
 // RSS feed reader via CORS proxy
+import { proxyFetch } from './http'
+
 const PRESETS = {
   hackernews: 'https://hnrss.org/frontpage',
   bbc: 'https://feeds.bbci.co.uk/news/rss.xml',
@@ -17,8 +19,7 @@ export const rssTool = {
   },
   async execute({ url, count = 5 }) {
     const feedUrl = PRESETS[url.toLowerCase()] || url
-    const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`
-    const resp = await fetch(proxy)
+    const resp = await proxyFetch(feedUrl)
     const text = await resp.text()
     const parser = new DOMParser()
     const doc = parser.parseFromString(text, 'text/xml')

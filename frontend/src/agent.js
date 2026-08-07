@@ -7,11 +7,53 @@
 import { streamChat } from './llm'
 import { getToolSchemas, executeTool } from './tools/index'
 
-const SYSTEM_PROMPT = `You are Yogatik, a helpful AI assistant with access to powerful tools.
-You can generate images, execute Python code, create charts/diagrams, look up weather, translate text, read QR codes, extract web content, convert units, and more.
-When a user's request requires a tool, call the appropriate function. You can call multiple tools in sequence.
-Always provide clear, concise responses. Format with markdown when helpful.
-If a tool fails, explain what happened and suggest alternatives.`
+function buildSystemPrompt({ webEnabled }) {
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  })
+
+  return `You are Yogatik, a helpful AI assistant with access to powerful browser-native tools.
+Today's date is ${today}.
+
+You can generate images, execute Python, create charts and diagrams, look up weather,
+translate text, read QR codes, convert units, and more. Call tools whenever they help.
+You may request several tools at once — independent calls run in parallel, so batch them
+rather than asking for one, waiting, then asking for the next.
+
+${webEnabled ? `RESEARCH — you have live internet access:
+- Your training data is stale. For anything time-sensitive (news, prices, releases,
+  schedules, "latest"/"current"/"today", or any fact that could have changed), you MUST
+  call deep_research before answering. Do not answer such questions from memory, and do
+  not tell the user you cannot browse the web — you can.
+- deep_research runs a search AND reads the top pages in one call. Prefer it over
+  web_search + web_extract chains. Use web_search alone when you only need links, and
+  web_extract when the user gives you a specific URL.
+- Read what the pages actually say. Ground every factual claim in the retrieved text
+  rather than your priors, and quote figures and dates exactly as they appear.
+- Cite sources inline as [n] matching the numbered pages you were given, and note when
+  sources disagree or when the information looks outdated.
+- If research returns nothing useful, say so plainly instead of guessing.`
+    : `Web access is currently disabled by the user. Answer from your own knowledge, and
+say clearly when something may be out of date or when you are unsure.`}
+
+Format with markdown when it aids clarity. Be concise.
+If a tool fails, explain what happened and suggest an alternative.`
+}
+
+/** Tools that surface citable web sources */
+const SOURCE_TOOLS = new Set(['deep_research', 'web_search', 'web_extract', 'link_preview'])
+
+function collectSources(result) {
+  if (!result || typeof result !== 'object') return []
+  const out = []
+  if (Array.isArray(result.sources)) out.push(...result.sources)
+  if (Array.isArray(result.results)) out.push(...result.results)
+  if (Array.isArray(result.pages)) out.push(...result.pages)
+  if (result.url) out.push({ title: result.title || result.url, url: result.url })
+  return out
+    .filter(s => s?.url)
+    .map(s => ({ title: s.title || s.url, url: s.url, snippet: s.snippet }))
+}
 
 /**
  * Run the agent loop.
@@ -33,11 +75,11 @@ If a tool fails, explain what happened and suggest alternatives.`
  */
 export async function runAgent({
   provider, apiKey, model, history = [], userMessage,
-  toolsEnabled = true, temperature = 0.7, signal,
-  onToken, onStatus, onToolStart, onToolResult, onDone, onError,
+  toolsEnabled = true, webEnabled = true, temperature = 0.7, signal,
+  onToken, onStatus, onToolStart, onToolResult, onDone, onError, onSources,
 }) {
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: buildSystemPrompt({ webEnabled: toolsEnabled && webEnabled }) },
     // Sliding window: last 20 messages, max ~6k chars
     ...history.slice(-20).map(m => ({
       role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 3000) : m.content,
@@ -47,6 +89,7 @@ export async function runAgent({
 
   const tools = toolsEnabled ? getToolSchemas() : null
   const toolResults = {}
+  const sources = []
   let fullContent = ''   // everything shown to the user, across all rounds
   let roundContent = ''  // text from the current round only
   let toolCallsToProcess = []
@@ -87,31 +130,47 @@ export async function runAgent({
         })),
       })
 
-      for (const tc of round) {
-        onStatus?.(`Using ${tc.name}...`)
-        onToolStart?.(tc.name)
+      onStatus?.(round.length > 1
+        ? `Running ${round.length} tools…`
+        : `Using ${round[0].name}…`)
+      round.forEach(tc => onToolStart?.(tc.name))
 
-        let result
+      // Independent calls run concurrently — a 3-page research round finishes in
+      // the time of its slowest fetch instead of the sum of all of them.
+      const results = await Promise.all(round.map(async (tc) => {
         try {
-          result = await executeTool(tc.name, tc.parsedArgs || {})
+          return await executeTool(tc.name, tc.parsedArgs || {})
         } catch (e) {
-          result = { error: e?.message || String(e) }
+          return { error: e?.message || String(e) }
         }
+      }))
+
+      round.forEach((tc, i) => {
+        const result = results[i]
         toolResults[tc.name] = result
         onToolResult?.(tc.name, result)
 
+        if (SOURCE_TOOLS.has(tc.name)) {
+          for (const s of collectSources(result)) {
+            if (!sources.some(existing => existing.url === s.url)) sources.push(s)
+          }
+        }
+
         messages.push({
           role: 'tool', tool_call_id: tc.id, name: tc.name,
-          content: JSON.stringify(result).slice(0, 12000), // cap context blowup
+          // Research payloads are large but valuable; give them more room.
+          content: JSON.stringify(result).slice(0, tc.name === 'deep_research' ? 24000 : 12000),
         })
-      }
+      })
+
+      if (sources.length) onSources?.(sources)
 
       // Call LLM again with tool results
       onStatus?.('Thinking...')
       await processStream()
     }
 
-    onDone?.({ content: fullContent, toolResults })
+    onDone?.({ content: fullContent, toolResults, sources })
   } catch (err) {
     if (err.name !== 'AbortError') onError?.(err)
   }

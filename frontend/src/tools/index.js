@@ -1,5 +1,5 @@
 /**
- * Browser-native tool registry — all 28 tools, zero backend.
+ * Browser-native tool registry — all 32 tools, zero backend.
  * Each tool: { schema (OpenAI function schema), execute(args) → result }
  */
 
@@ -30,6 +30,9 @@ import { unitConvertTool } from './unitConvert'
 import { ipLookupTool } from './ipLookup'
 import { mdToPdfTool } from './mdToPdf'
 import { webExtractTool } from './webExtract'
+import { webSearchTool } from './webSearch'
+import { researchTool } from './research'
+import { docSearchTool, docListTool } from './documents'
 import { youtubeTool } from './youtube'
 
 const ALL_TOOLS = {
@@ -60,6 +63,10 @@ const ALL_TOOLS = {
   unit_convert: unitConvertTool,
   ip_lookup: ipLookupTool,
   md_to_pdf: mdToPdfTool,
+  web_search: webSearchTool,
+  deep_research: researchTool,
+  doc_search: docSearchTool,
+  doc_list: docListTool,
   web_extract: webExtractTool,
   youtube: youtubeTool,
 }

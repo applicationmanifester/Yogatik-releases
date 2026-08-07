@@ -6,27 +6,43 @@
 
 import * as db from './db'
 import { runAgent } from './agent'
-import { getProviders as getLLMProviders, getProviderModels, registerCustomProviders, fetchLiveModels } from './llm'
+import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels } from './llm'
 import { getToolNames } from './tools/index'
+import { chunkText } from './retrieval'
+import { invalidateDocIndex } from './tools/documents'
 
-import { signInWithGoogle, logOutGoogle, saveUserApiKey, getUserApiKeys } from './firebaseAuth'
+import { signInWithGoogle, logOutGoogle, saveUserApiKey, getUserApiKeys, purgePlaintextKeys } from './firebaseAuth'
 
-// ─── Auth (Google Sign-In & Firestore API Key Vault) ───
-export async function loginWithGoogle() {
+// ─── Auth (Google Sign-In & encrypted Firestore key vault) ───
+
+// Held in memory for the session only — never persisted, never uploaded.
+let _passphrase = null
+export function setKeyPassphrase(p) { _passphrase = p || null }
+export function hasKeyPassphrase() { return !!_passphrase }
+
+export async function loginWithGoogle(passphrase) {
   const user = await signInWithGoogle()
   await db.setSetting('user', user)
-  // Restore saved cloud API keys to IndexedDB
-  const keys = await getUserApiKeys()
-  for (const [provider, key] of Object.entries(keys)) {
-    if (key) await db.setSetting(`apikey_${provider}`, key)
+  if (passphrase) _passphrase = passphrase
+  // Restore cloud keys — only possible when the passphrase can decrypt them
+  if (_passphrase) {
+    const keys = await getUserApiKeys(_passphrase)
+    for (const [provider, key] of Object.entries(keys)) {
+      if (key) await db.setSetting(`apikey_${provider}`, key)
+    }
   }
+  // Scrub any keys stored in plaintext by earlier versions
+  try { await purgePlaintextKeys() } catch {}
   return user
 }
 
 export async function saveProviderApiKey(provider, apiKey) {
   await db.setSetting(`apikey_${provider}`, apiKey)
-  // Only touch Firestore (and load the Firebase SDK) when signed in
-  if (await db.getSetting('user')) await saveUserApiKey(provider, apiKey)
+  // Cloud sync is opt-in and encrypted; without a passphrase the key stays local.
+  if (_passphrase && await db.getSetting('user')) {
+    return saveUserApiKey(provider, apiKey, _passphrase)
+  }
+  return { synced: false, reason: _passphrase ? 'signed-out' : 'no-passphrase' }
 }
 
 export async function getMe() {
@@ -34,6 +50,7 @@ export async function getMe() {
 }
 
 export async function logout() {
+  _passphrase = null
   if (await db.getSetting('user')) await logOutGoogle()
   await db.setSetting('user', null)
 }
@@ -60,14 +77,17 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
       provider, apiKey, model,
       history: body.messages || [],
       userMessage: body.message || body.messages?.[body.messages.length - 1]?.content || '',
-      toolsEnabled: body.tools !== false,
+      toolsEnabled: body.tools !== false && body.use_tools !== false,
+      webEnabled: body.use_web_search !== false,
       temperature: body.temperature || 0.7,
       signal: currentAbort.signal,
       onToken,
       onStatus,
+      onSources,
       onToolStart: (name) => onToolsDetected?.([name]),
       onToolResult: (name, result) => onToolResult?.(name, result),
-      onDone: ({ content, toolResults }) => {
+      onDone: ({ content, sources }) => {
+        if (sources?.length) onSources?.(sources)
         onDone?.(content)
       },
       onError: (err) => onError?.(err.message),
@@ -125,9 +145,66 @@ export async function deleteTemplate(id) {
   await db.setSetting('templates', templates.filter(t => t.id !== id))
 }
 
-// ─── Documents (no-op, RAG not available in browser mode) ───
-export async function uploadDocument() {
-  return { message: 'Document upload not available in browser-only mode. Paste text directly in chat.' }
+// ─── Documents (browser-native retrieval, no backend) ───
+
+/** Text extraction per file type. PDFs go through pdf.js, everything else is read as text. */
+async function extractText(file) {
+  const name = (file.name || '').toLowerCase()
+
+  if (name.endsWith('.pdf') || file.type === 'application/pdf') {
+    const { pdfExtractTool } = await import('./tools/pdfExtract')
+    const url = URL.createObjectURL(file)
+    try {
+      const res = await pdfExtractTool.execute({ url })
+      if (!res?.text) throw new Error('No extractable text — the PDF may be a scan. Try the OCR tool.')
+      return res.text
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
+
+  if (/\.(txt|md|markdown|csv|tsv|json|log|xml|ya?ml|html?|jsx?|tsx?|py|css)$/.test(name) ||
+      file.type.startsWith('text/') || file.type === 'application/json') {
+    return file.text()
+  }
+
+  throw new Error(`Unsupported file type: ${file.type || name}. Supported: PDF, TXT, MD, CSV, JSON, code files.`)
+}
+
+const INLINE_LIMIT = 12000 // small docs ride along in the prompt; larger ones are retrieved
+
+export async function uploadDocument(file) {
+  if (!file) return { success: false, error: 'No file provided' }
+
+  const text = (await extractText(file)).trim()
+  if (!text) return { success: false, error: 'File appears to be empty' }
+
+  const chunks = chunkText(text)
+  const doc = await db.addDocument({
+    name: file.name, type: file.type || 'text', size: file.size,
+    chars: text.length, text, chunks,
+  })
+  invalidateDocIndex(doc.id)
+
+  return {
+    success: true,
+    id: doc.id,
+    name: file.name,
+    chars: text.length,
+    chunks: chunks.length,
+    // Short documents are cheaper and more accurate injected whole than retrieved.
+    inline: text.length <= INLINE_LIMIT ? text : null,
+    message: text.length <= INLINE_LIMIT
+      ? `Loaded ${file.name} (${text.length.toLocaleString()} chars).`
+      : `Indexed ${file.name} — ${chunks.length} passages searchable via doc_search.`,
+  }
+}
+
+export async function listDocuments() { return db.getDocuments() }
+
+export async function removeDocument(id) {
+  await db.deleteDocument(id)
+  invalidateDocIndex(id)
 }
 
 // ─── Models & Providers (dynamically fetched per provider) ───
@@ -250,12 +327,18 @@ export async function getTools() {
 }
 
 // ─── TTS (Web Speech API) ───
-export async function requestTTS(text) {
+export async function requestTTS(text, { onEnd } = {}) {
   if (!('speechSynthesis' in window)) throw new Error('TTS not supported')
   const utter = new SpeechSynthesisUtterance(text)
+  utter.onend = () => onEnd?.()
+  utter.onerror = () => onEnd?.()
   window.speechSynthesis.cancel()
   window.speechSynthesis.speak(utter)
   return { success: true }
+}
+
+export function stopTTS() {
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel()
 }
 
 export async function getTTSVoices() {

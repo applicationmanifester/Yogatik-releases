@@ -1,4 +1,6 @@
 // Link preview via CORS proxy — extracts Open Graph meta tags
+import { proxyFetch } from './http'
+
 export const linkPreviewTool = {
   schema: {
     description: 'Get a link preview (title, description, image) for a URL',
@@ -7,8 +9,7 @@ export const linkPreviewTool = {
     }, required: ['url'] },
   },
   async execute({ url }) {
-    const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-    const resp = await fetch(proxy)
+    const resp = await proxyFetch(url)
     const html = await resp.text()
     const doc = new DOMParser().parseFromString(html, 'text/html')
     const meta = (name) => doc.querySelector(`meta[property="og:${name}"], meta[name="og:${name}"]`)?.getAttribute('content') || ''

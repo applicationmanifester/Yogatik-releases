@@ -1,4 +1,6 @@
 // WHOIS lookup via free API
+import { proxyFetch } from './http'
+
 export const whoisTool = {
   schema: {
     description: 'Lookup WHOIS information for a domain',
@@ -7,7 +9,7 @@ export const whoisTool = {
     }, required: ['domain'] },
   },
   async execute({ domain }) {
-    const resp = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://rdap.org/domain/${domain}`)}`)
+    const resp = await proxyFetch(`https://rdap.org/domain/${domain}`)
     if (!resp.ok) return { success: false, error: 'WHOIS lookup failed' }
     const data = await resp.json()
     return {

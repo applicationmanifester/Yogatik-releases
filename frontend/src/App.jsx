@@ -1,502 +1,22 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import ReactMarkdown from 'react-markdown'
-import {
-  Send, Plus, Sun, Moon, Upload, Menu, X, Globe, Database,
-  Trash2, Copy, Check, Plug, TestTube, LogIn, LogOut, User,
-  Square, Download, Sparkles, Mic, MicOff, Volume2, VolumeX,
-  Wrench, Image, Code, CloudSun, Calculator, Languages, Youtube, Link,
-  ScanLine, QrCode, FileText, AudioLines, Hash, Regex, ArrowLeftRight,
-  Palette, Search, GitCompare, Ruler, MapPin, Rss, Eye, FileDown,
-  Smartphone, AlertTriangle
-} from 'lucide-react'
-import {
-  streamMessage, stopGeneration, uploadDocument, getModels, getProviders,
-  addProvider, removeProvider, testProvider, loginWithGoogle, saveProviderApiKey, logout,
-  isLoggedIn, getMe, getConversations, getConversation, deleteConversation,
-  exportConversation, getTemplates, requestTTS, getTools
-} from './api'
-import { CodeBlock } from './components/CodeBlock'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText } from 'lucide-react'
+import { streamMessage, stopGeneration, uploadDocument, getModels, getProviders, removeProvider, testProvider, saveProviderApiKey, logout, isLoggedIn, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
-import { ArenaView } from './components/ArenaView'
-
-const API_BASE = 'http://localhost:8000'
+import { YogatikLogo } from './components/YogatikLogo'
+import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
+import { MessageBubble } from './components/MessageBubble'
+import { AuthModal } from './components/AuthModal'
+import { ProviderModal } from './components/ProviderModal'
+import { AdModal } from './components/AdModal'
 
 const SUGGESTIONS = [
   "What's the weather in New York?",
   "Generate an image of a futuristic city",
   "Translate 'hello world' to Japanese",
   "Calculate the square root of 144",
-  "Search for today's AI news",
+  "Search the web for today's AI news",
   "Summarize this YouTube video",
 ]
-
-const TOOL_ICONS = {
-  weather: CloudSun, image_generate: Image, code_execute: Code,
-  calculator: Calculator, translate: Languages, youtube: Youtube,
-  web_extract: Link, chart: Image, tts: Volume2,
-  ocr: ScanLine, qr_generate: QrCode, qr_read: QrCode,
-  pdf_extract: FileText, stt: AudioLines, summarize: FileText,
-  rss_feed: Rss, hash: Hash, regex: Regex, data_convert: ArrowLeftRight,
-  color_palette: Palette, whois: Search, diagram: GitCompare,
-  audio_edit: AudioLines, image_info: Eye, link_preview: Link,
-  diff: GitCompare, unit_convert: Ruler, ip_lookup: MapPin,
-  md_to_pdf: FileDown,
-}
-
-// ─── Logo ───
-function YogatikLogo({ size = 24 }) {
-  const isDark = document.documentElement.getAttribute('data-theme') !== 'light'
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width={size} height={size} style={{ flexShrink: 0 }}>
-      {!isDark ? <rect width="192" height="192" rx="40" fill="#ffffff"/> : null}
-      <circle cx="96" cy="80" r="36" fill="none" stroke="#ff6b35" strokeWidth="6"/>
-      <circle cx="82" cy="72" r="5" fill="#ff6b35"/>
-      <circle cx="110" cy="72" r="5" fill="#ff6b35"/>
-      <path d="M78 90 q18 16 36 0" fill="none" stroke="#ff6b35" strokeWidth="4" strokeLinecap="round"/>
-      <rect x="60" y="130" width="72" height="8" rx="4" fill="#ff6b35" opacity="0.6"/>
-      <rect x="72" y="146" width="48" height="6" rx="3" fill="#ff6b35" opacity="0.3"/>
-    </svg>
-  )
-}
-
-// ─── Tool Result Display ───
-function ToolResultCard({ tool, result }) {
-  const Icon = TOOL_ICONS[tool] || Wrench
-  if (!result || result.success === false) {
-    return (
-      <div className="tool-result-card error">
-        <div className="tool-result-header"><Icon size={14} /> {tool} — Failed</div>
-        <p className="tool-error">{result?.error || 'Unknown error'}</p>
-      </div>
-    )
-  }
-
-  if (tool === 'image_generate' && result.filename) {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Image size={14} /> Generated Image</div>
-        <img src={`${API_BASE}/tools/image/${result.filename}`} alt={result.prompt}
-          className="generated-image" loading="lazy" />
-        <p className="tool-prompt">Prompt: "{result.prompt}"</p>
-      </div>
-    )
-  }
-
-  if (tool === 'chart' && result.filename) {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Image size={14} /> Chart</div>
-        <img src={`${API_BASE}/tools/image/${result.filename}`} alt="Chart"
-          className="generated-image" loading="lazy" />
-      </div>
-    )
-  }
-
-  if (tool === 'code_execute') {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Code size={14} /> Code Output</div>
-        {result.stdout && <pre className="code-output">{result.stdout}</pre>}
-        {result.stderr && <pre className="code-output error">{result.stderr}</pre>}
-        {result.charts?.map((f, i) => (
-          <img key={i} src={`${API_BASE}/tools/code-output/${f}`} alt="Chart" className="generated-image" />
-        ))}
-      </div>
-    )
-  }
-
-  if (tool === 'weather' && result.current) {
-    const c = result.current
-    return (
-      <div className="tool-result-card weather-card">
-        <div className="tool-result-header"><CloudSun size={14} /> {result.location}</div>
-        <div className="weather-current">
-          <span className="weather-temp">{c.temperature}°C</span>
-          <span className="weather-condition">{c.condition}</span>
-        </div>
-        <div className="weather-details">
-          Feels like {c.feels_like}°C · Humidity {c.humidity}% · Wind {c.wind_speed} km/h
-        </div>
-        {result.forecast && (
-          <div className="weather-forecast">
-            {result.forecast.slice(0, 5).map((f, i) => (
-              <div key={i} className="forecast-day">
-                <span className="forecast-date">{new Date(f.date).toLocaleDateString('en', { weekday: 'short' })}</span>
-                <span>{f.low}°–{f.high}°</span>
-                <span className="forecast-cond">{f.condition}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  if (tool === 'calculator') {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Calculator size={14} /> Calculator</div>
-        <div className="calc-result">{result.formatted || String(result.result)}</div>
-      </div>
-    )
-  }
-
-  if (tool === 'translate') {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Languages size={14} /> Translation ({result.source_lang} → {result.target_lang})</div>
-        <p className="translation-result">{result.translated}</p>
-      </div>
-    )
-  }
-
-  if (tool === 'unit_convert') {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Ruler size={14} /> Unit Conversion</div>
-        <div className="calc-result">{result.formatted || result.output}</div>
-      </div>
-    )
-  }
-
-  if (tool === 'hash') {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Hash size={14} /> {result.algorithm?.toUpperCase()}</div>
-        <pre className="code-output" style={{ wordBreak: 'break-all' }}>{result.result}</pre>
-      </div>
-    )
-  }
-
-  if (tool === 'ip_lookup' && result.ip) {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><MapPin size={14} /> IP Lookup: {result.ip}</div>
-        <div className="tool-detail">{result.city}, {result.region}, {result.country}</div>
-        <div className="tool-detail">ISP: {result.isp} · TZ: {result.timezone}</div>
-      </div>
-    )
-  }
-
-  if (tool === 'whois' && result.domain) {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Search size={14} /> WHOIS: {result.domain}</div>
-        <div className="tool-detail">Registrar: {result.registrar}</div>
-        <div className="tool-detail">Created: {result.creation_date} · Expires: {result.expiration_date}</div>
-      </div>
-    )
-  }
-
-  if (tool === 'rss_feed' && result.items) {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Rss size={14} /> {result.feed_title || 'RSS Feed'}</div>
-        {result.items.slice(0, 5).map((item, i) => (
-          <div key={i} className="tool-detail">
-            <a href={item.link} target="_blank" rel="noopener">{item.title}</a>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  if (tool === 'qr_generate' && result.filename) {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><QrCode size={14} /> QR Code</div>
-        <img src={`${API_BASE}/tools/image/${result.filename}`} alt="QR Code" className="generated-image" style={{ maxWidth: 200 }} />
-      </div>
-    )
-  }
-
-  if (tool === 'summarize' && result.summary) {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><FileText size={14} /> Summary</div>
-        <p className="translation-result">{result.summary}</p>
-      </div>
-    )
-  }
-
-  if (tool === 'diagram' && result.filename) {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><GitCompare size={14} /> Diagram</div>
-        <img src={`${API_BASE}/tools/image/${result.filename}`} alt="Diagram" className="generated-image" />
-      </div>
-    )
-  }
-
-  if (tool === 'diff') {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><GitCompare size={14} /> Diff — {(result.similarity * 100).toFixed(1)}% similar</div>
-        <pre className="code-output">{result.diff}</pre>
-      </div>
-    )
-  }
-
-  if (tool === 'link_preview' && result.title) {
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Link size={14} /> Link Preview</div>
-        {result.image && <img src={result.image} alt="" className="generated-image" style={{ maxHeight: 150 }} />}
-        <div className="tool-detail"><strong>{result.title}</strong></div>
-        {result.description && <div className="tool-detail">{result.description}</div>}
-      </div>
-    )
-  }
-
-  // Generic fallback for other tools
-  if (result && result.success !== false) {
-    const Icon = TOOL_ICONS[tool] || Wrench
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Icon size={14} /> {tool.replace(/_/g, ' ')}</div>
-        <pre className="code-output">{JSON.stringify(result, null, 2)}</pre>
-      </div>
-    )
-  }
-
-  return null
-}
-
-// ─── Message ───
-function MessageBubble({ msg, onTTS, onOpenArtifact }) {
-  return (
-    <div className={`message ${msg.role}`}>
-      <div className="message-role">
-        {msg.role === 'user' ? 'You' : 'Yogatik'}
-        {msg.role === 'assistant' && (
-          <button className="icon-btn tts-btn" onClick={() => onTTS(msg.content)} title="Read aloud">
-            <Volume2 size={12} />
-          </button>
-        )}
-      </div>
-      {msg.toolResults && Object.keys(msg.toolResults).length > 0 && (
-        <div className="tool-results">
-          {Object.entries(msg.toolResults).map(([tool, result]) => (
-            <ToolResultCard key={tool} tool={tool} result={result} />
-          ))}
-        </div>
-      )}
-      {msg.toolsUsed?.length > 0 && (
-        <div className="tools-used">
-          {msg.toolsUsed.map(t => {
-            const Icon = TOOL_ICONS[t] || Wrench
-            return <span key={t} className="tool-chip"><Icon size={10} /> {t}</span>
-          })}
-        </div>
-      )}
-      <div className="message-content">
-        <ReactMarkdown components={{
-          code({ node, inline, className, children, ...props }) {
-            return !inline ? (
-              <CodeBlock className={className} onOpenArtifact={onOpenArtifact}>{children}</CodeBlock>
-            ) : (
-              <code className={className} {...props}>{children}</code>
-            )
-          }
-        }}>{msg.content}</ReactMarkdown>
-      </div>
-      {msg.sources?.length > 0 && (
-        <div className="sources">
-          <div className="sources-title">Sources</div>
-          {msg.sources.filter(s => s.url).map((s, i) => (
-            <div key={i} className="source-item">
-              <a href={s.url} target="_blank" rel="noopener">{s.title || s.url}</a>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Auth Modal ───
-function AuthModal({ onClose, onAuth }) {
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const handleGoogleSignIn = async () => {
-    setError('')
-    setLoading(true)
-    try {
-      const user = await loginWithGoogle()
-      onAuth(user)
-      onClose()
-    } catch (err) {
-      setError(err.message || 'Google Sign-In failed')
-    }
-    setLoading(false)
-  }
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2><User size={18} /> Sign In to Yogatik</h2>
-          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="modal-body" style={{ textAlign: 'center', padding: '16px 0' }}>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-            Sign in with Google to sync your conversation history and back up your custom Provider API Keys to your account.
-          </p>
-          <button
-            className="new-chat-btn"
-            onClick={handleGoogleSignIn}
-            disabled={loading}
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '10px', width: '100%' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24">
-              <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.3 9 5 12 5z"/>
-              <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"/>
-              <path fill="#FBBC05" d="M5.6 14.8c-.3-.8-.4-1.8-.4-2.8s.1-2 .4-2.8L1.9 6.3C.7 8.7 0 10.3 0 12s.7 3.3 1.9 5.7l3.7-2.9z"/>
-              <path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.3-6.4-5.2L1.9 16C3.7 19.7 7.5 23 12 23z"/>
-            </svg>
-            {loading ? 'Signing in...' : 'Sign in with Google'}
-          </button>
-        </div>
-        {error && <div className="test-result error">{error}</div>}
-      </div>
-    </div>
-  )
-}
-
-// ─── Provider Modal ───
-const QUICK_TEMPLATES = {
-  together: { name: 'Together AI', baseUrl: 'https://api.together.xyz/v1', models: ['meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', 'mistralai/Mixtral-8x7B-Instruct-v0.1'], default: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', keyUrl: 'https://api.together.xyz/settings/api-keys' },
-  deepseek: { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-coder'], default: 'deepseek-chat', keyUrl: 'https://platform.deepseek.com/api_keys' },
-  mistral: { name: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', models: ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'], default: 'mistral-large-latest', keyUrl: 'https://console.mistral.ai/api-keys' },
-  anthropic_or: { name: 'Anthropic (via OpenRouter)', baseUrl: 'https://openrouter.ai/api/v1', models: ['anthropic/claude-sonnet-4', 'anthropic/claude-haiku-4'], default: 'anthropic/claude-sonnet-4', keyUrl: 'https://openrouter.ai/keys' },
-  gemini: { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', models: ['gemini-2.5-flash', 'gemini-2.5-pro'], default: 'gemini-2.5-flash', keyUrl: 'https://aistudio.google.com/apikey' },
-}
-
-function ProviderModal({ onClose, onSaved, editProvider }) {
-  const isEdit = !!editProvider
-  const [mode, setMode] = useState(isEdit ? 'custom' : 'template')
-  const [form, setForm] = useState(() => {
-    if (editProvider) {
-      return { id: editProvider.id, name: editProvider.name || '', base_url: editProvider.base_url || editProvider.baseUrl || '', api_key: '', default_model: editProvider.default_model || editProvider.default || '', models: (editProvider.models || []).join(', ') }
-    }
-    return { id: '', name: '', base_url: '', api_key: '', default_model: '', models: '' }
-  })
-
-  const selectTemplate = (key) => {
-    const t = QUICK_TEMPLATES[key]
-    setForm({ id: key, name: t.name, base_url: t.baseUrl, api_key: '', default_model: t.default, models: t.models.join(', ') })
-    setMode('custom')
-  }
-
-  const handleSave = async () => {
-    if (!form.id || !form.name || !form.base_url) return
-    try {
-      await addProvider({
-        id: form.id.toLowerCase().replace(/[^a-z0-9-_]/g, '-'),
-        name: form.name, base_url: form.base_url, api_key: form.api_key,
-        default_model: form.default_model,
-        models: form.models ? form.models.split(',').map(s => s.trim()).filter(Boolean) : [],
-      })
-      onSaved()
-      onClose()
-    } catch (e) { alert(e.message) }
-  }
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2><Plug size={18} /> {isEdit ? 'Edit Provider' : 'Add Custom Provider'}</h2>
-          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
-        </div>
-        {!isEdit && (
-          <div className="modal-tabs">
-            <button className={mode === 'template' ? 'active' : ''} onClick={() => setMode('template')}>Quick Add</button>
-            <button className={mode === 'custom' ? 'active' : ''} onClick={() => setMode('custom')}>Custom API</button>
-          </div>
-        )}
-        {mode === 'template' && (
-          <div className="template-grid">
-            {Object.entries(QUICK_TEMPLATES).map(([key, t]) => (
-              <div key={key} className="template-card" onClick={() => selectTemplate(key)}>
-                <div className="template-name">{t.name}</div>
-                <div className="template-url">{t.baseUrl}</div>
-              </div>
-            ))}
-          </div>
-        )}
-        {mode === 'custom' && (
-          <div className="modal-form">
-            <label>Provider ID</label>
-            <input value={form.id} onChange={e => setForm({ ...form, id: e.target.value })} placeholder="e.g. my-api" disabled={isEdit} style={isEdit ? { opacity: 0.5 } : {}} />
-            <label>Display Name</label>
-            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. My LLM Server" />
-            <label>Base URL (OpenAI-compatible)</label>
-            <input value={form.base_url} onChange={e => setForm({ ...form, base_url: e.target.value })} placeholder="https://api.example.com/v1" />
-            <label>API Key</label>
-            <input type="password" value={form.api_key} onChange={e => setForm({ ...form, api_key: e.target.value })} placeholder="sk-..." />
-            <label>Default Model</label>
-            <input value={form.default_model} onChange={e => setForm({ ...form, default_model: e.target.value })} placeholder="e.g. llama-3.1-70b" />
-            <label>Models (comma-separated)</label>
-            <input value={form.models} onChange={e => setForm({ ...form, models: e.target.value })} placeholder="model-a, model-b" />
-          </div>
-        )}
-        <div className="modal-actions">
-          <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={handleSave} disabled={!form.id || !form.name || !form.base_url}>{isEdit ? 'Save Changes' : 'Add Provider'}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Ad Modal (Google AdSense interstitial) ───
-function AdModal({ onClose }) {
-  const [countdown, setCountdown] = useState(5)
-  const adRef = useRef(null)
-
-  useEffect(() => {
-    // Push ad to AdSense slot
-    try { (window.adsbygoogle = window.adsbygoogle || []).push({}) } catch {}
-  }, [])
-
-  useEffect(() => {
-    if (countdown <= 0) return
-    const t = setTimeout(() => setCountdown(c => c - 1), 1000)
-    return () => clearTimeout(t)
-  }, [countdown])
-
-  return (
-    <div className="modal-overlay" style={{ zIndex: 10000 }} onClick={countdown <= 0 ? onClose : undefined}>
-      <div className="modal ad-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480, textAlign: 'center' }}>
-        <div className="modal-header" style={{ justifyContent: 'center', borderBottom: 'none', padding: '16px 16px 4px' }}>
-          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Yogatik is free — ads keep it running</span>
-        </div>
-        <div style={{ padding: '8px 16px 16px', minHeight: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {/* Google AdSense Ad Unit — replace data-ad-slot with your slot ID */}
-          <ins className="adsbygoogle"
-            ref={adRef}
-            style={{ display: 'block', width: '100%', minHeight: 250 }}
-            data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
-            data-ad-slot="XXXXXXXXXX"
-            data-ad-format="auto"
-            data-full-width-responsive="true" />
-        </div>
-        <div style={{ padding: '0 16px 16px' }}>
-          <button
-            className="btn-primary"
-            onClick={onClose}
-            disabled={countdown > 0}
-            style={{ width: '100%', padding: '10px', fontSize: 14, opacity: countdown > 0 ? 0.5 : 1 }}
-          >
-            {countdown > 0 ? `Continue in ${countdown}s` : 'Continue Chatting'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ─── Main App ───
 export default function App() {
@@ -513,7 +33,6 @@ export default function App() {
   const [provider, setProvider] = useState('nvidia')
   const [model, setModel] = useState('')
   const [webSearch, setWebSearch] = useState(true)
-  const [rag, setRag] = useState(true)
   const [tools, setToolsEnabled] = useState(true)
   const [temperature, setTemperature] = useState(0.7)
   const [models, setModels] = useState({})
@@ -529,6 +48,7 @@ export default function App() {
   const [pendingToolResults, setPendingToolResults] = useState({})
   const [ttsPlaying, setTtsPlaying] = useState(false)
   const [attachedFile, setAttachedFile] = useState(null)
+  const [docs, setDocs] = useState([])
   const [editingProvider, setEditingProvider] = useState(null)
   const [pwaPrompt, setPwaPrompt] = useState(null)
   const [showPwaInstall, setShowPwaInstall] = useState(false)
@@ -542,11 +62,25 @@ export default function App() {
 
   const conv = conversations[activeIdx]
 
+  // Streaming tokens arrive faster than the browser can paint. Coalesce them
+  // into one state update per animation frame instead of one per token.
+  const streamFrame = useRef(0)
+  const streamPending = useRef('')
+  const pushStream = useCallback((text) => {
+    streamPending.current = text
+    if (streamFrame.current) return
+    streamFrame.current = requestAnimationFrame(() => {
+      streamFrame.current = 0
+      setStreamingContent(streamPending.current)
+    })
+  }, [])
+  useEffect(() => () => { if (streamFrame.current) cancelAnimationFrame(streamFrame.current) }, [])
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('bgkai_theme', theme)
   }, [theme])
-  useEffect(() => { messagesEnd.current?.scrollIntoView({ behavior: 'smooth' }) }, [conv?.messages, streamingContent])
+  useEffect(() => { messagesEnd.current?.scrollIntoView({ behavior: streamingContent ? 'auto' : 'smooth' }) }, [conv?.messages, streamingContent])
 
   // PWA install prompt
   useEffect(() => {
@@ -570,6 +104,7 @@ export default function App() {
   useEffect(() => {
     refreshModels()
     refreshTemplates()
+    refreshDocs()
     if (isLoggedIn()) {
       getMe().then(u => {
         if (u) { setUser(u); loadConversations() }
@@ -616,6 +151,10 @@ export default function App() {
   const refreshTemplates = () => {
     getTemplates().then(setPromptTemplates).catch(() => {})
   }
+
+  const refreshDocs = useCallback(() => {
+    listDocuments().then(setDocs).catch(() => {})
+  }, [])
 
   const loadConversations = async () => {
     const convs = await getConversations()
@@ -720,18 +259,13 @@ export default function App() {
   }
 
   const handleTTS = async (text) => {
-    if (ttsPlaying && audioRef.current) { audioRef.current.pause(); setTtsPlaying(false); return }
+    // Web Speech API speaks directly — there is no audio file to fetch.
+    if (ttsPlaying) { stopTTS(); setTtsPlaying(false); return }
     try {
-      const result = await requestTTS(text.slice(0, 5000))
-      if (result.success) {
-        const audio = new Audio(`${API_BASE}/tools/audio/${result.filename}`)
-        audioRef.current = audio
-        audio.onplay = () => setTtsPlaying(true)
-        audio.onended = () => setTtsPlaying(false)
-        audio.onerror = () => setTtsPlaying(false)
-        audio.play()
-      }
-    } catch { console.error('TTS failed') }
+      setTtsPlaying(true)
+      const result = await requestTTS(text.slice(0, 5000), { onEnd: () => setTtsPlaying(false) })
+      if (!result?.success) setTtsPlaying(false)
+    } catch { setTtsPlaying(false); console.error('TTS failed') }
   }
 
   const getSystemPrompt = () => {
@@ -753,18 +287,23 @@ export default function App() {
 
     let fileContext = ''
     if (attachedFile) {
-      setStatusText('Uploading file...')
+      setStatusText(`Reading ${attachedFile.name}...`)
       try {
         const result = await uploadDocument(attachedFile)
-        if (result.type === 'media') {
-          fileContext = `[Attached file: ${result.filename}, path: ${result.path}] `
+        if (!result.success) {
+          fileContext = `[Could not read ${attachedFile.name}: ${result.error}] `
+        } else if (result.inline) {
+          // Small enough to read directly — no retrieval round-trip needed.
+          fileContext = `[Document: ${result.name}]\n"""\n${result.inline}\n"""\n\n`
         } else {
-          fileContext = `[Uploaded document: ${result.filename}, ${result.chunks_created} chunks indexed] `
+          fileContext = `[Document "${result.name}" indexed: ${result.chars.toLocaleString()} chars in ${result.chunks} passages. `
+            + `Use doc_search to retrieve relevant parts.] `
         }
       } catch (err) {
         fileContext = `[File upload failed: ${err.message}] `
       }
       setAttachedFile(null)
+      refreshDocs()
     }
 
     const finalText = fileContext + (msgText || 'Process the attached file')
@@ -781,8 +320,8 @@ export default function App() {
     let toolsUsed = []
 
     await streamMessage(
-      { message: finalText, messages: updated.messages, tools, temperature, model: model || undefined },
-      (token) => { content += token; setStreamingContent(content); setStatusText('') },
+      { message: finalText, messages: updated.messages, tools, use_tools: tools, use_web_search: webSearch, temperature, model: model || undefined },
+      (token) => { content += token; pushStream(content); setStatusText('') },
       (s) => { sources = s },
       () => {
         setStatusText('')
@@ -871,7 +410,7 @@ export default function App() {
       <aside className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
         <div className="sidebar-header">
           <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><YogatikLogo size={28} /> Yogatik</h2>
-          <button className="icon-btn" onClick={() => setSidebarOpen(false)}><X size={16} /></button>
+          <button className="icon-btn" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar"><X size={16} /></button>
         </div>
 
         <div className="auth-section">
@@ -888,19 +427,19 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <button className="auth-btn" onClick={() => setShowAuthModal(true)}>
+            <button className="auth-btn" onClick={() => setShowAuthModal(true)} aria-label="Sign in">
               <LogIn size={14} /> Sign In
             </button>
           )}
         </div>
 
-        <button className="new-chat-btn" onClick={newChat}><Plus size={14} /> New Chat</button>
+        <button className="new-chat-btn" onClick={newChat} aria-label="New chat"><Plus size={14} /> New Chat</button>
         <div className="conversation-list">
           {conversations.map((c, i) => (
             <div key={i} className={`conversation-item ${i === activeIdx ? 'active' : ''}`} onClick={() => switchChat(i)}>
               <span className="conv-title">{c.title}</span>
               {i === activeIdx && (
-                <button className="icon-btn conv-delete" onClick={e => { e.stopPropagation(); deleteChat(i) }}>
+                <button className="icon-btn conv-delete" onClick={e => { e.stopPropagation(); deleteChat(i) }} aria-label="Delete conversation">
                   <Trash2 size={12} />
                 </button>
               )}
@@ -959,23 +498,43 @@ export default function App() {
 
           <label>Temperature: {temperature}</label>
           <input type="range" min="0" max="1" step="0.1" value={temperature} onChange={e => setTemperature(parseFloat(e.target.value))} />
-          {/* Web search + RAG handled by LLM natively in serverless mode */}
           <div className="toggle-row">
             <label><Wrench size={12} /> AI Tools</label>
-            <label className="toggle"><input type="checkbox" checked={tools} onChange={e => setToolsEnabled(e.target.checked)} /><span className="slider" /></label>
+            <label className="toggle" aria-label="Toggle AI tools">
+              <input type="checkbox" checked={tools} onChange={e => setToolsEnabled(e.target.checked)} /><span className="slider" />
+            </label>
           </div>
+          <div className="toggle-row">
+            <label><Globe size={12} /> Web Research</label>
+            <label className="toggle" aria-label="Toggle web research">
+              <input type="checkbox" checked={webSearch} disabled={!tools}
+                onChange={e => setWebSearch(e.target.checked)} /><span className="slider" />
+            </label>
+          </div>
+          {docs.length > 0 && (
+            <div className="doc-list">
+              <label><FileText size={12} /> Documents ({docs.length})</label>
+              {docs.map(d => (
+                <div key={d.id} className="doc-item">
+                  <span className="doc-name" title={`${d.chars.toLocaleString()} chars · ${d.chunks.length} passages`}>{d.name}</span>
+                  <button className="icon-btn" aria-label={`Remove ${d.name}`}
+                    onClick={() => removeDocument(d.id).then(refreshDocs)}><X size={12} /></button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </aside>
 
       <main className="chat-area">
         <header className="chat-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {!sidebarOpen && <button className="icon-btn" onClick={() => setSidebarOpen(true)}><Menu size={18} /></button>}
+            {!sidebarOpen && <button className="icon-btn" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar"><Menu size={18} /></button>}
             <h1>{conv?.title || 'New Chat'}</h1>
           </div>
           <div className="header-actions">
-            <button className="icon-btn" onClick={handleExport} title="Export chat"><Download size={18} /></button>
-            <button className="icon-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
+            <button className="icon-btn" onClick={handleExport} title="Export chat" aria-label="Export chat"><Download size={18} /></button>
+            <button className="icon-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
           </div>
@@ -1047,7 +606,7 @@ export default function App() {
               <Upload size={12} /> Upload
               <input type="file" hidden accept="*/*" onChange={handleUpload} />
             </label>
-            <button className={`small-btn ${isEnhancing ? 'pulsing' : ''}`} onClick={handleEnhancePrompt} disabled={!input.trim() || isEnhancing} title="Enhance prompt with AI">
+            <button className={`small-btn ${isEnhancing ? 'pulsing' : ''}`} onClick={handleEnhancePrompt} disabled={!input.trim() || isEnhancing} title="Enhance prompt with AI" aria-label="Enhance prompt with AI">
               <Sparkles size={12} /> {isEnhancing ? 'Enhancing...' : 'Enhance'}
             </button>
             {recognitionRef.current && (
@@ -1057,7 +616,7 @@ export default function App() {
               </button>
             )}
             {loading && (
-              <button className="stop-btn" onClick={handleStop} title="Stop generation (Esc)">
+              <button className="stop-btn" onClick={handleStop} title="Stop generation (Esc)" aria-label="Stop generation (Esc)">
                 <Square size={12} /> Stop (Esc)
               </button>
             )}
@@ -1071,7 +630,7 @@ export default function App() {
           <div className="input-wrapper">
             <textarea ref={textareaRef} value={input} onChange={e => { setInput(e.target.value); autoResize() }}
               onKeyDown={handleKeyDown} placeholder={attachedFile ? `Describe what to do with ${attachedFile.name}...` : "Ask anything... (try: weather, images, code, translate)"} rows={1} />
-            <button className="send-btn" onClick={() => send()} disabled={loading || (!input.trim() && !attachedFile)}>
+            <button className="send-btn" aria-label="Send message" onClick={() => send()} disabled={loading || (!input.trim() && !attachedFile)}>
               <Send size={18} />
             </button>
           </div>
@@ -1091,7 +650,7 @@ export default function App() {
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
             <div className="modal-header">
               <h2 style={{ color: '#ff4444' }}><AlertTriangle size={18} /> API Key Error</h2>
-              <button className="icon-btn" onClick={() => setErrorModalMsg(null)}><X size={18} /></button>
+              <button className="icon-btn" onClick={() => setErrorModalMsg(null)} aria-label="Dismiss error"><X size={18} /></button>
             </div>
             <div style={{ padding: '16px 0', fontSize: 13, lineHeight: 1.5, color: 'var(--text-primary)', whitespace: 'pre-wrap' }}>
               {errorModalMsg}

@@ -1,4 +1,6 @@
 // Web content extraction via CORS proxy
+import { proxyText } from './http'
+
 export const webExtractTool = {
   schema: {
     description: 'Extract readable text content from a web page URL',
@@ -7,9 +9,7 @@ export const webExtractTool = {
     }, required: ['url'] },
   },
   async execute({ url }) {
-    const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-    const resp = await fetch(proxy)
-    const html = await resp.text()
+    const html = await proxyText(url)
     const doc = new DOMParser().parseFromString(html, 'text/html')
     // Remove scripts, styles, nav, footer
     doc.querySelectorAll('script,style,nav,footer,header,aside,iframe').forEach(el => el.remove())

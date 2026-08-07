@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yogatik-v2';
+const CACHE_NAME = 'yogatik-v3';
 const STATIC_ASSETS = ['/', '/index.html', '/icon-192.svg', '/icon-512.svg'];
 
 self.addEventListener('install', (e) => {
@@ -16,29 +16,49 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
-  // Skip non-http(s) schemes (chrome-extension, etc.)
+  const req = e.request;
+
+  // Only ever touch same-origin GETs. Everything else — LLM/proxy POSTs,
+  // SSE streams, cross-origin API calls — goes straight to the network
+  // untouched. Intercepting them buffered streams and threw on cache.put().
+  if (req.method !== 'GET') return;
+
+  let url;
+  try { url = new URL(req.url); } catch { return; }
+  if (url.origin !== self.location.origin) return;
   if (!url.protocol.startsWith('http')) return;
-  // Never cache API calls or SSE streams
-  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/chat') ||
-      e.request.headers.get('accept')?.includes('text/event-stream')) {
+  if (url.pathname.startsWith('/api')) return;
+  if (req.headers.get('accept')?.includes('text/event-stream')) return;
+
+  // HTML: network-first so deploys land immediately, cache as offline fallback.
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      fetch(req)
+        .then(resp => {
+          const clone = resp.clone();
+          caches.open(CACHE_NAME).then(c => c.put('/index.html', clone)).catch(() => {});
+          return resp;
+        })
+        .catch(() => caches.match('/index.html').then(r => r || Response.error()))
+    );
     return;
   }
-  // Network-first for HTML, cache-first for assets
-  if (e.request.mode === 'navigate') {
-    e.respondWith(
-      fetch(e.request).catch(() => caches.match('/index.html'))
-    );
-  } else {
-    e.respondWith(
-      caches.match(e.request).then(r => r || fetch(e.request).then(resp => {
-        const reqUrl = new URL(e.request.url);
-        if (resp.ok && reqUrl.protocol.startsWith('http')) {
-          const clone = resp.clone();
-          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
-        }
-        return resp;
-      }).catch(() => new Response('', { status: 408 })))
-    );
-  }
+
+  // Hashed assets are immutable: serve from cache, refresh in background.
+  e.respondWith(
+    caches.match(req).then(cached => {
+      const network = fetch(req)
+        .then(resp => {
+          if (resp.ok) {
+            const clone = resp.clone();
+            caches.open(CACHE_NAME).then(c => c.put(req, clone)).catch(() => {});
+          }
+          return resp;
+        })
+        // Propagate the real network failure instead of inventing a 408,
+        // so callers see an actual error they can act on.
+        .catch(err => { if (cached) return cached; throw err; });
+      return cached || network;
+    })
+  );
 });

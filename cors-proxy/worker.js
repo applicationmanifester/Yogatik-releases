@@ -22,7 +22,7 @@ function corsHeaders(origin, env) {
   return {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Target-URL',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Target-URL, X-Subscription-Token, Accept',
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -45,16 +45,41 @@ export default {
       );
     }
 
-    // Validate target URL (only allow known LLM API hosts)
-    const allowedHosts = [
+    // Validate target URL. LLM hosts receive credentials; the rest are
+    // read-only public endpoints used by tools (search, RSS, page extraction).
+    const allowedHosts = (env?.ALLOWED_HOSTS ? env.ALLOWED_HOSTS.split(',').map(s => s.trim()) : [
       'integrate.api.nvidia.com',
       'api.nvidia.com',
-    ];
+      'api.search.brave.com',
+      'lite.duckduckgo.com',
+      'duckduckgo.com',
+      'rdap.org',
+    ]);
     try {
       const url = new URL(targetUrl);
-      if (!allowedHosts.some(h => url.hostname.endsWith(h))) {
+      const carriesCredentials = request.headers.has('Authorization') ||
+                                 request.headers.has('X-Subscription-Token');
+
+      if (url.protocol !== 'https:') {
         return new Response(
-          JSON.stringify({ error: 'Target host not allowed' }),
+          JSON.stringify({ error: 'Only https targets are allowed' }),
+          { status: 403, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
+        );
+      }
+      // Never relay a credential to a host that isn't explicitly trusted —
+      // that is how an open proxy leaks API keys. Credential-free reads
+      // (page extraction, RSS) may target any public https host; the
+      // ALLOWED_ORIGINS check above already restricts who can ask.
+      if (carriesCredentials && !allowedHosts.some(h => url.hostname === h || url.hostname.endsWith('.' + h))) {
+        return new Response(
+          JSON.stringify({ error: 'Target host not allowed for credentialed requests' }),
+          { status: 403, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
+        );
+      }
+      // Block SSRF into private ranges / link-local metadata endpoints
+      if (/^(localhost$|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/i.test(url.hostname)) {
+        return new Response(
+          JSON.stringify({ error: 'Private address targets are blocked' }),
           { status: 403, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
         );
       }
@@ -67,7 +92,7 @@ export default {
 
     // Build forwarded headers (skip hop-by-hop and browser-specific)
     const skipHeaders = new Set([
-      'host', 'origin', 'referer', 'x-target-url',
+      'host', 'origin', 'referer', 'x-target-url', 'cookie',
       'x-forwarded-for', 'x-forwarded-proto',
       'cf-connecting-ip', 'cf-ray', 'cf-visitor',
       'connection', 'upgrade',

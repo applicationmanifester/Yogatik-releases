@@ -166,33 +166,74 @@ export function getDefaultModel(providerId) { return getProviders()[providerId]?
 const PROXY_BASE = (import.meta.env.VITE_LLM_PROXY_BASE || '').replace(/\/+$/, '')
 const isLocalhost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
 
-export function getProxyEndpoint(url) {
+/** Private proxy we control: Vite dev plugin on localhost, Worker in prod. */
+export function getProxyEndpoint() {
   if (isLocalhost) return '/api/llm-proxy'
-  if (PROXY_BASE) return PROXY_BASE
-  if (url) return `https://corsproxy.io/?${encodeURIComponent(url)}`
-  return 'https://corsproxy.io/'
+  return PROXY_BASE || null
 }
 
-export function proxyAvailable() { return true }
+export function proxyAvailable() { return !!getProxyEndpoint() }
+
+const PUBLIC_RELAY = 'https://corsproxy.io/?'
 
 async function smartFetch(url, options, prov) {
-  if (prov?.needsProxy) {
-    if (isLocalhost) {
-      return fetch('/api/llm-proxy', { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
-    }
-    if (PROXY_BASE) {
-      return fetch(PROXY_BASE, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
-    }
-    // Fallback to corsproxy.io on web host if worker URL not set
-    const corsProxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`
-    return fetch(corsProxyUrl, options)
+  if (!prov?.needsProxy) return fetch(url, options)
+
+  const endpoint = getProxyEndpoint()
+  if (endpoint) {
+    return fetch(endpoint, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
   }
-  return fetch(url, options)
+
+  // No private proxy configured. A public relay may only carry requests with
+  // no credentials (e.g. NVIDIA's unauthenticated /models catalog) — sending
+  // an Authorization header through it would hand a third party the API key.
+  const carriesKey = Object.keys(options?.headers || {}).some(h => h.toLowerCase() === 'authorization')
+  if (carriesKey) {
+    throw new Error(
+      `${prov.name} needs a CORS proxy to send your API key safely, and none is configured. ` +
+      `Deploy the Cloudflare Worker (deploy-proxy.bat) and set VITE_LLM_PROXY_BASE — ` +
+      `or use Groq / Gemini / OpenRouter / OpenAI, which work directly from the browser.`
+    )
+  }
+  return fetch(PUBLIC_RELAY + encodeURIComponent(url), options)
+}
+
+/**
+ * Retry on rate limits and transient upstream failures.
+ * Honours Retry-After when present, else exponential backoff with jitter.
+ */
+const RETRY_STATUS = new Set([429, 500, 502, 503, 504])
+
+async function fetchWithRetry(url, options, prov, { retries = 3, onStatus } = {}) {
+  let attempt = 0
+  for (;;) {
+    const resp = await smartFetch(url, options, prov)
+    if (!RETRY_STATUS.has(resp.status) || attempt >= retries || options?.signal?.aborted) return resp
+
+    const header = Number(resp.headers.get('retry-after'))
+    const backoff = Number.isFinite(header) && header > 0
+      ? Math.min(header * 1000, 30000)
+      : Math.min(2 ** attempt * 1000, 8000) + Math.random() * 500
+
+    attempt++
+    onStatus?.(resp.status === 429
+      ? `Rate limited — retrying in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})`
+      : `Provider error ${resp.status} — retrying (${attempt}/${retries})`)
+
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(resolve, backoff)
+      options?.signal?.addEventListener(
+        'abort',
+        () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) },
+        { once: true },
+      )
+    })
+  }
 }
 
 export async function streamChat({
   provider, apiKey, model, messages, tools = null,
-  temperature = 0.7, signal, onToken, onToolCall, onDone, onError
+  temperature = 0.7, signal, onToken, onToolCall, onDone, onError, onStatus
 }) {
   const prov = getProviders()[provider]
   if (!prov) throw new Error(`Unknown provider: ${provider}`)
@@ -218,9 +259,9 @@ export async function streamChat({
   }
 
   try {
-    const resp = await smartFetch(`${prov.baseUrl}/chat/completions`, {
+    const resp = await fetchWithRetry(`${prov.baseUrl}/chat/completions`, {
       method: 'POST', headers, body: JSON.stringify(body), signal,
-    }, prov)
+    }, prov, { onStatus })
 
     if (!resp.ok) {
       const err = await resp.text()
@@ -317,7 +358,7 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
   const body = { model: model || prov.default, messages, temperature }
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto' }
 
-  const resp = await smartFetch(`${prov.baseUrl}/chat/completions`, {
+  const resp = await fetchWithRetry(`${prov.baseUrl}/chat/completions`, {
     method: 'POST', headers, body: JSON.stringify(body),
   }, prov)
   if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`)
