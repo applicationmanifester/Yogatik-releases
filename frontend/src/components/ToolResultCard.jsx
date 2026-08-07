@@ -37,11 +37,13 @@ function ToolResultCard({ tool, result }) {
       <div className="tool-result-card">
         <div className="tool-result-header"><Image size={14} /> Generated Image</div>
         {/* Blob URLs die on reload; fall back to the origin URL for old messages. */}
-        <img src={result.image_url} alt={result.prompt}
+        {/* Prefer the already-downloaded blob; fall back to the durable URL
+            (blob URLs do not survive a reload). */}
+        <img src={result.display_url || result.image_url} alt={result.prompt}
           className="generated-image" loading="lazy"
           onError={e => {
-            if (result.source_url && e.currentTarget.src !== result.source_url) {
-              e.currentTarget.src = result.source_url
+            if (result.image_url && e.currentTarget.src !== result.image_url) {
+              e.currentTarget.src = result.image_url
             }
           }} />
         <p className="tool-prompt">Prompt: "{result.prompt}"</p>

@@ -20,8 +20,12 @@ export const imageGenTool = {
     if (!blob.size) return { success: false, error: 'Image generation returned no data' }
     return {
       success: true, tool: 'image_generate', prompt,
-      image_url: URL.createObjectURL(blob),
-      source_url: url,
+      // image_url MUST be the durable https URL: the model often repeats it
+      // into markdown, and a blob: URL breaks on reload and in any other tab.
+      image_url: url,
+      // Blob of the bytes we already downloaded, purely so the card can render
+      // without fetching the same megabyte twice. Not for the model.
+      display_url: URL.createObjectURL(blob),
       bytes: blob.size,
     }
   }

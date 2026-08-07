@@ -88,6 +88,7 @@ export default function App() {
   const [showAd, setShowAd] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
   const chatCountRef = useRef(0)
+  const toolRunRef = useRef({ results: {}, used: [] })
   const messagesEnd = useRef(null)
   const textareaRef = useRef(null)
   const [isEnhancing, setIsEnhancing] = useState(false)
@@ -592,7 +593,10 @@ export default function App() {
 
     let content = ''
     let sources = []
-    let toolsUsed = []
+    // Accumulate in a ref: the onDone callback closes over the render that
+    // started the send, so reading pendingToolResults there always saw {} and
+    // the finished message lost every tool result (images included).
+    toolRunRef.current = { results: {}, used: [] }
 
     await streamMessage(
       { message: finalText, messages: updated.messages, tools, use_tools: tools, use_web_search: webSearch,
@@ -607,7 +611,9 @@ export default function App() {
           createdAt: Date.now(),
           role: 'assistant',
           content: meta?.aborted ? content + '\n\n_[stopped]_' : content,
-          sources, toolResults: { ...pendingToolResults }, toolsUsed,
+          sources,
+          toolResults: { ...toolRunRef.current.results },
+          toolsUsed: [...toolRunRef.current.used],
         }
         saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
         setConversations(prev => prev.map((c, i) =>
@@ -641,8 +647,14 @@ export default function App() {
       },
       (status) => { setStatusText(status) },
       (streamId) => { setCurrentStreamId(streamId) },
-      (detectedTools) => { setActiveTools(detectedTools) },
+      (detectedTools) => {
+        setActiveTools(detectedTools)
+        for (const t of detectedTools) {
+          if (!toolRunRef.current.used.includes(t)) toolRunRef.current.used.push(t)
+        }
+      },
       (toolName, toolResult) => {
+        toolRunRef.current.results[toolName] = toolResult
         setPendingToolResults(prev => ({ ...prev, [toolName]: toolResult }))
       }
     )
