@@ -55,16 +55,35 @@ body {
 
 /* Sidebar */
 .sidebar {
-  width: 260px;
+  width: 272px;
+  flex-shrink: 0;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 14px 12px calc(10px + env(safe-area-inset-bottom));
   transition: transform var(--transition);
+  height: 100%;
+  min-height: 0;              /* lets the inner scroll region actually shrink */
+  overflow: hidden;
 }
-.sidebar.collapsed { transform: translateX(-260px); position: absolute; }
-.sidebar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.sidebar.collapsed { transform: translateX(-272px); position: absolute; }
+.sidebar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px; flex-shrink: 0;
+}
+
+/* Header, New Chat and search stay pinned; everything else scrolls. */
+.sidebar > .new-chat-btn, .sidebar > .conv-search, .sidebar > .settings { flex-shrink: 0; }
+
+.sidebar-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;   /* don't chain scroll to the chat pane */
+  margin: 0 -6px;
+  padding: 0 6px;
+}
 .sidebar-header h2 {
   font-size: 17px; font-weight: 700;
   background: var(--accent-gradient); -webkit-background-clip: text;
@@ -85,7 +104,7 @@ body {
   box-shadow: 0 2px 12px var(--accent-glow);
 }
 .new-chat-btn:hover { filter: brightness(1.15); box-shadow: 0 4px 20px var(--accent-glow); }
-.conversation-list { flex: 1; overflow-y: auto; }
+.conversation-list { display: flex; flex-direction: column; gap: 1px; }
 .conversation-item {
   padding: 10px 12px;
   border-radius: 8px;
@@ -102,10 +121,34 @@ body {
 .conversation-item.active { border-left: 3px solid var(--accent); padding-left: 9px; }
 
 /* Settings panel */
+/* Collapsible settings drawer, pinned to the bottom with its own scroll. */
 .settings {
   border-top: 1px solid var(--border);
-  padding-top: 12px;
-  margin-top: auto;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.settings.open { max-height: 58vh; }
+.settings-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 10px 8px; margin: 0;
+  background: none; border: 0; cursor: pointer;
+  color: var(--text-secondary); font-size: 12px; font-weight: 600;
+}
+.settings-toggle:hover { color: var(--text-primary); }
+.settings-toggle-main { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.settings-toggle-main > span:not(.conn-dot) {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.conn-dot-inline { width: 6px; height: 6px; flex-shrink: 0; }
+.settings .chev { transition: transform var(--transition); flex-shrink: 0; }
+.settings .chev.open { transform: rotate(180deg); }
+.settings-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  padding: 2px 2px 8px;
 }
 .settings select, .settings input[type="range"] {
   width: 100%;
@@ -880,3 +923,42 @@ body {
 }
 .tool-check { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 2px 0; cursor: pointer; }
 .tool-check input { accent-color: var(--accent, #ff6b35); }
+
+
+/* ── Sidebar polish ── */
+.conversation-item {
+  display: flex; align-items: center; gap: 6px;
+}
+.conversation-item .conv-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-item.active { border-left: 3px solid var(--accent); padding-left: 9px; }
+
+/* Thin, unobtrusive scrollbars that only show on hover */
+.sidebar-scroll, .settings-body, .tool-picker {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.sidebar-scroll:hover, .settings-body:hover, .tool-picker:hover {
+  scrollbar-color: var(--border) transparent;
+}
+.sidebar-scroll::-webkit-scrollbar,
+.settings-body::-webkit-scrollbar,
+.tool-picker::-webkit-scrollbar { width: 8px; }
+.sidebar-scroll::-webkit-scrollbar-thumb,
+.settings-body::-webkit-scrollbar-thumb,
+.tool-picker::-webkit-scrollbar-thumb {
+  background: transparent; border-radius: 8px; border: 2px solid transparent;
+  background-clip: content-box;
+}
+.sidebar-scroll:hover::-webkit-scrollbar-thumb,
+.settings-body:hover::-webkit-scrollbar-thumb,
+.tool-picker:hover::-webkit-scrollbar-thumb { background: var(--border); background-clip: content-box; }
+
+/* Section labels inside settings */
+.settings-body > label { margin-top: 10px; }
+.settings-body > label:first-child { margin-top: 0; }
+
+@media (max-width: 768px) {
+  .sidebar { width: min(86vw, 320px); }
+  .sidebar.collapsed { transform: translateX(-100%); }
+  .settings.open { max-height: 50vh; }
+}

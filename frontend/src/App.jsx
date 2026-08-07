@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown } from 'lucide-react'
 import { streamMessage, stopGeneration, uploadDocument, getModels, getProviders, removeProvider, testProvider, saveProviderApiKey, logout, isLoggedIn, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, getTools, setToolEnabled, setToolsEnabledBulk } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
@@ -57,6 +57,7 @@ export default function App() {
   const [providerStatus, setProviderStatus] = useState({})
   const [toolPrefs, setToolPrefs] = useState([])
   const [showToolPicker, setShowToolPicker] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(() => window.innerWidth > 900)
   const [renamingIdx, setRenamingIdx] = useState(null)
   const [renameText, setRenameText] = useState('')
   const [visibleCount, setVisibleCount] = useState(WINDOW_STEP)
@@ -568,6 +569,7 @@ export default function App() {
           </div>
         )}
 
+        <div className="sidebar-scroll">
         <div className="conversation-list">
           {visibleConvs.map(({ c, i }) => (
             <div key={i} className={`conversation-item ${i === activeIdx ? 'active' : ''}`}
@@ -600,8 +602,20 @@ export default function App() {
             <div className="conv-empty">No chats match "{convQuery}"</div>
           )}
         </div>
+        </div>
 
-        <div className="settings">
+        <div className={`settings ${settingsOpen ? 'open' : 'closed'}`}>
+          <button className="settings-toggle" onClick={() => setSettingsOpen(v => !v)}
+            aria-expanded={settingsOpen} aria-controls="settings-body">
+            <span className="settings-toggle-main">
+              <Plug size={12} />
+              <span>{models[provider]?.name || provider}</span>
+              <span className={`conn-dot conn-dot-inline conn-${providerStatus[provider]?.state || 'no-key'}`} />
+            </span>
+            <ChevronDown size={14} className={settingsOpen ? 'chev open' : 'chev'} />
+          </button>
+
+          <div className="settings-body" id="settings-body" hidden={!settingsOpen}>
           <label><Sparkles size={12} /> Persona</label>
           <select value={activeTemplate} onChange={e => setActiveTemplate(e.target.value)}>
             {promptTemplates.map(t => (
@@ -745,6 +759,7 @@ export default function App() {
               ))}
             </div>
           )}
+          </div>
         </div>
       </aside>
 
