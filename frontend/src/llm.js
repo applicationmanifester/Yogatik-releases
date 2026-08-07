@@ -161,10 +161,19 @@ export function getDefaultModel(providerId) { return getProviders()[providerId]?
  * On localhost: Vite dev server proxy handles /api/llm-proxy.
  * On production: Firebase Cloud Function handles /api/llm-proxy.
  */
+// Cloudflare Worker URL (VITE_LLM_PROXY_BASE). Empty → same-origin /api/llm-proxy,
+// which the Vite plugin serves in dev.
+const PROXY_BASE = (import.meta.env.VITE_LLM_PROXY_BASE || '').replace(/\/+$/, '')
+const isLocalhost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+
+export function getProxyEndpoint() {
+  return (!isLocalhost && PROXY_BASE) ? PROXY_BASE : '/api/llm-proxy'
+}
+
 async function smartFetch(url, options, prov) {
   if (prov?.needsProxy) {
     const proxyHeaders = { ...options.headers, 'X-Target-URL': url }
-    return fetch('/api/llm-proxy', { ...options, headers: proxyHeaders })
+    return fetch(getProxyEndpoint(), { ...options, headers: proxyHeaders })
   }
   return fetch(url, options)
 }
@@ -203,14 +212,24 @@ export async function streamChat({
 
     if (!resp.ok) {
       const err = await resp.text()
-      onError?.(new Error(`${resp.status}: ${err}`))
+      onError?.(new Error(`${resp.status}: ${err.slice(0, 300)}`))
       return
     }
+
+    // Guard: a misconfigured proxy returns index.html with 200 — detect it
+    // instead of silently yielding an empty answer.
+    const ctype = resp.headers.get('content-type') || ''
+    if (ctype.includes('text/html')) {
+      onError?.(new Error(`LLM proxy misconfigured — ${getProxyEndpoint()} returned HTML instead of a stream. Deploy the Cloudflare Worker and set VITE_LLM_PROXY_BASE.`))
+      return
+    }
+    if (!resp.body) { onError?.(new Error('Empty response body from provider')); return }
 
     const reader = resp.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
     let toolCalls = {}
+    let sawData = false
 
     while (true) {
       const { done, value } = await reader.read()
@@ -220,10 +239,14 @@ export async function streamChat({
       const lines = buffer.split('\n')
       buffer = lines.pop()
 
-      for (const line of lines) {
-        if (!line.startsWith('data: ') || line === 'data: [DONE]') continue
+      for (const raw of lines) {
+        const line = raw.trim()                       // strips \r from CRLF streams
+        if (!line.startsWith('data:')) continue       // some providers omit the space
+        const payload = line.slice(5).trim()
+        if (!payload || payload === '[DONE]') continue
+        sawData = true
         try {
-          const data = JSON.parse(line.slice(6))
+          const data = JSON.parse(payload)
           const delta = data.choices?.[0]?.delta
           if (!delta) continue
 
@@ -249,6 +272,11 @@ export async function streamChat({
           }
         } catch {}
       }
+    }
+
+    if (!sawData) {
+      onError?.(new Error('Provider returned no stream data — check model name and API key.'))
+      return
     }
 
     const remaining = Object.values(toolCalls).filter(tc => tc.name)

@@ -794,9 +794,9 @@ export default function App() {
         setStreamingContent('')
         setActiveTools([])
         setPendingToolResults({})
-        // Show ad after every chat except the first
+        // Show ad every 3 chats
         chatCountRef.current++
-        if (chatCountRef.current > 1) setShowAd(true)
+        if (chatCountRef.current % 3 === 0) setShowAd(true)
       },
       (err) => {
         setStatusText('')

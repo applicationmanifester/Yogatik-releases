@@ -2,11 +2,11 @@ const { onRequest } = require("firebase-functions/v2/https");
 
 /**
  * Universal CORS proxy for LLM APIs that don't support browser CORS.
- * Forwards requests to the target URL specified in the X-Target-URL header,
- * passing through Authorization and other headers, and streams the response back.
+ * Forwards to X-Target-URL and streams the response back chunk-by-chunk
+ * (required for SSE token streaming — buffering would break live output).
  */
 exports.llmProxy = onRequest(
-  { cors: true, region: "us-central1", memory: "256MiB", timeoutSeconds: 120 },
+  { cors: true, region: "us-central1", memory: "256MiB", timeoutSeconds: 300 },
   async (req, res) => {
     const targetUrl = req.headers["x-target-url"];
     if (!targetUrl) {
@@ -14,44 +14,53 @@ exports.llmProxy = onRequest(
       return;
     }
 
-    // Build headers to forward (skip hop-by-hop and host headers)
     const skipHeaders = new Set([
-      "host", "x-target-url", "origin", "referer",
+      "host", "x-target-url", "origin", "referer", "cookie",
       "x-forwarded-for", "x-forwarded-proto", "x-forwarded-host",
-      "connection", "transfer-encoding",
+      "connection", "transfer-encoding", "content-length",
+      "accept-encoding", "user-agent",
     ]);
     const forwardHeaders = {};
-    for (const [key, value] of Object.entries(req.headers)) {
-      if (!skipHeaders.has(key.toLowerCase())) {
-        forwardHeaders[key] = value;
-      }
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (!skipHeaders.has(k.toLowerCase())) forwardHeaders[k] = v;
     }
 
     try {
-      const fetchOptions = {
-        method: req.method,
-        headers: forwardHeaders,
-      };
-
-      // Forward body for POST/PUT/PATCH
-      if (["POST", "PUT", "PATCH"].includes(req.method) && req.body) {
-        fetchOptions.body =
-          typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+      const bodyless = req.method === "GET" || req.method === "HEAD";
+      const fetchOptions = { method: req.method, headers: forwardHeaders };
+      if (!bodyless && req.body != null) {
+        fetchOptions.body = Buffer.isBuffer(req.body)
+          ? req.body
+          : typeof req.body === "string"
+            ? req.body
+            : JSON.stringify(req.body);
       }
 
       const upstream = await fetch(targetUrl, fetchOptions);
 
-      // Copy status and selected response headers
       res.status(upstream.status);
       const ct = upstream.headers.get("content-type");
       if (ct) res.set("Content-Type", ct);
+      // Defeat any intermediate buffering so SSE chunks reach the browser live
+      res.set("Cache-Control", "no-cache, no-transform");
+      res.set("X-Accel-Buffering", "no");
+      if (typeof res.flushHeaders === "function") res.flushHeaders();
 
-      // Stream or send body
-      const body = await upstream.arrayBuffer();
-      res.send(Buffer.from(body));
+      if (!upstream.body) { res.end(); return; }
+
+      const reader = upstream.body.getReader();
+      req.on("close", () => reader.cancel().catch(() => {}));
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(Buffer.from(value));
+        if (typeof res.flush === "function") res.flush();
+      }
+      res.end();
     } catch (err) {
       console.error("llmProxy error:", err);
-      res.status(502).json({ error: "Proxy error", message: err.message });
+      if (!res.headersSent) res.status(502).json({ error: "Proxy error", message: err.message });
+      else res.end();
     }
   }
 );

@@ -10,10 +10,10 @@ echo Building...
 call npm run build || (echo BUILD FAILED & pause & exit /b 1)
 
 cd /d "%~dp0"
-if not exist functions\node_modules (cd functions && call npm install && cd ..)
+if not exist frontend\.env echo WARNING: frontend\.env missing - NVIDIA proxy disabled (run deploy-proxy.bat first)
 
-echo Deploying hosting + functions + firestore rules...
-call firebase deploy --only hosting,functions,firestore:rules
+echo Deploying hosting + firestore rules...
+call firebase deploy --only hosting,firestore:rules
 echo.
 echo  https://yogatik.web.app/
 pause

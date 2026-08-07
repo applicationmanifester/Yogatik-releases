@@ -47,14 +47,16 @@ export async function runAgent({
 
   const tools = toolsEnabled ? getToolSchemas() : null
   const toolResults = {}
-  let fullContent = ''
+  let fullContent = ''   // everything shown to the user, across all rounds
+  let roundContent = ''  // text from the current round only
   let toolCallsToProcess = []
 
   const processStream = () => new Promise((resolve, reject) => {
     toolCallsToProcess = []
+    roundContent = ''
     streamChat({
       provider, apiKey, model, messages, tools, temperature, signal,
-      onToken: (t) => { fullContent += t; onToken?.(t) },
+      onToken: (t) => { roundContent += t; fullContent += t; onToken?.(t) },
       onToolCall: (tc) => { toolCallsToProcess.push(tc) },
       onDone: () => resolve(),
       onError: (e) => reject(e),
@@ -69,27 +71,43 @@ export async function runAgent({
     let rounds = 0
     while (toolCallsToProcess.length > 0 && rounds < 5) {
       rounds++
-      for (const tc of toolCallsToProcess) {
+      const round = toolCallsToProcess.map((tc, i) => ({
+        ...tc, id: tc.id || `call_${rounds}_${i}`,
+      }))
+
+      // One assistant message carrying every tool_call of this round,
+      // followed by one tool message per call — the shape OpenAI-compatible
+      // providers validate against (NVIDIA rejects interleaved pairs).
+      messages.push({
+        role: 'assistant',
+        content: roundContent || null,
+        tool_calls: round.map(tc => ({
+          id: tc.id, type: 'function',
+          function: { name: tc.name, arguments: JSON.stringify(tc.parsedArgs || {}) },
+        })),
+      })
+
+      for (const tc of round) {
         onStatus?.(`Using ${tc.name}...`)
         onToolStart?.(tc.name)
 
-        const result = await executeTool(tc.name, tc.parsedArgs || {})
+        let result
+        try {
+          result = await executeTool(tc.name, tc.parsedArgs || {})
+        } catch (e) {
+          result = { error: e?.message || String(e) }
+        }
         toolResults[tc.name] = result
         onToolResult?.(tc.name, result)
 
-        // Add assistant tool call + result to messages for next round
         messages.push({
-          role: 'assistant', content: null,
-          tool_calls: [{ id: tc.id, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.parsedArgs || {}) } }],
-        })
-        messages.push({
-          role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result),
+          role: 'tool', tool_call_id: tc.id, name: tc.name,
+          content: JSON.stringify(result).slice(0, 12000), // cap context blowup
         })
       }
 
       // Call LLM again with tool results
       onStatus?.('Thinking...')
-      fullContent = ''
       await processStream()
     }
 

@@ -9,15 +9,16 @@
  *   Body: { ...request body... }
  */
 
-const ALLOWED_ORIGINS = [
+const DEFAULT_ORIGINS = [
   'https://yogatik.web.app',
   'https://yogatik.firebaseapp.com',
   'http://localhost:5173',
   'http://localhost:4173',
 ];
 
-function corsHeaders(origin) {
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+function corsHeaders(origin, env) {
+  const list = (env?.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) : DEFAULT_ORIGINS);
+  const allowed = list.includes(origin) ? origin : list[0];
   return {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -32,7 +33,7 @@ export default {
 
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+      return new Response(null, { status: 204, headers: corsHeaders(origin, env) });
     }
 
     // Get the target URL from the header
@@ -40,7 +41,7 @@ export default {
     if (!targetUrl) {
       return new Response(
         JSON.stringify({ error: 'Missing X-Target-URL header' }),
-        { status: 400, headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
       );
     }
 
@@ -54,13 +55,13 @@ export default {
       if (!allowedHosts.some(h => url.hostname.endsWith(h))) {
         return new Response(
           JSON.stringify({ error: 'Target host not allowed' }),
-          { status: 403, headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' } }
+          { status: 403, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
         );
       }
     } catch {
       return new Response(
         JSON.stringify({ error: 'Invalid target URL' }),
-        { status: 400, headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
       );
     }
 
@@ -88,13 +89,16 @@ export default {
       });
 
       // Build response with CORS headers
-      const responseHeaders = new Headers(corsHeaders(origin));
+      const responseHeaders = new Headers(corsHeaders(origin, env));
       // Copy content-type and other useful headers from upstream
-      const copyHeaders = ['content-type', 'content-length', 'x-request-id'];
+      // NB: never copy content-length — the body is re-streamed, so a stale
+      // length truncates SSE responses.
+      const copyHeaders = ['content-type', 'x-request-id'];
       for (const h of copyHeaders) {
         const val = upstream.headers.get(h);
         if (val) responseHeaders.set(h, val);
       }
+      responseHeaders.set('Cache-Control', 'no-cache, no-transform');
 
       return new Response(upstream.body, {
         status: upstream.status,
@@ -104,7 +108,7 @@ export default {
     } catch (err) {
       return new Response(
         JSON.stringify({ error: 'Proxy error', message: err.message }),
-        { status: 502, headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' } }
+        { status: 502, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
       );
     }
   },
