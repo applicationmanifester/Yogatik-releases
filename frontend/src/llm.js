@@ -199,10 +199,10 @@ async function smartFetch(url, options, prov) {
 }
 
 /**
- * Retry on rate limits and transient upstream failures.
+ * Retry on rate limits, gateway timeouts (524), and transient upstream failures.
  * Honours Retry-After when present, else exponential backoff with jitter.
  */
-const RETRY_STATUS = new Set([429, 500, 502, 503, 504])
+const RETRY_STATUS = new Set([429, 500, 502, 503, 504, 524])
 
 async function fetchWithRetry(url, options, prov, { retries = 3, onStatus } = {}) {
   let attempt = 0
