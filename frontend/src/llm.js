@@ -176,7 +176,20 @@ export function proxyAvailable() { return !!getProxyEndpoint() }
 
 const PUBLIC_RELAY = 'https://corsproxy.io/?'
 
-async function smartFetch(url, options, prov) {
+// Nothing should hang forever: a stalled proxy or provider previously left the
+// UI on "Connecting…" with no way out but the Stop button.
+const REQUEST_TIMEOUT = 120_000
+
+function withTimeout(options) {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT)
+  const signal = options?.signal
+    ? (AbortSignal.any ? AbortSignal.any([options.signal, timeout]) : options.signal)
+    : timeout
+  return { ...options, signal }
+}
+
+async function smartFetch(url, rawOptions, prov) {
+  const options = withTimeout(rawOptions)
   if (!prov?.needsProxy) return fetch(url, options)
 
   const endpoint = getProxyEndpoint()
@@ -202,7 +215,10 @@ async function smartFetch(url, options, prov) {
  * Retry on rate limits, gateway timeouts (524), and transient upstream failures.
  * Honours Retry-After when present, else exponential backoff with jitter.
  */
-const RETRY_STATUS = new Set([429, 500, 502, 503, 504, 524])
+// 520/522/524 are Cloudflare edge errors: the worker could not get a timely
+// response from the provider. Worth retrying — free-tier model cold starts
+// routinely blow past the 100s edge timeout on the first request of the day.
+const RETRY_STATUS = new Set([429, 500, 502, 503, 504, 520, 522, 524])
 
 async function fetchWithRetry(url, options, prov, { retries = 3, onStatus } = {}) {
   let attempt = 0
@@ -265,6 +281,13 @@ export async function streamChat({
 
     if (!resp.ok) {
       const err = await resp.text()
+      if ([504, 520, 522, 524].includes(resp.status)) {
+        onError?.(new Error(
+          `The provider did not respond in time (${resp.status}). Large models on free tiers ` +
+          `can take over 100s to warm up. Try a smaller model, or send the message again.`
+        ))
+        return
+      }
       onError?.(new Error(`${resp.status}: ${err.slice(0, 300)}`))
       return
     }
@@ -340,7 +363,11 @@ export async function streamChat({
 
     onDone?.()
   } catch (err) {
-    if (err.name !== 'AbortError') onError?.(err)
+    if (err.name === 'TimeoutError') {
+      onError?.(new Error(`No response after ${REQUEST_TIMEOUT / 1000}s — the provider or proxy is not responding. Try a smaller model.`))
+    } else if (err.name !== 'AbortError') {
+      onError?.(err)
+    }
   }
 }
 

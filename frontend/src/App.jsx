@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, getProviders, removeProvider, testProvider, saveProviderApiKey, logout, isLoggedIn, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, getTools, setToolEnabled, setToolsEnabledBulk } from './api'
+import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
@@ -9,6 +9,7 @@ import { MessageBubble } from './components/MessageBubble'
 import { AuthModal } from './components/AuthModal'
 import { ProviderModal } from './components/ProviderModal'
 import { AdModal } from './components/AdModal'
+import { Modal } from './components/Modal'
 
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
@@ -30,20 +31,19 @@ export default function App() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
+  const [streamingIdx, setStreamingIdx] = useState(null)
   const [statusText, setStatusText] = useState('')
   const [currentStreamId, setCurrentStreamId] = useState(null)
   const [theme, setTheme] = useState(localStorage.getItem('bgkai_theme') || 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
   const [provider, setProviderState] = useState('groq')
   const [model, setModel] = useState('')
-  const [webSearch, setWebSearch] = useState(true)
-  const [tools, setToolsEnabled] = useState(true)
-  const [temperature, setTemperature] = useState(0.7)
+  const [webSearch, setWebSearchState] = useState(true)
+  const [tools, setToolsEnabledState] = useState(true)
+  const [temperature, setTemperatureState] = useState(0.7)
   const [models, setModels] = useState({})
   const [showProviderModal, setShowProviderModal] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const [providerTemplates, setProviderTemplates] = useState({})
-  const [testingProvider, setTestingProvider] = useState(null)
   const [user, setUser] = useState(null)
   const [promptTemplates, setPromptTemplates] = useState([])
   const [activeTemplate, setActiveTemplate] = useState('default')
@@ -65,12 +65,12 @@ export default function App() {
   const [pwaPrompt, setPwaPrompt] = useState(null)
   const [showPwaInstall, setShowPwaInstall] = useState(false)
   const [showAd, setShowAd] = useState(false)
+  const [online, setOnline] = useState(() => navigator.onLine)
   const chatCountRef = useRef(0)
   const messagesEnd = useRef(null)
   const textareaRef = useRef(null)
   const [isEnhancing, setIsEnhancing] = useState(false)
   const recognitionRef = useRef(null)
-  const audioRef = useRef(null)
 
   const conv = conversations[activeIdx]
 
@@ -85,6 +85,20 @@ export default function App() {
     setActiveModel(provider, m).catch(() => {})
   }, [provider])
 
+  // Chat preferences persist across reloads like provider and model do.
+  const setTemperature = useCallback((v) => {
+    setTemperatureState(v)
+    setPref('temperature', v).catch(() => {})
+  }, [])
+  const setWebSearch = useCallback((v) => {
+    setWebSearchState(v)
+    setPref('web_search', v).catch(() => {})
+  }, [])
+  const setToolsEnabled = useCallback((v) => {
+    setToolsEnabledState(v)
+    setPref('tools_enabled', v).catch(() => {})
+  }, [])
+
   // Only the tail of a long conversation is mounted; older turns stay in state
   // (and IndexedDB) but are not rendered until asked for. Keeps a 500-message
   // chat as cheap to paint as a fresh one.
@@ -93,6 +107,9 @@ export default function App() {
     ? allMessages.slice(-visibleCount)
     : allMessages
   const hiddenCount = allMessages.length - shownMessages.length
+  // A reply streams into the conversation it was sent from, even if the user
+  // navigates away mid-answer.
+  const isStreamingHere = streamingIdx === activeIdx
 
   // Streaming tokens arrive faster than the browser can paint. Coalesce them
   // into one state update per animation frame instead of one per token.
@@ -112,7 +129,15 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('bgkai_theme', theme)
   }, [theme])
-  useEffect(() => { messagesEnd.current?.scrollIntoView({ behavior: streamingContent ? 'auto' : 'smooth' }) }, [conv?.messages, streamingContent])
+  useEffect(() => { if (isStreamingHere || !loading) messagesEnd.current?.scrollIntoView({ behavior: streamingContent ? 'auto' : 'smooth' }) }, [conv?.messages, streamingContent, isStreamingHere, loading])
+
+  useEffect(() => {
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
 
   // PWA install prompt
   useEffect(() => {
@@ -145,6 +170,12 @@ export default function App() {
       setProviderState(p)
       setModel(await getActiveModel(p))
       setProviderStatus(await getAllProviderStatus())
+    }).catch(() => {})
+    getPrefs().then(pref => {
+      if (pref.temperature != null) setTemperatureState(pref.temperature)
+      if (pref.web_search != null) setWebSearchState(pref.web_search)
+      if (pref.tools_enabled != null) setToolsEnabledState(pref.tools_enabled)
+      if (pref.persona) setActiveTemplate(pref.persona)
     }).catch(() => {})
     refreshToolPrefs()
     // Init Web Speech API
@@ -179,9 +210,10 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
   }, [loading])
 
+  // One fetch, not two: getProviders() is an alias of getModels() and the
+  // second call only fed state nothing ever read.
   const refreshModels = () => {
     getModels().then(setModels).catch(() => {})
-    getProviders().then(d => setProviderTemplates(d.templates || {})).catch(() => {})
   }
 
   const refreshTemplates = () => {
@@ -255,9 +287,14 @@ export default function App() {
   const deleteChat = async (idx) => {
     const c = conversations[idx]
     if (c.id) { try { await deleteConversation(c.id) } catch {} }
-    if (conversations.length === 1) { newChat(); return }
-    setConversations(prev => prev.filter((_, i) => i !== idx))
-    setActiveIdx(prev => prev >= idx ? Math.max(0, prev - 1) : prev)
+    setVisibleCount(WINDOW_STEP)
+    setConversations(prev => {
+      const next = prev.filter((_, i) => i !== idx)
+      // Always keep one empty chat to land in, rather than appending a new one
+      // beside the row we just deleted.
+      return next.length ? next : [{ id: null, title: 'New Chat', messages: [] }]
+    })
+    setActiveIdx(prev => Math.max(0, prev >= idx ? prev - 1 : prev))
   }
 
   const handleExport = async () => {
@@ -343,11 +380,16 @@ export default function App() {
 
   const send = async (text = input) => {
     if ((!text.trim() && !attachedFile) || loading) return
+    if (!navigator.onLine) {
+      setErrorModalMsg("You're offline. Yogatik needs a connection to reach the model provider — your chats and documents are safe on this device.")
+      return
+    }
     const msgText = text.trim()
     setInput('')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
     setLoading(true)
     setStreamingContent('')
+    setStreamingIdx(activeIdx)   // the stream belongs to THIS conversation
     setStatusText('Connecting...')
     setCurrentStreamId(null)
     setActiveTools([])
@@ -400,13 +442,19 @@ export default function App() {
     let toolsUsed = []
 
     await streamMessage(
-      { message: finalText, messages: updated.messages, tools, use_tools: tools, use_web_search: webSearch, temperature, model: model || undefined },
+      { message: finalText, messages: updated.messages, tools, use_tools: tools, use_web_search: webSearch,
+        system_prompt: getSystemPrompt(), temperature, model: model || undefined, channel: 'chat' },
       (token) => { content += token; pushStream(content); setStatusText('') },
       (s) => { sources = s },
-      () => {
+      (_final, meta) => {
         setStatusText('')
         setCurrentStreamId(null)
-        const assistantMsg = { role: 'assistant', content, sources, toolResults: { ...pendingToolResults }, toolsUsed }
+        if (!content.trim() && meta?.aborted) { setStreamingContent(''); setActiveTools([]); setPendingToolResults({}); return }
+        const assistantMsg = {
+          role: 'assistant',
+          content: meta?.aborted ? content + '\n\n_[stopped]_' : content,
+          sources, toolResults: { ...pendingToolResults }, toolsUsed,
+        }
         saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
         setConversations(prev => prev.map((c, i) =>
           i === activeIdx ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
@@ -436,6 +484,7 @@ export default function App() {
       }
     )
     setLoading(false)
+    setStreamingIdx(null)
   }
 
   const handleUpload = (e) => {
@@ -457,9 +506,9 @@ export default function App() {
           provider,
           model: model || undefined,
           use_web_search: false,
-          use_rag: false,
           use_tools: false,
-          temperature: 0.7
+          temperature: 0.7,
+          channel: 'enhance',
         },
         (token) => { enhanced += token; setInput(enhanced) }, // onToken
         () => {}, // onSources
@@ -617,7 +666,7 @@ export default function App() {
 
           <div className="settings-body" id="settings-body" hidden={!settingsOpen}>
           <label><Sparkles size={12} /> Persona</label>
-          <select value={activeTemplate} onChange={e => setActiveTemplate(e.target.value)}>
+          <select value={activeTemplate} aria-label="Persona" onChange={e => { setActiveTemplate(e.target.value); setPref('persona', e.target.value).catch(() => {}) }}>
             {promptTemplates.map(t => (
               <option key={t.id} value={t.id}>{t.icon} {t.name}</option>
             ))}
@@ -778,7 +827,7 @@ export default function App() {
         </header>
 
         <div className="messages">
-          {allMessages.length === 0 && !streamingContent ? (
+          {allMessages.length === 0 && !isStreamingHere ? (
             <div className="welcome">
               <h1 style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center' }}><YogatikLogo size={48} /> Yogatik</h1>
               <p>AI assistant with live web research, document Q&A, image generation, code execution, weather, translation, TTS and 32 free tools — all running in your browser.</p>
@@ -819,13 +868,13 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {streamingContent && (
+              {isStreamingHere && streamingContent && (
                 <div className="message assistant">
                   <div className="message-role">Yogatik</div>
                   <div className="message-content"><ReactMarkdown>{streamingContent}</ReactMarkdown></div>
                 </div>
               )}
-              {loading && !streamingContent && (
+              {loading && streamingIdx === activeIdx && !streamingContent && (
                 <div className="message assistant">
                   {statusText && <div className="status-text">{statusText}</div>}
                   {activeTools.length > 0 && (
@@ -871,6 +920,11 @@ export default function App() {
               </button>
             )}
           </div>
+          {!online && (
+            <div className="offline-banner" role="status">
+              <AlertTriangle size={12} /> Offline — messages will fail until the connection returns.
+            </div>
+          )}
           {attachedFile && (
             <div className="attached-file">
               <span className="attached-name">📎 {attachedFile.name}</span>
@@ -880,7 +934,7 @@ export default function App() {
           <div className="input-wrapper">
             <textarea ref={textareaRef} value={input} onChange={e => { setInput(e.target.value); autoResize() }}
               onKeyDown={handleKeyDown} placeholder={attachedFile ? `Describe what to do with ${attachedFile.name}...` : "Ask anything... (try: weather, images, code, translate)"} rows={1} />
-            <button className="send-btn" aria-label="Send message" onClick={() => send()} disabled={loading || (!input.trim() && !attachedFile)}>
+            <button className="send-btn" aria-label="Send message" onClick={() => send()} disabled={loading || !online || (!input.trim() && !attachedFile)}>
               <Send size={18} />
             </button>
           </div>
@@ -896,20 +950,17 @@ export default function App() {
       {activeArtifact && <ArtifactPanel artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />}
       {showAd && <AdModal onClose={() => setShowAd(false)} />}
       {errorModalMsg && (
-        <div className="modal-overlay" onClick={() => setErrorModalMsg(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
-            <div className="modal-header">
-              <h2 style={{ color: '#ff4444' }}><AlertTriangle size={18} /> API Key Error</h2>
-              <button className="icon-btn" onClick={() => setErrorModalMsg(null)} aria-label="Dismiss error"><X size={18} /></button>
-            </div>
-            <div style={{ padding: '16px 0', fontSize: 13, lineHeight: 1.5, color: 'var(--text-primary)', whitespace: 'pre-wrap' }}>
-              {errorModalMsg}
-            </div>
+        <Modal title="Connection problem" icon={<AlertTriangle size={18} />}
+          onClose={() => setErrorModalMsg(null)} labelledBy="error-title"
+          footer={
             <div className="modal-actions">
-              <button className="btn-primary" onClick={() => setErrorModalMsg(null)}>Got It</button>
+              <button className="btn-primary" onClick={() => setErrorModalMsg(null)}>Got it</button>
             </div>
+          }>
+          <div style={{ padding: '16px 0', fontSize: 13, lineHeight: 1.5, color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
+            {errorModalMsg}
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

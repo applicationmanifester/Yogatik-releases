@@ -7,7 +7,7 @@
 import { streamChat } from './llm'
 import { getToolSchemas, executeTool } from './tools/index'
 
-function buildSystemPrompt({ webEnabled }) {
+function buildSystemPrompt({ webEnabled, persona }) {
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
@@ -16,9 +16,18 @@ function buildSystemPrompt({ webEnabled }) {
 Today's date is ${today}.
 
 You can generate images, execute Python, create charts and diagrams, look up weather,
-translate text, read QR codes, convert units, and more. Call tools whenever they help.
-You may request several tools at once — independent calls run in parallel, so batch them
-rather than asking for one, waiting, then asking for the next.
+translate text, read QR codes, convert units, and more.
+
+WHEN TO USE TOOLS:
+- Call a tool only when it does something you cannot do by writing text. Most messages —
+  explanations, opinions, summaries, code you can simply write out — need no tools at all.
+  Answer those directly.
+- Never call a tool to deliver, narrate, announce or format your own reply. In particular
+  do NOT call tts to read your answer aloud; the user is reading it and has a play button.
+- Never call a tool "just in case" or to look busy. A wrong tool call costs the user time
+  and, for tts/stt, hijacks their speakers or microphone.
+- When you do need several independent tools, request them in one turn — they run in
+  parallel — rather than one at a time.
 
 ${webEnabled ? `RESEARCH — you have live internet access:
 - Your training data is stale. For anything time-sensitive (news, prices, releases,
@@ -37,7 +46,11 @@ ${webEnabled ? `RESEARCH — you have live internet access:
 say clearly when something may be out of date or when you are unsure.`}
 
 Format with markdown when it aids clarity. Be concise.
-If a tool fails, explain what happened and suggest an alternative.`
+If a tool fails, explain what happened and suggest an alternative.${persona ? `
+
+PERSONA — the user selected this style; follow it for tone and depth, but never let
+it override the tool and research rules above:
+${persona}` : ''}`
 }
 
 /**
@@ -63,8 +76,9 @@ function windowHistory(history, budget = HISTORY_BUDGET) {
     } else {
       const room = budget - used
       // Only worth keeping a partial message if a useful amount survives.
+      // The ellipsis counts against the budget, hence room - 1.
       if (room > 500) {
-        out.push({ role: m.role, content: '…' + content.slice(-room) })
+        out.push({ role: m.role, content: '…' + content.slice(-(room - 1)) })
       }
       break
     }
@@ -107,7 +121,7 @@ function collectSources(result) {
  */
 export async function runAgent({
   provider, apiKey, model, history = [], userMessage,
-  toolsEnabled = true, webEnabled = true, disabledTools = [], temperature = 0.7, signal,
+  toolsEnabled = true, webEnabled = true, disabledTools = [], persona = null, temperature = 0.7, signal,
   onToken, onStatus, onToolStart, onToolResult, onDone, onError, onSources,
 }) {
   // Web research is only truly available if tools are on, the toggle is on,
@@ -116,7 +130,7 @@ export async function runAgent({
     !['deep_research', 'web_search'].every(t => disabledTools.includes(t))
 
   const messages = [
-    { role: 'system', content: buildSystemPrompt({ webEnabled: webAvailable }) },
+    { role: 'system', content: buildSystemPrompt({ webEnabled: webAvailable, persona }) },
     ...windowHistory(history),
     { role: 'user', content: userMessage },
   ]
@@ -206,6 +220,11 @@ export async function runAgent({
 
     onDone?.({ content: fullContent, toolResults, sources })
   } catch (err) {
-    if (err.name !== 'AbortError') onError?.(err)
+    if (err.name === 'AbortError') {
+      // User pressed Stop: keep whatever was generated instead of dropping it.
+      onDone?.({ content: fullContent, toolResults, sources, aborted: true })
+    } else {
+      onError?.(err)
+    }
   }
 }

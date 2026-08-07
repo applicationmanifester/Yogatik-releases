@@ -1,7 +1,10 @@
 // Web Speech Recognition API — built into Chrome/Edge, free
 export const sttTool = {
   schema: {
-    description: 'Transcribe speech from microphone',
+    description:
+      'Record from the microphone and transcribe it. ' +
+      'ONLY call when the user explicitly asks to dictate or capture audio. ' +
+      'NEVER call it to ask the user a question or to wait for input — it opens the mic for 15 seconds and blocks.',
     parameters: { type: 'object', properties: {
       lang: { type: 'string', description: 'Language code (default en-US)' },
     } },

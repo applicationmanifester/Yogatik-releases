@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { X, User } from 'lucide-react'
+import { User } from 'lucide-react'
+import { Modal } from './Modal'
 import { loginWithGoogle } from '../api'
 
 // ─── Auth Modal ───
@@ -21,12 +22,7 @@ function AuthModal({ onClose, onAuth }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2><User size={18} /> Sign In to Yogatik</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        </div>
+    <Modal title="Sign in to Yogatik" icon={<User size={18} />} onClose={onClose} labelledBy="auth-title">
         <div className="modal-body" style={{ textAlign: 'center', padding: '16px 0' }}>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
             Sign in with Google to sync your conversation history and back up your custom Provider API Keys to your account.
@@ -47,8 +43,7 @@ function AuthModal({ onClose, onAuth }) {
           </button>
         </div>
         {error && <div className="test-result error">{error}</div>}
-      </div>
-    </div>
+    </Modal>
   )
 }
 

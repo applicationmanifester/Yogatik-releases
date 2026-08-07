@@ -57,7 +57,9 @@ export async function logout() {
 export async function isLoggedIn() { return !!(await db.getSetting('user')) }
 
 // ─── Chat (via browser agent) ───
-let currentAbort = null
+// Keyed so that a side task (prompt enhancement) cannot have its handle
+// clobbered by — or clobber — the main chat stream.
+const aborters = new Map()
 
 export async function streamMessage(body, onToken, onSources, onDone, onError, onStatus, onStreamId, onToolsDetected, onToolResult) {
   const provider = body.provider || await getActiveProvider()
@@ -70,7 +72,10 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
     return
   }
 
-  currentAbort = new AbortController()
+  const channel = body.channel || 'chat'
+  aborters.get(channel)?.abort()
+  const controller = new AbortController()
+  aborters.set(channel, controller)
   onStreamId?.('local-' + Date.now())
 
   try {
@@ -81,27 +86,42 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
       toolsEnabled: body.tools !== false && body.use_tools !== false,
       webEnabled: body.use_web_search !== false,
       disabledTools: await getDisabledTools(),
+      persona: body.system_prompt || null,
       temperature: body.temperature || 0.7,
-      signal: currentAbort.signal,
+      signal: controller.signal,
       onToken,
       onStatus,
       onSources,
       onToolStart: (name) => onToolsDetected?.([name]),
       onToolResult: (name, result) => onToolResult?.(name, result),
-      onDone: ({ content, sources }) => {
+      onDone: ({ content, sources, aborted }) => {
         if (sources?.length) onSources?.(sources)
-        onDone?.(content)
+        onDone?.(content, { aborted })
       },
       onError: (err) => onError?.(err.message),
     })
   } catch (err) {
     onError?.(err.message)
+  } finally {
+    if (aborters.get(channel) === controller) aborters.delete(channel)
   }
 }
 
-export async function stopGeneration() {
-  currentAbort?.abort()
-  currentAbort = null
+export async function stopGeneration(channel = 'chat') {
+  aborters.get(channel)?.abort()
+  aborters.delete(channel)
+}
+
+// ─── Chat preferences (persisted) ───
+export async function getPrefs() {
+  return db.getSetting('chat_prefs', {})
+}
+
+export async function setPref(key, value) {
+  const prefs = await db.getSetting('chat_prefs', {})
+  prefs[key] = value
+  await db.setSetting('chat_prefs', prefs)
+  return prefs
 }
 
 // ─── Conversations (IndexedDB) ───
@@ -205,9 +225,11 @@ export async function uploadDocument(file) {
   if (!text) return { success: false, error: 'File appears to be empty' }
 
   const chunks = chunkText(text)
+  // Only chunks are ever read back (doc_search joins them); keeping the full
+  // text too doubled IndexedDB usage for every upload.
   const doc = await db.addDocument({
     name: file.name, type: file.type || 'text', size: file.size,
-    chars: text.length, text, chunks,
+    chars: text.length, chunks,
   })
   invalidateDocIndex(doc.id)
 
@@ -278,6 +300,7 @@ export async function getModels() {
   return result
 }
 
+/** @deprecated alias kept for callers; identical payload to getModels(). */
 export async function getProviders() {
   return getModels()
 }
@@ -431,8 +454,18 @@ export async function setActiveModel(providerId, model) {
  * Per-tool enable/disable. Stored as a map of the *disabled* names so tools
  * added in future releases are on by default rather than silently missing.
  */
+/**
+ * Tools that grab hardware and annoy the user when a model over-calls them.
+ * Both are already available as UI buttons (speaker on each message, mic in
+ * the composer), so the agent does not need them by default.
+ */
+const DEFAULT_DISABLED = ['tts', 'stt']
+
 export async function getDisabledTools() {
-  return db.getSetting('disabled_tools', [])
+  const saved = await db.getSetting('disabled_tools')
+  if (saved) return saved
+  await db.setSetting('disabled_tools', DEFAULT_DISABLED)
+  return DEFAULT_DISABLED
 }
 
 export async function setToolEnabled(name, enabled) {

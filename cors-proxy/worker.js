@@ -94,8 +94,12 @@ export default {
     const skipHeaders = new Set([
       'host', 'origin', 'referer', 'x-target-url', 'cookie',
       'x-forwarded-for', 'x-forwarded-proto',
-      'cf-connecting-ip', 'cf-ray', 'cf-visitor',
+      'cf-connecting-ip', 'cf-ray', 'cf-visitor', 'cf-ipcountry',
       'connection', 'upgrade',
+      // Must NOT be forwarded: the body is re-encoded on the way out, so a
+      // stale content-length makes the upstream wait for bytes that never
+      // arrive — the request hangs until Cloudflare gives up with a 524.
+      'content-length', 'transfer-encoding', 'content-encoding', 'accept-encoding',
     ]);
 
     const forwardHeaders = new Headers();
@@ -106,12 +110,28 @@ export default {
     }
 
     try {
-      // Forward the request to the target API
-      const upstream = await fetch(targetUrl, {
-        method: request.method,
-        headers: forwardHeaders,
-        body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
-      });
+      // Buffer the request body (chat payloads are small) so the runtime sets a
+      // correct content-length. Streaming request.body through with the client's
+      // original headers is what produced the hang. Response streaming, which is
+      // what actually matters for SSE, is untouched below.
+      const bodyless = ['GET', 'HEAD'].includes(request.method);
+      const body = bodyless ? undefined : await request.arrayBuffer();
+
+      // Fail fast with a readable error instead of Cloudflare's opaque 524.
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), 90_000);
+
+      let upstream;
+      try {
+        upstream = await fetch(targetUrl, {
+          method: request.method,
+          headers: forwardHeaders,
+          body,
+          signal: abort.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
 
       // Build response with CORS headers
       const responseHeaders = new Headers(corsHeaders(origin, env));
@@ -131,9 +151,18 @@ export default {
         headers: responseHeaders,
       });
     } catch (err) {
+      const timedOut = err.name === 'AbortError';
       return new Response(
-        JSON.stringify({ error: 'Proxy error', message: err.message }),
-        { status: 502, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          error: timedOut ? 'Upstream timeout' : 'Proxy error',
+          message: timedOut
+            ? 'The provider did not respond within 90s. It may be overloaded — try a smaller model.'
+            : err.message,
+        }),
+        {
+          status: timedOut ? 504 : 502,
+          headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' },
+        }
       );
     }
   },

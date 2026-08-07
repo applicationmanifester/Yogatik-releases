@@ -962,3 +962,30 @@ body {
   .sidebar.collapsed { transform: translateX(-100%); }
   .settings.open { max-height: 50vh; }
 }
+
+/* ── Research / search result cards ── */
+.tool-result-meta { margin-left: auto; font-size: 10px; opacity: .6; font-weight: 400; }
+.source-list { list-style: none; margin: 6px 0 0; padding: 0; counter-reset: src; }
+.source-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 4px; border-radius: 6px;
+}
+.source-row:hover { background: var(--bg-tertiary); }
+.source-favicon { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; }
+.source-link { display: flex; flex-direction: column; min-width: 0; text-decoration: none; }
+.source-name {
+  font-size: 12px; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.source-host { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 3px; }
+.passage { margin-top: 8px; padding-left: 8px; border-left: 2px solid var(--border); }
+.passage-src { font-size: 10px; color: var(--text-muted); margin-bottom: 2px; }
+.passage-text { font-size: 12px; line-height: 1.5; color: var(--text-secondary); margin: 0; }
+
+/* ── Offline banner ── */
+.offline-banner {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 6px; padding: 6px 10px; border-radius: var(--radius, 8px);
+  background: var(--bg-tertiary, #241a12); color: #ffb26b;
+  border: 1px solid rgba(255, 178, 107, .3); font-size: 11px;
+}

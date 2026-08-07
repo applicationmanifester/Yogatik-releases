@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { X, Plug } from 'lucide-react'
+import { Plug } from 'lucide-react'
+import { Modal } from './Modal'
 import { addProvider } from '../api'
 
 // ─── Provider Modal ───
@@ -42,12 +43,8 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2><Plug size={18} /> {isEdit ? 'Edit Provider' : 'Add Custom Provider'}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        </div>
+    <Modal title={isEdit ? 'Edit provider' : 'Add custom provider'} icon={<Plug size={18} />}
+      onClose={onClose} labelledBy="provider-title">
         {!isEdit && (
           <div className="modal-tabs">
             <button className={mode === 'template' ? 'active' : ''} onClick={() => setMode('template')}>Quick Add</button>
@@ -84,8 +81,7 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn-primary" onClick={handleSave} disabled={!form.id || !form.name || !form.base_url}>{isEdit ? 'Save Changes' : 'Add Provider'}</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

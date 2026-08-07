@@ -11,9 +11,18 @@ export const imageGenTool = {
   async execute({ prompt, width = 1024, height = 1024 }) {
     const seed = Math.floor(Math.random() * 999999)
     const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${seed}&nologo=true`
-    // Pre-fetch to ensure it's generated
+    // Pollinations renders on first request, so we must fetch once to trigger
+    // generation — keep those bytes as a blob URL instead of throwing them away
+    // and making the <img> download the same megabyte all over again.
     const resp = await fetch(url)
-    if (!resp.ok) return { success: false, error: 'Image generation failed' }
-    return { success: true, tool: 'image_generate', image_url: url, prompt }
+    if (!resp.ok) return { success: false, error: `Image generation failed (${resp.status})` }
+    const blob = await resp.blob()
+    if (!blob.size) return { success: false, error: 'Image generation returned no data' }
+    return {
+      success: true, tool: 'image_generate', prompt,
+      image_url: URL.createObjectURL(blob),
+      source_url: url,
+      bytes: blob.size,
+    }
   }
 }
