@@ -225,6 +225,23 @@ export async function stopGeneration(channel = 'chat') {
   aborters.delete(channel)
 }
 
+// ─── Terms acceptance ───
+export async function getTermsAcceptance() {
+  return db.getSetting('terms_accepted')   // { version, at } | null
+}
+
+export async function acceptTerms(version) {
+  const record = { version, at: Date.now() }
+  await db.setSetting('terms_accepted', record)
+  return record
+}
+
+/** True when the user has accepted this exact version. */
+export async function hasAcceptedTerms(version) {
+  const rec = await db.getSetting('terms_accepted')
+  return rec?.version === version
+}
+
 // ─── Chat preferences (persisted) ───
 export async function getPrefs() {
   return db.getSetting('chat_prefs', {})

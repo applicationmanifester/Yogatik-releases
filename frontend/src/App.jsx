@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, enableCloudSync, disableCloudSync, isCloudSyncOn } from './api'
+import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, enableCloudSync, disableCloudSync, isCloudSyncOn } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
@@ -10,6 +10,7 @@ import { AuthModal } from './components/AuthModal'
 import { ProviderModal } from './components/ProviderModal'
 import { AdModal, adsConfigured } from './components/AdModal'
 import { Modal } from './components/Modal'
+import { TermsModal, TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
@@ -52,6 +53,7 @@ export default function App() {
   const [models, setModels] = useState({})
   const [showProviderModal, setShowProviderModal] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [showTerms, setShowTerms] = useState(false)
   const [user, setUser] = useState(null)
   const [promptTemplates, setPromptTemplates] = useState([])
   const [activeTemplate, setActiveTemplate] = useState('default')
@@ -366,6 +368,21 @@ export default function App() {
   }
 
   const handleAuth = (userData) => { setUser(userData); loadConversations() }
+
+  /**
+   * Sign-in is gated on accepting the current terms. Acceptance is recorded
+   * per version, so a material update asks again.
+   */
+  const requestSignIn = async () => {
+    if (await hasAcceptedTerms(TERMS_VERSION)) setShowAuthModal(true)
+    else setShowTerms(true)
+  }
+
+  const handleAcceptTerms = async (version) => {
+    await acceptTerms(version)
+    setShowTerms(false)
+    setShowAuthModal(true)
+  }
 
   const autoResize = useCallback(() => {
     const ta = textareaRef.current
@@ -776,7 +793,7 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <button className="auth-btn" onClick={() => setShowAuthModal(true)} aria-label="Sign in">
+            <button className="auth-btn" onClick={requestSignIn} aria-label="Sign in">
               <LogIn size={14} /> Sign In
             </button>
           )}
@@ -938,7 +955,7 @@ export default function App() {
 
           <div className="cloud-sync">
             {!user ? (
-              <span className="cloud-hint">Keys stay on this device. <button className="link-btn" onClick={() => setShowAuthModal(true)}>Sign in</button> to sync them, encrypted.</span>
+              <span className="cloud-hint">Keys stay on this device. <button className="link-btn" onClick={requestSignIn}>Sign in</button> to sync them, encrypted.</span>
             ) : cloudSync ? (
               <span className="cloud-hint">
                 <Cloud size={11} /> Cloud sync on
@@ -1257,6 +1274,15 @@ export default function App() {
               <Send size={18} />
             </button>
           </div>
+
+          <div className="composer-footer">
+            <span className="disclaimer">
+              AI can make mistakes — please check important responses.
+            </span>
+            <a className="feedback-link" href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Yogatik feedback')}`}>
+              Feedback
+            </a>
+          </div>
         </div>
       </main>
 
@@ -1265,6 +1291,9 @@ export default function App() {
         onSaved={() => { refreshModels(); setEditingProvider(null) }}
         editProvider={editingProvider ? { id: editingProvider, ...models[editingProvider] } : null}
       />}
+      {showTerms && (
+        <TermsModal onAccept={handleAcceptTerms} onDecline={() => setShowTerms(false)} />
+      )}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={handleAuth} />}
       {activeArtifact && <ArtifactPanel artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />}
       {showAd && <AdModal onClose={() => setShowAd(false)} />}
