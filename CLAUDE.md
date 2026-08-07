@@ -105,3 +105,12 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - Context window: budget-based (24k chars / 20 turns), keeps recent msgs whole.
   Never blanket-truncate — that shredded inlined docs on turn 2.
 - Message list renders last 40 turns; "Load earlier" pages back.
+
+## Provider / tools config
+- Active provider+model persisted in IndexedDB (`provider`, `model_<id>`) — agent reads
+  these, so React-only state meant every msg went to the stored default (was 'nvidia').
+- Default when unset: first provider with a key that doesn't need a proxy, else groq.
+- testProvider does a REAL 1-token chatComplete through the same path chat uses
+  (incl. proxy) and stores `status_<id>`; UI shows dot + latency + friendly error.
+- Per-tool on/off in `disabled_tools` (stores DISABLED names so new tools default on);
+  getToolSchemas(disabled) filters what the model ever sees.

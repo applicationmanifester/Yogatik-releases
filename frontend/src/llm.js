@@ -345,7 +345,7 @@ export async function streamChat({
 }
 
 /** Non-streaming completion (for tool result processing) */
-export async function chatComplete({ provider, apiKey, model, messages, tools, temperature = 0.7 }) {
+export async function chatComplete({ provider, apiKey, model, messages, tools, temperature = 0.7, maxTokens }) {
   const prov = getProviders()[provider]
   const headers = {
     'Content-Type': 'application/json',
@@ -356,6 +356,7 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
     headers['X-Title'] = 'Yogatik'
   }
   const body = { model: model || prov.default, messages, temperature }
+  if (maxTokens) body.max_tokens = maxTokens
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto' }
 
   const resp = await fetchWithRetry(`${prov.baseUrl}/chat/completions`, {

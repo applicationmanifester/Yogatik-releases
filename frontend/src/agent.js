@@ -107,16 +107,21 @@ function collectSources(result) {
  */
 export async function runAgent({
   provider, apiKey, model, history = [], userMessage,
-  toolsEnabled = true, webEnabled = true, temperature = 0.7, signal,
+  toolsEnabled = true, webEnabled = true, disabledTools = [], temperature = 0.7, signal,
   onToken, onStatus, onToolStart, onToolResult, onDone, onError, onSources,
 }) {
+  // Web research is only truly available if tools are on, the toggle is on,
+  // and the research tools themselves have not been disabled.
+  const webAvailable = toolsEnabled && webEnabled &&
+    !['deep_research', 'web_search'].every(t => disabledTools.includes(t))
+
   const messages = [
-    { role: 'system', content: buildSystemPrompt({ webEnabled: toolsEnabled && webEnabled }) },
+    { role: 'system', content: buildSystemPrompt({ webEnabled: webAvailable }) },
     ...windowHistory(history),
     { role: 'user', content: userMessage },
   ]
 
-  const tools = toolsEnabled ? getToolSchemas() : null
+  const tools = toolsEnabled ? getToolSchemas(disabledTools) : null
   const toolResults = {}
   const sources = []
   let fullContent = ''   // everything shown to the user, across all rounds

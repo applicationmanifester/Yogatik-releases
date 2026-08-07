@@ -71,12 +71,15 @@ const ALL_TOOLS = {
   youtube: youtubeTool,
 }
 
-/** Get OpenAI function schemas for all tools */
-export function getToolSchemas() {
-  return Object.entries(ALL_TOOLS).map(([name, tool]) => ({
-    type: 'function',
-    function: { name, ...tool.schema },
-  }))
+/** Get OpenAI function schemas, optionally excluding user-disabled tools */
+export function getToolSchemas(disabled = []) {
+  const off = new Set(disabled)
+  return Object.entries(ALL_TOOLS)
+    .filter(([name]) => !off.has(name))
+    .map(([name, tool]) => ({
+      type: 'function',
+      function: { name, ...tool.schema },
+    }))
 }
 
 /** Execute a tool by name */

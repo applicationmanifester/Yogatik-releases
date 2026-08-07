@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, getProviders, removeProvider, testProvider, saveProviderApiKey, logout, isLoggedIn, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom } from './api'
+import { streamMessage, stopGeneration, uploadDocument, getModels, getProviders, removeProvider, testProvider, saveProviderApiKey, logout, isLoggedIn, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, getTools, setToolEnabled, setToolsEnabledBulk } from './api'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
@@ -33,7 +34,7 @@ export default function App() {
   const [currentStreamId, setCurrentStreamId] = useState(null)
   const [theme, setTheme] = useState(localStorage.getItem('bgkai_theme') || 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
-  const [provider, setProvider] = useState('nvidia')
+  const [provider, setProviderState] = useState('groq')
   const [model, setModel] = useState('')
   const [webSearch, setWebSearch] = useState(true)
   const [tools, setToolsEnabled] = useState(true)
@@ -53,6 +54,9 @@ export default function App() {
   const [attachedFile, setAttachedFile] = useState(null)
   const [docs, setDocs] = useState([])
   const [convQuery, setConvQuery] = useState('')
+  const [providerStatus, setProviderStatus] = useState({})
+  const [toolPrefs, setToolPrefs] = useState([])
+  const [showToolPicker, setShowToolPicker] = useState(false)
   const [renamingIdx, setRenamingIdx] = useState(null)
   const [renameText, setRenameText] = useState('')
   const [visibleCount, setVisibleCount] = useState(WINDOW_STEP)
@@ -68,6 +72,17 @@ export default function App() {
   const audioRef = useRef(null)
 
   const conv = conversations[activeIdx]
+
+  // Provider/model must be persisted: the agent reads them from IndexedDB, so
+  // React-only state meant every message silently went to the stored default.
+  const setProvider = useCallback((id) => {
+    setProviderState(id)
+    setActiveProvider(id).catch(() => {})
+  }, [])
+  const chooseModel = useCallback((m) => {
+    setModel(m)
+    setActiveModel(provider, m).catch(() => {})
+  }, [provider])
 
   // Only the tail of a long conversation is mounted; older turns stay in state
   // (and IndexedDB) but are not rendered until asked for. Keeps a 500-message
@@ -125,6 +140,12 @@ export default function App() {
     // account — load them whether or not the user has signed in.
     loadConversations()
     getMe().then(u => { if (u) setUser(u) }).catch(() => {})
+    getActiveProvider().then(async (p) => {
+      setProviderState(p)
+      setModel(await getActiveModel(p))
+      setProviderStatus(await getAllProviderStatus())
+    }).catch(() => {})
+    refreshToolPrefs()
     // Init Web Speech API
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -169,6 +190,21 @@ export default function App() {
   const refreshDocs = useCallback(() => {
     listDocuments().then(setDocs).catch(() => {})
   }, [])
+
+  const refreshToolPrefs = useCallback(() => {
+    getTools().then(setToolPrefs).catch(() => {})
+  }, [])
+
+  const toggleTool = async (name, enabled) => {
+    await setToolEnabled(name, enabled)
+    refreshToolPrefs()
+  }
+
+  const toggleToolGroup = async (group, enabled) => {
+    const names = toolPrefs.filter(t => t.group === group).map(t => t.name)
+    await setToolsEnabledBulk(names, enabled)
+    refreshToolPrefs()
+  }
 
   const hydrate = (m) => ({
     role: m.role, content: m.content,
@@ -256,15 +292,25 @@ export default function App() {
       await saveProviderApiKey(pid, keyToSave.trim())
       const testRes = await testProvider(pid)
       setSavingApiKey(null)
-      if (testRes.status === 'ok' || testRes.success) {
+      setProviderStatus(await getAllProviderStatus())
+      if (testRes.success) {
         refreshModels()
+        setApiKeyInput(prev => ({ ...prev, [pid]: '' }))
       } else {
-        setErrorModalMsg(`API Key connection failed for ${models[pid]?.name || pid}:\n${testRes.error || 'Invalid API Key or Provider unreachable'}`)
+        setErrorModalMsg(`Could not connect to ${models[pid]?.name || pid}:\n\n${testRes.error}`)
       }
     } catch (err) {
       setSavingApiKey(null)
       setErrorModalMsg(`Failed to save API Key for ${models[pid]?.name || pid}:\n${err.message}`)
     }
+  }
+
+  const retestProvider = async (pid) => {
+    setSavingApiKey(pid)
+    await testProvider(pid).catch(() => {})
+    setProviderStatus(await getAllProviderStatus())
+    setSavingApiKey(null)
+    refreshModels()
   }
 
   const handleRemoveProvider = async (pid) => {
@@ -569,13 +615,39 @@ export default function App() {
               <Plus size={11} /> Custom
             </button>
           </div>
-          <select value={provider} onChange={e => { setProvider(e.target.value); setModel('') }}>
+          <select value={provider} aria-label="Provider" onChange={e => { setProvider(e.target.value); chooseModel('') }}>
             {providerEntries.map(([key, val]) => (
               <option key={key} value={key}>
                 {val.name || key}
               </option>
             ))}
           </select>
+
+          {(() => {
+            const st = providerStatus[provider] || {}
+            const label = {
+              connected: 'Connected', failed: 'Not connected',
+              untested: 'Key saved — not verified', 'no-key': 'No API key',
+            }[st.state] || 'No API key'
+            return (
+              <div className={`conn-status conn-${st.state || 'no-key'}`}>
+                <span className="conn-dot" />
+                <span className="conn-label">{label}</span>
+                {st.state === 'connected' && st.latencyMs != null && (
+                  <span className="conn-meta">{st.model} · {st.latencyMs}ms</span>
+                )}
+                {st.hasKey && (
+                  <button className="small-btn" onClick={() => retestProvider(provider)}
+                    disabled={savingApiKey === provider} aria-label="Test connection">
+                    {savingApiKey === provider ? 'Testing…' : 'Test'}
+                  </button>
+                )}
+              </div>
+            )
+          })()}
+          {providerStatus[provider]?.error && (
+            <div className="conn-error">{providerStatus[provider].error}</div>
+          )}
 
           <label>API Key {models[provider]?.key_url && <a href={models[provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get free key)</a>}</label>
           <input type="password" placeholder="Enter API key..."
@@ -597,7 +669,7 @@ export default function App() {
           </div>
 
           <label>Model {providerModels.length > 0 && <span style={{opacity:.6}}>({providerModels.length})</span>}</label>
-          <input list="model-options" value={model} onChange={e => setModel(e.target.value)}
+          <input list="model-options" value={model} onChange={e => chooseModel(e.target.value)}
             placeholder={`Auto (${models[provider]?.default_model || 'default'}) — type to filter`}
             style={{ width: '100%', padding: '6px 8px', background: 'var(--bg-input)', border: '1px solid var(--border)',
               borderRadius: '6px', color: 'var(--text-primary)', fontSize: '12px', marginBottom: '8px' }} />
@@ -607,7 +679,7 @@ export default function App() {
           {model && !providerModels.includes(model) && (
             <div style={{ fontSize: 10, color: 'var(--accent)', marginTop: -4, marginBottom: 8 }}>
               Not in this provider's catalog — will be sent as-is.
-              <button className="small-btn" style={{ marginLeft: 6 }} onClick={() => setModel('')}>Reset</button>
+              <button className="small-btn" style={{ marginLeft: 6 }} onClick={() => chooseModel('')}>Reset</button>
             </div>
           )}
 
@@ -619,6 +691,41 @@ export default function App() {
               <input type="checkbox" checked={tools} onChange={e => setToolsEnabled(e.target.checked)} /><span className="slider" />
             </label>
           </div>
+          {tools && (
+            <>
+              <button className="small-btn tool-picker-toggle" onClick={() => setShowToolPicker(v => !v)}>
+                {showToolPicker ? 'Hide' : 'Choose'} tools
+                <span className="tool-count">
+                  {toolPrefs.filter(t => t.enabled).length}/{toolPrefs.length}
+                </span>
+              </button>
+              {showToolPicker && (
+                <div className="tool-picker">
+                  {[...new Set(toolPrefs.map(t => t.group))].map(group => {
+                    const inGroup = toolPrefs.filter(t => t.group === group)
+                    const allOn = inGroup.every(t => t.enabled)
+                    return (
+                      <div key={group} className="tool-group">
+                        <div className="tool-group-head">
+                          <span>{group}</span>
+                          <button className="link-btn" onClick={() => toggleToolGroup(group, !allOn)}>
+                            {allOn ? 'none' : 'all'}
+                          </button>
+                        </div>
+                        {inGroup.map(t => (
+                          <label key={t.name} className="tool-check">
+                            <input type="checkbox" checked={t.enabled}
+                              onChange={e => toggleTool(t.name, e.target.checked)} />
+                            <span>{t.name.replace(/_/g, ' ')}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
           <div className="toggle-row">
             <label><Globe size={12} /> Web Research</label>
             <label className="toggle" aria-label="Toggle web research">

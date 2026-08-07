@@ -6,7 +6,7 @@
 
 import * as db from './db'
 import { runAgent } from './agent'
-import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels } from './llm'
+import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels, chatComplete, proxyAvailable } from './llm'
 import { getToolNames } from './tools/index'
 import { chunkText } from './retrieval'
 import { invalidateDocIndex } from './tools/documents'
@@ -60,12 +60,13 @@ export async function isLoggedIn() { return !!(await db.getSetting('user')) }
 let currentAbort = null
 
 export async function streamMessage(body, onToken, onSources, onDone, onError, onStatus, onStreamId, onToolsDetected, onToolResult) {
-  const provider = await db.getSetting('provider', 'nvidia')
+  const provider = body.provider || await getActiveProvider()
   const apiKey = await db.getSetting(`apikey_${provider}`)
   const model = body.model || await db.getSetting(`model_${provider}`, '')
 
   if (!apiKey) {
-    onError?.('API key not set. Go to Settings → enter your API key.')
+    const p = getLLMProviders()[provider]
+    onError?.(`No API key for ${p?.name || provider}. Open Settings and add one${p?.keyUrl ? ` — free key at ${p.keyUrl}` : ''}.`)
     return
   }
 
@@ -79,6 +80,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
       userMessage: body.message || body.messages?.[body.messages.length - 1]?.content || '',
       toolsEnabled: body.tools !== false && body.use_tools !== false,
       webEnabled: body.use_web_search !== false,
+      disabledTools: await getDisabledTools(),
       temperature: body.temperature || 0.7,
       signal: currentAbort.signal,
       onToken,
@@ -309,44 +311,166 @@ export async function removeProvider(id) {
   return { success: true }
 }
 
+/**
+ * Real connection test: a 1-token completion through the same path chat uses,
+ * so a pass genuinely means "chat will work" — including the proxy hop.
+ * Result is persisted so the UI can show connection state after a reload.
+ */
 export async function testProvider(id) {
   const apiKey = await db.getSetting(`apikey_${id}`)
-  if (!apiKey) return { success: false, error: 'No API key set' }
-  try {
-    await loadCustomProviders()
-    const providers = getLLMProviders()
-    const p = providers[id]
-    if (!p) return { success: false, error: 'Provider not found' }
-    
-    // Non-CORS providers (like NVIDIA) cannot be tested via client-side fetch on static web hosting
-    if (p.needsProxy && window.location.hostname !== 'localhost') {
-      if (apiKey.length < 5) return { success: false, error: 'API key format invalid' }
-      return { success: true, status: 'ok', response: 'API Key saved successfully!' }
-    }
+  if (!apiKey) {
+    const res = { success: false, error: 'No API key set' }
+    await db.setSetting(`status_${id}`, { ...res, at: Date.now() })
+    return res
+  }
 
-    const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }
-    if (id === 'openrouter') { headers['HTTP-Referer'] = 'https://yogatik.app'; headers['X-Title'] = 'Yogatik' }
-    const url = `${p.baseUrl}/chat/completions`
-    const fetchOpts = {
-      method: 'POST', headers,
-      body: JSON.stringify({ model: p.default || p.models?.[0], messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 }),
+  await loadCustomProviders()
+  const p = getLLMProviders()[id]
+  if (!p) return { success: false, error: 'Provider not found' }
+
+  // Needs a proxy but none is configured — say so instead of faking success.
+  if (p.needsProxy && !proxyAvailable()) {
+    const res = {
+      success: false,
+      error: 'This provider needs a CORS proxy. Deploy the Cloudflare Worker and set VITE_LLM_PROXY_BASE, or pick a provider that works directly from the browser.',
     }
-    let resp
-    if (p.needsProxy && window.location.hostname === 'localhost') {
-      resp = await fetch('/api/llm-proxy', { ...fetchOpts, headers: { ...headers, 'X-Target-URL': url } })
-    } else {
-      resp = await fetch(url, fetchOpts)
+    await db.setSetting(`status_${id}`, { ...res, at: Date.now() })
+    return res
+  }
+
+  const started = performance.now()
+  try {
+    const model = await db.getSetting(`model_${id}`) || p.default || p.models?.[0]
+    const out = await chatComplete({
+      provider: id, apiKey, model,
+      messages: [{ role: 'user', content: 'ping' }],
+      temperature: 0,
+      maxTokens: 1,
+    })
+    const res = {
+      success: true,
+      status: 'ok',
+      model: out?.model || model,
+      latencyMs: Math.round(performance.now() - started),
+      response: 'Connected',
     }
-    if (!resp.ok) { const t = await resp.text(); return { success: false, error: `HTTP ${resp.status}: ${t.slice(0, 120)}` } }
-    return { success: true, status: 'ok', response: 'Connected successfully!' }
+    await db.setSetting(`status_${id}`, { ...res, at: Date.now() })
+    return res
   } catch (e) {
-    return { success: false, error: e.message }
+    const res = { success: false, error: friendlyProviderError(e.message) }
+    await db.setSetting(`status_${id}`, { ...res, at: Date.now() })
+    return res
   }
 }
 
+/** Turn raw provider HTTP errors into something a user can act on. */
+function friendlyProviderError(msg = '') {
+  if (/\b401\b|invalid api key|unauthorized/i.test(msg)) return 'Invalid API key — check you pasted the whole key.'
+  if (/\b403\b/i.test(msg)) return 'Key rejected (403). It may lack permission or be from the wrong account.'
+  if (/\b404\b|model.*not found/i.test(msg)) return 'Model not found for this provider — pick a different model.'
+  if (/\b429\b/i.test(msg)) return 'Rate limited (429). The key works, but you are over quota right now.'
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) return 'Could not reach the provider — network or CORS proxy issue.'
+  return msg.slice(0, 200)
+}
+
+export async function getProviderStatus(id) {
+  return db.getSetting(`status_${id}`)
+}
+
+/** Connection state for every known provider, for the settings UI. */
+export async function getAllProviderStatus() {
+  await loadCustomProviders()
+  const out = {}
+  for (const id of Object.keys(getLLMProviders())) {
+    const hasKey = !!(await db.getSetting(`apikey_${id}`))
+    const status = await db.getSetting(`status_${id}`)
+    out[id] = {
+      hasKey,
+      // "verified" only counts if the successful test happened after the
+      // current key was saved; otherwise it's stale and we say "untested".
+      state: !hasKey ? 'no-key' : status?.success ? 'connected' : status ? 'failed' : 'untested',
+      error: status?.success ? null : status?.error || null,
+      latencyMs: status?.latencyMs,
+      model: status?.model,
+      at: status?.at,
+    }
+  }
+  return out
+}
+
+// ─── Active provider / model (persisted — the agent reads these) ───
+export async function getActiveProvider() {
+  const saved = await db.getSetting('provider')
+  if (saved) return saved
+  // No stored choice: prefer a provider that already has a key, and never
+  // default to one that needs a proxy the user may not have deployed.
+  await loadCustomProviders()
+  const providers = getLLMProviders()
+  for (const [id, p] of Object.entries(providers)) {
+    if (p.needsProxy && !proxyAvailable()) continue
+    if (await db.getSetting(`apikey_${id}`)) return id
+  }
+  return 'groq'
+}
+
+export async function setActiveProvider(id) {
+  await db.setSetting('provider', id)
+}
+
+export async function getActiveModel(providerId) {
+  return db.getSetting(`model_${providerId}`, '')
+}
+
+export async function setActiveModel(providerId, model) {
+  await db.setSetting(`model_${providerId}`, model || '')
+}
+
 // ─── AI Tools (browser-native) ───
+
+/**
+ * Per-tool enable/disable. Stored as a map of the *disabled* names so tools
+ * added in future releases are on by default rather than silently missing.
+ */
+export async function getDisabledTools() {
+  return db.getSetting('disabled_tools', [])
+}
+
+export async function setToolEnabled(name, enabled) {
+  const disabled = new Set(await getDisabledTools())
+  if (enabled) disabled.delete(name)
+  else disabled.add(name)
+  await db.setSetting('disabled_tools', [...disabled])
+  return [...disabled]
+}
+
+export async function setToolsEnabledBulk(names, enabled) {
+  const disabled = new Set(await getDisabledTools())
+  for (const n of names) enabled ? disabled.delete(n) : disabled.add(n)
+  await db.setSetting('disabled_tools', [...disabled])
+  return [...disabled]
+}
+
 export async function getTools() {
-  return getToolNames().map(name => ({ name, enabled: true }))
+  const disabled = new Set(await getDisabledTools())
+  return getToolNames().map(name => ({
+    name,
+    enabled: !disabled.has(name),
+    group: TOOL_GROUPS[name] || 'Other',
+  }))
+}
+
+/** Grouping drives the settings UI only — the agent sees a flat list. */
+export const TOOL_GROUPS = {
+  web_search: 'Web', deep_research: 'Web', web_extract: 'Web', link_preview: 'Web',
+  rss_feed: 'Web', youtube: 'Web', whois: 'Web', ip_lookup: 'Web',
+  doc_search: 'Documents', doc_list: 'Documents', pdf_extract: 'Documents',
+  ocr: 'Documents', summarize: 'Documents', md_to_pdf: 'Documents',
+  code_execute: 'Compute', calculator: 'Compute', data_convert: 'Compute',
+  unit_convert: 'Compute', regex: 'Compute', hash: 'Compute', diff: 'Compute',
+  image_generate: 'Media', chart: 'Media', diagram: 'Media', image_info: 'Media',
+  color_palette: 'Media', qr_generate: 'Media', qr_read: 'Media', audio_edit: 'Media',
+  tts: 'Voice', stt: 'Voice',
+  weather: 'Utility', translate: 'Utility',
 }
 
 // ─── TTS (Web Speech API) ───
