@@ -1282,3 +1282,5 @@ body {
   padding: 5px 9px; border-top: 1px solid var(--border, #333);
   font-size: 9.5px; color: var(--text-muted, #888);
 }
+.arena-wrap { position: relative; }
+.arena-close { position: absolute; top: 6px; right: 6px; z-index: 2; }

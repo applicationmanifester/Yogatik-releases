@@ -1288,10 +1288,10 @@ export default function App() {
         </header>
 
         <div className="messages" ref={scrollerRef} onScroll={onScroll}>
-          {allMessages.length === 0 && !isStreamingHere ? (
+          {allMessages.length === 0 && !isStreamingHere && !arena ? (
             <div className="welcome">
               <h1 style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center' }}><YogatikLogo size={48} /> Yogatik</h1>
-              <p>AI assistant with live web research, document Q&A, image generation, code execution, weather, translation, TTS and 32 free tools — all running in your browser.</p>
+              <p>AI assistant with live web research, document Q&A, image generation, code execution, weather, translation, TTS and 44 free tools — all running in your browser.</p>
               {showPwaInstall && (
                 <button className="pwa-install-btn" onClick={installPwa}>
                   <Smartphone size={16} /> Install App
@@ -1334,7 +1334,15 @@ export default function App() {
             </div>
           ) : (
             <>
-              {arena && <ArenaView arenaData={arena} onOpenArtifact={setActiveArtifact} />}
+              {arena && (
+                <div className="arena-wrap">
+                  <button className="small-btn arena-close" onClick={() => setArena(null)}
+                    aria-label="Close comparison">
+                    <X size={12} /> Close comparison
+                  </button>
+                  <ArenaView arenaData={arena} onOpenArtifact={setActiveArtifact} />
+                </div>
+              )}
               {hiddenCount > 0 && (
                 <button className="load-earlier" onClick={() => setVisibleCount(v => v + WINDOW_STEP)}>
                   Load {Math.min(hiddenCount, WINDOW_STEP)} earlier message{Math.min(hiddenCount, WINDOW_STEP) === 1 ? '' : 's'}

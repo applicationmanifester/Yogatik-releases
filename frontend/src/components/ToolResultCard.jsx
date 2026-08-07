@@ -43,8 +43,8 @@ function ToolResultCard({ tool, result }) {
       <div className="tool-result-card">
         <div className="tool-result-header"><Image size={14} /> Generated Image</div>
         {/* Blob URLs die on reload; fall back to the origin URL for old messages. */}
-        {/* Prefer the already-downloaded blob; fall back to the durable URL
-            (blob URLs do not survive a reload). */}
+        {/* Prefer the already-downloaded blob, but only within the session that
+            created it: a restored message has no live blob, so use the URL. */}
         <img src={result.display_url || result.image_url} alt={result.prompt}
           className="generated-image" loading="lazy"
           onError={e => {

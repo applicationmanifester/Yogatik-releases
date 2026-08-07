@@ -135,8 +135,17 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - `downloadBackup()` / `restoreBackup(file, 'merge'|'replace')` — chats + docs + settings.
   API keys are excluded from backup files by design.
 
-## Tests (npm test — 65)
-- retrieval (18), agent loop (19), search parsers (6), routing (11), crypto (11)
+## Prompted tool calling (promptedTools.js)
+- Models that 400 on a `tools` array (many NVIDIA free-tier, base models) don't lose tools:
+  llm.js fires `onToolsRejected` -> agent switches toolMode 'native'->'prompted', appends
+  compact tool list to the system prompt, asks for ```json {"tool_calls":[...]}```.
+- Prompted mode buffers tokens (the reply may BE a call) and replays results as plain
+  assistant/user turns (`TOOL_RESULTS ...`) — no tool_calls/role:'tool'.
+- Mode cached in `toolmode_<provider>::<model>` so the rejected request is paid once.
+- onToolsRejected MUST still fire onDone, else the agent's promise hangs.
+
+## Tests (npm test — 70)
+- retrieval (18), agent loop (24), search parsers (6), routing (11), crypto (11)
 - Run with pool:forks singleFork — parallel jsdom envs starve the runner.
 - `npm run lint` uses react/jsx-no-undef: plain no-undef does NOT catch `<Foo/>` with no
   import, which is how a ReactMarkdown crash reached production.

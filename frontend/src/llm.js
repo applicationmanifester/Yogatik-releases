@@ -277,7 +277,8 @@ async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeo
 
 export async function streamChat({
   provider, apiKey, model, messages, tools = null,
-  temperature = 0.7, signal, onToken, onToolCall, onDone, onError, onStatus
+  temperature = 0.7, signal, onToken, onToolCall, onDone, onError, onStatus,
+  retriedWithoutTools = false, onToolsRejected = null,
 }) {
   const prov = getProviders()[provider]
   if (!prov) throw new Error(`Unknown provider: ${provider}`)
@@ -315,6 +316,26 @@ export async function streamChat({
 
     if (!resp.ok) {
       const err = await resp.text()
+
+      // Many models simply do not accept a `tools` array and answer 400.
+      // Tell the caller so it can fall back to prompted tool calling, which
+      // keeps the tools working instead of dropping them.
+      if (resp.status === 400 && tools?.length && !retriedWithoutTools) {
+        // onDone must still fire — the caller awaits it before retrying.
+        if (onToolsRejected) { onToolsRejected(); onDone?.(); return }
+        return streamChat({
+          provider, apiKey, model, messages, tools: null,
+          temperature, signal, onToken, onToolCall, onDone, onError, onStatus,
+          retriedWithoutTools: true,
+        })
+      }
+      if (resp.status === 400) {
+        onError?.(new Error(
+          `"${model || prov.default}" rejected the request (400). ` +
+          `${err.slice(0, 200)}`
+        ))
+        return
+      }
       if (resp.status === 404) {
         onError?.(new Error(
           `The provider does not serve "${model || prov.default}" on its chat endpoint (404). ` +

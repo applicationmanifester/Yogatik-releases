@@ -257,3 +257,81 @@ describe('history window', () => {
     expect(sent.some(m => m.content.startsWith('5'))).toBe(true)
   })
 })
+
+describe('prompted tool calling (models without native tools)', () => {
+  const schema = [{ type: 'function', function: { name: 'web_search', description: 'Search the web.', parameters: { properties: { query: { type: 'string' } }, required: ['query'] } } }]
+
+  /** Rounds where a `rejects` flag fires onToolsRejected instead of answering. */
+  function scriptWithRejection(rounds) {
+    let call = 0
+    streamChat.mockImplementation(async (opts) => {
+      const round = rounds[call++] || {}
+      if (round.rejects) { opts.onToolsRejected?.(); opts.onDone(); return }
+      for (const t of round.tokens || []) opts.onToken(t)
+      for (const tc of round.toolCalls || []) opts.onToolCall(tc)
+      opts.onDone()
+    })
+  }
+
+  it('falls back to the text protocol and still runs the tool', async () => {
+    getToolSchemas.mockReturnValue(schema)
+    executeTool.mockResolvedValue({ answer: 42 })
+    scriptWithRejection([
+      { rejects: true },
+      { tokens: ['```json\n{"tool_calls":[{"name":"web_search","arguments":{"query":"x"}}]}\n```'] },
+      { tokens: ['The answer is 42.'] },
+    ])
+    const onDone = vi.fn()
+    const onToken = vi.fn()
+    const onToolModeChange = vi.fn()
+    await runAgent({ ...base, onDone, onToken, onToolModeChange })
+
+    expect(onToolModeChange).toHaveBeenCalledWith('prompted')
+    expect(executeTool).toHaveBeenCalledWith('web_search', { query: 'x' })
+    expect(onDone.mock.calls[0][0].content).toBe('The answer is 42.')
+    // The JSON block must never reach the user.
+    expect(onToken.mock.calls.flat().join('')).not.toContain('tool_calls')
+  })
+
+  it('sends no tools array once in prompted mode, and describes them in the prompt', async () => {
+    getToolSchemas.mockReturnValue(schema)
+    scriptWithRejection([{ rejects: true }, { tokens: ['hi'] }])
+    await runAgent({ ...base })
+
+    const second = streamChat.mock.calls[1][0]
+    expect(second.tools).toBeNull()
+    expect(second.messages[0].content).toContain('web_search(query: string)')
+  })
+
+  it('replays results as ordinary turns, never role:tool', async () => {
+    getToolSchemas.mockReturnValue(schema)
+    scriptWithRejection([
+      { rejects: true },
+      { tokens: ['{"tool_calls":[{"name":"web_search","arguments":{"query":"y"}}]}'] },
+      { tokens: ['done'] },
+    ])
+    await runAgent({ ...base })
+
+    const last = streamChat.mock.calls[2][0].messages
+    expect(last.some(m => m.role === 'tool')).toBe(false)
+    expect(last[last.length - 1].role).toBe('user')
+    expect(last[last.length - 1].content).toContain('TOOL_RESULTS')
+  })
+
+  it('starts in prompted mode when the model is already known to need it', async () => {
+    getToolSchemas.mockReturnValue(schema)
+    scriptRounds([{ tokens: ['hello'] }])
+    await runAgent({ ...base, initialToolMode: 'prompted' })
+
+    expect(streamChat).toHaveBeenCalledTimes(1)   // no wasted rejected request
+    expect(streamChat.mock.calls[0][0].tools).toBeNull()
+  })
+
+  it('prose in prompted mode still reaches the user', async () => {
+    getToolSchemas.mockReturnValue(schema)
+    scriptRounds([{ tokens: ['Paris', ' is', ' the', ' capital.'] }])
+    const onDone = vi.fn()
+    await runAgent({ ...base, initialToolMode: 'prompted', onDone })
+    expect(onDone.mock.calls[0][0].content).toBe('Paris is the capital.')
+  })
+})

@@ -191,6 +191,8 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         webEnabled: !getLLMProviders()[pid]?.isLocal && body.use_web_search !== false,
         disabledTools: await getDisabledTools(),
         persona: body.system_prompt || null,
+        initialToolMode: await getToolMode(pid, mdl),
+        onToolModeChange: (mode) => { setToolMode(pid, mdl, mode).catch(() => {}) },
         temperature: body.temperature || 0.7,
         signal: controller.signal,
         onToken: (t) => { produced = true; onToken?.(t) },
@@ -248,6 +250,18 @@ export async function acceptTerms(version) {
 export async function hasAcceptedTerms(version) {
   const rec = await db.getSetting('terms_accepted')
   return rec?.version === version
+}
+
+// ─── Tool-calling mode per model ───
+// Learned once: a model that rejects a tools array keeps using the text
+// protocol instead of paying for a failed request on every message.
+const toolModeKey = (id, model) => `toolmode_${id}::${model || 'default'}`
+
+export async function getToolMode(providerId, model) {
+  return db.getSetting(toolModeKey(providerId, model))
+}
+export async function setToolMode(providerId, model, mode) {
+  return db.setSetting(toolModeKey(providerId, model), mode)
 }
 
 // ─── Usage meter ───
@@ -321,10 +335,33 @@ export async function createConversation(title, projectId) {
   return c.id
 }
 
+/**
+ * blob: URLs belong to the document that created them and are dead after a
+ * reload — persisting one guarantees a broken image later. Drop them, keeping
+ * the durable source URL that sits alongside.
+ */
+function stripBlobUrls(value) {
+  if (typeof value === 'string') return value.startsWith('blob:') ? null : value
+  if (Array.isArray(value)) return value.map(stripBlobUrls)
+  if (value && typeof value === 'object') {
+    const out = {}
+    for (const [k, v] of Object.entries(value)) {
+      const cleaned = stripBlobUrls(v)
+      if (cleaned !== null) out[k] = cleaned
+    }
+    return out
+  }
+  return value
+}
+
 /** Append a message to a stored conversation. */
 export async function saveMessage(conversationId, msg) {
   if (!conversationId) return null
-  return db.addMessage(conversationId, msg.role, msg.content, msg.toolResults || null, msg.sources || null)
+  return db.addMessage(
+    conversationId, msg.role, msg.content,
+    msg.toolResults ? stripBlobUrls(msg.toolResults) : null,
+    msg.sources || null,
+  )
 }
 
 export async function renameConversation(id, title) {

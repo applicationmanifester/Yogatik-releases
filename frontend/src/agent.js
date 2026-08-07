@@ -6,6 +6,7 @@
 
 import { streamChat } from './llm'
 import { getToolSchemas, executeTool } from './tools/index'
+import { buildToolPrompt, parseToolCalls, formatToolResults } from './promptedTools'
 
 function buildSystemPrompt({ webEnabled, persona }) {
   const today = new Date().toLocaleDateString('en-US', {
@@ -131,6 +132,7 @@ export async function runAgent({
   provider, apiKey, model, history = [], userMessage,
   toolsEnabled = true, webEnabled = true, disabledTools = [], persona = null, temperature = 0.7, signal,
   onToken, onStatus, onToolStart, onToolResult, onDone, onError, onSources,
+  initialToolMode = null, onToolModeChange = null,
 }) {
   // Web research is only truly available if tools are on, the toggle is on,
   // and the research tools themselves have not been disabled.
@@ -143,7 +145,24 @@ export async function runAgent({
     { role: 'user', content: userMessage },
   ]
 
-  const tools = toolsEnabled ? getToolSchemas(disabledTools) : null
+  const schemas = toolsEnabled ? getToolSchemas(disabledTools) : null
+
+  // 'native' → OpenAI-style tools array. 'prompted' → JSON protocol in the
+  // system prompt, for models that 400 on a tools array.
+  let toolMode = toolsEnabled ? (initialToolMode || 'native') : 'off'
+  let tools = toolMode === 'native' ? schemas : null
+
+  /** Switch to the text protocol and re-run the round. */
+  const enablePromptedTools = () => {
+    toolMode = 'prompted'
+    tools = null
+    messages[0] = {
+      role: 'system',
+      content: buildSystemPrompt({ webEnabled: webAvailable, persona }) + buildToolPrompt(schemas),
+    }
+    onStatus?.('This model lacks native tool calling — using the text protocol')
+    onToolModeChange?.('prompted')
+  }
   const toolResults = {}
   const sources = []
   let fullContent = ''   // everything shown to the user, across all rounds
@@ -153,18 +172,44 @@ export async function runAgent({
   const processStream = () => new Promise((resolve, reject) => {
     toolCallsToProcess = []
     roundContent = ''
+    let rejectedTools = false
+
     streamChat({
       provider, apiKey, model, messages, tools, temperature, signal,
-      onToken: (t) => { roundContent += t; fullContent += t; onToken?.(t) },
+      // In prompted mode the reply may BE a tool call, so it is buffered and
+      // only shown once we know it is prose.
+      onToken: (t) => {
+        roundContent += t
+        if (toolMode !== 'prompted') { fullContent += t; onToken?.(t) }
+      },
       onToolCall: (tc) => { toolCallsToProcess.push(tc) },
-      onDone: () => resolve(),
+      onToolsRejected: toolMode === 'native' ? () => { rejectedTools = true } : null,
+      onDone: () => resolve({ rejectedTools }),
       onError: (e) => reject(e),
     })
   })
 
+  /** In prompted mode, pull any tool calls out of the reply text. */
+  const harvestPromptedCalls = () => {
+    if (toolMode !== 'prompted') return
+    const { calls, text } = parseToolCalls(roundContent)
+    if (calls.length) {
+      toolCallsToProcess = calls
+    } else if (text) {
+      // Genuine prose: release it to the UI now that we know.
+      fullContent += text
+      onToken?.(text)
+    }
+  }
+
   try {
     // First LLM call — may return text or tool calls
-    await processStream()
+    let first = await processStream()
+    if (first?.rejectedTools) {
+      enablePromptedTools()
+      first = await processStream()
+    }
+    harvestPromptedCalls()
 
     // Tool execution loop (max 5 rounds to prevent infinite loops)
     let rounds = 0
@@ -177,14 +222,19 @@ export async function runAgent({
       // One assistant message carrying every tool_call of this round,
       // followed by one tool message per call — the shape OpenAI-compatible
       // providers validate against (NVIDIA rejects interleaved pairs).
-      messages.push({
-        role: 'assistant',
-        content: roundContent || null,
-        tool_calls: round.map(tc => ({
-          id: tc.id, type: 'function',
-          function: { name: tc.name, arguments: JSON.stringify(tc.parsedArgs || {}) },
-        })),
-      })
+      if (toolMode === 'prompted') {
+        // No tool_calls/tool roles available — replay as ordinary turns.
+        messages.push({ role: 'assistant', content: roundContent })
+      } else {
+        messages.push({
+          role: 'assistant',
+          content: roundContent || null,
+          tool_calls: round.map(tc => ({
+            id: tc.id, type: 'function',
+            function: { name: tc.name, arguments: JSON.stringify(tc.parsedArgs || {}) },
+          })),
+        })
+      }
 
       onStatus?.(round.length > 1
         ? `Running ${round.length} tools…`
@@ -212,21 +262,31 @@ export async function runAgent({
           }
         }
 
-        messages.push({
-          role: 'tool', tool_call_id: tc.id, name: tc.name,
-          // Research payloads are large but valuable; give them more room.
-          content: JSON.stringify(result).slice(0, tc.name === 'deep_research' ? 24000 : 12000),
-        })
+        if (toolMode !== 'prompted') {
+          messages.push({
+            role: 'tool', tool_call_id: tc.id, name: tc.name,
+            // Research payloads are large but valuable; give them more room.
+            content: JSON.stringify(result).slice(0, tc.name === 'deep_research' ? 24000 : 12000),
+          })
+        }
       })
+
+      if (toolMode === 'prompted') {
+        messages.push({
+          role: 'user',
+          content: formatToolResults(round.map((tc, i) => ({ name: tc.name, result: results[i] }))),
+        })
+      }
 
       if (sources.length) onSources?.(sources)
 
       // Call LLM again with tool results
       onStatus?.('Thinking...')
       await processStream()
+      harvestPromptedCalls()
     }
 
-    onDone?.({ content: fullContent, toolResults, sources })
+    onDone?.({ content: fullContent, toolResults, sources, toolMode })
   } catch (err) {
     if (err.name === 'AbortError') {
       // User pressed Stop: keep whatever was generated instead of dropping it.
