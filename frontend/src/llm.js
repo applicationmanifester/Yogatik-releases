@@ -117,6 +117,7 @@ const PROVIDERS = {
     default: 'meta/llama-3.3-70b-instruct',
     keyUrl: 'https://build.nvidia.com',
     needsProxy: true,
+    publicModels: true, // /v1/models is unauthenticated — live catalog without a key
   },
   gemini: {
     name: 'Gemini (Free)',
@@ -283,13 +284,19 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
   return resp.json()
 }
 
-/** Fetch available models dynamically from provider's /v1/models endpoint */
+/** Non-chat model families to hide from the chat model picker */
+const NON_CHAT = /(^|\/)(.*(embed|rerank|retrieval|ocr|parse|tts|stt|asr|whisper|riva|dall-e|whisperx|moderation|guard|nemoguard|safety|clip|sana|flux|stable-diffusion|sdxl|image|audio|video|edify|molmim|esm|diffdock|genmol|proteinmpnn|rfdiffusion|alphafold|codegen).*)$/i
+
+/**
+ * Fetch available models dynamically from provider's /v1/models endpoint.
+ * Providers flagged `publicModels` (NVIDIA) work without a key.
+ */
 export async function fetchLiveModels(providerId, apiKey) {
   const prov = getProviders()[providerId]
-  if (!prov || !apiKey) return []
+  if (!prov || (!apiKey && !prov.publicModels)) return []
 
   try {
-    const headers = { 'Authorization': `Bearer ${apiKey}` }
+    const headers = apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}
     if (providerId === 'openrouter') {
       headers['HTTP-Referer'] = 'https://yogatik.app'
       headers['X-Title'] = 'Yogatik'
@@ -304,7 +311,9 @@ export async function fetchLiveModels(providerId, apiKey) {
 
     const data = await resp.json()
     const modelList = data.data || data.models || []
-    const ids = modelList.map(m => (m.id || m.name || m)).filter(Boolean)
+    const ids = [...new Set(modelList.map(m => (m.id || m.name || m)).filter(Boolean))]
+      .filter(id => !NON_CHAT.test(id))
+      .sort((a, b) => a.localeCompare(b))
     return ids
   } catch (err) {
     return []

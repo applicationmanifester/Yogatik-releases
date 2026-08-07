@@ -1,0 +1,6 @@
+name = "yogatik-cors-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://yogatik.web.app,http://localhost:5173"

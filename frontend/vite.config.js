@@ -11,7 +11,7 @@ function llmProxyPlugin() {
         if (req.method === 'OPTIONS') {
           res.writeHead(204, {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Target-URL',
             'Access-Control-Max-Age': '86400',
           })
@@ -35,10 +35,11 @@ function llmProxyPlugin() {
         req.on('end', async () => {
           try {
             const body = Buffer.concat(chunks)
+            const isBodyless = req.method === 'GET' || req.method === 'HEAD'
             const resp = await fetch(targetUrl, {
-              method: 'POST',
+              method: req.method || 'POST',
               headers,
-              body: body.length > 0 ? body : undefined,
+              body: isBodyless || body.length === 0 ? undefined : body,
             })
 
             res.writeHead(resp.status, {
@@ -78,12 +79,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    chunkSizeWarningLimit: 700,
     rollupOptions: {
       output: {
+        // Only the always-needed core is grouped; firebase + prism are
+        // dynamically imported and left to rollup's automatic code-splitting.
         manualChunks: {
           vendor: ['react', 'react-dom', 'dexie'],
-          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
-          ui: ['lucide-react', 'react-markdown', 'react-syntax-highlighter'],
+          ui: ['lucide-react', 'react-markdown'],
         }
       }
     }

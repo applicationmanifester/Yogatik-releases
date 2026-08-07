@@ -1,7 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import {
   Send, Plus, Sun, Moon, Upload, Menu, X, Globe, Database,
   Trash2, Copy, Check, Plug, TestTube, LogIn, LogOut, User,

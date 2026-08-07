@@ -25,7 +25,8 @@ export async function loginWithGoogle() {
 
 export async function saveProviderApiKey(provider, apiKey) {
   await db.setSetting(`apikey_${provider}`, apiKey)
-  await saveUserApiKey(provider, apiKey)
+  // Only touch Firestore (and load the Firebase SDK) when signed in
+  if (await db.getSetting('user')) await saveUserApiKey(provider, apiKey)
 }
 
 export async function getMe() {
@@ -33,7 +34,7 @@ export async function getMe() {
 }
 
 export async function logout() {
-  await logOutGoogle()
+  if (await db.getSetting('user')) await logOutGoogle()
   await db.setSetting('user', null)
 }
 export async function isLoggedIn() { return !!(await db.getSetting('user')) }
@@ -136,6 +137,24 @@ async function loadCustomProviders() {
   return custom
 }
 
+const MODEL_TTL = 6 * 60 * 60 * 1000 // 6h
+
+/** Cached live-model lookup: serves cache instantly, refreshes in background. */
+async function cachedModels(id, key, fallback) {
+  const cache = await db.getSetting(`models_${id}`)
+  const fresh = cache && Date.now() - cache.ts < MODEL_TTL && cache.list?.length
+  const refresh = async () => {
+    try {
+      const fetched = await fetchLiveModels(id, key)
+      if (fetched?.length) await db.setSetting(`models_${id}`, { ts: Date.now(), list: fetched })
+      return fetched
+    } catch { return [] }
+  }
+  if (fresh) { refresh(); return cache.list }              // stale-while-revalidate
+  const fetched = await refresh()
+  return fetched?.length ? fetched : (cache?.list?.length ? cache.list : fallback)
+}
+
 export async function getModels() {
   await loadCustomProviders()
   const providers = getLLMProviders()
@@ -145,16 +164,12 @@ export async function getModels() {
     const key = await db.getSetting(`apikey_${id}`)
     const hasKey = !!key
     let liveModels = p.models || []
-    if (hasKey) {
-      try {
-        const fetched = await fetchLiveModels(id, key)
-        if (fetched && fetched.length > 0) liveModels = fetched
-      } catch {}
-    }
+    if (hasKey || p.publicModels) liveModels = await cachedModels(id, key, liveModels)
     result[id] = {
       name: p.name, type: 'openai_compatible',
       available: hasKey, models: liveModels,
-      default_model: p.default || liveModels[0] || '', needs_key: !hasKey,
+      default_model: (liveModels.includes(p.default) ? p.default : liveModels[0]) || p.default || '',
+      needs_key: !hasKey,
       builtin: !custom[id], base_url: p.baseUrl, key_url: p.keyUrl,
     }
   }
