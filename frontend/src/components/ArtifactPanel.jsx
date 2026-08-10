@@ -55,13 +55,13 @@ export function ArtifactPanel({ artifact, onClose }) {
           <span className="artifact-lang-tag">{language}</span>
         </div>
         <div className="artifact-actions">
-          <button className="artifact-btn" onClick={handleCopy} title="Copy code">
+          <button className="artifact-btn" onClick={handleCopy} title="Copy code" aria-label="Copy code">
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
-          <button className="artifact-btn" onClick={handleDownload} title="Download file">
+          <button className="artifact-btn" onClick={handleDownload} title="Download file" aria-label="Download file">
             <Download size={14} />
           </button>
-          <button className="artifact-btn close" onClick={onClose} title="Close Canvas">
+          <button className="artifact-btn close" onClick={onClose} title="Close Canvas" aria-label="Close canvas">
             <X size={16} />
           </button>
         </div>

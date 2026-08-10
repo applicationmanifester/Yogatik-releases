@@ -2,19 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <title>Yogatik</title>
   <link rel="icon" type="image/svg+xml" href="/icon-192.svg" media="(prefers-color-scheme: dark)" />
   <link rel="icon" type="image/svg+xml" href="/icon-light.svg" media="(prefers-color-scheme: light)" />
   <link rel="manifest" href="/manifest.json" />
+  <link rel="preconnect" href="https://esm.run" crossorigin />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="https://huggingface.co" crossorigin />
+  <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin />
   <meta name="theme-color" content="#ff6b35" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Yogatik" />
   <link rel="apple-touch-icon" href="/icon-192.svg" />
-  <meta name="description" content="Private AI assistant with live web research, document Q&A, image generation and code execution — 32 free tools, running entirely in your browser." />
+  <meta name="description" content="Private AI assistant with live web research, document Q&A, image generation and code execution — 53 free tools, running entirely in your browser." />
   <meta property="og:title" content="Yogatik" />
-  <meta property="og:description" content="Private AI assistant with live web research, document Q&A, image generation and code execution — 32 free tools, running entirely in your browser." />
+  <meta property="og:description" content="Private AI assistant with live web research, document Q&A, image generation and code execution — 53 free tools, running entirely in your browser." />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary" />
   <!-- Google AdSense -->
@@ -23,12 +27,5 @@
 <body>
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
-      });
-    }
-  </script>
 </body>
 </html>

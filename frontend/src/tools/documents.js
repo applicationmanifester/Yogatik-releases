@@ -5,6 +5,15 @@
 
 import { getDocuments, getSetting } from '../db'
 import { buildIndex, search } from '../retrieval'
+import { resolveFeatures } from '../features'
+import { semanticRerank, setSemanticConsent } from '../semantic'
+
+/** Is the opt-in on-device semantic re-ranker enabled? */
+async function semanticOn() {
+  const on = resolveFeatures(await getSetting('chat_prefs', {}))?.semanticSearch === true
+  setSemanticConsent(on) // mirror consent so the model may load when used
+  return on
+}
 
 const indexCache = new Map() // docId -> { index, chunks, updatedAt }
 
@@ -49,10 +58,15 @@ export const docSearchTool = {
       if (filtered.length) docs = filtered
     }
 
-    const hits = []
+    // Pull a wider BM25 shortlist when semantic re-ranking is on, so the model
+    // has room to reorder by meaning; otherwise just the top k.
+    const semantic = await semanticOn()
+    const shortlist = semantic ? Math.max(k * 4, 12) : k
+
+    let hits = []
     for (const doc of docs) {
       const { index, chunks } = indexFor(doc)
-      for (const { i, score } of search(index, query, k)) {
+      for (const { i, score } of search(index, query, shortlist)) {
         hits.push({ score, document: doc.name, passage: chunks[i], chunk: i + 1, of: chunks.length })
       }
     }
@@ -66,12 +80,17 @@ export const docSearchTool = {
     }
 
     hits.sort((a, b) => b.score - a.score)
+    if (semantic) {
+      // semanticRerank falls back to BM25 order on any failure.
+      hits = await semanticRerank(query, hits.map(h => ({ ...h, text: h.passage })), k)
+    }
     return {
       success: true,
       tool: 'doc_search',
       query,
+      retrieval: semantic ? 'hybrid (BM25 + semantic)' : 'BM25',
       documents_searched: docs.map(d => d.name),
-      passages: hits.slice(0, k).map(({ score, ...rest }) => rest),
+      passages: hits.slice(0, k).map(({ score, semanticScore, text, ...rest }) => rest),
     }
   },
 }
@@ -91,5 +110,25 @@ export const docListTool = {
         added: new Date(d.createdAt).toISOString(),
       })),
     }
+  },
+}
+
+export const localVaultTool = {
+  schema: {
+    description:
+      'Search 100% locally across all stored user documents, notes, and past conversation history in IndexedDB. ' +
+      'Runs completely offline on-device without any cloud APIs or internet connection.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Query to search across local personal vault' },
+        top_k: { type: 'number', description: 'Number of passages to return (1-10, default 5)' },
+      },
+      required: ['query'],
+    },
+  },
+  async execute({ query, top_k = 5 }) {
+    const { searchLocalVault } = await import('../retrieval')
+    return searchLocalVault(query, top_k)
   },
 }

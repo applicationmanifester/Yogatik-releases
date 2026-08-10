@@ -12,7 +12,8 @@ import {
   decodeServerMessage, rateFromMime, LIVE_MODELS,
 } from './protocol'
 import { createMicCapture, createPlayer, base64ToPcm16 } from './audio'
-import { createCamera } from './video'
+import { createCamera, createScreenCapture } from './video'
+import { setSharedVisualSource, clearSharedVisualSource } from '../vision/source'
 import { executeTool, getToolSchemas } from '../tools/index'
 
 const FRAME_MS = 1000        // API ceiling is 1fps
@@ -35,8 +36,10 @@ export function createLiveSession({
   let ws = null
   let mic = null
   let cam = null
+  let screen = null
   let player = null
   let frameTimer = null
+  let screenTimer = null
   let resumeHandle = null
   let reconnects = 0
   let closed = false
@@ -167,19 +170,49 @@ You can see them through their camera and hear them through their microphone. Be
   async function enableCamera(on) {
     if (on && !cam) {
       cam = await createCamera()
+      // Let the `see` tool and the vision panel borrow this stream — a second
+      // getUserMedia fails on most phones.
+      setSharedVisualSource(cam)
       emit({ type: 'camera', stream: cam.stream, video: cam.video })
       let sinceForced = 0
       frameTimer = setInterval(() => {
-        // Force one frame every 5s even if nothing moved, so the model does not
-        // lose track of a still scene.
         const force = ++sinceForced % 5 === 0
         const b64 = cam?.grab(force)
         if (b64) send(videoFrame(b64))
       }, FRAME_MS)
     } else if (!on && cam) {
       clearInterval(frameTimer); frameTimer = null
+      clearSharedVisualSource(cam)
       cam.close(); cam = null
       emit({ type: 'camera', stream: null })
+    }
+  }
+
+  async function enableScreenShare(on) {
+    if (on && !screen) {
+      try {
+        screen = await createScreenCapture()
+        setSharedVisualSource(screen)
+        emit({ type: 'screen', stream: screen.stream, active: true })
+        // Send screen frames at 1fps, same as camera
+        let sinceForced = 0
+        screenTimer = setInterval(() => {
+          if (screen?.stopped) { enableScreenShare(false); return }
+          const force = ++sinceForced % 5 === 0
+          const b64 = screen?.grab(force)
+          if (b64) send(videoFrame(b64))
+        }, FRAME_MS)
+        // Auto-stop when browser's "Stop sharing" is clicked
+        screen.stream.getVideoTracks()[0].addEventListener('ended', () => enableScreenShare(false))
+      } catch {
+        emit({ type: 'error', message: 'Screen sharing was cancelled or not supported.' })
+      }
+    } else if (!on && screen) {
+      clearInterval(screenTimer); screenTimer = null
+      clearSharedVisualSource(screen)
+      screen.close(); screen = null
+      if (cam) setSharedVisualSource(cam)
+      emit({ type: 'screen', stream: null, active: false })
     }
   }
 
@@ -187,11 +220,15 @@ You can see them through their camera and hear them through their microphone. Be
     if (closed) return
     closed = true
     clearInterval(frameTimer)
+    clearInterval(screenTimer)
     try { ws?.close() } catch {}
+    clearSharedVisualSource(cam)
+    clearSharedVisualSource(screen)
     cam?.close()
+    screen?.close()
     mic?.close()
     player?.close()
-    ws = null; cam = null; mic = null; player = null
+    ws = null; cam = null; screen = null; mic = null; player = null
     onEvent({ type: 'ended' })
   }
 
@@ -199,9 +236,18 @@ You can see them through their camera and hear them through their microphone. Be
     start,
     stop,
     enableCamera,
+    enableScreenShare,
     sendText: (t) => send(textInput(t)),
+    /** Auto-scan tick: Gemini already streams frames, so force one now. */
+    watch: () => {
+      const b64 = (screen || cam)?.grab(true)
+      if (b64) send(videoFrame(b64))
+    },
+    /** Current frame for the vision panel — never opens a second camera. */
+    grabFrame: (profile) => (screen || cam)?.grab(true, profile) || null,
     setMuted: (v) => { mic?.setMuted(v); emit({ type: 'muted', value: v }) },
     isMuted: () => !!mic?.isMuted(),
     get cameraOn() { return !!cam },
+    get screenOn() { return !!screen },
   }
 }

@@ -2,17 +2,27 @@ const CACHE_NAME = 'yogatik-v3';
 const STATIC_ASSETS = ['/', '/index.html', '/icon-192.svg', '/icon-512.svg'];
 
 self.addEventListener('install', (e) => {
+  // NO skipWaiting here. Taking over immediately swaps the worker under a page
+  // that still references the previous build's hashed chunks, and every later
+  // lazy import 404s. The page asks for the swap when the user accepts it.
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(STATIC_ASSETS)));
-  self.skipWaiting();
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
+  e.waitUntil((async () => {
+    // Navigation preload: start the network fetch in parallel with SW startup,
+    // shaving the worker's boot latency off first navigations.
+    if (self.registration.navigationPreload) {
+      try { await self.registration.navigationPreload.enable(); } catch { /* unsupported */ }
+    }
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', (e) => {
@@ -31,16 +41,17 @@ self.addEventListener('fetch', (e) => {
   if (req.headers.get('accept')?.includes('text/event-stream')) return;
 
   // HTML: network-first so deploys land immediately, cache as offline fallback.
+  // Uses the navigation-preload response when the browser provided one.
   if (req.mode === 'navigate') {
-    e.respondWith(
-      fetch(req)
-        .then(resp => {
-          const clone = resp.clone();
-          caches.open(CACHE_NAME).then(c => c.put('/index.html', clone)).catch(() => {});
-          return resp;
-        })
-        .catch(() => caches.match('/index.html').then(r => r || Response.error()))
-    );
+    e.respondWith((async () => {
+      try {
+        const resp = (await e.preloadResponse) || await fetch(req);
+        caches.open(CACHE_NAME).then(c => c.put('/index.html', resp.clone())).catch(() => {});
+        return resp;
+      } catch {
+        return (await caches.match('/index.html')) || Response.error();
+      }
+    })());
     return;
   }
 

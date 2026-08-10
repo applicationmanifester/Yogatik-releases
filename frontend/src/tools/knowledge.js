@@ -103,12 +103,14 @@ export const scholarTool = {
   },
   async execute({ query, limit = 5, since, preprints = true }) {
     const n = Math.min(Math.max(1, limit | 0), 10)
+    // Strip future years like 2025/2026 which break academic search term matching
+    const cleanQuery = query.replace(/\b(2025|2026|2027|2028)\b/g, '').trim() || query
     const out = []
 
     try {
       const filter = since ? `&filter=from_publication_date:${since}-01-01` : ''
       const data = await json(
-        `https://api.openalex.org/works?search=${encodeURIComponent(query)}&per-page=${n}${filter}&mailto=yogatik`
+        `https://api.openalex.org/works?search=${encodeURIComponent(cleanQuery)}&per-page=${n + 5}${filter}&mailto=yogatik`
       )
       for (const w of data.results || []) {
         // OpenAlex stores abstracts as an inverted index to sidestep copyright.
@@ -139,7 +141,7 @@ export const scholarTool = {
       try {
         // arXiv has no CORS headers, so it goes through the proxy.
         const xml = await proxyText(
-          `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&max_results=${Math.min(n, 5)}&sortBy=relevance`
+          `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(cleanQuery)}&max_results=${Math.min(n, 5)}&sortBy=relevance`
         )
         const doc = new DOMParser().parseFromString(xml, 'text/xml')
         for (const e of [...doc.querySelectorAll('entry')].slice(0, n)) {
@@ -148,10 +150,10 @@ export const scholarTool = {
             source: 'arxiv',
             title: txt('title').replace(/\s+/g, ' '),
             year: Number(txt('published').slice(0, 4)) || undefined,
-            authors: [...e.querySelectorAll('author name')].slice(0, 5).map(a => a.textContent.trim()),
+            authors: [...e.querySelectorAll('author name')].map(a => a.textContent?.trim()).filter(Boolean),
             url: txt('id'),
-            pdf: e.querySelector('link[title=pdf]')?.getAttribute('href') || undefined,
-            abstract: txt('summary').replace(/\s+/g, ' ').slice(0, 700),
+            pdf: e.querySelector('link[title="pdf"]')?.getAttribute('href') || undefined,
+            abstract: txt('summary').replace(/\s+/g, ' ').slice(0, 700) || undefined,
             open_access: true,
           })
         }
@@ -328,7 +330,7 @@ export const dictionaryTool = {
         })),
         source: entry.sourceUrls?.[0],
       }
-    } catch (e) {
+    } catch {
       return { success: false, error: `No definition found for "${word}"` }
     }
   },

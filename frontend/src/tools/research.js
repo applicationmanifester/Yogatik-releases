@@ -25,15 +25,71 @@ const FILLER = new Set((
 ).split(' '))
 
 export function toSearchQuery(text = '') {
-  const quoted = text.match(/"[^"]+"/g) || []          // keep phrases intact
-  const rest = text.replace(/"[^"]+"/g, ' ')
+  // Strip future year tokens which break search engine & API term matching
+  const cleanedText = text.replace(/\b(2025|2026|2027|2028)\b/g, '')
+  const quoted = cleanedText.match(/"[^"]+"/g) || []          // keep phrases intact
+  const rest = cleanedText.replace(/"[^"]+"/g, ' ')
   const words = rest
     .replace(/[?!.,;:]/g, ' ')
     .split(/\s+/)
     .filter(w => w && !FILLER.has(w.toLowerCase()))
   const out = [...quoted, ...words].join(' ').trim()
-  // If filtering removed nearly everything, the original was already terse.
-  return out.split(/\s+/).length >= 2 ? out : text.trim()
+  return out.split(/\s+/).length >= 2 ? out : (cleanedText.trim() || text.trim())
+}
+
+/**
+ * Decompose a multi-part query into 2-3 focused sub-queries for parallel search.
+ */
+export function decomposeQuery(query = '') {
+  const clean = query.trim()
+  if (!clean) return []
+  const splitPattern = /\b(?:vs|versus|compared to|and also|as well as)\b/i
+  if (splitPattern.test(clean)) {
+    const parts = clean.split(splitPattern).map(p => p.trim()).filter(p => p.length >= 3)
+    if (parts.length >= 2) return parts.slice(0, 3).map(p => toSearchQuery(p))
+  }
+  return [toSearchQuery(clean)]
+}
+
+/**
+ * Domain credibility & authority scoring for candidate search results.
+ */
+const HIGH_AUTH_DOMAINS = /\.(edu|gov|org)$|arxiv\.org|github\.com|wikipedia\.org|docs\.|nature\.com|ieee\.org|nytimes\.com|bbc\.com|reuters\.com|bloomberg\.com|techcrunch\.com/i
+const LOW_AUTH_DOMAINS = /top10|best5|affiliate|review202|coupon|cheap/i
+
+export function scoreDomain(urlStr = '') {
+  try {
+    const host = new URL(urlStr).hostname.toLowerCase()
+    if (HIGH_AUTH_DOMAINS.test(host)) return 2.5
+    if (LOW_AUTH_DOMAINS.test(host)) return 0.4
+    return 1.0
+  } catch {
+    return 1.0
+  }
+}
+
+/**
+ * Extract key bulleted summary points & metrics across retrieved pages.
+ */
+function extractStructuredMetrics(pages) {
+  const bullets = []
+  const metrics = []
+  pages.forEach((p, idx) => {
+    const lines = (p.text || '').split('\n').map(l => l.trim())
+    lines.forEach(line => {
+      if ((line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) && line.length > 20 && line.length < 200) {
+        if (bullets.length < 8) bullets.push(`[Source ${idx + 1}] ${line.replace(/^[-*•]\s*/, '')}`)
+      }
+      const match = line.match(/(?:[$€£₹]\s?\d[\d,.]*\s?(?:billion|million|bn|m|k)?|\b\d[\d,.]*\s?(?:%|percent|billion|million|users|TOPS|GB|MB)\b)/i)
+      if (match && metrics.length < 8 && line.length < 150) {
+        metrics.push({ metric: match[0], context: line, page: idx + 1 })
+      }
+    })
+  })
+  return {
+    key_takeaways: bullets.length ? bullets : undefined,
+    extracted_metrics: metrics.length ? metrics : undefined,
+  }
 }
 
 /**
@@ -141,14 +197,14 @@ function markDuplicates(pages) {
 /** Sites that reliably return a paywall or a JS shell rather than content. */
 const LOW_YIELD = /(facebook|instagram|twitter|x)\.com|linkedin\.com|pinterest\.|tiktok\.com|\.pdf($|\?)/i
 
+const AD_TRACKER = /\b(?:duckduckgo\.com\/y\.js|bing\.com\/aclick|google\.com\/aclk|doubleclick\.net|t3\.gstatic\.com|amazon\.com\/gp\/r\.html|ad_domain=|ad_provider=|click_metadata=|aclick|aclk|rlid=)\b/i
+
 async function fetchPage(url) {
+  if (!url || AD_TRACKER.test(url)) return null
   const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), FETCH_TIMEOUT))
   try {
     const html = await Promise.race([proxyText(url), timeout])
-    // Keep far more than we will send: relevantExcerpt needs material to rank,
-    // and the answer is often past the first 4000 characters.
     const page = extractReadable(html, { maxChars: EXTRACT_CHARS })
-    // Under ~200 chars it is a cookie wall or a JS-only shell, not an article.
     if (page.text.length < 200) return null
     return { url, ...page }
   } catch {
@@ -185,34 +241,45 @@ export const researchTool = {
   async execute({ query, depth = 3, recency = 'any', site, follow_up = false }) {
     if (!query?.trim()) return { error: 'Empty query' }
     const n = Math.min(Math.max(1, depth | 0), 5)
-    const searchQuery = toSearchQuery(query)
+    const subQueries = decomposeQuery(query)
 
-    let search = await webSearchTool.execute({
-      query: searchQuery, count: Math.min(n + 4, 10), recency, site,
+    // Execute sub-queries concurrently for comprehensive coverage
+    const searchResults = await Promise.all(subQueries.map(sq =>
+      webSearchTool.execute({ query: sq, count: Math.min(n + 4, 10), recency, site })
+    ))
+
+    const allResults = []
+    const seenUrls = new Set()
+    searchResults.forEach(search => {
+      if (search?.results) {
+        search.results.forEach(r => {
+          if (!seenUrls.has(r.url) && !LOW_YIELD.test(r.url)) {
+            seenUrls.add(r.url)
+            allResults.push(r)
+          }
+        })
+      }
     })
 
-    // One retry with the raw wording before giving up — reformulation
-    // occasionally strips the very term that mattered.
-    if (!search.error && !search.results?.length && searchQuery !== query) {
-      search = await webSearchTool.execute({ query, count: Math.min(n + 4, 10), recency, site })
-    }
-    if (search.error) return search
-    if (!search.results?.length) {
+    if (!allResults.length) {
       return { query, sources: [], pages: [], note: 'No search results. Try different wording.' }
     }
 
-    // Skip hosts that reliably yield nothing readable, then over-fetch a little
-    // so failures still leave `n` usable pages.
-    const candidates = search.results.filter(r => !LOW_YIELD.test(r.url)).slice(0, n + 3)
-    const settled = await Promise.all(candidates.map(r => fetchPage(r.url)))
+    // Rank candidates by combining search position with domain authority score
+    const rankedCandidates = allResults
+      .map((r, idx) => ({ ...r, score: (100 - idx) * scoreDomain(r.url) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, n + 3)
+
+    const settled = await Promise.all(rankedCandidates.map(r => fetchPage(r.url)))
     const pages = markDuplicates(settled.filter(Boolean)).slice(0, n)
 
     if (!pages.length) {
       return {
         query,
-        engine: search.engine,
+        engine: [...new Set(searchResults.map(s => s?.engine).filter(Boolean))].join('+') || 'unknown',
         pages: [],
-        sources: search.results.map(r => ({ title: r.title, url: r.url, snippet: r.snippet })),
+        sources: allResults.map(r => ({ title: r.title, url: r.url, snippet: r.snippet })),
         note: 'Search worked but none of the pages could be read (paywalls or JavaScript-only sites). Use the snippets below, and say they are snippets rather than full articles.',
       }
     }
@@ -227,7 +294,7 @@ export const researchTool = {
       ).slice(0, 3)
       if (leads.length) {
         const second = await webSearchTool.execute({
-          query: `${searchQuery} ${leads.join(' ')}`, count: 4, recency, site,
+          query: `${query} ${leads.join(' ')}`, count: 4, recency, site,
         })
         const seen = new Set(pages.map(p => p.url))
         const more = (second.results || [])
@@ -256,14 +323,14 @@ export const researchTool = {
       success: true,
       tool: 'deep_research',
       query,
-      engine: search.engine,
+      sub_queries: subQueries.length > 1 ? subQueries : undefined,
       fetched_at: new Date().toISOString(),
-      query_used: searchQuery !== query ? searchQuery : undefined,
       hops: follow_up ? 2 : 1,
+      structured_findings: extractStructuredMetrics(allPages),
       cross_check: findConflicts(rendered),
       related_terms: followUpTerms(rendered, query),
       pages: rendered,
-      sources: search.results.map(r => ({ title: r.title, url: r.url, snippet: r.snippet })),
+      sources: allResults.map(r => ({ title: r.title, url: r.url, snippet: r.snippet })),
     }
   },
 }

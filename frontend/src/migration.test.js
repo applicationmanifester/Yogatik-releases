@@ -7,7 +7,18 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import 'fake-indexeddb/auto'
+import FDBFactory from 'fake-indexeddb/lib/FDBFactory'
+import FDBKeyRange from 'fake-indexeddb/lib/FDBKeyRange'
 import Dexie from 'dexie'
+
+// The suite runs in ONE fork (see vitest.config.js), so Dexie may already be
+// cached from a file that imported it without fake-indexeddb — and Dexie reads
+// `indexedDB` once, at import. Injecting the dependency directly makes this
+// file independent of which test ran first.
+globalThis.indexedDB ??= new FDBFactory()
+globalThis.IDBKeyRange ??= FDBKeyRange
+Dexie.dependencies.indexedDB = globalThis.indexedDB
+Dexie.dependencies.IDBKeyRange = globalThis.IDBKeyRange
 
 /** Recreate a v2 database exactly as an existing user's browser holds it. */
 async function seedV2() {

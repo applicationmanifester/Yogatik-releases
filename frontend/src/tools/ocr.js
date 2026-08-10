@@ -1,5 +1,4 @@
 // Tesseract.js — OCR in the browser via CDN
-let workerReady = null
 
 async function loadTesseract() {
   if (window.Tesseract) return window.Tesseract

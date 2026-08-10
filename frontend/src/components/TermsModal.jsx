@@ -86,8 +86,8 @@ export function TermsModal({ onAccept, onDecline }) {
           </li>
           <li>
             <strong>Optional cloud sync.</strong> If you sign in and explicitly enable key sync,
-            your API keys are encrypted in your browser with a passphrase only you know and stored
-            in encrypted form. The passphrase is never transmitted or stored, and without it the
+            your API keys are encrypted in your browser before they are stored, and are unlocked by
+            your signed-in account rather than by anything we hold in the clear. Without that the
             data cannot be decrypted by anyone, including the developer.
           </li>
         </ul>

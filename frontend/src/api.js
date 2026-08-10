@@ -12,42 +12,110 @@ import { chunkText } from './retrieval'
 import { invalidateDocIndex } from './tools/documents'
 import { LIVE_MODELS } from './live/protocol'
 import { getCachedVision, looksVisionCapable, probeVision } from './vision/capability'
+import { getSharedSpeaker, stopSharedSpeaker } from './live/voice'
+import { DEFAULT_VOICE } from './video/speech'
 
-import { signInWithGoogle, logOutGoogle, saveUserApiKey, getUserApiKeys, purgePlaintextKeys } from './firebaseAuth'
+import { signInWithGoogle, checkRedirectResult, logOutGoogle, saveUserApiKey, getUserApiKeys, purgePlaintextKeys, authRedirectPending } from './firebaseAuth'
 
 // ─── Auth (Google Sign-In & encrypted Firestore key vault) ───
 
-// Held in memory for the session only — never persisted, never uploaded.
-let _passphrase = null
-export function setKeyPassphrase(p) { _passphrase = p || null }
-export function hasKeyPassphrase() { return !!_passphrase }
+/**
+ * Key vault: the account IS the credential.
+ *
+ * Keys are sealed with a secret derived from the signed-in account id, so any
+ * device unlocks them the moment the same user signs in — nothing to type, no
+ * to type. That is encryption at rest rather than zero knowledge — a deliberate
+ * trade, because a secret nobody remembers protects a key nobody can use. The
+ * Firestore rules scope the document to its owner's uid.
+ */
+function accountSecret(uid) {
+  return uid ? `yogatik.account.v1.${uid}` : null
+}
 
-export async function loginWithGoogle(passphrase) {
-  const user = await signInWithGoogle()
-  await db.setSetting('user', user)
-  if (passphrase) _passphrase = passphrase
-  // Restore cloud keys — only possible when the passphrase can decrypt them
-  if (_passphrase) {
-    const keys = await getUserApiKeys(_passphrase)
+async function vaultSecret() {
+  const user = await db.getSetting('user')
+  return accountSecret(user?.uid)
+}
+
+/** Pull every key this account has and store it on this device. */
+export async function pullCloudKeys() {
+  const secret = await vaultSecret()
+  if (!secret) return { pulled: 0 }
+  let pulled = 0
+  try {
+    const keys = await getUserApiKeys(secret)
     for (const [provider, key] of Object.entries(keys)) {
-      if (key) await db.setSetting(`apikey_${provider}`, key)
+      if (!key) continue
+      if (await db.getSetting(`apikey_${provider}`) === key) continue
+      await db.setSetting(`apikey_${provider}`, key)
+      pulled++
     }
+  } catch { /* offline or rules: local keys still work */ }
+  return { pulled }
+}
+
+/** Push every key stored on this device up to the account. */
+export async function pushCloudKeys() {
+  const secret = await vaultSecret()
+  if (!secret) return { pushed: 0 }
+  await loadCustomProviders()
+  let pushed = 0
+  for (const id of Object.keys(getLLMProviders())) {
+    const key = await db.getSetting(`apikey_${id}`)
+    if (!key) continue
+    try {
+      const res = await saveUserApiKey(id, key, secret)
+      if (res?.synced) { await db.setSetting(`synced_${id}`, Date.now()); pushed++ }
+    } catch { /* keep going: one provider failing is not a reason to stop */ }
   }
-  // Scrub any keys stored in plaintext by earlier versions
-  try { await purgePlaintextKeys() } catch {}
+  return { pushed }
+}
+
+/** Both directions, newest wins locally. Safe to call on every sign-in. */
+export async function syncCloudKeys() {
+  const pulled = await pullCloudKeys()
+  const pushed = await pushCloudKeys()
+  return { ...pulled, ...pushed }
+}
+
+/**
+ * Runs on every startup, so it must not pull the Firebase SDK (~170KB gzipped)
+ * for a visitor who has never signed in. Only a pending redirect or an existing
+ * session justifies loading it.
+ */
+export async function checkGoogleRedirect() {
+  if (!authRedirectPending() && !(await db.getSetting('user'))) return null
+  const user = await checkRedirectResult()
+  if (user) {
+    await db.setSetting('user', user)
+    try { await syncCloudKeys() } catch {}
+    try { await purgePlaintextKeys() } catch {}
+  }
+  return user
+}
+
+export async function loginWithGoogle() {
+  const user = await signInWithGoogle()
+  if (user) {
+    await db.setSetting('user', user)
+    // Signing in IS the sync step — nothing to type, no button to find.
+    try { await syncCloudKeys() } catch {}
+    try { await purgePlaintextKeys() } catch {}
+  }
   return user
 }
 
 export async function saveProviderApiKey(provider, apiKey) {
   await db.setSetting(`apikey_${provider}`, apiKey)
-  // Cloud sync is opt-in and encrypted; without a passphrase the key stays local.
-  if (_passphrase && await db.getSetting('user')) {
-    const res = await saveUserApiKey(provider, apiKey, _passphrase)
+  // Signed in => it syncs, encrypted, to every other device of this account.
+  const secret = await vaultSecret()
+  if (secret) {
+    const res = await saveUserApiKey(provider, apiKey, secret)
     if (res?.synced) await db.setSetting(`synced_${provider}`, Date.now())
     return res
   }
   await db.setSetting(`synced_${provider}`, null)
-  return { synced: false, reason: _passphrase ? 'signed-out' : 'no-passphrase' }
+  return { synced: false, reason: 'signed-out' }
 }
 
 /** What the user can be told about a stored key, without revealing it. */
@@ -69,36 +137,8 @@ export async function getAllKeyInfo() {
   return out
 }
 
-/**
- * Turn on cloud sync: hold the passphrase for this session and push every key
- * already stored on this device, encrypted.
- */
-export async function enableCloudSync(passphrase) {
-  if (!passphrase) throw new Error('A passphrase is required — it is what encrypts your keys.')
-  if (!(await db.getSetting('user'))) throw new Error('Sign in first to sync keys to the cloud.')
-  _passphrase = passphrase
-
-  await loadCustomProviders()
-  let synced = 0
-  for (const id of Object.keys(getLLMProviders())) {
-    const key = await db.getSetting(`apikey_${id}`)
-    if (!key) continue
-    const res = await saveUserApiKey(id, key, passphrase)
-    if (res?.synced) { await db.setSetting(`synced_${id}`, Date.now()); synced++ }
-  }
-  await db.setSetting('cloud_sync_on', true)
-  return { synced }
-}
-
-export async function disableCloudSync() {
-  _passphrase = null
-  await db.setSetting('cloud_sync_on', false)
-  await loadCustomProviders()
-  for (const id of Object.keys(getLLMProviders())) await db.setSetting(`synced_${id}`, null)
-}
-
 export async function isCloudSyncOn() {
-  return !!(await db.getSetting('cloud_sync_on')) && hasKeyPassphrase()
+  return !!(await db.getSetting('user'))
 }
 
 export async function getMe() {
@@ -106,7 +146,6 @@ export async function getMe() {
 }
 
 export async function logout() {
-  _passphrase = null
   if (await db.getSetting('user')) await logOutGoogle()
   await db.setSetting('user', null)
 }
@@ -139,6 +178,8 @@ function isProviderFailure(msg = '') {
 // Keyed so that a side task (prompt enhancement) cannot have its handle
 // clobbered by — or clobber — the main chat stream.
 const aborters = new Map()
+export const routeCache = new Map()
+const ROUTE_CACHE_TTL = 5 * 60 * 1000
 
 export async function streamMessage(body, onToken, onSources, onDone, onError, onStatus, onStreamId, onToolsDetected, onToolResult) {
   const provider = body.provider || await getActiveProvider()
@@ -165,7 +206,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
   aborters.get(channel)?.abort()
   const controller = new AbortController()
   aborters.set(channel, controller)
-  onStreamId?.('local-' + Date.now())
+  onStreamId?.(channel)
 
   const prefs2 = await db.getSetting('chat_prefs', {})
   const chain = prefs2.fallback === false || channel !== 'chat'
@@ -178,6 +219,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
       const key = i === 0 ? apiKey : await db.getSetting(`apikey_${pid}`)
       if (!key && !getLLMProviders()[pid]?.isLocal) continue
       const mdl = i === 0 ? model : await db.getSetting(`model_${pid}`, '')
+      const isLocalProvider = getLLMProviders()[pid]?.isLocal
 
       let failure = null
       let produced = false
@@ -186,25 +228,26 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         provider: pid, apiKey: key, model: mdl,
         history: body.messages || [],
         userMessage: body.message || body.messages?.[body.messages.length - 1]?.content || '',
-        // 1B-class on-device models call tools unreliably; a wrong call costs
-        // the user more than the missing capability.
-        toolsEnabled: !getLLMProviders()[pid]?.isLocal &&
-          body.tools !== false && body.use_tools !== false,
-        webEnabled: !getLLMProviders()[pid]?.isLocal && body.use_web_search !== false,
+        userImage: body.image || null,
+        // 1B-class on-device: keep tools on (for web/research) but force
+        // prompted mode (text JSON protocol) so streamLocal never sees a
+        // native `tools` array that breaks the small WebLLM engine.
+        toolsEnabled: body.tools !== false && body.use_tools !== false,
+        initialToolMode: isLocalProvider ? 'prompted' : await getToolMode(pid, mdl),
+        webEnabled: body.use_web_search !== false,
         disabledTools: await getDisabledTools(),
         persona: body.system_prompt || null,
         // Probing costs a round-trip, so per message we trust the cache and
         // fall back to the name heuristic; the probe runs when a key is verified.
         modelCanSee: (await getCachedVision(pid, mdl)) ?? looksVisionCapable(mdl),
         localVisionEnabled: prefs2.local_vision !== false,
-        initialToolMode: await getToolMode(pid, mdl),
         onToolModeChange: (mode) => { setToolMode(pid, mdl, mode).catch(() => {}) },
         temperature: body.temperature || 0.7,
         signal: controller.signal,
         onToken: (t) => { produced = true; onToken?.(t) },
         onStatus,
         onSources,
-        onToolStart: (name) => onToolsDetected?.([name]),
+        onToolStart: (name, args) => onToolsDetected?.([name], args),
         onToolResult: (name, result) => onToolResult?.(name, result),
         onDone: ({ content, sources, aborted }) => {
           if (sources?.length) onSources?.(sources)
@@ -307,9 +350,29 @@ export async function getLiveConfig() {
   }
 
   // Universal cascade: works with Groq, NVIDIA, OpenRouter, OpenAI, on-device, and custom providers.
+  // A call is long-lived, so it carries its own fallback chain: a 429 ten
+  // minutes in should switch provider, not hang up.
+  const fallbacks = []
+  for (const pid of await getFallbackChain(provider)) {
+    if (pid === provider) continue
+    const key = await db.getSetting(`apikey_${pid}`)
+    if (!key && !getLLMProviders()[pid]?.isLocal) continue
+    const mdl = await db.getSetting(`model_${pid}`, '')
+    fallbacks.push({
+      provider: pid, apiKey: key, model: mdl,
+      modelCanSee: (await getCachedVision(pid, mdl)) ?? looksVisionCapable(mdl),
+    })
+  }
+
   return {
     available: true, engine: 'cascade', provider, apiKey, model,
-    voice: prefs.live_voice_name || null,
+    // Distinct from `live_voice`: that one holds a Gemini voice name, and the
+    // two namespaces do not overlap.
+    voice: prefs.live_voice_local || DEFAULT_VOICE,
+    // Neural (Kokoro, on-device) by default — the system voice is robotic and
+    // people hang up on it. Explicit opt-out for slow devices / tight data.
+    voiceEngine: prefs.live_voice_engine === 'system' ? 'system' : 'neural',
+    fallbacks,
     modelCanSee: (await getCachedVision(provider, model)) ?? looksVisionCapable(model),
     disabledTools,
   }
@@ -381,7 +444,9 @@ export async function setPref(key, value) {
 
 // ─── Projects ───
 export async function getProjects() { return db.getProjects() }
-export async function createProject(name, opts) { return db.createProject(name, opts) }
+// Returns the id, like createConversation — the two used to disagree, and the
+// object form silently became `undefined` wherever an id was expected.
+export async function createProject(name, opts) { return (await db.createProject(name, opts)).id }
 export async function updateProject(id, patch) { return db.updateProject(id, patch) }
 export async function deleteProject(id) { return db.deleteProject(id) }
 export async function assignConversation(cid, pid) { return db.assignConversation(cid, pid) }
@@ -442,6 +507,28 @@ export async function trimConversationFrom(id, from) {
 
 export async function getConversation(id) {
   return db.getConversation(id)
+}
+
+/**
+ * Fork a conversation at `index`: everything before it is copied into a new
+ * conversation, which is where the edited turn will go.
+ *
+ * Editing an earlier message used to mean destroying every reply after it. A
+ * fork keeps the original thread intact, so trying a different question is not
+ * a decision you can regret.
+ *
+ * @returns {Promise<{id:number, title:string, messages:Array}>}
+ */
+export async function branchConversation(sourceId, index) {
+  const source = sourceId ? await db.getConversation(sourceId) : null
+  const kept = (source?.messages || []).slice(0, index)
+  const baseTitle = (source?.title || 'Chat').replace(/\s*\(\d+\)$/, '')
+
+  const created = await db.createConversation(baseTitle, source?.projectId ?? null)
+  for (const m of kept) {
+    await db.addMessage(created.id, m.role, m.content, m.toolResults ?? null, m.sources ?? null)
+  }
+  return { ...created, messages: await db.getMessages(created.id) }
 }
 
 export async function deleteConversation(id) {
@@ -680,13 +767,15 @@ export async function testProvider(id, modelOverride) {
     return res
   }
 
-  if (!apiKey) return remember({ success: false, error: 'No API key set' })
+  if (!apiKey && !p?.noKey) return remember({ success: false, error: 'No API key set' })
   if (!p) return { success: false, error: 'Provider not found' }
 
-  if (p.needsProxy && !proxyAvailable()) {
+  if (p.isLocal) {
     return remember({
-      success: false,
-      error: 'This provider needs a CORS proxy. Deploy the Cloudflare Worker and set VITE_LLM_PROXY_BASE, or pick a provider that works directly from the browser.',
+      success: true,
+      status: 'ok',
+      model,
+      response: 'On-device model ready',
     })
   }
 
@@ -714,7 +803,7 @@ export async function testProvider(id, modelOverride) {
     return remember({
       success: false,
       error: timedOut
-        ? `No response in ${TEST_TIMEOUT / 1000}s — this model is too slow to use for chat. Pick a smaller one.`
+        ? `No response in ${TEST_TIMEOUT / 1000}s — this model is too slow to use for chat. Pick another different modal.`
         : friendlyProviderError(e.message),
       latencyMs: Math.round(performance.now() - started),
     })
@@ -730,8 +819,13 @@ function candidateScore(id) {
   const m = id.toLowerCase()
   let score = 0
   if (/instruct|chat|-it$|turbo/.test(m)) score += 3
-  if (/flash|nano|mini|lite|small|fast|8b|7b|9b|4b|3b|2b|1b/.test(m)) score += 4   // responsive
-  if (/70b|72b|90b|120b|123b|253b|340b|405b|550b|large|ultra|pro\b/.test(m)) score -= 4  // slow to first token
+  // Parse the parameter count (e.g. "8b", "49b", "0.5b") to size-tier the model.
+  const b = parseFloat((m.match(/(\d+(?:\.\d+)?)\s*b\b/) || [])[1])
+  if (/flash|nano|lite|fast/.test(m) || (b >= 7 && b <= 15)) score += 4   // responsive sweet spot
+  if (b >= 70 || /large|ultra|pro\b/.test(m)) score -= 4                  // slow to first token
+  // Sub-5B models are too weak to drive tools/agentic turns reliably — they
+  // accept a call then 400 the result, or answer incoherently. Keep them last.
+  if ((b && b < 5) || /\bmini\b/.test(m)) score -= 6
   if (/vision|vl|omni|audio|video|reason/.test(m)) score -= 2                       // specialised
   if (/preview|alpha|beta|experimental|deprecated/.test(m)) score -= 2
   return score
@@ -761,7 +855,12 @@ export async function autoPickModel(providerId, { max = 4, timeoutMs = 10_000, o
     }
   }
   const all = (cached?.list?.length ? cached.list : prov.models) || []
-  const ranked = [...all].sort((a, b) => candidateScore(b) - candidateScore(a)).slice(0, max)
+  // Probe the curated known-good models FIRST (those the provider still serves),
+  // then fall back to the name-heuristic ranking. Stops a fresh key from landing
+  // on a weak/broken free model just because it answered a 1-token ping fastest.
+  const preferred = (prov.preferred || []).filter(m => all.includes(m))
+  const rest = all.filter(m => !preferred.includes(m)).sort((a, b) => candidateScore(b) - candidateScore(a))
+  const ranked = [...preferred, ...rest].slice(0, Math.max(max, preferred.length))
   if (!ranked.length) throw new Error('No models available for this provider.')
 
   onProgress?.(`Testing ${ranked.length} models…`)
@@ -795,6 +894,27 @@ export async function autoPickModel(providerId, { max = 4, timeoutMs = 10_000, o
   if (!winner) {
     const reason = friendlyProviderError(results[0]?.error || '')
     throw new Error(`None of the ${ranked.length} models responded within ${timeoutMs / 1000}s. ${reason}`)
+  }
+
+  // Cache the winner's tool-calling mode NOW, so its first real chat never pays
+  // the native→prompted 400 round-trip. A model that 400s on a tools array is
+  // marked 'prompted'; one that accepts it is 'native'. (Runtime still demotes
+  // models that accept the call but reject the tool RESULT — see agent.js.)
+  try {
+    await chatComplete({
+      provider: providerId, apiKey, model: winner.model,
+      messages: [{ role: 'user', content: 'ping' }],
+      tools: [{ type: 'function', function: {
+        name: 'noop', description: 'probe', parameters: {
+          type: 'object', properties: { q: { type: 'string' } }, required: [],
+        },
+      } }],
+      temperature: 0, maxTokens: 1, timeoutMs, retries: 0,
+    })
+    await setToolMode(providerId, winner.model, 'native')
+  } catch (e) {
+    if (/\b400\b/.test(e?.message || '')) await setToolMode(providerId, winner.model, 'prompted')
+    // Any other error (429/network): leave unset; the agent detects at runtime.
   }
 
   await db.setSetting(`model_${providerId}`, winner.model)
@@ -836,6 +956,13 @@ export async function routeModel(providerId, message) {
   const prov = getLLMProviders()[providerId]
   if (!prov) return null
 
+  const kind = classifyQuery(message)
+  const cacheKey = `${providerId}::${kind}`
+  const cachedRoute = routeCache.get(cacheKey)
+  if (cachedRoute && Date.now() - cachedRoute.at < ROUTE_CACHE_TTL) {
+    return cachedRoute.value
+  }
+
   const cached = await db.getSetting(`models_${providerId}`)
   const all = (cached?.list?.length ? cached.list : prov.models) || []
   if (!all.length) return null
@@ -849,7 +976,6 @@ export async function routeModel(providerId, message) {
   }
   if (!measured.length) return null
 
-  const kind = classifyQuery(message)
   const { prefer } = ROUTE_PREFS[kind] || ROUTE_PREFS.quick
 
   const matching = measured.filter(m => prefer.test(m.model.toLowerCase()))
@@ -857,7 +983,9 @@ export async function routeModel(providerId, message) {
 
   // Within the right category, fastest wins.
   const pick = pool.sort((a, b) => a.latencyMs - b.latencyMs)[0]
-  return pick ? { model: pick.model, kind, latencyMs: pick.latencyMs } : null
+  const value = pick ? { model: pick.model, kind, latencyMs: pick.latencyMs } : null
+  routeCache.set(cacheKey, { at: Date.now(), value })
+  return value
 }
 
 /** Every model we have timed for a provider, for the picker. */
@@ -883,7 +1011,9 @@ export function isRetiredModelError(msg = '') {
   return /\b410\b/.test(msg) ||
     /end of life|no longer available/i.test(msg) ||
     // NVIDIA answers 404 "page not found" for a model it does not serve.
-    (/\b404\b/.test(msg) && /not found/i.test(msg))
+    (/\b404\b/.test(msg) && /not found/i.test(msg)) ||
+    // …and 400 "The model X does not exist" when it renames/withdraws one.
+    (/model/i.test(msg) && /does not exist|no such model|unknown model|invalid model/i.test(msg))
 }
 
 /**
@@ -948,16 +1078,30 @@ export async function getAllProviderStatus() {
 export async function getActiveProvider() {
   const saved = await db.getSetting('provider')
   if (saved) return saved
-  // No stored choice: prefer a provider that already has a key, and never
-  // default to one that needs a proxy the user may not have deployed.
+  // First provider that can actually answer right now: has a key (or needs
+  // none) and no proxy. NEVER 'local' — that default silently pointed a fresh
+  // install at a 750MB download with tools and web forced off.
   await loadCustomProviders()
-  const providers = getLLMProviders()
-  for (const [id, p] of Object.entries(providers)) {
-    if (p.needsProxy && !proxyAvailable()) continue
-    if (p.isLocal) continue
-    if (await db.getSetting(`apikey_${id}`)) return id
+  for (const [id, p] of Object.entries(getLLMProviders())) {
+    if (p.isLocal || (p.needsProxy && !proxyAvailable())) continue
+    if (p.noKey || await db.getSetting(`apikey_${id}`)) return id
   }
   return 'groq'
+}
+
+/** True once any real provider has a key — i.e. the user is not empty-handed. */
+export async function hasAnyProviderKey() {
+  await loadCustomProviders()
+  for (const [id, p] of Object.entries(getLLMProviders())) {
+    if (p.isLocal) continue
+    if (await db.getSetting(`apikey_${id}`)) return true
+  }
+  return false
+}
+
+/** The provider the user actually chose, or null. Never the computed default. */
+export async function getStoredProvider() {
+  return db.getSetting('provider')
 }
 
 export async function setActiveProvider(id) {
@@ -1025,6 +1169,7 @@ export const TOOL_GROUPS = {
   package_info: 'Data', gutenberg: 'Data', geocode: 'Data', currency: 'Data', earthquake: 'Data',
   doc_search: 'Documents', doc_list: 'Documents', pdf_extract: 'Documents',
   ocr: 'Documents', summarize: 'Documents', md_to_pdf: 'Documents',
+  keyword_extract: 'Utility', entity_extract: 'Utility', query_refine: 'Utility',
   code_execute: 'Compute', calculator: 'Compute', data_convert: 'Compute',
   unit_convert: 'Compute', regex: 'Compute', hash: 'Compute', diff: 'Compute',
   image_generate: 'Media', chart: 'Media', diagram: 'Media', image_info: 'Media',
@@ -1034,17 +1179,37 @@ export const TOOL_GROUPS = {
 }
 
 // ─── TTS (Web Speech API) ───
+/**
+ * Read a message aloud in the same on-device voice the call uses. Long replies
+ * are spoken sentence by sentence so playback starts immediately instead of
+ * after the whole thing has been synthesised.
+ */
 export async function requestTTS(text, { onEnd } = {}) {
-  if (!('speechSynthesis' in window)) throw new Error('TTS not supported')
-  const utter = new SpeechSynthesisUtterance(text)
-  utter.onend = () => onEnd?.()
-  utter.onerror = () => onEnd?.()
-  window.speechSynthesis.cancel()
-  window.speechSynthesis.speak(utter)
+  const prefs = await db.getSetting('chat_prefs', {})
+  const speaker = getSharedSpeaker({
+    engine: prefs.live_voice_engine === 'system' ? 'system' : 'neural',
+    voice: prefs.live_voice_local || DEFAULT_VOICE,
+    onEnd: () => onEnd?.(),
+  })
+  speaker.cancel()   // a second play button stops the first
+  for (const part of splitForSpeech(text)) speaker.speak(part)
   return { success: true }
 }
 
+/** ~200 characters keeps each synthesis short without chopping sentences. */
+function splitForSpeech(text, max = 200) {
+  const out = []
+  let buf = ''
+  for (const s of String(text ?? '').split(/(?<=[.!?…])\s+|\n+/)) {
+    if ((buf + ' ' + s).trim().length > max && buf) { out.push(buf.trim()); buf = s }
+    else buf = `${buf} ${s}`
+  }
+  if (buf.trim()) out.push(buf.trim())
+  return out
+}
+
 export function stopTTS() {
+  stopSharedSpeaker()
   if ('speechSynthesis' in window) window.speechSynthesis.cancel()
 }
 

@@ -1,6 +1,6 @@
 import Dexie from 'dexie'
 
-const db = new Dexie('YogatikDB')
+export const db = new Dexie('YogatikDB')
 db.version(1).stores({
   conversations: '++id, title, updatedAt',
   messages: '++id, conversationId, role, createdAt',
@@ -23,11 +23,44 @@ db.version(3).stores({
   documents: '++id, name, createdAt, projectId',
   projects: '++id, name, createdAt',
 })
+// v4: rendered media (video/audio blobs). A blob: URL dies on reload, so the
+// bytes themselves have to live somewhere or the video the user just made is
+// gone the moment they refresh.
+db.version(4).stores({
+  conversations: '++id, title, updatedAt, projectId',
+  messages: '++id, conversationId, role, createdAt, [conversationId+createdAt]',
+  settings: 'key',
+  documents: '++id, name, createdAt, projectId',
+  projects: '++id, name, createdAt',
+  media: '++id, createdAt',
+})
+
+// ─── Media (rendered video) ───
+const MEDIA_KEEP = 10          // newest N kept; older renders are disposable
+
+export async function saveMedia({ blob, mime, filename, meta = {} }) {
+  const id = await db.media.add({ blob, mime, filename, meta, createdAt: Date.now() })
+  // Videos are megabytes. Without a cap, IndexedDB fills up and every later
+  // write starts failing with QuotaExceededError.
+  const all = await db.media.orderBy('createdAt').reverse().toArray()
+  for (const old of all.slice(MEDIA_KEEP)) await db.media.delete(old.id)
+  return id
+}
+
+export async function getMedia(id) {
+  return db.media.get(Number(id))
+}
+
+export async function deleteMedia(id) {
+  return db.media.delete(Number(id))
+}
 
 // ─── Settings (API keys, provider, theme, etc.) ───
 export async function getSetting(key, fallback = null) {
   const row = await db.settings.get(key)
-  return row ? row.value : fallback
+  // A row holding null must still yield the fallback: `getSetting(k, '')`
+  // returning null put null into controlled inputs. false/0 are kept.
+  return row && row.value != null ? row.value : fallback
 }
 export async function setSetting(key, value) {
   await db.settings.put({ key, value })

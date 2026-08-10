@@ -6,9 +6,13 @@ vi.mock('./tools/index', () => ({
   getToolSchemas: vi.fn(() => []),
   executeTool: vi.fn(async () => ({ ok: true })),
 }))
+vi.mock('./vision/source', () => ({
+  describeWithoutModel: vi.fn(async () => ({ via: 'ocr', text: 'INVOICE TOTAL 42.00' })),
+}))
 
 const { streamChat } = await import('./llm')
 const { getToolSchemas, executeTool } = await import('./tools/index')
+const { describeWithoutModel } = await import('./vision/source')
 const { runAgent } = await import('./agent')
 
 /** Queue a scripted response per LLM round. */
@@ -287,7 +291,7 @@ describe('prompted tool calling (models without native tools)', () => {
     await runAgent({ ...base, onDone, onToken, onToolModeChange })
 
     expect(onToolModeChange).toHaveBeenCalledWith('prompted')
-    expect(executeTool).toHaveBeenCalledWith('web_search', { query: 'x' })
+    expect(executeTool).toHaveBeenCalledWith('web_search', { query: 'x' }, { signal: undefined })
     expect(onDone.mock.calls[0][0].content).toBe('The answer is 42.')
     // The JSON block must never reach the user.
     expect(onToken.mock.calls.flat().join('')).not.toContain('tool_calls')
@@ -409,5 +413,89 @@ describe('vision plumbing', () => {
     const sent = streamChat.mock.calls[0][0].messages[1]
     expect(Array.isArray(sent.content)).toBe(true)
     expect(sent.content[1].image_url.url).toBe(IMG)
+  })
+})
+
+describe('Stop', () => {
+  it('does not wait for a slow tool round', async () => {
+    const ctrl = new AbortController()
+    scriptRounds([{ toolCalls: [{ name: 'deep_research', parsedArgs: {} }] }, { tokens: ['late'] }])
+    // A tool that never finishes on its own.
+    executeTool.mockImplementation(() => new Promise(() => {}))
+
+    const onDone = vi.fn()
+    const run = runAgent({ ...base, onDone, signal: ctrl.signal })
+    await Promise.resolve()
+    ctrl.abort()
+    await run
+
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ aborted: true }))
+    expect(streamChat).toHaveBeenCalledTimes(1)     // never asked for round 2
+  })
+
+  it('keeps the partial answer and marks it aborted', async () => {
+    const ctrl = new AbortController()
+    streamChat.mockImplementation(async (opts) => {
+      opts.onToken('half an ans')
+      ctrl.abort()
+      opts.onDone()                                  // llm.js fires onDone on abort
+    })
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone, signal: ctrl.signal })
+
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'half an ans', aborted: true }),
+    )
+  })
+
+  it('never starts a round when the signal is already aborted', async () => {
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone, signal: AbortSignal.abort() })
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ aborted: true }))
+  })
+})
+
+
+describe('an attached image', () => {
+  const IMG = 'data:image/jpeg;base64,AAAA'
+
+  it('goes to the model as an image part when it can see', async () => {
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, userMessage: 'what is this?', userImage: IMG, modelCanSee: true })
+
+    const turn = streamChat.mock.calls[0][0].messages.at(-1)
+    expect(Array.isArray(turn.content)).toBe(true)
+    expect(turn.content).toEqual(expect.arrayContaining([
+      { type: 'image_url', image_url: { url: IMG } },
+    ]))
+    expect(describeWithoutModel).not.toHaveBeenCalled()
+  })
+
+  it('is read on-device and passed as text when the model is blind', async () => {
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, userMessage: 'total?', userImage: IMG, modelCanSee: false })
+
+    expect(describeWithoutModel).toHaveBeenCalledWith(IMG, 'total?')
+    const turn = streamChat.mock.calls[0][0].messages.at(-1)
+    expect(typeof turn.content).toBe('string')
+    expect(turn.content).toContain('INVOICE TOTAL 42.00')
+    // The base64 must never reach a text-only model as prompt text.
+    expect(turn.content).not.toContain(IMG)
+  })
+
+  it('tells the user when the image cannot be read at all, instead of dropping it', async () => {
+    describeWithoutModel.mockRejectedValueOnce(new Error('no text found'))
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, userMessage: 'read this', userImage: IMG, modelCanSee: false })
+
+    const turn = streamChat.mock.calls[0][0].messages.at(-1)
+    expect(turn.content).toMatch(/could not be read/i)
+    expect(turn.content).toMatch(/vision-capable|On-device vision/i)
+  })
+
+  it('leaves a normal turn as a plain string', async () => {
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, userMessage: 'hello' })
+    expect(typeof streamChat.mock.calls[0][0].messages.at(-1).content).toBe('string')
   })
 })

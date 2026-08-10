@@ -4,6 +4,7 @@ import { hashTool } from './hash'
 import { unitConvertTool } from './unitConvert'
 import { dataConvertTool } from './dataConvert'
 import { regexTool } from './regex'
+import { keywordExtractTool, entityExtractTool, queryRefineTool } from './independentTools'
 
 describe('calculator', () => {
   const val = async (expression) => (await calculatorTool.execute({ expression })).result
@@ -116,5 +117,43 @@ describe('regex', () => {
   it('returns an error for an invalid pattern instead of throwing', async () => {
     const r = await regexTool.execute({ text: 'x', pattern: '([', operation: 'find' })
     expect(r.success).toBe(false)
+  })
+})
+
+describe('keyword_extract', () => {
+  it('returns useful keywords and phrases', async () => {
+    const r = await keywordExtractTool.execute({
+      text: 'React compiler optimizes components. React compiler improves rendering performance.',
+      max_keywords: 5,
+      max_phrases: 3,
+    })
+    expect(r.success).toBe(true)
+    expect(r.keywords.map(k => k.term)).toContain('react')
+    expect(r.search_query).toMatch(/react/)
+  })
+})
+
+describe('entity_extract', () => {
+  it('extracts basic entities and metadata', async () => {
+    const r = await entityExtractTool.execute({
+      text: 'Sam Altman met OpenAI in San Francisco on Jan 5, 2024. Contact hello@example.com or https://openai.com.',
+    })
+    expect(r.success).toBe(true)
+    expect(r.people.join(' ')).toMatch(/Sam Altman/i)
+    expect(r.organizations.join(' ')).toMatch(/OpenAI/i)
+    expect(r.locations.join(' ')).toMatch(/San Francisco/i)
+    expect(r.dates.join(' ')).toMatch(/2024|Jan/i)
+    expect(r.emails).toContain('hello@example.com')
+    expect(r.urls).toContain('https://openai.com')
+  })
+})
+
+describe('query_refine', () => {
+  it('creates a cleaner search query and suggested tools', async () => {
+    const r = await queryRefineTool.execute({ query: 'can you compare groq vs openai for coding?', max_subqueries: 2 })
+    expect(r.success).toBe(true)
+    expect(r.intent).toBe('compare')
+    expect(r.subqueries.length).toBeGreaterThanOrEqual(2)
+    expect(r.suggested_tools).toContain('code_execute')
   })
 })

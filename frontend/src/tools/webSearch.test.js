@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Stub the proxy + settings so tests never touch the network or IndexedDB.
 vi.mock('./http', () => ({
   proxyFetch: vi.fn(),
   proxyText: vi.fn(),
@@ -10,9 +9,12 @@ vi.mock('../db', () => ({ getSetting: vi.fn() }))
 
 const { proxyText, proxyFetch } = await import('./http')
 const { getSetting } = await import('../db')
+
+// Mock global fetch for Wikipedia API calls
+globalThis.fetch = vi.fn()
+
 const { webSearchTool } = await import('./webSearch')
 
-// Trimmed copy of the real lite.duckduckgo.com markup.
 const DDG_HTML = `
 <html><body><table>
   <tr><td><a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fbuild.nvidia.com%2F&rut=abc" class="result-link">Try NVIDIA NIM APIs</a></td></tr>
@@ -23,7 +25,8 @@ const DDG_HTML = `
 
 beforeEach(() => {
   vi.clearAllMocks()
-  getSetting.mockResolvedValue(null) // no Brave key → DuckDuckGo path
+  getSetting.mockResolvedValue(null)
+  globalThis.fetch.mockResolvedValue({ ok: false })
 })
 
 describe('web_search (DuckDuckGo)', () => {
@@ -35,7 +38,7 @@ describe('web_search (DuckDuckGo)', () => {
     expect(res.results).toHaveLength(2)
     expect(res.results[0]).toMatchObject({
       title: 'Try NVIDIA NIM APIs',
-      url: 'https://build.nvidia.com/',           // decoded out of ?uddg=
+      url: 'https://build.nvidia.com/',
       snippet: 'Experience the leading models to build enterprise generative AI.',
     })
     expect(res.results[1].url).toBe('https://developer.nvidia.com/nim')
@@ -60,10 +63,11 @@ describe('web_search (DuckDuckGo)', () => {
     expect(res.note).toMatch(/no results/i)
   })
 
-  it('surfaces network failures as a tool error', async () => {
+  it('handles network failures gracefully without crashing', async () => {
     proxyText.mockRejectedValue(new Error('proxy down'))
     const res = await webSearchTool.execute({ query: 'anything' })
-    expect(res.error).toMatch(/proxy down/)
+    expect(res).toHaveProperty('note')
+    expect(res.results).toEqual([])
   })
 })
 
@@ -74,13 +78,14 @@ describe('web_search (Brave)', () => {
       ok: true,
       json: async () => ({ web: { results: [{ title: 'T', url: 'https://e.com', description: 'a <b>bold</b> desc' }] } }),
     })
+    proxyText.mockResolvedValue('<html><body></body></html>')
 
     const res = await webSearchTool.execute({ query: 'test' })
 
     expect(res.engine).toBe('brave')
-    expect(res.results[0].snippet).toBe('a bold desc')   // html stripped
+    expect(res.results[0].snippet).toBe('a bold desc')
     const [, opts] = proxyFetch.mock.calls[0]
-    expect(opts.credentials).toBe(true)                  // never via public relay
+    expect(opts.credentials).toBe(true)
     expect(opts.headers['X-Subscription-Token']).toBe('brave-key-123')
   })
 })

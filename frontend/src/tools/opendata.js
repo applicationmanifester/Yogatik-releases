@@ -7,10 +7,14 @@
  *   Photon (Komoot, OSM data)      geocoding without an API key, CORS
  *   Frankfurter (ECB rates)        open-source FX service, CORS
  *   USGS                           earthquake feed, CORS
+ *   Open-Meteo Air Quality         AQI / particulates / pollen, keyless, CORS
+ *   LanguageTool (open source)     grammar + spell proofreading, CORS *
  *
  * Rejected after testing: OpenAQ (now requires a key), MusicBrainz (throttles
  * non-identifying user agents), Zenodo (403), Nominatim (403 without a UA policy).
  */
+
+import { getDeviceLocation } from './geolocate'
 
 const json = async (url) => {
   const r = await fetch(url)
@@ -288,6 +292,121 @@ export const earthquakeTool = {
         quakes,
         note: quakes.length ? undefined : `No earthquakes above magnitude ${min_magnitude} in that period.`,
         source: 'United States Geological Survey',
+      }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  },
+}
+
+// ─── Air quality + pollen (Open-Meteo, same source as weather) ────────────────
+const AQI_BANDS = [ // US AQI category from the composite index
+  [50, 'Good'], [100, 'Moderate'], [150, 'Unhealthy for sensitive groups'],
+  [200, 'Unhealthy'], [300, 'Very unhealthy'], [Infinity, 'Hazardous'],
+]
+export const airQualityTool = {
+  schema: {
+    description:
+      'Current air quality (US + European AQI, PM2.5, PM10, ozone, NO₂, CO) and pollen for a location. ' +
+      'Omit coordinates to use the device GPS; otherwise give lat/lon (geocode a place name first). ' +
+      'Air quality changes hourly — never answer from memory.',
+    parameters: {
+      type: 'object',
+      properties: {
+        lat: { type: 'number', description: 'Latitude (omit to use device GPS)' },
+        lon: { type: 'number', description: 'Longitude (omit to use device GPS)' },
+      },
+    },
+  },
+  async execute({ lat, lon } = {}) {
+    try {
+      if (lat == null || lon == null) {
+        try {
+          const pos = await getDeviceLocation()
+          lat = pos.lat; lon = pos.lon
+        } catch (e) {
+          return { success: false, needs_location: true, error: `${e.message} Give a place name and I'll use that.` }
+        }
+      }
+      const fields = 'us_aqi,european_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,' +
+        'alder_pollen,birch_pollen,grass_pollen,ragweed_pollen'
+      const d = await json(
+        `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}` +
+        `&current=${fields}&timezone=auto`
+      )
+      const c = d.current || {}
+      const aqi = c.us_aqi
+      const category = aqi != null ? AQI_BANDS.find(([hi]) => aqi <= hi)[1] : undefined
+      return {
+        success: true, tool: 'air_quality',
+        time: c.time,
+        us_aqi: aqi, category, european_aqi: c.european_aqi,
+        pollutants_ugm3: {
+          pm2_5: c.pm2_5, pm10: c.pm10, ozone: c.ozone,
+          nitrogen_dioxide: c.nitrogen_dioxide, sulphur_dioxide: c.sulphur_dioxide,
+          carbon_monoxide: c.carbon_monoxide,
+        },
+        pollen_grains_m3: {
+          alder: c.alder_pollen, birch: c.birch_pollen,
+          grass: c.grass_pollen, ragweed: c.ragweed_pollen,
+        },
+        source: 'Open-Meteo Air Quality (CAMS)',
+      }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  },
+}
+
+// ─── Grammar + spelling proofreader (LanguageTool, open source) ───────────────
+export const grammarTool = {
+  schema: {
+    description:
+      'Proofread text for grammar, spelling, punctuation and style using LanguageTool. ' +
+      'Returns each issue with its position, message and suggested replacements, plus a corrected version. ' +
+      'Use when the user asks to check, proofread, fix or improve the correctness of a piece of writing.',
+    parameters: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The text to proofread' },
+        language: { type: 'string', description: 'Language code (default en-US). Use "auto" to detect.' },
+      },
+      required: ['text'],
+    },
+  },
+  async execute({ text, language = 'en-US' }) {
+    try {
+      if (!text?.trim()) return { success: false, error: 'No text to check.' }
+      const body = new URLSearchParams({ text: text.slice(0, 20000), language })
+      const r = await fetch('https://api.languagetool.org/v2/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      })
+      if (!r.ok) throw new Error(`${r.status} from LanguageTool`)
+      const d = await r.json()
+      // Apply replacements back-to-front so earlier offsets stay valid.
+      let corrected = text
+      const matches = (d.matches || [])
+        .filter(m => m.replacements?.length)
+        .sort((a, b) => b.offset - a.offset)
+      for (const m of matches) {
+        corrected = corrected.slice(0, m.offset) + m.replacements[0].value +
+          corrected.slice(m.offset + m.length)
+      }
+      return {
+        success: true, tool: 'grammar_check',
+        issue_count: d.matches?.length || 0,
+        detected_language: d.language?.name,
+        corrected,
+        issues: (d.matches || []).slice(0, 40).map(m => ({
+          message: m.message,
+          context: m.context?.text,
+          bad: text.substr(m.offset, m.length),
+          suggestions: (m.replacements || []).slice(0, 3).map(x => x.value),
+          type: m.rule?.category?.name,
+        })),
+        source: 'LanguageTool (open source)',
       }
     } catch (e) {
       return { success: false, error: e.message }

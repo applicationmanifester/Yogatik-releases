@@ -100,7 +100,6 @@ export const calculatorTool = {
     }
 
     try {
-      // eslint-disable-next-line no-new-func
       const result = new Function(...args, `"use strict"; return (${js})`)(...vals)
       if (typeof result !== 'number') {
         return { success: false, error: 'Expression did not produce a number' }

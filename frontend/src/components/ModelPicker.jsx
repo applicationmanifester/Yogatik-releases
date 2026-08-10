@@ -9,7 +9,7 @@ import { ChevronDown, Search, Check, Zap, X } from 'lucide-react'
  * models with near-identical names — the other 70 became unreachable. Here the
  * filter box is separate from the selection, so the full list is always there.
  */
-export function ModelPicker({ models = [], value, measured = {}, onChange, formatLatency, disabled }) {
+export function ModelPicker({ models = [], value, measured = {}, onChange, formatLatency, disabled, compact = false, prefix = null }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
@@ -69,9 +69,12 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
   const current = measured[value]
 
   return (
-    <div className="model-picker" ref={boxRef}>
+    <div className={`model-picker${compact ? ' compact' : ''}`} ref={boxRef}>
       <button className="model-trigger" onClick={() => setOpen(o => !o)} disabled={disabled}
-        aria-haspopup="listbox" aria-expanded={open}>
+        aria-haspopup="listbox" aria-expanded={open}
+        aria-label={`Model: ${label}. Change model`}
+        title={`${prefix ? prefix + ' — ' : ''}${label}`}>
+        {prefix && <span className="model-prefix">{prefix}</span>}
         <span className="model-current" title={label}>{label}</span>
         {current?.success && formatLatency && (
           <span className="model-ms">{formatLatency(current.latencyMs)}</span>

@@ -7,6 +7,8 @@
  * keyword-style questions while running in microseconds with zero download.
  */
 
+import { db } from './db'
+
 const STOP = new Set(('a an the and or but if then else of to in on at by for with about as is are was were be been ' +
   'being it its this that these those i you he she they we me my your our their from not no so such can will just').split(' '))
 
@@ -130,4 +132,57 @@ export function search(index, query, topK = 5) {
     .filter(r => r.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK)
+}
+
+/**
+ * Search 100% locally across all stored IndexedDB documents and chat history.
+ * Runs entirely on-device without network requests or external search APIs.
+ */
+export async function searchLocalVault(query, topK = 5) {
+  try {
+    const docs = await db.documents.toArray().catch(() => [])
+    const convs = await db.conversations.toArray().catch(() => [])
+
+    const corpus = []
+
+    docs.forEach(doc => {
+      if (doc.text) {
+        const chunks = chunkText(doc.text, { size: 1000, overlap: 150 })
+        chunks.forEach((chunk, i) => {
+          corpus.push({ source: `File: ${doc.name || 'Document'}`, text: chunk, chunkIndex: i })
+        })
+      }
+    })
+
+    convs.forEach(c => {
+      if (c.messages?.length) {
+        c.messages.forEach(m => {
+          if (m.content && typeof m.content === 'string' && m.content.length > 30) {
+            corpus.push({ source: `Chat: ${c.title || 'Untitled'}`, text: m.content })
+          }
+        })
+      }
+    })
+
+    if (!corpus.length) return { results: [], note: 'No local documents or chat history stored in IndexedDB.' }
+
+    const index = buildIndex(corpus.map(item => item.text))
+    const hits = search(index, query, topK)
+
+    const matches = hits.map(hit => ({
+      source: corpus[hit.i].source,
+      score: Math.round(hit.score * 100) / 100,
+      excerpt: corpus[hit.i].text,
+    }))
+
+    return {
+      success: true,
+      query,
+      total_corpus_chunks: corpus.length,
+      results_count: matches.length,
+      matches,
+    }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
 }

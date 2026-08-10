@@ -18,12 +18,22 @@ export function LocalModelPanel({ model = DEFAULT_LOCAL_MODEL, onModelChange, on
   const [error, setError] = useState('')
   const [ready, setReady] = useState(isLocalReady(model))
 
+  // Probe only. This panel is mounted (hidden) with the settings sidebar, so
+  // anything heavier than a probe here is a download nobody asked for: it used
+  // to "auto-preload", i.e. pull 350MB+ on page load.
   useEffect(() => {
-    webGpuDetails().then(setGpu)
-    isLocalModelCached().then(setCached)
-  }, [])
-
-  useEffect(() => { setReady(isLocalReady(model)) }, [model])
+    let live = true
+    setReady(isLocalReady(model))
+    webGpuDetails().then(async (g) => {
+      if (!live) return
+      setGpu(g)
+      if (g?.available) {
+        const isC = await isLocalModelCached()
+        if (live) setCached(isC)
+      }
+    }).catch(() => {})
+    return () => { live = false }
+  }, [model])
 
   const info = LOCAL_MODELS[model] || LOCAL_MODELS[DEFAULT_LOCAL_MODEL]
 
@@ -49,8 +59,14 @@ export function LocalModelPanel({ model = DEFAULT_LOCAL_MODEL, onModelChange, on
   if (gpu && !gpu.available) {
     return (
       <div className="local-panel local-unavailable">
-        <div className="local-head"><AlertTriangle size={13} /> On-device model unavailable</div>
+        <div className="local-head"><AlertTriangle size={13} /> On-device LLM needs a GPU</div>
         <p className="local-note">{gpu.reason}</p>
+        <p className="local-note">
+          This only affects the on-device <em>chat model</em> (it runs on WebGPU). Other on-device
+          features still work on CPU: the Kokoro voice, Whisper transcription, semantic search and
+          image reading. To enable the local LLM, turn on hardware acceleration in your browser
+          settings and reload — or just add a free cloud provider key (Groq, Gemini, NVIDIA).
+        </p>
       </div>
     )
   }

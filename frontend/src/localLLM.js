@@ -9,8 +9,13 @@
 const CDN = 'https://esm.run/@mlc-ai/web-llm'
 
 export const LOCAL_MODELS = {
+  'Qwen2.5-0.5B-Instruct-q4f16_1-MLC': {
+    label: 'Qwen 2.5 0.5B (Ultra Fast)',
+    size: '~350 MB',
+    note: 'Super fast, smart for general questions and fast chat.',
+  },
   'Llama-3.2-1B-Instruct-q4f16_1-MLC': {
-    label: 'Llama 3.2 1B',
+    label: 'Llama 3.2 1B (Balanced)',
     size: '~750 MB',
     note: 'Fast, good for chat and short tasks. Weakest at code and maths.',
   },
@@ -26,11 +31,13 @@ export const LOCAL_MODELS = {
   },
 }
 
-export const DEFAULT_LOCAL_MODEL = 'Llama-3.2-1B-Instruct-q4f16_1-MLC'
+export const DEFAULT_LOCAL_MODEL = 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC'
 
 let _engine = null
 let _engineModel = null
-let _loading = null
+let _loadingByModel = new Map()
+let _loadSeq = 0
+let _desiredLoad = { seq: 0, model: null }
 
 /** WebGPU is required; Safari and Firefox only shipped it recently. */
 export function webGpuAvailable() {
@@ -42,7 +49,7 @@ export async function webGpuDetails() {
     return { available: false, reason: 'This browser has no WebGPU. Chrome or Edge 113+, Chrome on Android 121+, or Safari 26+ are needed.' }
   }
   try {
-    const adapter = await navigator.gpu.requestAdapter()
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
     if (!adapter) return { available: false, reason: 'WebGPU is present but no GPU adapter was offered — often the case in VMs or with GPU acceleration disabled.' }
     return { available: true, adapter: adapter.info?.description || adapter.info?.vendor || 'GPU' }
   } catch (e) {
@@ -60,9 +67,11 @@ export function isLocalReady(model = DEFAULT_LOCAL_MODEL) {
  */
 export async function loadLocalModel(model = DEFAULT_LOCAL_MODEL, onProgress) {
   if (isLocalReady(model)) return _engine
-  if (_loading) return _loading
+  if (_loadingByModel.has(model)) return _loadingByModel.get(model)
 
-  _loading = (async () => {
+  const seq = ++_loadSeq
+  _desiredLoad = { seq, model }
+  const promise = (async () => {
     const gpu = await webGpuDetails()
     if (!gpu.available) throw new Error(gpu.reason)
 
@@ -75,15 +84,25 @@ export async function loadLocalModel(model = DEFAULT_LOCAL_MODEL, onProgress) {
         })
       },
     })
-    _engine = engine
-    _engineModel = model
+    if (_desiredLoad.seq === seq && _desiredLoad.model === model) {
+      // Drop the previous engine first: two sets of weights on the GPU at once
+      // is how switching models twice ends in an out-of-memory abort.
+      if (_engine && _engine !== engine) {
+        try { await _engine.unload?.() } catch { /* best effort */ }
+      }
+      _engine = engine
+      _engineModel = model
+    } else {
+      try { await engine.unload?.() } catch { /* best effort */ }
+    }
     return engine
   })()
 
+  _loadingByModel.set(model, promise)
   try {
-    return await _loading
+    return await promise
   } finally {
-    _loading = null
+    _loadingByModel.delete(model)
   }
 }
 
@@ -92,6 +111,8 @@ export async function unloadLocalModel() {
   try { await _engine?.unload?.() } catch { /* nothing useful to do */ }
   _engine = null
   _engineModel = null
+  _desiredLoad = { seq: 0, model: null }
+  _loadingByModel.clear()
 }
 
 /** Delete the cached weights so the browser reclaims the disk space. */
@@ -116,27 +137,77 @@ export async function isLocalModelCached() {
  * Tool calling is deliberately not offered: 1B-class models call tools badly,
  * and a wrong call is worse than no call.
  */
-export async function streamLocal({ messages, temperature = 0.7, signal, onToken, onDone, onError }) {
+export async function streamLocal({ model = DEFAULT_LOCAL_MODEL, messages, temperature = 0.7, tools = null, signal, onToken, onToolCall, onDone, onError, onStatus }) {
   try {
-    if (!_engine) throw new Error('The on-device model is not loaded yet.')
+    if (signal?.aborted) { onDone?.(); return }
 
-    const chunks = await _engine.chat.completions.create({
-      messages,
-      temperature,
-      stream: true,
-    })
-
-    for await (const chunk of chunks) {
-      if (signal?.aborted) {
-        try { await _engine.interruptGenerate?.() } catch { /* best effort */ }
-        break
-      }
-      const delta = chunk.choices?.[0]?.delta?.content
-      if (delta) onToken?.(delta)
+    // Hold the engine this turn loaded. Reading the module-level _engine after
+    // an await means a concurrent model switch nulls it mid-turn.
+    let engine = _engineModel === model ? _engine : null
+    if (!engine) {
+      onStatus?.('Initializing on-device AI model…')
+      engine = await loadLocalModel(model, (p) => {
+        const pct = Math.round((p.progress || 0) * 100)
+        onStatus?.(`Loading model weights (${pct}%): ${p.text || ''}`)
+      })
     }
+    if (!engine) throw new Error('On-device model failed to load')
+
+    if (signal?.aborted) { onDone?.(); return }
+
+    const abortHandler = () => {
+      try { engine.interruptGenerate?.() } catch { /* best effort */ }
+    }
+    signal?.addEventListener('abort', abortHandler, { once: true })
+
+    try {
+      const req = {
+        messages,
+        temperature,
+        stream: true,
+      }
+      // Small on-device models (0.5B/1B) cannot drive native function calling.
+      // Disabled in api.js; never inject here so the stream isn't broken.
+
+      const chunks = await engine.chat.completions.create(req)
+
+      let toolCalls = {}
+
+      for await (const chunk of chunks) {
+        if (signal?.aborted) {
+          try { await engine.interruptGenerate?.() } catch { /* best effort */ }
+          break
+        }
+        
+        const delta = chunk.choices?.[0]?.delta
+        if (!delta) continue
+        
+        if (delta.content) onToken?.(delta.content)
+
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index ?? 0
+            if (!toolCalls[idx]) toolCalls[idx] = { id: '', name: '', arguments: '' }
+            if (tc.id) toolCalls[idx].id = tc.id
+            if (tc.function?.name) toolCalls[idx].name = tc.function.name
+            if (tc.function?.arguments) toolCalls[idx].arguments += tc.function.arguments
+          }
+        }
+      }
+
+      for (const tc of Object.values(toolCalls)) {
+        if (tc.name) {
+          try { tc.parsedArgs = JSON.parse(tc.arguments) } catch { tc.parsedArgs = {} }
+          onToolCall?.(tc)
+        }
+      }
+    } finally {
+      signal?.removeEventListener('abort', abortHandler)
+    }
+
     onDone?.()
   } catch (err) {
-    if (err?.name === 'AbortError') onDone?.()
+    if (err?.name === 'AbortError' || signal?.aborted) onDone?.()
     else onError?.(err)
   }
 }

@@ -64,17 +64,17 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
         {mode === 'custom' && (
           <div className="modal-form">
             <label>Provider ID</label>
-            <input value={form.id} onChange={e => setForm({ ...form, id: e.target.value })} placeholder="e.g. my-api" disabled={isEdit} style={isEdit ? { opacity: 0.5 } : {}} />
+            <input aria-label="Provider ID" value={form.id} onChange={e => setForm({ ...form, id: e.target.value })} placeholder="e.g. my-api" disabled={isEdit} style={isEdit ? { opacity: 0.5 } : {}} />
             <label>Display Name</label>
-            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. My LLM Server" />
+            <input aria-label="Display name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. My LLM Server" />
             <label>Base URL (OpenAI-compatible)</label>
-            <input value={form.base_url} onChange={e => setForm({ ...form, base_url: e.target.value })} placeholder="https://api.example.com/v1" />
+            <input aria-label="Base URL" value={form.base_url} onChange={e => setForm({ ...form, base_url: e.target.value })} placeholder="https://api.example.com/v1" />
             <label>API Key</label>
-            <input type="password" value={form.api_key} onChange={e => setForm({ ...form, api_key: e.target.value })} placeholder="sk-..." />
+            <input type="password" aria-label="API key" value={form.api_key} onChange={e => setForm({ ...form, api_key: e.target.value })} placeholder="sk-..." />
             <label>Default Model</label>
-            <input value={form.default_model} onChange={e => setForm({ ...form, default_model: e.target.value })} placeholder="e.g. llama-3.1-70b" />
+            <input aria-label="Default model" value={form.default_model} onChange={e => setForm({ ...form, default_model: e.target.value })} placeholder="e.g. llama-3.1-70b" />
             <label>Models (comma-separated)</label>
-            <input value={form.models} onChange={e => setForm({ ...form, models: e.target.value })} placeholder="model-a, model-b" />
+            <input aria-label="Models, comma separated" value={form.models} onChange={e => setForm({ ...form, models: e.target.value })} placeholder="model-a, model-b" />
           </div>
         )}
         <div className="modal-actions">

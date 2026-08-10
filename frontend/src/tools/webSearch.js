@@ -3,7 +3,7 @@
  * keyless DuckDuckGo Lite endpoint. Both go through the CORS proxy.
  */
 
-import { proxyFetch, proxyText } from './http'
+import { proxyFetch, proxyText, proxyJson } from './http'
 import { getSetting } from '../db'
 
 const MAX_RESULTS = 8
@@ -24,6 +24,7 @@ async function braveSearch(query, key, count, recency) {
     url: r.url,
     snippet: (r.description || '').replace(/<[^>]+>/g, ''),
     published: r.page_age || r.age || undefined,
+    engine: 'brave',
   }))
 }
 
@@ -63,10 +64,8 @@ async function marginaliaSearch(query, count) {
 /** Wikipedia is often the best single answer for definitional queries. */
 async function wikipediaSearch(query, count) {
   const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=${count}&format=json&origin=*`
-  const resp = await fetch(url)
-  if (!resp.ok) return []
-  const data = await resp.json()
-  return (data.query?.search || []).map(r => ({
+  const data = await proxyJson(url)
+  return (data?.query?.search || []).map(r => ({
     title: r.title,
     url: `https://en.wikipedia.org/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`,
     snippet: (r.snippet || '').replace(/<[^>]+>/g, ''),

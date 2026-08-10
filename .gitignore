@@ -23,3 +23,6 @@ chroma_data/
 Thumbs.db
 .idea/
 .vscode/
+
+# Vitest / Vite timestamps
+*.timestamp-*.mjs

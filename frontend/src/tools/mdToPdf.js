@@ -8,7 +8,7 @@ export const mdToPdfTool = {
     }, required: ['markdown'] },
   },
   async execute({ markdown, filename = 'document.pdf' }) {
-    // Simple markdown to HTML
+    const outName = filename.endsWith('.pdf') ? filename : `${filename}.pdf`
     let html = markdown
       .replace(/^### (.+)$/gm, '<h3>$1</h3>')
       .replace(/^## (.+)$/gm, '<h2>$1</h2>')
@@ -29,12 +29,21 @@ export const mdToPdfTool = {
       await new Promise((res, rej) => { s.onload = res; s.onerror = rej })
     }
     const blob = await window.html2pdf().from(container).set({
-      margin: 10, filename, jsPDF: { unit: 'mm', format: 'a4' }
+      margin: 10, filename: outName, jsPDF: { unit: 'mm', format: 'a4' }
     }).outputPdf('blob')
 
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
-    URL.revokeObjectURL(url)
-    return { success: true, tool: 'md_to_pdf', filename, size: `${(blob.size/1024).toFixed(1)} KB` }
+    const dataUrl = await new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result)
+      reader.readAsDataURL(blob)
+    })
+
+    return {
+      success: true,
+      tool: 'md_to_pdf',
+      filename: outName,
+      size: `${(blob.size/1024).toFixed(1)} KB`,
+      pdf_data_url: dataUrl
+    }
   }
 }

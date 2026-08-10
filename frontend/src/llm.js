@@ -28,7 +28,6 @@ const PROVIDERS = {
       'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
       'nvidia/nvidia-nemotron-nano-9b-v2',
       'nvidia/nemotron-nano-12b-v2-vl',
-      'nvidia/nemotron-nano-3-30b-a3b',
       'nvidia/nemotron-3-nano-30b-a3b',
       'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
       'nvidia/nemotron-3-super-120b-a12b',
@@ -112,6 +111,17 @@ const PROVIDERS = {
       'baai/bge-m3',
     ],
     default: 'meta/llama-3.3-70b-instruct',
+    // Curated known-good, tool-capable free models, best-first. Auto-pick probes
+    // these before anything else (intersected with the live catalog, so a
+    // withdrawn name is simply skipped) — a fresh key never lands on a weak 4B.
+    preferred: [
+      'openai/gpt-oss-20b',
+      'nvidia/nemotron-3-nano-30b-a3b',
+      'meta/llama-3.1-8b-instruct',
+      'nvidia/llama-3.3-nemotron-super-49b-v1.5',
+      'openai/gpt-oss-120b',
+      'meta/llama-3.3-70b-instruct',
+    ],
     keyUrl: 'https://build.nvidia.com',
     needsProxy: true,
     publicModels: true, // /v1/models is unauthenticated — live catalog without a key
@@ -130,6 +140,7 @@ const PROVIDERS = {
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     models: [],
     default: '',
+    preferred: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'],
     keyUrl: 'https://aistudio.google.com/apikey',
   },
   groq: {
@@ -137,6 +148,7 @@ const PROVIDERS = {
     baseUrl: 'https://api.groq.com/openai/v1',
     models: [],
     default: '',
+    preferred: ['llama-3.3-70b-versatile', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'],
     keyUrl: 'https://console.groq.com',
   },
   openrouter: {
@@ -151,6 +163,7 @@ const PROVIDERS = {
     baseUrl: 'https://api.openai.com/v1',
     models: [],
     default: '',
+    preferred: ['gpt-4o-mini', 'gpt-4o', 'o4-mini'],
     keyUrl: 'https://platform.openai.com/api-keys',
   },
 }
@@ -178,9 +191,7 @@ export function getProxyEndpoint() {
   return PROXY_BASE || null
 }
 
-export function proxyAvailable() { return !!getProxyEndpoint() }
-
-const PUBLIC_RELAY = 'https://corsproxy.io/?'
+export function proxyAvailable() { return true }
 
 // Nothing should hang forever: a stalled proxy or provider previously left the
 // UI on "Connecting…" with no way out but the Stop button.
@@ -199,22 +210,16 @@ async function smartFetch(url, rawOptions, prov, timeoutMs) {
   if (!prov?.needsProxy) return fetch(url, options)
 
   const endpoint = getProxyEndpoint()
-  if (endpoint) {
-    return fetch(endpoint, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
+  if (!endpoint) throw new Error('This provider requires the proxy, which is not configured.')
+  try {
+    return await fetch(endpoint, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
+  } catch (e) {
+    // needsProxy hosts (NVIDIA) send no CORS headers, so a direct browser fetch
+    // can NEVER succeed — attempting it only sprayed a guaranteed CORS error.
+    // Surface the real cause: the proxy/worker is unreachable.
+    throw new Error(`Model proxy unreachable (${e?.message || 'connection failed'}). ` +
+      `Retry in a moment, or redeploy the Cloudflare worker (deploy-proxy.bat).`)
   }
-
-  // No private proxy configured. A public relay may only carry requests with
-  // no credentials (e.g. NVIDIA's unauthenticated /models catalog) — sending
-  // an Authorization header through it would hand a third party the API key.
-  const carriesKey = Object.keys(options?.headers || {}).some(h => h.toLowerCase() === 'authorization')
-  if (carriesKey) {
-    throw new Error(
-      `${prov.name} needs a CORS proxy to send your API key safely, and none is configured. ` +
-      `Deploy the Cloudflare Worker (deploy-proxy.bat) and set VITE_LLM_PROXY_BASE — ` +
-      `or use Groq / Gemini / OpenRouter / OpenAI, which work directly from the browser.`
-    )
-  }
-  return fetch(PUBLIC_RELAY + encodeURIComponent(url), options)
 }
 
 /**
@@ -286,7 +291,7 @@ export async function streamChat({
   // On-device inference never touches the network or a key.
   if (prov.isLocal) {
     const { streamLocal } = await import('./localLLM')
-    return streamLocal({ messages, temperature, signal, onToken, onDone, onError })
+    return streamLocal({ model, messages, temperature, tools, signal, onToken, onToolCall, onDone, onError, onStatus })
   }
 
   const headers = {
@@ -316,6 +321,19 @@ export async function streamChat({
 
     if (!resp.ok) {
       const err = await resp.text()
+
+      // A renamed/withdrawn model 400s (NVIDIA does not 404 it). Surface it as
+      // a model error so the caller prunes it — NOT as "tools rejected", which
+      // would waste a second call in prompted mode on the same dead model.
+      const modelGone = resp.status === 400 &&
+        /does not exist|not found|unknown model|invalid model|no such model/i.test(err) &&
+        /model/i.test(err)
+      if (modelGone) {
+        onError?.(new Error(
+          `"${model || prov.default}" not found (404). ${err.slice(0, 200)}`
+        ))
+        return
+      }
 
       // Many models simply do not accept a `tools` array and answer 400.
       // Tell the caller so it can fall back to prompted tool calling, which
@@ -427,7 +445,11 @@ export async function streamChat({
   } catch (err) {
     if (err.name === 'TimeoutError') {
       onError?.(new Error(`No response after ${REQUEST_TIMEOUT / 1000}s — the provider or proxy is not responding. Try a smaller model.`))
-    } else if (err.name !== 'AbortError') {
+    } else if (err.name === 'AbortError') {
+      // Stop was pressed. onDone MUST still fire: the agent awaits this promise
+      // and swallowing the abort left the whole turn (and the UI) hanging.
+      onDone?.()
+    } else {
       onError?.(err)
     }
   }
@@ -486,7 +508,7 @@ export async function fetchLiveModels(providerId, apiKey) {
       .filter(id => !NON_CHAT.test(id))
       .sort((a, b) => a.localeCompare(b))
     return ids
-  } catch (err) {
+  } catch {
     return []
   }
 }

@@ -34,8 +34,10 @@ const MODELS = [
   'nvidia/llama-3.1-nemotron-70b-instruct',
 ]
 
-beforeEach(() => {
+beforeEach(async () => {
   db.__store.clear()
+  const { routeCache } = await import('./api')
+  routeCache.clear()
 })
 
 describe('classifyQuery', () => {

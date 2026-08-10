@@ -33,15 +33,16 @@ TOOLS — you do not have native function calling, so use this text protocol.
 Available tools:
 ${schemas.map(renderTool).join('\n')}
 
-To call tools, reply with ONLY a fenced json block and nothing else:
+You MAY think first, but the LAST thing in your reply must be the json block (or plain prose if
+no tool is needed). To call tools, end your reply with a fenced json block:
 
 \`\`\`json
 {"tool_calls": [{"name": "web_search", "arguments": {"query": "…"}}]}
 \`\`\`
 
 Rules:
-- Emit the block alone, with no explanation before or after it. Any prose in the
-  same reply is discarded.
+- Put the block LAST. Any prose before it is discarded; keep reasoning short.
+- Use valid JSON: double quotes, no trailing commas, true/false/null (not True/False/None).
 - You may list several calls in one block; they run in parallel.
 - Results come back as a user message beginning with TOOL_RESULTS. Use them to
   answer normally, in plain prose — do not emit another block unless you need
@@ -49,49 +50,67 @@ Rules:
 - If no tool is needed, just answer. Never emit an empty tool_calls array.`
 }
 
-const FENCED = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/g
-const BARE = /\{\s*"tool_calls"\s*:\s*\[[\s\S]*?\]\s*\}/g
+// Capture the WHOLE fenced body (not up to the first }, which truncates nested JSON).
+const FENCED = /```(?:json)?\s*([\s\S]*?)```/g
+const BARE = /\{\s*["“]tool_calls["”]\s*:\s*\[[\s\S]*?\]\s*\}/g
+
+/** Best-effort repair of the almost-JSON weak models emit. */
+function repairJson(raw) {
+  return raw
+    .replace(/,\s*([}\]])/g, '$1')                 // trailing commas
+    .replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false').replace(/\bNone\b/g, 'null')
+    .replace(/[“”]/g, '"').replace(/[‘’]/g, "'")   // smart quotes → straight
+}
 
 /**
  * Extract tool calls from a reply. Tolerant by design: weak models add prose,
- * forget the fence, or single-quote things.
- * @returns {{calls: Array, text: string}} text is the reply minus the block
+ * wrap reasoning in <think>, forget the fence, add trailing commas, or use
+ * Python literals. Returns `malformed:true` when a block was clearly attempted
+ * but could not be parsed, so the caller can reprompt once.
+ * @returns {{calls: Array, text: string, malformed: boolean}}
  */
 export function parseToolCalls(reply = '') {
   const found = []
-  let text = reply
+  // Reasoning-then-format: drop <think>…</think> (and an unclosed one) first.
+  const clean = String(reply)
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/i, '')
+  let text = clean
+  let attempted = false
 
   const tryParse = (raw) => {
-    try {
-      const obj = JSON.parse(raw)
-      const list = obj.tool_calls || obj.tools || (obj.name ? [obj] : null)
-      if (!Array.isArray(list)) return false
-      for (const c of list) {
-        const name = c.name || c.tool || c.function
-        if (!name) continue
-        let args = c.arguments ?? c.args ?? c.parameters ?? {}
-        if (typeof args === 'string') {
-          try { args = JSON.parse(args) } catch { args = {} }
+    for (const candidate of [raw, repairJson(raw)]) {
+      try {
+        const obj = JSON.parse(candidate)
+        const list = obj.tool_calls || obj.tools || (obj.name ? [obj] : null)
+        if (!Array.isArray(list)) continue
+        for (const c of list) {
+          const name = c.name || c.tool || c.function
+          if (!name) continue
+          let args = c.arguments ?? c.args ?? c.parameters ?? {}
+          if (typeof args === 'string') {
+            try { args = JSON.parse(args) } catch { try { args = JSON.parse(repairJson(args)) } catch { args = {} } }
+          }
+          found.push({ name, parsedArgs: args, id: `pt_${found.length}` })
         }
-        found.push({ name, parsedArgs: args, id: `pt_${found.length}` })
-      }
-      return found.length > 0
-    } catch {
-      return false
+        if (found.length) return true
+      } catch { /* try next candidate */ }
     }
+    return false
   }
 
   for (const re of [FENCED, BARE]) {
     re.lastIndex = 0
     let m
-    while ((m = re.exec(reply))) {
+    while ((m = re.exec(clean))) {
+      attempted = true
       const raw = m[1] || m[0]
       if (tryParse(raw)) text = text.replace(m[0], '')
     }
     if (found.length) break
   }
 
-  return { calls: found, text: text.trim() }
+  return { calls: found, text: text.trim(), malformed: attempted && found.length === 0 }
 }
 
 /** Feed results back in a form a non-tool model can read. */

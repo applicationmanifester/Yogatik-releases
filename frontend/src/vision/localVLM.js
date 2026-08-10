@@ -10,6 +10,8 @@
  * ~40MB of ONNX runtime out of the bundle for the users who never enable it.
  */
 
+import { webgpuDevice } from '../gpu'
+
 const CDN = 'https://esm.run/@huggingface/transformers@3.7.6'
 
 export const LOCAL_VLM_MODELS = {
@@ -27,9 +29,33 @@ export const DEFAULT_LOCAL_VLM = 'HuggingFaceTB/SmolVLM-256M-Instruct'
 let lib = null
 let loaded = null          // { id, processor, model }
 let loading = null
+let consented = false
 
-export function isWebGPUAvailable() {
-  return typeof navigator !== 'undefined' && !!navigator.gpu
+/**
+ * Downloading 230MB is a decision, not a fallback. The blind-model path used to
+ * call straight into loadLocalVLM, so asking "what am I holding" on a provider
+ * without vision pulled the weights with nothing on screen to say so.
+ * App mirrors the `localVision` feature toggle in here.
+ */
+export function setLocalVLMConsent(v) { consented = !!v }
+
+/** True once the weights are in the Transformers.js cache — then it is free. */
+export async function isLocalVLMCached(id = DEFAULT_LOCAL_VLM) {
+  if (typeof caches === 'undefined') return false
+  try {
+    for (const name of await caches.keys()) {
+      if (!/transformers/i.test(name)) continue
+      const cache = await caches.open(name)
+      const hit = (await cache.keys()).some(r => r.url.includes(id))
+      if (hit) return true
+    }
+  } catch { /* opaque storage: assume not cached */ }
+  return false
+}
+
+/** Kept for callers; the real probe asks for an adapter (see gpu.js). */
+export async function isWebGPUAvailable() {
+  return (await webgpuDevice()) === 'webgpu'
 }
 
 export function isLocalVLMReady(id = DEFAULT_LOCAL_VLM) {
@@ -49,20 +75,30 @@ async function getLib() {
 export async function loadLocalVLM(id = DEFAULT_LOCAL_VLM, onProgress) {
   if (loaded?.id === id) return loaded
   if (loading) return loading
+  if (!consented && !(await isLocalVLMCached(id))) {
+    throw new Error('On-device vision is off. Turn on "On-device vision" in Personalise to download the model (~230MB, once).')
+  }
 
   loading = (async () => {
     const { AutoProcessor, AutoModelForVision2Seq } = await getLib()
-    const webgpu = isWebGPUAvailable()
+    const webgpu = (await webgpuDevice()) === 'webgpu'
     const processor = await AutoProcessor.from_pretrained(id, { progress_callback: onProgress })
-    const model = await AutoModelForVision2Seq.from_pretrained(id, {
+    const load = (gpu) => AutoModelForVision2Seq.from_pretrained(id, {
       // fp16 on GPU halves the download and the memory; WASM needs int8 or it
       // is unusably slow on a CPU.
-      dtype: webgpu
+      dtype: gpu
         ? { embed_tokens: 'fp16', vision_encoder: 'fp16', decoder_model_merged: 'q4' }
         : { embed_tokens: 'fp16', vision_encoder: 'q8', decoder_model_merged: 'q8' },
-      device: webgpu ? 'webgpu' : 'wasm',
+      device: gpu ? 'webgpu' : 'wasm',
       progress_callback: onProgress,
     })
+    let model
+    try {
+      model = await load(webgpu)
+    } catch (e) {
+      if (!webgpu) throw e
+      model = await load(false)   // adapter exists but cannot run it
+    }
     loaded = { id, processor, model }
     return loaded
   })()

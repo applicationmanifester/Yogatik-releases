@@ -1,11 +1,11 @@
 /**
- * Browser-native tool registry — all 44 tools, zero backend.
+ * Browser-native tool registry — all 47 tools, zero backend.
  * Each tool: { schema (OpenAI function schema), execute(args) → result }
  */
 
 import { weatherTool } from './weather'
 import { calculatorTool } from './calculator'
-import { imageGenTool } from './imageGen'
+import { imageGenTool, stickerGenTool } from './imageGen'
 import { ttsTool } from './tts'
 import { sttTool } from './stt'
 import { translateTool } from './translate'
@@ -32,21 +32,34 @@ import { mdToPdfTool } from './mdToPdf'
 import { webExtractTool } from './webExtract'
 import { webSearchTool } from './webSearch'
 import { researchTool } from './research'
-import { docSearchTool, docListTool } from './documents'
+import { docSearchTool, docListTool, localVaultTool } from './documents'
 import {
   wikipediaTool, scholarTool, stackOverflowTool, hackerNewsTool,
   archiveTool, dictionaryTool, booksTool,
 } from './knowledge'
 import {
   packageTool, gutenbergTool, geocodeTool, currencyTool, earthquakeTool,
+  airQualityTool, grammarTool,
 } from './opendata'
 import { youtubeTool } from './youtube'
+import { jsExecTool } from './jsExec'
+import { memoryTool } from './memory'
+import { textToAudioTool } from './textToAudio'
 import { seeTool } from './see'
+import { videoRenderTool } from './videoRender'
+import {
+  diagramRenderTool, codeFormatTool, textAnalyticsTool, dataStatsTool,
+  keywordExtractTool, entityExtractTool, queryRefineTool,
+  docExportTool, docEnhanceTool,
+} from './independentTools'
+import { pushAmbientSignal, popAmbientSignal } from './http'
+import { getMcpSchemas, isMcpTool, callMcpTool } from '../mcp'
 
 const ALL_TOOLS = {
   weather: weatherTool,
   calculator: calculatorTool,
   image_generate: imageGenTool,
+  sticker_generate: stickerGenTool,
   tts: ttsTool,
   stt: sttTool,
   translate: translateTool,
@@ -75,6 +88,7 @@ const ALL_TOOLS = {
   deep_research: researchTool,
   doc_search: docSearchTool,
   doc_list: docListTool,
+  local_vault_search: localVaultTool,
   wikipedia: wikipediaTool,
   scholar: scholarTool,
   stackoverflow: stackOverflowTool,
@@ -87,30 +101,54 @@ const ALL_TOOLS = {
   geocode: geocodeTool,
   currency: currencyTool,
   earthquake: earthquakeTool,
+  air_quality: airQualityTool,
+  grammar_check: grammarTool,
+  js_execute: jsExecTool,
+  memory: memoryTool,
+  text_to_audio: textToAudioTool,
   web_extract: webExtractTool,
   youtube: youtubeTool,
   see: seeTool,
+  video_render: videoRenderTool,
+  diagram_render: diagramRenderTool,
+  code_format: codeFormatTool,
+  text_analytics: textAnalyticsTool,
+  data_stats: dataStatsTool,
+  keyword_extract: keywordExtractTool,
+  entity_extract: entityExtractTool,
+  query_refine: queryRefineTool,
+  doc_export: docExportTool,
+  doc_enhance: docEnhanceTool,
 }
 
 /** Get OpenAI function schemas, optionally excluding user-disabled tools */
 export function getToolSchemas(disabled = []) {
   const off = new Set(disabled)
-  return Object.entries(ALL_TOOLS)
+  const builtin = Object.entries(ALL_TOOLS)
     .filter(([name]) => !off.has(name))
     .map(([name, tool]) => ({
       type: 'function',
       function: { name, ...tool.schema },
     }))
+  // Discovered MCP-server tools (if any servers are connected) join the list.
+  return [...builtin, ...getMcpSchemas().filter(s => !off.has(s.function.name))]
 }
 
 /** Execute a tool by name */
-export async function executeTool(name, args) {
+export async function executeTool(name, args, { signal } = {}) {
+  if (isMcpTool(name)) return callMcpTool(name, args)
   const tool = ALL_TOOLS[name]
   if (!tool) return { success: false, error: `Unknown tool: ${name}` }
+  if (signal?.aborted) return { success: false, error: 'Stopped' }
+  // Makes Stop reach the tool's own network calls (see tools/http.js).
+  pushAmbientSignal(signal)
   try {
     return await tool.execute(args)
   } catch (err) {
+    if (err?.name === 'AbortError' || signal?.aborted) return { success: false, error: 'Stopped' }
     return { success: false, error: err.message }
+  } finally {
+    popAmbientSignal(signal)
   }
 }
 

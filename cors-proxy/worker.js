@@ -23,6 +23,9 @@ function corsHeaders(origin, env) {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Target-URL, X-Subscription-Token, Accept',
+    // Without Expose-Headers the browser hides retry-after from the client that
+    // needs it — CORS strips everything but the safelist.
+    'Access-Control-Expose-Headers': 'Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-Request-Id, X-Yogatik-Proxy',
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -138,12 +141,21 @@ export default {
       // Copy content-type and other useful headers from upstream
       // NB: never copy content-length — the body is re-streamed, so a stale
       // length truncates SSE responses.
-      const copyHeaders = ['content-type', 'x-request-id'];
+      // retry-after MUST survive: the client honours it on 429/503, and without
+      // it every rate limit degrades into blind exponential backoff.
+      const copyHeaders = [
+        'content-type', 'x-request-id', 'retry-after',
+        'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset',
+      ];
       for (const h of copyHeaders) {
         const val = upstream.headers.get(h);
         if (val) responseHeaders.set(h, val);
       }
       responseHeaders.set('Cache-Control', 'no-cache, no-transform');
+      // Whose status is this? A 429 relayed from the target (DuckDuckGo and
+      // YouTube rate-limit datacenter IPs hard) says nothing about this worker,
+      // and the client must not put its own proxy on cooldown for it.
+      responseHeaders.set('X-Yogatik-Proxy', 'upstream');
 
       return new Response(upstream.body, {
         status: upstream.status,

@@ -23,7 +23,8 @@ export default [
       'react/jsx-uses-vars': 'error',
       'react/jsx-uses-react': 'error',
       'react-hooks/rules-of-hooks': 'error',
-      'no-unused-vars': ['warn', { args: 'none', varsIgnorePattern: '^React$' }],
+      // ignoreRestSiblings: `const { id, ...rest } = row` is how ids are stripped.
+      'no-unused-vars': ['warn', { args: 'none', varsIgnorePattern: '^React$', ignoreRestSiblings: true }],
     },
   },
 ]

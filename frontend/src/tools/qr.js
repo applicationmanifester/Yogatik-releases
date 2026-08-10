@@ -1,19 +1,29 @@
 // QR code generate + read via CDN
+//
+// qrcode 1.5.x ships no browser bundle — the old /build/qrcode.min.js path
+// 404s, and a 404 body loaded as a <script> is refused by ORB, so this failed
+// with a bare Event and the tool reported "undefined". Use the ESM build.
+let qrcodeLib = null
 async function loadQRCode() {
-  if (window.QRCode) return window.QRCode
-  const script = document.createElement('script')
-  script.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js'
-  document.head.appendChild(script)
-  await new Promise((res, rej) => { script.onload = res; script.onerror = rej })
-  return window.QRCode
+  if (!qrcodeLib) {
+    const mod = await import(/* @vite-ignore */ 'https://esm.run/qrcode@1.5.4')
+    qrcodeLib = mod.default || mod
+  }
+  return qrcodeLib
 }
 
 async function loadJsQR() {
   if (window.jsQR) return window.jsQR
+  const src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js'
   const script = document.createElement('script')
-  script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js'
+  script.src = src
   document.head.appendChild(script)
-  await new Promise((res, rej) => { script.onload = res; script.onerror = rej })
+  // onerror hands back an Event, not an Error: rejecting with it loses the URL
+  // and surfaces as "undefined" three layers up.
+  await new Promise((res, rej) => {
+    script.onload = res
+    script.onerror = () => rej(new Error(`Could not load ${src}`))
+  })
   return window.jsQR
 }
 

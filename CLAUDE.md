@@ -5,10 +5,10 @@
 - **DB**: IndexedDB via Dexie (conversations, settings, API keys — all in browser)
 - **LLM**: Direct API calls to Groq/OpenRouter/OpenAI from browser
 - **Agent**: OpenAI function-calling loop — LLM decides tools → browser executes → results → final answer
-- **Tools**: 28 browser-native tools (Pyodide, Tesseract.js, Mermaid, Web Speech API, Canvas, etc.)
+- **Tools**: 65 browser-native tools (Pyodide, Tesseract.js, Mermaid, Web Speech API, Canvas, etc.)
 - **PWA**: Service worker, manifest, installable on mobile + desktop
 - **Proxy**: Cloudflare Worker (cors-proxy/) for non-CORS providers (NVIDIA only). Vite plugin serves /api/llm-proxy in dev. Client picks via VITE_LLM_PROXY_BASE.
-- **Auth**: Firebase (lazy-loaded). API keys sync to Firestore AES-GCM encrypted (crypto.js, PBKDF2 passphrase, in-memory only). No passphrase = local-only.
+- **Auth**: Firebase (lazy-loaded; NOT loaded at startup unless a session/redirect exists). API keys sync to Firestore AES-GCM encrypted under an ACCOUNT-derived secret (crypto.js) — sign in on any device and the keys are there. No passphrase anywhere.
 - **Deploy**: Firebase Hosting. `deploy-proxy.bat` (worker) then `deploy.bat` (build + hosting + rules)
 
 ## File Structure
@@ -28,7 +28,7 @@ AI ChatBot/
 │   │   ├── agent.js           # Agentic loop (LLM ↔ tools)
 │   │   ├── styles.css         # Theme + mobile responsive + PWA
 │   │   ├── main.jsx
-│   │   ├── tools/             # 28 browser-native tools
+│   │   ├── tools/             # 65 browser-native tools
 │   │   │   ├── index.js       # Registry + schemas
 │   │   │   ├── weather.js     # Open-Meteo (free, CORS)
 │   │   │   ├── calculator.js  # Math.* safe eval
@@ -46,7 +46,8 @@ AI ChatBot/
 │   │   │   ├── webExtract.js  # via tools/http.js proxyFetch
 │   │   │   ├── webSearch.js   # Brave / DuckDuckGo
 │   │   │   ├── http.js        # shared proxyFetch (never relays credentials publicly)
-│   │   │   └── ... (28 total)
+│   │   │   ├── videoRender.js # WebCodecs MP4 + Kokoro narration (video/)
+│   │   │   └── ... (65 total)
 │   │   └── components/
 │   │       ├── CodeBlock.jsx, ArtifactPanel.jsx, ArenaView.jsx
 │   │       ├── ErrorBoundary.jsx, YogatikLogo.jsx
@@ -66,8 +67,10 @@ User message → LLM (function calling) → tools run **in parallel** per round 
 - webEnabled=false → prompt tells model web is off (UI toggle: Web Research)
 
 ## Retrieval (RAG replacement)
-- retrieval.js: BM25 + light stemmer + boundary-aware chunking (1200/200). No embeddings —
-  no 25MB model download; beats vectors on small keyword-y corpora, runs in µs
+- retrieval.js: BM25 + light stemmer + boundary-aware chunking (1200/200). No embeddings by
+  default — no download; beats vectors on small keyword-y corpora, runs in µs.
+- OPT-IN semantic re-rank (semantic.js, features.semanticSearch): hybrid BM25→cosine over a
+  widened shortlist. Off by default; ~23MB model downloads only on consent.
 - Upload → extractText (pdf.js / text) → chunk → Dexie `documents` table
 - ≤12k chars: injected inline into the prompt. >12k: doc_search retrieves top-k passages
 - Verified 5/5 on a synthetic handbook Q&A set
@@ -78,12 +81,12 @@ User message → LLM (function calling) → tools run **in parallel** per round 
 - **openai**: GPT-4o etc — platform.openai.com
 - API key stored in IndexedDB (never leaves browser)
 
-## Browser-Native Tools (32 — all free, no backend)
-web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_research (search + parallel page reads, 1 call), doc_search/doc_list (BM25 over uploaded files), weather (Open-Meteo), calculator (Math.*), image_generate (Pollinations), code_execute (Pyodide WASM), tts (Web Speech), stt (Web Speech), translate (MyMemory), chart (Canvas), ocr (Tesseract.js), qr_generate/qr_read (qrcode/jsQR), pdf_extract (pdf.js), summarize (extractive), rss_feed (CORS proxy), hash (Web Crypto), regex (native), data_convert (native), color_palette (Canvas), whois (RDAP), diagram (Mermaid), audio_edit (Web Audio), image_info (Canvas), link_preview (CORS proxy), diff (native), unit_convert (native), ip_lookup (ip-api), md_to_pdf (html2pdf), web_extract (CORS proxy), youtube (noembed)
+## Browser-Native Tools (65 — all free, no backend)
+web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_research (search + parallel page reads, 1 call), doc_search/doc_list (BM25 over uploaded files), weather (Open-Meteo), calculator (Math.*), image_generate (Pollinations), code_execute (Pyodide WASM), tts (Web Speech), stt (Web Speech), translate (MyMemory), chart (Canvas), ocr (Tesseract.js), qr_generate/qr_read (qrcode/jsQR), pdf_extract (pdf.js), summarize (extractive), rss_feed (CORS proxy), hash (Web Crypto), regex (native), data_convert (native), color_palette (Canvas), whois (RDAP), diagram (Mermaid), audio_edit (Web Audio), image_info (Canvas), link_preview (CORS proxy), diff (native), unit_convert (native), ip_lookup (ip-api), md_to_pdf (html2pdf), web_extract (CORS proxy), youtube (noembed), video_render (WebCodecs MP4), air_quality (Open-Meteo AQI+pollen), grammar_check (LanguageTool, open source), js_execute (sandboxed Web Worker — JS counterpart to code_execute), memory (durable on-device user memory in IndexedDB), text_to_audio (Kokoro on-device → downloadable WAV narration)
 
 ## Run
 - Dev: `cd frontend && npm install && npm run dev`
-- Test: `cd frontend && npm test` (vitest: retrieval + search parsers, 24 tests)
+- Test: `cd frontend && npm test` (vitest, 184 tests)
 - Build: `cd frontend && npm run build` (static files in dist/)
 - Deploy: Upload `dist/` to Vercel/Netlify/GitHub Pages
 
@@ -94,9 +97,188 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - Never copy upstream content-length when re-streaming (truncates SSE)
 - Agent: ONE assistant msg with all tool_calls, then tool msgs (NVIDIA 400s otherwise)
 - NVIDIA /v1/models is public (no key); models cached 6h in IndexedDB, SWR
-- Public CORS relays only for credential-free requests — never with Authorization
+- proxyFetch order: OUR worker first (real bytes, may carry credentials), then allorigins /
+  corsproxy, then r.jina.ai LAST — jina returns markdown, so HTML parsers found nothing when
+  it was first. Public relays are never given credentials. A relay that fails is skipped 60s
+  instead of being retried on every call (corsproxy 403s were per-call noise).
+- The worker must copy retry-after AND expose it via Access-Control-Expose-Headers, else CORS
+  hides it and every 429 degrades to blind backoff.
+- The worker sets `X-Yogatik-Proxy: upstream` on anything it merely relayed. DuckDuckGo and
+  YouTube 429 datacenter IPs, and without that header the client benched its OWN proxy for
+  the target's decision. Relayed 4xx/429 => no cooldown, just fall through to a public relay.
+- youtube.js had a SECOND copy of the relay list + worker URL, so it missed the ordering, the
+  cooldown and the jina-is-markdown rule. Tools must go through tools/http.js, never their own.
+- A host that beats EVERY relay (youtube.com: datacenter IPs are refused outright) is skipped
+  for 5 min — otherwise each call reprints four CORS failures and costs a second.
+- YOUTUBE TRANSCRIPTS ARE UNOBTAINABLE keylessly from a datacenter (measured 2026-08-09):
+  watch page 429 to our worker AND every relay, InnerTube WEB 200 but captions stripped (bot
+  check), InnerTube ANDROID 400, video.google.com legacy timedtext 200-empty, Piped 502,
+  Invidious 403/401. Same worker returns 200 for example.com and DuckDuckGo, so it is not the
+  proxy. The tool returns metadata + transcript_note telling the model to say so and offer to
+  use a pasted/uploaded transcript. Do not "fix" this with another relay — none of them have
+  a residential IP.
+- The clock shortcut in App.jsx answers WITHOUT the model, so isDirectTimeQuery matches whole
+  questions via anchored regexes. Substring matching on 'today'/'now' answered "Today's India
+  news" with the time (hit 2026-08-09). 3 tests in timeQuery.test.jsx.
 - 429/5xx retried w/ backoff + Retry-After in llm.js fetchWithRetry
-- Lint: npx eslint@9 w/ no-undef catches extraction mistakes vite build won't
+- Lint: npx eslint@9 w/ no-undef catches extraction mistakes vite build won't. It has
+  caught real ReferenceErrors twice (PUBLIC_RELAYS, research.js `search`) that only blow
+  up at runtime — run it before every deploy.
+- qrcode 1.5.x has NO /build browser bundle; the 404 page loaded as a script is refused by
+  ORB. Use the esm.run ESM build. Script onerror gives an Event — reject with an Error or
+  the failure surfaces as "undefined".
+- NEVER `await import('jsdom')` as a DOMParser fallback: Vite bundles it statically anyway —
+  it shipped a 2.86MB dead chunk (build was 3351 modules / ~5.1MB, now 2228 / ~2.3MB).
+  DOMParser is a browser global; tests get it from test-setup.js.
+- WebGPU: `!!navigator.gpu` is not availability. requestAdapter() can still return null
+  (headless, blocklisted drivers, VMs) — gpu.js probes properly and everything falls back
+  to wasm.
+
+## Model 400s + weak models (2026-08-10)
+- NVIDIA renames/withdraws models with a 400 "The model X does not exist" (NOT 410/404).
+  isRetiredModelError now matches that phrasing so pruneRetiredModel drops it + clears the
+  selection. streamChat surfaces a model-gone 400 as an error instead of misrouting it into
+  the prompted-tools retry (which 400s again on the same dead model = the double-400).
+- Weak models (e.g. nemotron-mini-4b) ACCEPT a tools array + emit a call, then 400 when the
+  tool RESULT is sent back (they reject role:"tool" history). The native→prompted fallback
+  was only checked after the FIRST call; now the tool loop checks rejectedTools every round
+  and calls demoteToPrompted(), which rewrites the native tool turns already in `messages`
+  (assistant.tool_calls → plain assistant, role:tool → user "TOOL_RESULTS …") before retrying.
+  Without the rewrite the retry re-sends role:tool and 400s again.
+- candidateScore parses the param count and gives sub-5B models / "mini" a -6 so auto-pick
+  stops landing on a 4B model that can't drive tools. 7–15B is the responsive sweet spot.
+- MessageBubble: long assistant replies (>500 chars) defaulted to COLLAPSED — the whole
+  answer hid behind "Show more" (worse with reasoning models whose <think> preview renders
+  blank). isExpanded now defaults true.
+
+## Reliability + capability upgrades (2026-08-10)
+- MessageBubble.splitReasoning() pulls <think>…</think> (incl. an unclosed one mid-stream)
+  into a collapsible "Thinking" panel; the answer renders plainly. A successful turn with an
+  empty answer now shows an explicit note instead of a blank bubble. Errors already surface
+  via msg.error; the gap was reasoning-only/empty replies.
+- youtube.js fetchPage() tries the user's OWN connection first (residential IP dodges the
+  datacenter 429) then the relay chain. youtube.com is still usually CORS-blocked (no ACAO),
+  so this is best-effort; the transcript_note is the real fallback.
+- autoPickModel probes prov.preferred (curated known-good, tool-capable) FIRST, intersected
+  with the live catalog, then the heuristic ranking — a fresh key never lands on a weak 4B.
+  It also probes the winner's tool mode once (tiny tools array) and caches toolmode_<p>::<m>
+  so the first real chat never pays the native→prompted 400. Runtime demoteToPrompted still
+  handles models that accept the call but 400 the RESULT, and caches the mode too.
+- Opt-in semantic retrieval (features.semanticSearch, default off; ~23MB Xenova/all-MiniLM
+  q8 via esm.run, consent-gated like localVLM). semantic.js.semanticRerank blends cosine with
+  BM25 over a widened BM25 shortlist in doc_search — no persisted vectors, falls back to BM25
+  order on any failure so BM25 stays the safety net. semantic.test.js covers the fallback.
+
+## Images + memory + audio (2026-08-10)
+- imageGen.js fetchImage(): ONE global rate-gate (900ms min-gap, serialised chain) + backoff
+  honouring Retry-After. Pollinations 429s a 5-image video round instantly; both image tools
+  AND videoRender.loadImage (for pollinations hosts) go through it so nothing bursts.
+- agent.js memoryBlock(): the `memory` tool's saved facts are auto-injected into the system
+  prompt each turn (systemBase, reused by the prompted-mode rebuild) so the model recalls them
+  without a tool call. Capped at last 20.
+- text_to_audio: on-device Kokoro (video/speech.js) → sentence-chunked synth → Float32 concat →
+  pure-JS 16-bit WAV → Dexie media. ToolResultCard.RenderedAudio plays it (media_id recovery
+  like video). The FILE counterpart to tts (which only plays, returns nothing to hold).
+
+## Reliability + retrieval + SW (2026-08-10)
+- promptedTools.parseToolCalls: repairJson (trailing commas, Python True/False/None, smart quotes)
+  + <think> strip (reasoning-then-format) + FENCED captures the WHOLE fenced body (non-greedy to
+  first } truncated nested JSON). Returns malformed:true so agent.harvestOrRepair() reprompts ONCE
+  for valid JSON. promptedTools.test.js is the weak-model regression harness (13 cases).
+- semantic.rrfFuse: Reciprocal Rank Fusion (1/(k+rank)) of BM25 + semantic order — rank-based, no
+  score-scale tuning; replaces the linear blend. semanticRerank uses it. semantic.test.js covers it.
+- sw.js: navigation preload enabled in activate + used via e.preloadResponse in the navigate
+  handler (parallelises fetch with SW boot). HTML still network-first, assets still SWR.
+- Perf: all heavy deps (pyodide/tesseract/transformers/kokoro/mp4-muxer/mermaid/pdfjs/webllm/prism)
+  are lazy — only firebaseAuth is static and it defers the SDK. No bundle work needed.
+
+## Skills + Workflows + variables (2026-08-10)
+- Skills (skills.js): saveable bundles {id,name,description,system,tools[],starters[]} in db `skills`.
+  Active skill (db `active_skill`) → agent appends skill.system to systemBase AND scopes tools via
+  skillDisabledTools (allowlist → disable the rest). Export/import as JSON (parseSkill validates).
+- Workflows (workflows.js): db `workflows`, ordered {steps:[{prompt}]}. runWorkflow is PURE
+  orchestration (takes a runStep fn) so it's testable; App.runWorkflowNow sends each filled step
+  and waits on loadingRef between turns (steps chain via conversation history + {{last}}).
+- Variables (template.js): {{name}} placeholders shared by skills starters + workflow steps.
+  extractVars/fillTemplate/userVars; workflow built-ins {{last}}/{{stepN}} excluded from prompts.
+- UI: components/SkillsPanel.jsx (sidebar "Skills & workflows" + Ctrl+K). skills.test.js (8).
+
+## Agent-layer additions (2026-08-10)
+- MCP client (mcp.js): browser JSON-RPC over Streamable HTTP. connectMcpServer → initialize +
+  notifications/initialized + tools/list; parseRpcBody handles application/json AND text/event-
+  stream (last data: frame). Discovered tools cached in _tools, namespaced mcp__<server>__<tool>;
+  getToolSchemas() appends getMcpSchemas(), executeTool() routes isMcpTool()→callMcpTool().
+  Servers stored in db `mcp_servers`, managed in components/McpServers.jsx (Personalise panel),
+  refreshed at App startup. LIMIT: server must send CORS headers (no stdio, no non-CORS hosts).
+- code_execute is now a STATEFUL Pyodide kernel: globals/imports/installed pkgs persist across
+  calls; loadPackagesFromImports auto-loads numpy/pandas; packages[] → micropip install;
+  runPythonAsync (top-level await); reset:true clears globals; captures stdout+stderr.
+- Plan mode (features.planMode, default off) + always-on self-check/reflection + confirm-before-
+  irreversible guidance injected via buildSystemPrompt({planMode}). agent reads chat_prefs.
+- memory `recall` does semantic re-rank when features.semanticSearch is on (semanticRerank over
+  saved memories), else keyword; auto-recall via memoryBlock() unchanged.
+- On-device Whisper STT (whisper.js, Xenova/whisper-base via transformers.js): stt falls back to
+  MediaRecorder→blobToPcm(16k mono)→transcribe when Web Speech is absent (Firefox/Safari).
+
+## Location (tools/geolocate.js)
+- weather + air_quality resolve "current/here/my area" via the browser Geolocation API
+  (GPS/Wi-Fi, enableHighAccuracy) — NEVER IP (coarse + wrong). getDeviceLocation() REJECTS on
+  denial/timeout so the tool asks for a place name (needs_location:true) instead of silently
+  reporting London (the old fallback). air_quality with no lat/lon also uses GPS.
+
+## Auth on mobile
+- authDomain = VITE_AUTH_DOMAIN || yogatik.firebaseapp.com. A same-origin handler
+  (yogatik.web.app/__/auth/handler) is what makes signInWithRedirect survive Safari 16.1 /
+  Chrome storage partitioning — cross-origin drops the credential, getRedirectResult -> null,
+  user returns looking signed out. BUT the handler URL must be an Authorized redirect URI on
+  the project's OAuth client; only firebaseapp.com is there by default, and .web.app without
+  it = Error 400 redirect_uri_mismatch (hit on 2026-08-09). Add the URI in Cloud console
+  -> Credentials -> Web client, THEN set VITE_AUTH_DOMAIN=yogatik.web.app. Popup works either
+  way; only the redirect path (installed PWA / blocked popup) needs same-origin.
+- REDIRECT on phones (UA or pointer:coarse) + installed PWA; popup only on desktop, and it
+  races a 90s deadline. signInWithPopup on Android Chrome opens a TAB: the opener link is
+  fragile and when it breaks the promise never settles — the button sat on "Signing in…"
+  forever (verified 2026-08-09, redirect fixed it). AuthModal shows an escape hatch at 15s. `localStorage yogatik.authRedirect` marks a redirect in flight.
+- checkRedirectResult falls back to auth.currentUser / one onAuthStateChanged (8s cap):
+  the session often arrives via persistence with a null redirect result.
+- checkGoogleRedirect returns early (no SDK fetch, ~170KB gz) when there is no pending
+  redirect and no stored user. App must NOT swallow its error — a silent catch is why a
+  failed sign-in looked like nothing happening.
+- AuthModal: loginWithGoogle resolving null means "redirecting", not "failed". Calling
+  onAuth(null)+onClose there wiped the session that was about to arrive.
+
+## Image attachments (vision/attach.js) — v3.7
+- Paste, drop or pick an image and it is SENT, not indexed: extractText found no text in a
+  PNG so attaching a screenshot used to answer "File appears to be empty".
+- prepareImage() downscales once: 1280px q0.9 JPEG for the model/OCR, 320px thumb for the
+  stored message. A 6MB phone photo in every history row would fill IndexedDB in a day.
+- agent.js userImage follows the same 3-tier policy as the camera: image_url part when
+  modelCanSee, else describeWithoutModel (OCR for text, local VLM otherwise) injected as
+  text, else an explicit "could not be read" note. Never silently dropped.
+- The composer says "will be read on-device" BEFORE sending when getVisionStatus says the
+  model is blind (cache + name heuristic only — no probe round-trip per keystroke).
+
+## Durability + deploys (storage.js, pwa.js) — v3.7
+- navigator.storage.persist() at startup: without it the whole origin is "best-effort" and
+  the browser may evict every chat, document and key with no warning. Settings shows
+  used/quota + protected|best-effort.
+- sw.js must NOT skipWaiting() on install. Taking over mid-session leaves the open page
+  pointing at the previous build's hashed chunks, so every later lazy import (Prism,
+  Firebase, pdf.js, WebLLM) 404s. The new worker waits; the UI offers "Reload".
+- retryImport() wraps lazy imports: retry once, then reload ONCE (sessionStorage guard, or a
+  broken build becomes a reload loop). controllerchange -> single reload.
+
+## Chat search (chatSearch.js) — v3.7
+- Ctrl+K searched conversation TITLES only; message bodies were unreachable. Same BM25 index
+  as documents, one hit per conversation, 60s cache invalidated by Dexie hooks.
+- Multimodal turns are arrays: only their text parts are indexed.
+
+## Mobile
+- Prism/react-syntax-highlighter (616KB / 225KB gz) is React.lazy inside CodeBlock, with a
+  plain <pre> fallback — most chats have no code block and phones paid for it on first paint.
+- viewport: no user-scalable=no (a11y), plus interactive-widget=resizes-content so the
+  Android keyboard resizes the layout instead of covering the composer. dvh + safe-area
+  insets already handled in styles.css.
 
 ## Persistence
 - Conversations/messages saved to IndexedDB as they stream (createConversation/saveMessage
@@ -109,13 +291,23 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 ## Provider / tools config
 - Active provider+model persisted in IndexedDB (`provider`, `model_<id>`) — agent reads
   these, so React-only state meant every msg went to the stored default (was 'nvidia').
-- Default when unset: first provider with a key that doesn't need a proxy, else groq.
+- Default when unset: first provider with a key (or noKey) that doesn't need a proxy, else
+  groq. getActiveProvider returned 'local' — a fresh install pointed at a 750MB download
+  with tools+web force-disabled. local is never a default.
+- getSetting(key, fallback) returns the fallback for a row holding null too (false/0 kept):
+  `getSetting(k, '')` yielding null put null into controlled inputs.
 - testProvider does a REAL 1-token chatComplete through the same path chat uses
   (incl. proxy) and stores `status_<id>`; UI shows dot + latency + friendly error.
 - Per-tool on/off in `disabled_tools` (stores DISABLED names so new tools default on);
   getToolSchemas(disabled) filters what the model ever sees.
 
 ## Model selection (v3.1)
+- ModelPicker also sits in the COMPOSER (compact variant: prefix = provider name, panel opens
+  UPWARDS, fixed full-width sheet under 768px). Which model answers is a per-message choice;
+  it was only reachable inside the settings drawer.
+- Editing an earlier turn BRANCHES (api.branchConversation): messages before it are copied to
+  a new conversation and the original is left intact. Only the last turn rewinds in place —
+  there is nothing after it to lose.
 - `status_<provider>::<model>` — per-MODEL probe result (success, latencyMs, at). 30 min TTL.
 - `autoPickModel(p)` probes top-4 candidates in parallel (name heuristics: flash/nano/8b up,
   70b/large/ultra down), picks fastest that answers. Runs automatically after a key verifies.
@@ -130,8 +322,12 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 
 ## Keys & backup
 - Key UI shows masked value (first4…last4) + where it lives (device / cloud).
-- Cloud sync is opt-in: `enableCloudSync(passphrase)` AES-GCM encrypts every stored key.
-  Passphrase is memory-only. NOTE: before this, sync silently never ran (no UI set it).
+- Sync is automatic and unconditional once signed in: `accountSecret(uid)` seals every key
+  (AES-GCM), saveProviderApiKey pushes, sign-in/redirect-return runs syncCloudKeys() both
+  ways. Nothing to type — a passphrase nobody remembers protects a key nobody can use.
+  Encryption at rest, NOT zero knowledge; Firestore rules scope the doc to its owner uid.
+- getUserApiKeys(...secrets) tries each: an entry sealed under an older scheme still opens,
+  and one that cannot is skipped (never surfaced as garbage) then healed on the next push.
 - `downloadBackup()` / `restoreBackup(file, 'merge'|'replace')` — chats + docs + settings.
   API keys are excluded from backup files by design.
 
@@ -152,12 +348,29 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   see" — 429/network must NOT poison the cache.
 - localVLM.js: SmolVLM-256M/500M ONNX via Transformers.js @esm.run, WebGPU (wasm+q8
   fallback). ~230MB, consent-gated download. Zero key, offline after first load.
+- Consent is REAL now: loadLocalVLM throws unless features.localVision is on (App mirrors
+  it via setLocalVLMConsent) or the weights are already cached. The blind-model fallback
+  used to pull 230MB with nothing on screen saying so.
 - tools/see.js: one shared camera (2nd getUserMedia fails on phones), 60s idle release.
   Returns `{image}` when the model can see (agent attaches it as an image_url part) or
   `{observation}` from the local VLM when it cannot.
 - agent.js: `stripImage()` before JSON.stringify (else ~50KB base64 becomes prompt text);
   `pruneOldImages()` keeps 1 frame (~1.1k tokens each); windowHistory must NOT stringify
   array content.
+
+## Vision policy (vision/source.js) — v3.3
+- ONE shared stream: Live registers its camera/screen via setSharedVisualSource; `see`
+  and the vision panel borrow it. A 2nd getUserMedia fails on phones (see used to be
+  dead inside a call).
+- Frames are sent only when isVisualQuestion(utterance) — a frame is ~1.1k tokens and
+  cascade used to attach one to EVERY turn.
+- captureProfile(): text questions 1280px/q0.92/centre-crop 0.75; scenes 768/q0.7.
+  768@0.7 cannot read a serial number.
+- needsMotion() -> two frames (previousFrame() + now); agent flattens result.images.
+- Fallback chain when the model is blind: OCR (Tesseract) for text questions, on-device
+  VLM otherwise, each falling back to the other. describeWithoutModel().
+- pendingImage is consumed once — leaving it set made every later look answer from the
+  same stale picture.
 
 ## Live mode — face-to-face (live/)
 - Two engines, one UI (components/LiveView.jsx picks via `engine`):
@@ -166,7 +379,31 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   for ANY other provider incl. on-device. ~1.5-2.5s; barge-in is manual (cancel + abort).
   Sentence-chunked TTS, else nothing is spoken until the whole reply lands.
   recog.onend MUST restart it — it self-stops on silence and the call goes deaf.
+  Restart is backed off + skipped on not-allowed (a denied mic spun forever), and
+  re-armed on visibilitychange (backgrounding kills it).
+- cascade turn queue: two finals landing during a turn used to run two agents at once.
+  enqueue() serialises; queued utterances merge.
+- Endpointing fires ~700ms after interim speech stops — Chrome sits on isFinal ~1s.
+- First TTS chunk breaks at a clause, later chunks at sentences (~400ms sooner to speak).
+- Echo guard (isEcho, exported + tested): the mic hears speechSynthesis; treating that
+  as barge-in made the model cut itself off in a loop.
 - getLiveConfig() picks: gemini key -> realtime, else active provider -> cascade.
+- live/voice.js: ONE speaker interface, two engines. `system` = speechSynthesis (instant,
+  robotic). `neural` = Kokoro on-device (video/speech.js) through an AudioContext.
+  Neural is the DEFAULT (chat_prefs.live_voice_engine='system' opts out); voice id in
+  live_voice_local (live_voice is Gemini's namespace, they do not overlap).
+  Cold start (~90MB): speaks on the system voice and upgrades mid-call. Warm
+  (localStorage flag yogatik.narrator.cached): the first clause WAITS up to 6s so the
+  robot is never heard at all. Blocking a cold first answer on 90MB would be worse.
+- requestTTS / the `tts` tool use the same shared speaker, split into ~200-char sentence
+  chunks so playback starts immediately. stopTTS cancels it.
+- speak() queues: clauses must be heard in order, never overlapped. cancel() rebuilds the
+  chain so the old .finally cannot resurrect `speaking` on the next turn.
+- spokenAloud is recorded BEFORE playback — the echo guard needs to know what the room is
+  about to hear, not what it finished hearing.
+- Cascade carries its own fallback chain (getLiveConfig.fallbacks): a 429 ten minutes into
+  a call switches provider and retries the utterance, but only if no token was spoken yet.
+- lang follows navigator.language (defaultLang()), not a hardcoded en-US.
 - protocol.js: pure wire layer (setup/audio/video/toolResponse builders, decodeServerMessage).
   audio.js: AudioWorklet capture @16k PCM16 -> base64; 24k scheduled playback queue + flush.
   video.js: JPEG <=1fps, 768px, aHash-gated (skips unchanged scenes; forced frame every 5s).
@@ -184,10 +421,91 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - No face recognition by design: identity claims are prompted against; the model describes
   people, never names them (BIPA/GDPR Art.9 — a bystander cannot consent via the T&C).
 
-## Tests (npm test — 98)
-- retrieval (18), agent loop (29), live protocol (19), vision heuristic (4), tools (26),
-  search parsers (6), routing (11), crypto (11)
-- Run with pool:forks singleFork — parallel jsdom envs starve the runner.
+## Video (video/, tools/videoRender.js) — v3.4
+- `video_render`: real MP4 made on-device. No key, no backend, no cost.
+- timeline.js is PURE (spec -> frames/scene/progress) => unit-testable + offline encode:
+  timestamps are computed, never sampled from the clock.
+- encode.js: WebCodecs VideoEncoder + mp4-muxer@5.2.2 (esm.run, not bundled). Codec is
+  probed via isConfigSupported over an avc1 candidate list — hardware refuses silently.
+  Backpressure at encodeQueueSize>8 or the GPU runs out of memory on long videos.
+  Fallback MediaRecorder/WebM is REALTIME (60s video = 60s) — WebCodecs is the fast path.
+- Dimensions forced even (H.264 chroma), fps 12-60, 180s cap, 40 scenes.
+- Images: crossOrigin='anonymous' first, else re-fetch through the proxy as a blob.
+  A tainted canvas kills the encode with an opaque SecurityError.
+- Scene types: title/outro, text (staggered bullets), image (Ken Burns), bars (animated).
+
+## Narration (video/speech.js, video/audio.js) — v3.5
+- speechSynthesis is a DEAD END for video: it writes to the audio device and exposes no
+  MediaStream/buffer. You cannot mux a sound you are not allowed to hold.
+- Narrator = Kokoro-82M ONNX via kokoro-js@1.2.1 (esm.run), WebGPU fp32 / wasm q8, ~90MB
+  cached after first render. Returns Float32 PCM @24k — exactly what AudioEncoder wants.
+- Scene durations are decided BY the voice: synthesize first, then planNarration() grows
+  each scene to lead+speech+tail (never shrinks it). Fixed durations cut lines in half.
+- Audio is encoded to chunks BEFORE the muxer is constructed: mp4-muxer must be told up
+  front whether a track exists, and a declared-but-empty track = corrupt MP4. So a TTS
+  failure degrades to a silent video, never a broken one.
+- AAC (mp4a.40.2) first, Opus fallback — Opus-in-MP4 is legal but players still refuse it.
+- Burnt-in subtitles (captionCues, weighted by sentence length): the MP4 has no subtitle
+  track, and a spoken video is useless muted.
+- audio.js is pure Float32 maths (no AudioContext) => unit-testable; all clips share one
+  sample rate so mixing is a copy at an offset, no resampling.
+- MediaRecorder fallback plays the PCM through a MediaStreamDestination (realtime anyway).
+- Output is a blob: URL (dies on reload) AND the bytes go to Dexie `media` (db v4,
+  newest 10 kept). The card re-creates a URL from media_id, so videos survive a refresh.
+- agent.js strips video_url from the model's view: given a blob: URL the model pastes it
+  into the reply as a link that is dead one refresh later.
+- NEVER setTimeout inside the encode loop: background tabs clamp timers to ~1/s, which
+  turned a 5s render into 268s when the user switched tabs. yieldToLoop() uses
+  MessageChannel (unthrottled). 720p30, 150 frames ≈ 2.1s measured.
+- Result carries `timings: {narration_ms, images_ms, encode_ms}` — the phases have wildly
+  different costs and guessing which one is slow wastes an afternoon.
+
+## Personalise (features.js, components/PersonalisePanel.jsx) — v3.6
+- ONE registry (FEATURES) of optional UI + the small preferences. resolveFeatures()
+  merges stored over defaults, so a NEW feature ships on and an old opt-out survives.
+- Only an explicit `false` disables — undefined must not read as off.
+- Off = not rendered (and haptics/captions not fired), never CSS-hidden.
+- Voice picker splits male/female and keeps the list POSITION when switching sides.
+- autoScan defaults OFF: it spends tokens. Its tick calls session.watch(), which grabs
+  a frame only if the scene CHANGED (grab(force=false)) and attaches it to the next
+  turn — no spontaneous speech, no per-second frame cost.
+- Prefs live in chat_prefs; App holds one `prefs` object + updatePref(key, value).
+
+## Stop / abort
+- llm.js swallowed AbortError without firing onDone -> processStream never settled and
+  the whole turn (plus the UI's loading state) hung. AbortError MUST call onDone.
+- agent.js checks signal.aborted between rounds and RACES the tool round against abort:
+  a 40s deep_research used to run to completion after Stop was pressed.
+- executeTool(name, args, {signal}) sets an ambient signal (tools/http.js) so proxyFetch
+  cancels the tool's own network calls. Ambient is skipped when 2 channels run at once
+  (compare mode) — better to lose cancellation than cancel the other channel.
+- Partial text is kept and rendered with `_[stopped]_` (App.jsx onDone meta.aborted).
+
+## Test runner (scripts/run-vitest.mjs)
+- Wrapper exists because vitest CLI has no --configLoader; config is IMPORTED and passed
+  as **viteOverrides**. `test:` inside the CLI-options arg is IGNORED — the old inline copy
+  meant every test ran in the `node` env with NO setupFiles (no DOMParser).
+- It must exit(1) on failures: startVitest alone leaves code 0, so deploy.bat's test gate
+  was decorative.
+- Passes through filters + `--watch`.
+
+## Tests (npm test — 234)
+- smoke.test.jsx mounts <App/> in jsdom with ./api stubbed: lint cannot catch a component
+  that THROWS on first render. Config include covers *.test.{js,jsx}; test-setup.js stubs
+  scrollIntoView/scrollTo/matchMedia (jsdom has none, all are called on mount).
+  A vi.mock factory must not return a Proxy — vitest reads `then` on it and `await import`
+  then waits on a promise that never settles (looks exactly like a hang in App).
+- retrieval (18), agent loop (32, incl. 3 stop paths), live protocol (19), vision heuristic (4), vision policy (8),
+  cascade echo guard (3), live voice queue (7), tools (26), relay policy (8), zero-key boot (3),
+  chat search (9), chunk-reload guard (4), image attach routing (6), agent image policy (4),
+  key sync (5), search parsers (7), routing (11), crypto (11), migration (9), features (5), video timeline (13), video audio+speech (12)
+- web_search is a METASEARCH: ddg+marginalia+wikipedia(+brave) merged. Tests must stub
+  proxyJson too, or Wikipedia answers every query and "no results" can never happen.
+  wikipediaSearch went through bare fetch — no timeout/retry, unmockable; now proxyJson.
+- One engine dying returns `degraded: [...]`; only all-engines-failed returns `error`.
+- Run with pool:forks singleFork — parallel jsdom envs starve the runner. That shares the
+  module registry, so migration.test injects Dexie.dependencies.indexedDB itself: Dexie
+  reads indexedDB once at import, and whichever file imported it first decides.
 - `npm run lint` uses react/jsx-no-undef: plain no-undef does NOT catch `<Foo/>` with no
   import, which is how a ReactMarkdown crash reached production.
 
@@ -196,7 +514,16 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   Weights (~750MB+) download ONLY after explicit consent in LocalModelPanel. Cached by the
   browser => later sessions are offline. Provider id `local` (isLocal/noKey flags).
   Tools + web are force-disabled for local: 1B models call tools badly.
-- Never in the fallback chain and never auto-selected (a 750MB download is not a fallback).
+- Zero-key start (App): no stored provider AND no key AND WebGPU -> provider='local' and the
+  SMALLEST model (Qwen 0.5B, ~350MB) downloads itself with a progress card in the empty state.
+  A stored provider or any key wins — never override a real choice. 3 tests in smoke.test.jsx.
+- Never in the fallback chain and never auto-selected as a FALLBACK (a 750MB download is not a
+  fallback for a 429).
+  LocalModelPanel is mounted (hidden) with the settings sidebar, so its mount effect may
+  only PROBE — it used to "auto-preload", i.e. fetch 350MB on page load, and App separately
+  force-set provider='local' whenever WebGPU existed. Both removed.
+- streamLocal holds the engine it loaded; reading module-level _engine after an await let a
+  concurrent model switch null it mid-turn. Loading a 2nd model unloads the 1st (GPU OOM).
 - Projects (db v3): conversations + documents carry projectId; doc_search scopes to the
   active project so a work PDF can't answer inside a personal project.
 - Compare mode revives ArenaView: one prompt, two models, channels `compare-A`/`compare-B`.
