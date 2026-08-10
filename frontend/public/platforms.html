@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Yogatik — Download for Desktop</title>
+  <meta name="description" content="Get Yogatik on your desktop: a private AI assistant with local Ollama models, local-file editing, live web research and 65+ free tools. Runs on your machine." />
+  <meta property="og:title" content="Yogatik for Desktop" />
+  <meta property="og:description" content="Private AI on your machine — local Ollama models, local-file editing, 65+ free tools." />
+  <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+  <style>
+    :root{
+      --bg:#0a0e14; --panel:#121824; --panel2:#0f1520; --line:rgba(255,255,255,.08);
+      --text:#e8edf4; --muted:#93a0b4; --brand:#ff6b35; --brand2:#ff9142;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased}
+    a{color:inherit;text-decoration:none}
+    .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+    header{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
+    .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;letter-spacing:-.02em}
+    .logo img{width:30px;height:30px}
+    .nav-cta{padding:9px 18px;border:1px solid var(--line);border-radius:9px;font-size:14px;font-weight:600;transition:.2s}
+    .nav-cta:hover{border-color:var(--brand);color:var(--brand2)}
+
+    .hero{text-align:center;padding:70px 0 40px}
+    .hero .pill{display:inline-block;font-size:12.5px;font-weight:600;color:var(--brand2);background:rgba(255,107,53,.1);border:1px solid rgba(255,107,53,.28);border-radius:999px;padding:6px 14px;margin-bottom:22px}
+    .hero h1{font-size:clamp(34px,6vw,58px);line-height:1.05;letter-spacing:-.03em;font-weight:800;margin-bottom:18px}
+    .hero h1 .grad{background:linear-gradient(120deg,var(--brand),var(--brand2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+    .hero p{font-size:clamp(16px,2.4vw,20px);color:var(--muted);max-width:640px;margin:0 auto 34px}
+
+    .platforms{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin:14px 0 8px}
+    .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:18px;padding:28px 24px;text-align:left;transition:.2s;position:relative}
+    .card:hover{border-color:rgba(255,107,53,.4);transform:translateY(-3px)}
+    .card .os{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;margin-bottom:6px}
+    .card .os svg{width:22px;height:22px;fill:var(--text)}
+    .card .sub{font-size:13px;color:var(--muted);margin-bottom:18px;min-height:34px}
+    .dl{display:block;text-align:center;background:var(--brand);color:#fff;font-weight:700;font-size:14.5px;padding:11px;border-radius:10px;transition:.2s}
+    .dl:hover{background:var(--brand2)}
+    .dl.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+    .dl.ghost:hover{border-color:var(--brand)}
+    .soon{position:absolute;top:16px;right:16px;font-size:10.5px;font-weight:700;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+    .note{font-size:12.5px;color:var(--muted);margin-top:10px}
+
+    section.feat{padding:64px 0 20px}
+    .feat h2{text-align:center;font-size:clamp(26px,4vw,38px);font-weight:800;letter-spacing:-.02em;margin-bottom:12px}
+    .feat .lead{text-align:center;color:var(--muted);max-width:620px;margin:0 auto 42px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+    .feature{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px}
+    .feature .ic{font-size:22px;margin-bottom:10px}
+    .feature h3{font-size:16.5px;margin-bottom:6px}
+    .feature p{font-size:14px;color:var(--muted)}
+
+    .steps{max-width:760px;margin:56px auto 0}
+    .step{display:flex;gap:16px;padding:16px 0;border-top:1px solid var(--line)}
+    .step .n{flex:0 0 34px;height:34px;border-radius:50%;background:rgba(255,107,53,.14);color:var(--brand2);font-weight:800;display:grid;place-items:center}
+    .step h4{font-size:15.5px}
+    .step p{font-size:14px;color:var(--muted)}
+
+    .cta{text-align:center;margin:72px 0 40px;background:linear-gradient(120deg,rgba(255,107,53,.1),rgba(255,145,66,.05));border:1px solid rgba(255,107,53,.22);border-radius:22px;padding:52px 24px}
+    .cta h2{font-size:clamp(24px,4vw,34px);font-weight:800;margin-bottom:12px}
+    .cta p{color:var(--muted);margin-bottom:26px}
+    .cta .row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+    .btn{padding:13px 26px;border-radius:11px;font-weight:700;font-size:15px}
+    .btn.primary{background:var(--brand);color:#fff}
+    .btn.primary:hover{background:var(--brand2)}
+    .btn.ghost{border:1px solid var(--line)}
+
+    footer{border-top:1px solid var(--line);padding:30px 0;color:var(--muted);font-size:13px;text-align:center}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="logo" href="/"><img src="/icon-192.svg" alt="" /> Yogatik</a>
+      <a class="nav-cta" href="/">Open in browser →</a>
+    </header>
+
+    <section class="hero">
+      <span class="pill">Yogatik for Desktop · v3.8</span>
+      <h1>Your private AI,<br /><span class="grad">running on your machine.</span></h1>
+      <p>Download the desktop app to chat with local <strong>Ollama</strong> models, and let the agent read, edit and organise files in a folder you choose — plus every tool from the web app. No account, no cloud lock-in.</p>
+
+      <div class="platforms">
+        <div class="card">
+          <div class="os">
+            <svg viewBox="0 0 448 512"><path d="M0 93.7l183.6-25.3v177.4H0zm0 324.6l183.6 25.3V268.4H0zm203.8 28L448 480V268.4H203.8zM203.8 66v180.1H448V32z"/></svg>
+            Windows
+          </div>
+          <div class="sub">Windows 10 &amp; 11 · 64-bit standalone (.exe)</div>
+          <a class="dl" id="win-dl" href="https://github.com/applicationmanifester/Yogatik/releases" target="_blank" rel="noopener noreferrer">Download for Windows</a>
+          <div class="note">Installs per-user, launches on finish.</div>
+        </div>
+
+        <div class="card">
+          <span class="soon">Coming soon</span>
+          <div class="os">
+            <svg viewBox="0 0 384 512"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zM256.6 93.4c25.9-30.8 23.6-58.8 22.9-68.9-22.9 1.3-49.4 15.6-64.5 33.2-16.6 18.9-26.4 42.2-24.3 67.4 24.8 1.9 47.5-10.8 65.9-31.7z"/></svg>
+            macOS
+          </div>
+          <div class="sub">Universal (Apple Silicon &amp; Intel)</div>
+          <a class="dl ghost" href="/">Use the web app</a>
+          <div class="note">Build it yourself today — see below.</div>
+        </div>
+
+        <div class="card">
+          <span class="soon">Coming soon</span>
+          <div class="os">
+            <svg viewBox="0 0 448 512"><path d="M220.8 123.3c1 .5 1.8 1.7 3 1.7 1.1 0 2.8-.4 2.9-1.5.2-1.4-1.9-2.3-3.2-2.9-1.7-.7-3.9-1-5.5-.1-.4.2-.8.7-.6 1.1.3 1.3 2 1.2 3.4 1.6zm-21.9 1.7c1.2 0 2-1.2 3-1.7 1.4-.4 3.1-.3 3.4-1.6.2-.4-.2-.9-.6-1.1-1.6-.9-3.8-.6-5.5.1-1.3.6-3.4 1.5-3.2 2.9.1 1 1.8 1.5 2.9 1.4zM420 403.8c-3.6-4-5.3-11.6-7.2-19.7-1.8-8.1-3.9-16.8-10.5-22.4-1.3-1.1-2.6-2.1-4-2.9 1.3-6.7 2-13.5 2-20.3 0-104.8-58.6-189.9-131-189.9S138 233.6 138 338.4c0 6.5.6 12.9 1.8 19.3-1.6.9-3.1 2-4.5 3.2-6.6 5.6-8.7 14.3-10.5 22.4-1.9 8.1-3.6 15.7-7.2 19.7-8.4 9.3-9.5 20.9-3.3 32.8 6.1 11.9 20.5 20 42.5 25 7.9 1.8 15.4 3 22.6 3.6 5.1 5.6 12.2 10.9 21.5 13.5 6.5 1.8 13.6 2.7 20.8 2.7s14.3-.9 20.8-2.7c9.3-2.6 16.4-7.9 21.5-13.5 7.2-.6 14.7-1.8 22.6-3.6 22-5 36.4-13.1 42.5-25 6.2-11.9 5.1-23.5-3.4-32.7z"/></svg>
+            Linux
+          </div>
+          <div class="sub">AppImage &amp; .deb</div>
+          <a class="dl ghost" href="/">Use the web app</a>
+          <div class="note">Build it yourself today — see below.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="feat">
+      <h2>Everything the web app does — plus your machine</h2>
+      <p class="lead">The desktop build is the same fast, private assistant, extended with two capabilities the browser can't offer.</p>
+      <div class="grid">
+        <div class="feature"><div class="ic">🖥️</div><h3>Local Ollama models</h3><p>Point at a running Ollama daemon and chat with Llama, Qwen, Mistral, DeepSeek and more — fully offline, no API key, nothing sent to any cloud.</p></div>
+        <div class="feature"><div class="ic">📂</div><h3>Local-file agent</h3><p>Grant one folder and the agent can read, search, create and edit files inside it — refactors, summaries, batch renames — Cowork-style, scoped and safe.</p></div>
+        <div class="feature"><div class="ic">🔎</div><h3>Live web research</h3><p>Metasearch across multiple engines with parallel page reads and cited sources, right inside the conversation.</p></div>
+        <div class="feature"><div class="ic">🧠</div><h3>On-device models &amp; vision</h3><p>Run small LLMs and vision models on your GPU via WebGPU. Private by default, works offline after first load.</p></div>
+        <div class="feature"><div class="ic">🛠️</div><h3>65+ built-in tools</h3><p>Code execution, image &amp; video generation, OCR, PDF Q&amp;A, diagrams, charts, translation, TTS and much more.</p></div>
+        <div class="feature"><div class="ic">🔒</div><h3>Private by design</h3><p>Conversations and keys live in your browser/device. Bring your own free API key; no backend holds your data.</p></div>
+      </div>
+    </section>
+
+    <section class="feat" id="install-from-source">
+      <h2>Get the Windows app</h2>
+      <p class="lead">A one-click installer is on the way. Prefer to build it now? Two commands.</p>
+      <div style="max-width:560px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px 24px">
+        <pre style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:16px;overflow:auto;font-size:13.5px;color:var(--text);line-height:1.7;margin-bottom:14px"><code>cd frontend
+npm install
+npm run desktop:build</code></pre>
+        <p style="font-size:13.5px;color:var(--muted)">Your <code>.exe</code> lands in <code>src-tauri/target/release/bundle</code>. Needs Node 18+ and <a href="https://rustup.rs" style="color:var(--brand2)">Rust</a> (Windows 11 already has the rest).</p>
+      </div>
+      <p class="note" style="text-align:center;margin-top:18px">Want local models? Install <a href="https://ollama.com/download" style="color:var(--brand2)">Ollama</a>, then pick <strong>Ollama (local)</strong> in Settings.</p>
+    </section>
+
+    <div class="cta">
+      <h2>Try it now, no download</h2>
+      <p>The full assistant runs in your browser today. Install the desktop app when you want local models and file editing.</p>
+      <div class="row">
+        <a class="btn primary" href="/">Launch web app</a>
+        <a class="btn ghost" href="https://ollama.com/download">Get Ollama</a>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="wrap">Yogatik · Private browser-native AI · <a href="/" style="color:var(--brand2)">yogatik.web.app</a></div>
+  </footer>
+
+  <script>
+    // Detect OS and highlight the matching download card.
+    (function () {
+      var b = document.getElementById('win-dl');
+      if (!b) return;
+      var repo = b.getAttribute('data-repo');
+      // Once REPO is set, point the button at the auto-published GitHub release.
+      if (repo && repo !== 'OWNER/REPO') {
+        b.setAttribute('href', 'https://github.com/' + repo + '/releases/latest');
+      }
+    })();
+  </script>
+</body>
+</html>
