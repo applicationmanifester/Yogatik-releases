@@ -752,17 +752,13 @@ export default function App() {
   }, [])
 
   const newChat = useCallback(() => {
-    stopGeneration('chat')
+    // Don't stop other chats — let them keep streaming in background
     setConvQuery('')
     setInput('')
     setActiveArtifact(null)
     setAttachedFile(null)
     setAttachedImage(null)
     setVisibleCount(WINDOW_STEP)
-    setLoadingMap({})
-    setStreamingMap({})
-    setStatusMap({})
-    setStreamIdMap({})
 
     const newConv = {
       clientId: `c_new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1276,7 +1272,7 @@ export default function App() {
         temperature: useTemp,
         provider: useProvider,
         model: useModel || undefined,
-        channel: 'chat',
+        channel: targetClientId,
         image: sentImage?.dataUrl || null,
       },
       (token) => { content += token; pushStreamContent(content); setStatusMap(prev => ({ ...prev, [targetClientId]: '' })) },
@@ -1398,7 +1394,7 @@ export default function App() {
           use_web_search: false,
           use_tools: false,
           temperature: 0.7,
-          channel: 'enhance',
+          channel: 'enhance', noFallback: true,
         },
         (token) => { enhanced += token; setInput(enhanced) }, // onToken
         () => {}, // onSources
@@ -1521,7 +1517,7 @@ export default function App() {
       let out = ''
       streamMessage(
         { message: prompt, messages: [], provider, model: mdl, use_tools: false, use_web_search: false,
-          temperature, channel: `compare-${side}` },
+          temperature, channel: `compare-${side}`, noFallback: true },
         (t) => { out += t; setArena(prev => ({ ...prev, [`response${side}`]: out })) },
         () => {},
         () => { setArena(prev => ({ ...prev, [`streaming${side}`]: false })); resolve() },

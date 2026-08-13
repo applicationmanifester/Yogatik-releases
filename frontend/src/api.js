@@ -270,7 +270,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
   onStreamId?.(channel)
 
   const prefs2 = await db.getSetting('chat_prefs', {})
-  const chain = prefs2.fallback === false || channel !== 'chat'
+  const chain = prefs2.fallback === false || body.noFallback
     ? [provider]
     : await getFallbackChain(provider)
 
