@@ -273,6 +273,14 @@ export default function App() {
   const loadingMapRef = useRef(loadingMap)
   loadingMapRef.current = loadingMap  // always current — no useEffect lag
 
+  // send() reads these refs so it always sees the latest state, even when
+  // called from a closure captured during a previous render (e.g. right after
+  // newChat() updates conversations but before the next React paint).
+  const conversationsRef = useRef(conversations)
+  conversationsRef.current = conversations
+  const activeIdxRef = useRef(activeIdx)
+  activeIdxRef.current = activeIdx
+
   // Provider/model must be persisted: the agent reads them from IndexedDB, so
   // React-only state meant every message silently went to the stored default.
   const setProvider = useCallback((id) => {
@@ -1085,12 +1093,14 @@ export default function App() {
       runCompare(text)
       return
     }
-    const targetIdx = activeIdx
-    const targetConv = conversations[targetIdx]
+    // Always read from refs so we get the freshest state, even if this closure
+    // was captured before a newChat() state update was committed.
+    const targetIdx = activeIdxRef.current
+    const targetConv = conversationsRef.current[targetIdx]
     if (!targetConv) return
     const targetClientId = targetConv.clientId
 
-    if ((!text.trim() && !attachedFile && !attachedImage) || loadingMap[targetClientId]) return
+    if ((!text.trim() && !attachedFile && !attachedImage) || loadingMapRef.current[targetClientId]) return
     if (!navigator.onLine) {
       setErrorModalMsg("You're offline. Yogatik needs a connection to reach the model provider — your chats and documents are safe on this device.")
       return
