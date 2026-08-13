@@ -326,6 +326,47 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         onError: (err) => { failure = err?.message || String(err) },
       })
 
+      if (failure && !produced && !controller.signal.aborted && isProviderFailure(failure)) {
+        try {
+          const fallbackMdl = await autoPickModel(pid)
+          if (fallbackMdl && fallbackMdl !== mdl) {
+            onStatus?.(`${mdl || pid} unavailable — trying ${fallbackMdl}…`)
+            failure = null
+            await runAgent({
+              provider: pid, apiKey: key, model: fallbackMdl,
+              history: body.messages || [],
+              userMessage: body.message || body.messages?.[body.messages.length - 1]?.content || '',
+              userImage: body.image || null,
+              toolsEnabled: body.tools !== false && body.use_tools !== false,
+              initialToolMode: isLocalProvider ? 'prompted' : await getToolMode(pid, fallbackMdl),
+              webEnabled: body.use_web_search !== false,
+              disabledTools: [...new Set([...(await getDisabledTools()), ...(body.disabledTools || [])])],
+              agentOverride: body.agent_override || null,
+              persona: body.system_prompt || null,
+              modelCanSee: (await getCachedVision(pid, fallbackMdl)) ?? looksVisionCapable(fallbackMdl),
+              localVisionEnabled: prefs2.local_vision !== false,
+              onToolModeChange: (mode) => { setToolMode(pid, fallbackMdl, mode).catch(() => {}) },
+              temperature: body.temperature || 0.7,
+              signal: controller.signal,
+              onToken: (t) => { produced = true; onToken?.(t) },
+              onStatus,
+              onSources,
+              onToolStart: (name, args) => onToolsDetected?.([name], args),
+              onToolResult: (name, result) => onToolResult?.(name, result),
+              onDone: ({ content, sources, aborted }) => {
+                if (sources?.length) onSources?.(sources)
+                recordUsage(pid, fallbackMdl, {
+                  inTokens: estimateTokens(body.message || ''),
+                  outTokens: estimateTokens(content || ''),
+                }).catch(() => {})
+                onDone?.(content, { aborted, provider: pid, model: fallbackMdl })
+              },
+              onError: (err) => { failure = err?.message || String(err) },
+            })
+          }
+        } catch { /* ignore fallback error */ }
+      }
+
       if (!failure) return
 
       // Only switch provider if nothing was shown yet — swapping mid-answer
