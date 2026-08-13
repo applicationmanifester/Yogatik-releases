@@ -1457,10 +1457,13 @@ export default function App() {
     }
   }
 
+  const sendRef = useRef(null)
+  useEffect(() => { sendRef.current = send }, [send])
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && (!e.shiftKey || e.ctrlKey || e.metaKey)) {
       e.preventDefault()
-      send()
+      sendRef.current?.()
     }
   }
 
@@ -2585,7 +2588,7 @@ export default function App() {
             >
               {listening ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
-            <button className="send-btn" aria-label="Send message" onClick={() => send()} disabled={isStreamingHere || !online || (!input.trim() && !attachedFile && !attachedImage)}>
+            <button className="send-btn" aria-label="Send message" onClick={() => sendRef.current?.()} disabled={isStreamingHere || !online || (!input.trim() && !attachedFile && !attachedImage)}>
               <Send size={18} />
             </button>
           </div>

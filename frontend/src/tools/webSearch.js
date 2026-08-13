@@ -82,8 +82,9 @@ async function wikipediaSearch(query, count) {
 async function googleNewsSearch(query, count) {
   try {
     const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`
-    const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`
-    const resp = await fetch(url).then(r => r.json()).catch(() => null)
+    // rss2json.com converts RSS to JSON without CORS issues
+    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&api_key=kklbxmtiwjjlpnnfqtwgkjzuricohtb1jlryjw6`
+    const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(6000) }).then(r => r.json()).catch(() => null)
     if (resp?.items?.length) {
       return resp.items.slice(0, count).map(item => ({
         title: (item.title || '').trim(),
@@ -93,7 +94,7 @@ async function googleNewsSearch(query, count) {
         engine: 'google_news',
       })).filter(r => r.url && r.title)
     }
-    // Fallback: proxyText RSS parse
+    // Fallback: route through our own proxy
     const xml = await proxyText(rssUrl)
     const doc = new DOMParser().parseFromString(xml, 'text/xml')
     const items = [...doc.querySelectorAll('item')].slice(0, count)
