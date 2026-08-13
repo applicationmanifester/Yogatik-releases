@@ -764,35 +764,23 @@ export default function App() {
     setStatusMap({})
     setStreamIdMap({})
 
+    const newConv = {
+      clientId: `c_new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      id: null,
+      title: 'New Chat',
+      messages: [],
+      provider: provider || 'local',
+      model: model || '',
+      systemPrompt: '',
+      temperature: temperature ?? 0.7,
+      webSearch: webSearch ?? true,
+      tools: tools ?? true,
+    }
+
     setConversations(prev => {
-      const top = prev[0]
-      const isTopEmptyDraft = top && !top.id && (!top.messages || top.messages.length === 0)
-
-      if (isTopEmptyDraft) {
-        return prev.map((c, i) => i === 0 ? {
-          ...c,
-          messages: [],
-          title: 'New Chat',
-          provider: provider || 'local',
-          model: model || '',
-          systemPrompt: '',
-          temperature: temperature ?? 0.7,
-          webSearch: webSearch ?? true,
-          tools: tools ?? true,
-        } : c)
-      }
-
-      const newConv = {
-        clientId: `c_new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        id: null,
-        title: 'New Chat',
-        messages: [],
-        provider: provider || 'local',
-        model: model || '',
-        systemPrompt: '',
-        temperature: temperature ?? 0.7,
-        webSearch: webSearch ?? true,
-        tools: tools ?? true,
+      // If the top chat is already a brand new empty draft with 0 messages, reuse it
+      if (prev[0] && !prev[0].id && (!prev[0].messages || prev[0].messages.length === 0)) {
+        return prev.map((c, i) => i === 0 ? newConv : c)
       }
       return [newConv, ...prev]
     })
