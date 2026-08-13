@@ -1276,7 +1276,7 @@ export default function App() {
           }
           saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
           setConversations(prev => prev.map(c =>
-            c.clientId === targetClientId ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
+            c.clientId === targetClientId ? { ...c, id: convId, messages: [...(c.messages || []), assistantMsg] } : c
           ))
           setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
           delete toolRunMapRef.current[targetClientId]
@@ -1288,7 +1288,7 @@ export default function App() {
           setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
           setConversations(prev => prev.map(c =>
             c.clientId === targetClientId
-              ? { ...c, id: convId, messages: [...updated.messages, { role: 'assistant', error: String(err), content: '' }] }
+              ? { ...c, id: convId, messages: [...(c.messages || []), { role: 'assistant', error: String(err), content: '' }] }
               : c
           ))
           setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
@@ -1343,7 +1343,7 @@ export default function App() {
         }
         saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
         setConversations(prev => prev.map(c =>
-          (c.clientId === targetClientId || (convId && c.id === convId)) ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
+          (c.clientId === targetClientId || (convId && c.id === convId)) ? { ...c, id: convId, messages: [...(c.messages || []), assistantMsg] } : c
         ))
         setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
         setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
@@ -1369,7 +1369,7 @@ export default function App() {
         }
         setConversations(prev => prev.map(c =>
           (c.clientId === targetClientId || (convId && c.id === convId))
-            ? { ...c, id: convId, messages: [...updated.messages, { role: 'assistant', provider: useProvider, model: useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined), error: String(err), content: '' }] }
+            ? { ...c, id: convId, messages: [...(c.messages || []), { role: 'assistant', provider: useProvider, model: useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined), error: String(err), content: '' }] }
             : c
         ))
         setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
