@@ -315,9 +315,17 @@ export async function runAgent({
   const hBudget = isLocalProvider ? LOCAL_HISTORY_BUDGET : HISTORY_BUDGET
   const hTurns = isLocalProvider ? LOCAL_MAX_TURNS : MAX_TURNS
 
+  const lastHistoryMsg = history[history.length - 1]
+  const lastContent = typeof lastHistoryMsg?.content === 'string' ? lastHistoryMsg.content : ''
+  const isCurrentMessageInHistory = lastHistoryMsg &&
+    lastHistoryMsg.role === 'user' &&
+    (lastContent === userMessage || (userImage && Array.isArray(lastHistoryMsg.content)))
+
+  const pastHistory = isCurrentMessageInHistory ? history.slice(0, -1) : history
+
   const messages = [
     { role: 'system', content: systemBase },
-    ...windowHistory(history, hBudget, hTurns),
+    ...windowHistory(pastHistory, hBudget, hTurns),
     { role: 'user', content: userMessage },
   ]
 
