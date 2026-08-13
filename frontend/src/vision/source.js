@@ -58,6 +58,36 @@ export function captureProfile(q = '') {
     : { maxEdge: 768, quality: 0.7, crop: 0 }
 }
 
+/**
+ * Format raw OCR text with structural layout insights:
+ *  - Counts line structure & repeated elements (e.g. 18x \frac{1}{2}).
+ *  - Formats raw OCR text cleanly for LLM synthesis.
+ */
+export function formatOcrText(rawText) {
+  if (!rawText || typeof rawText !== 'string') return ''
+  const trimmed = rawText.trim()
+  const lines = trimmed.split('\n').map(l => l.trim()).filter(Boolean)
+
+  const tokens = trimmed.split(/\s+/).filter(Boolean)
+  const freq = {}
+  for (const t of tokens) {
+    freq[t] = (freq[t] || 0) + 1
+  }
+
+  const repeatedPatterns = Object.entries(freq)
+    .filter(([_, count]) => count >= 3)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+
+  let summary = ''
+  if (repeatedPatterns.length > 0) {
+    const patternStr = repeatedPatterns.map(([term, cnt]) => `"${term}" (${cnt}x)`).join(', ')
+    summary = `[LAYOUT ANALYSIS: Detected ${lines.length} line(s), ${tokens.length} total token(s). Repeated patterns: ${patternStr}]\n\n`
+  }
+
+  return summary + trimmed
+}
+
 // ─── Model-free vision (fallback chain) ──────────────────────────────────────
 
 /**
@@ -76,7 +106,7 @@ export async function describeWithoutModel(image, question = '') {
     const r = await ocrTool.execute({ image_url: image })
     const text = (r?.text || r?.result || '').trim()
     if (!text) throw new Error('no text found')
-    return { via: 'ocr', text }
+    return { via: 'ocr', text: formatOcrText(text) }
   }
   const runVlm = async () => ({
     via: 'local-vlm',

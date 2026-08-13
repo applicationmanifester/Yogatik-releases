@@ -27,6 +27,7 @@ import { isDbClosedError } from './db'
 import { resolveFeatures } from './features'
 import { setLocalVLMConsent } from './vision/localVLM'
 import { setSemanticConsent } from './semantic'
+import { looksVisionCapable } from './vision/capability'
 import { prepareImage, isImageFile, imageFromClipboard, imageFromDrop } from './vision/attach'
 import { registerServiceWorker } from './pwa'
 import { requestPersistence, storageReport, formatBytes } from './storage'
@@ -2464,16 +2465,35 @@ export default function App() {
               <button className="icon-btn" onClick={() => setAttachedFile(null)} title="Remove"><X size={12} /></button>
             </div>
           )}
-          {attachedImage && (
-            <div className="attached-file attached-image">
-              <img src={attachedImage.thumb} alt={attachedImage.name} className="attach-thumb" />
-              <span className="attached-name">
-                {attachedImage.name}
-                <em>{attachedImage.width}×{attachedImage.height}{modelSees === false ? ' — will be read on-device' : ''}</em>
-              </span>
-              <button className="icon-btn" onClick={() => setAttachedImage(null)} title="Remove image" aria-label="Remove image"><X size={12} /></button>
-            </div>
-          )}
+          {attachedImage && (() => {
+            const visionCandidate = modelSees === false ? (providerModels || []).find(m => looksVisionCapable(m)) : null
+            return (
+              <div className="attached-file attached-image">
+                <img src={attachedImage.thumb} alt={attachedImage.name} className="attach-thumb" />
+                <span className="attached-name">
+                  {attachedImage.name}
+                  <em>{attachedImage.width}×{attachedImage.height}{modelSees === false ? ' — read on-device (text model active)' : ''}</em>
+                </span>
+                {visionCandidate && (
+                  <button
+                    type="button"
+                    className="small-btn btn-vision-switch"
+                    onClick={() => chooseModel(visionCandidate)}
+                    title={`Switch to ${visionCandidate} for full native vision`}
+                    style={{
+                      fontSize: '11px', padding: '3px 8px', marginLeft: 'auto', marginRight: '6px',
+                      background: 'var(--accent-color, #ff6b35)', color: '#fff', border: 'none',
+                      borderRadius: '5px', cursor: 'pointer', fontWeight: 600, display: 'inline-flex',
+                      alignItems: 'center', gap: '4px', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <Sparkles size={11} /> Switch to {visionCandidate.split('/').pop()}
+                  </button>
+                )}
+                <button className="icon-btn" onClick={() => setAttachedImage(null)} title="Remove image" aria-label="Remove image"><X size={12} /></button>
+              </div>
+            )
+          })()}
           <div className="input-wrapper">
             <textarea ref={textareaRef} aria-label="Message" value={input} onChange={e => { setInput(e.target.value); autoResize() }}
               onKeyDown={handleKeyDown} onPaste={handlePaste}

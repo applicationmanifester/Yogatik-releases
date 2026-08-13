@@ -336,8 +336,8 @@ export async function runAgent({
       try {
         const { via, text } = await describeWithoutModel(userImage, userMessage)
         turn.content = `${userMessage || 'Describe this image.'}\n\n` +
-          `[The attached image was read on-device with ${via === 'ocr' ? 'OCR' : 'a local vision model'} ` +
-          `because ${model || 'this model'} cannot see images. Answer from this, and say so if it is not enough.]\n` +
+          `[The attached image was read on-device with ${via === 'ocr' ? 'OCR & layout analysis' : 'a local vision model'} ` +
+          `because ${model || 'this model'} cannot see images natively. Synthesize and analyze the structured content below carefully.]\n\n` +
           `IMAGE CONTENT:\n${text}`
       } catch (e) {
         turn.content = `${userMessage || ''}\n\n[An image was attached but could not be read: ${e.message}. ` +
