@@ -1088,10 +1088,19 @@ export default function App() {
     }
 
     const useProvider = targetConv.provider || provider
-    const useModel = targetConv.model !== undefined ? targetConv.model : model
+    let useModel = targetConv.model !== undefined ? targetConv.model : model
     const useTemp = targetConv.temperature !== undefined ? targetConv.temperature : temperature
     const useWeb = targetConv.webSearch !== undefined ? targetConv.webSearch : webSearch
     const useTools = targetConv.tools !== undefined ? targetConv.tools : tools
+
+    // Auto-switch to a vision model if enabled and current model cannot see natively
+    if (attachedImage && features.autoVision !== false && modelSees === false) {
+      const visionCandidate = (providerModels || []).find(m => looksVisionCapable(m))
+      if (visionCandidate) {
+        chooseModel(visionCandidate, useProvider)
+        useModel = visionCandidate
+      }
+    }
 
     // models is populated asynchronously; if it's still empty the provider list
     // hasn't loaded yet — don't block the first send while that fetch is in flight.
@@ -2367,6 +2376,36 @@ export default function App() {
           onDragOver={e => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}>
+          <div className="composer-top-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+            <div className="persona-chips" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary, #a6adc8)', fontWeight: 600, marginRight: 2 }}>Persona:</span>
+              {promptTemplates.slice(0, 4).map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`chip ${activeTemplate === t.id ? 'active' : ''}`}
+                  onClick={() => setActiveTemplate(t.id)}
+                  style={{
+                    fontSize: 11, padding: '2px 8px', borderRadius: 12, border: '1px solid var(--border-color, rgba(255,255,255,0.15))',
+                    background: activeTemplate === t.id ? 'var(--accent-color, #ff6b35)' : 'transparent',
+                    color: activeTemplate === t.id ? '#fff' : 'var(--text-secondary, #a6adc8)',
+                    cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s ease',
+                  }}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+            {docs.length > 0 && (
+              <div
+                className="rag-docs-badge"
+                title={`${docs.length} document(s) in active project local RAG index`}
+                style={{ fontSize: 11, color: '#a6e3a1', display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(166,227,161,0.1)', padding: '2px 8px', borderRadius: 12, border: '1px solid rgba(166,227,161,0.2)', fontWeight: 600 }}
+              >
+                <FileText size={11} /> {docs.length} RAG doc{docs.length === 1 ? '' : 's'} active
+              </div>
+            )}
+          </div>
           <div className="upload-area">
             {/* Which model answers is a per-message decision, so it belongs next
                 to the message — not buried in the settings drawer. */}

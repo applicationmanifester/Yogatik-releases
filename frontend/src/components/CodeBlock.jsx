@@ -161,9 +161,9 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
               <FileDown size={11} /> Download CSV
             </button>
           )}
-          {isPreviewable && onOpenArtifact && (
-            <button className="code-block-btn" onClick={handleOpenArtifact} title="Open in Canvas Sandbox">
-              <Eye size={11} /> Preview
+          {onOpenArtifact && (
+            <button className="code-block-btn" onClick={handleOpenArtifact} title="Open in Canvas Artifact sandbox">
+              <Eye size={11} /> {isPreviewable ? 'Preview' : 'Artifact'}
             </button>
           )}
           <button className="code-block-btn" onClick={copy} title="Copy code" aria-label="Copy code">

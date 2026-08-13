@@ -82,6 +82,11 @@ export const FEATURES = {
     hint: 'Quick agent actions above the composer — summarize, next steps, find issues',
     default: false,
   },
+  autoVision: {
+    label: 'Auto-switch Vision model',
+    hint: 'Automatically switch to a vision model when an image is attached',
+    default: true,
+  },
 }
 
 export const FEATURE_DEFAULTS = Object.fromEntries(
