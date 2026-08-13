@@ -5,7 +5,7 @@ import React, { useState, useEffect, useRef } from 'react'
 //   VITE_ADSENSE_SLOT=1234567890
 // Left unset, the interstitial never renders. Requesting a placeholder slot
 // made AdSense return 410 Gone and showed the user an empty box.
-const AD_CLIENT = import.meta.env.VITE_ADSENSE_CLIENT || ''
+const AD_CLIENT = import.meta.env.VITE_ADSENSE_CLIENT || 'ca-pub-8240433260986072'
 const AD_SLOT = import.meta.env.VITE_ADSENSE_SLOT || ''
 export const adsConfigured = !!AD_CLIENT
 
