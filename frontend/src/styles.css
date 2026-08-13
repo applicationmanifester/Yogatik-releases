@@ -2703,3 +2703,92 @@ body {
   color: var(--text-primary);
 }
 
+/* ── Composer Top Bar, Persona Chips & RAG Badge ── */
+.composer-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.persona-chips {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.persona-chip-label {
+  font-size: 11px;
+  color: var(--text-secondary, #a6adc8);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.persona-chip {
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  background: transparent;
+  color: var(--text-secondary, #a6adc8);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.persona-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary, #fff);
+}
+
+.persona-chip.active {
+  background: var(--accent-color, #ff6b35);
+  color: #ffffff;
+  border-color: var(--accent-color, #ff6b35);
+  box-shadow: 0 2px 6px rgba(255, 107, 53, 0.3);
+}
+
+.rag-docs-badge {
+  font-size: 11px;
+  color: #a6e3a1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(166, 227, 161, 0.12);
+  padding: 2px 9px;
+  border-radius: 12px;
+  border: 1px solid rgba(166, 227, 161, 0.25);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.rag-docs-badge:hover {
+  background: rgba(166, 227, 161, 0.2);
+}
+
+.btn-vision-switch {
+  font-size: 11px;
+  padding: 3px 9px;
+  margin-left: auto;
+  margin-right: 6px;
+  background: linear-gradient(135deg, #ff6b35, #f76707);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(255, 107, 53, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-vision-switch:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(255, 107, 53, 0.4);
+}
+
