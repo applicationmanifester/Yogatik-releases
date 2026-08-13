@@ -1067,13 +1067,11 @@ export default function App() {
   const loadingRef = useRef(null)
   useEffect(() => { loadingRef.current = !!(conv?.clientId && loadingMap[conv.clientId]) }, [loadingMap, conv?.clientId])
 
-  const activateNewChatRef = useRef(false)
-
   /** Run a workflow: send each (variable-filled) step in order, waiting for the
    *  previous turn to finish. Steps chain through the conversation history. */
   const runWorkflowNow = async (wf, values) => {
     await runWorkflow(wf, values, (prompt) => new Promise((resolve) => {
-      send(prompt)
+      sendRef.current?.(prompt)
       const started = Date.now()
       const iv = setInterval(() => {
         const settled = !loadingRef.current && Date.now() - started > 900
@@ -1507,7 +1505,7 @@ export default function App() {
     const kept = msgs.slice(0, lastUser)
     setConversations(prev => prev.map((c, i) => i === activeIdx ? { ...c, messages: kept } : c))
     if (conv?.id) { try { await trimConversationFrom(conv.id, lastUser) } catch {} }
-    send(prompt)
+    sendRef.current?.(prompt)
   }
 
   const handleBackup = async () => {
@@ -2271,7 +2269,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="suggestions" hidden={!features.suggestions}>
-                  {SUGGESTIONS.map((s, i) => <div key={i} className="suggestion" onClick={() => send(s)}>{s}</div>)}
+                  {SUGGESTIONS.map((s, i) => <div key={i} className="suggestion" onClick={() => sendRef.current?.(s)}>{s}</div>)}
                 </div>
               )}
             </div>
