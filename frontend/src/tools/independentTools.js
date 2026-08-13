@@ -145,7 +145,8 @@ function intentFromQuery(query) {
   if (/\b(code|debug|fix|error|stack trace|exception)\b/.test(q)) return 'coding'
   if (/\b(chart|graph|graphical|plot|visualize)\b/.test(q)) return 'visualize'
   if (/\b(calculate|compute|math|equation|solve|percent|percentage)\b/.test(q)) return 'compute'
-  if (/\b(news|latest|current|today|now|price|prices|weather|release|update)\b/.test(q)) return 'research'
+  if (/\b(weather|forecast|temperature|rain|snow|cloudy|sunny|humidity)\b/.test(q)) return 'weather'
+  if (/\b(news|latest|current|today|now|price|prices|release|update)\b/.test(q)) return 'research'
   if (/\b(write|draft|rewrite|improve|polish|expand)\b/.test(q)) return 'writing'
   if (/\b(who|what|when|where|why|how)\b/.test(q)) return 'fact_lookup'
   return 'general'
@@ -562,6 +563,7 @@ export const queryRefineTool = {
     if (!subqueries.length) subqueries = [search_query || clean]
 
     const suggested_tools = []
+    if (intent === 'weather') suggested_tools.push('weather')
     if (intent === 'research') suggested_tools.push('web_search', 'deep_research')
     if (intent === 'compute') suggested_tools.push('calculator')
     if (intent === 'translate') suggested_tools.push('translate')
