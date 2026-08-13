@@ -246,6 +246,9 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
   const provider = body.provider || await getActiveProvider()
   const apiKey = await db.getSetting(`apikey_${provider}`)
   let model = body.model || await db.getSetting(`model_${provider}`, '')
+  if (!model) {
+    try { model = await autoPickModel(provider) } catch { /* ignore */ }
+  }
 
   // Auto-route: choose per message from models measured as working.
   const prefs = await db.getSetting('chat_prefs', {})

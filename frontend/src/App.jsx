@@ -1077,7 +1077,7 @@ export default function App() {
     }
 
     const useProvider = targetConv.provider || provider
-    let useModel = targetConv.model !== undefined ? targetConv.model : model
+    let useModel = (targetConv.model && targetConv.model.trim()) ? targetConv.model : model
     const useTemp = targetConv.temperature !== undefined ? targetConv.temperature : temperature
     const useWeb = targetConv.webSearch !== undefined ? targetConv.webSearch : webSearch
     const useTools = targetConv.tools !== undefined ? targetConv.tools : tools
