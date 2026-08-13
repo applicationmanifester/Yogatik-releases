@@ -162,6 +162,23 @@ const MessageBubble = React.memo(function MessageBubble({
   // Build stable markdown components config — avoids new object on every render
   const markdownComponents = useMarkdownComponents(msg.content, onOpenArtifact)
 
+  const formattedModelName = useMemo(() => {
+    const rawModel = msg.model || ''
+    const rawProv = msg.provider || ''
+    const mName = rawModel ? rawModel.split('/').pop() : ''
+    const pName = rawProv === 'nvidia' ? 'NVIDIA (Free)'
+      : rawProv === 'openrouter' ? 'OpenRouter'
+      : rawProv === 'groq' ? 'Groq'
+      : rawProv === 'openai' ? 'OpenAI'
+      : rawProv === 'gemini' ? 'Gemini'
+      : rawProv === 'local' ? 'On-device Model'
+      : rawProv
+    if (pName && mName) return `${pName} · ${mName}`
+    if (mName) return mName
+    if (pName) return pName
+    return 'AI Model'
+  }, [msg.model, msg.provider])
+
   let reasoning = '', answer = msg.content
 
   // Failed turns are shown attached to the message, never stored as if the
@@ -181,23 +198,6 @@ const MessageBubble = React.memo(function MessageBubble({
       </div>
     )
   }
-
-  const formattedModelName = useMemo(() => {
-    const rawModel = msg.model || ''
-    const rawProv = msg.provider || ''
-    const mName = rawModel ? rawModel.split('/').pop() : ''
-    const pName = rawProv === 'nvidia' ? 'NVIDIA (Free)'
-      : rawProv === 'openrouter' ? 'OpenRouter'
-      : rawProv === 'groq' ? 'Groq'
-      : rawProv === 'openai' ? 'OpenAI'
-      : rawProv === 'gemini' ? 'Gemini'
-      : rawProv === 'local' ? 'On-device Model'
-      : rawProv
-    if (pName && mName) return `${pName} · ${mName}`
-    if (mName) return mName
-    if (pName) return pName
-    return 'AI Model'
-  }, [msg.model, msg.provider])
 
   return (
     <div className={`message ${msg.role}`}>
