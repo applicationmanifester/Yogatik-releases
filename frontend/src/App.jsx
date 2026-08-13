@@ -752,50 +752,50 @@ export default function App() {
   }, [])
 
   const newChat = useCallback(() => {
-      setConvQuery('')
-      setInput('')
-      setActiveArtifact(null)
-      setAttachedFile(null)
-      setAttachedImage(null)
-      setVisibleCount(WINDOW_STEP)
+    setConvQuery('')
+    setInput('')
+    setActiveArtifact(null)
+    setAttachedFile(null)
+    setAttachedImage(null)
+    setVisibleCount(WINDOW_STEP)
 
-      setConversations(prev => {
-        const current = prev[activeIdx]
-        const isEmptyNewChat = current && !current.id && current.title === 'New Chat' && (!current.messages || current.messages.length === 0)
-      
-        if (isEmptyNewChat) {
-          return prev.map((c, i) => i === activeIdx ? {
-            ...c,
-            messages: [],
-            title: 'New Chat',
-            provider: provider || 'local',
-            model: model || '',
-            systemPrompt: '',
-            temperature: temperature ?? 0.7,
-            webSearch: webSearch ?? true,
-            tools: tools ?? true,
-          } : c)
-        }
-      
-        const newConv = {
-          clientId: `c_new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          id: null,
-          title: 'New Chat',
+    setConversations(prev => {
+      const top = prev[0]
+      const isTopEmptyDraft = top && !top.id && (!top.messages || top.messages.length === 0)
+
+      if (isTopEmptyDraft) {
+        return prev.map((c, i) => i === 0 ? {
+          ...c,
           messages: [],
+          title: 'New Chat',
           provider: provider || 'local',
           model: model || '',
           systemPrompt: '',
           temperature: temperature ?? 0.7,
           webSearch: webSearch ?? true,
           tools: tools ?? true,
-        }
-        return [newConv, ...prev]
-      })
+        } : c)
+      }
 
-      setActiveIdx(0)
-      if (window.innerWidth <= 768) setSidebarOpen(false)
-      setTimeout(() => textareaRef.current?.focus(), 50)
-    }, [provider, model, temperature, webSearch, tools, activeIdx])
+      const newConv = {
+        clientId: `c_new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id: null,
+        title: 'New Chat',
+        messages: [],
+        provider: provider || 'local',
+        model: model || '',
+        systemPrompt: '',
+        temperature: temperature ?? 0.7,
+        webSearch: webSearch ?? true,
+        tools: tools ?? true,
+      }
+      return [newConv, ...prev]
+    })
+
+    setActiveIdx(0)
+    if (window.innerWidth <= 768) setSidebarOpen(false)
+    setTimeout(() => textareaRef.current?.focus(), 50)
+  }, [provider, model, temperature, webSearch, tools])
 
   const newChatRef = useRef(newChat)
   useEffect(() => { newChatRef.current = newChat }, [newChat])
@@ -1177,6 +1177,7 @@ export default function App() {
           tools: useTools,
         }
         convId = await createConversation(updated.title, null, useProvider, useModel, chatSettings)
+        if (!convId) convId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
         updated.id = convId
       } else if (isNewTitle) {
         await renameConversation(convId, updated.title)

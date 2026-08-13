@@ -295,10 +295,11 @@ async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeo
       })
     } catch (err) {
       clearTimeout(timer)
-      if (err.name === 'TimeoutError') {
-        if (attempt >= retries) throw err
+      if (err.name === 'AbortError' || options?.signal?.aborted) throw err
+      if (attempt < retries) {
         attempt++
-        onStatus?.(`Connection timed out — retrying (${attempt}/${retries})...`)
+        onStatus?.(`Connection issue (${err.message || 'retrying'}) — retry ${attempt}/${retries}…`)
+        await new Promise(resolve => setTimeout(resolve, Math.min(2 ** attempt * 1000, 5000)))
         continue
       }
       throw err
