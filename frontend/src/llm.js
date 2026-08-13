@@ -115,12 +115,11 @@ const PROVIDERS = {
     // these before anything else (intersected with the live catalog, so a
     // withdrawn name is simply skipped) — a fresh key never lands on a weak 4B.
     preferred: [
+      'meta/llama-3.1-8b-instruct',
+      'meta/llama-3.3-70b-instruct',
       'openai/gpt-oss-20b',
       'nvidia/nemotron-3-nano-30b-a3b',
-      'meta/llama-3.1-8b-instruct',
       'nvidia/llama-3.3-nemotron-super-49b-v1.5',
-      'openai/gpt-oss-120b',
-      'meta/llama-3.3-70b-instruct',
     ],
     keyUrl: 'https://build.nvidia.com',
     needsProxy: true,
