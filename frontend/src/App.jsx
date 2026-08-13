@@ -28,6 +28,7 @@ import { resolveFeatures } from './features'
 import { setLocalVLMConsent } from './vision/localVLM'
 import { setSemanticConsent } from './semantic'
 import { looksVisionCapable } from './vision/capability'
+import { getProviders as getLLMProviders } from './llm'
 import { prepareImage, isImageFile, imageFromClipboard, imageFromDrop } from './vision/attach'
 import { registerServiceWorker } from './pwa'
 import { requestPersistence, storageReport, formatBytes } from './storage'
@@ -778,8 +779,9 @@ export default function App() {
     }
 
     setConversations(prev => {
-      // If the top chat is already a brand new empty draft with 0 messages, reuse it
-      if (prev[0] && !prev[0].id && (!prev[0].messages || prev[0].messages.length === 0)) {
+      // If the top chat is already a brand new empty draft with 0 messages and not streaming, reuse it
+      const topIsIdleDraft = prev[0] && !prev[0].id && (!prev[0].messages || prev[0].messages.length === 0) && !loadingMap[prev[0].clientId]
+      if (topIsIdleDraft) {
         return prev.map((c, i) => i === 0 ? newConv : c)
       }
       return [newConv, ...prev]
@@ -1309,7 +1311,7 @@ export default function App() {
         }
         saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
         setConversations(prev => prev.map(c =>
-          c.clientId === targetClientId ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
+          (c.clientId === targetClientId || (convId && c.id === convId)) ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
         ))
         setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
         setActiveTools([])
@@ -1330,7 +1332,7 @@ export default function App() {
           })
         }
         setConversations(prev => prev.map(c =>
-          c.clientId === targetClientId
+          (c.clientId === targetClientId || (convId && c.id === convId))
             ? { ...c, id: convId, messages: [...updated.messages, { role: 'assistant', provider: useProvider, model: useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined), error: String(err), content: '' }] }
             : c
         ))
