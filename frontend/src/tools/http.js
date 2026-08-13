@@ -19,9 +19,7 @@ import { getProxyEndpoint } from '../llm'
 const PUBLIC_RELAYS = [
   'https://api.allorigins.win/raw?url=',
   'https://corsproxy.io/?url=',
-  'https://api.codetabs.com/v1/proxy?quest=',
-  'https://thingproxy.freeboard.io/fetch/',
-  'https://r.jina.ai/',
+  'https://corsproxy.org/?',
 ]
 
 const COOLDOWN_MS = 60_000

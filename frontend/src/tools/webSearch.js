@@ -62,37 +62,48 @@ async function marginaliaSearch(query, count) {
 }
 
 /** Wikipedia is often the best single answer for definitional queries. */
+/** Wikipedia is often the best single answer for definitional queries. */
 async function wikipediaSearch(query, count) {
-  const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=${count}&format=json&origin=*`
-  const data = await proxyJson(url)
-  return (data?.query?.search || []).map(r => ({
-    title: r.title,
-    url: `https://en.wikipedia.org/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`,
-    snippet: (r.snippet || '').replace(/<[^>]+>/g, ''),
-    engine: 'wikipedia',
-  }))
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=${count}&format=json&origin=*`
+    const data = await fetch(url).then(r => r.json()).catch(() => proxyJson(url))
+    return (data?.query?.search || []).map(r => ({
+      title: r.title,
+      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`,
+      snippet: (r.snippet || '').replace(/<[^>]+>/g, ''),
+      engine: 'wikipedia',
+    }))
+  } catch {
+    return []
+  }
 }
 
-/** Google News RSS Search — free keyless real-time news search */
+/** Google News RSS Search — free keyless real-time news search via native RSS JSON */
 async function googleNewsSearch(query, count) {
   try {
-    const xml = await proxyText(`https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`)
+    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`
+    const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`
+    const resp = await fetch(url).then(r => r.json()).catch(() => null)
+    if (resp?.items?.length) {
+      return resp.items.slice(0, count).map(item => ({
+        title: (item.title || '').trim(),
+        url: (item.link || '').trim(),
+        snippet: (item.description || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 250),
+        published: item.pubDate || undefined,
+        engine: 'google_news',
+      })).filter(r => r.url && r.title)
+    }
+    // Fallback: proxyText RSS parse
+    const xml = await proxyText(rssUrl)
     const doc = new DOMParser().parseFromString(xml, 'text/xml')
     const items = [...doc.querySelectorAll('item')].slice(0, count)
-    return items.map(item => {
-      const title = item.querySelector('title')?.textContent || ''
-      const link = item.querySelector('link')?.textContent || ''
-      const pubDate = item.querySelector('pubDate')?.textContent || ''
-      const desc = item.querySelector('description')?.textContent || ''
-      const snippet = desc.replace(/<[^>]+>/g, '').trim()
-      return {
-        title: title.trim(),
-        url: link.trim(),
-        snippet: snippet.slice(0, 250),
-        published: pubDate,
-        engine: 'google_news',
-      }
-    }).filter(r => r.url && r.title)
+    return items.map(item => ({
+      title: (item.querySelector('title')?.textContent || '').trim(),
+      url: (item.querySelector('link')?.textContent || '').trim(),
+      snippet: (item.querySelector('description')?.textContent || '').replace(/<[^>]+>/g, '').trim().slice(0, 250),
+      published: item.querySelector('pubDate')?.textContent || undefined,
+      engine: 'google_news',
+    })).filter(r => r.url && r.title)
   } catch {
     return []
   }
@@ -101,22 +112,28 @@ async function googleNewsSearch(query, count) {
 /** ArXiv API Search — free keyless academic & scientific paper search */
 async function arxivSearch(query, count) {
   try {
-    const xml = await proxyText(`https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&max_results=${count}`)
+    const rssUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&max_results=${count}`
+    const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`
+    const resp = await fetch(url).then(r => r.json()).catch(() => null)
+    if (resp?.items?.length) {
+      return resp.items.slice(0, count).map(item => ({
+        title: (item.title || '').replace(/\s+/g, ' ').trim(),
+        url: (item.link || item.guid || '').trim(),
+        snippet: (item.description || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 250),
+        published: item.pubDate || undefined,
+        engine: 'arxiv',
+      })).filter(r => r.url && r.title)
+    }
+    const xml = await proxyText(rssUrl)
     const doc = new DOMParser().parseFromString(xml, 'text/xml')
     const entries = [...doc.querySelectorAll('entry')].slice(0, count)
-    return entries.map(e => {
-      const title = e.querySelector('title')?.textContent || ''
-      const summary = e.querySelector('summary')?.textContent || ''
-      const id = e.querySelector('id')?.textContent || ''
-      const published = e.querySelector('published')?.textContent || ''
-      return {
-        title: title.replace(/\s+/g, ' ').trim(),
-        url: id.trim(),
-        snippet: summary.replace(/\s+/g, ' ').trim().slice(0, 250),
-        published,
-        engine: 'arxiv',
-      }
-    }).filter(r => r.url && r.title)
+    return entries.map(e => ({
+      title: (e.querySelector('title')?.textContent || '').replace(/\s+/g, ' ').trim(),
+      url: (e.querySelector('id')?.textContent || '').trim(),
+      snippet: (e.querySelector('summary')?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 250),
+      published: e.querySelector('published')?.textContent || undefined,
+      engine: 'arxiv',
+    })).filter(r => r.url && r.title)
   } catch {
     return []
   }
