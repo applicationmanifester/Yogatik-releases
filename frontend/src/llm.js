@@ -335,7 +335,9 @@ export async function streamChat({
   }
   if (tools && tools.length > 0) {
     body.tools = tools
-    body.tool_choice = 'auto'
+    // NVIDIA (needsProxy) rejects the tool_choice field with a 400.
+    // All other providers accept "auto" fine, so only send it for those.
+    if (!prov.needsProxy) body.tool_choice = 'auto'
   }
 
   try {

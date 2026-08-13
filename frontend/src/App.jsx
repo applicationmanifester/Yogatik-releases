@@ -1088,7 +1088,10 @@ export default function App() {
     const useWeb = targetConv.webSearch !== undefined ? targetConv.webSearch : webSearch
     const useTools = targetConv.tools !== undefined ? targetConv.tools : tools
 
-    const isProviderReady = models[useProvider]?.available || keyInfo[useProvider]?.configured || useProvider === 'local'
+    // models is populated asynchronously; if it's still empty the provider list
+    // hasn't loaded yet — don't block the first send while that fetch is in flight.
+    const modelsLoaded = Object.keys(models).length > 0
+    const isProviderReady = !modelsLoaded || models[useProvider]?.available || keyInfo[useProvider]?.configured || useProvider === 'local'
 
     if (!isProviderReady) {
       setErrorModalMsg(
@@ -1554,11 +1557,20 @@ export default function App() {
   const editAndResend = useCallback(async (index, text) => {
     if (isStreamingHere) return
     const source = conversations[activeIdx]
-    const isLastTurn = index >= (source?.messages?.length || 0) - 2
+    const msgs = source?.messages || []
+
+    // Find the actual index of the last user message so we rewind in-place
+    // when editing it (nothing after it is worth keeping as a separate branch).
+    // The old `-2` heuristic was wrong: it branched even when editing the very
+    // last turn once there was one assistant reply sitting after it.
+    const lastUserIdx = msgs.reduceRight(
+      (found, m, i) => found >= 0 ? found : m.role === 'user' ? i : -1, -1
+    )
+    const isLastTurn = index >= lastUserIdx
 
     // The very last turn has nothing after it worth preserving: rewind in place.
     if (isLastTurn) {
-      const kept = (source?.messages || []).slice(0, index)
+      const kept = msgs.slice(0, index)
       setConversations(prev => prev.map((c, i) => i === activeIdx ? { ...c, messages: kept } : c))
       if (source?.id) { try { await trimConversationFrom(source.id, index) } catch {} }
       setInput(text)
@@ -2286,20 +2298,47 @@ export default function App() {
                 </div>
                 )
               })()}
-              {isStreamingHere && !streamingContent && (
-                <div className="message assistant">
-                  {statusText && <div className="status-text">{statusText}</div>}
-                  {activeTools.length > 0 && (
-                    <div className="active-tools">
-                      {activeTools.map(t => {
-                        const Icon = TOOL_ICONS[t] || Wrench
-                        return <span key={t} className="tool-chip active"><Icon size={10} /> {t}</span>
-                      })}
+              {isStreamingHere && !streamingContent && (() => {
+                const { provider: useProvider = provider, model: useModel = model } = conv || {}
+                // Build a friendly display name: prefer the real model ID, then provider name.
+                const modelLabel = useModel
+                  ? `${models[useProvider]?.name || useProvider} · ${useModel.split('/').pop()}`
+                  : models[useProvider]?.name || useProvider
+                return (
+                  <div className="message assistant">
+                    <div className="message-role">
+                      <span className="message-who">Yogatik</span>
+                      <span className="msg-model-badge" title={`Running: ${useProvider} / ${useModel || 'default'}`}>
+                        {modelLabel}
+                      </span>
                     </div>
-                  )}
-                  <div className="typing"><span /><span /><span /></div>
-                </div>
-              )}
+                    {statusText && <div className="status-text">{statusText}</div>}
+                    {activeTools.length > 0 && (
+                      <div className="active-tools">
+                        {activeTools.map(t => {
+                          const Icon = TOOL_ICONS[t] || Wrench
+                          return <span key={t} className="tool-chip active"><Icon size={10} /> {t}</span>
+                        })}
+                      </div>
+                    )}
+                    {traceRef.current.length > 0 && (
+                      <div className="live-trace-steps" style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {traceRef.current.map((s, i) => {
+                          const Icon = TOOL_ICONS[s.tool] || Wrench
+                          return (
+                            <span key={i} className={`tool-chip trace-chip trace-${s.status}`} title={s.tool}>
+                              <Icon size={10} />
+                              {' '}{s.tool}
+                              {s.status === 'running' ? ' …' : s.status === 'done' ? ' ✓' : ' ✕'}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
+                    <div className="typing"><span /><span /><span /></div>
+                  </div>
+                )
+              })()}
               {arena && (
                 <div className="arena-wrap">
                   <button className="small-btn arena-close" onClick={() => setArena(null)}

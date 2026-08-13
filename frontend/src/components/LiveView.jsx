@@ -180,21 +180,25 @@ export function LiveView({
           case 'thinking': setState({ thinking: e.value }); break
           case 'transcript': pushDelta(e.role, e.text); break
           case 'tools':
-            setState({ tool: e.names.join(', ') })
-            setState({ transcript: [...uiState.transcript, { type: 'tool', name: e.names.join(', '), time: Date.now() }] })
+            // Use functional form so we always append to the *current* transcript,
+            // not the stale snapshot captured when the effect was created.
+            setState(prev => ({
+              ...prev,
+              tool: e.names.join(', '),
+              transcript: [...prev.transcript, { type: 'tool', name: e.names.join(', '), time: Date.now() }],
+            }))
             break
           case 'toolResult': {
-            setState({ tool: null })
             // Keep the raw result object so images/videos/files/code render richly.
-            setState({ transcript: [...uiState.transcript, {
-              type: 'toolResult', name: e.name, time: Date.now(), result: e.result,
-            }] })
-            // Surface generated media: open the panel so the user sees it.
             const r = e.result
-            if (r && typeof r === 'object' &&
-                (r.image_url || r.url || r.video_url || r.media_id || r.audio_url || r.exported_text || r.images)) {
-              setState({ showTranscript: true })
-            }
+            setState(prev => ({
+              ...prev,
+              tool: null,
+              transcript: [...prev.transcript, { type: 'toolResult', name: e.name, time: Date.now(), result: r }],
+              // Surface generated media: open the panel so the user sees it.
+              showTranscript: prev.showTranscript || !!(r && typeof r === 'object' &&
+                (r.image_url || r.url || r.video_url || r.media_id || r.audio_url || r.exported_text || r.images)),
+            }))
             break
           }
           case 'voice': setState({ liveVoice: e.engine }); break
