@@ -247,7 +247,8 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
   const apiKey = await db.getSetting(`apikey_${provider}`)
   let model = body.model || await db.getSetting(`model_${provider}`, '')
   if (!model) {
-    try { model = await autoPickModel(provider) } catch { /* ignore */ }
+    const provDef = getLLMProviders()[provider]
+    model = provDef?.default_model || provDef?.preferred?.[0] || ''
   }
 
   // Auto-route: choose per message from models measured as working.

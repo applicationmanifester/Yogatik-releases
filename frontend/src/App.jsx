@@ -271,17 +271,21 @@ export default function App() {
   const setProvider = useCallback((id) => {
     setProviderState(prev => {
       if (prev !== id) {
-        setModel('')
-        setActiveModel(id, '').catch(() => {})
+        const provDef = getLLMProviders()[id]
+        const defModel = provDef?.default_model || provDef?.preferred?.[0] || ''
+        setModel(defModel)
+        setActiveModel(id, defModel).catch(() => {})
       }
       return id
     })
     setActiveProvider(id).catch(() => {})
     setConversations(prev => prev.map((c, i) => {
       if (i !== activeIdx) return c
-      const updated = { ...c, provider: id, model: '' }
+      const provDef = getLLMProviders()[id]
+      const defModel = provDef?.default_model || provDef?.preferred?.[0] || ''
+      const updated = { ...c, provider: id, model: defModel }
       if (updated.id) {
-        updateConversationModel(updated.id, id, '', {
+        updateConversationModel(updated.id, id, defModel, {
           systemPrompt: updated.systemPrompt,
           temperature: updated.temperature,
           webSearch: updated.webSearch,
@@ -1078,6 +1082,10 @@ export default function App() {
 
     const useProvider = targetConv.provider || provider
     let useModel = (targetConv.model && targetConv.model.trim()) ? targetConv.model : model
+    if (!useModel) {
+      const provDef = getLLMProviders()[useProvider]
+      useModel = provDef?.default_model || provDef?.preferred?.[0] || ''
+    }
     const useTemp = targetConv.temperature !== undefined ? targetConv.temperature : temperature
     const useWeb = targetConv.webSearch !== undefined ? targetConv.webSearch : webSearch
     const useTools = targetConv.tools !== undefined ? targetConv.tools : tools
