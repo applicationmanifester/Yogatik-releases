@@ -204,8 +204,8 @@ export default function App() {
   const [showAd, setShowAd] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
   const chatCountRef = useRef(0)
-  const toolRunRef = useRef({ results: {}, used: [] })
-  const traceRef = useRef([])   // ordered per-turn activity steps (tool + args + status)
+  const toolRunMapRef = useRef({}) // per-chat tool results: { [clientId]: { results: {}, used: [] } }
+  const traceMapRef = useRef({})   // per-chat activity steps: { [clientId]: [...] }
   const messagesEnd = useRef(null)
   const textareaRef = useRef(null)
   const [isEnhancing, setIsEnhancing] = useState(false)
@@ -1212,8 +1212,8 @@ export default function App() {
 
     let content = ''
     let sources = []
-    toolRunRef.current = { results: {}, used: [] }
-    traceRef.current = []
+    toolRunMapRef.current[targetClientId] = { results: {}, used: [] }
+    traceMapRef.current[targetClientId] = []
 
     const pushStreamContent = (txt) => {
       setStreamingMap(prev => ({ ...prev, [targetClientId]: txt }))
@@ -1255,6 +1255,8 @@ export default function App() {
             c.clientId === targetClientId ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
           ))
           setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+          delete toolRunMapRef.current[targetClientId]
+          delete traceMapRef.current[targetClientId]
         },
         onError: (err) => {
           setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
@@ -1266,6 +1268,8 @@ export default function App() {
               : c
           ))
           setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+          delete toolRunMapRef.current[targetClientId]
+          delete traceMapRef.current[targetClientId]
         }
       })
       return
@@ -1295,16 +1299,20 @@ export default function App() {
           setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
           setActiveTools([])
           setPendingToolResults({})
+          delete toolRunMapRef.current[targetClientId]
+          delete traceMapRef.current[targetClientId]
           return
         }
-        const finalTrace = (meta?.trace?.length ? meta.trace : traceRef.current)
+        const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
+        const channelTrace = traceMapRef.current[targetClientId] || []
+        const finalTrace = (meta?.trace?.length ? meta.trace : channelTrace)
         const assistantMsg = {
           createdAt: Date.now(),
           role: 'assistant',
           content: meta?.aborted ? content + '\n\n_[stopped]_' : content,
           sources,
-          toolResults: { ...toolRunRef.current.results },
-          toolsUsed: [...toolRunRef.current.used],
+          toolResults: { ...runData.results },
+          toolsUsed: [...runData.used],
           trace: finalTrace.length ? [...finalTrace] : undefined,
           provider: meta?.provider || useProvider,
           model: meta?.model || useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined),
@@ -1316,6 +1324,8 @@ export default function App() {
         setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
         setActiveTools([])
         setPendingToolResults({})
+        delete toolRunMapRef.current[targetClientId]
+        delete traceMapRef.current[targetClientId]
         getTodayUsage().then(setUsage).catch(() => {})
         chatCountRef.current++
         if (adsConfigured && chatCountRef.current % 10 === 0) setShowAd(true)
@@ -1324,6 +1334,8 @@ export default function App() {
         setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
         setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
         setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+        delete toolRunMapRef.current[targetClientId]
+        delete traceMapRef.current[targetClientId]
         if (isRetiredModelError(err)) {
           pruneRetiredModel(useProvider, useModel).then(() => {
             setModel('')
@@ -1342,15 +1354,22 @@ export default function App() {
       (streamId) => { setStreamIdMap(prev => ({ ...prev, [targetClientId]: streamId })) },
       (detectedTools, args) => {
         setActiveTools(detectedTools)
+        const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
         for (const t of detectedTools) {
-          if (!toolRunRef.current.used.includes(t)) toolRunRef.current.used.push(t)
-          traceRef.current.push({ tool: t, args: args || undefined, status: 'running' })
+          if (!runData.used.includes(t)) runData.used.push(t)
+          const trace = traceMapRef.current[targetClientId] || []
+          trace.push({ tool: t, args: args || undefined, status: 'running' })
+          traceMapRef.current[targetClientId] = trace
         }
+        toolRunMapRef.current[targetClientId] = runData
       },
       (toolName, toolResult) => {
-        toolRunRef.current.results[toolName] = toolResult
+        const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
+        runData.results[toolName] = toolResult
+        toolRunMapRef.current[targetClientId] = runData
         setPendingToolResults(prev => ({ ...prev, [toolName]: toolResult }))
-        const step = [...traceRef.current].reverse().find(s => s.tool === toolName && s.status === 'running')
+        const trace = traceMapRef.current[targetClientId] || []
+        const step = [...trace].reverse().find(s => s.tool === toolName && s.status === 'running')
         if (step) step.status = toolResult?.success === false ? 'error' : 'done'
       }
     )
