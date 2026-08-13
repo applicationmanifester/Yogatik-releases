@@ -107,8 +107,8 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [promptTemplates, setPromptTemplates] = useState([])
   const [activeTemplate, setActiveTemplate] = useState('default')
-  const [activeTools, setActiveTools] = useState([])
-  const [pendingToolResults, setPendingToolResults] = useState({})
+  const [activeToolsMap, setActiveToolsMap] = useState({})
+  const [pendingToolResultsMap, setPendingToolResultsMap] = useState({})
   const [ttsPlaying, setTtsPlaying] = useState(false)
   const [attachedFile, setAttachedFile] = useState(null)
   const [attachedImage, setAttachedImage] = useState(null)   // { dataUrl, thumb, name, width, height }
@@ -266,6 +266,9 @@ export default function App() {
   const streamingContent = (activeClientId && streamingMap[activeClientId]) || ''
   const statusText = (activeClientId && statusMap[activeClientId]) || ''
   const currentStreamId = (activeClientId && streamIdMap[activeClientId]) || null
+  // Derive per-active-chat tool state from maps
+  const activeTools = (activeClientId && activeToolsMap[activeClientId]) || []
+  const pendingToolResults = (activeClientId && pendingToolResultsMap[activeClientId]) || {}
 
   const loadingMapRef = useRef(loadingMap)
   useEffect(() => { loadingMapRef.current = loadingMap }, [loadingMap])
@@ -1042,7 +1045,17 @@ export default function App() {
       basePrompt +
       folderCtx +
       queryContext +
-      '\n\nPRESENTATION, DOCUMENT & SLIDE ENHANCEMENT GUIDELINES:\n' +
+      '\n\nTOOL-USE PRIORITY (CRITICAL — always follow these rules):\n' +
+      '- ALWAYS call tools before answering from memory when real-time or external data is needed.\n' +
+      '- For any question about current events, news, prices, weather, stock data, or anything after 2023: call `web_search` FIRST.\n' +
+      '- For any translation request ("translate X to Y", "how do you say X in Y"): call the `translate` tool IMMEDIATELY.\n' +
+      '- For any code execution, math computation, or data processing: call `js_execute` or `code_execute` instead of guessing.\n' +
+      '- For any image generation or visual request: call `image_generate` or `sticker_generate`.\n' +
+      '- For document/file creation (Word, PDF, CSV, PowerPoint): call `doc_export` or `doc_enhance`.\n' +
+      '- For research/deep analysis: call `deep_research` or `web_search` to gather facts before responding.\n' +
+      '- Accuracy over speed: if you are uncertain about a fact, use a tool to verify it. Do NOT guess or hallucinate.\n' +
+      '- When tools are enabled, prefer multi-step tool chains to build complete, accurate answers.\n' +
+      '\nPRESENTATION, DOCUMENT & SLIDE ENHANCEMENT GUIDELINES:\n' +
       '- Present answers with high visual clarity: use clear headers (#, ##), formatted bullet points, bold key terms, and structured Markdown tables.\n' +
       '- When creating or editing PowerPoint presentations, Word documents, CSV spreadsheets, or reports, call `doc_export` or `doc_enhance` to build high-quality files with slide graphics, calculated totals, and executive styling.\n' +
       '- When asked to generate visual aids, graphics, icons, or stickers, call the `sticker_generate` or `image_generate` tools.\n' +
@@ -1129,8 +1142,8 @@ export default function App() {
     setStatusMap(prev => ({ ...prev, [targetClientId]: 'Connecting...' }))
     setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
 
-    setActiveTools([])
-    setPendingToolResults({})
+    setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+    setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
 
     let fileContext = ''
     if (attachedFile) {
@@ -1300,8 +1313,8 @@ export default function App() {
         setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
         if (!content.trim() && meta?.aborted) {
           setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
-          setActiveTools([])
-          setPendingToolResults({})
+          setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+          setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
           delete toolRunMapRef.current[targetClientId]
           delete traceMapRef.current[targetClientId]
           return
@@ -1325,8 +1338,8 @@ export default function App() {
           (c.clientId === targetClientId || (convId && c.id === convId)) ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
         ))
         setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
-        setActiveTools([])
-        setPendingToolResults({})
+        setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+        setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
         delete toolRunMapRef.current[targetClientId]
         delete traceMapRef.current[targetClientId]
         getTodayUsage().then(setUsage).catch(() => {})
@@ -1356,7 +1369,7 @@ export default function App() {
       (status) => { setStatusMap(prev => ({ ...prev, [targetClientId]: status })) },
       (streamId) => { setStreamIdMap(prev => ({ ...prev, [targetClientId]: streamId })) },
       (detectedTools, args) => {
-        setActiveTools(detectedTools)
+        setActiveToolsMap(prev => ({ ...prev, [targetClientId]: detectedTools }))
         const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
         for (const t of detectedTools) {
           if (!runData.used.includes(t)) runData.used.push(t)
@@ -1370,7 +1383,7 @@ export default function App() {
         const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
         runData.results[toolName] = toolResult
         toolRunMapRef.current[targetClientId] = runData
-        setPendingToolResults(prev => ({ ...prev, [toolName]: toolResult }))
+        setPendingToolResultsMap(prev => ({ ...prev, [targetClientId]: { ...(prev[targetClientId] || {}), [toolName]: toolResult } }))
         const trace = traceMapRef.current[targetClientId] || []
         const step = [...trace].reverse().find(s => s.tool === toolName && s.status === 'running')
         if (step) step.status = toolResult?.success === false ? 'error' : 'done'
