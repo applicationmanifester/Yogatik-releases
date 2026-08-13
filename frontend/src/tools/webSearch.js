@@ -78,31 +78,19 @@ async function wikipediaSearch(query, count) {
   }
 }
 
-/** Google News RSS Search — free keyless real-time news search via native RSS JSON */
+/** Google News RSS Search — free keyless real-time news search via rss2json */
 async function googleNewsSearch(query, count) {
   try {
     const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`
-    // rss2json.com converts RSS to JSON without CORS issues
-    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&api_key=kklbxmtiwjjlpnnfqtwgkjzuricohtb1jlryjw6`
+    // rss2json converts RSS → JSON without CORS issues (Google News blocks datacenter IPs directly)
+    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`
     const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(6000) }).then(r => r.json()).catch(() => null)
-    if (resp?.items?.length) {
-      return resp.items.slice(0, count).map(item => ({
-        title: (item.title || '').trim(),
-        url: (item.link || '').trim(),
-        snippet: (item.description || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 250),
-        published: item.pubDate || undefined,
-        engine: 'google_news',
-      })).filter(r => r.url && r.title)
-    }
-    // Fallback: route through our own proxy
-    const xml = await proxyText(rssUrl)
-    const doc = new DOMParser().parseFromString(xml, 'text/xml')
-    const items = [...doc.querySelectorAll('item')].slice(0, count)
-    return items.map(item => ({
-      title: (item.querySelector('title')?.textContent || '').trim(),
-      url: (item.querySelector('link')?.textContent || '').trim(),
-      snippet: (item.querySelector('description')?.textContent || '').replace(/<[^>]+>/g, '').trim().slice(0, 250),
-      published: item.querySelector('pubDate')?.textContent || undefined,
+    if (!resp?.items?.length) return []
+    return resp.items.slice(0, count).map(item => ({
+      title: (item.title || '').trim(),
+      url: (item.link || '').trim(),
+      snippet: (item.description || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 250),
+      published: item.pubDate || undefined,
       engine: 'google_news',
     })).filter(r => r.url && r.title)
   } catch {

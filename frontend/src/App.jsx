@@ -271,7 +271,7 @@ export default function App() {
   const pendingToolResults = (activeClientId && pendingToolResultsMap[activeClientId]) || {}
 
   const loadingMapRef = useRef(loadingMap)
-  useEffect(() => { loadingMapRef.current = loadingMap }, [loadingMap])
+  loadingMapRef.current = loadingMap  // always current — no useEffect lag
 
   // Provider/model must be persisted: the agent reads them from IndexedDB, so
   // React-only state meant every message silently went to the stored default.
@@ -799,7 +799,7 @@ export default function App() {
   }, [provider, model, temperature, webSearch, tools])
 
   const newChatRef = useRef(newChat)
-  useEffect(() => { newChatRef.current = newChat }, [newChat])
+  newChatRef.current = newChat  // always current — no useEffect lag
 
   /** Jump to a conversation by its stored id — the palette searches messages,
    *  which know their conversation but not its position in the sidebar. */
@@ -1455,8 +1455,8 @@ export default function App() {
     }
   }
 
-  const sendRef = useRef(null)
-  useEffect(() => { sendRef.current = send }, [send])
+  const sendRef = useRef(send)
+  sendRef.current = send  // always current — no useEffect lag
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && (!e.shiftKey || e.ctrlKey || e.metaKey)) {
