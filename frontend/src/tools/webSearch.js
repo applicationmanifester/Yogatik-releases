@@ -73,6 +73,92 @@ async function wikipediaSearch(query, count) {
   }))
 }
 
+/** Google News RSS Search — free keyless real-time news search */
+async function googleNewsSearch(query, count) {
+  try {
+    const xml = await proxyText(`https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`)
+    const doc = new DOMParser().parseFromString(xml, 'text/xml')
+    const items = [...doc.querySelectorAll('item')].slice(0, count)
+    return items.map(item => {
+      const title = item.querySelector('title')?.textContent || ''
+      const link = item.querySelector('link')?.textContent || ''
+      const pubDate = item.querySelector('pubDate')?.textContent || ''
+      const desc = item.querySelector('description')?.textContent || ''
+      const snippet = desc.replace(/<[^>]+>/g, '').trim()
+      return {
+        title: title.trim(),
+        url: link.trim(),
+        snippet: snippet.slice(0, 250),
+        published: pubDate,
+        engine: 'google_news',
+      }
+    }).filter(r => r.url && r.title)
+  } catch {
+    return []
+  }
+}
+
+/** ArXiv API Search — free keyless academic & scientific paper search */
+async function arxivSearch(query, count) {
+  try {
+    const xml = await proxyText(`https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&max_results=${count}`)
+    const doc = new DOMParser().parseFromString(xml, 'text/xml')
+    const entries = [...doc.querySelectorAll('entry')].slice(0, count)
+    return entries.map(e => {
+      const title = e.querySelector('title')?.textContent || ''
+      const summary = e.querySelector('summary')?.textContent || ''
+      const id = e.querySelector('id')?.textContent || ''
+      const published = e.querySelector('published')?.textContent || ''
+      return {
+        title: title.replace(/\s+/g, ' ').trim(),
+        url: id.trim(),
+        snippet: summary.replace(/\s+/g, ' ').trim().slice(0, 250),
+        published,
+        engine: 'arxiv',
+      }
+    }).filter(r => r.url && r.title)
+  } catch {
+    return []
+  }
+}
+
+/** Crossref Search — free keyless academic publication search */
+async function crossrefSearch(query, count) {
+  try {
+    const url = `https://api.crossref.org/works?query=${encodeURIComponent(query)}&rows=${count}`
+    const data = await proxyJson(url)
+    const items = data?.message?.items || []
+    return items.map(item => ({
+      title: Array.isArray(item.title) ? item.title[0] : (item.title || ''),
+      url: item.URL || (item.DOI ? `https://doi.org/${item.DOI}` : ''),
+      snippet: item.abstract ? item.abstract.replace(/<[^>]+>/g, '').slice(0, 250) : (item.publisher || ''),
+      published: item.created?.['date-time'] || undefined,
+      engine: 'crossref',
+    })).filter(r => r.url && r.title)
+  } catch {
+    return []
+  }
+}
+
+/** Reddit JSON Search — free keyless community & opinion search */
+async function redditSearch(query, count) {
+  try {
+    const data = await proxyJson(`https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&limit=${count}`)
+    const children = data?.data?.children || []
+    return children.map(c => {
+      const p = c.data
+      return {
+        title: p.title || '',
+        url: `https://www.reddit.com${p.permalink}`,
+        snippet: (p.selftext || p.title || '').slice(0, 250),
+        engine: 'reddit',
+      }
+    }).filter(r => r.url && r.title)
+  } catch {
+    return []
+  }
+}
+
 /** Merge engines, dedupe by URL, and rank by how many engines agreed. */
 function mergeResults(lists, count) {
   const byUrl = new Map()
@@ -122,7 +208,7 @@ async function duckDuckGoSearch(query, count) {
 
 export const webSearchTool = {
   schema: {
-    description: 'Search the live web across several independent indexes at once (DuckDuckGo, Marginalia, Wikipedia, and Brave if a key is set), merged and deduplicated. Results agreed on by multiple engines rank higher. Use web_extract afterwards to read a specific result in full.',
+    description: 'Search the live web across 8 independent free indexes (DuckDuckGo, Google News, Wikipedia, Marginalia, ArXiv, Crossref, Reddit, and Brave), merged and deduplicated. Multi-engine agreement increases result rank.',
     parameters: {
       type: 'object',
       properties: {
@@ -148,17 +234,22 @@ export const webSearchTool = {
     const braveKey = await getSetting('apikey_brave')
     const wide = engines === 'all' && !site
 
-    // Query several engines at once and merge, the way a metasearch engine
-    // does. One index misses things another finds, and agreement between
-    // independent indexes is a useful ranking signal on its own.
     const tasks = []
     if (braveKey) {
       tasks.push(braveSearch(site ? `${query} site:${site}` : query, braveKey, n, recency).catch(() => []))
     }
     tasks.push(duckDuckGoSearch(ddgQuery(query, recency, site), n).catch(() => []))
     if (wide) {
-      tasks.push(marginaliaSearch(query, 4).catch(() => []))
+      tasks.push(googleNewsSearch(query, 3).catch(() => []))
       tasks.push(wikipediaSearch(query, 2).catch(() => []))
+      tasks.push(marginaliaSearch(query, 3).catch(() => []))
+      if (/paper|arxiv|study|research|algorithm|model|code|math|science|physics|ai/i.test(query)) {
+        tasks.push(arxivSearch(query, 2).catch(() => []))
+        tasks.push(crossrefSearch(query, 2).catch(() => []))
+      }
+      if (/review|opinion|problem|issue|reddit|forum|fix|discussion/i.test(query)) {
+        tasks.push(redditSearch(query, 2).catch(() => []))
+      }
     }
 
     try {
