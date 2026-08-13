@@ -492,12 +492,12 @@ export async function runAgent({
     if (toolMode !== 'prompted') return false
     const { calls, text, malformed } = parseToolCalls(roundContent)
     if (calls.length) { toolCallsToProcess = calls; return false }
-    if (malformed && !promptedRepairTried) return true
-    if (text) {
-      // Genuine prose: release it to the UI now that we know.
+    if (text && (!malformed || promptedRepairTried)) {
+      // Genuine prose (or repair fallback): release it to the UI.
       fullContent += text
       onToken?.(text)
     }
+    if (malformed && !promptedRepairTried) return true
     return false
   }
 
@@ -525,6 +525,11 @@ export async function runAgent({
       first = await processStream()
     }
     await harvestOrRepair()
+    // If native tool call was rejected and we switched to prompted mode without tool calls,
+    // harvestPromptedCalls was called inside harvestOrRepair. Ensure prose is released.
+    if (toolMode === 'prompted' && !toolCallsToProcess.length && roundContent && !fullContent) {
+      harvestPromptedCalls()
+    }
     throwIfAborted()
 
     // Tool execution loop (maxRounds cap prevents infinite loops)

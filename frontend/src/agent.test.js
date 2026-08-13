@@ -505,3 +505,25 @@ describe('an attached image', () => {
     expect(typeof streamChat.mock.calls[0][0].messages.at(-1).content).toBe('string')
   })
 })
+
+describe('prompted mode text release', () => {
+  it('releases text on first turn even if text contains unparseable brackets', async () => {
+    // Model rejects native tools, switches to prompted mode
+    const onToken = vi.fn()
+    const onDone = vi.fn()
+    let call = 0
+    streamChat.mockImplementation(async (opts) => {
+      call++
+      if (call === 1) {
+        opts.onToolsRejected?.()
+        opts.onDone()
+      } else {
+        opts.onToken('[Here is some text with brackets]')
+        opts.onDone()
+      }
+    })
+    await runAgent({ ...base, onToken, onDone })
+    expect(onToken).toHaveBeenCalledWith('[Here is some text with brackets]')
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ content: '[Here is some text with brackets]' }))
+  })
+})
