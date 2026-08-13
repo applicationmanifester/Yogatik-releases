@@ -1333,7 +1333,7 @@ export default function App() {
         }
         setConversations(prev => prev.map(c =>
           c.clientId === targetClientId
-            ? { ...c, id: convId, messages: [...updated.messages, { role: 'assistant', error: String(err), content: '' }] }
+            ? { ...c, id: convId, messages: [...updated.messages, { role: 'assistant', provider: useProvider, model: useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined), error: String(err), content: '' }] }
             : c
         ))
         setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))

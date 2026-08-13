@@ -85,7 +85,9 @@ export function parseToolCalls(reply = '') {
         const list = obj.tool_calls || obj.tools || (obj.name ? [obj] : null)
         if (!Array.isArray(list)) continue
         for (const c of list) {
-          const name = c.name || c.tool || c.function
+          let name = c.name || c.tool || c.function
+          if (!name) continue
+          name = String(name).split('<')[0].split(' ')[0].split(':')[0].trim()
           if (!name) continue
           let args = c.arguments ?? c.args ?? c.parameters ?? {}
           if (typeof args === 'string') {

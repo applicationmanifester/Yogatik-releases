@@ -546,7 +546,9 @@ export async function runAgent({
       throwIfAborted()
       rounds++
       const round = toolCallsToProcess.map((tc, i) => ({
-        ...tc, id: tc.id || `call_${rounds}_${i}`,
+        ...tc,
+        name: String(tc.name || '').split('<')[0].split(' ')[0].split(':')[0].trim(),
+        id: tc.id || `call_${rounds}_${i}`,
       }))
 
       // One assistant message carrying every tool_call of this round,

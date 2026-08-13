@@ -180,8 +180,9 @@ export function getToolSchemas(disabled = []) {
 
 /** Execute a tool by name */
 export async function executeTool(name, args, { signal } = {}) {
-  if (isMcpTool(name)) return callMcpTool(name, args)
-  const tool = ALL_TOOLS[name]
+  const cleanName = String(name || '').split('<')[0].split(' ')[0].split(':')[0].trim()
+  if (isMcpTool(cleanName)) return callMcpTool(cleanName, args)
+  const tool = ALL_TOOLS[cleanName]
   if (!tool) return { success: false, error: `Unknown tool: ${name}` }
   if (signal?.aborted) return { success: false, error: 'Stopped' }
   // Makes Stop reach the tool's own network calls (see tools/http.js).
