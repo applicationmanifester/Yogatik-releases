@@ -267,6 +267,9 @@ export default function App() {
   const statusText = (activeClientId && statusMap[activeClientId]) || ''
   const currentStreamId = (activeClientId && streamIdMap[activeClientId]) || null
 
+  const loadingMapRef = useRef(loadingMap)
+  useEffect(() => { loadingMapRef.current = loadingMap }, [loadingMap])
+
   // Provider/model must be persisted: the agent reads them from IndexedDB, so
   // React-only state meant every message silently went to the stored default.
   const setProvider = useCallback((id) => {
@@ -780,7 +783,7 @@ export default function App() {
 
     setConversations(prev => {
       // If the top chat is already a brand new empty draft with 0 messages and not streaming, reuse it
-      const topIsIdleDraft = prev[0] && !prev[0].id && (!prev[0].messages || prev[0].messages.length === 0) && !loadingMap[prev[0].clientId]
+      const topIsIdleDraft = prev[0] && !prev[0].id && (!prev[0].messages || prev[0].messages.length === 0) && !loadingMapRef.current[prev[0]?.clientId]
       if (topIsIdleDraft) {
         return prev.map((c, i) => i === 0 ? newConv : c)
       }
@@ -2306,11 +2309,11 @@ export default function App() {
                       })}
                     </div>
                   )}
-                  {traceRef.current.length > 0 && (
+                  {((traceMapRef.current[activeClientId] || []).length > 0) && (
                     <details className="activity-trace" open style={{ marginTop: 4 }}>
-                      <summary>Steps, thoughts & actions taken ({traceRef.current.length} step{traceRef.current.length === 1 ? '' : 's'})</summary>
+                      <summary>Steps, thoughts & actions taken ({(traceMapRef.current[activeClientId] || []).length} step{(traceMapRef.current[activeClientId] || []).length === 1 ? '' : 's'})</summary>
                       <ol>
-                        {traceRef.current.map((s, i) => {
+                        {(traceMapRef.current[activeClientId] || []).map((s, i) => {
                           const Icon = TOOL_ICONS[s.tool] || Wrench
                           const arg = s.args && Object.keys(s.args).length
                             ? JSON.stringify(s.args).replace(/^{|}$/g, '').slice(0, 180)
@@ -2354,9 +2357,9 @@ export default function App() {
                         })}
                       </div>
                     )}
-                    {traceRef.current.length > 0 && (
+                    {((traceMapRef.current[activeClientId] || []).length > 0) && (
                       <div className="live-trace-steps" style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                        {traceRef.current.map((s, i) => {
+                        {(traceMapRef.current[activeClientId] || []).map((s, i) => {
                           const Icon = TOOL_ICONS[s.tool] || Wrench
                           return (
                             <span key={i} className={`tool-chip trace-chip trace-${s.status}`} title={s.tool}>
