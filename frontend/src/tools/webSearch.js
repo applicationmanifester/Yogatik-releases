@@ -97,23 +97,27 @@ function mergeResults(lists, count) {
 }
 
 async function duckDuckGoSearch(query, count) {
-  const html = await proxyText(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`)
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  const rows = [...doc.querySelectorAll('a.result-link')]
-  const snippets = [...doc.querySelectorAll('td.result-snippet')]
-  return rows.slice(0, count).map((a, i) => {
-    let url = a.getAttribute('href') || ''
-    // DDG wraps targets as /l/?uddg=<encoded>
-    const m = url.match(/[?&]uddg=([^&]+)/)
-    if (m) url = decodeURIComponent(m[1])
-    if (url.startsWith('//')) url = 'https:' + url
-    return {
-      title: a.textContent.trim(),
-      url,
-      snippet: (snippets[i]?.textContent || '').replace(/\s+/g, ' ').trim(),
-      engine: 'duckduckgo',
-    }
-  }).filter(r => r.url && r.title)
+  try {
+    const html = await proxyText(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`)
+      .catch(() => proxyText(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`))
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const rows = [...doc.querySelectorAll('a.result__url, a.result-link, a.result__a')]
+    const snippets = [...doc.querySelectorAll('.result__snippet, td.result-snippet')]
+    return rows.slice(0, count).map((a, i) => {
+      let url = a.getAttribute('href') || ''
+      const m = url.match(/[?&]uddg=([^&]+)/)
+      if (m) url = decodeURIComponent(m[1])
+      if (url.startsWith('//')) url = 'https:' + url
+      return {
+        title: (a.textContent || '').trim(),
+        url,
+        snippet: (snippets[i]?.textContent || '').replace(/\s+/g, ' ').trim(),
+        engine: 'duckduckgo',
+      }
+    }).filter(r => r.url && r.title)
+  } catch {
+    return []
+  }
 }
 
 export const webSearchTool = {
