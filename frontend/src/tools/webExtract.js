@@ -12,6 +12,13 @@ export const webExtractTool = {
   },
   async execute({ url, max_chars = 8000 }) {
     if (!/^https?:\/\//i.test(url || '')) return { success: false, error: 'Provide a full http(s) URL' }
+    if (url.includes('news.google.com/rss/articles/')) {
+      return {
+        success: false,
+        error: 'Google News redirect links cannot be extracted directly. Use web_search or provide the publisher direct URL.',
+        url,
+      }
+    }
     try {
       const html = await proxyText(url)
       const page = extractReadable(html, { maxChars: Math.min(Math.max(1000, max_chars | 0), 20000) })
