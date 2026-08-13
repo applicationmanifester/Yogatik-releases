@@ -752,12 +752,17 @@ export default function App() {
   }, [])
 
   const newChat = useCallback(() => {
+    stopGeneration('chat')
     setConvQuery('')
     setInput('')
     setActiveArtifact(null)
     setAttachedFile(null)
     setAttachedImage(null)
     setVisibleCount(WINDOW_STEP)
+    setLoadingMap({})
+    setStreamingMap({})
+    setStatusMap({})
+    setStreamIdMap({})
 
     setConversations(prev => {
       const top = prev[0]
