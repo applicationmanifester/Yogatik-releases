@@ -92,60 +92,69 @@ export async function getAllSettings() {
   const rows = await withReopen(() => db.settings.toArray())
   return Object.fromEntries(rows.map(r => [r.key, r.value]))
 }
-
 // ─── Conversations ───
 export async function createConversation(title = 'New Chat', projectId = null, provider = null, model = null, settings = null) {
-  const id = await db.conversations.add({ title, updatedAt: Date.now(), projectId, provider, model, settings })
-  return { id, title, projectId, provider, model, settings, messages: [] }
+  return withReopen(async () => {
+    const id = await db.conversations.add({ title, updatedAt: Date.now(), projectId, provider, model, settings })
+    return { id, title, projectId, provider, model, settings, messages: [] }
+  })
 }
 
 export async function getConversations(projectId) {
-  const convs = await db.conversations.orderBy('updatedAt').reverse().toArray()
+  const convs = await withReopen(() => db.conversations.orderBy('updatedAt').reverse().toArray())
   if (projectId === undefined) return convs
   return convs.filter(c => (c.projectId ?? null) === (projectId ?? null))
 }
 
 export async function getConversation(id) {
-  const conv = await db.conversations.get(id)
-  if (!conv) return null
-  const messages = await getMessages(id)
-  return { ...conv, messages }
+  return withReopen(async () => {
+    const conv = await db.conversations.get(id)
+    if (!conv) return null
+    const messages = await getMessages(id)
+    return { ...conv, messages }
+  })
 }
 
 export async function deleteConversation(id) {
-  await db.messages.where('conversationId').equals(id).delete()
-  await db.conversations.delete(id)
+  return withReopen(async () => {
+    await db.messages.where('conversationId').equals(id).delete()
+    await db.conversations.delete(id)
+  })
 }
 
 export async function updateConversationTitle(id, title) {
-  await db.conversations.update(id, { title, updatedAt: Date.now() })
+  return withReopen(() => db.conversations.update(id, { title, updatedAt: Date.now() }))
 }
 
 export async function updateConversationModel(id, provider, model, settings = null) {
   const updateData = { provider, model }
   if (settings !== null) updateData.settings = settings
-  await db.conversations.update(id, updateData)
+  return withReopen(() => db.conversations.update(id, updateData))
 }
 
 // ─── Messages ───
 export async function addMessage(conversationId, role, content, toolResults = null, sources = null) {
-  const msg = {
-    conversationId, role, content,
-    toolResults: toolResults || undefined,
-    sources: sources || undefined,
-    createdAt: Date.now(),
-  }
-  const id = await db.messages.add(msg)
-  await db.conversations.update(conversationId, { updatedAt: Date.now() })
-  return { id, ...msg }
+  return withReopen(async () => {
+    const msg = {
+      conversationId, role, content,
+      toolResults: toolResults || undefined,
+      sources: sources || undefined,
+      createdAt: Date.now(),
+    }
+    const id = await db.messages.add(msg)
+    await db.conversations.update(conversationId, { updatedAt: Date.now() })
+    return { id, ...msg }
+  })
 }
 
 export async function getMessages(conversationId) {
-  return db.messages
+  return withReopen(() => db.messages
     .where('[conversationId+createdAt]')
     .between([conversationId, Dexie.minKey], [conversationId, Dexie.maxKey])
-    .toArray()
+    .toArray())
 }
+
+
 
 /** Delete messages at or after `from` (chronological position) in a conversation. */
 export async function trimMessages(conversationId, from) {

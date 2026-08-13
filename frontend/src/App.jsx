@@ -23,6 +23,7 @@ import { SkillsPanel } from './components/SkillsPanel'
 import { runWorkflow } from './workflows'
 import { DemoModal } from './components/DemoModal'
 import { DownloadModal } from './components/DownloadModal'
+import { isDbClosedError } from './db'
 import { resolveFeatures } from './features'
 import { setLocalVLMConsent } from './vision/localVLM'
 import { setSemanticConsent } from './semantic'
@@ -233,7 +234,10 @@ export default function App() {
   useEffect(() => {
     checkGoogleRedirect()
       .then(u => { if (u) { setUser(u); loadConversations() } })
-      .catch(err => setErrorModalMsg(`Sign-in did not complete.\n\n${err.message || err}`))
+      .catch(err => {
+        if (isDbClosedError(err)) return
+        setErrorModalMsg(`Sign-in did not complete.\n\n${err.message || err}`)
+      })
   }, [])
 
   // Auto-show demo modal ONLY for brand new first-time users (0 messages & 0 API keys)
