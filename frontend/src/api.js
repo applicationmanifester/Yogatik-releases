@@ -318,7 +318,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
             inTokens: estimateTokens(body.message || ''),
             outTokens: estimateTokens(content || ''),
           }).catch(() => {})
-          onDone?.(content, { aborted, provider: pid })
+          onDone?.(content, { aborted, provider: pid, model: mdl })
         },
         onError: (err) => { failure = err?.message || String(err) },
       })

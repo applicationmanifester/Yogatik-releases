@@ -1292,8 +1292,8 @@ export default function App() {
           toolResults: { ...toolRunRef.current.results },
           toolsUsed: [...toolRunRef.current.used],
           trace: finalTrace.length ? [...finalTrace] : undefined,
-          provider: useProvider,
-          model: useModel,
+          provider: meta?.provider || useProvider,
+          model: meta?.model || useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined),
         }
         saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
         setConversations(prev => prev.map(c =>
