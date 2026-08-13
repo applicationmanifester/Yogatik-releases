@@ -1,8 +1,61 @@
 // Pyodide — full Python interpreter in the browser via WASM.
 // Stateful: the interpreter and its global namespace persist across calls
 // (variables, imports and installed packages carry over), like a Jupyter kernel.
+import { saveMedia } from '../db'
+
 let pyodideReady = null
 let micropip = null
+
+const MIME = {
+  pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  gif: 'image/gif', svg: 'image/svg+xml', csv: 'text/csv', txt: 'text/plain',
+  json: 'application/json', html: 'text/html', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  zip: 'application/zip', wav: 'audio/wav', mp3: 'audio/mpeg', mp4: 'video/mp4',
+}
+const MAX_FILE_BYTES = 20 * 1024 * 1024   // don't try to surface a huge artefact
+const MAX_FILES = 6
+
+/** Recursively map path → mtime|size for the dirs the code might write to. */
+function snapshotFiles(py, dirs) {
+  const out = {}
+  const walk = (dir) => {
+    let entries
+    try { entries = py.FS.readdir(dir) } catch { return }
+    for (const name of entries) {
+      if (name === '.' || name === '..') continue
+      const path = dir.endsWith('/') ? dir + name : dir + '/' + name
+      let st
+      try { st = py.FS.stat(path) } catch { continue }
+      if (py.FS.isDir(st.mode)) { if (!/\/(proc|dev|lib|sys)$/.test(path)) walk(path) }
+      else out[path] = `${st.mtime?.getTime?.() ?? 0}:${st.size}`
+    }
+  }
+  dirs.forEach(walk)
+  return out
+}
+
+/** Read files that were created/modified during the run, save them as blobs. */
+async function collectNewFiles(py, before) {
+  const dirs = ['/tmp']
+  try { dirs.push(py.FS.cwd()) } catch { /* default cwd only */ }
+  const after = snapshotFiles(py, dirs)
+  const changed = Object.keys(after).filter(p => after[p] !== before[p])
+  const files = []
+  for (const path of changed.slice(0, MAX_FILES)) {
+    try {
+      const bytes = py.FS.readFile(path, { encoding: 'binary' })   // Uint8Array
+      if (!bytes?.length || bytes.length > MAX_FILE_BYTES) continue
+      const name = path.split('/').pop()
+      const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : ''
+      const mime = MIME[ext] || 'application/octet-stream'
+      const blob = new Blob([bytes], { type: mime })
+      const media_id = await saveMedia({ blob, mime, filename: name, meta: { from: 'code_execute' } })
+      files.push({ name, bytes: bytes.length, mime, media_id })
+    } catch { /* skip unreadable file */ }
+  }
+  return files
+}
 
 async function getPyodide() {
   if (pyodideReady) return pyodideReady
@@ -60,6 +113,9 @@ export const codeExecTool = {
         }
       }
 
+      // Snapshot the filesystem so we can surface any file the code writes.
+      const filesBefore = snapshotFiles(py, ['/tmp', (() => { try { return py.FS.cwd() } catch { return '/home/pyodide' } })()])
+
       // Capture stdout + stderr around the run.
       py.runPython('import sys, io\n_out = io.StringIO()\n_err = io.StringIO()\n_o, _e = sys.stdout, sys.stderr\nsys.stdout, sys.stderr = _out, _err')
       let result
@@ -75,10 +131,14 @@ export const codeExecTool = {
       const stderr = py.runPython('_err.getvalue()')
 
       const output = stdout || (result !== undefined && result !== null ? String(result) : '')
+      // Surface any files the code created (PDF, images, CSV…) as downloadables.
+      let files = []
+      try { files = await collectNewFiles(py, filesBefore) } catch { /* best-effort */ }
       return {
         success: true, tool: 'code_execute', output,
         ...(stderr ? { stderr } : {}),
         ...(installed.length ? { installed } : {}),
+        ...(files.length ? { files, files_note: `${files.length} file(s) are offered to the user as download buttons in the UI. Tell the user they can download ${files.map(f => f.name).join(', ')} directly — never mention a server/temp file path, which does not exist on their device.` } : {}),
         stateful: true, code,
       }
     } catch (e) {

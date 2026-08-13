@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Volume2, Wrench, Copy, Check, RefreshCw, Pencil, AlertTriangle, FileDown, FileText, Download } from 'lucide-react'
 import { CodeBlock } from './CodeBlock'
@@ -70,7 +70,7 @@ function triggerDownload(text, format = 'doc', defaultTitle = 'Document') {
     }
     const printWin = window.open('', '_blank')
     if (printWin) {
-      printWin.document.write(`<!DOCTYPE html><html><head><title>${defaultTitle}</title><style>body{font-family:sans-serif;padding:30px;line-height:1.6;color:#222;}</style></head><body><pre style="white-space:pre-wrap;font-family:inherit;">${text}</pre><script>window.print();</script></body></html>`)
+      printWin.document.write(`<!DOCTYPE html><html><head><title>${defaultTitle}</title><style>body{font-family:sans-serif;padding:30px;line-height:1.6;color:#222;}</style></head><body><pre style="white-space:pre-wrap;font-family:inherit;">${text}</pre><script>window.print();<\/script></body></html>`)
       printWin.document.close()
     }
     return
@@ -87,6 +87,49 @@ function triggerDownload(text, format = 'doc', defaultTitle = 'Document') {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+/**
+ * Build a stable ReactMarkdown `components` map. Defined once per MessageBubble
+ * instance (not inline per render), so React.memo can actually skip re-renders.
+ */
+function useMarkdownComponents(msgContent, onOpenArtifact) {
+  return useMemo(() => ({
+    a({ node, href, children, ...props }) {
+      const rawLabel = String(children || '').trim()
+      const cleanLabel = rawLabel.replace(/^download\s+/i, '').trim()
+      const isDocLink = href?.match(/\.(rtf|doc|docx|pdf|csv|html|txt)($|\?)/i) || rawLabel.match(/\.(rtf|doc|docx|pdf|csv|html|txt)\b/i)
+      if (isDocLink || href?.startsWith('data:') || href?.startsWith('blob:')) {
+        const format = rawLabel.match(/\.(rtf|doc|docx)/i) ? 'doc' : rawLabel.match(/\.pdf/i) ? 'pdf' : 'doc'
+        return (
+          <button
+            className="inline-download-btn"
+            onClick={(e) => {
+              e.preventDefault()
+              triggerDownload(msgContent, format, cleanLabel.replace(/\.(rtf|doc|docx|pdf)$/i, '') || 'document')
+            }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: 'var(--accent-color, #ff6b35)', color: '#fff',
+              border: 'none', padding: '4px 10px', borderRadius: 6,
+              fontWeight: 600, fontSize: 12, cursor: 'pointer', margin: '4px 0',
+            }}
+          >
+            <FileDown size={14} /> Download {cleanLabel}
+          </button>
+        )
+      }
+      return <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+    },
+    code({ node, inline, className, children, ...props }) {
+      return !inline ? (
+        <CodeBlock className={className} onOpenArtifact={onOpenArtifact}>{children}</CodeBlock>
+      ) : (
+        <code className={className} {...props}>{children}</code>
+      )
+    }
+  // msgContent changes when the message changes, onOpenArtifact is stable
+  }), [msgContent, onOpenArtifact])
+}
+
 const MessageBubble = React.memo(function MessageBubble({
    msg, onTTS, onOpenArtifact, onRegenerate, onEdit, onRetry, showToolCards = true,
 }) {
@@ -94,15 +137,32 @@ const MessageBubble = React.memo(function MessageBubble({
    const [showExportMenu, setShowExportMenu] = useState(false)
    // Default EXPANDED: collapsing by default hid whole answers behind "Show more".
    const [isExpanded, setIsExpanded] = useState(true)
-   let reasoning = '', answer = msg.content
+   const exportMenuRef = useRef(null)
 
-  const copy = async () => {
+  // Close export dropdown when clicking outside it
+  useEffect(() => {
+    if (!showExportMenu) return
+    const handler = (e) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+        setShowExportMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showExportMenu])
+
+  const copy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(msg.content)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch { /* clipboard blocked — nothing useful to say */ }
-  }
+  }, [msg.content])
+
+  // Build stable markdown components config — avoids new object on every render
+  const markdownComponents = useMarkdownComponents(msg.content, onOpenArtifact)
+
+  let reasoning = '', answer = msg.content
 
   // Failed turns are shown attached to the message, never stored as if the
   // assistant had said them.
@@ -126,6 +186,11 @@ const MessageBubble = React.memo(function MessageBubble({
     <div className={`message ${msg.role}`}>
       <div className="message-role">
         <span className="message-who">{msg.role === 'user' ? 'You' : 'Yogatik'}</span>
+        {msg.role === 'assistant' && (msg.model || msg.provider) && (
+          <span className="msg-model-badge" title={`Generated by ${msg.provider ? `${msg.provider} (${msg.model || 'default'})` : msg.model}`}>
+            {msg.provider && msg.model ? `${msg.provider} / ${msg.model}` : (msg.model || msg.provider)}
+          </span>
+        )}
         {msg.createdAt && <time className="message-time" dateTime={new Date(msg.createdAt).toISOString()}>{relativeTime(msg.createdAt)}</time>}
 
         <span className="message-actions" style={{ position: 'relative' }}>
@@ -137,60 +202,47 @@ const MessageBubble = React.memo(function MessageBubble({
               <button className="icon-btn" onClick={() => onTTS(msg.content)} title="Read aloud" aria-label="Read aloud">
                 <Volume2 size={12} />
               </button>
-              <button
-                className="icon-btn"
-                onClick={() => setShowExportMenu(v => !v)}
-                title="Download as Word / PDF / MD"
-                aria-label="Download message"
-              >
-                <Download size={12} />
-              </button>
-              {showExportMenu && (
-                <div
-                  className="export-dropdown"
-                  style={{
-                    position: 'absolute', top: '100%', right: 0, zIndex: 100,
-                    background: 'var(--bg-secondary, #1e1e2e)', border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                    borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.3)', padding: 4, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 140,
-                  }}
+              <span ref={exportMenuRef} style={{ position: 'relative' }}>
+                <button
+                  className="icon-btn"
+                  onClick={() => setShowExportMenu(v => !v)}
+                  title="Download as Word / PDF / MD"
+                  aria-label="Download message"
+                  aria-haspopup="true"
+                  aria-expanded={showExportMenu}
                 >
-                  <button
-                    className="dropdown-item"
-                    onClick={() => { triggerDownload(msg.content, 'doc', 'document'); setShowExportMenu(false) }}
-                    style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 10px', fontSize: 12, textAlign: 'left', cursor: 'pointer', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 6 }}
+                  <Download size={12} />
+                </button>
+                {showExportMenu && (
+                  <div
+                    className="export-dropdown"
+                    role="menu"
+                    style={{
+                      position: 'absolute', top: '100%', right: 0, zIndex: 100,
+                      background: 'var(--bg-secondary, #1e1e2e)', border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
+                      borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.3)', padding: 4, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 140,
+                    }}
                   >
-                    <FileText size={12} /> Word Document (.doc)
-                  </button>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => { triggerDownload(msg.content, 'ppt', 'presentation'); setShowExportMenu(false) }}
-                    style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 10px', fontSize: 12, textAlign: 'left', cursor: 'pointer', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 6 }}
-                  >
-                    <FileText size={12} /> PowerPoint (.ppt)
-                  </button>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => { triggerDownload(msg.content, 'csv', 'data'); setShowExportMenu(false) }}
-                    style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 10px', fontSize: 12, textAlign: 'left', cursor: 'pointer', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 6 }}
-                  >
-                    <FileText size={12} /> CSV Spreadsheet (.csv)
-                  </button>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => { triggerDownload(msg.content, 'pdf', 'document'); setShowExportMenu(false) }}
-                    style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 10px', fontSize: 12, textAlign: 'left', cursor: 'pointer', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 6 }}
-                  >
-                    <FileDown size={12} /> PDF (.pdf)
-                  </button>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => { triggerDownload(msg.content, 'md', 'document'); setShowExportMenu(false) }}
-                    style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 10px', fontSize: 12, textAlign: 'left', cursor: 'pointer', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 6 }}
-                  >
-                    <Download size={12} /> Markdown (.md)
-                  </button>
-                </div>
-              )}
+                    {[
+                      { fmt: 'doc',          label: 'Word Document (.doc)',    icon: <FileText size={12} />,  title: 'document' },
+                      { fmt: 'ppt',          label: 'PowerPoint (.ppt)',       icon: <FileText size={12} />,  title: 'presentation' },
+                      { fmt: 'csv',          label: 'CSV Spreadsheet (.csv)',  icon: <FileText size={12} />,  title: 'data' },
+                      { fmt: 'pdf',          label: 'PDF (.pdf)',              icon: <FileDown size={12} />,  title: 'document' },
+                      { fmt: 'md',           label: 'Markdown (.md)',          icon: <Download size={12} />,  title: 'document' },
+                    ].map(({ fmt, label, icon, title }) => (
+                      <button
+                        key={fmt}
+                        role="menuitem"
+                        className="dropdown-item"
+                        onClick={() => { triggerDownload(msg.content, fmt, title); setShowExportMenu(false) }}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 10px', fontSize: 12, textAlign: 'left', cursor: 'pointer', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        {icon} {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </span>
             </>
           )}
           {msg.role === 'assistant' && onRegenerate && (
@@ -223,24 +275,31 @@ const MessageBubble = React.memo(function MessageBubble({
           })}
         </div>
       )}
-      {msg.trace?.length > 0 && (
+      {msg.role === 'assistant' && (
         <details className="activity-trace">
-          <summary>How I answered this — {msg.trace.length} step{msg.trace.length === 1 ? '' : 's'}</summary>
+          <summary>Steps, thoughts & actions taken ({msg.trace?.length || 1} step{(msg.trace?.length || 1) === 1 ? '' : 's'})</summary>
           <ol>
-            {msg.trace.map((s, i) => {
-              const Icon = TOOL_ICONS[s.tool] || Wrench
-              const arg = s.args && Object.keys(s.args).length
-                ? JSON.stringify(s.args).replace(/^{|}$/g, '').slice(0, 120)
-                : ''
-              const mark = s.status === 'error' ? '✕' : s.status === 'done' ? '✓' : '…'
-              return (
-                <li key={i} className={`trace-step trace-${s.status}`}>
-                  <Icon size={11} /> <span className="trace-tool">{s.tool}</span>
-                  {arg && <span className="trace-args">{arg}</span>}
-                  <span className="trace-mark">{mark}</span>
-                </li>
-              )
-            })}
+            {msg.trace?.length > 0 ? (
+              msg.trace.map((s, i) => {
+                const Icon = TOOL_ICONS[s.tool] || Wrench
+                const arg = s.args && Object.keys(s.args).length
+                  ? JSON.stringify(s.args).replace(/^{|}$/g, '').slice(0, 180)
+                  : ''
+                const mark = s.status === 'error' ? '✕ Failed' : s.status === 'done' ? '✓ Completed' : '… In progress'
+                return (
+                  <li key={i} className={`trace-step trace-${s.status}`}>
+                    <Icon size={11} /> <span className="trace-tool">Step {i + 1}: Executed {s.tool}</span>
+                    {arg && <div className="trace-args" style={{ fontSize: '10.5px', opacity: 0.85, marginTop: '2px' }}>Input: {arg}</div>}
+                    <span className="trace-mark" style={{ fontSize: '10px', marginLeft: 'auto', fontWeight: 600 }}>{mark}</span>
+                  </li>
+                )
+              })
+            ) : (
+              <li className="trace-step trace-done">
+                <Wrench size={11} /> <span className="trace-tool">Step 1: Direct response generation ({msg.model || msg.provider || 'local model'})</span>
+                <span className="trace-mark" style={{ fontSize: '10px', marginLeft: 'auto', fontWeight: 600 }}>✓ Completed</span>
+              </li>
+            )}
           </ol>
         </details>
       )}
@@ -265,47 +324,13 @@ const MessageBubble = React.memo(function MessageBubble({
       )}
        {/* Check if message content is long enough to warrant collapsing */}
        {typeof answer === 'string' && answer.length > 500 && msg.role === 'assistant' ? (
-         <>
+         <div className="message-content">
            {!isExpanded && (
              <>
-               <ReactMarkdown components={{
-                 a({ node, href, children, ...props }) {
-                   const rawLabel = String(children || '').trim()
-                   const cleanLabel = rawLabel.replace(/^download\s+/i, '').trim()
-                   const isDocLink = href?.match(/\.(rtf|doc|docx|pdf|csv|html|txt)($|\?)/i) || rawLabel.match(/\.(rtf|doc|docx|pdf|csv|html|txt)\b/i)
-                   if (isDocLink || href?.startsWith('data:') || href?.startsWith('blob:')) {
-                     const format = rawLabel.match(/\.(rtf|doc|docx)/i) ? 'doc' : rawLabel.match(/\.pdf/i) ? 'pdf' : 'doc'
-                     return (
-                       <button
-                         className="inline-download-btn"
-                         onClick={(e) => {
-                           e.preventDefault()
-                           triggerDownload(msg.content, format, cleanLabel.replace(/\.(rtf|doc|docx|pdf)$/i, '') || 'document')
-                         }}
-                         style={{
-                           display: 'inline-flex', alignItems: 'center', gap: 6,
-                           background: 'var(--accent-color, #ff6b35)', color: '#fff',
-                           border: 'none', padding: '4px 10px', borderRadius: 6,
-                           fontWeight: 600, fontSize: 12, cursor: 'pointer', margin: '4px 0',
-                         }}
-                       >
-                         <FileDown size={14} /> Download {cleanLabel}
-                       </button>
-                     )
-                   }
-                   return <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
-                 },
-                 code({ node, inline, className, children, ...props }) {
-                   return !inline ? (
-                     <CodeBlock className={className} onOpenArtifact={onOpenArtifact}>{children}</CodeBlock>
-                   ) : (
-                     <code className={className} {...props}>{children}</code>
-                   )
-                 }
-               }}>
+               <ReactMarkdown components={markdownComponents}>
                  {answer.substring(0, 500)}...
                </ReactMarkdown>
-               <button 
+               <button
                  className="message-toggle-btn"
                  onClick={() => setIsExpanded(true)}
                >
@@ -315,41 +340,7 @@ const MessageBubble = React.memo(function MessageBubble({
            )}
            {isExpanded && (
              <>
-               <ReactMarkdown components={{
-                 a({ node, href, children, ...props }) {
-                   const rawLabel = String(children || '').trim()
-                   const cleanLabel = rawLabel.replace(/^download\s+/i, '').trim()
-                   const isDocLink = href?.match(/\.(rtf|doc|docx|pdf|csv|html|txt)($|\?)/i) || rawLabel.match(/\.(rtf|doc|docx|pdf|csv|html|txt)\b/i)
-                   if (isDocLink || href?.startsWith('data:') || href?.startsWith('blob:')) {
-                     const format = rawLabel.match(/\.(rtf|doc|docx)/i) ? 'doc' : rawLabel.match(/\.pdf/i) ? 'pdf' : 'doc'
-                     return (
-                       <button
-                         className="inline-download-btn"
-                         onClick={(e) => {
-                           e.preventDefault()
-                           triggerDownload(msg.content, format, cleanLabel.replace(/\.(rtf|doc|docx|pdf)$/i, '') || 'document')
-                         }}
-                         style={{
-                           display: 'inline-flex', alignItems: 'center', gap: 6,
-                           background: 'var(--accent-color, #ff6b35)', color: '#fff',
-                           border: 'none', padding: '4px 10px', borderRadius: 6,
-                           fontWeight: 600, fontSize: 12, cursor: 'pointer', margin: '4px 0',
-                         }}
-                       >
-                         <FileDown size={14} /> Download {cleanLabel}
-                       </button>
-                     )
-                   }
-                   return <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
-                 },
-                 code({ node, inline, className, children, ...props }) {
-                   return !inline ? (
-                     <CodeBlock className={className} onOpenArtifact={onOpenArtifact}>{children}</CodeBlock>
-                   ) : (
-                     <code className={className} {...props}>{children}</code>
-                   )
-                 }
-               }}>
+               <ReactMarkdown components={markdownComponents}>
                  {answer}
                </ReactMarkdown>
                <button
@@ -360,46 +351,12 @@ const MessageBubble = React.memo(function MessageBubble({
                </button>
              </>
            )}
-         </>
-       ) : (
-         <div className="message-content">
-            <ReactMarkdown components={{
-              a({ node, href, children, ...props }) {
-                const rawLabel = String(children || '').trim()
-                const cleanLabel = rawLabel.replace(/^download\s+/i, '').trim()
-                const isDocLink = href?.match(/\.(rtf|doc|docx|pdf|csv|html|txt)($|\?)/i) || rawLabel.match(/\.(rtf|doc|docx|pdf|csv|html|txt)\b/i)
-                if (isDocLink || href?.startsWith('data:') || href?.startsWith('blob:')) {
-                  const format = rawLabel.match(/\.(rtf|doc|docx)/i) ? 'doc' : rawLabel.match(/\.pdf/i) ? 'pdf' : 'doc'
-                  return (
-                    <button
-                      className="inline-download-btn"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        triggerDownload(msg.content, format, cleanLabel.replace(/\.(rtf|doc|docx|pdf)$/i, '') || 'document')
-                      }}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        background: 'var(--accent-color, #ff6b35)', color: '#fff',
-                        border: 'none', padding: '4px 10px', borderRadius: 6,
-                        fontWeight: 600, fontSize: 12, cursor: 'pointer', margin: '4px 0',
-                      }}
-                    >
-                      <FileDown size={14} /> Download {cleanLabel}
-                    </button>
-                  )
-                }
-                return <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
-              },
-              code({ node, inline, className, children, ...props }) {
-                return !inline ? (
-                  <CodeBlock className={className} onOpenArtifact={onOpenArtifact}>{children}</CodeBlock>
-                ) : (
-                  <code className={className} {...props}>{children}</code>
-                )
-              }
-            }}>{answer}</ReactMarkdown>
          </div>
-       )}
+        ) : (
+         <div className="message-content">
+            <ReactMarkdown components={markdownComponents}>{answer}</ReactMarkdown>
+          </div>
+        )}
       {msg.sources?.length > 0 && (
         <div className="sources">
           <div className="sources-title">Sources</div>

@@ -124,7 +124,6 @@ const PROVIDERS = {
     ],
     keyUrl: 'https://build.nvidia.com',
     needsProxy: true,
-    publicModels: true, // /v1/models is unauthenticated — live catalog without a key
   },
   local: {
     name: 'On-device (no key)',
@@ -134,6 +133,20 @@ const PROVIDERS = {
     keyUrl: '',
     isLocal: true,
     noKey: true,
+  },
+  ollama: {
+    name: 'Ollama (local)',
+    // OpenAI-compatible endpoint of a locally-running Ollama daemon.
+    // Override host via VITE_OLLAMA_HOST or chat_prefs.ollama_host.
+    baseUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_OLLAMA_HOST
+      ? import.meta.env.VITE_OLLAMA_HOST.replace(/\/+$/, '')
+      : 'http://localhost:11434') + '/v1',
+    models: [],             // filled live from /v1/models (Ollama serves it keyless)
+    default: '',
+    publicModels: true,     // no API key — the daemon is on the user's machine
+    noKey: true,
+    isOllama: true,
+    keyUrl: 'https://ollama.com/download',
   },
   gemini: {
     name: 'Gemini (Free)',
@@ -193,6 +206,13 @@ export function getProxyEndpoint() {
 
 export function proxyAvailable() { return true }
 
+// In the Electron desktop app the main process strips CORS for provider hosts,
+// so the renderer calls providers DIRECTLY (no Cloudflare worker needed) — the
+// same model native desktop AI apps use. This removes the desktop dependency on
+// a deployed proxy + a baked-in VITE_LLM_PROXY_BASE.
+const isElectron = typeof window !== 'undefined' && !!window.__YOGATIK_ELECTRON__
+const isNvidiaHost = (url) => typeof url === 'string' && url.includes('://integrate.api.nvidia.com')
+
 // Nothing should hang forever: a stalled proxy or provider previously left the
 // UI on "Connecting…" with no way out but the Stop button.
 const REQUEST_TIMEOUT = 120_000
@@ -207,13 +227,19 @@ function withTimeout(options, ms = REQUEST_TIMEOUT) {
 
 async function smartFetch(url, rawOptions, prov, timeoutMs) {
   const options = withTimeout(rawOptions, timeoutMs)
-  if (!prov?.needsProxy) return fetch(url, options)
+  // Desktop: always direct (main process handles CORS). Browser: direct only for
+  // CORS-friendly providers; needsProxy hosts go through the worker.
+  if (isElectron || !prov?.needsProxy) return fetch(url, options)
 
   const endpoint = getProxyEndpoint()
   if (!endpoint) throw new Error('This provider requires the proxy, which is not configured.')
   try {
     return await fetch(endpoint, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
   } catch (e) {
+    // An intentional abort (barge-in, new turn, Stop) is NOT a proxy failure —
+    // rethrow it so the normal abort path handles it silently. Only a real
+    // connection error becomes the "proxy unreachable" message.
+    if (e?.name === 'AbortError' || options.signal?.aborted) throw e
     // needsProxy hosts (NVIDIA) send no CORS headers, so a direct browser fetch
     // can NEVER succeed — attempting it only sprayed a guaranteed CORS error.
     // Surface the real cause: the proxy/worker is unreachable.
@@ -294,10 +320,8 @@ export async function streamChat({
     return streamLocal({ model, messages, temperature, tools, signal, onToken, onToolCall, onDone, onError, onStatus })
   }
 
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`,
-  }
+  const headers = { 'Content-Type': 'application/json' }
+  if (apiKey || !prov.noKey) headers['Authorization'] = `Bearer ${apiKey}`
   if (provider === 'openrouter') {
     headers['HTTP-Referer'] = 'https://yogatik.app'
     headers['X-Title'] = 'Yogatik'
@@ -458,10 +482,8 @@ export async function streamChat({
 /** Non-streaming completion (for tool result processing) */
 export async function chatComplete({ provider, apiKey, model, messages, tools, temperature = 0.7, maxTokens, timeoutMs, retries }) {
   const prov = getProviders()[provider]
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`,
-  }
+  const headers = { 'Content-Type': 'application/json' }
+  if (apiKey || !prov?.noKey) headers['Authorization'] = `Bearer ${apiKey}`
   if (provider === 'openrouter') {
     headers['HTTP-Referer'] = 'https://yogatik.app'
     headers['X-Title'] = 'Yogatik'
@@ -486,7 +508,7 @@ const NON_CHAT = /(^|\/)(.*(embed|rerank|retrieval|ocr|parse|tts|stt|asr|whisper
  */
 export async function fetchLiveModels(providerId, apiKey) {
   const prov = getProviders()[providerId]
-  if (!prov || (!apiKey && !prov.publicModels)) return []
+  if (!prov || (!apiKey && !prov.publicModels) || (!apiKey && prov.needsProxy)) return []
 
   try {
     const headers = apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}

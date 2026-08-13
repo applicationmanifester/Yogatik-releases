@@ -8,6 +8,6 @@ export default defineConfig({
     // cost more to spin up than these tests take to run.
     setupFiles: ['./test-setup.js'],
     pool: 'forks',
-    poolOptions: { forks: { singleFork: true } },
+    fileParallelism: false,
   },
 })

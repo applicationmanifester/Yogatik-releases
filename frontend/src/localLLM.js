@@ -33,11 +33,8 @@ export const LOCAL_MODELS = {
 
 export const DEFAULT_LOCAL_MODEL = 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC'
 
-let _engine = null
-let _engineModel = null
+const _engineMap = new Map()
 let _loadingByModel = new Map()
-let _loadSeq = 0
-let _desiredLoad = { seq: 0, model: null }
 
 /** WebGPU is required; Safari and Firefox only shipped it recently. */
 export function webGpuAvailable() {
@@ -49,7 +46,10 @@ export async function webGpuDetails() {
     return { available: false, reason: 'This browser has no WebGPU. Chrome or Edge 113+, Chrome on Android 121+, or Safari 26+ are needed.' }
   }
   try {
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
+    let adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null)
+    if (!adapter) {
+      adapter = await navigator.gpu.requestAdapter().catch(() => null)
+    }
     if (!adapter) return { available: false, reason: 'WebGPU is present but no GPU adapter was offered — often the case in VMs or with GPU acceleration disabled.' }
     return { available: true, adapter: adapter.info?.description || adapter.info?.vendor || 'GPU' }
   } catch (e) {
@@ -58,7 +58,7 @@ export async function webGpuDetails() {
 }
 
 export function isLocalReady(model = DEFAULT_LOCAL_MODEL) {
-  return !!_engine && _engineModel === model
+  return _engineMap.has(model)
 }
 
 /**
@@ -66,11 +66,9 @@ export function isLocalReady(model = DEFAULT_LOCAL_MODEL) {
  * @param {(p:{progress:number,text:string}) => void} onProgress
  */
 export async function loadLocalModel(model = DEFAULT_LOCAL_MODEL, onProgress) {
-  if (isLocalReady(model)) return _engine
+  if (_engineMap.has(model)) return _engineMap.get(model)
   if (_loadingByModel.has(model)) return _loadingByModel.get(model)
 
-  const seq = ++_loadSeq
-  _desiredLoad = { seq, model }
   const promise = (async () => {
     const gpu = await webGpuDetails()
     if (!gpu.available) throw new Error(gpu.reason)
@@ -84,17 +82,7 @@ export async function loadLocalModel(model = DEFAULT_LOCAL_MODEL, onProgress) {
         })
       },
     })
-    if (_desiredLoad.seq === seq && _desiredLoad.model === model) {
-      // Drop the previous engine first: two sets of weights on the GPU at once
-      // is how switching models twice ends in an out-of-memory abort.
-      if (_engine && _engine !== engine) {
-        try { await _engine.unload?.() } catch { /* best effort */ }
-      }
-      _engine = engine
-      _engineModel = model
-    } else {
-      try { await engine.unload?.() } catch { /* best effort */ }
-    }
+    _engineMap.set(model, engine)
     return engine
   })()
 
@@ -107,12 +95,19 @@ export async function loadLocalModel(model = DEFAULT_LOCAL_MODEL, onProgress) {
 }
 
 /** Free GPU memory; cached weights stay on disk for next time. */
-export async function unloadLocalModel() {
-  try { await _engine?.unload?.() } catch { /* nothing useful to do */ }
-  _engine = null
-  _engineModel = null
-  _desiredLoad = { seq: 0, model: null }
-  _loadingByModel.clear()
+export async function unloadLocalModel(model = null) {
+  if (model) {
+    const eng = _engineMap.get(model)
+    if (eng) {
+      try { await eng.unload?.() } catch { /* best effort */ }
+      _engineMap.delete(model)
+    }
+  } else {
+    for (const [m, eng] of _engineMap.entries()) {
+      try { await eng.unload?.() } catch { /* best effort */ }
+    }
+    _engineMap.clear()
+  }
 }
 
 /** Delete the cached weights so the browser reclaims the disk space. */
@@ -143,7 +138,7 @@ export async function streamLocal({ model = DEFAULT_LOCAL_MODEL, messages, tempe
 
     // Hold the engine this turn loaded. Reading the module-level _engine after
     // an await means a concurrent model switch nulls it mid-turn.
-    let engine = _engineModel === model ? _engine : null
+    let engine = _engineMap.get(model)
     if (!engine) {
       onStatus?.('Initializing on-device AI model…')
       engine = await loadLocalModel(model, (p) => {
@@ -164,6 +159,9 @@ export async function streamLocal({ model = DEFAULT_LOCAL_MODEL, messages, tempe
       const req = {
         messages,
         temperature,
+        top_p: 0.9,
+        repetition_penalty: 1.15,
+        max_tokens: 1024,
         stream: true,
       }
       // Small on-device models (0.5B/1B) cannot drive native function calling.

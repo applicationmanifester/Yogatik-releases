@@ -99,7 +99,8 @@ describe('data_convert', () => {
       data: JSON.stringify([{ a: 1, b: 'x' }, { a: 2, b: 'y' }]),
       operation: 'json_to_csv',
     })
-    expect(r.result.split('\n')[0]).toBe('a,b')
+    // RFC-4180 output: UTF-8 BOM prefix + CRLF row endings.
+    expect(r.result.replace(/^﻿/, '').split('\r\n')[0]).toBe('a,b')
   })
 
   it('fails cleanly on malformed json', async () => {

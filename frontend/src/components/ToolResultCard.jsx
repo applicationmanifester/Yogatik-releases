@@ -5,9 +5,52 @@ import {
   Palette, Search, GitCompare, Ruler, MapPin, Rss, Eye, FileDown, Volume2,
   Telescope, FileSearch, Files, ExternalLink, Sliders,
   BookOpen, GraduationCap, MessageSquare, Archive, BookA, Library,
-  Package, BookMarked, Banknote, Activity, Film, Sparkles, Copy
+  Package, BookMarked, Banknote, Activity, Film, Sparkles, Copy, Check, Users
 } from 'lucide-react'
 import { getMedia } from '../db'
+
+// Mermaid output is data from a tool/LLM, not application markup. Keep the
+// SVG needed for diagrams while removing executable and externally-loaded
+// content before it reaches dangerouslySetInnerHTML.
+function sanitizeDiagramSvg(svg) {
+  if (typeof svg !== 'string' || !svg.trim()) return ''
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
+  const root = doc.documentElement
+  if (root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return ''
+
+  root.querySelectorAll('script, foreignObject, iframe, object, embed, animate, set').forEach(node => node.remove())
+  root.querySelectorAll('*').forEach(node => {
+    for (const attr of [...node.attributes]) {
+      const name = attr.name.toLowerCase()
+      const value = attr.value.trim().toLowerCase()
+      if (name.startsWith('on') ||
+          ((name === 'href' || name === 'xlink:href') && /^(javascript:|data:|https?:|\/\/)/.test(value)) ||
+          (name === 'style' && /(?:@import|url\(\s*['"]?(?:javascript:|data:|https?:|\/\/))/i.test(value))) {
+        node.removeAttribute(attr.name)
+      }
+    }
+  })
+  root.querySelectorAll('style').forEach(node => {
+    if (/(?:@import|url\(\s*['"]?(?:javascript:|data:|https?:|\/\/))/i.test(node.textContent || '')) node.remove()
+  })
+  return new XMLSerializer().serializeToString(root)
+}
+
+// Reusable copy button with transient "copied" feedback (replaces 7 duplicated inline handlers)
+export function CopyButton({ text, title = 'Copy', className = 'copy-btn', style, iconSize = 10, label }) {
+  const [copied, setCopied] = React.useState(false)
+  const onClick = async () => {
+    try { await navigator.clipboard.writeText((text ?? '').toString()) } catch { return }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+  return (
+    <button onClick={onClick} className={className} title={copied ? 'Copied' : title} style={style}>
+      {copied ? <Check size={iconSize} /> : <Copy size={iconSize} />}
+      {label ? ' ' + (copied ? 'Copied' : label) : ''}
+    </button>
+  )
+}
 
 export const TOOL_ICONS = {
   weather: CloudSun, image_generate: Image, code_execute: Code, video_render: Film,
@@ -28,7 +71,7 @@ export const TOOL_ICONS = {
   md_to_pdf: FileDown, diagram_render: GitCompare, code_format: Code,
   text_analytics: FileText, data_stats: Activity, keyword_extract: Search,
   entity_extract: BookOpen, query_refine: Sliders, doc_export: FileDown,
-  sticker_generate: Sparkles,
+  sticker_generate: Sparkles, spawn_agents: Users, terminal_run: Code,
 }
 
 /**
@@ -112,8 +155,37 @@ function RenderedAudio({ result }) {
   )
 }
 
+/** Files a tool produced (e.g. code_execute writing a PDF), as download links.
+ *  Bytes live in the media store; a fresh object URL is minted on demand. */
+function RenderedFiles({ files }) {
+  const download = async (f) => {
+    try {
+      const row = await getMedia(f.media_id)
+      if (!row?.blob) return
+      const url = URL.createObjectURL(row.blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = f.name; a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch { /* cleared */ }
+  }
+  return (
+    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {files.map((f, i) => (
+        <button key={i} className="small-btn" onClick={() => download(f)} title={`${f.mime} · ${f.bytes} bytes`}>
+          <FileDown size={12} /> {f.name}{f.bytes ? ` (${(f.bytes / 1024).toFixed(0)} KB)` : ''}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ─── Tool Result Display ───
-function ToolResultCard({ tool, result }) {
+/**
+ * Memoised: a card can hold a rendered image, video or chart, and re-running
+ * that for every animation frame of the surrounding answer was pure waste.
+ * Results are immutable once produced, so identity comparison is enough.
+ */
+const ToolResultCard = React.memo(function ToolResultCard({ tool, result }) {
   if (tool === 'text_to_audio' && result?.success !== false && (result.audio_url || result.media_id)) {
     return <RenderedAudio result={result} />
   }
@@ -123,6 +195,20 @@ function ToolResultCard({ tool, result }) {
       <div className="tool-result-card error">
         <div className="tool-result-header"><Icon size={14} /> {tool} — Failed</div>
         <p className="tool-error">{result?.error || 'Unknown error'}</p>
+      </div>
+    )
+  }
+
+  if (tool === 'spawn_agents' && Array.isArray(result.results)) {
+    return (
+      <div className="tool-result-card">
+        <div className="tool-result-header"><Users size={14} /> Delegated to {result.delegated} agent{result.delegated === 1 ? '' : 's'}</div>
+        {result.results.map((r, i) => (
+          <div key={i} style={{ marginTop: 8 }}>
+            <div className="personalise-sub" style={{ fontWeight: 600, marginBottom: 2 }}>{r.agent} <span style={{ opacity: .6 }}>· {r.role}</span></div>
+            <div className="code-output" style={{ whiteSpace: 'pre-wrap', maxHeight: 180, overflowY: 'auto', padding: 10, fontSize: 13 }}>{r.result}</div>
+          </div>
+        ))}
       </div>
     )
   }
@@ -230,27 +316,11 @@ function ToolResultCard({ tool, result }) {
                Standard Output:
              </div>
              <div className="code-output" style={{ position: 'relative' }}>
-               <button
-                 onClick={() => {
-                   navigator.clipboard.writeText(result.stdout || '');
-                   // TODO: Add toast notification for copy success
-                 }}
-                 className="copy-btn"
-                 title="Copy output"
-                 style={{
-                   position: 'absolute',
-                   top: 4,
-                   right: 4,
-                   background: 'var(--bg-input)',
-                   border: '1px solid var(--border)',
-                   borderRadius: 3,
-                   padding: '2px 4px',
-                   fontSize: 10,
-                   cursor: 'pointer'
-                 }}
-               >
-                 <Copy size={10} />
-               </button>
+               <CopyButton text={result.stdout} title="Copy output" style={{
+                   position: 'absolute', top: 4, right: 4,
+                   background: 'var(--bg-input)', border: '1px solid var(--border)',
+                   borderRadius: 3, padding: '2px 4px', fontSize: 10, cursor: 'pointer'
+                 }} />
                <pre className="code-output" style={{ margin: 0, overflowX: 'auto' }}>{result.stdout}</pre>
              </div>
            </>
@@ -261,27 +331,11 @@ function ToolResultCard({ tool, result }) {
                Standard Error:
              </div>
              <div className="code-output error" style={{ position: 'relative' }}>
-               <button
-                 onClick={() => {
-                   navigator.clipboard.writeText(result.stderr || '');
-                   // TODO: Add toast notification for copy success
-                 }}
-                 className="copy-btn"
-                 title="Copy error"
-                 style={{
-                   position: 'absolute',
-                   top: 4,
-                   right: 4,
-                   background: 'var(--bg-input)',
-                   border: '1px solid var(--border)',
-                   borderRadius: 3,
-                   padding: '2px 4px',
-                   fontSize: 10,
-                   cursor: 'pointer'
-                 }}
-               >
-                 <Copy size={10} />
-               </button>
+               <CopyButton text={result.stderr} title="Copy error" style={{
+                   position: 'absolute', top: 4, right: 4,
+                   background: 'var(--bg-input)', border: '1px solid var(--border)',
+                   borderRadius: 3, padding: '2px 4px', fontSize: 10, cursor: 'pointer'
+                 }} />
                <pre className="code-output error" style={{ margin: 0, overflowX: 'auto' }}>{result.stderr}</pre>
              </div>
            </>
@@ -289,31 +343,16 @@ function ToolResultCard({ tool, result }) {
          {(result.output && !result.stdout && !result.stderr) && (
            <>
              <div className="code-output" style={{ position: 'relative' }}>
-               <button
-                 onClick={() => {
-                   navigator.clipboard.writeText(result.output || '');
-                   // TODO: Add toast notification for copy success
-                 }}
-                 className="copy-btn"
-                 title="Copy output"
-                 style={{
-                   position: 'absolute',
-                   top: 4,
-                   right: 4,
-                   background: 'var(--bg-input)',
-                   border: '1px solid var(--border)',
-                   borderRadius: 3,
-                   padding: '2px 4px',
-                   fontSize: 10,
-                   cursor: 'pointer'
-                 }}
-               >
-                 <Copy size={10} />
-               </button>
+               <CopyButton text={result.output} title="Copy output" style={{
+                   position: 'absolute', top: 4, right: 4,
+                   background: 'var(--bg-input)', border: '1px solid var(--border)',
+                   borderRadius: 3, padding: '2px 4px', fontSize: 10, cursor: 'pointer'
+                 }} />
                <pre className="code-output" style={{ margin: 0, overflowX: 'auto' }}>{result.output}</pre>
              </div>
            </>
          )}
+         {result.files?.length > 0 && <RenderedFiles files={result.files} />}
        </div>
      );
    }
@@ -371,27 +410,11 @@ function ToolResultCard({ tool, result }) {
                Original Text ({result.source_lang})
              </div>
              <div className="translation-original" style={{ position: 'relative', background: 'var(--bg-input)', borderRadius: 6, padding: '12px', minHeight: '60px' }}>
-               <button
-                 onClick={() => {
-                   navigator.clipboard.writeText(result.source_text || '');
-                   // TODO: Add toast notification for copy success
-                 }}
-                 className="copy-btn"
-                 title="Copy original"
-                 style={{
-                   position: 'absolute',
-                   top: 8,
-                   right: 8,
-                   background: 'var(--bg-tertiary)',
-                   border: '1px solid var(--border)',
-                   borderRadius: 3,
-                   padding: '2px 6px',
-                   fontSize: 10,
-                   cursor: 'pointer'
-                 }}
-               >
-                 <Copy size={10} />
-               </button>
+               <CopyButton text={result.source_text} title="Copy original" style={{
+                   position: 'absolute', top: 8, right: 8,
+                   background: 'var(--bg-tertiary)', border: '1px solid var(--border)',
+                   borderRadius: 3, padding: '2px 6px', fontSize: 10, cursor: 'pointer'
+                 }} />
                <p style={{ margin: 0, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{result.source_text}</p>
              </div>
            </div>
@@ -400,27 +423,11 @@ function ToolResultCard({ tool, result }) {
                Translated Text ({result.target_lang})
              </div>
              <div className="translation-result" style={{ position: 'relative', background: 'var(--bg-tertiary)', borderRadius: 6, padding: '12px', minHeight: '60px' }}>
-               <button
-                 onClick={() => {
-                   navigator.clipboard.writeText(result.translated || '');
-                   // TODO: Add toast notification for copy success
-                 }}
-                 className="copy-btn"
-                 title="Copy translation"
-                 style={{
-                   position: 'absolute',
-                   top: 8,
-                   right: 8,
-                   background: 'var(--bg-input)',
-                   border: '1px solid var(--border)',
-                   borderRadius: 3,
-                   padding: '2px 6px',
-                   fontSize: 10,
-                   cursor: 'pointer'
-                 }}
-               >
-                 <Copy size={10} />
-               </button>
+               <CopyButton text={result.translated} title="Copy translation" style={{
+                   position: 'absolute', top: 8, right: 8,
+                   background: 'var(--bg-input)', border: '1px solid var(--border)',
+                   borderRadius: 3, padding: '2px 6px', fontSize: 10, cursor: 'pointer'
+                 }} />
                <p style={{ margin: 0, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{result.translated}</p>
              </div>
            </div>
@@ -447,19 +454,9 @@ function ToolResultCard({ tool, result }) {
            </div>
          )}
          <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
-           <button
-             onClick={() => {
-               navigator.clipboard.writeText((result.formatted || result.output || '').toString());
-               // TODO: Add toast notification for copy success
-             }}
-             className="small-btn"
-             style={{
-               padding: '4px 8px',
-               fontSize: 12
-             }}
-           >
-             <Copy size={12} /> Copy Result
-           </button>
+           <CopyButton text={result.formatted || result.output} title="Copy Result"
+             className="small-btn" iconSize={12} label="Copy Result"
+             style={{ padding: '4px 8px', fontSize: 12 }} />
          </div>
        </div>
      )
@@ -477,27 +474,11 @@ function ToolResultCard({ tool, result }) {
            )}
          </div>
          <div className="code-output" style={{ position: 'relative', wordBreak: 'break-all', background: 'var(--code-bg)', padding: '12px', borderRadius: 6, marginTop: '8px' }}>
-           <button
-             onClick={() => {
-               navigator.clipboard.writeText(result.result || '');
-               // TODO: Add toast notification for copy success
-             }}
-             className="copy-btn"
-             title="Copy hash"
-             style={{
-               position: 'absolute',
-               top: 8,
-               right: 8,
-               background: 'var(--bg-input)',
-               border: '1px solid var(--border)',
-               borderRadius: 3,
-               padding: '2px 6px',
-               fontSize: 10,
-               cursor: 'pointer'
-             }}
-           >
-             <Copy size={10} />
-           </button>
+           <CopyButton text={result.result} title="Copy hash" style={{
+               position: 'absolute', top: 8, right: 8,
+               background: 'var(--bg-input)', border: '1px solid var(--border)',
+               borderRadius: 3, padding: '2px 6px', fontSize: 10, cursor: 'pointer'
+             }} />
            <div style={{ margin: 0, fontFamily: 'monospace' }}>{result.result}</div>
          </div>
          {result.alternatives && result.alternatives.length > 0 && (
@@ -656,11 +637,13 @@ function ToolResultCard({ tool, result }) {
   }
 
   if (tool === 'diagram' && result.svg) {
+    const svg = sanitizeDiagramSvg(result.svg)
+    if (!svg) return null
     return (
       <div className="tool-result-card">
         <div className="tool-result-header"><GitCompare size={14} /> Diagram</div>
         {/* Mermaid renders to SVG in-browser; no backend image endpoint exists */}
-        <div className="diagram-svg" dangerouslySetInnerHTML={{ __html: result.svg }} />
+        <div className="diagram-svg" dangerouslySetInnerHTML={{ __html: svg }} />
       </div>
     )
   }
@@ -847,7 +830,7 @@ function ToolResultCard({ tool, result }) {
   }
 
   return null
-}
+})
 
 // ─── Message ───
 

@@ -3,7 +3,11 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { markAppHealthy } from './pwa'
+import { installErrorLog } from './errorLog'
 import './styles.css'
+
+// Capture runtime errors/rejections to an on-device ring buffer for diagnostics.
+installErrorLog()
 
 // Filter out third-party browser extension message channel warnings
 window.addEventListener('unhandledrejection', (event) => {

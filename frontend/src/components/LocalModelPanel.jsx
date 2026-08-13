@@ -17,6 +17,7 @@ export function LocalModelPanel({ model = DEFAULT_LOCAL_MODEL, onModelChange, on
   const [progress, setProgress] = useState(null)
   const [error, setError] = useState('')
   const [ready, setReady] = useState(isLocalReady(model))
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   // Probe only. This panel is mounted (hidden) with the settings sidebar, so
   // anything heavier than a probe here is a download nobody asked for: it used
@@ -51,9 +52,8 @@ export function LocalModelPanel({ model = DEFAULT_LOCAL_MODEL, onModelChange, on
   }
 
   const forget = async () => {
-    if (!confirm('Delete the downloaded model files? You can download them again later.')) return
     await clearLocalModelCache()
-    setCached(false); setReady(false)
+    setCached(false); setReady(false); setConfirmDelete(false)
   }
 
   if (gpu && !gpu.available) {
@@ -114,9 +114,17 @@ export function LocalModelPanel({ model = DEFAULT_LOCAL_MODEL, onModelChange, on
           <button className="small-btn" onClick={() => { unloadLocalModel(); setReady(false) }}>
             Unload from memory
           </button>
-          <button className="small-btn" onClick={forget} style={{ color: '#ff6b6b' }}>
-            <Trash2 size={11} /> Delete files
-          </button>
+          {confirmDelete ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Delete model files?</span>
+              <button className="small-btn" style={{ color: '#ff6b6b' }} onClick={forget}>Yes, delete</button>
+              <button className="small-btn" onClick={() => setConfirmDelete(false)}>Cancel</button>
+            </span>
+          ) : (
+            <button className="small-btn" onClick={() => setConfirmDelete(true)} style={{ color: '#ff6b6b' }}>
+              <Trash2 size={11} /> Delete files
+            </button>
+          )}
         </div>
       )}
 

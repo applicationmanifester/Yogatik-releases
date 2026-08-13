@@ -35,9 +35,10 @@ self.addEventListener('fetch', (e) => {
 
   let url;
   try { url = new URL(req.url); } catch { return; }
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return;
   if (url.origin !== self.location.origin) return;
   if (!url.protocol.startsWith('http')) return;
-  if (url.pathname.startsWith('/api')) return;
+  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/src/') || url.pathname.startsWith('/@') || url.search.includes('token=')) return;
   if (req.headers.get('accept')?.includes('text/event-stream')) return;
 
   // HTML: network-first so deploys land immediately, cache as offline fallback.

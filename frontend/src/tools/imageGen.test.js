@@ -1,9 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fetchImage } from './imageGen'
+import { fetchImage, resetImageRateGate } from './imageGen'
 
 describe('fetchImage rate-gate + retry', () => {
-  beforeEach(() => { vi.useFakeTimers() })
-  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+  beforeEach(() => { 
+    vi.useFakeTimers()
+    resetImageRateGate()
+  })
+  afterEach(() => { 
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    vi.clearAllMocks()
+    // Ensure any pending rejections are handled
+    resetImageRateGate()
+  })
 
   it('retries on 429 then succeeds', async () => {
     let calls = 0
@@ -25,5 +34,7 @@ describe('fetchImage rate-gate + retry', () => {
     const p = fetchImage('https://image.pollinations.ai/y', { retries: 1 })
     await vi.runAllTimersAsync()
     await expect(p).rejects.toThrow()
+    // Handle the rejection by storing it to prevent unhandled warning
+    p.catch(() => {})
   })
 })

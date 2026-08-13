@@ -11,6 +11,10 @@
     ],
     "rewrites": [
       {
+        "source": "/platforms",
+        "destination": "/platforms.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

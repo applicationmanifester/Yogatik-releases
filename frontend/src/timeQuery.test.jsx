@@ -4,10 +4,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 
-vi.mock('./api', () => ({}))
-vi.mock('./localLLM', () => ({ DEFAULT_LOCAL_MODEL: 'x', webGpuDetails: vi.fn(), LOCAL_MODELS: {} }))
-
-const { isDirectTimeQuery } = await import('./App')
+import { isDirectTimeQuery } from './timeQuery'
 
 describe('isDirectTimeQuery', () => {
   it('answers real clock questions', () => {

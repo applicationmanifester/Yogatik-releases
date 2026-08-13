@@ -15,9 +15,15 @@ async function gate() {
   _lastAt = Date.now()
 }
 
+/** Reset chain state - primarily for testing. */
+export function resetImageRateGate() {
+  _lastAt = 0
+  _chain = Promise.resolve()
+}
+
 /** Fetch an image URL, rate-gated and retried. Resolves with a Response (ok or
  *  the final non-retryable one) or throws after exhausting retries on 429/5xx. */
-export async function fetchImage(url, { retries = 3, signal } = {}) {
+export function fetchImage(url, { retries = 3, signal } = {}) {
   // Chain so concurrent callers queue behind each other (serialised bursts).
   const run = _chain.then(async () => {
     let lastErr
@@ -40,30 +46,45 @@ export async function fetchImage(url, { retries = 3, signal } = {}) {
     }
     throw lastErr || new Error('Image request failed')
   })
-  // Keep the chain alive but don't let one failure break the queue.
+  run.catch(() => {}).then(() => {})
   _chain = run.catch(() => {})
   return run
 }
 
+// Build a Pollinations URL with the quality knobs the endpoint supports.
+export function pollinationsUrl(prompt, { width = 1024, height = 1024, seed, model = 'flux', enhance = true, negative } = {}) {
+  const p = new URLSearchParams({
+    width: String(width), height: String(height),
+    seed: String(seed ?? Math.floor(Math.random() * 999999)),
+    model, nologo: 'true', nofeed: 'true',
+  })
+  if (enhance) p.set('enhance', 'true')          // server-side prompt enrichment → better composition
+  if (negative) p.set('negative_prompt', negative)
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${p.toString()}`
+}
+
+const DEFAULT_NEGATIVE = 'blurry, low quality, distorted, deformed, extra limbs, bad anatomy, watermark, text, jpeg artifacts'
+
 export const imageGenTool = {
   schema: {
-    description: 'Generate an image from a text prompt',
+    description: 'Generate a high-quality image from a text prompt (Flux model, prompt auto-enhanced).',
     parameters: { type: 'object', properties: {
-      prompt: { type: 'string', description: 'Image description' },
-      width: { type: 'number', description: 'Width in pixels (default 1024)' },
+      prompt: { type: 'string', description: 'Detailed image description — the more specific, the better.' },
+      width: { type: 'number', description: 'Width in pixels (default 1024). Use 1280×720 for 16:9.' },
       height: { type: 'number', description: 'Height in pixels (default 1024)' },
+      model: { type: 'string', enum: ['flux', 'turbo'], description: 'flux = best quality (default), turbo = faster/lower.' },
+      negative: { type: 'string', description: 'What to avoid in the image (optional).' },
     }, required: ['prompt'] },
   },
-  async execute({ prompt, width = 1024, height = 1024 }) {
-    const seed = Math.floor(Math.random() * 999999)
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${seed}&nologo=true`
+  async execute({ prompt, width = 1024, height = 1024, model = 'flux', negative }) {
+    const url = pollinationsUrl(prompt, { width, height, model, enhance: true, negative: negative || DEFAULT_NEGATIVE })
     let resp
     try { resp = await fetchImage(url) } catch (e) { return { success: false, error: `Image generation failed: ${e.message}` } }
     if (!resp.ok) return { success: false, error: `Image generation failed (${resp.status})` }
     const blob = await resp.blob()
     if (!blob.size) return { success: false, error: 'Image generation returned no data' }
     return {
-      success: true, tool: 'image_generate', prompt,
+      success: true, tool: 'image_generate', prompt, model,
       image_url: url,
       display_url: URL.createObjectURL(blob),
       bytes: blob.size,
@@ -80,9 +101,8 @@ export const stickerGenTool = {
     }, required: ['prompt'] },
   },
   async execute({ prompt, style = 'vector sticker' }) {
-    const seed = Math.floor(Math.random() * 999999)
     const enhancedPrompt = `high quality ${style}, die-cut outline, vibrant sticker graphic, isolated white background, ${prompt}`
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?width=768&height=768&seed=${seed}&nologo=true`
+    const url = pollinationsUrl(enhancedPrompt, { width: 1024, height: 1024, model: 'flux', enhance: true })
     let resp
     try { resp = await fetchImage(url) } catch (e) { return { success: false, error: `Sticker generation failed: ${e.message}` } }
     if (!resp.ok) return { success: false, error: `Sticker generation failed (${resp.status})` }

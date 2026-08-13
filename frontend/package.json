@@ -1,15 +1,20 @@
 {
   "name": "yogatik",
   "private": true,
-  "version": "3.0.0",
+  "version": "3.8.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js --configLoader runner",
     "build": "node ./node_modules/vite/bin/vite.js --configLoader runner build",
     "preview": "node ./node_modules/vite/bin/vite.js --configLoader runner preview",
     "test": "node ./scripts/run-vitest.mjs",
     "test:watch": "node ./scripts/run-vitest.mjs --watch",
-    "lint": "node ./node_modules/eslint/bin/eslint.js src"
+    "lint": "node ./node_modules/eslint/bin/eslint.js src",
+    "build:electron": "node ./node_modules/vite/bin/vite.js --configLoader runner build --base=./ --outDir dist-electron",
+    "electron:dev": "electron .",
+    "electron:build": "npm run build:electron && electron-builder --win nsis",
+    "electron:build:all": "npm run build:electron && electron-builder -wl"
   },
   "dependencies": {
     "dexie": "^4.0.0",
@@ -18,18 +23,64 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
-    "react-syntax-highlighter": "^15.6.1"
+    "react-syntax-highlighter": "^16.1.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.0",
-    "vitest": "^2.1.9",
-    "jsdom": "^25.0.1",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "electron-updater": "^6.3.9",
     "eslint": "^9.15.0",
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.0.0",
+    "fake-indexeddb": "^6.0.0",
     "globals": "^15.12.0",
-    "fake-indexeddb": "^6.0.0"
+    "jsdom": "^25.0.1",
+    "vite": "^6.0.0",
+    "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "app.yogatik.desktop",
+    "productName": "Yogatik",
+    "directories": {
+      "output": "release-electron"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "electron/**/*",
+      "bin/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "bin/search-sidecar",
+        "to": "search-sidecar",
+        "filter": ["**/*"]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "electron/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true,
+      "artifactName": "Yogatik-Setup.exe"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    }
   }
 }

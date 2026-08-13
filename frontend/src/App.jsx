@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate } from './api'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder } from 'lucide-react'
+import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate } from './api'
+import { isDesktop, grantFolder, getGrantedRoot } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
@@ -21,6 +22,7 @@ import { PersonalisePanel } from './components/PersonalisePanel'
 import { SkillsPanel } from './components/SkillsPanel'
 import { runWorkflow } from './workflows'
 import { DemoModal } from './components/DemoModal'
+import { DownloadModal } from './components/DownloadModal'
 import { resolveFeatures } from './features'
 import { setLocalVLMConsent } from './vision/localVLM'
 import { setSemanticConsent } from './semantic'
@@ -28,16 +30,19 @@ import { prepareImage, isImageFile, imageFromClipboard, imageFromDrop } from './
 import { registerServiceWorker } from './pwa'
 import { requestPersistence, storageReport, formatBytes } from './storage'
 import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clearLocalModelCache } from './localLLM'
+import { isDirectTimeQuery } from './timeQuery'
 
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
 
 /** 329189ms is unreadable; 5m 29s is not. */
 function formatLatency(ms) {
+  if (ms == null || isNaN(ms)) return ''
   if (ms < 1000) return `${ms}ms`
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
   const m = Math.floor(ms / 60000)
-  return `${m}m ${Math.round((ms % 60000) / 1000)}s`
+  const s = Math.round((ms % 60000) / 1000)
+  return `${m}m ${s}s`
 }
 
 const SUGGESTIONS = [
@@ -49,37 +54,6 @@ const SUGGESTIONS = [
   "Summarize this YouTube video",
 ]
 
-/**
- * Does this message ask for nothing but the clock?
- *
- * Substring matching was a disaster here: "today" and "now" appear in half of
- * all questions, so "Today's India news" was answered with the time. The shortcut
- * bypasses the model entirely, which makes a false positive worse than a missed
- * one — so match whole questions, not fragments.
- */
-const TIME_QUESTIONS = [
-  /^what(?:'s| is| s)?(?: the)?(?: current| local)? time(?: is it)?(?: now| here| there)?$/,
-  /^what time is it(?: now| here| there)?$/,
-  /^(?:the )?time(?: now| here| please)?$/,
-  /^what(?:'s| is| s)?(?: the)?(?: current| today'?s)? date(?: today| now)?$/,
-  /^(?:the )?date(?: today| now)?$/,
-  /^what day is it(?: today)?$/,
-  /^what(?:'s| is| s)?(?: the)? day(?: today| of the week)?$/,
-  /^current (?:time|date|time and date|date and time)$/,
-  /^time and date$|^date and time$/,
-  /^what(?:'s| is| s)?(?: my| the)? time ?zone$/,
-  /^which time ?zone(?: am i in)?$/,
-  /^what(?:'s| is| s)?(?: the)? time in \w[\w\s]{0,20}$/,
-]
-
-export function isDirectTimeQuery(text) {
-  const q = String(text || '')
-    .trim().toLowerCase()
-    .replace(/[?!.,]+$/g, '')
-    .replace(/\s+/g, ' ')
-  if (!q || q.length > 40) return false
-  return TIME_QUESTIONS.some(re => re.test(q))
-}
 
 function formatDirectTimeAnswer() {
   const locale = navigator.language || 'en-US'
@@ -101,16 +75,21 @@ function formatDirectTimeAnswer() {
 
 // ─── Main App ───
 export default function App() {
-  const [conversations, setConversations] = useState([{ id: null, title: 'New Chat', messages: [] }])
+  const [conversations, setConversations] = useState([{ clientId: `c_def_${Date.now()}`, id: null, title: 'New Chat', messages: [] }])
   const [activeArtifact, setActiveArtifact] = useState(null)
   const [activeIdx, setActiveIdx] = useState(0)
   const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [streamingContent, setStreamingContent] = useState('')
-  const [streamingIdx, setStreamingIdx] = useState(null)
-  const [statusText, setStatusText] = useState('')
-  const [currentStreamId, setCurrentStreamId] = useState(null)
-  const [theme, setTheme] = useState(localStorage.getItem('bgkai_theme') || 'dark')
+  const [loadingMap, setLoadingMap] = useState({})
+  const [streamingMap, setStreamingMap] = useState({})
+  const [statusMap, setStatusMap] = useState({})
+  const [streamIdMap, setStreamIdMap] = useState({})
+  const [theme, setTheme] = useState(() => {
+    // Migrate old key 'bgkai_theme' → 'yogatik_theme' on first load
+    const old = localStorage.getItem('bgkai_theme')
+    const cur = localStorage.getItem('yogatik_theme')
+    if (old && !cur) { localStorage.setItem('yogatik_theme', old); localStorage.removeItem('bgkai_theme') }
+    return localStorage.getItem('yogatik_theme') || 'dark'
+  })
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
   const [provider, setProviderState] = useState('local')
   const [model, setModel] = useState('')
@@ -125,7 +104,6 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [promptTemplates, setPromptTemplates] = useState([])
   const [activeTemplate, setActiveTemplate] = useState('default')
-  const [isListening, setIsListening] = useState(false)
   const [activeTools, setActiveTools] = useState([])
   const [pendingToolResults, setPendingToolResults] = useState({})
   const [ttsPlaying, setTtsPlaying] = useState(false)
@@ -158,10 +136,20 @@ export default function App() {
   const [prefs, setPrefsState] = useState({})
   const [showPersonalise, setShowPersonalise] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
+  const [grantedRoot, setGrantedRoot] = useState(null)
   const [toast, setToast] = useState(null)
   const showToast = useCallback((msg) => {
     setToast(msg)
-    setTimeout(() => setToast(t => (t === msg ? null : t)), 2600)
+    // Scale dismiss timeout by message length — short messages 2s, long messages up to 5s
+    const ms = Math.min(5000, Math.max(2000, msg.length * 60))
+    setTimeout(() => setToast(t => (t === msg ? null : t)), ms)
+  }, [])
+  const showConfirm = useCallback((msg, onOk, { okLabel = 'OK', cancelLabel = 'Cancel', onCancel } = {}) => {
+    setConfirmModal({ msg, okLabel, cancelLabel, onOk, onCancel })
+  }, [])
+  const handleGrantFolder = useCallback(async () => {
+    const root = await grantFolder()
+    if (root) setGrantedRoot(root)
   }, [])
   const features = useMemo(() => resolveFeatures(prefs.features), [prefs.features])
   // The vision fallback lives outside React; it needs the toggle, not a prop.
@@ -220,8 +208,15 @@ export default function App() {
   const [isEnhancing, setIsEnhancing] = useState(false)
   const recognitionRef = useRef(null)
   const [showDemoModal, setShowDemoModal] = useState(false)
+  const [showDownloadModal, setShowDownloadModal] = useState(false)
   const [showStorageDetails, setShowStorageDetails] = useState(false)
   const [showPersonaModal, setShowPersonaModal] = useState(false)
+  // Generic confirm modal — replaces native confirm() throughout the app
+  const [confirmModal, setConfirmModal] = useState(null) // { msg, okLabel?, cancelLabel?, onOk, onCancel? }
+  // Project-name prompt modal — replaces native prompt() in addProject
+  const [projectNameModal, setProjectNameModal] = useState(null) // { onSubmit }
+  // Restore-mode modal — replaces confirm() in handleRestore
+  const [restoreModal, setRestoreModal] = useState(null) // { file }
 
   // Service worker updates + durable storage. Both are fire-and-forget: a
   // browser that refuses either must still get a working app.
@@ -260,6 +255,11 @@ export default function App() {
   }, [conversations, keyInfo])
 
   const conv = conversations[activeIdx]
+  const activeClientId = conv?.clientId
+  const isStreamingHere = !!(activeClientId && loadingMap[activeClientId])
+  const streamingContent = (activeClientId && streamingMap[activeClientId]) || ''
+  const statusText = (activeClientId && statusMap[activeClientId]) || ''
+  const currentStreamId = (activeClientId && streamIdMap[activeClientId]) || null
 
   // Provider/model must be persisted: the agent reads them from IndexedDB, so
   // React-only state meant every message silently went to the stored default.
@@ -272,21 +272,73 @@ export default function App() {
       return id
     })
     setActiveProvider(id).catch(() => {})
-  }, [])
+    setConversations(prev => prev.map((c, i) => {
+      if (i !== activeIdx) return c
+      const updated = { ...c, provider: id, model: '' }
+      if (updated.id) {
+        updateConversationModel(updated.id, id, '', {
+          systemPrompt: updated.systemPrompt,
+          temperature: updated.temperature,
+          webSearch: updated.webSearch,
+          tools: updated.tools,
+        }).catch(() => {})
+      }
+      return updated
+    }))
+  }, [activeIdx])
   const chooseModel = useCallback((m, providerId = provider) => {
     setModel(m)
     setActiveModel(providerId, m).catch(() => {})
-  }, [provider])
+    setConversations(prev => prev.map((c, i) => {
+      if (i !== activeIdx) return c
+      const updated = { ...c, provider: providerId, model: m }
+      if (updated.id) {
+        updateConversationModel(updated.id, providerId, m, {
+          systemPrompt: updated.systemPrompt,
+          temperature: updated.temperature,
+          webSearch: updated.webSearch,
+          tools: updated.tools,
+        }).catch(() => {})
+      }
+      return updated
+    }))
+  }, [provider, activeIdx])
 
   // Chat preferences persist across reloads like provider and model do.
   const setTemperature = useCallback((v) => {
     setTemperatureState(v)
     setPref('temperature', v).catch(() => {})
-  }, [])
+    setConversations(prev => prev.map((c, i) => {
+      if (i !== activeIdx) return c
+      const updated = { ...c, temperature: v }
+      if (updated.id) {
+        updateConversationModel(updated.id, updated.provider, updated.model, {
+          systemPrompt: updated.systemPrompt,
+          temperature: v,
+          webSearch: updated.webSearch,
+          tools: updated.tools,
+        }).catch(() => {})
+      }
+      return updated
+    }))
+  }, [activeIdx])
   const setWebSearch = useCallback((v) => {
     setWebSearchState(v)
     setPref('web_search', v).catch(() => {})
-  }, [])
+    setConversations(prev => prev.map((c, i) => {
+      if (i !== activeIdx) return c
+      const updated = { ...c, webSearch: v }
+      if (updated.id) {
+        updateConversationModel(updated.id, updated.provider, updated.model, {
+          systemPrompt: updated.systemPrompt,
+          temperature: updated.temperature,
+          webSearch: v,
+          tools: updated.tools,
+        }).catch(() => {})
+      }
+      return updated
+    }))
+  }, [activeIdx])
   const setAutoRoute = useCallback((v) => {
     setAutoRouteState(v)
     setPref('auto_route', v).catch(() => {})
@@ -298,7 +350,20 @@ export default function App() {
   const setToolsEnabled = useCallback((v) => {
     setToolsEnabledState(v)
     setPref('tools_enabled', v).catch(() => {})
-  }, [])
+    setConversations(prev => prev.map((c, i) => {
+      if (i !== activeIdx) return c
+      const updated = { ...c, tools: v }
+      if (updated.id) {
+        updateConversationModel(updated.id, updated.provider, updated.model, {
+          systemPrompt: updated.systemPrompt,
+          temperature: updated.temperature,
+          webSearch: updated.webSearch,
+          tools: v,
+        }).catch(() => {})
+      }
+      return updated
+    }))
+  }, [activeIdx])
   /** One updater for every small preference the Personalise panel owns. */
   const updatePref = useCallback((key, value) => {
     setPrefsState(p => ({ ...p, [key]: value }))
@@ -313,27 +378,10 @@ export default function App() {
     ? allMessages.slice(-visibleCount)
     : allMessages
   const hiddenCount = allMessages.length - shownMessages.length
-  // A reply streams into the conversation it was sent from, even if the user
-  // navigates away mid-answer.
-  const isStreamingHere = streamingIdx === activeIdx
-
-  // Streaming tokens arrive faster than the browser can paint. Coalesce them
-  // into one state update per animation frame instead of one per token.
-  const streamFrame = useRef(0)
-  const streamPending = useRef('')
-  const pushStream = useCallback((text) => {
-    streamPending.current = text
-    if (streamFrame.current) return
-    streamFrame.current = requestAnimationFrame(() => {
-      streamFrame.current = 0
-      setStreamingContent(streamPending.current)
-    })
-  }, [])
-  useEffect(() => () => { if (streamFrame.current) cancelAnimationFrame(streamFrame.current) }, [])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('bgkai_theme', theme)
+    localStorage.setItem('yogatik_theme', theme)
   }, [theme])
   // Follow the stream only while the user is already at the bottom. Yanking
   // someone back mid-read is the most annoying thing a chat UI can do.
@@ -352,9 +400,9 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!isStreamingHere && loading) return
+    if (!isStreamingHere) return
     if (atBottom) scrollToBottom(streamingContent ? 'auto' : 'smooth')
-  }, [conv?.messages, streamingContent, isStreamingHere, loading, atBottom, scrollToBottom])
+  }, [conv?.messages, streamingContent, isStreamingHere, atBottom, scrollToBottom])
 
   useEffect(() => {
     const on = () => setOnline(true)
@@ -376,7 +424,7 @@ export default function App() {
   const toggleVoiceInput = useCallback(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SR) {
-      alert('Voice dictation is not supported by your browser.')
+      setErrorModalMsg('Voice dictation is not supported by your browser.')
       return
     }
     if (listening) {
@@ -387,7 +435,7 @@ export default function App() {
       const rec = new SR()
       rec.continuous = false
       rec.interimResults = true
-      rec.lang = 'en-US'
+      rec.lang = navigator.language || 'en-US'
       rec.onstart = () => setListening(true)
       rec.onend = () => setListening(false)
       rec.onerror = () => setListening(false)
@@ -483,6 +531,9 @@ export default function App() {
       setModel(await getActiveModel(p) || '')
       setProviderStatus(await getAllProviderStatus())
     }).catch(() => {})
+    if (isDesktop()) {
+      getGrantedRoot().then(setGrantedRoot).catch(() => {})
+    }
     getPrefs().then(pref => {
       if (pref.temperature != null) setTemperatureState(pref.temperature)
       if (pref.web_search != null) setWebSearchState(pref.web_search)
@@ -511,21 +562,8 @@ export default function App() {
     if (shared || params.get('new') || params.get('intent') || params.get('live')) {
       history.replaceState(null, '', location.pathname)   // don't re-fire on reload
     }
-    // Init Web Speech API
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-      const recognition = new SR()
-      recognition.continuous = false
-      recognition.interimResults = true
-      recognition.lang = 'en-US'
-      recognition.onresult = (e) => {
-        const transcript = Array.from(e.results).map(r => r[0].transcript).join('')
-        setInput(transcript)
-      }
-      recognition.onend = () => setIsListening(false)
-      recognition.onerror = () => setIsListening(false)
-      recognitionRef.current = recognition
-    }
+    // Note: Speech Recognition is initialised on-demand in toggleVoiceInput;
+    // no duplicate init is needed here.
     // Global Keyboard Shortcuts
     const handleGlobalKeyDown = (e) => {
       // Ctrl/Cmd+K -> command palette
@@ -536,27 +574,28 @@ export default function App() {
       // Ctrl+Shift+O or Cmd+Shift+O -> New Chat
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'O' || e.key === 'o')) {
         e.preventDefault()
-        newChat()
+        newChatRef.current()
       }
-      // Escape -> Stop generation
-      if (e.key === 'Escape' && loading) {
+      // Escape -> Stop generation (only if THIS chat is generating)
+      if (e.key === 'Escape' && isStreamingHere) {
         e.preventDefault()
         handleStop()
       }
     }
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [loading])
+  }, [isStreamingHere])
+
 
   // One fetch, not two: getProviders() is an alias of getModels() and the
   // second call only fed state nothing ever read.
-  const refreshModels = () => {
+  const refreshModels = useCallback(() => {
     getModels().then(setModels).catch(() => {})
-  }
+  }, [])
 
-  const refreshTemplates = () => {
+  const refreshTemplates = useCallback(() => {
     getTemplates().then(setPromptTemplates).catch(() => {})
-  }
+  }, [])
 
   const refreshDocs = useCallback(() => {
     getActiveProject().then(pid => listDocuments(pid)).then(setDocs).catch(() => {})
@@ -573,19 +612,24 @@ export default function App() {
     refreshDocs()
   }
 
-  const addProject = async () => {
-    const name = prompt('Project name')?.trim()
-    if (!name) return
-    const pid = await createProject(name)
-    refreshProjects()
-    chooseProject(pid)
+  const addProject = () => {
+    setProjectNameModal({
+      onSubmit: async (name) => {
+        setProjectNameModal(null)
+        if (!name?.trim()) return
+        const pid = await createProject(name.trim())
+        refreshProjects()
+        chooseProject(pid)
+      }
+    })
   }
 
   const removeProject = async (pid) => {
-    if (!confirm('Delete this project? Its chats and documents are kept and moved out of the project.')) return
-    await deleteProject(pid)
-    refreshProjects()
-    chooseProject(null)
+    showConfirm(
+      'Delete this project? Its chats and documents are kept and moved out of the project.',
+      async () => { await deleteProject(pid); refreshProjects(); chooseProject(null) },
+      { okLabel: 'Delete Project' }
+    )
   }
 
   const refreshKeys = useCallback(() => {
@@ -637,24 +681,48 @@ export default function App() {
     toolResults: m.toolResults || undefined,
     toolsUsed: m.toolsUsed || undefined,
     trace: m.trace || undefined,
+    provider: m.provider || undefined,
+    model: m.model || undefined,
     createdAt: m.createdAt,
   })
 
-  const loadConversations = async (projectId = activeProject) => {
-    const convs = await getConversations(projectId ?? null)
+  const loadConversations = useCallback(async (projectId = activeProject) => {
+    const convs = await getConversations(projectId ?? undefined)
     if (!convs.length) {
-      setConversations([{ id: null, title: 'New Chat', messages: [] }])
+      setConversations([{
+        clientId: `c_def_${Date.now()}`, id: null, title: 'New Chat', messages: [],
+        provider: provider || 'local', model: model || '',
+        systemPrompt: '', temperature: temperature ?? 0.7,
+        webSearch: webSearch ?? true, tools: tools ?? true,
+      }])
       setActiveIdx(0)
       return
     }
     const first = await getConversation(convs[0].id)
     const mapped = convs.map((c, i) => ({
-      id: c.id, title: c.title,
+      clientId: `c_${c.id}_${i}`,
+      id: c.id,
+      title: c.title,
+      provider: c.provider || provider || 'local',
+      model: c.model !== undefined ? c.model : model || '',
+      systemPrompt: c.settings?.systemPrompt ?? c.systemPrompt ?? '',
+      temperature: c.settings?.temperature ?? c.temperature ?? temperature ?? 0.7,
+      webSearch: c.settings?.webSearch ?? c.webSearch ?? webSearch ?? true,
+      tools: c.settings?.tools ?? c.tools ?? tools ?? true,
       messages: i === 0 && first ? (first.messages || []).map(hydrate) : [],
     }))
-    setConversations([...mapped, { id: null, title: 'New Chat', messages: [] }])
-    setActiveIdx(0)
-  }
+    const filtered = mapped.filter(c => c.title || (c.messages && c.messages.length))
+    setConversations(filtered)
+    if (!filtered.length) setActiveIdx(0)
+    else {
+      const top = filtered[0]
+      if (top.provider) setProviderState(top.provider)
+      if (top.model !== undefined) setModel(top.model)
+      if (top.temperature !== undefined) setTemperatureState(top.temperature)
+      if (top.webSearch !== undefined) setWebSearchState(top.webSearch)
+      if (top.tools !== undefined) setToolsEnabledState(top.tools)
+    }
+  }, [activeProject, provider, model, temperature, webSearch, tools])
 
   const handleAuth = (userData) => { setUser(userData); loadConversations() }
 
@@ -678,12 +746,54 @@ export default function App() {
     if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 280) + 'px' }
   }, [])
 
-  const newChat = () => {
-    setVisibleCount(WINDOW_STEP)
-    setConversations(prev => [...prev, { id: null, title: 'New Chat', messages: [] }])
-    setActiveIdx(conversations.length)
-    if (window.innerWidth <= 768) setSidebarOpen(false)
-  }
+  const newChat = useCallback(() => {
+      setConvQuery('')
+      setInput('')
+      setActiveArtifact(null)
+      setAttachedFile(null)
+      setAttachedImage(null)
+      setVisibleCount(WINDOW_STEP)
+
+      setConversations(prev => {
+        const current = prev[activeIdx]
+        const isEmptyNewChat = current && !current.id && current.title === 'New Chat' && (!current.messages || current.messages.length === 0)
+      
+        if (isEmptyNewChat) {
+          return prev.map((c, i) => i === activeIdx ? {
+            ...c,
+            messages: [],
+            title: 'New Chat',
+            provider: provider || 'local',
+            model: model || '',
+            systemPrompt: '',
+            temperature: temperature ?? 0.7,
+            webSearch: webSearch ?? true,
+            tools: tools ?? true,
+          } : c)
+        }
+      
+        const newConv = {
+          clientId: `c_new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          id: null,
+          title: 'New Chat',
+          messages: [],
+          provider: provider || 'local',
+          model: model || '',
+          systemPrompt: '',
+          temperature: temperature ?? 0.7,
+          webSearch: webSearch ?? true,
+          tools: tools ?? true,
+        }
+        return [newConv, ...prev]
+      })
+
+      setActiveIdx(0)
+      if (window.innerWidth <= 768) setSidebarOpen(false)
+      setTimeout(() => textareaRef.current?.focus(), 50)
+    }, [provider, model, temperature, webSearch, tools, activeIdx])
+
+  const newChatRef = useRef(newChat)
+  useEffect(() => { newChatRef.current = newChat }, [newChat])
 
   /** Jump to a conversation by its stored id — the palette searches messages,
    *  which know their conversation but not its position in the sidebar. */
@@ -692,25 +802,50 @@ export default function App() {
     if (idx >= 0) { switchChat(idx); return }
     const full = await getConversation(convId)
     if (!full) return
-    setConversations(prev => {
-      const next = [{ ...full, messages: (full.messages || []).map(hydrate) }, ...prev]
-      return next
-    })
+    const formatted = {
+      clientId: `c_${full.id}_0`,
+      ...full,
+      provider: full.provider || provider || 'local',
+      model: full.model !== undefined ? full.model : model || '',
+      systemPrompt: full.settings?.systemPrompt ?? full.systemPrompt ?? '',
+      temperature: full.settings?.temperature ?? full.temperature ?? temperature ?? 0.7,
+      webSearch: full.settings?.webSearch ?? full.webSearch ?? webSearch ?? true,
+      tools: full.settings?.tools ?? full.tools ?? tools ?? true,
+      messages: (full.messages || []).map(hydrate),
+    }
+    setConversations(prev => [formatted, ...prev])
     setActiveIdx(0)
     setVisibleCount(WINDOW_STEP)
     if (window.innerWidth <= 768) setSidebarOpen(false)
-  }, [conversations])
+  }, [conversations, provider, model, temperature, webSearch, tools])
 
   const switchChat = async (idx) => {
     setActiveIdx(idx)
     setVisibleCount(WINDOW_STEP)
     if (window.innerWidth <= 768) setSidebarOpen(false)
     const c = conversations[idx]
+    if (!c) return
+
+    if (c.provider) setProviderState(c.provider)
+    if (c.model !== undefined) setModel(c.model)
+    if (c.temperature !== undefined) setTemperatureState(c.temperature)
+    if (c.webSearch !== undefined) setWebSearchState(c.webSearch)
+    if (c.tools !== undefined) setToolsEnabledState(c.tools)
+
     if (c.id && c.messages.length === 0) {
       const full = await getConversation(c.id)
       if (full) {
         setConversations(prev => prev.map((conv, i) =>
-          i === idx ? { ...conv, messages: (full.messages || []).map(hydrate) } : conv
+          i === idx ? {
+            ...conv,
+            provider: full.provider || conv.provider,
+            model: full.model !== undefined ? full.model : conv.model,
+            systemPrompt: full.settings?.systemPrompt ?? conv.systemPrompt ?? '',
+            temperature: full.settings?.temperature ?? conv.temperature ?? 0.7,
+            webSearch: full.settings?.webSearch ?? conv.webSearch ?? true,
+            tools: full.settings?.tools ?? conv.tools ?? true,
+            messages: (full.messages || []).map(hydrate),
+          } : conv
         ))
       }
     }
@@ -718,15 +853,33 @@ export default function App() {
 
   const deleteChat = async (idx) => {
     const c = conversations[idx]
-    if (c.id) { try { await deleteConversation(c.id) } catch {} }
-    setVisibleCount(WINDOW_STEP)
-    setConversations(prev => {
-      const next = prev.filter((_, i) => i !== idx)
-      // Always keep one empty chat to land in, rather than appending a new one
-      // beside the row we just deleted.
-      return next.length ? next : [{ id: null, title: 'New Chat', messages: [] }]
-    })
-    setActiveIdx(prev => Math.max(0, prev >= idx ? prev - 1 : prev))
+    const cClientId = c?.clientId
+    const doDelete = async () => {
+      if (c?.id) { try { await deleteConversation(c.id) } catch {} }
+      setVisibleCount(WINDOW_STEP)
+      setConversations(prev => {
+        const next = prev.filter((_, i) => i !== idx)
+        return next.length ? next : [{ clientId: `c_def_${Date.now()}`, id: null, title: 'New Chat', messages: [], provider, model, temperature, webSearch, tools }]
+      })
+      setActiveIdx(prev => Math.max(0, prev >= idx ? prev - 1 : prev))
+    }
+    if (cClientId && loadingMap[cClientId]) {
+      showConfirm(
+        'This chat is currently generating a response. Stop generation and delete?',
+        () => {
+          const streamId = streamIdMap[cClientId]
+          if (streamId) stopGeneration(streamId).catch(() => {})
+          setLoadingMap(prev => { const n = { ...prev }; delete n[cClientId]; return n })
+          setStreamingMap(prev => { const n = { ...prev }; delete n[cClientId]; return n })
+          setStatusMap(prev => { const n = { ...prev }; delete n[cClientId]; return n })
+          setStreamIdMap(prev => { const n = { ...prev }; delete n[cClientId]; return n })
+          doDelete()
+        },
+        { okLabel: 'Stop & Delete' }
+      )
+      return
+    }
+    doDelete()
   }
 
   const handleExport = async () => {
@@ -746,7 +899,13 @@ export default function App() {
   }
 
   const handleStop = async () => {
-    if (currentStreamId) { await stopGeneration(currentStreamId); setCurrentStreamId(null) }
+    const activeClientId = conv?.clientId
+    const streamId = activeClientId ? streamIdMap[activeClientId] : null
+    if (streamId) {
+      await stopGeneration(streamId)
+      setStreamIdMap(prev => ({ ...prev, [activeClientId]: null }))
+      setLoadingMap(prev => { const n = { ...prev }; delete n[activeClientId]; return n })
+    }
   }
 
   const [apiKeyInput, setApiKeyInput] = useState({})
@@ -783,7 +942,7 @@ export default function App() {
 
   const handleAutoPick = async (pid = provider) => {
     setAutoPicking(true)
-    setStatusText('')
+    showToast('')
     try {
       const res = await autoPickModel(pid, { onProgress: setAutoPickMsg })
       setModel(res.model)
@@ -814,26 +973,22 @@ export default function App() {
   }
 
   const handleRemoveProvider = async (pid) => {
-    if (!confirm(`Remove "${pid}"?`)) return
-    try {
-      await removeProvider(pid)
-      refreshModels()
-      if (provider === pid) {
-        const fallback = models.groq?.available ? 'groq'
-          : models.openrouter?.available ? 'openrouter'
-          : models.openai?.available ? 'openai'
-          : models.gemini?.available ? 'gemini'
-          : 'local'
-        setProvider(fallback)
+    showConfirm(`Remove "${pid}"?`, async () => {
+      try {
+        await removeProvider(pid)
+        refreshModels()
+        if (provider === pid) {
+          const fallback = models.groq?.available ? 'groq'
+            : models.openrouter?.available ? 'openrouter'
+            : models.openai?.available ? 'openai'
+            : models.gemini?.available ? 'gemini'
+            : 'local'
+          setProvider(fallback)
+        }
+      } catch (e) {
+        setErrorModalMsg(e.message)
       }
-    }
-    catch (e) { alert(e.message) }
-  }
-
-  const toggleVoice = () => {
-    if (!recognitionRef.current) return
-    if (isListening) { recognitionRef.current.stop(); setIsListening(false) }
-    else { recognitionRef.current.start(); setIsListening(true) }
+    }, { okLabel: 'Remove' })
   }
 
   const handleTTS = async (text) => {
@@ -846,9 +1001,9 @@ export default function App() {
     } catch { setTtsPlaying(false); console.error('TTS failed') }
   }
 
-  const getSystemPrompt = (query = '') => {
+  const getSystemPrompt = useCallback((query = '', customSystemPrompt = '') => {
     const t = promptTemplates.find(t => t.id === activeTemplate)
-    const basePrompt = t?.system_prompt || 'You are Yogatik, an intelligent AI assistant.'
+    const basePrompt = customSystemPrompt || t?.system_prompt || 'You are Yogatik, an intelligent AI assistant.'
 
     let queryContext = ''
     const q = (query || '').toLowerCase()
@@ -865,8 +1020,24 @@ export default function App() {
         '- Present comparative data in structured Markdown tables (| Header 1 | Header 2 |) ready for 1-click CSV export.'
     }
 
+    const folderCtx = grantedRoot
+      ? `\n\nWORKING FOLDER: ${grantedRoot}\n` +
+        `You have full file-system access to this folder via the fs_* tools. ` +
+        `Use them proactively when the user asks to create, read, edit, rename, move, delete files or directories:\n` +
+        `- fs_list   → list contents (use path="" for root)\n` +
+        `- fs_read   → read a file\n` +
+        `- fs_write  → create or overwrite a file\n` +
+        `- fs_edit   → patch a file by exact string replacement\n` +
+        `- fs_search → grep across files\n` +
+        `- fs_delete → delete a file or empty directory\n` +
+        `- fs_mkdir  → create a directory tree\n` +
+        `- fs_move   → move or rename a file/directory\n` +
+        `All paths are relative to the working folder above.`
+      : ''
+
     return (
       basePrompt +
+      folderCtx +
       queryContext +
       '\n\nPRESENTATION, DOCUMENT & SLIDE ENHANCEMENT GUIDELINES:\n' +
       '- Present answers with high visual clarity: use clear headers (#, ##), formatted bullet points, bold key terms, and structured Markdown tables.\n' +
@@ -875,11 +1046,12 @@ export default function App() {
       '- When explaining processes or workflows, include Mermaid flowcharts using `diagram` or ```mermaid code blocks.\n' +
       '- Keep document exports (Word .doc, PowerPoint .pptx, CSV) structured into clean sections and slides.'
     )
-  }
+  }, [promptTemplates, activeTemplate, grantedRoot])
 
-  // Mirror loading into a ref so the workflow runner can await turn completion.
-  const loadingRef = useRef(false)
-  useEffect(() => { loadingRef.current = loading }, [loading])
+  const loadingRef = useRef(null)
+  useEffect(() => { loadingRef.current = !!(conv?.clientId && loadingMap[conv.clientId]) }, [loadingMap, conv?.clientId])
+
+  const activateNewChatRef = useRef(false)
 
   /** Run a workflow: send each (variable-filled) step in order, waiting for the
    *  previous turn to finish. Steps chain through the conversation history. */
@@ -899,46 +1071,56 @@ export default function App() {
       runCompare(text)
       return
     }
-    if ((!text.trim() && !attachedFile && !attachedImage) || loading) return
+    const targetIdx = activeIdx
+    const targetConv = conversations[targetIdx]
+    if (!targetConv) return
+    const targetClientId = targetConv.clientId
+
+    if ((!text.trim() && !attachedFile && !attachedImage) || loadingMap[targetClientId]) return
     if (!navigator.onLine) {
       setErrorModalMsg("You're offline. Yogatik needs a connection to reach the model provider — your chats and documents are safe on this device.")
       return
     }
 
-    const isProviderReady = models[provider]?.available || keyInfo[provider]?.configured || provider === 'local'
+    const useProvider = targetConv.provider || provider
+    const useModel = targetConv.model !== undefined ? targetConv.model : model
+    const useTemp = targetConv.temperature !== undefined ? targetConv.temperature : temperature
+    const useWeb = targetConv.webSearch !== undefined ? targetConv.webSearch : webSearch
+    const useTools = targetConv.tools !== undefined ? targetConv.tools : tools
+
+    const isProviderReady = models[useProvider]?.available || keyInfo[useProvider]?.configured || useProvider === 'local'
 
     if (!isProviderReady) {
       setErrorModalMsg(
-        `🔑 API Key Required for ${models[provider]?.name || provider}\n\n` +
-        `To send messages using ${models[provider]?.name || provider}, please add your API key in the left sidebar.\n\n` +
+        `🔑 API Key Required for ${models[useProvider]?.name || useProvider}\n\n` +
+        `To send messages using ${models[useProvider]?.name || useProvider}, please add your API key in the left sidebar.\n\n` +
         `👉 Click "get free key" in the sidebar to claim a free key in seconds, paste it into the API Key field, and click "+ Add Key"!`
       )
       setSidebarOpen(true)
       setSettingsOpen(true)
       return
     }
-    const targetIdx = activeIdx
-    const targetConv = conversations[targetIdx]
+
     const msgText = text.trim()
     setInput('')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
-    setLoading(true)
-    setStreamingContent('')
-    setStreamingIdx(targetIdx)   // the stream belongs to THIS conversation
-    setStatusText('Connecting...')
-    setCurrentStreamId(null)
+
+    setLoadingMap(prev => ({ ...prev, [targetClientId]: true }))
+    setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+    setStatusMap(prev => ({ ...prev, [targetClientId]: 'Connecting...' }))
+    setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
+
     setActiveTools([])
     setPendingToolResults({})
 
     let fileContext = ''
     if (attachedFile) {
-      setStatusText(`Reading ${attachedFile.name}...`)
+      setStatusMap(prev => ({ ...prev, [targetClientId]: `Reading ${attachedFile.name}...` }))
       try {
         const result = await uploadDocument(attachedFile)
         if (!result.success) {
           fileContext = `[Could not read ${attachedFile.name}: ${result.error}] `
         } else if (result.inline) {
-          // Small enough to read directly — no retrieval round-trip needed.
           fileContext = `[Document: ${result.name}]\n"""\n${result.inline}\n"""\n\n`
         } else {
           fileContext = `[Document "${result.name}" indexed: ${result.chars.toLocaleString()} chars in ${result.chunks} passages. `
@@ -962,18 +1144,22 @@ export default function App() {
     const displayText = msgText || (attachedFile ? `📎 ${attachedFile.name}` : (sentImage ? '' : ''))
     const userMsg = {
       role: 'user', content: displayText, sources: [], createdAt: Date.now(),
-      // Only the thumbnail is stored: full frames would fill IndexedDB in a day.
       ...(sentImage ? { image: sentImage.thumb } : {}),
     }
     const updated = { ...targetConv, messages: [...targetConv.messages, userMsg] }
     const isNewTitle = updated.title === 'New Chat'
     if (isNewTitle) updated.title = (msgText || displayText).trim().slice(0, 40) || 'New Chat'
 
-    // Persist as we go — a refresh mid-answer must not lose the exchange.
     let convId = targetConv.id
     try {
       if (!convId) {
-        convId = await createConversation(updated.title)
+        const chatSettings = {
+          systemPrompt: targetConv.systemPrompt || '',
+          temperature: useTemp,
+          webSearch: useWeb,
+          tools: useTools,
+        }
+        convId = await createConversation(updated.title, null, useProvider, useModel, chatSettings)
         updated.id = convId
       } else if (isNewTitle) {
         await renameConversation(convId, updated.title)
@@ -981,7 +1167,7 @@ export default function App() {
       await saveMessage(convId, userMsg)
     } catch (e) { console.error('Failed to persist message', e) }
 
-    setConversations(prev => prev.map((c, i) => i === targetIdx ? updated : c))
+    setConversations(prev => prev.map(c => c.clientId === targetClientId ? updated : c))
 
     if (!attachedFile && !sentImage && isDirectTimeQuery(msgText)) {
       const assistantMsg = {
@@ -989,56 +1175,56 @@ export default function App() {
         role: 'assistant',
         content: `It is ${formatDirectTimeAnswer()}.`,
         sources: [],
+        provider: useProvider,
+        model: useModel,
       }
       try {
         if (convId) await saveMessage(convId, assistantMsg)
       } catch (e) {
         console.error('Failed to persist direct reply', e)
       }
-      setConversations(prev => prev.map((c, i) =>
-        i === targetIdx ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
+      setConversations(prev => prev.map(c =>
+        c.clientId === targetClientId ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
       ))
-      setStreamingContent('')
-      setActiveTools([])
-      setPendingToolResults({})
-      setStatusText('')
-      scrollToBottom('auto')
-      setLoading(false)
-      setStreamingIdx(null)
-      setCurrentStreamId(null)
+      setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+      setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
+      setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+      setStreamIdMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
       return
     }
 
     let content = ''
     let sources = []
-    // Accumulate in a ref: the onDone callback closes over the render that
-    // started the send, so reading pendingToolResults there always saw {} and
-    // the finished message lost every tool result (images included).
     toolRunRef.current = { results: {}, used: [] }
     traceRef.current = []
+
+    const pushStreamContent = (txt) => {
+      setStreamingMap(prev => ({ ...prev, [targetClientId]: txt }))
+    }
 
     if (isMultiAgent) {
       await runMultiAgentDebate({
         topic: collaborateTopic,
-        modelA: { provider, model },
-        modelB: { provider, model },
+        modelA: { provider: useProvider, model: useModel },
+        modelB: { provider: useProvider, model: useModel },
         rounds: 2,
         onMessageStart: (agent, mdl, label) => {
           content += `\n\n> **${agent === 'A' ? 'Proposer' : 'Critic'}** (${mdl.model || mdl.provider}): _${label}_\n\n`
-          pushStream(content)
-          setStatusText(label)
+          pushStreamContent(content)
+          setStatusMap(prev => ({ ...prev, [targetClientId]: label }))
         },
         onToken: (agent, token) => {
           content += token
-          pushStream(content)
+          pushStreamContent(content)
         },
         onMessageDone: (agent, finalContent) => {
           content += '\n'
-          pushStream(content)
+          pushStreamContent(content)
         },
         onDone: (finalContent) => {
-          setStatusText('')
-          setCurrentStreamId(null)
+          setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
+          setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
+          setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
           const assistantMsg = {
             createdAt: Date.now(),
             role: 'assistant',
@@ -1048,40 +1234,53 @@ export default function App() {
             toolsUsed: [],
           }
           saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
-          setConversations(prev => prev.map((c, i) =>
-            i === targetIdx ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
+          setConversations(prev => prev.map(c =>
+            c.clientId === targetClientId ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
           ))
-          setStreamingContent('')
-          setLoading(false)
-          setStreamingIdx(null)
+          setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
         },
         onError: (err) => {
-          setStatusText('')
-          setCurrentStreamId(null)
-          setConversations(prev => prev.map((c, i) =>
-            i === targetIdx
+          setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
+          setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
+          setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+          setConversations(prev => prev.map(c =>
+            c.clientId === targetClientId
               ? { ...c, id: convId, messages: [...updated.messages, { role: 'assistant', error: String(err), content: '' }] }
               : c
           ))
-          setStreamingContent('')
-          setLoading(false)
-          setStreamingIdx(null)
+          setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
         }
       })
       return
     }
 
     await streamMessage(
-      { message: finalText, messages: updated.messages, tools, use_tools: tools, use_web_search: webSearch,
-        system_prompt: getSystemPrompt(finalText), temperature, model: model || undefined, channel: 'chat',
-        // Full-resolution copy for the model / OCR; only the thumb is persisted.
-        image: sentImage?.dataUrl || null },
-      (token) => { content += token; pushStream(content); setStatusText('') },
+      {
+        message: finalText,
+        messages: updated.messages,
+        tools: useTools,
+        use_tools: useTools,
+        use_web_search: useWeb,
+        system_prompt: getSystemPrompt(finalText, targetConv.systemPrompt),
+        temperature: useTemp,
+        provider: useProvider,
+        model: useModel || undefined,
+        channel: 'chat',
+        image: sentImage?.dataUrl || null,
+      },
+      (token) => { content += token; pushStreamContent(content); setStatusMap(prev => ({ ...prev, [targetClientId]: '' })) },
       (s) => { sources = s },
       (_final, meta) => {
-        setStatusText('')
-        setCurrentStreamId(null)
-        if (!content.trim() && meta?.aborted) { setStreamingContent(''); setActiveTools([]); setPendingToolResults({}); return }
+        setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
+        setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
+        setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+        if (!content.trim() && meta?.aborted) {
+          setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+          setActiveTools([])
+          setPendingToolResults({})
+          return
+        }
+        const finalTrace = (meta?.trace?.length ? meta.trace : traceRef.current)
         const assistantMsg = {
           createdAt: Date.now(),
           role: 'assistant',
@@ -1089,41 +1288,41 @@ export default function App() {
           sources,
           toolResults: { ...toolRunRef.current.results },
           toolsUsed: [...toolRunRef.current.used],
-          trace: traceRef.current.length ? [...traceRef.current] : undefined,
+          trace: finalTrace.length ? [...finalTrace] : undefined,
+          provider: useProvider,
+          model: useModel,
         }
         saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
-        setConversations(prev => prev.map((c, i) =>
-          i === targetIdx ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
+        setConversations(prev => prev.map(c =>
+          c.clientId === targetClientId ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
         ))
-        setStreamingContent('')
+        setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
         setActiveTools([])
         setPendingToolResults({})
-        // Show ad every 3 chats
         getTodayUsage().then(setUsage).catch(() => {})
         chatCountRef.current++
         if (adsConfigured && chatCountRef.current % 10 === 0) setShowAd(true)
       },
       (err) => {
-        setStatusText('')
-        setCurrentStreamId(null)
+        setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
+        setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
+        setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
         if (isRetiredModelError(err)) {
-          pruneRetiredModel(provider, model).then(() => {
+          pruneRetiredModel(useProvider, useModel).then(() => {
             setModel('')
             refreshModels()
             getAllProviderStatus().then(setProviderStatus)
           })
         }
-        // Errors are UI state attached to the turn — never persisted and never
-        // replayed to the model as something the assistant said.
-        setConversations(prev => prev.map((c, i) =>
-          i === targetIdx
+        setConversations(prev => prev.map(c =>
+          c.clientId === targetClientId
             ? { ...c, id: convId, messages: [...updated.messages, { role: 'assistant', error: String(err), content: '' }] }
             : c
         ))
-        setStreamingContent('')
+        setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
       },
-      (status) => { setStatusText(status) },
-      (streamId) => { setCurrentStreamId(streamId) },
+      (status) => { setStatusMap(prev => ({ ...prev, [targetClientId]: status })) },
+      (streamId) => { setStreamIdMap(prev => ({ ...prev, [targetClientId]: streamId })) },
       (detectedTools, args) => {
         setActiveTools(detectedTools)
         for (const t of detectedTools) {
@@ -1134,13 +1333,10 @@ export default function App() {
       (toolName, toolResult) => {
         toolRunRef.current.results[toolName] = toolResult
         setPendingToolResults(prev => ({ ...prev, [toolName]: toolResult }))
-        // Mark the most recent running step for this tool as finished.
         const step = [...traceRef.current].reverse().find(s => s.tool === toolName && s.status === 'running')
         if (step) step.status = toolResult?.success === false ? 'error' : 'done'
       }
     )
-    setLoading(false)
-    setStreamingIdx(null)
   }
 
   /** An image is not a document: it goes to the model's eyes, not to BM25. */
@@ -1237,15 +1433,15 @@ export default function App() {
       // into, whatever chat happens to be open.
       let id = liveConvRef.current
       if (!id) {
-        id = await createConversation(`Live \u2014 ${new Date().toLocaleString()}`)
-        liveConvRef.current = id
+      id = await createConversation(`Live — ${new Date().toLocaleString()}`, null, provider, model)
+      liveConvRef.current = id
       }
       await saveMessage(id, msg)
     } catch (e) { console.error('Failed to persist live turn', e) }
   }, [])
 
   const regenerate = async () => {
-    if (loading) return
+    if (isStreamingHere) return
     const msgs = conv?.messages || []
     let lastUser = -1
     for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'user') { lastUser = i; break } }
@@ -1267,11 +1463,13 @@ export default function App() {
   }
 
   const handleRestore = async (file) => {
-    const replace = confirm(
-      'Replace everything currently stored?\n\nOK = replace (current chats are deleted)\nCancel = merge (keep both)'
-    )
+    setRestoreModal({ file })
+  }
+
+  const doRestore = async (file, mode) => {
+    setRestoreModal(null)
     try {
-      const c = await restoreBackup(file, replace ? 'replace' : 'merge')
+      const c = await restoreBackup(file, mode)
       await loadConversations()
       refreshDocs()
       setErrorModalMsg(`Restored ${c.conversations} conversations, ${c.messages} messages and ${c.documents} documents.`)
@@ -1354,7 +1552,7 @@ export default function App() {
    * one click away in the sidebar.
    */
   const editAndResend = useCallback(async (index, text) => {
-    if (loading) return
+    if (isStreamingHere) return
     const source = conversations[activeIdx]
     const isLastTurn = index >= (source?.messages?.length || 0) - 2
 
@@ -1377,12 +1575,11 @@ export default function App() {
       setInput(text)
       textareaRef.current?.focus()
       autoResize()
-      setStatusText('Branched — the original chat is untouched')
-      setTimeout(() => setStatusText(''), 3000)
+      showToast('Branched — the original chat is untouched')
     } catch (e) {
       setErrorModalMsg(`Could not branch this conversation.\n\n${e.message}`)
     }
-  }, [loading, conversations, activeIdx])
+  }, [loadingMap, conversations, activeIdx])
 
   const startRename = (idx) => {
     setRenamingIdx(idx)
@@ -1434,20 +1631,22 @@ export default function App() {
       cmds.push({ id: `conv-${i}`, group: 'Chat', label: c.title, hint: `${c.messages.length} messages`, run: () => switchChat(i) })
     })
     return cmds
-  }, [models, provider, measuredModels, conversations, theme, tools, webSearch, autoRoute])
+  }, [models, provider, measuredModels, conversations.length, conversations.map(c => `${c.title}:${c.messages?.length}`).join('|'), theme, tools, webSearch, autoRoute])
 
   const providerEntries = Object.entries(models)
   const providerModels = models[provider]?.models || []
 
-  // Conversation filter — matches title and message text
-  const visibleConvs = conversations
-    .map((c, i) => ({ c, i }))
-    .filter(({ c }) => {
-      if (!convQuery.trim()) return true
-      const q = convQuery.toLowerCase()
-      return c.title.toLowerCase().includes(q) ||
-        c.messages.some(m => (m.content || '').toLowerCase().includes(q))
-    })
+  // Conversation filter — matches title and message text (memoised to prevent full-tree scan on every render)
+  const visibleConvs = useMemo(() => {
+    return conversations
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => {
+        if (!convQuery.trim()) return true
+        const q = convQuery.toLowerCase()
+        return c.title.toLowerCase().includes(q) ||
+          c.messages.some(m => (m.content || '').toLowerCase().includes(q))
+      })
+  }, [conversations, convQuery])
 
   return (
     <div className="app">
@@ -1490,13 +1689,13 @@ export default function App() {
           )}
         </div>
 
-        <button className="new-chat-btn" onClick={newChat} aria-label="New chat"><Plus size={14} /> New Chat</button>
+        <button type="button" className="new-chat-btn" onClick={(e) => { e.preventDefault(); newChat(); }} aria-label="New chat"><Plus size={14} /> New Chat</button>
 
         {conversations.length > 3 && (
           <div className="conv-search">
             <Search size={12} />
             <input aria-label="Search conversations" value={convQuery} onChange={e => setConvQuery(e.target.value)}
-              placeholder="Search chats..." aria-label="Search conversations" />
+              placeholder="Search chats..." />
             {convQuery && (
               <button className="icon-btn" onClick={() => setConvQuery('')} aria-label="Clear search"><X size={11} /></button>
             )}
@@ -1518,7 +1717,10 @@ export default function App() {
                     if (e.key === 'Escape') setRenamingIdx(null)
                   }} />
               ) : (
-                <span className="conv-title" title={c.title}>{c.title}</span>
+                <span className="conv-title" title={c.title}>
+                  {c.title}
+                  {!!(c.clientId && loadingMap[c.clientId]) && <span className="conv-streaming-dot" title="Generating response…" />}
+                </span>
               )}
               {i === activeIdx && renamingIdx !== i && (
                 <span className="conv-actions">
@@ -1554,14 +1756,14 @@ export default function App() {
             <label style={{ margin: 0 }}><Sparkles size={12} /> Persona</label>
             <div style={{ display: 'flex', gap: '4px' }}>
               {activeTemplate.startsWith('tmpl-') && (
-                <button className="small-btn delete-persona-btn" style={{ padding: '2px 6px', fontSize: '10px', color: '#ff6b6b', height: 'auto', background: 'rgba(255,107,107,0.1)', border: 'none', borderRadius: '3px', cursor: 'pointer' }} onClick={async () => {
-                  if (confirm('Delete this custom persona?')) {
+                <button className="small-btn delete-persona-btn" style={{ padding: '2px 6px', fontSize: '10px', color: '#ff6b6b', height: 'auto', background: 'rgba(255,107,107,0.1)', border: 'none', borderRadius: '3px', cursor: 'pointer' }} onClick={() =>
+                  showConfirm('Delete this custom persona?', async () => {
                     await deleteTemplate(activeTemplate)
                     setActiveTemplate('default')
                     await setPref('persona', 'default')
                     refreshTemplates()
-                  }
-                }} title="Delete current custom persona">
+                  }, { okLabel: 'Delete' })
+                } title="Delete current custom persona">
                   Delete
                 </button>
               )}
@@ -1837,8 +2039,9 @@ export default function App() {
                         %LOCALAPPDATA%\Google\Chrome\User Data\OptGuideOnDeviceModel
                       </code>
                       <button className="small-btn" style={{ padding: '2px 6px', height: 'auto' }} onClick={() => {
-                        navigator.clipboard.writeText('%LOCALAPPDATA%\\Google\\Chrome\\User Data\\OptGuideOnDeviceModel');
-                        alert('Path copied to clipboard!');
+                        navigator.clipboard.writeText('%LOCALAPPDATA%\\Google\\Chrome\\User Data\\OptGuideOnDeviceModel')
+                          .then(() => showToast('Path copied to clipboard'))
+                          .catch(() => showToast('Could not copy — try manually'))
                       }}>Copy</button>
                     </div>
                   </div>
@@ -1848,10 +2051,11 @@ export default function App() {
                         await clearLocalModelCache()
                         const rep = await storageReport()
                         setStorage(rep)
+                        showToast('Model cache cleared')
                       }
                     }}>Clear model cache</button>
                     <button className="small-btn" style={{ flex: 1, padding: '4px' }} onClick={() => {
-                      alert('Configure on-device settings:\n• Type chrome://flags in your address bar and look for on-device AI.\n• Type chrome://components to update optimization guide components.');
+                      setErrorModalMsg('Configure on-device AI settings:\n\n• Type chrome://flags in your address bar and search for "on-device AI".\n• Type chrome://components to update optimization guide components.')
                     }}>Browser flags info</button>
                   </div>
                 </div>
@@ -1895,6 +2099,22 @@ export default function App() {
             <h1>{conv?.title || 'New Chat'}</h1>
           </div>
           <div className="header-actions">
+            {isDesktop() && (
+              <div className="desktop-folder-indicator" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginRight: 8, color: 'var(--text-secondary)' }}>
+                <Folder size={15} />
+                <span title={grantedRoot || 'No working folder granted'} style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {grantedRoot ? grantedRoot.split(/[/\\]/).pop() || grantedRoot : 'No folder'}
+                </span>
+                <button
+                  className="small-btn"
+                  style={{ padding: '2px 8px', fontSize: 11 }}
+                  onClick={handleGrantFolder}
+                  title="Change granted working folder for local filesystem tools (create/edit/read files)"
+                >
+                  {grantedRoot ? 'Change' : 'Grant folder'}
+                </button>
+              </div>
+            )}
             <button className="icon-btn" onClick={handleExport} title="Export chat" aria-label="Export chat"><Download size={18} /></button>
             <button className="icon-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
@@ -1906,19 +2126,19 @@ export default function App() {
           {allMessages.length === 0 && !isStreamingHere && !arena ? (
             <div className="welcome">
               <h1 style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center' }}><YogatikLogo size={48} /> Yogatik</h1>
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'center', margin: '8px 0' }}>
+              <div className="hero-buttons">
                 <button
-                  className="btn-primary"
+                  className="hero-btn primary"
                   onClick={() => setShowDemoModal(true)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
                 >
                   <Sparkles size={16} /> Take a Quick Demo
                 </button>
-                {showPwaInstall && (
-                  <button className="pwa-install-btn" onClick={installPwa}>
-                    <Smartphone size={16} /> Install App
-                  </button>
-                )}
+                <button
+                  className="hero-btn secondary"
+                  onClick={() => setShowDownloadModal(true)}
+                >
+                  <Download size={16} /> Install App
+                </button>
               </div>
               <div className="tool-badges">
                 {Object.entries(TOOL_ICONS).map(([name, Icon]) => (
@@ -2006,13 +2226,13 @@ export default function App() {
                   <MessageBubble key={absolute} msg={m} showToolCards={features.toolCards}
                     onTTS={handleTTS}
                     onOpenArtifact={(art) => setActiveArtifact(art)}
-                    onRegenerate={isLastAssistant && !loading ? regenerate : undefined}
-                    onEdit={!loading ? (text) => editAndResend(absolute, text) : undefined}
-                    onRetry={m.error && !loading ? regenerate : undefined} />
+                    onRegenerate={isLastAssistant && !isStreamingHere ? regenerate : undefined}
+                    onEdit={!isStreamingHere ? (text) => editAndResend(absolute, text) : undefined}
+                    onRetry={m.error && !isStreamingHere ? regenerate : undefined} />
                 )
               })}
               {/* Show pending tool results while streaming */}
-              {features.toolCards && loading && Object.keys(pendingToolResults).length > 0 && (
+              {features.toolCards && isStreamingHere && Object.keys(pendingToolResults).length > 0 && (
                 <div className="message assistant">
                   <div className="tool-results">
                     {Object.entries(pendingToolResults).map(([tool, result]) => (
@@ -2021,13 +2241,52 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {isStreamingHere && streamingContent && (
+              {isStreamingHere && streamingContent && (() => {
+                const { provider: useProvider = provider, model: useModel = model } = conv || {}
+                return (
                 <div className="message assistant">
-                  <div className="message-role">Yogatik</div>
+                  <div className="message-role">
+                    <span className="message-who">Yogatik</span>
+                    {(useModel || useProvider) && (
+                      <span className="msg-model-badge" title={`Generating with ${useProvider ? `${useProvider} (${useModel || 'default'})` : useModel}`}>
+                        {useProvider && useModel ? `${useProvider} / ${useModel}` : (useModel || useProvider)}
+                      </span>
+                    )}
+                  </div>
+                  {activeTools.length > 0 && (
+                    <div className="tools-used" style={{ marginTop: 4 }}>
+                      {activeTools.map(t => {
+                        const Icon = TOOL_ICONS[t] || Wrench
+                        return <span key={t} className="tool-chip active"><Icon size={10} /> {t}</span>
+                      })}
+                    </div>
+                  )}
+                  {traceRef.current.length > 0 && (
+                    <details className="activity-trace" open style={{ marginTop: 4 }}>
+                      <summary>Steps, thoughts & actions taken ({traceRef.current.length} step{traceRef.current.length === 1 ? '' : 's'})</summary>
+                      <ol>
+                        {traceRef.current.map((s, i) => {
+                          const Icon = TOOL_ICONS[s.tool] || Wrench
+                          const arg = s.args && Object.keys(s.args).length
+                            ? JSON.stringify(s.args).replace(/^{|}$/g, '').slice(0, 180)
+                            : ''
+                          const mark = s.status === 'error' ? '✕ Failed' : s.status === 'done' ? '✓ Completed' : '… In progress'
+                          return (
+                            <li key={i} className={`trace-step trace-${s.status}`}>
+                              <Icon size={11} /> <span className="trace-tool">Step {i + 1}: Executed {s.tool}</span>
+                              {arg && <div className="trace-args" style={{ fontSize: '10.5px', opacity: 0.85, marginTop: '2px' }}>Input: {arg}</div>}
+                              <span className="trace-mark" style={{ fontSize: '10px', marginLeft: 'auto', fontWeight: 600 }}>{mark}</span>
+                            </li>
+                          )
+                        })}
+                      </ol>
+                    </details>
+                  )}
                   <div className="message-content"><ReactMarkdown>{streamingContent}</ReactMarkdown></div>
                 </div>
-              )}
-              {loading && streamingIdx === activeIdx && !streamingContent && (
+                )
+              })()}
+              {isStreamingHere && !streamingContent && (
                 <div className="message assistant">
                   {statusText && <div className="status-text">{statusText}</div>}
                   {activeTools.length > 0 && (
@@ -2055,7 +2314,7 @@ export default function App() {
           <div ref={messagesEnd} />
           {!atBottom && (
             <button className="scroll-bottom" onClick={() => scrollToBottom()} aria-label="Scroll to latest">
-              <ChevronDown size={14} /> {loading ? 'Streaming…' : 'Latest'}
+              <ChevronDown size={14} /> {isStreamingHere ? 'Streaming…' : 'Latest'}
             </button>
           )}
         </div>
@@ -2084,13 +2343,13 @@ export default function App() {
               <Sparkles size={12} /> {isEnhancing ? 'Enhancing...' : 'Enhance'}
             </button>}
             {recognitionRef.current && (
-              <button className={`voice-btn ${isListening ? 'listening' : ''}`} onClick={toggleVoice} title={isListening ? 'Stop listening' : 'Voice input'}
-                aria-label={isListening ? 'Stop voice input' : 'Start voice input'}>
-                {isListening ? <MicOff size={12} /> : <Mic size={12} />}
-                {isListening ? 'Stop' : 'Voice'}
+              <button className={`voice-btn ${listening ? 'listening' : ''}`} onClick={toggleVoiceInput} title={listening ? 'Stop listening' : 'Voice input'}
+                aria-label={listening ? 'Stop voice input' : 'Start voice input'}>
+                {listening ? <MicOff size={12} /> : <Mic size={12} />}
+                {listening ? 'Stop' : 'Voice'}
               </button>
             )}
-            {loading && (
+            {isStreamingHere && (
               <button className="stop-btn" onClick={handleStop} title="Stop generation (Esc)" aria-label="Stop generation (Esc)">
                 <Square size={12} /> Stop (Esc)
               </button>
@@ -2118,7 +2377,7 @@ export default function App() {
                 <Radio size={12} /> Live
               </button>
             )}
-            {!loading && conv?.messages?.some(m => m.role === 'assistant') && (
+            {!isStreamingHere && conv?.messages?.some(m => m.role === 'assistant') && (
               <button className="small-btn" onClick={regenerate}
                 title="Regenerate last response" aria-label="Regenerate last response">
                 <RefreshCw size={12} /> Regenerate
@@ -2175,6 +2434,7 @@ export default function App() {
           <div className="input-wrapper">
             <textarea ref={textareaRef} aria-label="Message" value={input} onChange={e => { setInput(e.target.value); autoResize() }}
               onKeyDown={handleKeyDown} onPaste={handlePaste}
+              data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false"
               placeholder={attachedImage
                 ? 'Ask about this image… (or just send)'
                 : attachedFile ? `Describe what to do with ${attachedFile.name}...`
@@ -2195,7 +2455,7 @@ export default function App() {
             >
               {listening ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
-            <button className="send-btn" aria-label="Send message" onClick={() => send()} disabled={loading || !online || (!input.trim() && !attachedFile && !attachedImage)}>
+            <button className="send-btn" aria-label="Send message" onClick={() => send()} disabled={isStreamingHere || !online || (!input.trim() && !attachedFile && !attachedImage)}>
               <Send size={18} />
             </button>
           </div>
@@ -2315,7 +2575,7 @@ export default function App() {
             const system_prompt = e.target.elements.system_prompt.value.trim()
             const icon = e.target.elements.icon.value.trim() || '🤖'
             if (!name || !system_prompt) {
-              alert('Name and System instructions are required.')
+              setErrorModalMsg('Persona Name and System Instructions are both required.')
               return
             }
             const t = await createTemplate({ name, system_prompt, icon })
@@ -2345,7 +2605,54 @@ export default function App() {
       )}
       {showAd && <AdModal onClose={() => setShowAd(false)} />}
       {showDemoModal && <DemoModal onClose={() => setShowDemoModal(false)} />}
+      <DownloadModal isOpen={showDownloadModal} onClose={() => setShowDownloadModal(false)} onInstallPwa={installPwa} showPwa={!!showPwaInstall} />
       {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
+      {/* Generic confirm modal — no more native confirm() dialogs */}
+      {confirmModal && (
+        <Modal title="Confirm" onClose={() => { confirmModal.onCancel?.(); setConfirmModal(null) }}
+          footer={
+            <div className="modal-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="small-btn" onClick={() => { confirmModal.onCancel?.(); setConfirmModal(null) }}>{confirmModal.cancelLabel || 'Cancel'}</button>
+              <button className="small-btn btn-primary" onClick={() => { confirmModal.onOk(); setConfirmModal(null) }}>{confirmModal.okLabel || 'OK'}</button>
+            </div>
+          }>
+          <div style={{ padding: '12px 0', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{confirmModal.msg}</div>
+        </Modal>
+      )}
+      {/* Project-name modal — replaces native prompt() in addProject */}
+      {projectNameModal && (
+        <Modal title="New Project" onClose={() => setProjectNameModal(null)}
+          footer={null}>
+          <form onSubmit={e => { e.preventDefault(); projectNameModal.onSubmit(e.target.elements.name.value) }}
+            style={{ padding: '12px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <input name="name" autoFocus placeholder="Project name" required
+              style={{ padding: '8px 10px', borderRadius: 6, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: 13 }} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="small-btn" onClick={() => setProjectNameModal(null)}>Cancel</button>
+              <button type="submit" className="small-btn btn-primary">Create</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+      {/* Restore-mode modal — replace/merge choice for backup restore */}
+      {restoreModal && (
+        <Modal title="Restore Backup" onClose={() => setRestoreModal(null)}
+          footer={
+            <div className="modal-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="small-btn" onClick={() => setRestoreModal(null)}>Cancel</button>
+              <button className="small-btn" onClick={() => doRestore(restoreModal.file, 'merge')}>Merge (keep both)</button>
+              <button className="small-btn btn-primary" onClick={() => doRestore(restoreModal.file, 'replace')}>Replace (overwrite)</button>
+            </div>
+          }>
+          <div style={{ padding: '12px 0', fontSize: 13, lineHeight: 1.6 }}>
+            How should the backup be applied?
+            <ul style={{ marginTop: 8, paddingLeft: 18, color: 'var(--text-secondary)' }}>
+              <li><strong style={{ color: 'var(--text-primary)' }}>Merge</strong> — keep your existing chats and add the restored ones alongside them.</li>
+              <li><strong style={{ color: 'var(--text-primary)' }}>Replace</strong> — delete everything currently stored and restore from the backup file.</li>
+            </ul>
+          </div>
+        </Modal>
+      )}
       {errorModalMsg && (
         <Modal title="Connection problem" icon={<AlertTriangle size={18} />}
           onClose={() => setErrorModalMsg(null)} labelledBy="error-title"

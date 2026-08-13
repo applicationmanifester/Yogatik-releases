@@ -35,6 +35,29 @@ db.version(4).stores({
   media: '++id, createdAt',
 })
 
+// A backgrounded/hidden tab (mobile especially) can have IndexedDB closed out
+// from under us; the next Dexie call throws DatabaseClosedError / InvalidStateError
+// ("Database is closing"). At startup this surfaced as a bogus "sign-in failed"
+// modal. isDbClosedError lets callers treat it as transient; reopen + retry once.
+export function isDbClosedError(e) {
+  const s = `${e?.name || ''} ${e?.message || e || ''}`
+  return /DatabaseClosed|Database is closing|connection is closing|InvalidStateError/i.test(s)
+}
+async function withReopen(fn) {
+  try { return await fn() }
+  catch (e) {
+    if (!isDbClosedError(e)) throw e
+    try { if (!db.isOpen()) await db.open() } catch {}
+    return await fn()
+  }
+}
+// Re-open as soon as the tab is visible again so the first post-resume op succeeds.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && !db.isOpen()) db.open().catch(() => {})
+  })
+}
+
 // ─── Media (rendered video) ───
 const MEDIA_KEEP = 10          // newest N kept; older renders are disposable
 
@@ -57,23 +80,23 @@ export async function deleteMedia(id) {
 
 // ─── Settings (API keys, provider, theme, etc.) ───
 export async function getSetting(key, fallback = null) {
-  const row = await db.settings.get(key)
+  const row = await withReopen(() => db.settings.get(key))
   // A row holding null must still yield the fallback: `getSetting(k, '')`
   // returning null put null into controlled inputs. false/0 are kept.
   return row && row.value != null ? row.value : fallback
 }
 export async function setSetting(key, value) {
-  await db.settings.put({ key, value })
+  await withReopen(() => db.settings.put({ key, value }))
 }
 export async function getAllSettings() {
-  const rows = await db.settings.toArray()
+  const rows = await withReopen(() => db.settings.toArray())
   return Object.fromEntries(rows.map(r => [r.key, r.value]))
 }
 
 // ─── Conversations ───
-export async function createConversation(title = 'New Chat', projectId = null) {
-  const id = await db.conversations.add({ title, updatedAt: Date.now(), projectId })
-  return { id, title, projectId, messages: [] }
+export async function createConversation(title = 'New Chat', projectId = null, provider = null, model = null, settings = null) {
+  const id = await db.conversations.add({ title, updatedAt: Date.now(), projectId, provider, model, settings })
+  return { id, title, projectId, provider, model, settings, messages: [] }
 }
 
 export async function getConversations(projectId) {
@@ -96,6 +119,12 @@ export async function deleteConversation(id) {
 
 export async function updateConversationTitle(id, title) {
   await db.conversations.update(id, { title, updatedAt: Date.now() })
+}
+
+export async function updateConversationModel(id, provider, model, settings = null) {
+  const updateData = { provider, model }
+  if (settings !== null) updateData.settings = settings
+  await db.conversations.update(id, updateData)
 }
 
 // ─── Messages ───

@@ -23,6 +23,7 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
   const voice = prefs.live_voice_local || DEFAULT_VOICE
   const neural = prefs.live_voice_engine !== 'system'
   const speed = prefs.voice_speed ?? 1
+  const rounds = Math.max(3, Math.min(20, Number(prefs.max_tool_rounds) || 8))
   const [previewing, setPreviewing] = useState(false)
 
   const gender = GENDER.male.includes(voice) ? 'male' : 'female'
@@ -109,6 +110,23 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
             </button>
           </>
         )}
+      </section>
+
+      <section className="personalise-group">
+        <h4><Sliders size={13} /> Answer depth</h4>
+        <p className="personalise-hint">
+          How many tool/refinement rounds the assistant may take before it must
+          answer. Higher digs deeper on complex tasks but is slower.
+        </p>
+        <div className="toggle-row">
+          <label htmlFor="p-rounds">
+            Max rounds <span className="personalise-value">{rounds}</span>
+          </label>
+          <input
+            id="p-rounds" type="range" min="3" max="20" step="1" value={rounds}
+            onChange={e => onChange('max_tool_rounds', Number(e.target.value))}
+          />
+        </div>
       </section>
 
       <section className="personalise-group">

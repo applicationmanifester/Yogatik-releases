@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { extractVars, fillTemplate, userVars } from './template'
-import { skillDisabledTools, exportSkill, parseSkill } from './skills'
+import { skillDisabledTools, exportSkill, parseSkill, PRESET_SKILLS } from './skills'
+import { getToolNames } from './tools/index'
 import { workflowVars, runWorkflow } from './workflows'
 
 describe('template variables', () => {
@@ -22,6 +23,13 @@ describe('skills', () => {
   })
   it('no allowlist disables nothing', () => {
     expect(skillDisabledTools({ tools: [] }, ['a', 'b'])).toEqual([])
+  })
+  it('every built-in preset references only real, registered tools', () => {
+    const real = new Set(getToolNames())
+    for (const p of PRESET_SKILLS) {
+      expect(p.id).toMatch(/^preset_/)
+      for (const t of p.tools) expect(real.has(t), `${p.name} → ${t}`).toBe(true)
+    }
   })
   it('round-trips export/import', () => {
     const s = { name: 'Researcher', description: 'd', system: 'Be rigorous', tools: ['web_search'], starters: ['Research {{topic}}'] }

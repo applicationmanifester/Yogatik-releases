@@ -7,6 +7,53 @@
  * `interrupted` event, which flushes the speaker queue mid-word.
  */
 
+/**
+ * @typedef {Object} LiveEvent
+ * @property {'ready'|'camera'|'screen'|'level'|'speaking'|'thinking'|'transcript'|'tools'|'toolResult'|'voice'|'provider'|'reconnecting'|'error'|'ended'|'interrupted'|'status'|'watched'|'looked'|'muted'|'connected'} type
+ * @property {MediaStream} [stream]
+ * @property {number} [value]
+ * @property {string} [role]
+ * @property {string} [text]
+ * @property {string[]} [names]
+ * @property {string} [name]
+ * @property {any} [result]
+ * @property {string} [engine]
+ * @property {string} [provider]
+ * @property {string} [model]
+ * @property {string} [message]
+ * @property {number} [attempt]
+ * @property {number} [frames]
+ * @property {string} [via]
+ * @property {boolean} [active]
+ * @property {string} [who]
+ */
+
+/**
+ * @typedef {Object} LiveSession
+ * @property {Function} start
+ * @property {Function} stop
+ * @property {Function} enableCamera
+ * @property {Function} enableScreenShare
+ * @property {Function} sendText
+ * @property {Function} watch
+ * @property {Function} setMuted
+ * @property {Function} isMuted
+ * @property {Function} grabFrame
+ * @property {boolean} cameraOn
+ * @property {boolean} screenOn
+ */
+
+/**
+ * @param {Object} o
+ * @param {string} o.apiKey        Gemini API key
+ * @param {string} [o.model]
+ * @param {string} [o.voice]
+ * @param {string} [o.persona]     appended to the system instruction
+ * @param {string[]} [o.disabledTools]
+ * @param {boolean} [o.camera]     start with video on
+ * @param {Function} o.onEvent     (LiveEvent) => void
+ */
+
 import {
   liveEndpoint, buildSetup, audioChunk, videoFrame, textInput, toolResponse,
   decodeServerMessage, rateFromMime, LIVE_MODELS,
@@ -19,16 +66,6 @@ import { executeTool, getToolSchemas } from '../tools/index'
 const FRAME_MS = 1000        // API ceiling is 1fps
 const RECONNECT_MAX = 3
 
-/**
- * @param {Object} o
- * @param {string} o.apiKey        Gemini API key
- * @param {string} [o.model]
- * @param {string} [o.voice]
- * @param {string} [o.persona]     appended to the system instruction
- * @param {string[]} [o.disabledTools]
- * @param {boolean} [o.camera]     start with video on
- * @param {Function} o.onEvent     ({type, ...}) => void
- */
 export function createLiveSession({
   apiKey, model = LIVE_MODELS[0], voice = 'Puck', persona = null,
   disabledTools = [], camera = true, onEvent = () => {},

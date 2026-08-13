@@ -1,0 +1,50 @@
+name: Build Windows desktop app (Electron)
+
+# Manual run (Actions tab -> Run workflow) or on a version tag like v3.8.0.
+# No Rust toolchain needed — just Node. Produces a downloadable .exe.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Build Electron installer
+        working-directory: frontend
+        run: npm run electron:build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional — desktop already works without these (direct provider calls,
+          # hardcoded Firebase fallback). Set as repo secrets for full parity.
+          VITE_LLM_PROXY_BASE: ${{ secrets.VITE_LLM_PROXY_BASE }}
+          VITE_AUTH_DOMAIN: ${{ secrets.VITE_AUTH_DOMAIN }}
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+
+      - name: Publish to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-latest' }}
+          name: 'Yogatik Desktop ${{ github.ref_type == 'tag' && github.ref_name || '(latest)' }}'
+          body: 'Windows installer (.exe). Download it under Assets below. latest.yml + .blockmap enable in-app auto-update.'
+          files: |
+            frontend/release-electron/*.exe
+            frontend/release-electron/*.blockmap
+            frontend/release-electron/latest.yml

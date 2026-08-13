@@ -2,6 +2,7 @@
  * 100% Independent, keyless browser-native tools.
  * Zero external SaaS/API dependencies — all computation runs locally in JS.
  */
+import { mdToHtml } from './mdToPdf'
 
 const TEXT_STOPWORDS = new Set((
   'a an and are as at be but by for from has have i in is it its of on or ' +
@@ -697,7 +698,9 @@ export const docExportTool = {
       }
     } else if (['doc', 'docx', 'word', 'rtf', 'text', 'txt'].includes(requestedExt)) {
       mimeType = 'application/msword'
-      outContent = `<!DOCTYPE html><html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>${filename}</title><style>body{font-family:'Calibri','Segoe UI',sans-serif;font-size:11pt;line-height:1.5;color:#222;margin:1in;}h1{font-size:18pt;color:#1f4e78;margin-top:12pt;}h2{font-size:14pt;color:#2e75b6;margin-top:10pt;}p{margin-bottom:6pt;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ccc;padding:6px;}</style></head><body>${content.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</body></html>`
+      // Render Markdown structure (headings, lists, tables, bold, code) instead
+      // of dumping <br>-joined text — a real formatted Word document.
+      outContent = `<!DOCTYPE html><html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>${filename}</title><style>body{font-family:'Calibri','Segoe UI',sans-serif;font-size:11pt;line-height:1.5;color:#222;margin:1in;}h1{font-size:18pt;color:#1f4e78;margin-top:12pt;}h2{font-size:14pt;color:#2e75b6;margin-top:10pt;}h3{font-size:12pt;color:#2e75b6;}p{margin-bottom:6pt;}ul,ol{margin:6pt 0 6pt 18pt;}code{font-family:Consolas,monospace;background:#f3f4f6;padding:1px 4px;}pre{background:#f3f4f6;padding:8px;border-radius:4px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ccc;padding:6px;}th{background:#f3f4f6;}blockquote{border-left:3px solid #2e75b6;margin:6pt 0;padding-left:10px;color:#555;}</style></head><body>${mdToHtml(content)}</body></html>`
     } else if (requestedExt === 'csv') {
       mimeType = 'text/csv'
       // Convert Markdown tables to CSV lines automatically if markdown table detected
@@ -709,7 +712,7 @@ export const docExportTool = {
       }
     } else if (requestedExt === 'html') {
       mimeType = 'text/html'
-      outContent = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${filename}</title><style>body{font-family:sans-serif;line-height:1.6;padding:2rem;max-width:800px;margin:0 auto;color:#333;}</style></head><body>${content.replace(/\n/g, '<br>')}</body></html>`
+      outContent = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${filename}</title><style>body{font-family:system-ui,sans-serif;line-height:1.6;padding:2rem;max-width:820px;margin:0 auto;color:#333;}pre{background:#0f172a;color:#e2e8f0;padding:12px;border-radius:8px;overflow:auto;}code{background:#f3f4f6;padding:1px 5px;border-radius:4px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #d1d5db;padding:6px 10px;}th{background:#f3f4f6;}blockquote{border-left:3px solid #ff6b35;padding-left:12px;color:#555;}</style></head><body>${mdToHtml(content)}</body></html>`
     } else if (requestedExt === 'json') {
       mimeType = 'application/json'
       try {

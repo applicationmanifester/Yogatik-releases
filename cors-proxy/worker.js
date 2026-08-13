@@ -18,7 +18,7 @@ const DEFAULT_ORIGINS = [
 
 function corsHeaders(origin, env) {
   const list = (env?.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) : DEFAULT_ORIGINS);
-  const allowed = list.includes(origin) ? origin : list[0];
+  const allowed = list.includes(origin) ? origin : '';
   return {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -30,9 +30,26 @@ function corsHeaders(origin, env) {
   };
 }
 
+function isAllowedOrigin(origin, env) {
+  const list = env?.ALLOWED_ORIGINS
+    ? env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+    : DEFAULT_ORIGINS;
+  return list.includes(origin);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
+
+    // This is a browser-facing proxy. Restrict callers, but deliberately do
+    // not restrict their HTTPS destination: users can configure any provider
+    // or public API URL in Yogatik.
+    if (!isAllowedOrigin(origin, env)) {
+      return new Response(JSON.stringify({ error: 'Origin is not allowed' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
@@ -48,41 +65,14 @@ export default {
       );
     }
 
-    // Validate target URL. LLM hosts receive credentials; the rest are
-    // read-only public endpoints used by tools (search, RSS, page extraction).
-    const allowedHosts = (env?.ALLOWED_HOSTS ? env.ALLOWED_HOSTS.split(',').map(s => s.trim()) : [
-      'integrate.api.nvidia.com',
-      'api.nvidia.com',
-      'api.search.brave.com',
-      'lite.duckduckgo.com',
-      'duckduckgo.com',
-      'rdap.org',
-    ]);
+    // Accept every HTTPS destination. Provider and tool URLs are user-configured
+    // and must not be constrained to a hard-coded host list.
     try {
       const url = new URL(targetUrl);
-      const carriesCredentials = request.headers.has('Authorization') ||
-                                 request.headers.has('X-Subscription-Token');
 
       if (url.protocol !== 'https:') {
         return new Response(
           JSON.stringify({ error: 'Only https targets are allowed' }),
-          { status: 403, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
-        );
-      }
-      // Never relay a credential to a host that isn't explicitly trusted —
-      // that is how an open proxy leaks API keys. Credential-free reads
-      // (page extraction, RSS) may target any public https host; the
-      // ALLOWED_ORIGINS check above already restricts who can ask.
-      if (carriesCredentials && !allowedHosts.some(h => url.hostname === h || url.hostname.endsWith('.' + h))) {
-        return new Response(
-          JSON.stringify({ error: 'Target host not allowed for credentialed requests' }),
-          { status: 403, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
-        );
-      }
-      // Block SSRF into private ranges / link-local metadata endpoints
-      if (/^(localhost$|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/i.test(url.hostname)) {
-        return new Response(
-          JSON.stringify({ error: 'Private address targets are blocked' }),
           { status: 403, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
         );
       }

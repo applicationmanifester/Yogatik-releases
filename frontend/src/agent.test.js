@@ -137,13 +137,19 @@ describe('tool round-trip', () => {
     expect(toolMsg.content).toContain('boom')
   })
 
-  it('stops after 5 tool rounds', async () => {
+  it('caps tool rounds then forces a final answer', async () => {
     streamChat.mockImplementation(async (opts) => {
       opts.onToolCall({ id: 'x', name: 'loop', parsedArgs: {} })
       opts.onDone()
     })
-    await runAgent({ ...base, onDone: vi.fn() })
-    expect(streamChat.mock.calls.length).toBeLessThanOrEqual(6) // initial + 5 rounds
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+    // initial + default 8 rounds + 1 forced final-answer pass = 10, never unbounded
+    expect(streamChat.mock.calls.length).toBeLessThanOrEqual(10)
+    expect(onDone).toHaveBeenCalled()
+    // The last call must instruct the model to stop requesting tools.
+    const last = streamChat.mock.calls.at(-1)[0]
+    expect(last.messages.at(-1).content).toMatch(/tool-use limit|final answer/i)
   })
 
   it('excludes disabled tools from the schema list', async () => {

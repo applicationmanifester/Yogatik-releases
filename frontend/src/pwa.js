@@ -56,6 +56,19 @@ export function markAppHealthy() {
 export function registerServiceWorker(onUpdateReady) {
   if (!('serviceWorker' in navigator)) return
 
+  // In development (Vite dev server) the SW must be completely inactive:
+  // 1. Unregister any old workers so they stop intercepting /src/* requests
+  // 2. Do NOT add the controllerchange listener — unregistering the old SW
+  //    changes the controller to null, which would trigger location.reload()
+  if (import.meta.env.DEV) {
+    navigator.serviceWorker.getRegistrations()
+      .then(regs => { for (const r of regs) r.unregister() })
+      .catch(() => {})
+    return
+  }
+
+  // ── Production only ────────────────────────────────────────────────────────
+
   navigator.serviceWorker.register('/sw.js').then(reg => {
     const offer = (worker) => {
       if (!worker) return
@@ -82,10 +95,13 @@ export function registerServiceWorker(onUpdateReady) {
     })
   }).catch(() => { /* http, private mode, or unsupported: no worker, app still works */ })
 
+  // Reload when a new SW takes control so hashed chunk names are refreshed.
   let reloading = false
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (import.meta.env.DEV || !navigator.serviceWorker.controller) return
     if (reloading) return
     reloading = true
     location.reload()
   })
 }
+

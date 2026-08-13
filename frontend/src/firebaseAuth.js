@@ -192,6 +192,50 @@ export async function getUserApiKeys(...secrets) {
   return out
 }
 
+// ─── Encrypted data vault (conversations + documents snapshot) ───
+// A snapshot can exceed Firestore's 1 MB/doc limit, so the ciphertext is split
+// into ~700 KB chunks across a subcollection users/{uid}/vault/{n}. Only
+// ciphertext is stored; the account-derived secret never leaves the device.
+const VAULT_CHUNK = 700_000
+
+/** Write the encrypted snapshot string as ordered chunks; returns chunk count. */
+export async function saveVault(cipher, meta = {}) {
+  const f = await fb()
+  const user = f.auth.currentUser
+  if (!user) return { synced: false, reason: 'signed-out' }
+  const col = f.collection(f.db, 'users', user.uid, 'vault')
+  // Clear any previous, possibly longer, snapshot first so no stale tail remains.
+  const old = await f.getDocs(col)
+  const batch = f.writeBatch(f.db)
+  old.forEach(d => batch.delete(d.ref))
+  const chunks = []
+  for (let i = 0; i < cipher.length; i += VAULT_CHUNK) chunks.push(cipher.slice(i, i + VAULT_CHUNK))
+  chunks.forEach((c, i) => batch.set(f.doc(col, String(i).padStart(4, '0')), { i, c }))
+  batch.set(f.doc(f.db, 'users', user.uid), { vaultMeta: { ...meta, chunks: chunks.length, at: Date.now() } }, { merge: true })
+  await batch.commit()
+  return { synced: true, chunks: chunks.length }
+}
+
+/** Read and reassemble the encrypted snapshot string, or null if none. */
+export async function loadVault() {
+  const f = await fb()
+  const user = f.auth.currentUser
+  if (!user) return null
+  const snap = await f.getDocs(f.query(f.collection(f.db, 'users', user.uid, 'vault'), f.orderBy('i')))
+  if (snap.empty) return null
+  let cipher = ''
+  snap.forEach(d => { cipher += d.data().c || '' })
+  return cipher || null
+}
+
+export async function getVaultMeta() {
+  const f = await fb()
+  const user = f.auth.currentUser
+  if (!user) return null
+  const snap = await f.getDoc(f.doc(f.db, 'users', user.uid))
+  return (snap.exists() && snap.data().vaultMeta) || null
+}
+
 /** One-shot cleanup of pre-encryption plaintext keys left in Firestore. */
 export async function purgePlaintextKeys() {
   const f = await fb()

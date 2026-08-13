@@ -42,10 +42,11 @@ export function webCodecsAvailable() {
   return typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined'
 }
 
-/** Rough but honest: enough bits for text to stay sharp, not enough to hurt. */
+/** Bits-per-pixel tuned so slide text and Ken-Burns images stay crisp. Raised
+ *  from 0.09 → 0.13 (and cap 12M → 16M): the old rate softened fine text. */
 export function bitrateFor(width, height, fps) {
-  const bpp = 0.09
-  return Math.round(Math.min(12e6, Math.max(1.2e6, width * height * fps * bpp)))
+  const bpp = 0.13
+  return Math.round(Math.min(16e6, Math.max(2e6, width * height * fps * bpp)))
 }
 
 async function pickAudioCodec(sampleRate) {

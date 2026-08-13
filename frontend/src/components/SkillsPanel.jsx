@@ -40,9 +40,12 @@ export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter }) {
     setEditing(null); reload()
   }
 
+  const [importError, setImportError] = React.useState('')
+
   const importFile = async (e) => {
     const f = e.target.files?.[0]; if (!f) return
-    try { await upsertSkill(parseSkill(await f.text())); reload() } catch (err) { alert(`Import failed: ${err.message}`) }
+    try { await upsertSkill(parseSkill(await f.text())); reload(); setImportError('') }
+    catch (err) { setImportError(`Import failed: ${err.message}`) }
     e.target.value = ''
   }
 
@@ -55,16 +58,12 @@ export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter }) {
     setFlowEdit(null); reload()
   }
 
-  const runFlow = async (wf) => {
+  const [workflowVarsModal, setWorkflowVarsModal] = React.useState(null) // { wf, vars, values }
+
+  const runFlow = (wf) => {
     const vars = workflowVars(wf)
-    const values = {}
-    for (const v of vars) {
-      const val = window.prompt(`Value for "${v}":`, '')
-      if (val === null) return
-      values[v] = val
-    }
-    onClose?.()
-    onRunWorkflow?.(wf, values)
+    if (!vars.length) { onClose?.(); onRunWorkflow?.(wf, {}); return }
+    setWorkflowVarsModal({ wf, vars, values: Object.fromEntries(vars.map(v => [v, ''])) })
   }
 
   return (
@@ -139,6 +138,34 @@ export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter }) {
             <button className="small-btn" style={{ marginTop: 10 }} onClick={() => setFlowEdit({ name: '', stepsText: '' })}><Plus size={12} /> New workflow</button>
           )}
         </div>
+      )}
+      {workflowVarsModal && (
+        <Modal title={`Run: ${workflowVarsModal.wf.name}`} onClose={() => setWorkflowVarsModal(null)} footer={null}>
+          <form onSubmit={e => {
+            e.preventDefault()
+            const values = workflowVarsModal.values
+            setWorkflowVarsModal(null)
+            onClose?.()
+            onRunWorkflow?.(workflowVarsModal.wf, values)
+          }} style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>Fill in the workflow variables:</p>
+            {workflowVarsModal.vars.map(v => (
+              <label key={v} style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>{v}</span>
+                <input
+                  autoFocus
+                  value={workflowVarsModal.values[v] || ''}
+                  onChange={e => setWorkflowVarsModal(m => ({ ...m, values: { ...m.values, [v]: e.target.value } }))}
+                  style={{ padding: '6px 8px', borderRadius: 5, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: 13 }}
+                />
+              </label>
+            ))}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button type="button" className="small-btn" onClick={() => setWorkflowVarsModal(null)}>Cancel</button>
+              <button type="submit" className="small-btn btn-primary">Run Workflow</button>
+            </div>
+          </form>
+        </Modal>
       )}
     </Modal>
   )

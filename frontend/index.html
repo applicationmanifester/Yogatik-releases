@@ -1,9 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+  <script>
+    if (['localhost', '127.0.0.1'].includes(location.hostname) && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        for (const reg of regs) reg.unregister();
+      }).catch(() => {});
+    }
+  </script>
   <title>Yogatik</title>
+  <link rel="stylesheet" href="/src/styles.css" />
   <link rel="icon" type="image/svg+xml" href="/icon-192.svg" media="(prefers-color-scheme: dark)" />
   <link rel="icon" type="image/svg+xml" href="/icon-light.svg" media="(prefers-color-scheme: light)" />
   <link rel="manifest" href="/manifest.json" />
@@ -16,16 +24,24 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Yogatik" />
   <link rel="apple-touch-icon" href="/icon-192.svg" />
-  <meta name="description" content="Private AI assistant with live web research, document Q&A, image generation and code execution — 53 free tools, running entirely in your browser." />
-  <meta property="og:title" content="Yogatik" />
-  <meta property="og:description" content="Private AI assistant with live web research, document Q&A, image generation and code execution — 53 free tools, running entirely in your browser." />
+  <meta name="description" content="Private AI assistant with live web research, document Q&A, image generation and code execution — 65 free browser-native tools, running entirely in your browser. No backend, bring your own free API key." />
+  <meta property="og:title" content="Yogatik — Private browser-native AI assistant" />
+  <meta property="og:description" content="Private AI assistant with live web research, document Q&A, image generation and code execution — 65 free browser-native tools, running entirely in your browser." />
+  <meta property="og:image" content="/icon-192.svg" />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary" />
   <!-- Google AdSense -->
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8240433260986072" crossorigin="anonymous"></script>
 </head>
-<body>
-  <div id="root"></div>
+<body data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false">
+  <div id="root" data-gramm="false" data-gramm_editor="false"></div>
+  <noscript>
+    <div style="max-width:640px;margin:10vh auto;padding:0 24px;font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#e2e8f0;background:#0f172a">
+      <h1>Yogatik — private browser-native AI assistant</h1>
+      <p>Yogatik is a free, private AI chat app that runs entirely in your browser: live web research, document Q&amp;A, image generation, code execution and 60+ more tools, with no backend and your own free API key.</p>
+      <p><strong>This app requires JavaScript.</strong> Please enable JavaScript in your browser settings, then reload this page.</p>
+    </div>
+  </noscript>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

@@ -12,12 +12,65 @@
  * know or care which engine is behind it.
  */
 
+/**
+ * @typedef {Object} CascadeEvent
+ * @property {'ready'|'camera'|'screen'|'level'|'speaking'|'thinking'|'transcript'|'tools'|'toolResult'|'voice'|'provider'|'reconnecting'|'error'|'ended'|'interrupted'|'status'|'watched'|'looked'|'muted'} type
+ * @property {MediaStream} [stream]
+ * @property {number} [value]
+ * @property {string} [role]
+ * @property {string} [text]
+ * @property {string[]} [names]
+ * @property {string} [name]
+ * @property {any} [result]
+ * @property {string} [engine]
+ * @property {string} [provider]
+ * @property {string} [model]
+ * @property {string} [message]
+ * @property {number} [attempt]
+ * @property {number} [frames]
+ * @property {string} [via]
+ * @property {boolean} [active]
+ * @property {string} [who]
+ */
+
+/**
+ * @typedef {Object} CascadeSession
+ * @property {Function} start
+ * @property {Function} stop
+ * @property {Function} enableCamera
+ * @property {Function} enableScreenShare
+ * @property {Function} sendText
+ * @property {Function} watch
+ * @property {Function} setMuted
+ * @property {Function} isMuted
+ * @property {Function} grabFrame
+ * @property {boolean} cameraOn
+ * @property {boolean} screenOn
+ */
+
+/**
+ * @param {Object} o
+ * @param {string} o.provider
+ * @param {string} o.apiKey
+ * @param {string} o.model
+ * @param {string} [o.persona]
+ * @param {string[]} [o.disabledTools]
+ * @param {boolean} [o.modelCanSee]
+ * @param {boolean} [o.camera]
+ * @param {string} [o.voice]
+ * @param {string} [o.voiceEngine]
+ * @param {string} [o.lang]
+ * @param {number} [o.rate]
+ * @param {Object[]} [o.fallbacks]
+ * @param {Function} o.onEvent     (CascadeEvent) => void
+ */
+
 import { runAgent } from '../agent'
 import { createCamera, createScreenCapture } from './video'
 import { createSpeaker, defaultLang } from './voice'
 import {
   setSharedVisualSource, clearSharedVisualSource,
-  isVisualQuestion, needsMotion, captureProfile,
+  isVisualQuestion, needsMotion, captureProfile, describeWithoutModel,
 } from '../vision/source'
 
 const SENTENCE = /([.!?…]+["')\]]*\s+|\n{2,})/
@@ -33,6 +86,7 @@ export function speechRecognitionAvailable() {
 const MAX_HISTORY_TURNS = 20   // Keep context tight for fast providers
 const ENDPOINT_MS = 700        // Silence after interim speech = the turn is over
 const MIN_BARGE_CHARS = 6      // Shorter than this is usually echo or a cough
+const ECHO_TAIL_MS = 1500      // Keep filtering echo this long after speech ends
 
 /** Loose overlap test: is `heard` just the synthesiser being picked up again? */
 export function isEcho(heard, spoken) {
@@ -72,6 +126,7 @@ export function createCascadeSession({
   let abort = null
   let restartDelay = 0
   let recogFatal = false
+  let speechEndedAt = 0   // when the synthesiser last stopped (echo-tail guard)
   const history = []
 
   const emit = (e) => { if (!closed) onEvent(e) }
@@ -85,7 +140,7 @@ export function createCascadeSession({
   const speaker = createSpeaker({
     engine: voiceEngine, voice, lang, rate,
     onStart: () => { speaking = true; emit({ type: 'speaking', value: true }) },
-    onEnd: () => { speaking = false; emit({ type: 'speaking', value: false }) },
+    onEnd: () => { speaking = false; speechEndedAt = Date.now(); emit({ type: 'speaking', value: false }) },
     onEngine: (e) => emit({ type: 'voice', engine: e }),
   })
 
@@ -118,13 +173,16 @@ export function createCascadeSession({
   }
 
   /** Barge-in, done by hand: kill the voice and abandon the generation. */
-  const interrupt = () => {
+  const interrupt = async () => {
     if (!speaking && !abort) return
-    speaker.cancel()
+    // Stop synthesis first - wait for it to complete
+    await speaker.cancel()
     abort?.abort()
     abort = null
     speaking = false
-    spokenAloud = ''
+    // Arm the echo tail: cancelled audio can still echo for a moment. Keep
+    // spokenAloud so that residual echo is filtered rather than looped back.
+    speechEndedAt = Date.now()
     emit({ type: 'interrupted' })
     emit({ type: 'speaking', value: false })
   }
@@ -192,6 +250,25 @@ export function createCascadeSession({
     return frames.map(framePart)
   }
 
+  /**
+   * When the model cannot take images but the user IS asking about the camera or
+   * screen they've shared, describe the frame on-device (OCR/VLM) and hand the
+   * model that text — so "provided access" actually reaches any model, not just
+   * vision ones. Mirrors the `see` tool, but proactive.
+   */
+  async function describeIfVisual(userText) {
+    const src = screen || cam
+    if (modelCanSee || !src || !isVisualQuestion(userText)) return null
+    const b64 = src.grab(true, captureProfile(userText))
+    if (!b64) return null
+    try {
+      emit({ type: 'status', text: 'Looking (on-device)…' })
+      const { text } = await describeWithoutModel(`data:image/jpeg;base64,${b64}`, userText)
+      if (text?.trim()) { emit({ type: 'looked', frames: 1, via: 'on-device' }); return text.trim() }
+    } catch { /* fall through — answer without the frame */ }
+    return null
+  }
+
   /** Rate limits and outages are recoverable; ending the call is not. */
   function nextProvider() {
     if (chainIndex + 1 >= chain.length) return false
@@ -230,6 +307,10 @@ export function createCascadeSession({
     if (parts) {
       content = [{ type: 'text', text: userText }, ...parts]
       emit({ type: 'looked', frames: parts.length })
+    } else {
+      // Non-vision model + shared camera/screen: give it eyes on-device.
+      const seen = await describeIfVisual(userText)
+      if (seen) content = `${userText}\n\n[Live view (described on-device): ${seen}]`
     }
 
     let failure = null
@@ -242,7 +323,9 @@ export function createCascadeSession({
         userMessage: content,
         toolsEnabled: true, webEnabled: true, disabledTools,
         modelCanSee: active.modelCanSee ?? modelCanSee,
-        persona: `${persona ? persona + '\n\n' : ''}You are in a live spoken conversation, seen and heard through the user's camera and microphone. Reply the way a person speaks: short sentences, no markdown, no lists, no headings, no emoji. Two or three sentences unless asked for more. Never describe what you are doing.`,
+        persona: `${persona ? persona + '\n\n' : ''}You are in a live spoken conversation, heard through the user's microphone. Reply the way a person speaks: short sentences, no markdown, no lists, no headings, no emoji. Two or three sentences unless asked for more. You have full tools: generate images and videos, create and export files, run code and automated tests and report the results, and search the web — the result is shown on their screen, so just say briefly what you made or found. Never read out long code or file contents aloud.\n\n${(active.modelCanSee ?? modelCanSee)
+          ? 'You can SEE through the user\'s camera or shared screen: image frames are attached to the conversation when they ask about what is in view. Describe what you actually see.'
+          : 'You CANNOT see images directly. When the user asks about their camera or screen, a text description of the current view is inserted automatically as "[Live view (described on-device): …]". Rely ONLY on that description. Never invent, request, or fetch image URLs (e.g. do not make up links like example.com/photo.jpg); if no description was provided, say you could not see it and offer to look again.'}`,
         signal: controller.signal,
         onToken: (t) => {
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
@@ -305,9 +388,13 @@ export function createCascadeSession({
       }
 
       const heard = (finalText || interim).trim()
-      // Guard: while we are talking, the microphone hears the synthesiser.
-      // Treating that as barge-in makes the model cut itself off in a loop.
-      if ((speaking || abort) && isEcho(heard, spokenAloud)) return
+      // The synthesiser's audio is still in the room (and in the recogniser's
+      // buffer) for a beat AFTER playback ends, so guard for a tail window too —
+      // otherwise the echoed FINAL transcript lands with speaking already false,
+      // gets enqueued, and the assistant answers its own voice in a loop.
+      const echoWindow = speaking || abort || (Date.now() - speechEndedAt) < ECHO_TAIL_MS
+      if (echoWindow && isEcho(heard, spokenAloud)) return
+      // Genuine barge-in only counts while actually speaking (not during the tail).
       if ((speaking || abort) && (finalText || heard.length >= MIN_BARGE_CHARS)) interrupt()
 
       if (muted) return

@@ -12,6 +12,8 @@ import { describeWithoutModel } from './vision/source'
 import { getSetting } from './db'
 import { resolveFeatures } from './features'
 import { getActiveSkill, skillDisabledTools } from './skills'
+import { getActiveAgent, agentDisabledTools } from './agents'
+import { getActiveStyleBlock } from './styles'
 
 /** Durable memories the user asked to keep, injected so the model recalls them
  *  without needing a memory tool call (like ChatGPT/Claude memory). */
@@ -80,6 +82,18 @@ WHEN TO USE TOOLS:
 - When you do need several independent tools, request them in one turn — they run in
   parallel — rather than one at a time.
 
+DELEGATE AUTOMATICALLY WITH SUB-AGENTS (spawn_agents):
+- For any task that spans MULTIPLE distinct sub-tasks — e.g. research + write, gather data
+  + analyse + chart, or build several independent parts — call spawn_agents WITHOUT being
+  asked. Hand each sub-task to the right specialist: researcher (find/cite facts), coder
+  (write/run code), analyst (analyse/chart data), writer (draft/polish prose), planner
+  (break down a goal). They run in parallel; you then synthesize their results into one
+  coherent answer. This is autonomous, expected behaviour — the user should not have to
+  request it.
+- Judge scope honestly: a single-step question (one fact, one short answer, one snippet)
+  needs NO delegation — answer it directly. Delegation is for genuinely multi-part work.
+- After the sub-agents return, integrate their outputs yourself; do not just paste them.
+
 ${webEnabled ? `RESEARCH — you have live internet access:
 - Your training data is stale. For anything time-sensitive (news, prices, releases,
   schedules, "latest"/"current"/"today", or any fact that could have changed), you MUST
@@ -122,6 +136,26 @@ it override the tool and research rules above:
 ${persona}` : ''}`
 }
 
+function buildLocalSystemPrompt({ persona }) {
+  const now = new Date()
+  const today = now.toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  })
+  const time = now.toLocaleTimeString('en-US', {
+    hour: 'numeric', minute: '2-digit', hour12: true
+  })
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  return `You are Yogatik, a helpful on-device AI assistant.
+Current Time: ${time} on ${today} (${timeZone}).
+
+Strict Output Rules:
+- Synthesize a direct, natural answer in your own words.
+- NEVER output or repeat system section titles (like "FACTUAL BACKGROUND INFORMATION" or "Web Search Results").
+- NEVER copy-paste raw search result bullet lists verbatim. Extract the relevant weather or factual info and answer concisely.
+- For weather requests, state the condition, temperature, and forecast clearly.${persona ? `\n\nPersona:\n${persona}` : ''}`
+}
+
 /**
  * Build the history window under a character budget, newest-first.
  *
@@ -131,13 +165,15 @@ ${persona}` : ''}`
  * message that straddles the limit.
  */
 const HISTORY_BUDGET = 24000
+const LOCAL_HISTORY_BUDGET = 4000
 const MAX_TURNS = 20
+const LOCAL_MAX_TURNS = 6
 
-function windowHistory(history, budget = HISTORY_BUDGET) {
+function windowHistory(history, budget = HISTORY_BUDGET, maxTurns = MAX_TURNS) {
   const out = []
   let used = 0
 
-  for (const m of history.slice(-MAX_TURNS).reverse()) {
+  for (const m of history.slice(-maxTurns).reverse()) {
     // Multimodal turns are arrays of parts. Stringifying them inlines a whole
     // base64 image into the prompt as text — megabytes of garbage tokens.
     if (Array.isArray(m.content)) {
@@ -230,7 +266,7 @@ export async function runAgent({
   toolsEnabled = true, webEnabled = true, disabledTools = [], persona = null, temperature = 0.7, signal,
   modelCanSee = false, localVisionEnabled = true,
   onToken, onStatus, onToolStart, onToolResult, onDone, onError, onSources,
-  initialToolMode = null, onToolModeChange = null,
+  initialToolMode = null, onToolModeChange = null, agentOverride = null,
 }) {
   const abortError = () => Object.assign(new Error('Aborted'), { name: 'AbortError' })
   const throwIfAborted = () => { if (signal?.aborted) throw abortError() }
@@ -240,13 +276,20 @@ export async function runAgent({
     signal.addEventListener('abort', () => reject(abortError()), { once: true })
   })
 
+  const traceRef = []
+
   // Web research is only truly available if tools are on, the toggle is on,
   // and the research tools themselves have not been disabled.
   const webAvailable = toolsEnabled && webEnabled &&
     !['deep_research', 'web_search'].every(t => disabledTools.includes(t))
 
-  let planMode = false
-  try { planMode = resolveFeatures(await getSetting('chat_prefs', {}))?.planMode === true } catch { /* default off */ }
+  let chatPrefs = {}
+  try { chatPrefs = await getSetting('chat_prefs', {}) || {} } catch { /* defaults */ }
+  const planMode = resolveFeatures(chatPrefs)?.planMode === true
+  // How many tool rounds the agent may take before it must give a final answer.
+  // Raised from the old hard 5 so complex, multi-step tasks can keep refining;
+  // clamped so a runaway model can't loop forever. User-tunable in Personalise.
+  const maxRounds = Math.max(1, Math.min(20, Number(chatPrefs.max_tool_rounds) || 8))
 
   // An active Skill shapes the assistant: its system prompt is appended, and its
   // optional tool allowlist scopes what the model may call this turn.
@@ -254,11 +297,27 @@ export async function runAgent({
   try { activeSkill = await getActiveSkill() } catch { /* none */ }
   const skillBlock = activeSkill?.system ? `\n\nACTIVE SKILL — "${activeSkill.name}":\n${activeSkill.system}` : ''
 
-  const systemBase = buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + (await memoryBlock())
+  // Active agent (or an explicit override from a sub-agent / autonomous step)
+  // shapes the assistant and scopes its tools, like a Skill but role-centric.
+  let activeAgent = agentOverride
+  if (!activeAgent) { try { activeAgent = await getActiveAgent() } catch { /* none */ } }
+  const agentBlock = activeAgent?.system ? `\n\nACTIVE AGENT — "${activeAgent.name}" (${activeAgent.role || 'agent'}):\n${activeAgent.system}` : ''
+
+  let styleBlock = ''
+  try { styleBlock = await getActiveStyleBlock() } catch { /* default */ }
+
+  const isLocalProvider = provider === 'local' || provider === 'webllm'
+
+  const systemBase = isLocalProvider
+    ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + (await memoryBlock())
+    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + (await memoryBlock())
+
+  const hBudget = isLocalProvider ? LOCAL_HISTORY_BUDGET : HISTORY_BUDGET
+  const hTurns = isLocalProvider ? LOCAL_MAX_TURNS : MAX_TURNS
 
   const messages = [
     { role: 'system', content: systemBase },
-    ...windowHistory(history),
+    ...windowHistory(history, hBudget, hTurns),
     { role: 'user', content: userMessage },
   ]
 
@@ -287,7 +346,6 @@ export async function runAgent({
     }
   }
 
-  const isLocalProvider = provider === 'local' || provider === 'webllm'
   const isAskingTime = /time|date|clock|day is it|what hour|timezone/i.test(userMessage || '')
   if (isLocalProvider && isAskingTime) {
     const now = new Date()
@@ -335,8 +393,8 @@ export async function runAgent({
       const searchRes = await executeTool('web_search', { query: userMessage })
       throwIfAborted()
       if (searchRes?.results?.length) {
-        const topResults = searchRes.results.slice(0, 5).map(r => `• [${r.title}](${r.url}): ${r.snippet}`).join('\n')
-        messages[0].content += `\n\n[Web Search Results Context]:\n${topResults}`
+        const topResults = searchRes.results.slice(0, 5).map(r => `${r.title}: ${r.snippet}`).join('\n\n')
+        messages[0].content += `\n\nFACTUAL BACKGROUND DATA (Do not output raw bullets or repeat this section title, synthesize an answer directly):\n${topResults}`
         if (searchRes.results.some(r => r.url)) {
           sources.push(...searchRes.results.filter(r => r.url).map(r => ({ title: r.title, url: r.url })))
           onSources?.(sources)
@@ -351,11 +409,15 @@ export async function runAgent({
   // a text observation from the on-device VLM (it cannot).
   setVisionContext({ modelCanSee, allowLocal: localVisionEnabled })
 
-  // Fold the active skill's tool allowlist into the disabled set.
+  // Fold the active skill's + active agent's tool allowlists into the disabled set.
   let effectiveDisabled = disabledTools
-  if (activeSkill?.tools?.length) {
+  if (activeSkill?.tools?.length || activeAgent?.tools?.length) {
     const allToolNames = getToolSchemas([]).map(s => s.function.name)
-    effectiveDisabled = [...new Set([...disabledTools, ...skillDisabledTools(activeSkill, allToolNames)])]
+    effectiveDisabled = [...new Set([
+      ...disabledTools,
+      ...skillDisabledTools(activeSkill, allToolNames),
+      ...agentDisabledTools(activeAgent, allToolNames),
+    ])]
   }
   const schemas = toolsEnabled ? getToolSchemas(effectiveDisabled) : null
 
@@ -465,9 +527,9 @@ export async function runAgent({
     await harvestOrRepair()
     throwIfAborted()
 
-    // Tool execution loop (max 5 rounds to prevent infinite loops)
+    // Tool execution loop (maxRounds cap prevents infinite loops)
     let rounds = 0
-    while (toolCallsToProcess.length > 0 && rounds < 5) {
+    while (toolCallsToProcess.length > 0 && rounds < maxRounds) {
       throwIfAborted()
       rounds++
       const round = toolCallsToProcess.map((tc, i) => ({
@@ -494,7 +556,10 @@ export async function runAgent({
       onStatus?.(round.length > 1
         ? `Running ${round.length} tools…`
         : `Using ${round[0].name}…`)
-      round.forEach(tc => onToolStart?.(tc.name, tc.parsedArgs))
+      round.forEach(tc => {
+        onToolStart?.(tc.name, tc.parsedArgs)
+        traceRef.push({ tool: tc.name, args: tc.parsedArgs || undefined, status: 'running' })
+      })
 
       // Independent calls run concurrently — a 3-page research round finishes in
       // the time of its slowest fetch instead of the sum of all of them.
@@ -515,6 +580,8 @@ export async function runAgent({
         const result = results[i]
         toolResults[tc.name] = result
         onToolResult?.(tc.name, result)
+        const step = [...traceRef].reverse().find(s => s.tool === tc.name && s.status === 'running')
+        if (step) step.status = result?.error ? 'error' : 'done'
 
         if (SOURCE_TOOLS.has(tc.name)) {
           for (const s of collectSources(result)) {
@@ -576,12 +643,28 @@ export async function runAgent({
       await harvestOrRepair()
     }
 
+    // Cap reached but the model still wants more tools: force one final pass so
+    // the user always gets a synthesized answer instead of a cut-off / empty reply.
+    if (toolCallsToProcess.length > 0) {
+      throwIfAborted()
+      toolCallsToProcess = []
+      messages.push({
+        role: 'user',
+        content: 'You have reached the tool-use limit for this turn. Do NOT request any ' +
+          'more tools. Give your best, complete final answer now using everything gathered ' +
+          'so far, and note briefly if anything remained uncertain.',
+      })
+      onStatus?.('Finalizing answer…')
+      await processStream()
+      if (toolMode === 'prompted') harvestPromptedCalls()
+    }
+
     throwIfAborted()
-    onDone?.({ content: fullContent, toolResults, sources, toolMode })
+    onDone?.({ content: fullContent, toolResults, sources, toolMode, trace: traceRef ? [...traceRef] : undefined })
   } catch (err) {
     if (err.name === 'AbortError') {
       // User pressed Stop: keep whatever was generated instead of dropping it.
-      onDone?.({ content: fullContent, toolResults, sources, aborted: true })
+      onDone?.({ content: fullContent, toolResults, sources, aborted: true, trace: traceRef ? [...traceRef] : undefined })
     } else {
       onError?.(err)
     }

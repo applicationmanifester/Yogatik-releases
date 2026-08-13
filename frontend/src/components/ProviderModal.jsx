@@ -1,15 +1,116 @@
 import React, { useState } from 'react'
-import { Plug } from 'lucide-react'
+import { Plug, ExternalLink } from 'lucide-react'
 import { Modal } from './Modal'
 import { addProvider } from '../api'
 
-// ─── Provider Modal ───
+// ─── Provider Quick Templates ───────────────────────────────────────────────
+// Providers marked `free: true` have a genuinely free tier (no credit card).
 const QUICK_TEMPLATES = {
-  together: { name: 'Together AI', baseUrl: 'https://api.together.xyz/v1', models: ['meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', 'mistralai/Mixtral-8x7B-Instruct-v0.1'], default: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', keyUrl: 'https://api.together.xyz/settings/api-keys' },
-  deepseek: { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-coder'], default: 'deepseek-chat', keyUrl: 'https://platform.deepseek.com/api_keys' },
-  mistral: { name: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', models: ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'], default: 'mistral-large-latest', keyUrl: 'https://console.mistral.ai/api-keys' },
-  anthropic_or: { name: 'Anthropic (via OpenRouter)', baseUrl: 'https://openrouter.ai/api/v1', models: ['anthropic/claude-sonnet-4', 'anthropic/claude-haiku-4'], default: 'anthropic/claude-sonnet-4', keyUrl: 'https://openrouter.ai/keys' },
-  gemini: { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', models: ['gemini-2.5-flash', 'gemini-2.5-pro'], default: 'gemini-2.5-flash', keyUrl: 'https://aistudio.google.com/apikey' },
+  // ── Free / No credit card ──────────────────────────────────────────────────
+  nvidia: {
+    name: 'NVIDIA NIM',
+    badge: 'Free',
+    badgeColor: '#22c55e',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    models: [
+      'meta/llama-3.3-70b-instruct',
+      'nvidia/llama-3.1-nemotron-70b-instruct',
+      'openai/gpt-oss-20b',
+      'openai/gpt-oss-120b',
+      'meta/llama-3.1-8b-instruct',
+    ],
+    default: 'meta/llama-3.3-70b-instruct',
+    keyUrl: 'https://build.nvidia.com',
+    note: '1000 free credits/month • No credit card',
+    needsProxy: true,
+  },
+  gemini: {
+    name: 'Google Gemini',
+    badge: 'Free',
+    badgeColor: '#22c55e',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+    default: 'gemini-2.5-flash',
+    keyUrl: 'https://aistudio.google.com/apikey',
+    note: '1500 req/day free • No credit card',
+  },
+  groq: {
+    name: 'Groq',
+    badge: 'Free',
+    badgeColor: '#22c55e',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
+    default: 'llama-3.3-70b-versatile',
+    keyUrl: 'https://console.groq.com/keys',
+    note: 'Very fast inference • Free tier',
+  },
+  openrouter: {
+    name: 'OpenRouter',
+    badge: 'Free models',
+    badgeColor: '#a78bfa',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    models: [
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemma-3-27b-it:free',
+      'deepseek/deepseek-r1:free',
+      'anthropic/claude-sonnet-4',
+      'openai/gpt-4o',
+    ],
+    default: 'meta-llama/llama-3.3-70b-instruct:free',
+    keyUrl: 'https://openrouter.ai/keys',
+    note: '50+ free models + Claude & GPT-4 with credits',
+  },
+  // ── Paid / credits required ────────────────────────────────────────────────
+  anthropic_or: {
+    name: 'Anthropic (Claude)',
+    badge: 'Paid',
+    badgeColor: '#f59e0b',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    models: ['anthropic/claude-sonnet-4', 'anthropic/claude-haiku-4', 'anthropic/claude-opus-4'],
+    default: 'anthropic/claude-sonnet-4',
+    keyUrl: 'https://openrouter.ai/keys',
+    note: 'Via OpenRouter • Claude Sonnet 4, Haiku 4, Opus 4',
+  },
+  openai: {
+    name: 'OpenAI (ChatGPT)',
+    badge: 'Paid',
+    badgeColor: '#f59e0b',
+    baseUrl: 'https://api.openai.com/v1',
+    models: ['gpt-4o', 'gpt-4o-mini', 'o4-mini', 'gpt-4.1'],
+    default: 'gpt-4o',
+    keyUrl: 'https://platform.openai.com/api-keys',
+    note: 'Official OpenAI API • GPT-4o, o4-mini',
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    badge: 'Cheap',
+    badgeColor: '#38bdf8',
+    baseUrl: 'https://api.deepseek.com/v1',
+    models: ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner'],
+    default: 'deepseek-chat',
+    keyUrl: 'https://platform.deepseek.com/api_keys',
+    note: 'Very affordable • Excellent coding model',
+  },
+  mistral: {
+    name: 'Mistral AI',
+    badge: 'Paid',
+    badgeColor: '#f59e0b',
+    baseUrl: 'https://api.mistral.ai/v1',
+    models: ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'],
+    default: 'mistral-large-latest',
+    keyUrl: 'https://console.mistral.ai/api-keys',
+    note: 'European AI • Great multilingual support',
+  },
+  together: {
+    name: 'Together AI',
+    badge: 'Paid',
+    badgeColor: '#f59e0b',
+    baseUrl: 'https://api.together.xyz/v1',
+    models: ['meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', 'mistralai/Mixtral-8x7B-Instruct-v0.1'],
+    default: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
+    keyUrl: 'https://api.together.xyz/settings/api-keys',
+    note: 'Fast open-source models at scale',
+  },
 }
 
 function ProviderModal({ onClose, onSaved, editProvider }) {
@@ -28,8 +129,11 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
     setMode('custom')
   }
 
+  const [saveError, setSaveError] = useState('')
+
   const handleSave = async () => {
     if (!form.id || !form.name || !form.base_url) return
+    setSaveError('')
     try {
       await addProvider({
         id: form.id.toLowerCase().replace(/[^a-z0-9-_]/g, '-'),
@@ -39,11 +143,14 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
       })
       onSaved()
       onClose()
-    } catch (e) { alert(e.message) }
+    } catch (e) { setSaveError(e.message) }
   }
 
+  const freeTemplates = Object.entries(QUICK_TEMPLATES).filter(([, t]) => t.badge === 'Free' || t.badge === 'Free models')
+  const paidTemplates = Object.entries(QUICK_TEMPLATES).filter(([, t]) => t.badge !== 'Free' && t.badge !== 'Free models')
+
   return (
-    <Modal title={isEdit ? 'Edit provider' : 'Add custom provider'} icon={<Plug size={18} />}
+    <Modal title={isEdit ? 'Edit provider' : 'Add AI provider'} icon={<Plug size={18} />}
       onClose={onClose} labelledBy="provider-title">
         {!isEdit && (
           <div className="modal-tabs">
@@ -52,13 +159,45 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
           </div>
         )}
         {mode === 'template' && (
-          <div className="template-grid">
-            {Object.entries(QUICK_TEMPLATES).map(([key, t]) => (
-              <div key={key} className="template-card" onClick={() => selectTemplate(key)}>
-                <div className="template-name">{t.name}</div>
-                <div className="template-url">{t.baseUrl}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                ✅ Free — No credit card required
               </div>
-            ))}
+              <div className="template-grid">
+                {freeTemplates.map(([key, t]) => (
+                  <div key={key} className="template-card" onClick={() => selectTemplate(key)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div className="template-name">{t.name}</div>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: t.badgeColor, background: `${t.badgeColor}22`, padding: '1px 6px', borderRadius: 4 }}>{t.badge}</span>
+                    </div>
+                    <div className="template-url" style={{ marginBottom: 2 }}>{t.note}</div>
+                    <a href={t.keyUrl} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 10, color: '#7c93eb', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}
+                      onClick={e => e.stopPropagation()}>
+                      Get free API key <ExternalLink size={9} />
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                💳 Paid / Credits required
+              </div>
+              <div className="template-grid">
+                {paidTemplates.map(([key, t]) => (
+                  <div key={key} className="template-card" onClick={() => selectTemplate(key)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div className="template-name">{t.name}</div>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: t.badgeColor, background: `${t.badgeColor}22`, padding: '1px 6px', borderRadius: 4 }}>{t.badge}</span>
+                    </div>
+                    <div className="template-url">{t.note}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
         {mode === 'custom' && (
@@ -77,9 +216,12 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
             <input aria-label="Models, comma separated" value={form.models} onChange={e => setForm({ ...form, models: e.target.value })} placeholder="model-a, model-b" />
           </div>
         )}
-        <div className="modal-actions">
-          <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={handleSave} disabled={!form.id || !form.name || !form.base_url}>{isEdit ? 'Save Changes' : 'Add Provider'}</button>
+        <div className="modal-actions" style={{ flexDirection: 'column', gap: 6 }}>
+          {saveError && <div style={{ fontSize: 12, color: '#f87171', padding: '4px 0' }}>{saveError}</div>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn-primary" onClick={handleSave} disabled={!form.id || !form.name || !form.base_url}>{isEdit ? 'Save Changes' : 'Add Provider'}</button>
+          </div>
         </div>
     </Modal>
   )

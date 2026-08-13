@@ -85,6 +85,14 @@ export const textToAudioTool = {
     let off = 0
     for (const p of pcmParts) { merged.set(p, off); off += p.length }
 
+    // Peak-normalise to -1 dBFS so narration is at a consistent, healthy volume.
+    let peak = 0
+    for (let i = 0; i < merged.length; i++) { const a = Math.abs(merged[i]); if (a > peak) peak = a }
+    if (peak > 0) {
+      const gain = 0.89 / peak
+      if (gain < 4) for (let i = 0; i < merged.length; i++) merged[i] *= gain
+    }
+
     const blob = encodeWav(merged, sampleRate)
     const filename = `yogatik-narration-${Date.now()}.wav`
     let mediaId = null

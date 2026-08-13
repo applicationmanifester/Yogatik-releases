@@ -1,0 +1,47 @@
+name: Build Windows desktop app
+
+# Manual run (Actions tab → Run workflow) or on a version tag like v3.8.0.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # needed to create the Release and upload the .exe
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Build app and publish installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: frontend
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-latest' }}
+          releaseName: 'Yogatik Desktop ${{ github.ref_type == 'tag' && github.ref_name || '(latest)' }}'
+          releaseBody: 'Windows installer (.exe / .msi). Download the .exe under Assets below.'
+          releaseDraft: false
+          prerelease: false

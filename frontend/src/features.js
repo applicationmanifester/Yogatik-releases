@@ -77,6 +77,11 @@ export const FEATURES = {
     hint: 'For big multi-step tasks, lay out a plan and confirm before executing',
     default: false,
   },
+  proactiveAgent: {
+    label: 'Proactive assist',
+    hint: 'Quick agent actions above the composer — summarize, next steps, find issues',
+    default: false,
+  },
 }
 
 export const FEATURE_DEFAULTS = Object.fromEntries(

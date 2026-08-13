@@ -16,6 +16,24 @@
  * and clauses must be heard in order, never overlapped.
  */
 
+/**
+ * @typedef {Object} SpeakerEngine
+ * @property {'system'|'neural'|'loading'} engine
+ * @property {string} voice
+ * @property {string} lang
+ * @property {number} rate
+ */
+
+/**
+ * @typedef {Object} Speaker
+ * @property {Function} speak - Queue a clause. Order is preserved; overlapping speech is never allowed.
+ * @property {Function} cancel - Barge-in: stop mid-word and drop everything still queued.
+ * @property {Function} close - Clean up resources.
+ * @property {Function} configure - Update voice/lang/rate/engine on the shared speaker without recreating it.
+ * @property {boolean} speaking - Whether currently speaking.
+ * @property {boolean} usingNeural - Whether neural engine is ready and in use.
+ */
+
 import { synthesize, loadNarrator, narratorCached, DEFAULT_VOICE } from '../video/speech'
 
 /** How long a clause will wait for the neural voice before going robotic. */
@@ -31,6 +49,7 @@ const SYSTEM_HINT = {
   bm_george: /(en-gb|british).*male|george|ryan/i,
 }
 
+/** How long a clause will wait for the neural voice before going robotic. */
 export function createSpeaker({
   engine = 'system',
   voice = DEFAULT_VOICE,
@@ -58,6 +77,7 @@ export function createSpeaker({
   // user never hears the robot at all. Cold (~90MB), waiting would be rude, so
   // the call talks badly until it lands and upgrades mid-conversation.
   if (engine === 'neural') {
+    onEngine('loading')  // NEW: notify UI immediately
     ready = preload()
       .then(() => { neuralReady = true; onEngine('neural'); return true })
       .catch(() => { onEngine('system'); return false })   // stay robotic, stay working
@@ -161,6 +181,7 @@ export function createSpeaker({
       queue = []
       if (speaking) { speaking = false; onEnd() }
       cancelled = false
+      return Promise.resolve()
     },
 
     close() {

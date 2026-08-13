@@ -8,14 +8,19 @@ import * as db from './db'
 import { runAgent } from './agent'
 import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels, chatComplete, proxyAvailable } from './llm'
 import { getToolNames } from './tools/index'
+import { isDesktop } from './tools/localFs'
 import { chunkText } from './retrieval'
 import { invalidateDocIndex } from './tools/documents'
 import { LIVE_MODELS } from './live/protocol'
 import { getCachedVision, looksVisionCapable, probeVision } from './vision/capability'
 import { getSharedSpeaker, stopSharedSpeaker } from './live/voice'
 import { DEFAULT_VOICE } from './video/speech'
+import { getWorkflows, upsertWorkflow, runWorkflow } from './workflows'
+import { getSkills, upsertSkill } from './skills'
+import { getAgents, upsertAgent } from './agents'
 
-import { signInWithGoogle, checkRedirectResult, logOutGoogle, saveUserApiKey, getUserApiKeys, purgePlaintextKeys, authRedirectPending } from './firebaseAuth'
+import { signInWithGoogle, checkRedirectResult, logOutGoogle, saveUserApiKey, getUserApiKeys, purgePlaintextKeys, authRedirectPending, saveVault, loadVault, getVaultMeta } from './firebaseAuth'
+import { encryptSecret, decryptSecret } from './crypto'
 
 // ─── Auth (Google Sign-In & encrypted Firestore key vault) ───
 
@@ -78,6 +83,60 @@ export async function syncCloudKeys() {
   return { ...pulled, ...pushed }
 }
 
+// ─── Encrypted conversation + document sync ───
+// Opt-in (chat_prefs.cloud_sync). The whole local corpus is exported, encrypted
+// with the account secret, and stored as chunks in Firestore — so signing in on
+// another device restores your chats. Reuses the tested exportAll/importAll
+// merge logic rather than risky per-message live sync.
+
+export function cloudSyncEnabled() {
+  return db.getSetting('chat_prefs', {}).then(p => p?.cloud_sync === true)
+}
+
+/** Push the local snapshot (encrypted) to the cloud. */
+export async function pushCloudData() {
+  const secret = await vaultSecret()
+  if (!secret) return { synced: false, reason: 'signed-out' }
+  const snapshot = await db.exportAll()
+  const cipher = await encryptSecret(JSON.stringify(snapshot), secret)
+  const res = await saveVault(cipher, {
+    conversations: snapshot.conversations.length,
+    messages: snapshot.messages.length,
+  })
+  if (res?.synced) await db.setSetting('cloud_sync_at', Date.now())
+  return res
+}
+
+/** Pull the cloud snapshot and MERGE it into this device (never destructive). */
+export async function pullCloudData(mode = 'merge') {
+  const secret = await vaultSecret()
+  if (!secret) return { pulled: 0, reason: 'signed-out' }
+  const cipher = await loadVault()
+  if (!cipher) return { pulled: 0 }
+  const json = await decryptSecret(cipher, secret)
+  if (!json) return { pulled: 0, reason: 'decrypt-failed' }
+  let data
+  try { data = JSON.parse(json) } catch { return { pulled: 0, reason: 'corrupt' } }
+  const counts = await db.importAll(data, mode)
+  return { pulled: counts.conversations || 0, ...counts }
+}
+
+/** Two-way: pull first (so a fresh device gets history), then push the union. */
+export async function syncCloudData() {
+  if (!(await cloudSyncEnabled())) return { synced: false, reason: 'disabled' }
+  const pulled = await pullCloudData('merge').catch(() => ({ pulled: 0 }))
+  const pushed = await pushCloudData().catch((e) => ({ synced: false, reason: e?.message }))
+  return { ...pulled, ...pushed }
+}
+
+export async function cloudSyncStatus() {
+  const [enabled, at, meta] = await Promise.all([
+    cloudSyncEnabled(), db.getSetting('cloud_sync_at', null),
+    getVaultMeta().catch(() => null),
+  ])
+  return { enabled, at, meta }
+}
+
 /**
  * Runs on every startup, so it must not pull the Firebase SDK (~170KB gzipped)
  * for a visitor who has never signed in. Only a pending redirect or an existing
@@ -90,6 +149,7 @@ export async function checkGoogleRedirect() {
     await db.setSetting('user', user)
     try { await syncCloudKeys() } catch {}
     try { await purgePlaintextKeys() } catch {}
+    try { await syncCloudData() } catch {}
   }
   return user
 }
@@ -101,6 +161,7 @@ export async function loginWithGoogle() {
     // Signing in IS the sync step — nothing to type, no button to find.
     try { await syncCloudKeys() } catch {}
     try { await purgePlaintextKeys() } catch {}
+    try { await syncCloudData() } catch {}
   }
   return user
 }
@@ -235,7 +296,9 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         toolsEnabled: body.tools !== false && body.use_tools !== false,
         initialToolMode: isLocalProvider ? 'prompted' : await getToolMode(pid, mdl),
         webEnabled: body.use_web_search !== false,
-        disabledTools: await getDisabledTools(),
+        // A caller (e.g. a sub-agent) can scope tools further via body.disabledTools.
+        disabledTools: [...new Set([...(await getDisabledTools()), ...(body.disabledTools || [])])],
+        agentOverride: body.agent_override || null,
         persona: body.system_prompt || null,
         // Probing costs a round-trip, so per message we trust the cache and
         // fall back to the name heuristic; the probe runs when a key is verified.
@@ -460,9 +523,11 @@ export async function getConversations(projectId) {
 }
 
 /** Create a conversation row and return its id. */
-export async function createConversation(title, projectId) {
-  const c = await db.createConversation(title, projectId ?? await getActiveProject())
-  return c.id
+export async function createConversation(title, projectId, provider, model, settings = null) {
+ const activeP = provider || await getActiveProvider()
+ const activeM = model || await getActiveModel(activeP)
+ const c = await db.createConversation(title, projectId ?? await getActiveProject(), activeP, activeM, settings)
+ return c.id
 }
 
 /**
@@ -499,6 +564,11 @@ export async function renameConversation(id, title) {
   return db.updateConversationTitle(id, title)
 }
 
+export async function updateConversationModel(id, provider, model, settings = null) {
+  if (!id) return
+  return db.updateConversationModel(id, provider, model, settings)
+}
+
 /** Drop stored messages from index `from` onward (used by regenerate). */
 export async function trimConversationFrom(id, from) {
   if (!id) return
@@ -524,7 +594,7 @@ export async function branchConversation(sourceId, index) {
   const kept = (source?.messages || []).slice(0, index)
   const baseTitle = (source?.title || 'Chat').replace(/\s*\(\d+\)$/, '')
 
-  const created = await db.createConversation(baseTitle, source?.projectId ?? null)
+  const created = await db.createConversation(baseTitle, source?.projectId ?? null, source?.provider ?? null, source?.model ?? null)
   for (const m of kept) {
     await db.addMessage(created.id, m.role, m.content, m.toolResults ?? null, m.sources ?? null)
   }
@@ -684,7 +754,15 @@ export async function getModels() {
   const providers = getLLMProviders()
   const custom = await db.getSetting('custom_providers', {})
   const result = {}
+  const desktop = isDesktop()
   for (const [id, p] of Object.entries(providers)) {
+    // Desktop hides the WebLLM on-device provider — Ollama is the local path there.
+    if (desktop && p.isLocal) continue
+    // Web hides Ollama: a browser at https://…web.app can't reach the user's
+    // http://localhost:11434 (Ollama's CORS blocks it). Local models are the
+    // desktop app's job, whose main process strips CORS. Skipping it here also
+    // stops the console CORS spam from probing /v1/models on every load.
+    if (!desktop && p.isOllama) continue
     const key = await db.getSetting(`apikey_${id}`)
     const hasKey = !!key || !!p.noKey
     let liveModels = p.models || []
@@ -694,11 +772,15 @@ export async function getModels() {
     } else if (hasKey || p.publicModels) {
       liveModels = await cachedModels(id, key, liveModels)
     }
+    // Ollama is "available" only when the local daemon actually answered with
+    // models — otherwise it shows Ready but every message fails (daemon down).
+    const available = p.isOllama ? liveModels.length > 0 : hasKey
     result[id] = {
       name: p.name, type: 'openai_compatible',
-      available: hasKey, models: liveModels,
+      available, models: liveModels,
       default_model: (liveModels.includes(p.default) ? p.default : liveModels[0]) || p.default || '',
       needs_key: !hasKey,
+      is_ollama: !!p.isOllama,
       builtin: !custom[id], base_url: p.baseUrl, key_url: p.keyUrl,
     }
   }
@@ -1114,6 +1196,155 @@ export async function getActiveModel(providerId) {
 
 export async function setActiveModel(providerId, model) {
   await db.setSetting(`model_${providerId}`, model || '')
+}
+
+// ─── Scheduler / Cron Daemon (Electron desktop only) ───
+/**
+ * Execute a scheduled job by type. Called from the Electron main process
+ * via the __YOGATIK_SCHEDULER__ bridge when a cron job fires.
+ */
+export async function executeScheduledJob({ type, payload }) {
+  try {
+    switch (type) {
+      case 'workflow': {
+        const { workflowId, variables = {} } = payload || {}
+        const workflows = await getWorkflows()
+        const wf = workflows.find(w => w.id === workflowId)
+        if (!wf) throw new Error(`Workflow not found: ${workflowId}`)
+        
+        let output = ''
+        await runWorkflow(wf, variables, async (prompt, index) => {
+          // For scheduled jobs, we stream but don't need UI callbacks
+          return new Promise((resolve) => {
+            streamMessage(
+              { message: prompt, messages: [], use_tools: true, use_web_search: true },
+              (t) => { output += t },
+              null,
+              () => resolve(output),
+              (err) => resolve(`Error: ${err}`)
+            )
+          })
+        })
+        return { success: true, output, workflow: wf.name }
+      }
+      
+      case 'skill': {
+        const { skillId, prompt } = payload || {}
+        const skills = await getSkills()
+        const skill = skills.find(s => s.id === skillId)
+        if (!skill) throw new Error(`Skill not found: ${skillId}`)
+        
+        let output = ''
+        await new Promise((resolve) => {
+          streamMessage(
+            { 
+              message: prompt, 
+              messages: [], 
+              use_tools: true, 
+              use_web_search: true,
+              system_prompt: skill.system 
+            },
+            (t) => { output += t },
+            null,
+            () => resolve(output),
+            (err) => resolve(`Error: ${err}`)
+          )
+        })
+        return { success: true, output, skill: skill.name }
+      }
+      
+      case 'agent': {
+        const { agentId, task } = payload || {}
+        const agents = await getAgents()
+        const agent = agents.find(a => a.id === agentId)
+        if (!agent) throw new Error(`Agent not found: ${agentId}`)
+        
+        let output = ''
+        await new Promise((resolve) => {
+          streamMessage(
+            { 
+              message: task, 
+              messages: [], 
+              use_tools: true, 
+              use_web_search: true,
+              system_prompt: agent.system,
+              disabledTools: agent.tools?.length ? [] : undefined // Will be scoped by agent logic
+            },
+            (t) => { output += t },
+            null,
+            () => resolve(output),
+            (err) => resolve(`Error: ${err}`)
+          )
+        })
+        return { success: true, output, agent: agent.name }
+      }
+      
+      case 'backup': {
+        const data = await db.exportAll()
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `yogatik-backup-${new Date().toISOString().slice(0, 10)}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+        return { success: true, conversations: data.conversations.length, messages: data.messages.length }
+      }
+      
+      case 'briefing': {
+        const { topic, format = 'markdown' } = payload || {}
+        const briefingPrompt = `Generate a ${format} briefing on: ${topic || 'Today\'s top AI and tech news'}. 
+Include: key headlines, notable developments, and a summary. Use deep_research for current facts.`
+        
+        let output = ''
+        await new Promise((resolve) => {
+          streamMessage(
+            { message: briefingPrompt, messages: [], use_tools: true, use_web_search: true },
+            (t) => { output += t },
+            null,
+            () => resolve(output),
+            (err) => resolve(`Error: ${err}`)
+          )
+        })
+        return { success: true, output, topic: topic || 'AI & Tech News' }
+      }
+      
+      case 'custom': {
+        const { prompt, model, provider, system_prompt } = payload || {}
+        let output = ''
+        await new Promise((resolve) => {
+          streamMessage(
+            { 
+              message: prompt, 
+              messages: [], 
+              model, 
+              provider, 
+              system_prompt,
+              use_tools: true, 
+              use_web_search: true 
+            },
+            (t) => { output += t },
+            null,
+            () => resolve(output),
+            (err) => resolve(`Error: ${err}`)
+          )
+        })
+        return { success: true, output }
+      }
+      
+      default:
+        throw new Error(`Unknown job type: ${type}`)
+    }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+}
+
+/**
+ * Check if we can execute scheduled jobs (Electron desktop)
+ */
+export function canExecuteScheduledJobs() {
+  return isDesktop() && !!window.__YOGATIK_SCHEDULER__
 }
 
 // ─── AI Tools (browser-native) ───

@@ -10,6 +10,80 @@
 - **Proxy**: Cloudflare Worker (cors-proxy/) for non-CORS providers (NVIDIA only). Vite plugin serves /api/llm-proxy in dev. Client picks via VITE_LLM_PROXY_BASE.
 - **Auth**: Firebase (lazy-loaded; NOT loaded at startup unless a session/redirect exists). API keys sync to Firestore AES-GCM encrypted under an ACCOUNT-derived secret (crypto.js) — sign in on any device and the keys are there. No passphrase anywhere.
 - **Deploy**: Firebase Hosting. `deploy-proxy.bat` (worker) then `deploy.bat` (build + hosting + rules)
+- **Desktop (v3.8)**: Tauri v2 shell (`frontend/src-tauri/`). Wraps same Vite build. `build-desktop.bat` → `npm run desktop:build` → .exe/.msi in src-tauri/target/release/bundle/. Prereqs: Node, Rust, MSVC Build Tools, WebView2.
+
+## Desktop app — Electron (v3.8, Node-only path)
+- Modular main process: electron/main.cjs (thin orchestrator) + fsBridge.cjs (scoped fs_* IPC, grant
+  persistence, path-escape guards: abs/.. rejected + realpath re-check) + cors.cjs (enableProviderCors)
+  + menu.cjs (native menu/shortcuts) + windowState.cjs (remember size/pos/maximized in userData).
+- Native menu (menu.cjs): File→New Chat (Ctrl+N), Settings (Ctrl+,), Grant Working Folder (Ctrl+O)
+  send a 'menu' IPC action; View has reload/devtools/zoom/fullscreen roles; Help has web/Ollama links +
+  About. preload __YOGATIK_MENU__.on(cb) relays the action; App.jsx subscribes → newChat/setSettingsOpen/
+  pickWorkFolder. Single-instance lock focuses the open window.
+- frontend/electron/preload.cjs: contextBridge exposes window.__TAURI__.core.invoke → ipcRenderer, so
+  tools/localFs.js + the folder chip work UNCHANGED under Electron (no frontend branching). Also sets
+  window.__YOGATIK_ELECTRON__ and window.__YOGATIK_MENU__.
+- CI (.github/workflows/electron-release.yml) passes optional VITE_LLM_PROXY_BASE/VITE_AUTH_DOMAIN/
+  VITE_FIREBASE_API_KEY from repo secrets — but the .exe already works without them (desktop calls
+  providers directly; Firebase apiKey has a hardcoded fallback + web keys aren't secret).
+- Native extras: tray.cjs (tray icon: Open/New Chat/Quit; close hides to tray, app.isQuitting gates real
+  quit), notify.cjs (ipcMain 'notify' → OS Notification; preload __YOGATIK_NOTIFY__(title,body); App fires
+  it when a reply finishes while document.hidden; needs app.setAppUserModelId on Windows), updater.cjs
+  (electron-updater checkForUpdatesAndNotify + manual checkForUpdates() with dialogs, fully guarded/no-op
+  if unconfigured), globalShortcut Ctrl/Cmd+Shift+Y show/hide. package.json build.publish=[{github}]; CI
+  uploads *.exe + *.blockmap + latest.yml so auto-update works. electron-updater is a devDep; try/caught.
+- menu.cjs File menu: New Chat/Settings/Grant+Open Working Folder (shell.openPath getGrantedRoot)/Launch
+  at Login (app.setLoginItemSettings checkbox); Help: Check for Updates… (onCheckUpdates callback). buildMenu
+  takes {getRoot,onCheckUpdates}.
+
+## Open utility tools (v3.8) — tools/moretools.js (7, keyless)
+- Pure-client (never fail): uuid (v4), password_generate (password/passphrase + entropy), number_base
+  (2–36, auto 0x/0b/0o), cron_next (5-field cron → next N run times), timezone (IANA convert / world clock
+  via Intl offset trick). Network (keyless CORS via proxyJson): thesaurus (Datamuse rel_syn/ant/rhy/ml/sl),
+  country_info (REST Countries v3.1). Registered in tools/index.js. moretools.test.js = 8 tests.
+- Build is Node-only: `npm run electron:build` (= build:electron with --base=./ --outDir dist-electron,
+  then electron-builder --win nsis → release-electron/*.exe). Relative base is REQUIRED: file:// breaks
+  absolute /assets paths. electron-builder config in package.json "build" (appId, files, win nsis icon
+  src-tauri/icons/icon.ico, runAfterFinish). build-electron.bat at repo root.
+- CI: .github/workflows/electron-release.yml (windows-latest, no Rust) publishes the .exe to a Release.
+- Both shells coexist; Electron is the easy path, Tauri the small one. desktop.test.js covers the shared
+  bridge (window.__TAURI__ mock) so both are exercised.
+
+## Desktop LLM networking (v3.8) — no CORS proxy on desktop
+- NVIDIA (needsProxy) sends no CORS headers, so the web app routes it through the Cloudflare worker
+  (VITE_LLM_PROXY_BASE, in .env which is GITIGNORED → a CI/shared .exe had no proxy URL → NVIDIA dead).
+- Fix = native-desktop model: Electron main injects permissive CORS for provider hosts
+  (enableProviderCors: onHeadersReceived ACAO* + force 200 on OPTIONS preflight; onBeforeSendHeaders
+  sets localhost Origin for :11434/:1234). llm.js isElectron (window.__YOGATIK_ELECTRON__) → smartFetch
+  skips the worker and fetches providers DIRECTLY. Desktop no longer needs the worker or a baked .env.
+- Desktop defaults to Ollama, hides the WebLLM `local` provider: App provider initial state = ollama
+  when isDesktop(); zero-key boot activates ollama (no 750MB WebLLM DL); getModels() skips isLocal on
+  desktop; remove-provider fallback → ollama on desktop. Ollama available only when daemon answered.
+- Ollama CORS from file:// origin is handled by the same enableProviderCors shim.
+
+## Desktop app (Tauri v2 — v3.8)
+- src-tauri/lib.rs: scoped local-FS commands (fs_grant/list/read/write/edit/search). ONE granted
+  root (native folder picker via tauri-plugin-dialog), every path resolved against it; `..`/absolute/
+  symlink-escape rejected (resolve()). Browser build has no bridge → tools return "desktop only".
+- tauri.conf.json: withGlobalTauri:true (exposes window.__TAURI__.core.invoke, so NO npm @tauri dep in
+  web bundle), csp:null (app calls many external APIs), targets nsis+msi, icons in src-tauri/icons/.
+- capabilities/default.json grants core+dialog+shell. Icons generated from public/icon-1024.png
+  (or `npm run desktop:icon`).
+- Web side: tools/localFs.js (isDesktop() + fs_* tools, registered in tools/index.js). App welcome
+  shows "Desktop app" link → /platforms when !isDesktop().
+- Grant PERSISTS across restarts: fs_grant writes root to app_config_dir/granted_folder.txt, setup()
+  restores it (only if the dir still exists). fs_clear_grant removes it. UI: desktop-only header chip
+  (App.jsx, .work-folder-chip) shows the folder basename + Change/revoke; helpers grantFolder/
+  getGrantedRoot/clearGrantedFolder in localFs.js. Single-instance plugin focuses the open window on
+  a 2nd launch. desktop.test.js = 8 tests.
+- Ollama availability is gated on the daemon actually answering: getModels() sets available =
+  liveModels.length>0 for isOllama (else "Ready" but every message fails when the daemon is down);
+  exposes is_ollama on the payload.
+- Ollama provider (llm.js): `ollama`, baseUrl localhost:11434/v1 (VITE_OLLAMA_HOST override), noKey+
+  publicModels, models live from /v1/models. Works in browser too if OLLAMA_ORIGINS allows the origin;
+  desktop webview has no CORS issue. streamChat/chatComplete now omit Authorization for noKey providers.
+- Landing page: public/platforms.html (perplexity-style, OS cards + build steps). firebase.json rewrite
+  /platforms → /platforms.html (before SPA catch-all). desktop.test.js (6) covers provider + FS gating.
 
 ## File Structure
 ```
@@ -62,7 +136,9 @@ AI ChatBot/
 
 ## Agent Pipeline (browser-native)
 User message → LLM (function calling) → tools run **in parallel** per round → LLM (with results) → final response
-- Max 5 tool rounds; system prompt injects today's date + research rules
+- Tool rounds: chat_prefs.max_tool_rounds (default 8, clamp 1–20, Personalise "Answer depth"
+  slider). Cap-hit no longer drops pending calls/ends empty: forces one final "answer now, no
+  more tools" pass so the reply is always synthesized. system prompt injects date + research rules
 - Sliding window context (20 msgs); sources deduped & surfaced via onSources
 - webEnabled=false → prompt tells model web is off (UI toggle: Web Research)
 
@@ -180,6 +256,16 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   pure-JS 16-bit WAV → Dexie media. ToolResultCard.RenderedAudio plays it (media_id recovery
   like video). The FILE counterpart to tts (which only plays, returns nothing to hold).
 
+## Generation quality (2026-08-10)
+- dataConvert: RFC-4180 CSV — csvCell quotes/doubles, toCsv adds UTF-8 BOM + CRLF (Excel-safe),
+  parseCsv is a real quoted-field parser (was split(',')). generation.test.js round-trips it.
+- mdToPdf.mdToHtml: proper block Markdown (headings/lists/tables/code/blockquote/hr/paragraphs,
+  HTML-escaped) + print CSS + html2canvas scale:2 (crisp text) + css pagebreaks. Reused by
+  independentTools doc/html export so Word/.doc/HTML render real formatting, not <br> soup.
+- imageGen.pollinationsUrl: model=flux + enhance=true + nofeed + default negative prompt; sticker
+  too. Markedly better images. video/encode.bitrateFor bpp 0.09→0.13 (cap 16M) for sharper text.
+- textToAudio: peak-normalise to −1 dBFS so narration loudness is consistent.
+
 ## Reliability + retrieval + SW (2026-08-10)
 - promptedTools.parseToolCalls: repairJson (trailing commas, Python True/False/None, smart quotes)
   + <think> strip (reasoning-then-format) + FENCED captures the WHOLE fenced body (non-greedy to
@@ -193,6 +279,11 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   are lazy — only firebaseAuth is static and it defers the SDK. No bundle work needed.
 
 ## Skills + Workflows + variables (2026-08-10)
+- Built-in preset skills (skills.js PRESET_SKILLS): Writing Polish, Deep Researcher, Dev Utilities,
+  Data Analyst, Ethical Hacking & CTF (education/authorised only — refuses working malware/exploits),
+  Vision & Scan. Merged into getSkills() at read time (builtin:true, not persisted); editing stores an
+  override under the same id; deleting a preset adds it to `hidden_presets`. upsert/delete operate on
+  storedSkills() only. skills.test.js asserts every preset tool is a real registered tool.
 - Skills (skills.js): saveable bundles {id,name,description,system,tools[],starters[]} in db `skills`.
   Active skill (db `active_skill`) → agent appends skill.system to systemBase AND scopes tools via
   skillDisabledTools (allowlist → disable the rest). Export/import as JSON (parseSkill validates).
@@ -202,6 +293,26 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - Variables (template.js): {{name}} placeholders shared by skills starters + workflow steps.
   extractVars/fillTemplate/userVars; workflow built-ins {{last}}/{{stepN}} excluded from prompts.
 - UI: components/SkillsPanel.jsx (sidebar "Skills & workflows" + Ctrl+K). skills.test.js (8).
+
+## Agents subsystem (2026-08-11) — all 4 agent types on one runAgent loop
+- agents.js: registry {id,name,role,system,tools[],model?,provider?,canDelegate,subAgents[]} +
+  PRESET_AGENTS (General/Researcher/Coder/Writer/Analyst/Planner). Merged at read like skills;
+  getActiveAgent/setActiveAgent, getAgentById(id|role|name), agentDisabledTools (allowlist),
+  export/parseAgent. Active agent = "named preset agent" picked per chat.
+- agent.js: activeAgent (or agentOverride param) appends agentBlock to systemBase AND folds its
+  tool allowlist into effectiveDisabled, parallel to activeSkill. api.streamMessage passes
+  body.disabledTools (merged) + body.agent_override → runAgent.
+- Sub-agent delegation: tools/spawnAgents.js `spawn_agents` tool (registered in tools/index.js).
+  Runs specialists in capped-parallel (3) via lazy import('../api').streamMessage, each tool-scoped
+  to its agent + spawn_agents disabled (no recursion). ToolResultCard renders results (Users icon).
+- Autonomous: autonomousAgent.js. runAutonomousAgent is PURE (inject plan/runStep/review) →
+  testable; autonomousAgent() wires it to streamMessage (Planner→execute each step w/ prior
+  context→synthesize). parsePlan handles numbered/bulleted, caps 12 steps.
+- UI: components/AgentsPanel.jsx (Agents tab: activate/CRUD/import-export; Autonomous tab: goal→
+  live plan/step status→final report w/ CopyButton). App sidebar "Agents & autonomous" + Ctrl+K +
+  showAgents. Proactive: features.proactiveAgent (default off) → quick-action row above composer
+  (Summarize/Next steps/Find issues/Go deeper → send(prompt)).
+- Tests: agents.test.js (10). Total 303.
 
 ## Agent-layer additions (2026-08-10)
 - MCP client (mcp.js): browser JSON-RPC over Streamable HTTP. connectMcpServer → initialize +
@@ -272,6 +383,19 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - Ctrl+K searched conversation TITLES only; message bodies were unreachable. Same BM25 index
   as documents, one hit per conversation, 60s cache invalidated by Dexie hooks.
 - Multimodal turns are arrays: only their text parts are indexed.
+
+## Render performance (2026-08-11)
+- Streaming text lives in components/StreamingMessage.jsx (imperative ref, own rAF
+  coalescing), NOT App state. While it was App state every frame of every answer
+  re-rendered the whole shell — sidebar, composer and all 40 MessageBubbles, each
+  re-running ReactMarkdown. App now only tracks `hasStreamText` (flips once/turn).
+- MessageBubble is React.memo'd, but was passed inline arrows (`onOpenArtifact`,
+  `onEdit`) and plain function consts, so memo NEVER held. Stable wrappers now read
+  from a `latest` ref refreshed each render; MessageBubble takes `index` so onEdit
+  can stay identity-stable. Do not reintroduce inline props here.
+- Scroll-follow is imperative (`followStream` + `atBottomRef`); keying it on the
+  streaming text would restore the re-render the split exists to remove.
+- ToolResultCard is memo'd too — results are immutable once produced.
 
 ## Mobile
 - Prism/react-syntax-highlighter (616KB / 225KB gz) is React.lazy inside CodeBlock, with a
@@ -371,6 +495,29 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   VLM otherwise, each falling back to the other. describeWithoutModel().
 - pendingImage is consumed once — leaving it set made every later look answer from the
   same stale picture.
+
+## Response Styles + Chat export (v3.8)
+- styles.js: BUILT_IN_STYLES (Default/Concise/Formal/Explanatory/ELI5/Bullet) + custom, one active
+  (db active_style, default 'default'). getActiveStyleBlock() appends "RESPONSE STYLE — …" to agent
+  systemBase (after skillBlock, before memoryBlock). UI: <select className=style-select> in the sidebar
+  Response section; App state styles/activeStyleId + chooseStyle.
+- chatExport.js (pure builders, tested): conversationToMarkdown / conversationToHtml (self-contained,
+  minimal md→html, escapes, code blocks, drops system). downloadChat(conv,'md'|'html'|'pdf') — pdf via
+  html2pdf.js @esm.run. Toolbar Download button → .export-menu dropdown; command-palette md/html/pdf.
+- Live camera honesty (cascade persona): vision models are told frames are attached; NON-vision models
+  are told they cannot see, a "[Live view (described on-device): …]" text is inserted when relevant, and
+  to NEVER invent/fetch image URLs (was hallucinating example.com/*.jpg on gpt-oss-20b). describeIfVisual
+  supplies the on-device OCR/VLM description. Text-only models still can't see natively — use a vision model.
+
+## Live mode — tools + media + universal vision (v3.8)
+- Live cascade already runs the full agent (toolsEnabled). Tool RESULTS now render richly in the
+  transcript panel: LiveView passes the raw result object to <ToolResultCard tool result/> (was a
+  120-char string), so generated images/videos/audio/files/code output appear in-call. A result with
+  media (image_url/url/video_url/media_id/exported_text/images) auto-opens the transcript panel.
+- Non-vision models now SEE a shared camera/screen: cascade.describeIfVisual() — when !modelCanSee and
+  isVisualQuestion and a source is live, grabs a frame and describeWithoutModel() (OCR/on-device VLM),
+  injecting "[Live view (described on-device): …]" into the turn. Vision models still get real image
+  parts via visualParts(). Persona tells the model it can generate media/run code/tests + read the view.
 
 ## Live mode — face-to-face (live/)
 - Two engines, one UI (components/LiveView.jsx picks via `engine`):
@@ -489,13 +636,13 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   was decorative.
 - Passes through filters + `--watch`.
 
-## Tests (npm test — 234)
+## Tests (npm test — 315)
 - smoke.test.jsx mounts <App/> in jsdom with ./api stubbed: lint cannot catch a component
   that THROWS on first render. Config include covers *.test.{js,jsx}; test-setup.js stubs
   scrollIntoView/scrollTo/matchMedia (jsdom has none, all are called on mount).
   A vi.mock factory must not return a Proxy — vitest reads `then` on it and `await import`
   then waits on a promise that never settles (looks exactly like a hang in App).
-- retrieval (18), agent loop (32, incl. 3 stop paths), live protocol (19), vision heuristic (4), vision policy (8),
+- streaming render (6), retrieval (18), agent loop (32, incl. 3 stop paths), live protocol (19), vision heuristic (4), vision policy (8),
   cascade echo guard (3), live voice queue (7), tools (26), relay policy (8), zero-key boot (3),
   chat search (9), chunk-reload guard (4), image attach routing (6), agent image policy (4),
   key sync (5), search parsers (7), routing (11), crypto (11), migration (9), features (5), video timeline (13), video audio+speech (12)
