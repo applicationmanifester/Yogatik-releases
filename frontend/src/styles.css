@@ -2792,3 +2792,25 @@ body {
   box-shadow: 0 4px 10px rgba(255, 107, 53, 0.4);
 }
 
+
+/* Per-chat working folders (desktop) — header chip popover */
+.roots-popover {
+  position: absolute; top: 100%; right: 0; margin-top: 6px; z-index: 40;
+  min-width: 320px; max-width: 460px; padding: 10px;
+  background: var(--bg-elevated, #12161f); color: var(--text-primary);
+  border: 1px solid var(--border, #2a3140); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.roots-popover-title { font-weight: 600; font-size: 12px; }
+.roots-empty, .roots-inherited { font-size: 11px; color: var(--text-secondary); }
+.roots-row { display: flex; align-items: center; gap: 6px; }
+.roots-path {
+  flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; direction: rtl; text-align: left;
+}
+.roots-badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 999px;
+  background: var(--accent-soft, #23304a); color: var(--text-secondary);
+}
+@media (max-width: 768px) { .roots-popover { position: fixed; left: 8px; right: 8px; min-width: 0; } }
