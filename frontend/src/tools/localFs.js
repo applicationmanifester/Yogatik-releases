@@ -119,6 +119,49 @@ export async function clearGrantedFolder() {
   try { await invoke('fs_clear_grant') } catch { /* ignore */ }
 }
 
+/** Undo journal (Electron only) — every fs mutation is snapshotted first. */
+export async function listJournal() {
+  if (!isDesktop()) return []
+  try { return (await invoke('journal_list')) || [] } catch { return [] }
+}
+export async function revertJournalEntry(id) {
+  if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
+  try { return await invoke('journal_revert', { id }) } catch (e) { return fail(e) }
+}
+
+export const fsUndoTool = {
+  schema: {
+    description:
+      'Undo a previous file change made in this chat (write, edit, delete, move). ' +
+      'Call with no id to list what can be undone, then call again with the id. ' +
+      'Restores the file or directory exactly as it was before that change. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Journal entry id to revert. Omit to list recent changes.' },
+      },
+      required: [],
+    },
+  },
+  async execute({ id } = {}) {
+    if (!isDesktop()) return DESKTOP_ONLY
+    try {
+      if (!id) {
+        const entries = await listJournal()
+        return ok({
+          tool: 'fs_undo',
+          count: entries.length,
+          entries: entries.slice(0, 25).map(e => ({ id: e.id, op: e.op, target: e.target, at: e.ts })),
+          message: entries.length ? 'Call fs_undo again with one of these ids.' : 'Nothing to undo in this chat.',
+        })
+      }
+      const res = await revertJournalEntry(id)
+      if (!res?.success) return { success: false, error: res?.error || 'Could not undo that change.' }
+      return ok({ tool: 'fs_undo', restored: res.restored, message: `Restored ${res.restored}` })
+    } catch (e) { return fail(e) }
+  },
+}
+
 export const fsAddFolderTool = {
   schema: {
     description:

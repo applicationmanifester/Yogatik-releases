@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { Buffer } from 'node:buffer'
 import {
   DEFAULT_SKIP_DIRS, shouldSkipDir, looksBinary, parseGitignore, makeIgnoreMatcher,
 } from '../electron/searchFilter.cjs'

@@ -57,7 +57,7 @@ import { pushAmbientSignal, popAmbientSignal } from './http'
 import { getMcpSchemas, isMcpTool, callMcpTool } from '../mcp'
 import {
   isDesktop, fsAddFolderTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
-  fsDeleteTool, fsMkdirTool, fsMoveTool, getWorkspaceCtx,
+  fsDeleteTool, fsMkdirTool, fsMoveTool, fsUndoTool, getWorkspaceCtx,
 } from './localFs'
 import { requestPermission } from '../permissions'
 import { terminalRunTool } from './terminalRun'
@@ -144,6 +144,7 @@ const ALL_TOOLS = {
   fs_delete: fsDeleteTool,
   fs_mkdir: fsMkdirTool,
   fs_move: fsMoveTool,
+  fs_undo: fsUndoTool,
   terminal_run: terminalRunTool,
   // Open, keyless utilities + word/country data.
   uuid: uuidTool,

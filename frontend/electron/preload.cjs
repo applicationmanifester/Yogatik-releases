@@ -9,6 +9,7 @@ const FS_COMMANDS = new Set([
   'fs_list', 'fs_read', 'fs_write', 'fs_edit', 'fs_search',
   'fs_delete', 'fs_mkdir', 'fs_move',
   'roots_add', 'roots_list', 'roots_remove', 'roots_set_primary', 'roots_rebind',
+  'journal_list', 'journal_revert',
 ])
 
 function invoke(cmd, args) {

@@ -8,6 +8,19 @@ const path = require('path')
 const fs = require('fs')
 const { resolvePath, rootPathsFor } = require('./roots.cjs')
 const { shouldSkipDir, looksBinary, parseGitignore, makeIgnoreMatcher } = require('./searchFilter.cjs')
+const { createJournal } = require('./journalCore.cjs')
+
+let journal = null
+/** main.cjs supplies the store path (userData); absent = journalling disabled. */
+function initJournal(storeDir) {
+  try { journal = createJournal({ storeDir }) } catch { journal = null }
+  return journal
+}
+/** Snapshot before a mutation. Never throws — journalling must not block an
+ *  operation the user already approved. */
+function snapshot(ctx, op, target) {
+  try { journal?.record({ chatId: ctx?.conversationId, op, target }) } catch { /* best effort */ }
+}
 
 /** Cap a single file's size for text search — 2 MB of one line is not source. */
 const MAX_SEARCH_FILE_BYTES = 2 * 1024 * 1024
@@ -65,6 +78,7 @@ function registerFsBridge() {
 
   ipcMain.handle('fs_write', async (_e, { ctx, path: rel, content }) => {
     const file = resolvePath(ctx, rel)
+    snapshot(ctx, 'fs_write', file)
     await fs.promises.mkdir(path.dirname(file), { recursive: true })
     await fs.promises.writeFile(file, content ?? '', 'utf8')
     return null
@@ -81,6 +95,7 @@ function registerFsBridge() {
     const updated = replaceAll
       ? text.split(oldString).join(newString ?? '')
       : text.replace(oldString, newString ?? '')
+    snapshot(ctx, 'fs_edit', file)
     await fs.promises.writeFile(file, updated, 'utf8')
     return replaceAll ? count : 1
   })
@@ -134,6 +149,7 @@ function registerFsBridge() {
       if (e.code === 'ENOENT') throw new Error(`File not found: ${rel}`)
       throw e
     }
+    snapshot(ctx, 'fs_delete', target)
     if (stat.isDirectory()) {
       if (recursive) await fs.promises.rm(target, { recursive: true, force: true })
       else await fs.promises.rmdir(target)
@@ -148,13 +164,20 @@ function registerFsBridge() {
     return null
   })
 
+  ipcMain.handle('journal_list', (_e, { ctx } = {}) =>
+    (journal?.list(ctx?.conversationId) || []).slice(0, 200))
+
+  ipcMain.handle('journal_revert', (_e, { id } = {}) =>
+    journal ? journal.revert(id) : { success: false, error: 'Journalling is not enabled.' })
+
   ipcMain.handle('fs_move', async (_e, { ctx, src, dest }) => {
     const srcPath = resolvePath(ctx, src)
     const destPath = resolvePath(ctx, dest)
+    snapshot(ctx, 'fs_move', srcPath)
     await fs.promises.mkdir(path.dirname(destPath), { recursive: true })
     await fs.promises.rename(srcPath, destPath)
     return null
   })
 }
 
-module.exports = { registerFsBridge }
+module.exports = { registerFsBridge, initJournal }

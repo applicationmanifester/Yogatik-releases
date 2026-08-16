@@ -9,7 +9,7 @@ const { app, BrowserWindow, shell, globalShortcut, ipcMain } = require('electron
 const path = require('path')
 const { spawn } = require('child_process')
 
-const { registerFsBridge } = require('./fsBridge.cjs')
+const { registerFsBridge, initJournal } = require('./fsBridge.cjs')
 const { registerRootsIpc, rootPathsFor, resolvePath } = require('./roots.cjs')
 const { enableProviderCors } = require('./cors.cjs')
 const { buildMenu } = require('./menu.cjs')
@@ -152,6 +152,8 @@ if (!gotLock) {
     enableProviderCors()
     // Roots first: it loads the state fsBridge resolves every path against.
     registerRootsIpc({ getWindow })
+    // Undo journal for file mutations; lives beside the roots registry.
+    initJournal(path.join(app.getPath('userData'), 'yogatik-journal'))
     registerFsBridge()
     registerNotifications(getWindow)
     registerSchedulerIPC({ getWindow })
