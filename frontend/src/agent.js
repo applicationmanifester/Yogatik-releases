@@ -14,6 +14,7 @@ import { resolveFeatures } from './features'
 import { getActiveSkill, skillDisabledTools } from './skills'
 import { getActiveAgent, agentDisabledTools } from './agents'
 import { getActiveStyleBlock } from './styles'
+import { loadProjectInstructions } from './projectInstructions'
 
 /** Durable memories the user asked to keep, injected so the model recalls them
  *  without needing a memory tool call (like ChatGPT/Claude memory). */
@@ -315,9 +316,13 @@ export async function runAgent({
 
   const isLocalProvider = provider === 'local' || provider === 'webllm'
 
+  // Conventions from the chat's working folders (YOGATIK.md / AGENTS.md / …),
+  // so guidance lives with the project instead of only on this device.
+  const projectBlock = await loadProjectInstructions()
+
   const systemBase = isLocalProvider
-    ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + (await memoryBlock())
-    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + (await memoryBlock())
+    ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + projectBlock + (await memoryBlock())
+    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + projectBlock + (await memoryBlock())
 
   const hBudget = isLocalProvider ? LOCAL_HISTORY_BUDGET : HISTORY_BUDGET
   const hTurns = isLocalProvider ? LOCAL_MAX_TURNS : MAX_TURNS
