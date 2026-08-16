@@ -4,7 +4,10 @@
 const { ipcMain, dialog, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const { getWindow } = require('./fsBridge.cjs') // reuse window getter
+// fsBridge has never exported getWindow, so this was `undefined` and executeJob
+// threw "getWindow is not a function" the moment any scheduled job fired.
+// main.cjs now injects the real getter through registerSchedulerIPC.
+let getWindow = () => null
 
 let scheduledJobs = []
 let jobTimers = new Map()
@@ -312,7 +315,9 @@ function stopScheduler() {
 }
 
 // IPC Handlers
-function registerSchedulerIPC() {
+function registerSchedulerIPC(opts = {}) {
+  if (typeof opts.getWindow === 'function') getWindow = opts.getWindow
+
   // Get all jobs
   ipcMain.handle('scheduler:get-jobs', () => {
     return scheduledJobs.map(job => ({
