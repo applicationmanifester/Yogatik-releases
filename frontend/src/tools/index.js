@@ -56,7 +56,7 @@ import {
 import { pushAmbientSignal, popAmbientSignal } from './http'
 import { getMcpSchemas, isMcpTool, callMcpTool } from '../mcp'
 import {
-  isDesktop, fsGrantTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
+  isDesktop, fsAddFolderTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
   fsDeleteTool, fsMkdirTool, fsMoveTool,
 } from './localFs'
 import { terminalRunTool } from './terminalRun'
@@ -134,7 +134,7 @@ const ALL_TOOLS = {
   doc_enhance: docEnhanceTool,
   // Desktop-only local filesystem tools (Tauri shell). Present in every build;
   // in the browser they return an honest "desktop only" note.
-  fs_grant: fsGrantTool,
+  fs_add_folder: fsAddFolderTool,
   fs_list: fsListTool,
   fs_read: fsReadTool,
   fs_write: fsWriteTool,
