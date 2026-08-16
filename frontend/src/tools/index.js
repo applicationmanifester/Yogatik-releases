@@ -57,8 +57,9 @@ import { pushAmbientSignal, popAmbientSignal } from './http'
 import { getMcpSchemas, isMcpTool, callMcpTool } from '../mcp'
 import {
   isDesktop, fsAddFolderTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
-  fsDeleteTool, fsMkdirTool, fsMoveTool,
+  fsDeleteTool, fsMkdirTool, fsMoveTool, getWorkspaceCtx,
 } from './localFs'
+import { requestPermission } from '../permissions'
 import { terminalRunTool } from './terminalRun'
 import {
   uuidTool, passwordTool, numberBaseTool, cronTool, timezoneTool, thesaurusTool, countryTool,
@@ -185,6 +186,13 @@ export async function executeTool(name, args, { signal } = {}) {
   const tool = ALL_TOOLS[cleanName]
   if (!tool) return { success: false, error: `Unknown tool: ${name}` }
   if (signal?.aborted) return { success: false, error: 'Stopped' }
+
+  // Gate anything that writes to or runs on the user's machine. Reads pass
+  // straight through. A refusal is a normal tool result so the model adapts
+  // instead of the turn hanging.
+  const verdict = await requestPermission(cleanName, args || {}, getWorkspaceCtx())
+  if (!verdict.allowed) return { success: false, error: verdict.reason, denied: true }
+
   // Makes Stop reach the tool's own network calls (see tools/http.js).
   pushAmbientSignal(signal)
   try {

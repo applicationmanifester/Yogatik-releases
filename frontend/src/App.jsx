@@ -34,6 +34,8 @@ import { registerServiceWorker } from './pwa'
 import { requestPersistence, storageReport, formatBytes } from './storage'
 import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clearLocalModelCache } from './localLLM'
 import { isDirectTimeQuery } from './timeQuery'
+import { setPermissionPrompt } from './permissions'
+import PermissionPrompt from './components/PermissionPrompt'
 
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
@@ -223,6 +225,8 @@ export default function App() {
   const [showPersonaModal, setShowPersonaModal] = useState(false)
   // Generic confirm modal — replaces native confirm() throughout the app
   const [confirmModal, setConfirmModal] = useState(null) // { msg, okLabel?, cancelLabel?, onOk, onCancel? }
+  // One pending tool-permission request at a time: { request, resolve }
+  const [permRequest, setPermRequest] = useState(null)
   // Project-name prompt modal — replaces native prompt() in addProject
   const [projectNameModal, setProjectNameModal] = useState(null) // { onSubmit }
   // Restore-mode modal — replaces confirm() in handleRestore
@@ -278,6 +282,20 @@ export default function App() {
     projectId: activeProject ?? null,
   }
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
+
+  // Install the approval UI. permissions.js FAILS CLOSED without this, so a
+  // build where the UI never mounts refuses destructive calls rather than
+  // silently running them.
+  useEffect(() => {
+    setPermissionPrompt((request) => new Promise((resolve) => {
+      setPermRequest({ request, resolve })
+    }))
+    return () => setPermissionPrompt(null)
+  }, [])
+
+  const resolvePermission = useCallback((answer) => {
+    setPermRequest(prev => { prev?.resolve(answer); return null })
+  }, [])
 
   // This chat's folders. Reloads when the chat or project changes, which is what
   // makes switching chats switch the working folder.
@@ -2795,6 +2813,12 @@ export default function App() {
       <DownloadModal isOpen={showDownloadModal} onClose={() => setShowDownloadModal(false)} onInstallPwa={installPwa} showPwa={!!showPwaInstall} />
       {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
       {/* Generic confirm modal — no more native confirm() dialogs */}
+      {permRequest && (
+        <div className="perm-overlay">
+          <PermissionPrompt request={permRequest.request} onResolve={resolvePermission} />
+        </div>
+      )}
+
       {confirmModal && (
         <Modal title="Confirm" onClose={() => { confirmModal.onCancel?.(); setConfirmModal(null) }}
           footer={
