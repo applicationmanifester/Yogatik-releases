@@ -7,6 +7,17 @@ const { ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { resolvePath, rootPathsFor } = require('./roots.cjs')
+const { shouldSkipDir, looksBinary, parseGitignore, makeIgnoreMatcher } = require('./searchFilter.cjs')
+
+/** Cap a single file's size for text search — 2 MB of one line is not source. */
+const MAX_SEARCH_FILE_BYTES = 2 * 1024 * 1024
+
+function gitignoreMatcherFor(root) {
+  try {
+    const text = fs.readFileSync(path.join(root, '.gitignore'), 'utf8')
+    return makeIgnoreMatcher(parseGitignore(text))
+  } catch { return () => false }
+}
 
 function globToRegExp(glob) {
   const esc = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')
@@ -18,6 +29,13 @@ function walk(dir, out, opts, depth) {
   try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
   for (const e of entries) {
     const full = path.join(dir, e.name)
+    // `prune` skips heavy directories entirely (search); plain listing keeps
+    // showing them, because the user explicitly asked what is in a folder.
+    if (opts.prune && e.isDirectory() && shouldSkipDir(e.name)) continue
+    if (opts.prune && opts.ignores && opts.root) {
+      const rel = path.relative(opts.root, full)
+      if (rel && opts.ignores(rel)) continue
+    }
     out.push({ dirent: e, full })
     if (opts.recursive && e.isDirectory() && depth < 40 && out.length < 20000) {
       walk(full, out, opts, depth + 1)
@@ -76,13 +94,23 @@ function registerFsBridge() {
     const out = []
     for (const root of roots) {
       const all = []
-      walk(root, all, { recursive: true }, 0)
+      // Prune .git/node_modules/dist and anything .gitignore excludes BEFORE
+      // touching the disk — this is what keeps search from reading a whole
+      // dependency tree.
+      walk(root, all, { recursive: true, prune: true, root, ignores: gitignoreMatcherFor(root) }, 0)
       for (const { dirent, full } of all) {
         if (!dirent.isFile()) continue
         if (nameRe && !nameRe.test(dirent.name)) continue
-        let text
-        try { text = await fs.promises.readFile(full, 'utf8') } catch { continue }
-        const lines = text.split(/\r?\n/)
+
+        let stat
+        try { stat = fs.statSync(full) } catch { continue }
+        if (stat.size > MAX_SEARCH_FILE_BYTES) continue
+
+        let buf
+        try { buf = await fs.promises.readFile(full) } catch { continue }
+        if (looksBinary(buf)) continue
+
+        const lines = buf.toString('utf8').split(/\r?\n/)
         for (let i = 0; i < lines.length; i++) {
           const hit = re ? re.test(lines[i]) : lines[i].includes(query)
           if (hit) {
