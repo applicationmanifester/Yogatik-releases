@@ -112,7 +112,108 @@ function resolveWithin(rootPaths, target) {
   return { absolutePath: abs, rootPath }
 }
 
+function clone(state) {
+  const st = state || emptyState()
+  return { version: 1, roots: { ...st.roots }, bindings: { ...st.bindings } }
+}
+
+function chatKey(ctx) {
+  if (ctx?.conversationId == null || ctx.conversationId === '') return null
+  return `chat:${ctx.conversationId}`
+}
+
+/**
+ * Give this chat its OWN binding, seeded from whatever it currently inherits.
+ * Every mutation goes through here, so editing one chat's folders can never
+ * silently rewrite a project or global default.
+ */
+function materialise(state, ctx) {
+  const st = clone(state)
+  const key = chatKey(ctx)
+  if (!key) return st
+  if (!Array.isArray(st.bindings[key])) st.bindings[key] = resolveRootIds(st, ctx)
+  return st
+}
+
+function addRoot(state, ctx, absPath) {
+  const st = materialise(state, ctx)
+  const resolved = path.resolve(absPath)
+  const id = rootIdFor(resolved)
+  if (!st.roots[id]) {
+    st.roots[id] = { path: resolved, label: path.basename(resolved) || resolved, addedAt: Date.now() }
+  }
+  const key = chatKey(ctx) || 'default'
+  const list = st.bindings[key] || []
+  st.bindings[key] = list.includes(id) ? list : [...list, id]
+  return { state: st, root: { id, ...st.roots[id] } }
+}
+
+function removeRoot(state, ctx, rootId) {
+  const st = materialise(state, ctx)
+  const key = chatKey(ctx) || 'default'
+  st.bindings[key] = (st.bindings[key] || []).filter(id => id !== rootId)
+  const stillUsed = Object.values(st.bindings).some(list => (list || []).includes(rootId))
+  if (!stillUsed) delete st.roots[rootId]
+  return st
+}
+
+function setPrimary(state, ctx, rootId) {
+  const st = materialise(state, ctx)
+  const key = chatKey(ctx) || 'default'
+  const list = st.bindings[key] || []
+  if (!list.includes(rootId)) return st
+  st.bindings[key] = [rootId, ...list.filter(id => id !== rootId)]
+  return st
+}
+
+/** A draft chat has no DB id; move its binding once the chat is saved. */
+function rebindChat(state, oldId, newId) {
+  const st = clone(state)
+  const from = `chat:${oldId}`
+  const to = `chat:${newId}`
+  if (!st.bindings[from]) return st
+  st.bindings[to] = st.bindings[from]
+  delete st.bindings[from]
+  return st
+}
+
+/** The old app-wide granted_folder.txt becomes the global default. */
+function migrateLegacyGrant(state, legacyPath) {
+  const st = clone(state)
+  if (!legacyPath) return st
+  if ((st.bindings.default || []).length) return st
+  const resolved = path.resolve(legacyPath)
+  const id = rootIdFor(resolved)
+  st.roots[id] = st.roots[id] || {
+    path: resolved, label: path.basename(resolved) || resolved, addedAt: Date.now(),
+  }
+  st.bindings.default = [id]
+  return st
+}
+
+/** Drop bindings whose directory has been deleted or unmounted. */
+function pruneMissing(state) {
+  const st = clone(state)
+  const removed = []
+  for (const [id, root] of Object.entries(st.roots)) {
+    let ok = false
+    try { ok = fs.statSync(root.path).isDirectory() } catch { ok = false }
+    if (!ok) {
+      removed.push({ id, ...root })
+      delete st.roots[id]
+    }
+  }
+  if (removed.length) {
+    const gone = new Set(removed.map(r => r.id))
+    for (const key of Object.keys(st.bindings)) {
+      st.bindings[key] = (st.bindings[key] || []).filter(id => !gone.has(id))
+    }
+  }
+  return { state: st, removed }
+}
+
 module.exports = {
   rootIdFor, emptyState, bindingKeys, resolveRootIds, resolveRootPaths,
   containingRoot, resolveWithin,
+  materialise, addRoot, removeRoot, setPrimary, rebindChat, migrateLegacyGrant, pruneMissing,
 }

@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { rootIdFor, emptyState, resolveRootIds, resolveWithin } from '../electron/rootsCore.cjs'
+import {
+  rootIdFor, emptyState, resolveRootIds, resolveWithin,
+  materialise, addRoot, removeRoot, setPrimary, rebindChat, migrateLegacyGrant,
+} from '../electron/rootsCore.cjs'
 import os from 'node:os'
 import nodePath from 'node:path'
 import nodeFs from 'node:fs'
@@ -112,5 +115,85 @@ describe('resolveWithin', () => {
     const link = nodePath.join(rootA, 'escape2')
     try { nodeFs.symlinkSync(outside, link, 'junction') } catch { return }
     expect(() => resolveWithin([rootA], 'escape2/brand-new.txt')).toThrow(/outside/i)
+  })
+})
+
+describe('state transforms', () => {
+  const ctx = { conversationId: 1, projectId: 9 }
+
+  function seeded() {
+    return {
+      version: 1,
+      roots: { b: { path: '/b', label: 'b', addedAt: 1 } },
+      bindings: { 'project:9': ['b'] },
+    }
+  }
+
+  it('materialise copies an inherited list into an explicit chat binding', () => {
+    const next = materialise(seeded(), ctx)
+    expect(next.bindings['chat:1']).toEqual(['b'])
+    expect(next.bindings['project:9']).toEqual(['b'])
+  })
+
+  it('materialise leaves an existing chat binding untouched', () => {
+    const st = seeded()
+    st.bindings['chat:1'] = []
+    expect(materialise(st, ctx).bindings['chat:1']).toEqual([])
+  })
+
+  it('addRoot registers the folder and binds it to the chat only', () => {
+    const { state, root } = addRoot(seeded(), ctx, '/a')
+    expect(root.path).toBe(nodePath.resolve('/a'))
+    expect(root.label).toBe('a')
+    expect(state.roots[root.id]).toBeTruthy()
+    expect(state.bindings['chat:1']).toEqual(['b', root.id])
+    expect(state.bindings['project:9']).toEqual(['b'])
+  })
+
+  it('addRoot is idempotent for the same folder', () => {
+    const one = addRoot(seeded(), ctx, '/a')
+    const two = addRoot(one.state, ctx, '/a')
+    expect(two.state.bindings['chat:1'].filter(id => id === one.root.id)).toHaveLength(1)
+  })
+
+  it('removeRoot unbinds from the chat but keeps the registry entry in use elsewhere', () => {
+    const st = removeRoot(seeded(), ctx, 'b')
+    expect(st.bindings['chat:1']).toEqual([])
+    expect(st.roots.b).toBeTruthy()
+    expect(st.bindings['project:9']).toEqual(['b'])
+  })
+
+  it('setPrimary moves the id to the front of the chat binding', () => {
+    const { state, root } = addRoot(seeded(), ctx, '/a')
+    const st = setPrimary(state, ctx, root.id)
+    expect(st.bindings['chat:1'][0]).toBe(root.id)
+  })
+
+  it('rebindChat moves a draft chat binding to its saved id', () => {
+    const { state } = addRoot(seeded(), { conversationId: 'c_new_1' }, '/a')
+    const st = rebindChat(state, 'c_new_1', 42)
+    expect(st.bindings['chat:c_new_1']).toBeUndefined()
+    expect(st.bindings['chat:42']).toHaveLength(1)
+  })
+
+  it('rebindChat is a no-op when the draft had no binding', () => {
+    const st = rebindChat(seeded(), 'c_new_zzz', 42)
+    expect(st.bindings['chat:42']).toBeUndefined()
+  })
+
+  it('migrateLegacyGrant makes the old single root the default', () => {
+    const st = migrateLegacyGrant(emptyState(), '/legacy')
+    const id = rootIdFor('/legacy')
+    expect(st.roots[id].path).toBe(nodePath.resolve('/legacy'))
+    expect(st.bindings.default).toEqual([id])
+  })
+
+  it('migrateLegacyGrant does nothing without a legacy path', () => {
+    expect(migrateLegacyGrant(emptyState(), null)).toEqual(emptyState())
+  })
+
+  it('migrateLegacyGrant does not clobber an existing default', () => {
+    const st = { ...emptyState(), bindings: { default: ['b'] }, roots: { b: { path: '/b' } } }
+    expect(migrateLegacyGrant(st, '/legacy').bindings.default).toEqual(['b'])
   })
 })
