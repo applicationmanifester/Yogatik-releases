@@ -118,6 +118,10 @@ export const videoRenderTool = {
         width: { type: 'number', description: 'Default 1280' },
         height: { type: 'number', description: 'Default 720' },
         fps: { type: 'number', description: 'Default 30' },
+        quality: {
+          type: 'string',
+          description: "Encoding quality: 'draft' (small), 'standard' (default), 'high' (sharp text/detail, 1080p) or 'max'. Use 'high' when the video contains text or fine detail.",
+        },
         transition: { type: 'string', enum: ['fade', 'cut'], description: 'Default fade' },
         voice: {
           type: 'string', enum: Object.keys(VOICES),
@@ -225,6 +229,7 @@ export const videoRenderTool = {
         canvas,
         totalFrames: spec.totalFrames,
         fps: spec.fps,
+        quality: args.quality,
         audio,
         drawFrame: (i) => paintFrame(ctx, spec, frameAt(spec, i)),
       })

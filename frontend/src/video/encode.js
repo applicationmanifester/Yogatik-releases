@@ -1,3 +1,4 @@
+import { bitrateForQuality } from './edit'
 /**
  * Frame encoder.
  *
@@ -44,6 +45,8 @@ export function webCodecsAvailable() {
 
 /** Bits-per-pixel tuned so slide text and Ken-Burns images stay crisp. Raised
  *  from 0.09 → 0.13 (and cap 12M → 16M): the old rate softened fine text. */
+export { bitrateForQuality }
+
 export function bitrateFor(width, height, fps) {
   const bpp = 0.13
   return Math.round(Math.min(16e6, Math.max(2e6, width * height * fps * bpp)))
@@ -126,10 +129,10 @@ async function pickCodec(config) {
  * @param {AbortSignal} [o.signal]
  * @returns {Promise<{blob:Blob, mime:string, encoder:'webcodecs'|'mediarecorder'}>}
  */
-export async function encodeVideo({ canvas, drawFrame, totalFrames, fps, audio, onProgress, signal }) {
+export async function encodeVideo({ canvas, drawFrame, totalFrames, fps, audio, onProgress, signal, quality }) {
   if (webCodecsAvailable()) {
     try {
-      return await encodeWithWebCodecs({ canvas, drawFrame, totalFrames, fps, audio, onProgress, signal })
+      return await encodeWithWebCodecs({ canvas, drawFrame, totalFrames, fps, audio, onProgress, signal, quality })
     } catch (err) {
       if (signal?.aborted) throw err
       // Hardware encoder refusals are common and recoverable — fall through.
@@ -139,12 +142,16 @@ export async function encodeVideo({ canvas, drawFrame, totalFrames, fps, audio, 
   return encodeWithMediaRecorder({ canvas, drawFrame, totalFrames, fps, audio, onProgress, signal })
 }
 
-async function encodeWithWebCodecs({ canvas, drawFrame, totalFrames, fps, audio, onProgress, signal }) {
+async function encodeWithWebCodecs({ canvas, drawFrame, totalFrames, fps, audio, onProgress, signal, quality }) {
   const { Muxer, ArrayBufferTarget } = await import(/* @vite-ignore */ MUXER_CDN)
   const width = canvas.width
   const height = canvas.height
 
-  const base = { width, height, framerate: fps, bitrate: bitrateFor(width, height, fps) }
+  // A named preset wins when given; otherwise keep the historical bpp curve.
+  const bitrate = quality
+    ? bitrateForQuality(width, height, fps, quality)
+    : bitrateFor(width, height, fps)
+  const base = { width, height, framerate: fps, bitrate }
   const codec = await pickCodec(base)
   if (!codec) throw new Error('No supported H.264 encoder configuration')
 
