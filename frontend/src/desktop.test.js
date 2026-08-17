@@ -187,3 +187,28 @@ describe('local filesystem tools (desktop bridge)', () => {
     await expect(clearGrantedFolder()).resolves.toBeUndefined()
   })
 })
+
+describe('desktop provider list — Ollama is the local path, not a casualty of it', () => {
+  // Regression: getModels() skipped `desktop && p.isLocal` to hide the 750MB
+  // WebLLM provider, but Ollama carries isLocal too (it runs on the user's
+  // machine). So the desktop picker listed every cloud provider and silently
+  // dropped the one the desktop app is supposed to prefer.
+  it('the two providers are distinguishable by isOllama', async () => {
+    const p = getProviders()
+    expect(p.local.isLocal).toBe(true)
+    expect(!!p.local.isOllama).toBe(false)   // WebLLM — hidden on desktop
+    expect(p.ollama.isLocal).toBe(true)
+    expect(p.ollama.isOllama).toBe(true)     // Ollama — kept on desktop
+  })
+
+  it('Ollama takes its models from the daemon, not from LOCAL_MODELS', async () => {
+    // The isLocal branch fills liveModels from WebLLM's catalogue. Ollama must
+    // miss that branch, or it lists Qwen/Llama weights the daemon never had.
+    const { LOCAL_MODELS } = await import('./localLLM')
+    const ollama = getProviders().ollama
+    expect(ollama.publicModels).toBe(true)          // so it queries /v1/models
+    expect(ollama.models).toEqual([])               // nothing hardcoded
+    expect(Object.keys(LOCAL_MODELS).length).toBeGreaterThan(0)
+    expect(Object.keys(LOCAL_MODELS)).not.toContain(ollama.default)
+  })
+})

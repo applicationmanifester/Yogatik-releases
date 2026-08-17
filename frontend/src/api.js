@@ -834,8 +834,12 @@ export async function getModels() {
   const result = {}
   const desktop = isDesktop()
   for (const [id, p] of Object.entries(providers)) {
-    // Desktop hides the WebLLM on-device provider — Ollama is the local path there.
-    if (desktop && p.isLocal) continue
+    // Desktop hides the WebLLM on-device provider — Ollama is the local path
+    // there, so it must NOT be caught by this. Ollama carries isLocal too (it
+    // runs on the user's machine), so the bare isLocal test removed the very
+    // provider the comment says desktop should prefer: the Ollama entry simply
+    // never appeared in the desktop picker.
+    if (desktop && p.isLocal && !p.isOllama) continue
     // Web hides Ollama: a browser at https://…web.app can't reach the user's
     // http://localhost:11434 (Ollama's CORS blocks it). Local models are the
     // desktop app's job, whose main process strips CORS. Skipping it here also
@@ -844,7 +848,12 @@ export async function getModels() {
     const key = await db.getSetting(`apikey_${id}`)
     const hasKey = !!key || !!p.noKey
     let liveModels = (p.models || []).map(normalizeModelName).filter(Boolean)
-    if (p.isLocal) {
+    // Same isLocal/isOllama distinction, and it matters just as much here:
+    // Ollama's models come LIVE from the daemon's /v1/models, not from
+    // LOCAL_MODELS, which lists WebLLM weights. Without the isOllama guard,
+    // unhiding Ollama above would have populated it with Qwen/Llama entries
+    // the daemon has never heard of — visible, selectable, and unusable.
+    if (p.isLocal && !p.isOllama) {
       const { LOCAL_MODELS } = await import('./localLLM')
       liveModels = Object.keys(LOCAL_MODELS)
     } else if (hasKey || p.publicModels) {
