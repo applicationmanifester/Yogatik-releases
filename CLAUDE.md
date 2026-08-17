@@ -212,11 +212,49 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 
 ## Run
 - Dev: `cd frontend && npm install && npm run dev`
-- Test: `cd frontend && npm test` (vitest, 358 tests)
+- Test: `cd frontend && npm test` (vitest, 989 tests)
 - Build: `cd frontend && npm run build` (static files in dist/)
 - Deploy: Upload `dist/` to Vercel/Netlify/GitHub Pages
 
 ## No backend required. No API keys required to start — user enters their own key in settings.
+
+## Finance & quant suite (2026-08-17) — all pure, all on-device
+- finance.js: DCF (Gordon terminal value, net debt, per-share), NPV, IRR, CAGR, volatility,
+  Sharpe, Sortino, max drawdown, historical VaR, expected shortfall.
+- options.js: Black-Scholes-Merton, full Greeks, implied volatility, CRR binomial tree for
+  AMERICAN exercise. Validated against the canonical case (S=K=100, r=5%, sigma=20%, T=1):
+  call 10.4506, put 5.5735, ATM delta 0.6368, put-call parity to 1e-6.
+- portfolio.js: covariance/correlation, Gauss-Jordan inverse, global min-variance, tangency
+  (max-Sharpe), risk parity, per-asset risk contributions, efficient frontier, beta.
+- indicators.js: SMA/EMA/RSI/MACD/Bollinger/ATR/stochastic. Series are ALIGNED to the input
+  with null during warm-up — shifting arrays misaligns an indicator against its own prices.
+- backtest.js: signals apply on the NEXT bar. Same-bar execution is lookahead bias and is the
+  main reason a backtest looks great and loses money live. A test asserts a final-bar signal
+  yields exactly zero return.
+- marketData.js + tools/marketData.js: keyless history (Stooq CSV, Coinbase candles) and World
+  Bank indicators, parsed by pure functions; only the thin fetch half is untested.
+- Exposed as two tools: finance_analytics (dcf|npv|irr|cagr|analyze|var|option|implied_vol|
+  portfolio|beta|indicators|backtest) and market_data (stock|crypto|indicator).
+- LICENCE: inspired by FinceptTerminal's feature list, but NO code taken from it — that project
+  is AGPL-3.0-or-later and copying would force this app (unlicensed/proprietary) to become AGPL
+  including its network clause. Written from published equations, which are not copyrightable.
+
+## Gotchas — finance
+- Gordon growth is REFUSED when g >= r rather than returning a confident Infinity.
+- Sharpe/Sortino return null, not Infinity, when there is no variation or no downside.
+- IRR uses bisection (cannot diverge) and converges on the NPV VALUE, not just the interval —
+  a loose interval check left a visible residual on large cash flows.
+- Implied vol uses bisection too: vega collapses deep ITM/OTM and Newton diverges to a
+  confident wrong number. Returns null when no vol reproduces the quote.
+- Greeks are also reported in trader units (per 1% vol, per day, per 1% rate); the raw values
+  are routinely misread by 100x or 365x.
+- Portfolio weights are UNCONSTRAINED unless long_only is passed; silently clipping shorts
+  would change the answer without saying so.
+- Coinbase candles are [time, low, high, open, close, volume] — NOT intuitive OHLC. Swapping
+  open/close there silently corrupts every downstream return. Pinned by a test.
+- Stooq answers 200 with an HTML JavaScript browser check from datacenter IPs (measured
+  2026-08-17), which parses to an empty series. isBotChallenge detects it so the user is not
+  told their ticker is wrong. Same class as the YouTube datacenter note above.
 
 ## Gotchas (learned the hard way)
 - Working folders are PER CHAT on Electron (v3.9). Absolute paths are ALLOWED now — safety is the
@@ -788,7 +826,7 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   was decorative.
 - Passes through filters + `--watch`.
 
-## Tests (npm test — 358)
+## Tests (npm test — 989)
 - smoke.test.jsx mounts <App/> in jsdom with ./api stubbed: lint cannot catch a component
   that THROWS on first render. Config include covers *.test.{js,jsx}; test-setup.js stubs
   scrollIntoView/scrollTo/matchMedia (jsdom has none, all are called on mount).
