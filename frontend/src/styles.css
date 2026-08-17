@@ -276,8 +276,10 @@ body {
 }
 .message.user {
   background: var(--user-bg);
-  margin-left: 60px;
   border: 1px solid var(--border);
+  /* No margin-left override: it beat the `margin: 0 auto` above, so the user
+     bubble sat on a different left edge from the assistant reply and the tool
+     cards below it. Both now share the same 800px centred column. */
 }
 .message.assistant { background: var(--assistant-bg); }
 
@@ -1071,7 +1073,6 @@ body {
   .chat-area { height: 100dvh; }
   .messages { padding: 12px; padding-bottom: env(safe-area-inset-bottom, 0); }
   .message { padding: 12px 14px; font-size: 14px; }
-  .message.user { margin-left: 8px; }
   .input-area { padding: 10px 12px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   .input-wrapper { gap: 6px; }
   .input-wrapper textarea { padding: 10px 12px; font-size: 16px; /* prevents iOS zoom */ min-height: 42px; }
