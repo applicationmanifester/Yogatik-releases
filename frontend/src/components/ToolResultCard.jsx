@@ -5,36 +5,46 @@ import {
   Palette, Search, GitCompare, Ruler, MapPin, Rss, Eye, FileDown, Volume2,
   Telescope, FileSearch, Files, ExternalLink, Sliders,
   BookOpen, GraduationCap, MessageSquare, Archive, BookA, Library,
-  Package, BookMarked, Banknote, Activity, Film, Sparkles, Copy, Check, Users
+  Package, BookMarked, Banknote, Activity, Film, Sparkles, Copy, Check, Users, Clock,
+  Briefcase, Share2, AlarmClock, Bell, Plug, Monitor, MousePointer, Compass, Laptop
 } from 'lucide-react'
 import { getMedia } from '../db'
+import { diagnoseError } from '../errorLog'
+import { sanitizeSvg } from '../sanitize'
 
-// Mermaid output is data from a tool/LLM, not application markup. Keep the
-// SVG needed for diagrams while removing executable and externally-loaded
-// content before it reaches dangerouslySetInnerHTML.
-function sanitizeDiagramSvg(svg) {
-  if (typeof svg !== 'string' || !svg.trim()) return ''
-  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
-  const root = doc.documentElement
-  if (root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return ''
-
-  root.querySelectorAll('script, foreignObject, iframe, object, embed, animate, set').forEach(node => node.remove())
-  root.querySelectorAll('*').forEach(node => {
-    for (const attr of [...node.attributes]) {
-      const name = attr.name.toLowerCase()
-      const value = attr.value.trim().toLowerCase()
-      if (name.startsWith('on') ||
-          ((name === 'href' || name === 'xlink:href') && /^(javascript:|data:|https?:|\/\/)/.test(value)) ||
-          (name === 'style' && /(?:@import|url\(\s*['"]?(?:javascript:|data:|https?:|\/\/))/i.test(value))) {
-        node.removeAttribute(attr.name)
-      }
-    }
-  })
-  root.querySelectorAll('style').forEach(node => {
-    if (/(?:@import|url\(\s*['"]?(?:javascript:|data:|https?:|\/\/))/i.test(node.textContent || '')) node.remove()
-  })
-  return new XMLSerializer().serializeToString(root)
+// Standardised, friendly failure card: a plain-language line from diagnoseError
+// plus a collapsible "View details" holding the raw error for debugging.
+// Replaces the bare `result.error` dump (Phase-1 pain-point: "error messages
+// are cryptic"). Kept as a small local component so every tool failure — no
+// matter which branch produced it — renders the same way.
+function ToolErrorCard({ Icon, tool, error }) {
+  const [open, setOpen] = React.useState(false)
+  const raw = error || 'Unknown error'
+  const d = diagnoseError(raw)
+  return (
+    <div className="tool-result-card error" role="alert">
+      <div className="tool-result-header"><Icon size={14} /> {tool} — {d.category || 'Failed'}</div>
+      <p className="tool-error-friendly">{d.title}</p>
+      <p className="tool-error-hint">{d.suggestion}</p>
+      <button
+        className="tool-error-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+      >
+        {open ? 'Hide details' : 'View details'}
+      </button>
+      {open && (
+        <div className="tool-error-details" style={{ position: 'relative' }}>
+          <CopyButton text={raw} title="Copy error" style={{ position: 'absolute', top: 4, right: 4 }} />
+          <pre style={{ margin: 0, overflowX: 'auto', whiteSpace: 'pre-wrap' }}>{raw}</pre>
+        </div>
+      )}
+    </div>
+  )
 }
+
+// Diagram-SVG sanitisation now lives in ../sanitize (sanitizeSvg), shared with
+// any other externally-sourced markup sink.
 
 // Reusable copy button with transient "copied" feedback (replaces 7 duplicated inline handlers)
 export function CopyButton({ text, title = 'Copy', className = 'copy-btn', style, iconSize = 10, label }) {
@@ -72,6 +82,13 @@ export const TOOL_ICONS = {
   text_analytics: FileText, data_stats: Activity, keyword_extract: Search,
   entity_extract: BookOpen, query_refine: Sliders, doc_export: FileDown,
   sticker_generate: Sparkles, spawn_agents: Users, terminal_run: Code,
+  timer: AlarmClock, alarm: AlarmClock, scheduler: AlarmClock,
+  social_search: Share2, job_search: Briefcase, social_post_generator: MessageSquare,
+  // MCP tools get the Plug icon
+  mcp: Plug,
+  screen_inspect: Monitor,
+  desktop_action: MousePointer,
+  browser_autopilot: Compass,
 }
 
 /**
@@ -191,12 +208,7 @@ const ToolResultCard = React.memo(function ToolResultCard({ tool, result }) {
   }
   const Icon = TOOL_ICONS[tool] || Wrench
   if (!result || result.success === false) {
-    return (
-      <div className="tool-result-card error">
-        <div className="tool-result-header"><Icon size={14} /> {tool} — Failed</div>
-        <p className="tool-error">{result?.error || 'Unknown error'}</p>
-      </div>
-    )
+    return <ToolErrorCard Icon={Icon} tool={tool} error={result?.error} />
   }
 
   if (tool === 'spawn_agents' && Array.isArray(result.results)) {
@@ -637,7 +649,7 @@ const ToolResultCard = React.memo(function ToolResultCard({ tool, result }) {
   }
 
   if (tool === 'diagram' && result.svg) {
-    const svg = sanitizeDiagramSvg(result.svg)
+    const svg = sanitizeSvg(result.svg)
     if (!svg) return null
     return (
       <div className="tool-result-card">
@@ -757,6 +769,124 @@ const ToolResultCard = React.memo(function ToolResultCard({ tool, result }) {
     )
   }
 
+  if (tool === 'timer' || tool === 'alarm') {
+    return (
+      <div className="tool-result-card timer-result-card">
+        <div className="tool-result-header">
+          <AlarmClock size={15} style={{ color: '#10b981' }} /> Alarm &amp; Timer Confirmation
+          {result.duration && <span className="tool-result-meta">{result.duration}</span>}
+        </div>
+        <div className="timer-body">
+          <div className="timer-msg">{result.message}</div>
+          {result.firesAt && <div className="timer-sub">Fires at: <strong>{result.firesAt}</strong></div>}
+        </div>
+      </div>
+    )
+  }
+
+  if (tool === 'social_search' && result.results) {
+    return (
+      <div className="tool-result-card social-search-result-card">
+        <div className="tool-result-header">
+          <Share2 size={14} /> Social Intelligence: "{result.query}"
+          <span className="tool-result-meta">{result.platformName} · {result.count} posts</span>
+        </div>
+        <div className="social-search-list">
+          {result.results.map((item, i) => (
+            <div key={i} className="social-search-item">
+              <div className="social-search-item-header">
+                <span className={`platform-pill platform-${item.platform}`}>{item.platformName}</span>
+                {item.published && <span className="social-search-date">{item.published}</span>}
+              </div>
+              <a href={item.url} target="_blank" rel="noopener noreferrer" className="social-search-link">
+                <strong>{item.title}</strong>
+              </a>
+              {item.snippet && <p className="social-search-snippet">{item.snippet}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (tool === 'job_search' && result.jobs) {
+    return (
+      <div className="tool-result-card job-search-result-card">
+        <div className="tool-result-header">
+          <Briefcase size={14} /> Careers & Job Portals: "{result.role}"
+          <span className="tool-result-meta">{result.location} · {result.count} openings</span>
+        </div>
+        <div className="job-search-list">
+          {result.jobs.map((job, i) => {
+            const jobUrl = job.url && job.url.startsWith('http')
+              ? job.url
+              : `https://www.google.com/search?q=${encodeURIComponent(job.title + ' ' + (job.company || '') + ' ' + (job.location || ''))}`
+            return (
+              <div key={i} className="job-search-item">
+                <div className="job-search-item-top">
+                  <div className="job-title-group">
+                    <a
+                      href={jobUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="job-title-link"
+                      onClick={(e) => {
+                        if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.openExternal) {
+                          e.preventDefault()
+                          window.__YOGATIK_DESKTOP__.openExternal(jobUrl)
+                        }
+                      }}
+                    >
+                      <strong>{job.title}</strong>
+                    </a>
+                    <div className="job-company-loc">
+                      <span className="job-company">{job.company}</span> · <span className="job-location">{job.location}</span>
+                      {job.experience && <span className="job-exp"> · {job.experience}</span>}
+                    </div>
+                  </div>
+                  <span className={`portal-badge portal-${job.portal}`}>{job.portalName}</span>
+                </div>
+                {job.snippet && <p className="job-snippet">{job.snippet}</p>}
+                <div className="job-action-row">
+                  <a
+                    href={jobUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="job-apply-btn"
+                    onClick={(e) => {
+                      if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.openExternal) {
+                        e.preventDefault()
+                        window.__YOGATIK_DESKTOP__.openExternal(jobUrl)
+                      }
+                    }}
+                  >
+                    View & Apply on {job.portalName} <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  if (tool === 'social_post_generator') {
+    return (
+      <div className="tool-result-card social-post-card">
+        <div className="tool-result-header">
+          <MessageSquare size={14} /> Social Content Blueprint: {result.platformName}
+          <span className="tool-result-meta">{result.contentType?.replace('_', ' ')} · {result.characterLimit} chars max</span>
+        </div>
+        <div className="social-post-info">
+          <div><strong>Topic:</strong> {result.topic}</div>
+          <div><strong>Tone:</strong> {result.tone} · <strong>Audience:</strong> {result.audience}</div>
+          {result.guidelines && <div className="social-post-guideline">{result.guidelines}</div>}
+        </div>
+      </div>
+    )
+  }
+
   if ((tool === 'deep_research' || tool === 'web_search') && (result.pages || result.results)) {
     const items = result.pages || result.results
     return (
@@ -818,9 +948,144 @@ const ToolResultCard = React.memo(function ToolResultCard({ tool, result }) {
     )
   }
 
+  // ── MCP tool result ──────────────────────────────────────────────────────────
+  // Detected by the _mcpResult flag set in callMcpTool(); renders content parts
+  // (text, image, resource) in a rich card instead of raw JSON.
+  if (result?._mcpResult) {
+    const serverId = tool.split('__')[1] || ''
+    const toolName = tool.split('__')[2] || tool
+    const contentParts = result.content || []
+    const hasText = contentParts.some(c => c.type === 'text')
+    const hasImage = contentParts.some(c => c.type === 'image')
+    const hasResource = contentParts.some(c => c.type === 'resource')
+    const textContent = contentParts.filter(c => c.type === 'text').map(c => c.text).join('\n')
+    return (
+      <div className="tool-result-card">
+        <div className="tool-result-header">
+          <Plug size={14} />
+          <span>{serverId} / {toolName}</span>
+          <span className="tool-result-meta" style={{ fontSize: 10, color: '#38bdf8' }}>MCP</span>
+          {textContent && <CopyButton text={textContent} />}
+        </div>
+        {contentParts.map((part, i) => {
+          if (part.type === 'text') {
+            return (
+              <pre key={i} className="code-output" style={{ maxHeight: 320, overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {part.text}
+              </pre>
+            )
+          }
+          if (part.type === 'image' && part.data) {
+            const mimeType = part.mimeType || 'image/png'
+            return (
+              <img key={i} src={`data:${mimeType};base64,${part.data}`}
+                alt="MCP image result" style={{ maxWidth: '100%', borderRadius: 6, marginTop: 6 }} />
+            )
+          }
+          if (part.type === 'resource' && part.resource) {
+            const res = part.resource
+            return (
+              <div key={i} className="tool-detail" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <FileText size={12} />
+                {res.uri ? (
+                  <a href={res.uri} target="_blank" rel="noopener noreferrer" className="source-link">{res.name || res.uri}</a>
+                ) : (
+                  <span>{res.name || 'Resource'}</span>
+                )}
+                {res.mimeType && <span style={{ fontSize: 10, color: '#94a3b8' }}>{res.mimeType}</span>}
+              </div>
+            )
+          }
+          return null
+        })}
+        {result.structured && (
+          <pre className="code-output" style={{ maxHeight: 240, overflowY: 'auto', fontSize: 11 }}>
+            {JSON.stringify(result.structured, null, 2)}
+          </pre>
+        )}
+        {!hasText && !hasImage && !hasResource && result.text && (
+          <pre className="code-output" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{result.text}</pre>
+        )}
+      </div>
+    )
+  }
+
+  // ── Screen Inspect result ──────────────────────────────────────────────────
+  if (tool === 'screen_inspect' && result) {
+    return (
+      <div className="tool-result-card">
+        <div className="tool-result-header">
+          <Monitor size={14} /> Screen Inspected
+          <span className="tool-result-meta" style={{ fontSize: 10, color: '#38bdf8' }}>
+            {result.activeApp || 'Desktop'} · {result.screenWidth ? `${result.screenWidth}x${result.screenHeight}` : 'OS Window'}
+          </span>
+        </div>
+        {result.activeTitle && (
+          <div className="tool-detail" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+            🪟 {result.activeTitle}
+          </div>
+        )}
+        {result.dataUrl && (
+          <div style={{ marginTop: 6, marginBottom: 6 }}>
+            <img src={result.dataUrl} alt="Screen frame" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)' }} />
+          </div>
+        )}
+        {result.ocrPreview && (
+          <pre className="code-output" style={{ maxHeight: 160, overflowY: 'auto', fontSize: 11 }}>
+            {result.ocrPreview}
+          </pre>
+        )}
+        {result.message && <div className="tool-detail" style={{ color: 'var(--text-secondary)' }}>{result.message}</div>}
+      </div>
+    )
+  }
+
+  // ── Desktop Action result ──────────────────────────────────────────────────
+  if (tool === 'desktop_action' && result) {
+    return (
+      <div className="tool-result-card">
+        <div className="tool-result-header">
+          <MousePointer size={14} /> Desktop Action: {result.action || 'dispatched'}
+          <span className="tool-result-meta" style={{ fontSize: 10, color: result.success ? '#10b981' : '#f87171' }}>
+            {result.success ? '✓ Executed' : '✕ Failed'}
+          </span>
+        </div>
+        {result.text && <div className="tool-detail">Typed / Pasted: <code>{result.text}</code></div>}
+        {result.keys && <div className="tool-detail">Sent Hotkey: <code>{result.keys}</code></div>}
+        {result.target && <div className="tool-detail">Target: {result.target}</div>}
+        {result.note && <div className="tool-detail" style={{ color: '#94a3b8' }}>{result.note}</div>}
+      </div>
+    )
+  }
+
+  // ── Browser Autopilot result ───────────────────────────────────────────────
+  if (tool === 'browser_autopilot' && result) {
+    return (
+      <div className="tool-result-card">
+        <div className="tool-result-header">
+          <Compass size={14} /> Browser Autopilot
+          <span className="tool-result-meta" style={{ fontSize: 10, color: '#38bdf8' }}>
+            {result.contentLength ? `${result.contentLength.toLocaleString()} chars` : 'Navigated'}
+          </span>
+        </div>
+        {result.title && (
+          <div className="tool-detail" style={{ fontWeight: 600 }}>
+            🌐 <a href={result.url} target="_blank" rel="noopener noreferrer" className="source-link">{result.title}</a>
+          </div>
+        )}
+        {result.excerpt && (
+          <pre className="code-output" style={{ maxHeight: 200, overflowY: 'auto', fontSize: 11, whiteSpace: 'pre-wrap' }}>
+            {result.excerpt}
+          </pre>
+        )}
+        {result.message && <div className="tool-detail" style={{ color: 'var(--text-secondary)' }}>{result.message}</div>}
+      </div>
+    )
+  }
+
   // Generic fallback for other tools
   if (result && result.success !== false) {
-    const Icon = TOOL_ICONS[tool] || Wrench
+    const Icon = TOOL_ICONS[tool] || (tool.startsWith('mcp__') ? Plug : Wrench)
     return (
       <div className="tool-result-card">
         <div className="tool-result-header"><Icon size={14} /> {tool.replace(/_/g, ' ')}</div>

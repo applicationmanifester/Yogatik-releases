@@ -12,6 +12,42 @@
 - **Deploy**: Firebase Hosting. `deploy-proxy.bat` (worker) then `deploy.bat` (build + hosting + rules)
 - **Desktop (v3.8)**: Tauri v2 shell (`frontend/src-tauri/`). Wraps same Vite build. `build-desktop.bat` → `npm run desktop:build` → .exe/.msi in src-tauri/target/release/bundle/. Prereqs: Node, Rust, MSVC Build Tools, WebView2.
 
+## Desktop Superpowers batch (v3.13) — web-impossible capabilities
+Each capability = one electron/*.cjs main module (registers scoped IPC) + a window.__YOGATIK_*__
+bridge in preload.cjs + a renderer tool in src/tools/ (registered in tools/index.js, gates on its
+OWN bridge, honest "desktop only" fallback in the web build). Wired in main.cjs whenReady; cleaned up
+in will-quit. Tests: tools/desktopCapabilities.test.js (15). All built-in Electron APIs — no native
+deps — EXCEPT PTY.
+- keychain.cjs (safeStorage / Windows DPAPI): OS-encrypted key vault. db.js getSetting/setSetting is
+  the SINGLE choke point — apikey_* values are transparently sealed (`kc.v1:` prefix) at rest via
+  src/desktopKeychain.js (sealKey/openKey, lazy-imported so web/tests pass through unchanged). Backward
+  compatible: legacy plaintext + cloud-synced keys open untouched; a sealed value with no vault returns
+  null (re-prompt, never leaks ciphertext); if safeStorage is unavailable it stores plaintext (=today).
+  getAllSettings stays raw (only reads status_*, never apikey_). Backup already excludes apikey_.
+- clipboardManager.cjs: clipboard read (text+image) + 50-entry rolling history (800ms poller captures
+  copies from OTHER apps; there's no OS change-event) + write. Global hotkey Ctrl+Alt+C copies the
+  foreground selection (SendKeys ^c on Windows) → relays 'clipboard-selection-hotkey' to renderer.
+  Tool: clipboard_access. Events: 'clipboard-changed'.
+- watcher.cjs: fs.watch SCOPED to the granted root (reuses fsBridge path guards: abs/.. rejected +
+  realpath re-check), 300ms debounce, emits 'fs-changed' {id,type,path-relative-to-root}. Tool:
+  watch_folder (start/stop/list/stop_all).
+- power.cjs: powerMonitor suspend/resume/lock/ac/battery + getSystemIdleTime(). Suspend pauses the cron
+  scheduler (stopScheduler), resume restarts it — wired via registerPower hooks in main. Tool: system_state.
+- dialogs.cjs: native open/openMulti/save/pickFolder + read-picked (2MB cap) → REAL OS paths (browser
+  <input type=file> gives opaque blobs). Lets the user hand a file OUTSIDE the grant for one-shot read.
+  Tool: file_dialog.
+- processes.cjs: tasklist/ps parse + guarded kill (PROTECTED_PIDS = self/0/4). Tool: process_manager —
+  kill REFUSES without confirm:true (double guard: tool + main).
+- notify.cjs (enhanced): { actions[], hasReply } → button/inline-reply notifications, emits
+  'notification-action' {id,action,reply}. __YOGATIK_NOTIFY__ now takes (title,body) OR an options object.
+- pty.cjs: interactive streaming shell (node-pty). NATIVE dep, lazy require in try/catch — NOT in
+  package.json, so absent by default → pty:available=false and app falls back to one-shot terminal:exec.
+  Enable: `npm i node-pty && npx electron-rebuild -f -w node-pty`. Bridge __YOGATIK_PTY__ only (no agent
+  tool — streaming interactive doesn't fit one function-call return; it's for a future terminal panel).
+- preload.cjs also exposes __YOGATIK_DND__.getPathForFile (webUtils) → real path for a dropped File.
+- Remaining optional UX wiring in App.jsx (not yet done): subscribe __YOGATIK_CLIPBOARD__.onSelectionHotkey
+  → composer, __YOGATIK_WATCHER__.onChange → toast, __YOGATIK_NOTIFY_ACTIONS__.on → reply handling.
+
 ## Desktop app — Electron (v3.8, Node-only path)
 - Modular main process: electron/main.cjs (thin orchestrator) + fsBridge.cjs (scoped fs_* IPC, grant
   persistence, path-escape guards: abs/.. rejected + realpath re-check) + cors.cjs (enableProviderCors)
@@ -294,6 +330,35 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   extractVars/fillTemplate/userVars; workflow built-ins {{last}}/{{stepN}} excluded from prompts.
 - UI: components/SkillsPanel.jsx (sidebar "Skills & workflows" + Ctrl+K). skills.test.js (8).
 
+## Concurrent multi-agent execution (v3.13) — shared pool + same-agent instances
+- agentPool.js: ONE global concurrency semaphore shared by EVERY sub-agent runner (spawn_agents,
+  crew_orchestrator, map_reduce, best_of_n) so total concurrent LLM calls can't storm provider rate
+  limits, no matter how many orchestrations run at once. Rolling window (a finished slot starts the
+  next task immediately — NOT batch-of-N), order-preserving, error-isolating (a thrown worker yields
+  {error} in its slot, never sinks the batch). Concurrency is AUTO by default = one slot per task
+  ("as many as necessary"), capped by MAX_LIMIT=16 (providers 429 past that); an explicit
+  chat_prefs.max_parallel_agents (clamp 1–16) overrides. getAgentConcurrency() returns null for auto;
+  runAgentPool computes min(items.length, 16); configureConcurrency() wakes queued waiters when raised.
+  runAgentPool(items, worker) is the entry point. DOM-free; agentPool.test.js (10) tracks peak
+  concurrency, order, error isolation, clamp, slot-release-on-throw. _resetAgentPool for tests.
+- spawnAgents.js: dropped the batch-of-3 loop (a slow sub-agent stalled the next batch) → runAgentPool.
+  crewRunner.js: hierarchical Promise.all was UNCAPPED → runAgentPool. Both now share the global budget.
+- Two new crew workflows = genuine same-agent concurrency: "map_reduce" (run one agent over items[] in
+  parallel, then a reducer agent merges — fastest for per-item work) and "best_of_n" (race N=2–5
+  instances of one generator on the SAME task, then a critic picks/merges the best — quality over
+  tokens). crew_orchestrator schema/execute expose them (params items[], n).
+- 6 new preset agents (agents.js), all referencing only real registered tools (agents.test asserts):
+  Desktop Operator (clipboard/file_dialog/watch_folder/process_manager/terminal_run/system_state/
+  screen_inspect — desktop tools, degrade gracefully on web), Data Engineer (ETL: code_execute/
+  data_convert/data_stats/chart/fs_*), Knowledge Librarian (RAG over vault: doc_search/local_vault_
+  search/memory/pdf_extract), Media Producer (image/video/audio/diagram), Weather & Geo Analyst
+  (weather/air_quality/geocode/solar_times/earthquake/iss), and Orchestrator (manager: canDelegate,
+  drives spawn_agents + crew concurrently). All added to General's subAgents list. Presets appear
+  in AgentsPanel automatically (getAgents merges).
+- Concurrency defaults to auto (as many as the batch needs, ≤16); chat_prefs.max_parallel_agents
+  overrides. No UI slider yet — an optional PersonalisePanel control is the remaining follow-up.
+  Total tests 490.
+
 ## Agents subsystem (2026-08-11) — all 4 agent types on one runAgent loop
 - agents.js: registry {id,name,role,system,tools[],model?,provider?,canDelegate,subAgents[]} +
   PRESET_AGENTS (General/Researcher/Coder/Writer/Analyst/Planner). Merged at read like skills;
@@ -313,6 +378,45 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   showAgents. Proactive: features.proactiveAgent (default off) → quick-action row above composer
   (Summarize/Next steps/Find issues/Go deeper → send(prompt)).
 - Tests: agents.test.js (10). Total 303.
+
+## AI companion — real computer use (v3.15)
+- electron/companionInput.cjs: precise cross-app input via PowerShell + user32 — SetCursorPos +
+  mouse_event for click/double/right-click, pointer move, wheel scroll (notch*120), plus named key
+  presses. Windows-only; other platforms return an honest "not supported". Registered in main.cjs
+  (registerCompanionInput); bridge __YOGATIK_COMPANION_INPUT__.{move,click,scroll,key}.
+- INJECTION-SAFE BY CONSTRUCTION (deliberately separate from desktop:executeAction): coordinates are
+  coerced with Math.round(Number(v)), and buildSendKeys() assembles combos ONLY from fixed KEYS/MODS
+  tables — any unknown token returns null and the call is refused, so no raw user/model string is ever
+  interpolated into the shell. computerControl.test.js locks this (a quote-escape payload → null).
+- tools/computerControl.js → `computer_control` (click/double_click/right_click/move/scroll/key),
+  registered in tools/index.js. This is the gap desktop_action left: it could only type/hotkey/copy/
+  launch, never click a coordinate. Aliases computer_use/click_screen/mouse_click/scroll/press_key now
+  route here (type_text still → desktop_action). Schema tells the model to screen_inspect FIRST, then
+  act, and to confirm before anything that submits/sends/deletes/purchases.
+- Desktop Operator agent gained computer_control + a look-then-act system prompt.
+- Tests: computerControl.test.js (9). Total 519.
+
+## MCP overhaul + plugin system (v3.15)
+- mcp.js is now transport-aware: 'http' (Streamable HTTP/SSE via fetch, CORS-gated) OR 'stdio'
+  (LOCAL servers spawned by the desktop app). transportRpc() routes; _servers/_sessions maps hold
+  routing + session state. Reliability: isSessionError() + reconnect-once on 401/403/404/expired in
+  callMcpTool/readMcpResource/getMcpPrompt; refreshMcpTools records per-server latencyMs + transport.
+- MCP resources & prompts are now USABLE by the agent: tools/mcpResources.js → mcp_resource
+  (list/read by uri) + mcp_prompt (list/get by name → messages), registered in tools/index.js. They
+  were discovered before but unreachable from chat.
+- Local/stdio MCP (desktop): electron/mcpStdio.cjs spawns a child process and speaks
+  newline-delimited JSON-RPC over stdin/stdout (pending-by-id map, 30s timeout). preload bridge
+  __YOGATIK_MCP_STDIO__.{start,rpc,notify,stop}; wired in main.cjs (registerMcpStdio + killAllMcpStdio).
+  McpServers.jsx gained a desktop-only "Local (stdio) server" add row (command + args) + a 'local'
+  badge + latency in status. Server entry shape: { id, name, transport:'stdio', command, args, env?, cwd? }.
+- Plugin/extension system: plugins.js — installable JSON bundles that contribute agents / skills /
+  mcpServers / starters. install/uninstall/enable/disable/import/export; parsePlugin validates;
+  collectContributions (pure) gathers ENABLED plugins' items. NO arbitrary code runs — a plugin only
+  composes existing sandboxed building blocks. Merged at READ time: agents.js getAgents +
+  skills.js getSkills + mcp.js getMcpServers each dynamic-import plugins.js and fold in enabled
+  contributions (tagged fromPlugin/_plugin, deduped by id). UI: components/PluginsManager.jsx in the
+  Personalise panel (paste JSON / import file / toggle / export). db key 'plugins'.
+- Tests: plugins.test.js (6), mcp.test.js (5). Total 510.
 
 ## Agent-layer additions (2026-08-10)
 - MCP client (mcp.js): browser JSON-RPC over Streamable HTTP. connectMcpServer → initialize +
@@ -519,6 +623,28 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   injecting "[Live view (described on-device): …]" into the turn. Vision models still get real image
   parts via visualParts(). Persona tells the model it can generate media/run code/tests + read the view.
 
+## Live cascade upgrades (v3.14) — any-model vision, hands-free, latency, noise
+- Vision for ANY model (headline): createCascadeSession takes visionMode 'auto'|'always'|'off'.
+  visualParts (vision models) AND describeIfVisual (non-vision → on-device OCR/VLM injected as
+  "[Live view (described on-device): …]") both honour it: 'always' looks EVERY turn while a
+  camera/screen is live, so even a text-only model "sees" the feed continuously; 'auto' looks on a
+  visual question or an auto-scan scene change. LiveView has a watch toggle (Eye/EyeOff, cycles
+  auto↔always) + setVisionMode()/getVisionMode(); awareness badge shows "Watching"/"Can see
+  (on-device)". Default persists via the liveWatchAlways feature toggle (features.js → Personalise
+  panel, default off).
+- Adaptive endpointing: endpointDelay(text) replaces the fixed 700ms — a finished-sounding sentence
+  commits at 350ms, a long phrase 450ms, a short fragment 850ms. Lower perceived latency, no chop.
+- Hands-free voice commands (voiceCommands, default on): parseVoiceCommand recognises WHOLE-utterance
+  controls (stop/pause/resume/repeat/faster/slower/"speak in <lang>"), handled locally, never sent to
+  the model. Commands bypass the wake word so "stop" always interrupts. Wake word (wakeWord, opt-in):
+  stripWakeWord gates content — an utterance must start with the phrase; it's stripped, the rest runs.
+- Reliability: shouldRejectNoise drops short low-confidence finals (TV/chatter) but treats Chrome's
+  confidence-0 finals as unknown (never dropped). trimHistoryPairs keeps the context window aligned to
+  a user turn (no bare leading assistant that some providers reject).
+- Session setters for mid-call UI: setVisionMode/setWakeWord/setRate/setLang (rate/lang via
+  speaker.configure + recog.lang). Persona now nudges parallel delegation (spawn_agents/crew).
+- Pure helpers exported + tested in cascade.test.js (12 new: endpoint/commands/wake/noise/pairs).
+
 ## Live mode — face-to-face (live/)
 - Two engines, one UI (components/LiveView.jsx picks via `engine`):
   **gemini** — realtime WSS, native audio, ~0.8s, server-side barge-in.
@@ -679,3 +805,82 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - Usage meter: `usage_<YYYY-MM-DD>` per provider; estimated from chars (~4/token), labelled
   approximate because streamed responses rarely carry usage data.
 - Terms gate: TERMS_VERSION in TermsModal; sign-in blocked until accepted (scroll + tick).
+
+## Tool status + standardised errors (v3.9)
+- toolStatus.js: ephemeral pub/sub (beginTool/settleTool/subscribeToolStatus). DOM-free, testable.
+  Failure = falsy | success:false | error (matches ToolResultCard). Forwards to errorLog + diagnoseError.
+  Auto-prunes records (err 8s, ok 1.2s). isLongRunning >4s. _resetToolStatus for tests.
+- agent.js round loop emits beginTool on start, settleTool on result (parallel to onToolStart/onToolResult).
+- components/ToolStatusPanel.jsx: live ready/loading/failed, elapsed timer, Retry+Dismiss, aria-live. Idle=null.
+  Mounted above composer in App.jsx; Retry → send().
+- ToolResultCard error branch → ToolErrorCard: diagnoseError title+suggestion + collapsible View details + Copy.
+- Tests: toolStatus.test.js (7). Total 322.
+
+## Security + perf + sync + a11y batch (v3.10)
+- cors-proxy/worker.js: credential headers (authorization/x-api-key/x-subscription-token) only forwarded to
+  DEFAULT_CREDENTIALED_HOSTS (env.CREDENTIALED_HOSTS override); other HTTPS targets relayed WITHOUT creds.
+  Coarse per-origin rate limit (RL_MAX 120/RL_WINDOW_MS), host-only console audit log.
+- firebase.json: CSP-Report-Only (report-first; promote to CSP once clean) + X-Content-Type-Options,
+  Referrer-Policy, X-Frame-Options on **.
+- sanitize.js: sanitizeHtml/sanitizeSvg (DOMParser-based, no DOMPurify dep). ToolResultCard diagram uses it;
+  old inline sanitizeDiagramSvg removed.
+- crypto.js: model is ACCOUNT-derived (yogatik.account.v1.<uid>), NOT zero-knowledge — docstring fixed,
+  params renamed passphrase→secret. KEY_STORAGE_DISCLOSURE shown in ProviderModal key field.
+- computeWorker.js + workers/compute.worker.js: runInWorker(task,payload), lazy worker, idle-terminate 30s,
+  inline fallback (TASKS shared) when Worker unavailable. Scaffold — tools opt in.
+- syncMerge.js: conversationSignature (syncId else title+createdAt+first-msg) + selectIncoming (LWW: newer AND
+  longer). api.pullCloudData('merge') filters incoming via selectIncoming BEFORE importAll — fixes the
+  round-trip duplication (importAll always add()s). Preserves the yogatik-backup envelope.
+- downloadConsent.js: ensureDownloadConsent(feature,{label,sizeMb}) size-labelled, remembered per feature;
+  setConsentPrompter lets App supply a themed modal (default window.confirm).
+- storage.js: shouldNudgeBackup({persisted,conversationCount,lastNudgeAt,lastBackupAt}) pure; markBackedUp/
+  markBackupNudged/checkBackupNudge. No nudge when persisted.
+- analytics.js: OPT-IN, hard no-op until enableAnalytics(sink{capture}). SAFE_KEYS allowlist drops any other
+  prop (no content leak). latencyBucket coarse. toolStatus.settleTool → trackToolSettled.
+- A11yAnnouncer.jsx: single polite aria-live; announce('Response ready') from App onDone (not per token).
+  StreamingMessage container aria-busy. .sr-only utility in styles.css.
+- Tests: syncMerge.test.js (6) + enhancements.test.js (13) + toolStatus.test.js (7). Total ~341.
+
+## Companion Phase-0: safety + memory + measurement (v3.11)
+- safety.js: pure on-device screen. assessSafety(text) → {crisis:{type,resource}|null,
+  boundary:{domain,directive}|null, systemDirective, hasConcern}. Crisis = self_harm/
+  eating_disorder/violence (high-recall regex) → resource (988 / Nat. Alliance for Eating
+  Disorders 1-866-662-1235 / emergency). Boundary = medical/legal/financial → role-clarity.
+  crisisResourceCard(v) for UI. agent.runAgent screens userMessage, appends systemDirective
+  to systemBase, fires onSafety(verdict, card). Never blocks a turn (try/caught).
+- memory4.js: four stores episodic/semantic/procedural/emotional. recencyWeight (half-life
+  30/∞/90/14 days), salience (importance+refCount+recency), relevance (keyword overlap),
+  selectForPrompt (relevance-gated, salience-ranked, perStoreCap), memoryPromptBlock,
+  dueMilestones (anniversaries, importance≥0.6). Emotional store local-only. Pure; Dexie
+  tables mirror shape (not yet added — memory tool still flat until migration).
+- telemetry.js: startTurn({provider,model}) → {firstToken(),done()}. TTFB+total rings (200),
+  percentile() nearest-rank, latencyReport() p50/p95. done() → analytics track('turn_latency').
+  Wired in App.jsx main streaming path (_latTurn). _resetTelemetry for tests.
+- evalHarness.js: GOLDEN_SET (crisis/boundary/quality/injection). gradeResponse (expect/reject/
+  mustReferResource), gradeSafetyScreen (assessSafety regression), runEval(respond), 
+  runSafetyScreenEval() model-free. summarize → {total,passed,passRate,byCategory,failures}.
+- Tests: companion.test.js (18). Total ~359. Process items (interviews, hiring, A/B backend) NOT code.
+
+## Memory persistence + observability (v3.11.1)
+- db.js v5: `memories` table (++id, store, at). Flat user_memory blob retained.
+- memory4.js persistence layer (lazy db import so pure tests stay db-free): remember (dedupe→
+  refCount/importance bump), allMemories(store?), forget(id), recallForPrompt (usage bump),
+  memoryBlockFromStores(query), salience prune at CAP 500.
+- tools/memory.js save → also remember({store,text,importance}); schema adds store enum + importance.
+- agent.memoryBlock(): structured stores (memoryBlockFromStores) supersede flat block when non-empty.
+- DiagnosticsModal: Performance & Safety card — telemetry.latencyReport (TTFB/total P50/P95, green
+  when total P95<2s) + evalHarness.runSafetyScreenEval golden-set pass rate.
+
+## Phase 1/2: adaptation + experiments + transparency + onboarding (v3.12)
+- adaptation.js: deriveProcedural/aggregateSignals (pure; MIN_SAMPLES=4 evidence gate) → procedural
+  prefs from message length / tool usage / style / persona. recordTurn buffers (CAPTURE_EVERY=8) →
+  captureBehaviour writes to procedural store. Wired in App main onDone (recordTurn).
+- experiments.js: hashString (FNV-1a), assignVariant (deterministic weighted, stable per unit),
+  getVariant (flag-gated, one-time exposure → analytics), trackOutcome. unitId in localStorage.
+- analyticsSink.js: createPostHogSink({host,projectKey}) batched fetch sink; initAnalyticsFromSettings
+  reads chat_prefs.analytics_enabled + analytics_config → enableAnalytics. No SDK dep.
+- MessageBubble.explainReply(): "why did I say this" line in activity-trace (tools/sources/model).
+- components/DataDashboard.jsx: four-store memory view, per-item/per-store delete, export (downloadBackup).
+  Opened from storage-details button. components/OnboardingModal.jsx: 3-step first-run (persona/style/
+  boundary/privacy) → seeds procedural memory + setActiveTemplate; gated by localStorage yogatik_onboarded.
+- Tests: phase1.test.js (13). Total ~376. Premium billing + marketplace need backend (not built).

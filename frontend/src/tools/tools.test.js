@@ -158,3 +158,48 @@ describe('query_refine', () => {
     expect(r.suggested_tools).toContain('code_execute')
   })
 })
+
+describe('timer & alarms', () => {
+  it('sets a timer by duration', async () => {
+    const { timerTool } = await import('./timer')
+    const r = await timerTool.execute({ duration: '10 minutes', label: 'Check oven' })
+    expect(r.success).toBe(true)
+    expect(r.tool).toBe('timer')
+    expect(r.seconds).toBe(600)
+    expect(r.label).toBe('Check oven')
+    expect(r.id).toBeDefined()
+  })
+
+  it('lists and cancels active timers', async () => {
+    const { timerTool } = await import('./timer')
+    const created = await timerTool.execute({ duration: '30 seconds', label: 'Stand up' })
+    const listRes = await timerTool.execute({ action: 'list' })
+    expect(listRes.success).toBe(true)
+    expect(listRes.timers.some(t => t.id === created.id)).toBe(true)
+
+    const cancelRes = await timerTool.execute({ action: 'cancel', id: created.id })
+    expect(cancelRes.success).toBe(true)
+    expect(cancelRes.message).toMatch(/cancelled/i)
+  })
+})
+
+describe('tts robustness', () => {
+  it('handles missing or undefined text without throwing unhandled exceptions', async () => {
+    const { ttsTool } = await import('./tts')
+    const r = await ttsTool.execute({})
+    expect(r.success).toBe(false)
+    expect(r.error).toMatch(/No text provided/i)
+  })
+})
+
+describe('executeTool alias resolution', () => {
+  it('resolves common LLM tool aliases seamlessly', async () => {
+    const { executeTool } = await import('./index')
+    const rSchedule = await executeTool('schedule', { duration: '5m', label: 'Meeting' })
+    expect(rSchedule.success).toBe(true)
+
+    const rTimer = await executeTool('set_alarm', { duration: '15m', label: 'Tea' })
+    expect(rTimer.success).toBe(true)
+  })
+})
+

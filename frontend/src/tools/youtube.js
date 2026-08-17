@@ -88,10 +88,27 @@ export const youtubeTool = {
   async execute({ url }) {
     const id = extractVideoId(url)
     const canonicalUrl = `https://www.youtube.com/watch?v=${id}`
-    const resp = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(canonicalUrl)}`)
-    if (!resp.ok) return { success: false, error: 'Failed to fetch video info' }
-    const data = await resp.json()
-    if (data.error) return { success: false, error: data.error }
+    let data = null
+    try {
+      const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl)}&format=json`)
+      if (oembedRes.ok) {
+        data = await oembedRes.json()
+      }
+    } catch {}
+
+    if (!data || !data.title) {
+      try {
+        const noembedRes = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(canonicalUrl)}`)
+        if (noembedRes.ok) {
+          const d = await noembedRes.json()
+          if (!d.error && d.title) data = d
+        }
+      } catch {}
+    }
+
+    if (!data) {
+      data = { title: `YouTube Video (${id})`, author_name: 'YouTube' }
+    }
 
     let transcript = ''
     let transcriptLanguage = ''

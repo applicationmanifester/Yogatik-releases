@@ -13,8 +13,8 @@
     "lint": "node ./node_modules/eslint/bin/eslint.js src",
     "build:electron": "node ./node_modules/vite/bin/vite.js --configLoader runner build --base=./ --outDir dist-electron",
     "electron:dev": "electron .",
-    "electron:build": "npm run build:electron && electron-builder --win nsis",
-    "electron:build:all": "npm run build:electron && electron-builder -wl"
+    "electron:build": "npm run build:electron && electron-builder --win nsis --publish never",
+    "electron:build:all": "npm run build:electron && electron-builder -wl --publish never"
   },
   "dependencies": {
     "dexie": "^4.0.0",
@@ -23,7 +23,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
-    "react-syntax-highlighter": "^16.1.1"
+    "react-syntax-highlighter": "^16.1.1",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
@@ -55,14 +56,12 @@
       {
         "from": "bin/search-sidecar",
         "to": "search-sidecar",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
-    "publish": [
-      {
-        "provider": "github"
-      }
-    ],
+
     "win": {
       "target": [
         "nsis"

@@ -6,7 +6,7 @@
 
 import * as db from './db'
 import { runAgent } from './agent'
-import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels, chatComplete, proxyAvailable } from './llm'
+import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels, chatComplete, proxyAvailable, normalizeModelName } from './llm'
 import { getToolNames } from './tools/index'
 import { isDesktop } from './tools/localFs'
 import { chunkText } from './retrieval'
@@ -18,9 +18,11 @@ import { DEFAULT_VOICE } from './video/speech'
 import { getWorkflows, upsertWorkflow, runWorkflow } from './workflows'
 import { getSkills, upsertSkill } from './skills'
 import { getAgents, upsertAgent } from './agents'
+import { logError } from './errorLog'
 
 import { signInWithGoogle, checkRedirectResult, logOutGoogle, saveUserApiKey, getUserApiKeys, purgePlaintextKeys, authRedirectPending, saveVault, loadVault, getVaultMeta } from './firebaseAuth'
 import { encryptSecret, decryptSecret } from './crypto'
+import { selectIncoming } from './syncMerge'
 
 // ─── Auth (Google Sign-In & encrypted Firestore key vault) ───
 
@@ -117,6 +119,14 @@ export async function pullCloudData(mode = 'merge') {
   if (!json) return { pulled: 0, reason: 'decrypt-failed' }
   let data
   try { data = JSON.parse(json) } catch { return { pulled: 0, reason: 'corrupt' } }
+  // De-dup: importAll('merge') always ADDs, so without this every round trip
+  // duplicated the whole history. Import only genuinely-new/newer conversations.
+  if (mode === 'merge') {
+    try {
+      const local = await db.exportAll()
+      data = selectIncoming(data, local)
+    } catch { /* if the local snapshot fails, fall back to raw merge */ }
+  }
   const counts = await db.importAll(data, mode)
   return { pulled: counts.conversations || 0, ...counts }
 }
@@ -169,14 +179,18 @@ export async function loginWithGoogle() {
 export async function saveProviderApiKey(provider, apiKey) {
   await db.setSetting(`apikey_${provider}`, apiKey)
   // Signed in => it syncs, encrypted, to every other device of this account.
-  const secret = await vaultSecret()
-  if (secret) {
-    const res = await saveUserApiKey(provider, apiKey, secret)
-    if (res?.synced) await db.setSetting(`synced_${provider}`, Date.now())
-    return res
+  try {
+    const secret = await vaultSecret()
+    if (secret) {
+      const res = await saveUserApiKey(provider, apiKey, secret)
+      if (res?.synced) await db.setSetting(`synced_${provider}`, Date.now())
+      return res || { synced: false, reason: 'local-saved' }
+    }
+  } catch (err) {
+    console.warn('[ApiKey] Cloud sync skipped/failed:', err?.message)
   }
   await db.setSetting(`synced_${provider}`, null)
-  return { synced: false, reason: 'signed-out' }
+  return { synced: false, reason: 'local-saved' }
 }
 
 /** What the user can be told about a stored key, without revealing it. */
@@ -245,10 +259,10 @@ const ROUTE_CACHE_TTL = 5 * 60 * 1000
 export async function streamMessage(body, onToken, onSources, onDone, onError, onStatus, onStreamId, onToolsDetected, onToolResult) {
   const provider = body.provider || await getActiveProvider()
   const apiKey = await db.getSetting(`apikey_${provider}`)
-  let model = body.model || await db.getSetting(`model_${provider}`, '')
+  let model = normalizeModelName(body.model) || normalizeModelName(await db.getSetting(`model_${provider}`, ''))
   if (!model) {
     const provDef = getLLMProviders()[provider]
-    model = provDef?.default_model || provDef?.preferred?.[0] || ''
+    model = normalizeModelName(provDef?.default_model) || normalizeModelName(provDef?.default) || normalizeModelName(provDef?.preferred?.[0]) || normalizeModelName(provDef?.models?.[0]) || ''
   }
 
   // Auto-route: choose per message from models measured as working.
@@ -256,13 +270,14 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
   if (prefs.auto_route && !body.model) {
     const routed = await routeModel(provider, body.message || '')
     if (routed) {
-      model = routed.model
-      onStatus?.(`Routing ${routed.kind} → ${routed.model}`)
+      model = normalizeModelName(routed.model) || model
+      onStatus?.(`Routing ${routed.kind} → ${model}`)
     }
   }
 
   const provDef = getLLMProviders()[provider]
-  if (!apiKey && !provDef?.noKey) {
+  const isKeyless = provDef?.isLocal || provDef?.noKey || provDef?.isOllama || provider === 'ollama' || provider === 'local'
+  if (!apiKey && !isKeyless) {
     onError?.(`No API key for ${provDef?.name || provider}. Open Settings and add one${provDef?.keyUrl ? ` — free key at ${provDef.keyUrl}` : ''}.`)
     return
   }
@@ -281,10 +296,13 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
   try {
     for (let i = 0; i < chain.length; i++) {
       const pid = chain[i]
-      const key = i === 0 ? apiKey : await db.getSetting(`apikey_${pid}`)
-      if (!key && !getLLMProviders()[pid]?.isLocal) continue
+      const pDef = getLLMProviders()[pid]
+      const isKeylessProv = pDef?.isLocal || pDef?.noKey || pDef?.isOllama || pid === 'ollama' || pid === 'local'
+      const key = i === 0 ? (apiKey || (isKeylessProv ? 'keyless' : '')) : await db.getSetting(`apikey_${pid}`)
+      if (!key && !isKeylessProv) continue
       const mdl = i === 0 ? model : await db.getSetting(`model_${pid}`, '')
-      const isLocalProvider = getLLMProviders()[pid]?.isLocal
+      let activeMdl = mdl
+      const isLocalProvider = pDef?.isLocal
 
       let failure = null
       let produced = false
@@ -316,13 +334,14 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         onSources,
         onToolStart: (name, args) => onToolsDetected?.([name], args),
         onToolResult: (name, result) => onToolResult?.(name, result),
-        onDone: ({ content, sources, aborted }) => {
+        onSafety: body.onSafety || null,
+        onDone: ({ content, sources, aborted, trace, toolResults }) => {
           if (sources?.length) onSources?.(sources)
           recordUsage(pid, mdl, {
             inTokens: estimateTokens(body.message || ''),
             outTokens: estimateTokens(content || ''),
           }).catch(() => {})
-          onDone?.(content, { aborted, provider: pid, model: mdl })
+          onDone?.(content, { aborted, provider: pid, model: mdl, trace, toolResults })
         },
         onError: (err) => { failure = err?.message || String(err) },
       })
@@ -331,6 +350,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         try {
           const fallbackMdl = await autoPickModel(pid)
           if (fallbackMdl && fallbackMdl !== mdl) {
+            activeMdl = fallbackMdl
             onStatus?.(`${mdl || pid} unavailable — trying ${fallbackMdl}…`)
             failure = null
             await runAgent({
@@ -354,13 +374,14 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
               onSources,
               onToolStart: (name, args) => onToolsDetected?.([name], args),
               onToolResult: (name, result) => onToolResult?.(name, result),
-              onDone: ({ content, sources, aborted }) => {
+              onSafety: body.onSafety || null,
+              onDone: ({ content, sources, aborted, trace, toolResults }) => {
                 if (sources?.length) onSources?.(sources)
                 recordUsage(pid, fallbackMdl, {
                   inTokens: estimateTokens(body.message || ''),
                   outTokens: estimateTokens(content || ''),
                 }).catch(() => {})
-                onDone?.(content, { aborted, provider: pid, model: fallbackMdl })
+                onDone?.(content, { aborted, provider: pid, model: fallbackMdl, trace, toolResults })
               },
               onError: (err) => { failure = err?.message || String(err) },
             })
@@ -374,13 +395,16 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
       // would splice two different models' text together.
       const next = chain[i + 1]
       if (produced || controller.signal.aborted || !isProviderFailure(failure) || !next) {
+        logError('llm_stream', failure, null, { provider: pid, model: activeMdl })
         onError?.(failure)
         return
       }
       onStatus?.(`${getLLMProviders()[pid]?.name || pid} failed — trying ${getLLMProviders()[next]?.name || next}…`)
     }
+    logError('llm_stream', 'No provider with a working key could answer.', null, { provider, chain })
     onError?.('No provider with a working key could answer.')
   } catch (err) {
+    logError('llm_stream_uncaught', err.message, err.stack, { provider, model })
     onError?.(err.message)
   } finally {
     if (aborters.get(channel) === controller) aborters.delete(channel)
@@ -463,11 +487,13 @@ export async function getLiveConfig() {
   const fallbacks = []
   for (const pid of await getFallbackChain(provider)) {
     if (pid === provider) continue
+    const pDef = getLLMProviders()[pid]
+    const isKeylessProv = pDef?.isLocal || pDef?.noKey || pDef?.isOllama || pid === 'ollama' || pid === 'local'
     const key = await db.getSetting(`apikey_${pid}`)
-    if (!key && !getLLMProviders()[pid]?.isLocal) continue
+    if (!key && !isKeylessProv) continue
     const mdl = await db.getSetting(`model_${pid}`, '')
     fallbacks.push({
-      provider: pid, apiKey: key, model: mdl,
+      provider: pid, apiKey: key || (isKeylessProv ? 'keyless' : ''), model: mdl,
       modelCanSee: (await getCachedVision(pid, mdl)) ?? looksVisionCapable(mdl),
     })
   }
@@ -639,7 +665,13 @@ export async function branchConversation(sourceId, index) {
   const kept = (source?.messages || []).slice(0, index)
   const baseTitle = (source?.title || 'Chat').replace(/\s*\(\d+\)$/, '')
 
-  const created = await db.createConversation(baseTitle, source?.projectId ?? null, source?.provider ?? null, source?.model ?? null)
+  const created = await db.createConversation(
+    baseTitle,
+    source?.projectId ?? null,
+    source?.provider ?? null,
+    source?.model ?? null,
+    source?.settings ?? null
+  )
   for (const m of kept) {
     await db.addMessage(created.id, m.role, m.content, m.toolResults ?? null, m.sources ?? null)
   }
@@ -810,20 +842,23 @@ export async function getModels() {
     if (!desktop && p.isOllama) continue
     const key = await db.getSetting(`apikey_${id}`)
     const hasKey = !!key || !!p.noKey
-    let liveModels = p.models || []
+    let liveModels = (p.models || []).map(normalizeModelName).filter(Boolean)
     if (p.isLocal) {
       const { LOCAL_MODELS } = await import('./localLLM')
       liveModels = Object.keys(LOCAL_MODELS)
     } else if (hasKey || p.publicModels) {
-      liveModels = await cachedModels(id, key, liveModels)
+      const cached = await cachedModels(id, key, liveModels)
+      liveModels = (Array.isArray(cached) ? cached : []).map(normalizeModelName).filter(Boolean)
     }
+    const def = normalizeModelName(p.default)
+    const default_model = (liveModels.includes(def) ? def : liveModels[0]) || def || ''
     // Ollama is "available" only when the local daemon actually answered with
     // models — otherwise it shows Ready but every message fails (daemon down).
     const available = p.isOllama ? liveModels.length > 0 : hasKey
     result[id] = {
       name: p.name, type: 'openai_compatible',
       available, models: liveModels,
-      default_model: (liveModels.includes(p.default) ? p.default : liveModels[0]) || p.default || '',
+      default_model,
       needs_key: !hasKey,
       is_ollama: !!p.isOllama,
       builtin: !custom[id], base_url: p.baseUrl, key_url: p.keyUrl,
@@ -926,12 +961,37 @@ export async function testProvider(id, modelOverride) {
   } catch (e) {
     // A retired model must not linger in the picker or stay selected.
     if (isRetiredModelError(e.message)) await pruneRetiredModel(id, model)
-    const timedOut = e.name === 'TimeoutError' || /timeout/i.test(e.message || '')
+    const errStr = typeof e?.message === 'string' ? e.message : String(e || '')
+    const isTransient = /\b(503|502|504|520|522|524)\b|Service Unavailable|Internal server error/i.test(errStr)
+    const fallbackModel = (p?.default && p.default !== model) ? p.default : (p?.preferred?.[0] && p.preferred[0] !== model ? p.preferred[0] : null)
+
+    // If the selected model returned 503 or failed, probe the provider's default reliable model
+    if (isTransient && fallbackModel) {
+      try {
+        const fallbackOut = await chatComplete({
+          provider: id, apiKey, model: fallbackModel,
+          messages: [{ role: 'user', content: 'ping' }],
+          temperature: 0,
+          maxTokens: 1,
+          timeoutMs: TEST_TIMEOUT,
+          retries: 0,
+        })
+        return remember({
+          success: true,
+          status: 'ok',
+          model: fallbackModel,
+          latencyMs: Math.round(performance.now() - started),
+          response: `Connected (${model} is busy/503; ${fallbackModel} is ready)`,
+        })
+      } catch {}
+    }
+
+    const timedOut = e.name === 'TimeoutError' || /timeout/i.test(errStr)
     return remember({
       success: false,
       error: timedOut
-        ? `No response in ${TEST_TIMEOUT / 1000}s — this model is too slow to use for chat. Pick another different modal.`
-        : friendlyProviderError(e.message),
+        ? `No response in ${TEST_TIMEOUT / 1000}s — this model is too slow to use for chat. Pick another model.`
+        : friendlyProviderError(errStr),
       latencyMs: Math.round(performance.now() - started),
     })
   }
@@ -1159,12 +1219,19 @@ export async function pruneRetiredModel(providerId, model) {
 }
 
 /** Turn raw provider HTTP errors into something a user can act on. */
-function friendlyProviderError(msg = '') {
+function friendlyProviderError(rawMsg = '') {
+  const msg = typeof rawMsg === 'string' ? rawMsg : (rawMsg?.message ? String(rawMsg.message) : JSON.stringify(rawMsg || ''))
   if (isRetiredModelError(msg)) {
     const detail = msg.match(/"detail":"([^"]+)"/)?.[1]
     return detail
       ? `${detail} Pick a different model.`
       : 'This model has been retired by the provider. Pick a different model.'
+  }
+  if (/\b503\b|Service Unavailable/i.test(msg)) {
+    return 'Server busy (503 Service Unavailable). The API key is valid, but this specific model is temporarily offline or overloaded. Try switching to LLaMA 3.3 70B or LLaMA 3.1 8B.'
+  }
+  if (/\b500\b|502\b|504\b|Internal server error/i.test(msg)) {
+    return 'Provider server error (500/502/504). Please try again or switch to a lighter model.'
   }
   if (/\b401\b|invalid api key|unauthorized/i.test(msg)) return 'Invalid API key — check you pasted the whole key.'
   if (/\b403\b/i.test(msg)) return 'Key rejected (403). It may lack permission or be from the wrong account.'
@@ -1236,11 +1303,13 @@ export async function setActiveProvider(id) {
 }
 
 export async function getActiveModel(providerId) {
-  return db.getSetting(`model_${providerId}`, '')
+  const stored = await db.getSetting(`model_${providerId}`, '')
+  return normalizeModelName(stored)
 }
 
 export async function setActiveModel(providerId, model) {
-  await db.setSetting(`model_${providerId}`, model || '')
+  const clean = normalizeModelName(model)
+  await db.setSetting(`model_${providerId}`, clean)
 }
 
 // ─── Scheduler / Cron Daemon (Electron desktop only) ───

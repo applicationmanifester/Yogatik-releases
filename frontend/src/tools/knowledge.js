@@ -21,6 +21,19 @@ const json = async (url, init) => {
   return r.json()
 }
 
+function cleanTextQuery(query = '', maxLen = 160) {
+  let q = String(query || '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[#*`_~[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (q.length > maxLen) {
+    const firstSentence = q.split(/[.?!]/)[0]
+    q = (firstSentence && firstSentence.length >= 10 && firstSentence.length <= maxLen) ? firstSentence : q.slice(0, maxLen)
+  }
+  return q.trim()
+}
+
 // ─── Wikipedia ───────────────────────────────────────────────────────────────
 export const wikipediaTool = {
   schema: {
@@ -38,10 +51,12 @@ export const wikipediaTool = {
     },
   },
   async execute({ query, lang = 'en', full = false }) {
+    const cleanQuery = cleanTextQuery(query, 140)
+    if (!cleanQuery) return { success: false, error: 'Empty query' }
     const base = `https://${lang}.wikipedia.org`
     try {
       // Try the exact page first; fall back to search when it misses.
-      const summary = await json(`${base}/api/rest_v1/page/summary/${encodeURIComponent(query)}`).catch(() => null)
+      const summary = await json(`${base}/api/rest_v1/page/summary/${encodeURIComponent(cleanQuery)}`).catch(() => null)
 
       if (summary && summary.type !== 'disambiguation' && summary.extract) {
         let extract = summary.extract
@@ -64,16 +79,16 @@ export const wikipediaTool = {
       }
 
       const data = await json(
-        `${base}/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&format=json&origin=*`
+        `${base}/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&srlimit=5&format=json&origin=*`
       )
       const hits = (data.query?.search || []).map(r => ({
         title: r.title,
         snippet: (r.snippet || '').replace(/<[^>]+>/g, ''),
         url: `${base}/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`,
       }))
-      if (!hits.length) return { success: false, error: `No Wikipedia article found for "${query}"` }
+      if (!hits.length) return { success: false, error: `No Wikipedia article found for "${cleanQuery}"` }
       return {
-        success: true, tool: 'wikipedia', query, results: hits,
+        success: true, tool: 'wikipedia', query: cleanQuery, results: hits,
         note: summary?.type === 'disambiguation'
           ? 'That title is a disambiguation page — pick one of these and look it up by exact title.'
           : 'No exact page; these are search matches.',
@@ -103,8 +118,8 @@ export const scholarTool = {
   },
   async execute({ query, limit = 5, since, preprints = true }) {
     const n = Math.min(Math.max(1, limit | 0), 10)
-    // Strip future years like 2025/2026 which break academic search term matching
-    const cleanQuery = query.replace(/\b(2025|2026|2027|2028)\b/g, '').trim() || query
+    // Strip future years like 2025/2026 and sanitize length
+    const cleanQuery = cleanTextQuery(query.replace(/\b(2025|2026|2027|2028)\b/g, ''), 150) || 'research'
     const out = []
 
     try {
@@ -160,8 +175,8 @@ export const scholarTool = {
       } catch { /* preprints are a bonus, not a requirement */ }
     }
 
-    if (!out.length) return { success: false, error: `No papers found for "${query}"` }
-    return { success: true, tool: 'scholar', query, count: out.length, papers: out.slice(0, n + 3) }
+    if (!out.length) return { success: false, error: `No papers found for "${cleanQuery}"` }
+    return { success: true, tool: 'scholar', query: cleanQuery, count: out.length, papers: out.slice(0, n + 3) }
   },
 }
 
@@ -182,15 +197,18 @@ export const stackOverflowTool = {
     },
   },
   async execute({ query, tag, limit = 3 }) {
+    const cleanQuery = cleanTextQuery(query, 120)
+    if (!cleanQuery) return { success: false, error: 'Empty query' }
     const n = Math.min(Math.max(1, limit | 0), 5)
     try {
-      const tagged = tag ? `&tagged=${encodeURIComponent(tag)}` : ''
+      const cleanTag = tag ? cleanTextQuery(tag, 30) : ''
+      const tagged = cleanTag ? `&tagged=${encodeURIComponent(cleanTag)}` : ''
       const data = await json(
-        `https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&q=${encodeURIComponent(query)}${tagged}` +
+        `https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&q=${encodeURIComponent(cleanQuery)}${tagged}` +
         `&site=stackoverflow&pagesize=${n}&filter=!nNPvSNVZJS`
       )
       const items = data.items || []
-      if (!items.length) return { success: false, error: `Nothing on Stack Overflow for "${query}"` }
+      if (!items.length) return { success: false, error: `Nothing on Stack Overflow for "${cleanQuery}"` }
 
       const ids = items.map(i => i.question_id).join(';')
       const answers = await json(
@@ -200,7 +218,7 @@ export const stackOverflowTool = {
       const strip = (html = '') => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 900)
 
       return {
-        success: true, tool: 'stackoverflow', query,
+        success: true, tool: 'stackoverflow', query: cleanQuery,
         questions: items.map(q => {
           const best = (answers.items || [])
             .filter(a => a.question_id === q.question_id)
@@ -240,14 +258,16 @@ export const hackerNewsTool = {
     },
   },
   async execute({ query, limit = 5, sort = 'relevance' }) {
+    const cleanQuery = cleanTextQuery(query, 120)
+    if (!cleanQuery) return { success: false, error: 'Empty query' }
     const n = Math.min(Math.max(1, limit | 0), 10)
     const path = sort === 'recent' ? 'search_by_date' : 'search'
     try {
-      const data = await json(`https://hn.algolia.com/api/v1/${path}?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=${n}`)
+      const data = await json(`https://hn.algolia.com/api/v1/${path}?query=${encodeURIComponent(cleanQuery)}&tags=story&hitsPerPage=${n}`)
       const hits = (data.hits || []).filter(h => h.title)
-      if (!hits.length) return { success: false, error: `No Hacker News threads for "${query}"` }
+      if (!hits.length) return { success: false, error: `No Hacker News threads for "${cleanQuery}"` }
       return {
-        success: true, tool: 'hackernews', query,
+        success: true, tool: 'hackernews', query: cleanQuery,
         threads: hits.map(h => ({
           title: h.title,
           url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
@@ -315,7 +335,8 @@ export const dictionaryTool = {
   },
   async execute({ word }) {
     try {
-      const data = await json(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word.trim())}`)
+      const cleanWord = cleanTextQuery(word, 60)
+      const data = await json(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(cleanWord)}`)
       const entry = data[0]
       if (!entry) return { success: false, error: `No definition found for "${word}"` }
       return {
@@ -350,15 +371,17 @@ export const booksTool = {
     },
   },
   async execute({ query, limit = 5 }) {
+    const cleanQuery = cleanTextQuery(query, 120)
+    if (!cleanQuery) return { success: false, error: 'Empty query' }
     const n = Math.min(Math.max(1, limit | 0), 10)
     try {
       const data = await json(
-        `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=${n}&fields=title,author_name,first_publish_year,key,ebook_access,subject,number_of_pages_median`
+        `https://openlibrary.org/search.json?q=${encodeURIComponent(cleanQuery)}&limit=${n}&fields=title,author_name,first_publish_year,key,ebook_access,subject,number_of_pages_median`
       )
       const docs = data.docs || []
-      if (!docs.length) return { success: false, error: `No books found for "${query}"` }
+      if (!docs.length) return { success: false, error: `No books found for "${cleanQuery}"` }
       return {
-        success: true, tool: 'books', query,
+        success: true, tool: 'books', query: cleanQuery,
         books: docs.map(b => ({
           title: b.title,
           authors: (b.author_name || []).slice(0, 3),

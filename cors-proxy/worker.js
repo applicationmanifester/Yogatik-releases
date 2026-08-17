@@ -22,7 +22,7 @@ function corsHeaders(origin, env) {
   return {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Target-URL, X-Subscription-Token, Accept',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Target-URL, X-Subscription-Token, Accept, x-api-key, anthropic-version, anthropic-dangerous-direct-browser-access, *',
     // Without Expose-Headers the browser hides retry-after from the client that
     // needs it — CORS strips everything but the safelist.
     'Access-Control-Expose-Headers': 'Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-Request-Id, X-Yogatik-Proxy',
@@ -35,6 +35,44 @@ function isAllowedOrigin(origin, env) {
     ? env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
     : DEFAULT_ORIGINS;
   return list.includes(origin);
+}
+
+// Hosts that are trusted to RECEIVE a forwarded credential (Authorization /
+// x-api-key). Any other HTTPS target is still relayed — user-configured tool
+// URLs must keep working — but WITHOUT the credential, so a compromised or
+// XSS'd allowed origin cannot use the proxy to exfiltrate a provider key to an
+// attacker-controlled endpoint. Extend via env.CREDENTIALED_HOSTS (comma list).
+const DEFAULT_CREDENTIALED_HOSTS = [
+  'integrate.api.nvidia.com',
+  'api.openai.com',
+  'openrouter.ai',
+  'api.groq.com',
+  'api.anthropic.com',
+  'generativelanguage.googleapis.com',
+];
+
+function hostIsCredentialed(hostname, env) {
+  const list = env?.CREDENTIALED_HOSTS
+    ? env.CREDENTIALED_HOSTS.split(',').map(s => s.trim().toLowerCase())
+    : DEFAULT_CREDENTIALED_HOSTS;
+  return list.includes(String(hostname || '').toLowerCase());
+}
+
+// Best-effort per-origin rate limit. In-memory, per-isolate (Cloudflare spins up
+// many), so it is a coarse abuse brake, not a hard quota — pair with a WAF rule
+// or Durable Object for strict limits. Window: RL_MAX requests / RL_WINDOW_MS.
+const RL_WINDOW_MS = 60_000;
+const RL_MAX = 120;
+const _rl = new Map(); // origin -> { count, resetAt }
+function rateLimited(origin) {
+  const now = Date.now();
+  const rec = _rl.get(origin);
+  if (!rec || now > rec.resetAt) {
+    _rl.set(origin, { count: 1, resetAt: now + RL_WINDOW_MS });
+    return false;
+  }
+  rec.count += 1;
+  return rec.count > RL_MAX;
 }
 
 export default {
@@ -54,6 +92,14 @@ export default {
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders(origin, env) });
+    }
+
+    // Coarse per-origin abuse brake.
+    if (rateLimited(origin)) {
+      return new Response(
+        JSON.stringify({ error: 'Rate limit exceeded', message: 'Too many requests through the proxy. Slow down and retry shortly.' }),
+        { status: 429, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json', 'Retry-After': '30' } }
+      );
     }
 
     // Get the target URL from the header
@@ -95,12 +141,22 @@ export default {
       'content-length', 'transfer-encoding', 'content-encoding', 'accept-encoding',
     ]);
 
+    // Only vetted provider hosts may receive a forwarded credential. For any
+    // other destination we relay the request but strip auth headers.
+    let targetHost = '';
+    try { targetHost = new URL(targetUrl).hostname; } catch { /* validated above */ }
+    const credentialed = hostIsCredentialed(targetHost, env);
+    const credentialHeaders = new Set(['authorization', 'x-api-key', 'x-subscription-token']);
+
     const forwardHeaders = new Headers();
     for (const [key, value] of request.headers.entries()) {
-      if (!skipHeaders.has(key.toLowerCase())) {
-        forwardHeaders.set(key, value);
-      }
+      const lower = key.toLowerCase();
+      if (skipHeaders.has(lower)) continue;
+      if (!credentialed && credentialHeaders.has(lower)) continue; // never leak keys to unvetted hosts
+      forwardHeaders.set(key, value);
     }
+    // Minimal audit trail (host only, never the key or body).
+    try { console.log(JSON.stringify({ at: Date.now(), origin, targetHost, credentialed })); } catch { /* ignore */ }
 
     try {
       // Buffer the request body (chat payloads are small) so the runtime sets a

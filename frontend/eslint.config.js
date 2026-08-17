@@ -11,7 +11,7 @@ export default [
       ecmaVersion: 2022,
       sourceType: 'module',
       parserOptions: { ecmaFeatures: { jsx: true } },
-      globals: { ...globals.browser, ...globals.es2021 },
+      globals: { ...globals.browser, ...globals.es2021, global: 'readonly', globalThis: 'readonly' },
     },
     settings: { react: { version: '18' } },
     rules: {

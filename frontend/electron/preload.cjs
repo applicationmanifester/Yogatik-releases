@@ -2,12 +2,12 @@
 // shell uses, so the renderer's tools/localFs.js (isDesktop() + invoke) works
 // identically under Electron with zero frontend changes.
 
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const FS_COMMANDS = new Set([
   'fs_grant', 'fs_granted_root', 'fs_clear_grant',
   'fs_list', 'fs_read', 'fs_write', 'fs_edit', 'fs_search',
-  'fs_delete', 'fs_mkdir', 'fs_move',
+  'fs_delete', 'fs_mkdir', 'fs_move', 'fs_batch_read', 'fs_file_tree',
 ])
 
 function invoke(cmd, args) {
@@ -19,6 +19,43 @@ contextBridge.exposeInMainWorld('__TAURI__', { core: { invoke } })
 // Marker so the renderer can tell it's the Electron build if it ever needs to.
 contextBridge.exposeInMainWorld('__YOGATIK_ELECTRON__', true)
 
+// Desktop native system controls (Always on top, Explorer reveal, system hardware specs)
+contextBridge.exposeInMainWorld('__YOGATIK_DESKTOP__', {
+  isAlwaysOnTop: () => ipcRenderer.invoke('desktop:isAlwaysOnTop'),
+  toggleAlwaysOnTop: (flag) => ipcRenderer.invoke('desktop:toggleAlwaysOnTop', flag),
+  getSystemInfo: () => ipcRenderer.invoke('desktop:getSystemInfo'),
+  showItemInFolder: (fullPath) => ipcRenderer.invoke('desktop:showItemInFolder', fullPath),
+  openPath: (fullPath) => ipcRenderer.invoke('desktop:openPath', fullPath),
+  openExternal: (url) => ipcRenderer.invoke('desktop:openExternal', url),
+  loginWithGoogle: () => ipcRenderer.invoke('auth:google-desktop'),
+})
+
+// Desktop AI Companion & Screen-Watcher bridge
+contextBridge.exposeInMainWorld('__YOGATIK_COMPANION__', {
+  captureScreen: () => ipcRenderer.invoke('desktop:captureScreen'),
+  getActiveWindow: () => ipcRenderer.invoke('desktop:getActiveWindow'),
+  setCompanionMode: (enable) => ipcRenderer.invoke('desktop:setCompanionMode', enable),
+  executeAction: (action) => ipcRenderer.invoke('desktop:executeAction', action),
+  onToggleHotkey: (cb) => {
+    const handler = () => { try { cb() } catch { /* ignore */ } }
+    ipcRenderer.on('toggle-companion-hotkey', handler)
+    return () => ipcRenderer.removeListener('toggle-companion-hotkey', handler)
+  },
+  onModeChanged: (cb) => {
+    const handler = (_e, active) => { try { cb(active) } catch { /* ignore */ } }
+    ipcRenderer.on('companion-mode-changed', handler)
+    return () => ipcRenderer.removeListener('companion-mode-changed', handler)
+  },
+})
+
+// Precise cross-app input for the companion (mouse click/move/scroll, keys).
+contextBridge.exposeInMainWorld('__YOGATIK_COMPANION_INPUT__', {
+  move: (x, y) => ipcRenderer.invoke('companion:move', { x, y }),
+  click: (opts) => ipcRenderer.invoke('companion:click', opts || {}),
+  scroll: (amount) => ipcRenderer.invoke('companion:scroll', { amount }),
+  key: (combo) => ipcRenderer.invoke('companion:key', combo),
+})
+
 // Local search sidecar bridge
 contextBridge.exposeInMainWorld('__YOGATIK_SEARCH__', {
   search: (query, options) => ipcRenderer.invoke('local-search', query, options),
@@ -29,7 +66,7 @@ contextBridge.exposeInMainWorld('__YOGATIK_TERMINAL__', {
   exec: (command, options) => ipcRenderer.invoke('terminal:exec', { command, ...options }),
 })
 
-// Native-menu actions (New Chat / Settings / Grant Folder / update-ready) → renderer.
+// Native-menu actions (New Chat / Settings / Grant Folder / update-ready / palette / arena) → renderer.
 contextBridge.exposeInMainWorld('__YOGATIK_MENU__', {
   on(cb) {
     const handler = (_e, action) => { try { cb(action) } catch { /* ignore */ } }
@@ -38,9 +75,121 @@ contextBridge.exposeInMainWorld('__YOGATIK_MENU__', {
   },
 })
 
-// Fire a native OS notification (used when a reply lands while the app is hidden).
-contextBridge.exposeInMainWorld('__YOGATIK_NOTIFY__', (title, body) =>
-  ipcRenderer.invoke('notify', { title, body }))
+// Fire a native OS notification. Accepts either the legacy (title, body) form or
+// a single rich-options object { title, body, actions, hasReply, silent }.
+contextBridge.exposeInMainWorld('__YOGATIK_NOTIFY__', (titleOrOpts, body) =>
+  ipcRenderer.invoke('notify',
+    typeof titleOrOpts === 'object' && titleOrOpts !== null
+      ? titleOrOpts
+      : { title: titleOrOpts, body }))
+
+// Listen for rich-notification actions (button click / inline reply).
+contextBridge.exposeInMainWorld('__YOGATIK_NOTIFY_ACTIONS__', {
+  on(cb) {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('notification-action', handler)
+    return () => ipcRenderer.removeListener('notification-action', handler)
+  },
+})
+
+// OS-encrypted key vault (safeStorage). db.js wraps apikey_* settings through this.
+contextBridge.exposeInMainWorld('__YOGATIK_KEYCHAIN__', {
+  available: () => ipcRenderer.invoke('keychain:available'),
+  encrypt: (plain) => ipcRenderer.invoke('keychain:encrypt', plain),
+  decrypt: (value) => ipcRenderer.invoke('keychain:decrypt', value),
+})
+
+// Clipboard read + rolling history (browser can't read history or off-focus).
+contextBridge.exposeInMainWorld('__YOGATIK_CLIPBOARD__', {
+  read: () => ipcRenderer.invoke('clipboard:read'),
+  write: (text) => ipcRenderer.invoke('clipboard:write', text),
+  history: (limit) => ipcRenderer.invoke('clipboard:history', limit),
+  clear: () => ipcRenderer.invoke('clipboard:clear'),
+  onChange: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('clipboard-changed', handler)
+    return () => ipcRenderer.removeListener('clipboard-changed', handler)
+  },
+  // Ctrl+Alt+C sends the copied selection to the renderer as a ready prompt.
+  onSelectionHotkey: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('clipboard-selection-hotkey', handler)
+    return () => ipcRenderer.removeListener('clipboard-selection-hotkey', handler)
+  },
+})
+
+// File-system watcher (scoped to the granted folder).
+contextBridge.exposeInMainWorld('__YOGATIK_WATCHER__', {
+  start: (path, options) => ipcRenderer.invoke('watcher:start', { path, ...(options || {}) }),
+  stop: (id) => ipcRenderer.invoke('watcher:stop', id),
+  stopAll: () => ipcRenderer.invoke('watcher:stopAll'),
+  list: () => ipcRenderer.invoke('watcher:list'),
+  onChange: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('fs-changed', handler)
+    return () => ipcRenderer.removeListener('fs-changed', handler)
+  },
+})
+
+// Power / idle monitor.
+contextBridge.exposeInMainWorld('__YOGATIK_POWER__', {
+  getState: () => ipcRenderer.invoke('power:get-state'),
+  onEvent: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('power-event', handler)
+    return () => ipcRenderer.removeListener('power-event', handler)
+  },
+})
+
+// Native file dialogs (real OS paths).
+contextBridge.exposeInMainWorld('__YOGATIK_DIALOG__', {
+  openFile: (opts) => ipcRenderer.invoke('dialog:open-file', opts || {}),
+  openFiles: (opts) => ipcRenderer.invoke('dialog:open-files', opts || {}),
+  saveFile: (opts) => ipcRenderer.invoke('dialog:save-file', opts || {}),
+  pickFolder: (opts) => ipcRenderer.invoke('dialog:pick-folder', opts || {}),
+  readPicked: (path) => ipcRenderer.invoke('dialog:read-picked', path),
+})
+
+// Process manager (list + guarded kill).
+contextBridge.exposeInMainWorld('__YOGATIK_PROCESS__', {
+  list: (opts) => ipcRenderer.invoke('process:list', opts || {}),
+  kill: (pid) => ipcRenderer.invoke('process:kill', pid),
+})
+
+// Interactive PTY terminal (no-op unless node-pty is installed).
+contextBridge.exposeInMainWorld('__YOGATIK_PTY__', {
+  available: () => ipcRenderer.invoke('pty:available'),
+  spawn: (opts) => ipcRenderer.invoke('pty:spawn', opts || {}),
+  write: (id, data) => ipcRenderer.invoke('pty:write', { id, data }),
+  resize: (id, cols, rows) => ipcRenderer.invoke('pty:resize', { id, cols, rows }),
+  kill: (id) => ipcRenderer.invoke('pty:kill', id),
+  onData: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('pty:data', handler)
+    return () => ipcRenderer.removeListener('pty:data', handler)
+  },
+  onExit: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('pty:exit', handler)
+    return () => ipcRenderer.removeListener('pty:exit', handler)
+  },
+})
+
+// Local (stdio) MCP servers — spawn & talk to local MCP servers the browser
+// can't reach. mcp.js routes transport:'stdio' entries through this.
+contextBridge.exposeInMainWorld('__YOGATIK_MCP_STDIO__', {
+  start: (opts) => ipcRenderer.invoke('mcp-stdio:start', opts || {}),
+  rpc: (id, method, params) => ipcRenderer.invoke('mcp-stdio:rpc', { id, method, params }),
+  notify: (id, method, params) => ipcRenderer.invoke('mcp-stdio:notify', { id, method, params }),
+  stop: (id) => ipcRenderer.invoke('mcp-stdio:stop', id),
+})
+
+// Real OS path for a File dropped onto the window (web gives only opaque blobs).
+contextBridge.exposeInMainWorld('__YOGATIK_DND__', {
+  getPathForFile: (file) => {
+    try { return webUtils.getPathForFile(file) } catch { return null }
+  },
+})
 
 // Scheduler/Cron Daemon bridge
 contextBridge.exposeInMainWorld('__YOGATIK_SCHEDULER__', {

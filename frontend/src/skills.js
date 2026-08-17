@@ -77,7 +77,16 @@ export async function getSkills() {
   const presets = PRESET_SKILLS
     .filter(p => !storedIds.has(p.id) && !hidden.includes(p.id))
     .map(p => ({ ...p, builtin: true }))
-  return [...presets, ...stored]
+  // Skills contributed by enabled plugins (read-time; not persisted here).
+  let fromPlugins = []
+  try {
+    const { pluginSkills } = await import('./plugins')
+    const seen = new Set([...storedIds, ...presets.map(p => p.id)])
+    fromPlugins = (await pluginSkills())
+      .filter(s => s.id && !seen.has(s.id))
+      .map(s => ({ ...s, builtin: true, fromPlugin: true }))
+  } catch { /* plugins optional */ }
+  return [...presets, ...fromPlugins, ...stored]
 }
 export async function saveSkills(list) { return setSetting(KEY, list || []) }
 

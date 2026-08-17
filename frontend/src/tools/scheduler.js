@@ -5,29 +5,32 @@
  */
 
 import { isDesktop } from './localFs'
+import { timerTool } from './timer'
 
 export const schedulerTool = {
   schema: {
     description:
-      'Manage background scheduled jobs (cron daemon) that run unattended in the Electron desktop app. ' +
-      'Create, list, update, delete, or run jobs now. Jobs persist across restarts. ' +
-      'Schedule uses natural language: "every day at 9am", "weekly on monday at 10:30", "every 30 minutes", "monthly on the 1st at 8am", or a 5-field cron expression. ' +
-      'Job types: workflow (run a saved workflow), skill (run with a skill), agent (run with an agent), backup (export data), briefing (generate a report), custom (arbitrary prompt).',
+      'Manage background scheduled jobs, alarms, timers, and reminders. ' +
+      'In the desktop app, runs persistent background cron daemon jobs. ' +
+      'In the browser, sets alarms, countdown timers, and audio reminder alerts.',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'create', 'update', 'delete', 'toggle', 'run_now', 'parse_schedule', 'get_logs'],
+          enum: ['set', 'list', 'create', 'update', 'delete', 'cancel', 'toggle', 'run_now', 'parse_schedule', 'get_logs'],
           description: 'What to do',
         },
-        // For create
-        name: { type: 'string', description: 'Job name (required for create)' },
-        schedule: { type: 'string', description: 'Natural language schedule or cron (required for create)' },
+        // For create / set
+        name: { type: 'string', description: 'Job/alarm name' },
+        schedule: { type: 'string', description: 'Natural language schedule or duration, e.g. "every day at 9am", "in 10 minutes", "07:00 AM"' },
+        duration: { type: 'string', description: 'Timer duration, e.g. "10 minutes", "30s"' },
+        time: { type: 'string', description: 'Alarm time, e.g. "07:30 AM", "18:00"' },
+        label: { type: 'string', description: 'Alarm or reminder label' },
         type: {
           type: 'string',
-          enum: ['workflow', 'skill', 'agent', 'backup', 'briefing', 'custom'],
-          description: 'Job type (required for create)',
+          enum: ['workflow', 'skill', 'agent', 'backup', 'briefing', 'custom', 'timer', 'alarm', 'reminder'],
+          description: 'Job type',
         },
         description: { type: 'string', description: 'Job description' },
         payload: {
@@ -35,7 +38,7 @@ export const schedulerTool = {
           description: 'Job-specific payload. For workflow: {workflowId, variables}. For skill: {skillId, prompt}. For agent: {agentId, task}. For briefing: {topic, format}. For custom: {prompt, model, provider}.',
         },
         // For update/toggle/delete/run_now/get_logs
-        id: { type: 'string', description: 'Job ID (required for update/delete/toggle/run_now/get_logs)' },
+        id: { type: 'string', description: 'Job ID' },
         // For update
         updates: {
           type: 'object',
@@ -51,16 +54,32 @@ export const schedulerTool = {
         // For parse_schedule
         natural: { type: 'string', description: 'Natural language to parse (required for parse_schedule)' },
       },
-      required: ['action'],
     },
   },
 
-  async execute({ action, name, schedule, type, description, payload, id, updates, natural }) {
-    // Check if we're in Electron desktop
+  async execute(args = {}) {
+    const { action, name, schedule, type, description, payload, id, updates, natural, time, duration, label } = args || {}
+
+    // In browser builds: gracefully handle alarms, timers, and reminders
     if (!isDesktop()) {
+      if (action === 'create' || action === 'set' || schedule || time || duration || natural) {
+        return timerTool.execute({
+          action: 'set',
+          duration: duration || schedule || natural,
+          time: time,
+          label: label || name || description || 'Scheduled reminder',
+          message: payload?.prompt || payload?.topic || description || name || 'Scheduled reminder',
+        })
+      }
+      if (action === 'list') {
+        return timerTool.execute({ action: 'list' })
+      }
+      if (action === 'cancel' || action === 'delete') {
+        return timerTool.execute({ action: 'cancel', id })
+      }
       return {
         success: false,
-        error: 'Scheduler is only available in the Yogatik desktop app (Electron build).',
+        error: 'Background cron daemon is only available in the Yogatik desktop app (Electron build). In browser mode, timers and alarms are supported.',
         desktopOnly: true,
       }
     }

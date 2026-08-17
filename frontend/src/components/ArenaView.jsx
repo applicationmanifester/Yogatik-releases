@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { CodeBlock } from './CodeBlock'
 
 export function ArenaView({ arenaData, onOpenArtifact, onPickResponse, onRetry }) {
@@ -12,6 +13,23 @@ export function ArenaView({ arenaData, onOpenArtifact, onPickResponse, onRetry }
       ↻ Retry Model {side}
     </button>
   )
+
+  const mdComponents = {
+    a({ node, href, children, ...props }) {
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="chat-link" {...props}>
+          {children}
+        </a>
+      )
+    },
+    code({ node, inline, className, children, ...props }) {
+      return !inline ? (
+        <CodeBlock className={className} onOpenArtifact={onOpenArtifact}>{children}</CodeBlock>
+      ) : (
+        <code className={className} {...props}>{children}</code>
+      )
+    }
+  }
 
   return (
     <div className="arena-container" style={{ margin: '16px 0', padding: 16, background: '#0f172a', borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)' }}>
@@ -27,15 +45,7 @@ export function ArenaView({ arenaData, onOpenArtifact, onPickResponse, onRetry }
             {streamingA && <span className="arena-status pulsing" style={{ fontSize: 11, color: '#f59e0b' }}>Streaming...</span>}
           </div>
           <div className="arena-col-body" style={{ minHeight: 120, fontSize: 14, lineHeight: 1.6, color: '#e2e8f0' }}>
-            <ReactMarkdown components={{
-              code({ node, inline, className, children, ...props }) {
-                return !inline ? (
-                  <CodeBlock className={className} onOpenArtifact={onOpenArtifact}>{children}</CodeBlock>
-                ) : (
-                  <code className={className} {...props}>{children}</code>
-                )
-              }
-            }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
               {responseA || '_Waiting for response..._'}
             </ReactMarkdown>
           </div>
@@ -56,15 +66,7 @@ export function ArenaView({ arenaData, onOpenArtifact, onPickResponse, onRetry }
             {streamingB && <span className="arena-status pulsing" style={{ fontSize: 11, color: '#f59e0b' }}>Streaming...</span>}
           </div>
           <div className="arena-col-body" style={{ minHeight: 120, fontSize: 14, lineHeight: 1.6, color: '#e2e8f0' }}>
-            <ReactMarkdown components={{
-              code({ node, inline, className, children, ...props }) {
-                return !inline ? (
-                  <CodeBlock className={className} onOpenArtifact={onOpenArtifact}>{children}</CodeBlock>
-                ) : (
-                  <code className={className} {...props}>{children}</code>
-                )
-              }
-            }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
               {responseB || '_Waiting for response..._'}
             </ReactMarkdown>
           </div>

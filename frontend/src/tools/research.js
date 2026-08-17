@@ -26,7 +26,16 @@ const FILLER = new Set((
 
 export function toSearchQuery(text = '') {
   // Strip future year tokens which break search engine & API term matching
-  const cleanedText = text.replace(/\b(2025|2026|2027|2028)\b/g, '')
+  let cleanedText = String(text || '')
+    .replace(/\b(2025|2026|2027|2028)\b/g, '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[#*`_~[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (cleanedText.length > 180) {
+    const firstSentence = cleanedText.split(/[.?!]/)[0]
+    cleanedText = (firstSentence && firstSentence.length >= 10 && firstSentence.length <= 180) ? firstSentence : cleanedText.slice(0, 160)
+  }
   const quoted = cleanedText.match(/"[^"]+"/g) || []          // keep phrases intact
   const rest = cleanedText.replace(/"[^"]+"/g, ' ')
   const words = rest
@@ -34,15 +43,23 @@ export function toSearchQuery(text = '') {
     .split(/\s+/)
     .filter(w => w && !FILLER.has(w.toLowerCase()))
   const out = [...quoted, ...words].join(' ').trim()
-  return out.split(/\s+/).length >= 2 ? out : (cleanedText.trim() || text.trim())
+  return out.split(/\s+/).length >= 2 ? out : (cleanedText.trim() || String(text || '').trim().slice(0, 140))
 }
 
 /**
  * Decompose a multi-part query into 2-3 focused sub-queries for parallel search.
  */
 export function decomposeQuery(query = '') {
-  const clean = query.trim()
+  let clean = String(query || '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[#*`_~[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
   if (!clean) return []
+  if (clean.length > 200) {
+    const firstSentence = clean.split(/[.?!]/)[0]
+    clean = (firstSentence && firstSentence.length >= 10 && firstSentence.length <= 200) ? firstSentence : clean.slice(0, 160)
+  }
   const splitPattern = /\b(?:vs|versus|compared to|and also|as well as)\b/i
   if (splitPattern.test(clean)) {
     const parts = clean.split(splitPattern).map(p => p.trim()).filter(p => p.length >= 3)
@@ -238,8 +255,15 @@ export const researchTool = {
     },
   },
 
-  async execute({ query, depth = 3, recency = 'any', site, follow_up = false }) {
-    if (!query?.trim()) return { error: 'Empty query' }
+  async execute(args = {}) {
+    let rawQuery = typeof args === 'string' ? args : (args?.query ?? args?.q ?? args?.search_query ?? args?.keyword ?? args?.text ?? args?.input ?? args?.terms ?? args?.searchTerm ?? '')
+    if (!rawQuery && typeof args === 'object' && args !== null) {
+      const firstVal = Object.values(args).find(v => typeof v === 'string' && v.trim())
+      if (firstVal) rawQuery = firstVal
+    }
+    const query = typeof rawQuery === 'string' ? rawQuery.trim() : String(rawQuery || '').trim()
+    if (!query) return { error: 'Empty query' }
+    const { depth = 3, recency = 'any', site, follow_up = false } = (typeof args === 'object' && args !== null) ? args : {}
     const n = Math.min(Math.max(1, depth | 0), 5)
     const subQueries = decomposeQuery(query)
 

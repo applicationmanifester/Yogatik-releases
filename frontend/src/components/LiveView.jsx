@@ -34,6 +34,10 @@ export function LiveView({
     muted: false,
     camOn: true,
     screenOn: false,
+    // 'auto' = look when asked / on scene change; 'always' = watch every turn
+    // (works for ANY model — non-vision models are described on-device).
+    // Default persists via the liveWatchAlways preference (Personalise panel).
+    visionMode: features.liveWatchAlways ? 'always' : 'auto',
     speaking: false,
     thinking: false,
     tool: null,
@@ -70,7 +74,7 @@ export function LiveView({
 
   // Destructure for convenience in render
   const {
-    state, error, muted, camOn, screenOn, speaking, thinking, tool,
+    state, error, muted, camOn, screenOn, visionMode, speaking, thinking, tool,
     lines, transcript, showTranscript, copiedIdx, frameSent, liveVoice,
     activeProvider, connectionState, userLevel, assistantLevel, breathingPhase,
   } = uiState
@@ -125,7 +129,7 @@ export function LiveView({
   useEffect(() => {
     if (!visionState.open) return
     const handler = (e) => {
-      if (e.key === 'Escape') setVision({ open: false })
+      if (e.key === 'Escape') { e.stopPropagation(); setVision({ open: false }) }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); askVision(visionState.q) }
     }
     document.addEventListener('keydown', handler)
@@ -157,6 +161,7 @@ export function LiveView({
     const session = make({
       provider, apiKey, model, voice, voiceEngine, fallbacks,
       persona, disabledTools, modelCanSee, camera: true,
+      visionMode: features.liveWatchAlways ? 'always' : 'auto',
       onEvent: (e) => {
         if (cancelled) return
         switch (e.type) {
@@ -277,6 +282,14 @@ export function LiveView({
   const toggleScreen = async () => {
     const v = !screenOn
     await sessionRef.current?.enableScreenShare(v)
+    buzz(features, 30)
+  }
+  // Toggle continuous watching: 'always' makes ANY model (vision-capable or not)
+  // look at the camera/screen every turn; 'auto' looks only when relevant.
+  const toggleVision = () => {
+    const next = visionMode === 'always' ? 'auto' : 'always'
+    setState({ visionMode: next })
+    sessionRef.current?.setVisionMode?.(next)
     buzz(features, 30)
   }
   const copyText = (text, idx) => {
@@ -438,9 +451,9 @@ export function LiveView({
             <Volume2 size={12} /> Neural voice
           </span>
         )}
-        <span className={`live-badge awareness ${(camOn || screenOn) && modelCanSee ? 'watching' : 'audio-only'}`}>
-          {(camOn || screenOn) && modelCanSee ? (
-            <><Eye size={12} /> Watching</>
+        <span className={`live-badge awareness ${(camOn || screenOn) ? 'watching' : 'audio-only'}`}>
+          {(camOn || screenOn) ? (
+            <><Eye size={12} /> {visionMode === 'always' ? 'Watching' : 'Can see'}{modelCanSee ? '' : ' (on-device)'}</>
           ) : (
             <><EyeOff size={12} /> Audio only</>
           )}
@@ -570,6 +583,17 @@ export function LiveView({
           title="Ask about this frame"
         >
           <Aperture size={22} />
+        </button>
+        <button
+          className={`live-btn ${visionMode === 'always' ? 'active-autoscan' : 'off'}`}
+          onClick={toggleVision}
+          disabled={!camOn && !screenOn}
+          aria-label={visionMode === 'always' ? 'Stop watching every turn' : 'Watch every turn'}
+          title={visionMode === 'always'
+            ? 'Watching every turn — the model sees the feed on every reply. Tap for look-when-relevant.'
+            : 'Look-when-relevant. Tap to watch every turn (any model sees the feed continuously).'}
+        >
+          {visionMode === 'always' ? <Eye size={20} /> : <EyeOff size={20} />}
         </button>
         <button
           className={`live-btn ${autoScan ? 'active-autoscan' : 'off'}`}

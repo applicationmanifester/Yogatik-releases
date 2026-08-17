@@ -5,11 +5,13 @@
  */
 
 import { streamChat } from './llm'
-import { getToolSchemas, executeTool } from './tools/index'
+import { getToolSchemas, prioritizeToolSchemas, executeTool } from './tools/index'
 import { buildToolPrompt, parseToolCalls, formatToolResults } from './promptedTools'
 import { setVisionContext } from './tools/see'
 import { describeWithoutModel } from './vision/source'
 import { getSetting } from './db'
+import { beginTool, settleTool } from './toolStatus'
+import { assessSafety, crisisResourceCard } from './safety'
 import { resolveFeatures } from './features'
 import { getActiveSkill, skillDisabledTools } from './skills'
 import { getActiveAgent, agentDisabledTools } from './agents'
@@ -19,12 +21,67 @@ import { getActiveStyleBlock } from './styles'
  *  without needing a memory tool call (like ChatGPT/Claude memory). */
 async function memoryBlock() {
   try {
+    // Structured four-store memory (memory4). If populated, it supersedes the
+    // flat block — a salience-ranked companion memory instead of last-20 facts.
+    let structured = ''
+    try {
+      const { memoryBlockFromStores } = await import('./memory4')
+      structured = await memoryBlockFromStores('')
+    } catch { /* db v5 not ready / empty */ }
+    if (structured) return structured
+
     const mem = (await getSetting('user_memory', [])) || []
     if (!mem.length) return ''
     return '\n\nUSER MEMORY — durable facts the user asked you to remember. Use them when ' +
       'relevant; do not recite them unprompted.\n' +
       mem.slice(-20).map(m => `- ${m.text}`).join('\n')
   } catch { return '' }
+}
+
+
+export function isRealtimeOrSearchQuery(text) {
+  if (!text || typeof text !== 'string') return false
+  const t = text.trim()
+  if (t.length < 2) return false
+  // If user pasted text to convert/summarize/build a doc/ppt from, don't run web search
+  if (/\b(based on this|based on the following|summarize (this|the following)|build (a|me|the) (ppt|slides|presentation|document|doc|pdf|table|csv)|convert (this|the following) to|format (this|the following))\b/i.test(t.slice(0, 120))) return false
+  const patterns = [
+    /\b(recent|recently|latest|newest|today|yesterday|tonight|tomorrow|current|currently|upcoming|breaking|trending|at present|nowadays|this week|this month|this year|2024|2025|2026)\b/i,
+    /\b(news|updates|release|released|releasing|launch|launched|launching|announcement|announced|announcing)\b/i,
+    /\b(who is currently|who is the current|who won|score of|live score|match score|election|stock price|crypto price|exchange rate|weather in|weather forecast)\b/i,
+    /\b(did .+ (release|launch|announce|create|build|make|buy|acquire|win|lose))\b/i,
+    /\b(what happened (to|in|with)|is .+ (alive|dead|available|out|open|closed))\b/i,
+    /\b(search (for|the web|google|bing)|look up|browse for|find info on|google)\b/i,
+    /\b(xai|grok|deepseek|chatgpt|openai|gemini|claude 3|llama 3|sora|qwen|mistral)\b/i,
+  ]
+  return patterns.some(p => p.test(t.slice(0, 300)))
+}
+
+export function isPresentationQuery(text) {
+  if (!text || typeof text !== 'string') return false
+  return /\b(ppt|pptx|powerpoint|slides?|slide deck|presentation|pitch deck)\b/i.test(text.slice(0, 150))
+}
+
+export function isDocumentQuery(text) {
+  if (!text || typeof text !== 'string') return false
+  return /\b(word doc|word document|\.docx?|\.doc\b|executive report|whitepaper|formal document|generate doc|write document)\b/i.test(text.slice(0, 150))
+}
+
+export function isSpreadsheetQuery(text) {
+  if (!text || typeof text !== 'string') return false
+  return /\b(csv|spreadsheet|excel sheet|data table|export to csv|generate spreadsheet)\b/i.test(text.slice(0, 150))
+}
+
+export function isSocialQuery(text) {
+  if (!text || typeof text !== 'string') return false
+  const t = text.trim()
+  if (t.length < 5) return false
+  // If user pasted a long block of text with 'based on this' or 'format this', it's document processing, not social search
+  if (/\b(based on this|based on the following|summarize (this|the following)|build (a|me|the)|make a|create a|format (this|the following))\b/i.test(t.slice(0, 100))) return false
+  const prefix = t.slice(0, 150)
+  const isSocialTarget = /\b(instagram|reels|tiktok|tweets?|twitter|reddit|subreddit|pinterest|bluesky|mastodon|threads)\b/i.test(prefix)
+  const isSocialAction = /\b(search|find|show|look up|check|browse|what('s| is| are)|trending|viral|posts?|discussion|latest|recent)\b/i.test(prefix)
+  return isSocialTarget && isSocialAction
 }
 
 function buildSystemPrompt({ webEnabled, persona, planMode }) {
@@ -42,7 +99,7 @@ CURRENT SYSTEM CLOCK: ${today} at ${time} (${timeZone}).
 CRITICAL TIME INSTRUCTION: If the user asks for the current time, date, or timezone, you MUST report this exact local time: ${time} on ${today} (${timeZone}). Do NOT invent any other time.
 
 You can generate images, execute Python, create charts and diagrams, look up weather,
-translate text, read QR codes, convert units, and more.
+translate text, read QR codes, convert units, search social media, and search the live web.
 
 Guidelines:
 - Answer directly, accurately, and concisely.
@@ -56,50 +113,21 @@ Guidelines:
   4. HYPERLINK SAFETY: Only output markdown hyperlinks ([title](url)) if the URL was explicitly returned in tool outputs or verified sources. Never construct fake URL paths.
   5. EXACT ACCURACY: Quote statistics, numbers, dates, and technical specifications exactly as returned by tools.
 - ASK WHEN GENUINELY AMBIGUOUS: if the request is missing something you truly cannot proceed
-  without, or could reasonably mean very different things (a name matching several people, an
-  unspecified target/format/scope for a real task), ask ONE short clarifying question instead
-  of guessing. Otherwise do not stall — make the most reasonable assumption, state it in one
-  line ("Assuming you mean X…"), and proceed. Never ask a question you can answer yourself, and
-  never ask more than one at a time. Simple factual questions never need clarification.
+  without, or could reasonably mean very different things, ask ONE short clarifying question.
 
 WHEN TO USE TOOLS:
-- Call a tool only when it does something you cannot do by writing text. Most messages —
-  explanations, opinions, summaries, code you can simply write out — need no tools at all.
-  Answer those directly.
-- For YouTube links, use the youtube tool first. If it returns a transcript, summarize
-  that transcript. If it only returns metadata, tell the user the transcript was not
-  available instead of inventing video content.
-- To MAKE or GENERATE a VIDEO, you CAN — call video_render with a scenes array (title,
-  text/bullets, image, and bars scene types). Add a "narration" line to each scene and it
-  is spoken by an on-device voice with burnt-in subtitles; call image_generate first if you
-  want generated visuals. This produces a real MP4 on the device. Never tell the user you
-  cannot create videos — build the scene list and call the tool.
-- To RUN JavaScript, use js_execute; for Python use code_execute. To remember or recall a
-  durable user fact/preference across sessions, use the memory tool.
-- When the user wants to LISTEN to something as a saved file (audio summary, read-aloud,
-  audio overview), use text_to_audio — it returns a downloadable narrated WAV. Use tts only
-  for an immediate speak-aloud with no file.
-- Use keyword_extract for keywords, tags, themes, or search terms from longer text.
-- Use entity_extract when you need names, places, dates, numbers, emails, or URLs from text.
-- Use query_refine to turn a messy prompt into a cleaner search query or a few focused subqueries.
-- Never call a tool to deliver, narrate, announce or format your own reply. In particular
-  do NOT call tts to read your answer aloud; the user is reading it and has a play button.
-- Never call a tool "just in case" or to look busy. A wrong tool call costs the user time
-  and, for tts/stt, hijacks their speakers or microphone.
-- When you do need several independent tools, request them in one turn — they run in
-  parallel — rather than one at a time.
+- CRITICAL REAL-TIME & LIVE SEARCH DIRECTIVE: You have LIVE INTERNET ACCESS. For queries about recent events, latest releases, news, tech companies (e.g., xAI, OpenAI, Google, Meta, Anthropic), prices, people, or any post-2023 developments, ALWAYS use search results or call web_search/deep_research. NEVER guess or claim a current company or AI model does not exist without searching.
+- For YouTube links, use the youtube tool first. If it returns a transcript, summarize that transcript.
+- To MAKE or GENERATE a VIDEO, call video_render with a scenes array.
+- To set a TIMER, ALARM, or REMINDER, you CAN and MUST call the timer tool.
+- To SEARCH SOCIAL MEDIA (Instagram, X/Twitter, LinkedIn, Reddit, TikTok, Facebook, YouTube) for posts, viral content, links, trends, or creator updates, call social_search.
+- To FIND JOBS OR CAREER OPPORTUNITIES on Naukri, Indeed, LinkedIn Jobs, or Glassdoor, call job_search.
+- To GENERATE SOCIAL POSTS, X threads, LinkedIn posts, Instagram captions, or TikTok video scripts, call social_post_generator.
+- To RUN JavaScript, use js_execute; for Python use code_execute. To remember facts, use the memory tool.
+- When the user wants to LISTEN to something as a saved file, use text_to_audio.
 
 DELEGATE AUTOMATICALLY WITH SUB-AGENTS (spawn_agents):
-- For any task that spans MULTIPLE distinct sub-tasks — e.g. research + write, gather data
-  + analyse + chart, or build several independent parts — call spawn_agents WITHOUT being
-  asked. Hand each sub-task to the right specialist: researcher (find/cite facts), coder
-  (write/run code), analyst (analyse/chart data), writer (draft/polish prose), planner
-  (break down a goal). They run in parallel; you then synthesize their results into one
-  coherent answer. This is autonomous, expected behaviour — the user should not have to
-  request it.
-- Judge scope honestly: a single-step question (one fact, one short answer, one snippet)
-  needs NO delegation — answer it directly. Delegation is for genuinely multi-part work.
-- After the sub-agents return, integrate their outputs yourself; do not just paste them.
+- For tasks spanning MULTIPLE distinct sub-tasks (research + write, gather data + analyse + chart), call spawn_agents.
 
 ${webEnabled ? `RESEARCH — you have live internet access:
 - Your training data is stale. For anything time-sensitive (news, prices, releases,
@@ -111,29 +139,15 @@ ${webEnabled ? `RESEARCH — you have live internet access:
   web_extract when the user gives you a specific URL.
 - Read what the pages actually say. Ground every factual claim in the retrieved text
   rather than your priors, and quote figures and dates exactly as they appear.
-- Cite sources inline as [n] matching the numbered pages you were given, and note when
-  sources disagree or when the information looks outdated.
-- If research returns nothing useful, say so plainly instead of guessing.
-- Prefer the specialised source over a general search when one fits: wikipedia for
-  definitions and background, scholar for research claims and evidence, stackoverflow
-  for error messages and API usage, hackernews for practitioner opinion, archive for
-  dead or paywalled links, books for literature, dictionary for word meanings.
-  They return structured, attributable data instead of scraped page text.
-- Live data that cannot come from memory: package_info for library versions and whether
-  a project is still maintained, currency for exchange rates, geocode for coordinates,
-  earthquake for recent seismic events, gutenberg for public-domain full texts.`
+- Cite sources inline as [n] matching the numbered pages you were given.
+- If research returns nothing useful, say so plainly instead of guessing.`
     : `Web access is currently disabled by the user. Answer from your own knowledge, and
 say clearly when something may be out of date or when you are unsure.`}
 
 SELF-CHECK before finalizing: for multi-step or factual answers, verify your work against the
-tool results you actually received. If a result contradicts your draft, correct the draft rather
-than repeating your first guess. If you could not complete part of the task, say so plainly.
-CONFIRM BEFORE IRREVERSIBLE OR COSTLY ACTIONS: if a step would delete data, overwrite the user's
-files, spend money, or send something on their behalf, describe exactly what you will do and ask
-for a yes before doing it — never assume permission.${planMode ? `
-PLAN MODE IS ON: for any non-trivial multi-step task, FIRST reply with a short numbered plan of
-what you will do and which tools you will use, then STOP and ask the user to confirm before
-executing. Skip the plan only for simple one-step requests.` : ''}
+tool results you actually received.
+CONFIRM BEFORE IRREVERSIBLE ACTIONS: if a step would delete data or overwrite files, ask first.${planMode ? `
+PLAN MODE IS ON: for any non-trivial multi-step task, FIRST reply with a short numbered plan.` : ''}
 
 Format with markdown when it aids clarity. Be concise.
 If a tool fails, explain what happened and suggest an alternative.${persona ? `
@@ -273,8 +287,16 @@ export async function runAgent({
   toolsEnabled = true, webEnabled = true, disabledTools = [], persona = null, temperature = 0.7, signal,
   modelCanSee = false, localVisionEnabled = true,
   onToken, onStatus, onToolStart, onToolResult, onDone, onError, onSources,
-  initialToolMode = null, onToolModeChange = null, agentOverride = null,
+  initialToolMode = null, onToolModeChange = null, agentOverride = null, onSafety = null,
 }) {
+  // On-device safety screen (crisis + professional-boundary). Pure, zero-latency,
+  // offline. Feeds the system prompt and surfaces a resource card to the UI.
+  let safetyDirective = ''
+  try {
+    const verdict = assessSafety(typeof userMessage === 'string' ? userMessage : '')
+    safetyDirective = verdict.systemDirective
+    if (verdict.hasConcern) onSafety?.(verdict, crisisResourceCard(verdict))
+  } catch { /* safety must never block a turn */ }
   const abortError = () => Object.assign(new Error('Aborted'), { name: 'AbortError' })
   const throwIfAborted = () => { if (signal?.aborted) throw abortError() }
   const whenAborted = () => new Promise((_, reject) => {
@@ -315,25 +337,26 @@ export async function runAgent({
 
   const isLocalProvider = provider === 'local' || provider === 'webllm'
 
-  const systemBase = isLocalProvider
+  const systemBase = (isLocalProvider
     ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + (await memoryBlock())
     : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + (await memoryBlock())
+  ) + safetyDirective
 
   const hBudget = isLocalProvider ? LOCAL_HISTORY_BUDGET : HISTORY_BUDGET
   const hTurns = isLocalProvider ? LOCAL_MAX_TURNS : MAX_TURNS
 
-  const lastHistoryMsg = history[history.length - 1]
-  const lastContent = typeof lastHistoryMsg?.content === 'string' ? lastHistoryMsg.content : ''
-  const isCurrentMessageInHistory = lastHistoryMsg &&
-    lastHistoryMsg.role === 'user' &&
-    (lastContent === userMessage || (userImage && Array.isArray(lastHistoryMsg.content)))
-
-  const pastHistory = isCurrentMessageInHistory ? history.slice(0, -1) : history
+  let pastHistory = history
+  if (userMessage && history.length > 0) {
+    const last = history[history.length - 1]
+    if (last.role === 'user' && (last.content === userMessage || (typeof last.content === 'string' && typeof userMessage === 'string' && last.content.trim() === userMessage.trim()))) {
+      pastHistory = history.slice(0, -1)
+    }
+  }
 
   const messages = [
     { role: 'system', content: systemBase },
     ...windowHistory(pastHistory, hBudget, hTurns),
-    { role: 'user', content: userMessage },
+    ...(userMessage ? [{ role: 'user', content: userMessage }] : []),
   ]
 
   // An attached image follows the same policy as the camera: hand it to the
@@ -343,8 +366,8 @@ export async function runAgent({
     const turn = messages[messages.length - 1]
     if (modelCanSee) {
       turn.content = [
-        { type: 'text', text: userMessage || 'Look at this image.' },
         { type: 'image_url', image_url: { url: userImage } },
+        { type: 'text', text: userMessage || 'Analyze and describe this image in detail.' },
       ]
     } else {
       onStatus?.('Reading the image on this device…')
@@ -401,22 +424,95 @@ export async function runAgent({
         if (err.name === 'AbortError') throw err
       }
     }
-  } else if (isLocalProvider && webAvailable && userMessage) {
-    throwIfAborted()
-    onStatus?.('Searching the web for latest information…')
-    try {
-      const searchRes = await executeTool('web_search', { query: userMessage })
+  }
+
+  if (isPresentationQuery(userMessage)) {
+    messages[0].content += `\n\n[CRITICAL PRESENTATION GENERATION INSTRUCTION]:\n` +
+      `The user requested an executive PowerPoint presentation / slide deck.\n` +
+      `You MUST format your output with high-density, visually structured markdown slides:\n` +
+      `# Slide 1: [Executive Presentation Title]\n` +
+      `[Compelling Subtitle & Executive Context]\n\n` +
+      `# Slide 2: [Action-Oriented Slide Title]\n` +
+      `- **Key Concept 1**: Crisp technical/strategic explanation with quantitative data.\n` +
+      `- **Key Concept 2**: Concrete architectural tradeoff or operational benchmark.\n` +
+      `- **Strategic Verdict**: High-impact takeaway for decision-makers.\n\n` +
+      `# Slide 3: [Deep Dive or Comparison Table]\n` +
+      `| Category | Traditional Approach | Modern Solution | Impact |\n` +
+      `| :--- | :--- | :--- | :--- |\n` +
+      `| Architecture | Monolithic / Legacy | Cloud-Native / Edge | +40% Speed |\n\n` +
+      `# Slide 4: ... (Provide at least 6-8 structured slides with deep analytical content)\n\n` +
+      `At the end of your answer, include this direct download link:\n` +
+      `[Download Presentation (.pptx)](presentation.pptx)\n`
+  } else if (isDocumentQuery(userMessage)) {
+    messages[0].content += `\n\n[CRITICAL EXECUTIVE DOCUMENT INSTRUCTION]:\n` +
+      `The user requested a formal Word Document / Whitepaper / Executive Report.\n` +
+      `Structure the report with McKinsey/Bain-level quality:\n` +
+      `# [Executive Report Title]\n` +
+      `> **Executive Thesis**: High-level verdict, strategic rationale, and target outcomes.\n\n` +
+      `## 1. Background & Context\n` +
+      `Detailed industry/technical background with clear problem definition.\n\n` +
+      `## 2. Comprehensive Comparative Analysis\n` +
+      `Provide a multi-column Markdown comparison table with clear feature breakdown and metrics.\n\n` +
+      `## 3. Implementation Blueprint & Architecture\n` +
+      `Concrete technical/operational steps with bold lead-ins.\n\n` +
+      `## 4. Risk Assessment & Mitigations\n` +
+      `Actionable mitigation table.\n\n` +
+      `At the end of your answer, include these direct download links:\n` +
+      `[Download Word Document (.doc)](document.doc) · [Download PDF (.pdf)](document.pdf)\n`
+  } else if (isSpreadsheetQuery(userMessage)) {
+    messages[0].content += `\n\n[CRITICAL SPREADSHEET / CSV INSTRUCTION]:\n` +
+      `The user requested a structured Spreadsheet / CSV data table.\n` +
+      `Provide a comprehensive multi-column Markdown table with at least 5 columns and 8+ realistic data rows, including headers, formatted numbers, and a Summary/Total calculation row at the bottom.\n\n` +
+      `At the end of your answer, include this direct download link:\n` +
+      `[Download CSV Spreadsheet (.csv)](spreadsheet.csv)\n`
+  }
+
+  const toolResults = {}
+  const sources = []
+
+  if (webAvailable && userMessage) {
+    if (isSocialQuery(userMessage)) {
       throwIfAborted()
-      if (searchRes?.results?.length) {
-        const topResults = searchRes.results.slice(0, 5).map(r => `${r.title}: ${r.snippet}`).join('\n\n')
-        messages[0].content += `\n\nFACTUAL BACKGROUND DATA (Do not output raw bullets or repeat this section title, synthesize an answer directly):\n${topResults}`
-        if (searchRes.results.some(r => r.url)) {
-          sources.push(...searchRes.results.filter(r => r.url).map(r => ({ title: r.title, url: r.url })))
-          onSources?.(sources)
+      onStatus?.('Searching social media for live posts…')
+      try {
+        const socialRes = await executeTool('social_search', { query: userMessage })
+        throwIfAborted()
+        if (socialRes?.results?.length) {
+          toolResults['social_search'] = socialRes
+          traceRef.push({ tool: 'social_search', args: { query: userMessage }, status: 'done' })
+          onToolStart?.('social_search', { query: userMessage })
+          onToolResult?.('social_search', socialRes)
+          const topResults = socialRes.results.slice(0, 6).map(r => `${r.title} (${r.url}): ${r.snippet}`).join('\n\n')
+          messages[0].content += `\n\nREAL-TIME SOCIAL MEDIA SEARCH RESULTS (GROUND TRUTH):\n${topResults}\n\nCRITICAL: Provide direct clickable markdown links [Title](URL) for the social posts found above. Never say you cannot access social posts.`
+          if (socialRes.results.some(r => r.url)) {
+            sources.push(...socialRes.results.filter(r => r.url).map(r => ({ title: r.title, url: r.url, snippet: r.snippet })))
+            onSources?.(sources)
+          }
         }
+      } catch (e) {
+        if (e.name === 'AbortError') throw e
       }
-    } catch (e) {
-      if (e.name === 'AbortError') throw e
+    } else if (isLocalProvider || isRealtimeOrSearchQuery(userMessage)) {
+      throwIfAborted()
+      onStatus?.('Searching the web for latest information…')
+      try {
+        const searchRes = await executeTool('web_search', { query: userMessage })
+        throwIfAborted()
+        if (searchRes?.results?.length) {
+          toolResults['web_search'] = searchRes
+          traceRef.push({ tool: 'web_search', args: { query: userMessage }, status: 'done' })
+          onToolStart?.('web_search', { query: userMessage })
+          onToolResult?.('web_search', searchRes)
+          const topResults = searchRes.results.slice(0, 6).map(r => `${r.title} (${r.url}): ${r.snippet}`).join('\n\n')
+          messages[0].content += `\n\nREAL-TIME WEB SEARCH RESULTS (GROUND TRUTH — fetched live):\n${topResults}\n\nCRITICAL: Base your answer directly on the verified real-time search results above. Cite facts, dates, and names accurately. Never claim a company, product, or release mentioned above does not exist.`
+          if (searchRes.results.some(r => r.url)) {
+            sources.push(...searchRes.results.filter(r => r.url).map(r => ({ title: r.title, url: r.url, snippet: r.snippet })))
+            onSources?.(sources)
+          }
+        }
+      } catch (e) {
+        if (e.name === 'AbortError') throw e
+      }
     }
   }
 
@@ -434,7 +530,8 @@ export async function runAgent({
       ...agentDisabledTools(activeAgent, allToolNames),
     ])]
   }
-  const schemas = toolsEnabled ? getToolSchemas(effectiveDisabled) : null
+  const rawSchemas = toolsEnabled ? getToolSchemas(effectiveDisabled) : null
+  const schemas = (rawSchemas && userMessage) ? prioritizeToolSchemas(rawSchemas, userMessage) : rawSchemas
 
   // 'native' → OpenAI-style tools array. 'prompted' → JSON protocol in the
   // system prompt, for models that 400 on a tools array.
@@ -473,8 +570,6 @@ export async function runAgent({
     }
   }
 
-  const toolResults = {}
-  const sources = []
   let fullContent = ''   // everything shown to the user, across all rounds
   let roundContent = ''  // text from the current round only
   let toolCallsToProcess = []
@@ -552,11 +647,14 @@ export async function runAgent({
     while (toolCallsToProcess.length > 0 && rounds < maxRounds) {
       throwIfAborted()
       rounds++
-      const round = toolCallsToProcess.map((tc, i) => ({
-        ...tc,
-        name: String(tc.name || '').split('<')[0].split(' ')[0].split(':')[0].trim(),
-        id: tc.id || `call_${rounds}_${i}`,
-      }))
+      // Cap at max 3 tools per round to prevent runaway storms
+      const round = toolCallsToProcess
+        .slice(0, 3)
+        .map((tc, i) => ({
+          ...tc,
+          name: String(tc.name || '').split('<')[0].split(' ')[0].split(':')[0].trim(),
+          id: tc.id || `call_${rounds}_${i}`,
+        }))
 
       // One assistant message carrying every tool_call of this round,
       // followed by one tool message per call — the shape OpenAI-compatible
@@ -578,8 +676,10 @@ export async function runAgent({
       onStatus?.(round.length > 1
         ? `Running ${round.length} tools…`
         : `Using ${round[0].name}…`)
-      round.forEach(tc => {
+      const statusIds = []
+      round.forEach((tc, i) => {
         onToolStart?.(tc.name, tc.parsedArgs)
+        statusIds[i] = beginTool(tc.name, tc.parsedArgs)
         traceRef.push({ tool: tc.name, args: tc.parsedArgs || undefined, status: 'running' })
       })
 
@@ -590,7 +690,11 @@ export async function runAgent({
       const results = await Promise.race([
         Promise.all(round.map(async (tc) => {
           try {
-            return await executeTool(tc.name, tc.parsedArgs || {}, { signal })
+            let args = tc.parsedArgs || {}
+            if ((tc.name === 'web_search' || tc.name === 'deep_research') && (!args.query && !args.q && !args.search_query && !args.keyword && !args.text)) {
+              args = { query: userMessage, ...args }
+            }
+            return await executeTool(tc.name, args, { signal })
           } catch (e) {
             return { error: e?.message || String(e) }
           }
@@ -601,6 +705,7 @@ export async function runAgent({
       round.forEach((tc, i) => {
         const result = results[i]
         toolResults[tc.name] = result
+        settleTool(statusIds[i], result)
         onToolResult?.(tc.name, result)
         const step = [...traceRef].reverse().find(s => s.tool === tc.name && s.status === 'running')
         if (step) step.status = result?.error ? 'error' : 'done'

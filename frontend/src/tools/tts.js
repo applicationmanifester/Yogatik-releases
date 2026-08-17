@@ -16,7 +16,15 @@ export const ttsTool = {
       voice: { type: 'string', enum: Object.keys(VOICES), description: 'Voice id (default af_heart)' },
     }, required: ['text'] },
   },
-  async execute({ text, lang = 'en-US', rate = 1, voice }) {
+  async execute(args = {}) {
+    const raw = args?.text ?? args?.message ?? args?.input ?? args?.prompt ?? args?.content ?? ''
+    const text = typeof raw === 'string' ? raw : String(raw || '')
+    if (!text.trim()) {
+      return { success: false, error: 'No text provided to speak' }
+    }
+    const lang = args?.lang || 'en-US'
+    const rate = args?.rate ?? 1
+    const voice = args?.voice
     // Same on-device neural voice the call uses; falls back to the system
     // synthesiser on its own if the model is unavailable.
     const speaker = getSharedSpeaker({ engine: 'neural', voice: voice || DEFAULT_VOICE, lang, rate })

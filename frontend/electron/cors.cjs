@@ -8,10 +8,14 @@ const PROVIDER_FILTER = {
   urls: [
     'http://localhost:11434/*', 'http://127.0.0.1:11434/*',   // Ollama
     'http://localhost:1234/*', 'http://127.0.0.1:1234/*',     // LM Studio
-    'https://integrate.api.nvidia.com/*',                      // NVIDIA (sends no CORS)
+    'https://integrate.api.nvidia.com/*',                      // NVIDIA
+    'https://api.anthropic.com/*',                             // Anthropic Claude
     'https://api.groq.com/*',
     'https://openrouter.ai/*',
     'https://api.openai.com/*',
+    'https://api.deepseek.com/*',                              // DeepSeek
+    'https://api.x.ai/*',                                      // xAI Grok
+    'https://api.mistral.ai/*',                                // Mistral AI
     'https://generativelanguage.googleapis.com/*',
   ],
 }

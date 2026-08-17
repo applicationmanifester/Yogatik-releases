@@ -84,7 +84,6 @@ export function speechRecognitionAvailable() {
 }
 
 const MAX_HISTORY_TURNS = 20   // Keep context tight for fast providers
-const ENDPOINT_MS = 700        // Silence after interim speech = the turn is over
 const MIN_BARGE_CHARS = 6      // Shorter than this is usually echo or a cough
 const ECHO_TAIL_MS = 1500      // Keep filtering echo this long after speech ends
 
@@ -102,10 +101,97 @@ export function isEcho(heard, spoken) {
   return hits / words.length > 0.6
 }
 
+// ─── Adaptive endpointing ──────────────────────────────────────────────────
+// Chrome sits on isFinal ~1s, so we commit on a silence timer instead. A longer,
+// complete-sounding utterance can commit sooner; a short fragment waits a touch
+// longer in case the speaker is only pausing. Cuts perceived latency vs a fixed
+// 700ms without chopping people off mid-thought.
+export function endpointDelay(text = '') {
+  const t = String(text).trim()
+  if (/[.!?]$/.test(t)) return 350
+  const words = t ? t.split(/\s+/).length : 0
+  if (words >= 8) return 450
+  if (words >= 4) return 650
+  return 850
+}
+
+// ─── Hands-free voice commands ─────────────────────────────────────────────
+const LANG_MAP = {
+  english: 'en-US', spanish: 'es-ES', french: 'fr-FR', german: 'de-DE',
+  italian: 'it-IT', portuguese: 'pt-BR', hindi: 'hi-IN', japanese: 'ja-JP',
+  korean: 'ko-KR', chinese: 'zh-CN', mandarin: 'zh-CN', arabic: 'ar-SA',
+  russian: 'ru-RU', dutch: 'nl-NL', telugu: 'te-IN', tamil: 'ta-IN',
+}
+
+/**
+ * Recognise a spoken control command from a WHOLE utterance (anchored, so
+ * "stop the car" is content, "stop" is a command). Returns null for normal
+ * speech. Commands are handled locally and never sent to the model.
+ */
+export function parseVoiceCommand(text = '') {
+  const t = String(text).trim().toLowerCase().replace(/[.!?,]+$/, '')
+  if (!t) return null
+  if (/^(stop|stop talking|be quiet|quiet|shut up|cancel|never ?mind)$/.test(t)) return { type: 'stop' }
+  if (/^(pause|mute)$/.test(t)) return { type: 'pause' }
+  if (/^(resume|unmute|continue|keep going|go ahead)$/.test(t)) return { type: 'resume' }
+  if (/^(repeat|repeat that|say that again|come again|what did you say|pardon)$/.test(t)) return { type: 'repeat' }
+  if (/^(speak (faster|quicker)|talk faster|faster)$/.test(t)) return { type: 'rate', delta: 0.15 }
+  if (/^(speak (slower|more slowly)|talk slower|slow down|slower)$/.test(t)) return { type: 'rate', delta: -0.15 }
+  const lang = t.match(/^(?:speak|talk|switch|respond|reply)\s+(?:in\s+|to\s+)?(\w+)$/)
+  if (lang && LANG_MAP[lang[1]]) return { type: 'language', lang: LANG_MAP[lang[1]], name: lang[1] }
+  return null
+}
+
+/**
+ * Wake-word gate. With no wake word set, everything passes. With one set, an
+ * utterance must begin with it; the wake word is stripped and the remainder
+ * returned. (Control commands bypass this so "stop" always works.)
+ */
+export function stripWakeWord(text = '', wake = '') {
+  const t = String(text).trim()
+  if (!wake) return { matched: true, rest: t }
+  const w = String(wake).trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(`^\\s*${w}[\\s,!.:-]*`, 'i')
+  if (re.test(t)) return { matched: true, rest: t.replace(re, '').trim() }
+  return { matched: false, rest: t }
+}
+
+/**
+ * VAD-ish noise gate for FINAL results. Web Speech reports a confidence on
+ * finals; drop a short, low-confidence final (usually TV / background chatter).
+ * Chrome often reports confidence 0 for continuous finals, so 0 is treated as
+ * "unknown" and never rejected — only a real, low positive score is.
+ */
+export function shouldRejectNoise(text = '', confidence = 0) {
+  const t = String(text).trim()
+  if (t.length < 2) return true
+  const words = t.split(/\s+/).length
+  if (confidence > 0 && confidence < 0.35 && words <= 2) return true
+  return false
+}
+
+/** Trim history to the last N turns, keeping the window aligned to a user turn. */
+export function trimHistoryPairs(history = [], maxTurns = MAX_HISTORY_TURNS) {
+  const h = history.slice()
+  while (h.length > maxTurns) {
+    h.shift()
+    if (h.length && h[0].role === 'assistant') h.shift()
+  }
+  return h
+}
+
 export function createCascadeSession({
   provider, apiKey, model, persona = null, disabledTools = [],
   modelCanSee = false, camera = true, voice = null, voiceEngine = 'system',
   lang = defaultLang(), rate = 1.05,
+  // 'auto'  — describe/attach a frame only when the user asks about the view (or
+  //           auto-scan noticed a change). 'always' — every turn while a source
+  //           is live (any model sees continuously). 'off' — never.
+  visionMode = 'auto',
+  // Hands-free: require this phrase to start a spoken turn (null = always on).
+  wakeWord = null,
+  // Handle spoken control words (stop / pause / repeat / faster / language…).
+  voiceCommands = true,
   // Providers to fall back to when this one dies mid-call, from getLiveConfig.
   fallbacks = [],
   onEvent = () => {},
@@ -127,6 +213,7 @@ export function createCascadeSession({
   let restartDelay = 0
   let recogFatal = false
   let speechEndedAt = 0   // when the synthesiser last stopped (echo-tail guard)
+  let lastReply = ''      // for the "repeat that" voice command
   const history = []
 
   const emit = (e) => { if (!closed) onEvent(e) }
@@ -208,6 +295,52 @@ export function createCascadeSession({
     })()
   }
 
+  // ─── Spoken control commands + wake word + noise gate ───
+  function handleCommand(cmd) {
+    switch (cmd.type) {
+      case 'stop': interrupt(); return
+      case 'pause': muted = true; interrupt(); emit({ type: 'muted', value: true }); return
+      case 'resume': muted = false; emit({ type: 'muted', value: false }); return
+      case 'repeat':
+        if (lastReply) { emit({ type: 'status', text: 'Repeating…' }); speak(lastReply) }
+        return
+      case 'rate':
+        rate = Math.max(0.6, Math.min(1.6, Math.round((rate + cmd.delta) * 100) / 100))
+        speaker.configure({ rate })
+        emit({ type: 'status', text: `Speaking ${cmd.delta > 0 ? 'faster' : 'slower'}` })
+        return
+      case 'language':
+        lang = cmd.lang
+        speaker.configure({ lang })
+        if (recog) { try { recog.lang = lang } catch { /* mid-restart */ } }
+        emit({ type: 'status', text: `Switching to ${cmd.name}` })
+        return
+      default:
+    }
+  }
+
+  /**
+   * Route one recognised utterance: control commands first (always work), then
+   * the wake-word gate for content, then the noise gate, then to the agent.
+   */
+  function handleUtterance(raw, confidence = 0) {
+    const text = String(raw || '').trim()
+    if (!text) return
+    if (voiceCommands) {
+      const cmd = parseVoiceCommand(text)
+      if (cmd) { handleCommand(cmd); return }
+    }
+    if (wakeWord) {
+      const { matched, rest } = stripWakeWord(text, wakeWord)
+      if (!matched || !rest) return
+      if (shouldRejectNoise(rest, confidence)) return
+      enqueue(rest)
+      return
+    }
+    if (shouldRejectNoise(text, confidence)) return
+    enqueue(text)
+  }
+
   // Auto-scan: the newest frame in which something actually changed, waiting to
   // be attached to the next turn. One frame, only when the scene moved — that
   // is the difference between "keeps up" and "burns 1.1k tokens a second".
@@ -227,9 +360,12 @@ export function createCascadeSession({
   /** Grab the frames this question actually needs, or nothing. */
   function visualParts(userText) {
     const src = screen || cam
-    if (!modelCanSee) return null
+    if (!modelCanSee || visionMode === 'off') return null
 
-    if (!isVisualQuestion(userText)) {
+    // 'always' + a live source → attach a frame every turn (model watches).
+    const always = visionMode === 'always' && !!src
+
+    if (!always && !isVisualQuestion(userText)) {
       // Not a question about the room — but if auto-scan noticed a change,
       // let the model see it once.
       if (!watched) return null
@@ -258,8 +394,14 @@ export function createCascadeSession({
    */
   async function describeIfVisual(userText) {
     const src = screen || cam
-    if (modelCanSee || !src || !isVisualQuestion(userText)) return null
-    const b64 = src.grab(true, captureProfile(userText))
+    if (modelCanSee || !src || visionMode === 'off') return null
+    // 'always' → describe every turn. 'auto' → on visual questions, or reuse a
+    // frame auto-scan already flagged as changed. This is what lets ANY model,
+    // vision-capable or not, "see" the live camera/screen and answer about it.
+    const want = visionMode === 'always' || isVisualQuestion(userText)
+    let b64 = null
+    if (want) b64 = src.grab(true, captureProfile(userText))
+    else if (watched) { b64 = watched; watched = null }
     if (!b64) return null
     try {
       emit({ type: 'status', text: 'Looking (on-device)…' })
@@ -289,8 +431,9 @@ export function createCascadeSession({
       history.push({ role: 'user', content: userText })
     }
 
-    // Trim history so token overhead stays low on fast providers
-    while (history.length > MAX_HISTORY_TURNS) history.shift()
+    // Trim history so token overhead stays low, keeping user/assistant pairs
+    // aligned (a bare leading assistant turn confuses some providers).
+    history.splice(0, history.length, ...trimHistoryPairs(history, MAX_HISTORY_TURNS))
 
     thinking = true
     emit({ type: 'thinking', value: true })
@@ -323,7 +466,7 @@ export function createCascadeSession({
         userMessage: content,
         toolsEnabled: true, webEnabled: true, disabledTools,
         modelCanSee: active.modelCanSee ?? modelCanSee,
-        persona: `${persona ? persona + '\n\n' : ''}You are in a live spoken conversation, heard through the user's microphone. Reply the way a person speaks: short sentences, no markdown, no lists, no headings, no emoji. Two or three sentences unless asked for more. You have full tools: generate images and videos, create and export files, run code and automated tests and report the results, and search the web — the result is shown on their screen, so just say briefly what you made or found. Never read out long code or file contents aloud.\n\n${(active.modelCanSee ?? modelCanSee)
+        persona: `${persona ? persona + '\n\n' : ''}You are in a live spoken conversation, heard through the user's microphone. Reply the way a person speaks: short sentences, no markdown, no lists, no headings, no emoji. Two or three sentences unless asked for more. You have full tools: generate images and videos, create and export files, run code and automated tests and report the results, and search the web — the result is shown on their screen, so just say briefly what you made or found. Never read out long code or file contents aloud. For a big, multi-part request, delegate to specialists that run in parallel (spawn_agents / crew_orchestrator) and then say the result in a sentence or two.\n\n${(active.modelCanSee ?? modelCanSee)
           ? 'You can SEE through the user\'s camera or shared screen: image frames are attached to the conversation when they ask about what is in view. Describe what you actually see.'
           : 'You CANNOT see images directly. When the user asks about their camera or screen, a text description of the current view is inserted automatically as "[Live view (described on-device): …]". Rely ONLY on that description. Never invent, request, or fetch image URLs (e.g. do not make up links like example.com/photo.jpg); if no description was provided, say you could not see it and offer to look again.'}`,
         signal: controller.signal,
@@ -340,7 +483,7 @@ export function createCascadeSession({
         onDone: ({ content: full }) => {
           flushSentences(true)
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
-          if (full?.trim()) history.push({ role: 'assistant', content: full })
+          if (full?.trim()) { history.push({ role: 'assistant', content: full }); lastReply = full.trim() }
           abort = null
           resolve()
         },
@@ -381,9 +524,10 @@ export function createCascadeSession({
     recog.onresult = (e) => {
       let finalText = ''
       let interim = ''
+      let finalConfidence = 0
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i]
-        if (r.isFinal) finalText += r[0].transcript
+        if (r.isFinal) { finalText += r[0].transcript; finalConfidence = r[0].confidence || 0 }
         else interim += r[0].transcript
       }
 
@@ -402,18 +546,19 @@ export function createCascadeSession({
       if (finalText.trim()) {
         clearEndpoint()
         pendingInterim = ''
-        enqueue(finalText.trim())
+        handleUtterance(finalText.trim(), finalConfidence)
         return
       }
       if (interim.trim()) {
         pendingInterim = interim.trim()
         clearEndpoint()
+        // Adaptive: a complete-sounding phrase commits sooner than a fragment.
         endpointTimer = setTimeout(() => {
           const text = pendingInterim
           pendingInterim = ''
           endpointTimer = null
-          if (text.length >= 2) enqueue(text)
-        }, ENDPOINT_MS)
+          if (text.length >= 2) handleUtterance(text, 0)
+        }, endpointDelay(pendingInterim))
       }
     }
 
@@ -530,6 +675,15 @@ export function createCascadeSession({
     watch,
     setMuted: (v) => { muted = v; if (v) interrupt(); emit({ type: 'muted', value: v }) },
     isMuted: () => muted,
+    /** Let ANY model watch the feed continuously: 'auto' | 'always' | 'off'. */
+    setVisionMode: (mode) => { if (['auto', 'always', 'off'].includes(mode)) { visionMode = mode; emit({ type: 'status', text: `Vision: ${mode}` }) } },
+    getVisionMode: () => visionMode,
+    /** Hands-free: require a phrase to start each spoken turn (null to disable). */
+    setWakeWord: (w) => { wakeWord = w ? String(w).trim() : null },
+    /** Change speaking rate (0.6–1.6) mid-call. */
+    setRate: (r) => { rate = Math.max(0.6, Math.min(1.6, Number(r) || rate)); speaker.configure({ rate }) },
+    /** Change recognition + speaking language mid-call (BCP-47, e.g. es-ES). */
+    setLang: (l) => { if (l) { lang = l; speaker.configure({ lang }); if (recog) { try { recog.lang = lang } catch { /* mid-restart */ } } } },
     /** Current frame for the vision panel — never opens a second camera. */
     grabFrame: (profile) => (screen || cam)?.grab(true, profile) || null,
     get cameraOn() { return !!cam },

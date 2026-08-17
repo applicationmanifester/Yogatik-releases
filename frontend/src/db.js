@@ -34,6 +34,19 @@ db.version(4).stores({
   projects: '++id, name, createdAt',
   media: '++id, createdAt',
 })
+// v5: structured, four-store memory (episodic/semantic/procedural/emotional).
+// The flat `user_memory` settings blob stays put; this table is the richer,
+// salience-ranked companion memory (see memory4.js). `store` is indexed so a
+// single kind can be listed/decayed without scanning everything.
+db.version(5).stores({
+  conversations: '++id, title, updatedAt, projectId',
+  messages: '++id, conversationId, role, createdAt, [conversationId+createdAt]',
+  settings: 'key',
+  documents: '++id, name, createdAt, projectId',
+  projects: '++id, name, createdAt',
+  media: '++id, createdAt',
+  memories: '++id, store, at',
+})
 
 // A backgrounded/hidden tab (mobile especially) can have IndexedDB closed out
 // from under us; the next Dexie call throws DatabaseClosedError / InvalidStateError
@@ -66,7 +79,8 @@ export async function saveMedia({ blob, mime, filename, meta = {} }) {
   // Videos are megabytes. Without a cap, IndexedDB fills up and every later
   // write starts failing with QuotaExceededError.
   const all = await db.media.orderBy('createdAt').reverse().toArray()
-  for (const old of all.slice(MEDIA_KEEP)) await db.media.delete(old.id)
+  const toDelete = all.slice(MEDIA_KEEP).map(m => m.id)
+  if (toDelete.length > 0) await db.media.bulkDelete(toDelete)
   return id
 }
 
@@ -79,14 +93,34 @@ export async function deleteMedia(id) {
 }
 
 // ─── Settings (API keys, provider, theme, etc.) ───
+// Provider API keys (`apikey_*`) are transparently sealed by the desktop OS key
+// vault (safeStorage) at rest. Off-desktop / in tests the helpers pass the value
+// through unchanged, and legacy plaintext + cloud-synced keys keep working.
+const isApiKeySetting = (key) => typeof key === 'string' && key.startsWith('apikey_')
+
 export async function getSetting(key, fallback = null) {
   const row = await withReopen(() => db.settings.get(key))
   // A row holding null must still yield the fallback: `getSetting(k, '')`
   // returning null put null into controlled inputs. false/0 are kept.
-  return row && row.value != null ? row.value : fallback
+  let value = row && row.value != null ? row.value : fallback
+  if (isApiKeySetting(key) && typeof value === 'string' && value) {
+    try {
+      const { openKey } = await import('./desktopKeychain.js')
+      const opened = await openKey(value)
+      value = opened == null ? fallback : opened
+    } catch { /* keep raw value if the vault helper is unavailable */ }
+  }
+  return value
 }
 export async function setSetting(key, value) {
-  await withReopen(() => db.settings.put({ key, value }))
+  let toStore = value
+  if (isApiKeySetting(key) && typeof value === 'string' && value) {
+    try {
+      const { sealKey } = await import('./desktopKeychain.js')
+      toStore = await sealKey(value)
+    } catch { /* store plaintext if the vault helper is unavailable */ }
+  }
+  await withReopen(() => db.settings.put({ key, value: toStore }))
 }
 export async function getAllSettings() {
   const rows = await withReopen(() => db.settings.toArray())

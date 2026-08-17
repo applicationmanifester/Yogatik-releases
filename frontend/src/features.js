@@ -67,6 +67,11 @@ export const FEATURES = {
     hint: 'Periodically send a frame so the model keeps up with what changed',
     default: false,
   },
+  liveWatchAlways: {
+    label: 'Watch continuously in calls',
+    hint: 'The model sees the camera/screen on every turn — even text-only models, described on-device',
+    default: false,
+  },
   semanticSearch: {
     label: 'Semantic document search',
     hint: 'Re-rank document search by meaning, not just keywords. Downloads ~23MB once',
@@ -85,7 +90,7 @@ export const FEATURES = {
   autoVision: {
     label: 'Auto-switch Vision model',
     hint: 'Automatically switch to a vision model when an image is attached',
-    default: true,
+    default: false,
   },
 }
 

@@ -92,7 +92,43 @@ function prefersRedirect() {
   return standalone || phone
 }
 
+let _desktopUser = null
+try {
+  const cached = typeof localStorage !== 'undefined' && localStorage.getItem('yogatik.desktop_user')
+  if (cached) _desktopUser = JSON.parse(cached)
+} catch {}
+
+function setDesktopUser(u) {
+  _desktopUser = u
+  try {
+    if (u) localStorage.setItem('yogatik.desktop_user', JSON.stringify(u))
+    else localStorage.removeItem('yogatik.desktop_user')
+  } catch {}
+}
+
+function getActiveAuthUser(f) {
+  return f?.auth?.currentUser || _desktopUser || null
+}
+
 export async function signInWithGoogle() {
+  // ─── Electron Desktop Native OAuth Bridge ─────────────────────────────────
+  if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.loginWithGoogle) {
+    const res = await window.__YOGATIK_DESKTOP__.loginWithGoogle()
+    if (!res || !res.success || !res.user) {
+      throw new Error(res?.error || 'Desktop Google Sign-In was cancelled or failed.')
+    }
+    const f = await fb()
+    const user = {
+      uid: res.user.uid,
+      displayName: res.user.displayName,
+      email: res.user.email,
+      photoURL: res.user.photoURL,
+    }
+    setDesktopUser(user)
+    return await saveProfile(f, user)
+  }
+
+  // ─── Standard Web Browser OAuth Flow ──────────────────────────────────────
   const f = await fb()
   f.provider.setCustomParameters({ prompt: 'select_account' })
 
@@ -149,8 +185,9 @@ export async function checkRedirectResult() {
 }
 
 export async function logOutGoogle() {
+  setDesktopUser(null)
   const f = await fb()
-  await f.signOut(f.auth)
+  try { await f.signOut(f.auth) } catch {}
 }
 
 /**
@@ -160,12 +197,17 @@ export async function logOutGoogle() {
  */
 export async function saveUserApiKey(provider, apiKey, secret) {
   if (!secret) return { synced: false, reason: 'no-secret' }
-  const f = await fb()
-  const user = f.auth.currentUser
-  if (!user) return { synced: false, reason: 'signed-out' }
-  const sealed = await encryptSecret(apiKey, secret)
-  await f.setDoc(f.doc(f.db, 'users', user.uid), { apiKeys: { [provider]: sealed } }, { merge: true })
-  return { synced: true }
+  try {
+    const f = await fb()
+    const user = getActiveAuthUser(f)
+    if (!user) return { synced: false, reason: 'signed-out' }
+    const sealed = await encryptSecret(apiKey, secret)
+    await f.setDoc(f.doc(f.db, 'users', user.uid), { apiKeys: { [provider]: sealed } }, { merge: true })
+    return { synced: true }
+  } catch (err) {
+    // Firestore rules or desktop offline: keep local key intact
+    return { synced: false, reason: err?.message || 'firestore-restricted' }
+  }
 }
 
 /**
@@ -175,21 +217,25 @@ export async function saveUserApiKey(provider, apiKey, secret) {
  */
 export async function getUserApiKeys(...secrets) {
   const candidates = secrets.flat().filter(Boolean)
-  const f = await fb()
-  const user = f.auth.currentUser
-  if (!user || !candidates.length) return {}
-  const snap = await f.getDoc(f.doc(f.db, 'users', user.uid))
-  const stored = (snap.exists() && snap.data().apiKeys) || {}
+  try {
+    const f = await fb()
+    const user = getActiveAuthUser(f)
+    if (!user || !candidates.length) return {}
+    const snap = await f.getDoc(f.doc(f.db, 'users', user.uid))
+    const stored = (snap.exists() && snap.data().apiKeys) || {}
 
-  const out = {}
-  for (const [provider, value] of Object.entries(stored)) {
-    if (!isEncrypted(value)) continue // legacy plaintext — ignored, see purgePlaintextKeys
-    for (const secret of candidates) {
-      const plain = await decryptSecret(value, secret)
-      if (plain) { out[provider] = plain; break }
+    const out = {}
+    for (const [provider, value] of Object.entries(stored)) {
+      if (!isEncrypted(value)) continue // legacy plaintext — ignored, see purgePlaintextKeys
+      for (const secret of candidates) {
+        const plain = await decryptSecret(value, secret)
+        if (plain) { out[provider] = plain; break }
+      }
     }
+    return out
+  } catch {
+    return {}
   }
-  return out
 }
 
 // ─── Encrypted data vault (conversations + documents snapshot) ───
@@ -200,56 +246,72 @@ const VAULT_CHUNK = 700_000
 
 /** Write the encrypted snapshot string as ordered chunks; returns chunk count. */
 export async function saveVault(cipher, meta = {}) {
-  const f = await fb()
-  const user = f.auth.currentUser
-  if (!user) return { synced: false, reason: 'signed-out' }
-  const col = f.collection(f.db, 'users', user.uid, 'vault')
-  // Clear any previous, possibly longer, snapshot first so no stale tail remains.
-  const old = await f.getDocs(col)
-  const batch = f.writeBatch(f.db)
-  old.forEach(d => batch.delete(d.ref))
-  const chunks = []
-  for (let i = 0; i < cipher.length; i += VAULT_CHUNK) chunks.push(cipher.slice(i, i + VAULT_CHUNK))
-  chunks.forEach((c, i) => batch.set(f.doc(col, String(i).padStart(4, '0')), { i, c }))
-  batch.set(f.doc(f.db, 'users', user.uid), { vaultMeta: { ...meta, chunks: chunks.length, at: Date.now() } }, { merge: true })
-  await batch.commit()
-  return { synced: true, chunks: chunks.length }
+  try {
+    const f = await fb()
+    const user = getActiveAuthUser(f)
+    if (!user) return { synced: false, reason: 'signed-out' }
+    const col = f.collection(f.db, 'users', user.uid, 'vault')
+    // Clear any previous, possibly longer, snapshot first so no stale tail remains.
+    const old = await f.getDocs(col)
+    const batch = f.writeBatch(f.db)
+    old.forEach(d => batch.delete(d.ref))
+    const chunks = []
+    for (let i = 0; i < cipher.length; i += VAULT_CHUNK) chunks.push(cipher.slice(i, i + VAULT_CHUNK))
+    chunks.forEach((c, i) => batch.set(f.doc(col, String(i).padStart(4, '0')), { i, c }))
+    batch.set(f.doc(f.db, 'users', user.uid), { vaultMeta: { ...meta, chunks: chunks.length, at: Date.now() } }, { merge: true })
+    await batch.commit()
+    return { synced: true, chunks: chunks.length }
+  } catch (err) {
+    return { synced: false, reason: err?.message || 'vault-write-restricted' }
+  }
 }
 
 /** Read and reassemble the encrypted snapshot string, or null if none. */
 export async function loadVault() {
-  const f = await fb()
-  const user = f.auth.currentUser
-  if (!user) return null
-  const snap = await f.getDocs(f.query(f.collection(f.db, 'users', user.uid, 'vault'), f.orderBy('i')))
-  if (snap.empty) return null
-  let cipher = ''
-  snap.forEach(d => { cipher += d.data().c || '' })
-  return cipher || null
+  try {
+    const f = await fb()
+    const user = getActiveAuthUser(f)
+    if (!user) return null
+    const snap = await f.getDocs(f.query(f.collection(f.db, 'users', user.uid, 'vault'), f.orderBy('i')))
+    if (snap.empty) return null
+    let cipher = ''
+    snap.forEach(d => { cipher += d.data().c || '' })
+    return cipher || null
+  } catch {
+    return null
+  }
 }
 
 export async function getVaultMeta() {
-  const f = await fb()
-  const user = f.auth.currentUser
-  if (!user) return null
-  const snap = await f.getDoc(f.doc(f.db, 'users', user.uid))
-  return (snap.exists() && snap.data().vaultMeta) || null
+  try {
+    const f = await fb()
+    const user = getActiveAuthUser(f)
+    if (!user) return null
+    const snap = await f.getDoc(f.doc(f.db, 'users', user.uid))
+    return (snap.exists() && snap.data().vaultMeta) || null
+  } catch {
+    return null
+  }
 }
 
 /** One-shot cleanup of pre-encryption plaintext keys left in Firestore. */
 export async function purgePlaintextKeys() {
-  const f = await fb()
-  const user = f.auth.currentUser
-  if (!user) return 0
-  const ref = f.doc(f.db, 'users', user.uid)
-  const snap = await f.getDoc(ref)
-  const stored = (snap.exists() && snap.data().apiKeys) || {}
-  const cleaned = {}
-  let removed = 0
-  for (const [provider, value] of Object.entries(stored)) {
-    if (isEncrypted(value)) cleaned[provider] = value
-    else removed++
+  try {
+    const f = await fb()
+    const user = getActiveAuthUser(f)
+    if (!user) return 0
+    const ref = f.doc(f.db, 'users', user.uid)
+    const snap = await f.getDoc(ref)
+    const stored = (snap.exists() && snap.data().apiKeys) || {}
+    const cleaned = {}
+    let removed = 0
+    for (const [provider, value] of Object.entries(stored)) {
+      if (isEncrypted(value)) cleaned[provider] = value
+      else removed++
+    }
+    if (removed) await f.setDoc(ref, { apiKeys: cleaned }, { merge: false })
+    return removed
+  } catch {
+    return 0
   }
-  if (removed) await f.setDoc(ref, { apiKeys: cleaned }, { merge: false })
-  return removed
 }

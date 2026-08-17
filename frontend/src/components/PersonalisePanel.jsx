@@ -3,6 +3,7 @@ import { Sliders, Volume2, Play, Square, LayoutGrid, RotateCcw } from 'lucide-re
 import { Modal } from './Modal'
 import { FEATURES, resolveFeatures, FEATURE_DEFAULTS } from '../features'
 import { McpServers } from './McpServers'
+import { PluginsManager } from './PluginsManager'
 import { VOICE_LABELS, DEFAULT_VOICE } from '../video/speech'
 import { requestTTS, stopTTS } from '../api'
 
@@ -157,6 +158,7 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
       </section>
 
       <McpServers />
+      <PluginsManager />
     </Modal>
   )
 }

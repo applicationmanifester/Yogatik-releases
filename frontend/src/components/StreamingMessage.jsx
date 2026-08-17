@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 /**
  * The in-flight assistant reply.
@@ -11,6 +12,16 @@ import ReactMarkdown from 'react-markdown'
  *
  * The parent pushes through the ref; React state stops at this component.
  */
+function splitReasoning(content) {
+  if (typeof content !== 'string') return { reasoning: '', answer: content }
+  let reasoning = ''
+  const answer = content
+    .replace(/<think>([\s\S]*?)<\/think>/gi, (_, r) => { reasoning += r + '\n'; return '' })
+    .replace(/<think>([\s\S]*)$/i, (_, r) => { reasoning += r; return '' })
+    .trim()
+  return { reasoning: reasoning.trim(), answer }
+}
+
 export const StreamingMessage = forwardRef(function StreamingMessage(
   { onFirstToken, onGrow }, ref,
 ) {
@@ -47,10 +58,19 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
   useEffect(() => () => { if (frame.current) cancelAnimationFrame(frame.current) }, [])
 
   if (!text) return null
+  const { reasoning, answer } = splitReasoning(text)
   return (
-    <div className="message assistant">
+    <div className="message assistant" role="article" aria-busy="true" aria-label="Assistant is responding">
       <div className="message-role">Yogatik</div>
-      <div className="message-content"><ReactMarkdown>{text}</ReactMarkdown></div>
+      {reasoning ? (
+        <details className="reasoning-bubble" open>
+          <summary className="reasoning-summary">Thinking…</summary>
+          <div className="reasoning-body">{reasoning}</div>
+        </details>
+      ) : null}
+      <div className="message-content">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer || (reasoning ? '' : text)}</ReactMarkdown>
+      </div>
     </div>
   )
 })

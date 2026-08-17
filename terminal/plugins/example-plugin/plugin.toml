@@ -1,0 +1,7 @@
+name = "example-plugin"
+version = "1.0.0"
+description = "Example plugin for Yogatik Terminal"
+main = "plugin.wasm"
+api_version = 1
+permissions = ["terminal.read", "terminal.write", "settings.read"]
+entry_points = { on_load = "on_load", command = "example_command" }

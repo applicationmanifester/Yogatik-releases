@@ -29,12 +29,14 @@ export const memoryTool = {
         action: { type: 'string', enum: ['save', 'recall', 'list', 'forget'], description: 'What to do' },
         text: { type: 'string', description: 'For save: the fact to remember. For recall: what to look up.' },
         tag: { type: 'string', description: 'Optional category, e.g. "preference", "project".' },
+        store: { type: 'string', enum: ['episodic', 'semantic', 'procedural', 'emotional'], description: 'Memory kind: episodic (dated events), semantic (stable facts, default), procedural (preferences), emotional (sentiment — stays on-device).' },
+        importance: { type: 'number', description: 'Optional 0–1 salience hint for how strongly to weight this memory.' },
         id: { type: 'string', description: 'For forget: the memory id to delete.' },
       },
       required: ['action'],
     },
   },
-  async execute({ action, text, tag, id }) {
+  async execute({ action, text, tag, id, store, importance }) {
     try {
       const list = await load()
 
@@ -49,7 +51,14 @@ export const memoryTool = {
         const entry = { id, text: text.trim(), tag: tag || undefined, at: Date.now() }
         list.push(entry)
         await save(list)
-        return { success: true, tool: 'memory', saved: entry, count: list.length }
+        // Also write to the structured four-store memory (memory4, db v5). The
+        // flat store stays for backward-compatible recall; the structured store
+        // is what the salience-ranked prompt block now draws from.
+        try {
+          const { remember } = await import('../memory4')
+          await remember({ store: store || 'semantic', text, tag, importance: importance ?? 0.5 })
+        } catch { /* db v5 unavailable — flat save still succeeded */ }
+        return { success: true, tool: 'memory', saved: entry, store: store || 'semantic', count: list.length }
       }
 
       if (action === 'recall') {

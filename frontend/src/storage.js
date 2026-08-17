@@ -45,6 +45,43 @@ export async function storageReport() {
   }
 }
 
+/**
+ * Backup-nudge policy. When storage is only best-effort the browser can evict
+ * everything silently, so past a few conversations we prompt the user to export
+ * a backup — but not more than once per interval, and never once persistence is
+ * granted. Pure function so it is unit-testable.
+ *
+ * @returns {boolean} whether to surface a backup nudge now.
+ */
+const NUDGE_MIN_CONVERSATIONS = 5
+const NUDGE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000 // weekly at most
+
+export function shouldNudgeBackup({ persisted, conversationCount = 0, lastNudgeAt = 0, lastBackupAt = 0, now = Date.now() } = {}) {
+  if (persisted) return false                              // durable — no risk
+  if (conversationCount < NUDGE_MIN_CONVERSATIONS) return false
+  if (lastBackupAt && now - lastBackupAt < NUDGE_INTERVAL_MS) return false
+  if (lastNudgeAt && now - lastNudgeAt < NUDGE_INTERVAL_MS) return false
+  return true
+}
+
+const NUDGE_STORE = 'yogatik.backupNudge'
+function readNudge() {
+  try { return JSON.parse(localStorage.getItem(NUDGE_STORE) || '{}') } catch { return {} }
+}
+function writeNudge(patch) {
+  try { localStorage.setItem(NUDGE_STORE, JSON.stringify({ ...readNudge(), ...patch })) } catch { /* private */ }
+}
+export function getBackupTimestamps() { return readNudge() }
+export function markBackupNudged(now = Date.now()) { writeNudge({ lastNudgeAt: now }) }
+export function markBackedUp(now = Date.now()) { writeNudge({ lastBackupAt: now }) }
+
+/** Convenience: reads persistence + stored timestamps and applies the policy. */
+export async function checkBackupNudge(conversationCount) {
+  const persisted = await isPersisted()
+  const { lastNudgeAt = 0, lastBackupAt = 0 } = readNudge()
+  return shouldNudgeBackup({ persisted, conversationCount, lastNudgeAt, lastBackupAt })
+}
+
 export function formatBytes(n = 0) {
   if (n < 1024) return `${n} B`
   const units = ['KB', 'MB', 'GB', 'TB']

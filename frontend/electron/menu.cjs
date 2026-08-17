@@ -1,6 +1,6 @@
 // Native application menu with real desktop shortcuts. Menu items that need
-// app logic (New Chat, Settings, Grant Folder) send a 'menu' IPC event the
-// renderer listens for; the rest use built-in Electron roles.
+// app logic (New Chat, Settings, Grant Folder, Search, Arena) send a 'menu' IPC
+// event the renderer listens for; the rest use built-in Electron roles.
 
 const { app, Menu, shell, dialog } = require('electron')
 
@@ -16,11 +16,17 @@ function buildMenu(win, opts = {}) {
       label: 'File',
       submenu: [
         { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: () => send('new-chat') },
+        { label: 'Universal Search & Commands', accelerator: 'CmdOrCtrl+K', click: () => send('open-palette') },
+        { label: 'Model Arena (Compare Mode)', accelerator: 'CmdOrCtrl+Shift+A', click: () => send('open-arena') },
+        { label: 'Live Voice Mode', accelerator: 'CmdOrCtrl+Shift+L', click: () => send('open-live') },
+        { type: 'separator' },
         { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: () => send('open-settings') },
+        { label: 'Error Findings & Diagnostics', accelerator: 'CmdOrCtrl+Shift+D', click: () => send('open-diagnostics') },
         { type: 'separator' },
         { label: 'Grant Working Folder…', accelerator: 'CmdOrCtrl+O', click: () => send('grant-folder') },
         {
-          label: 'Open Working Folder',
+          label: 'Open Working Folder in Explorer',
+          accelerator: 'CmdOrCtrl+Shift+E',
           click: () => { const r = getRoot(); if (r) shell.openPath(r); else send('grant-folder') },
         },
         { type: 'separator' },
@@ -38,6 +44,20 @@ function buildMenu(win, opts = {}) {
     {
       label: 'View',
       submenu: [
+        {
+          label: 'Always on Top',
+          type: 'checkbox',
+          accelerator: 'CmdOrCtrl+Shift+T',
+          checked: win ? win.isAlwaysOnTop() : false,
+          click: (item) => {
+            if (win && !win.isDestroyed()) {
+              const next = item.checked
+              win.setAlwaysOnTop(next)
+              send({ type: 'always-on-top-changed', value: next })
+            }
+          },
+        },
+        { type: 'separator' },
         { role: 'reload' },
         { role: 'forceReload' },
         { role: 'toggleDevTools' },
@@ -63,7 +83,7 @@ function buildMenu(win, opts = {}) {
             type: 'info',
             title: 'About Yogatik',
             message: `Yogatik Desktop`,
-            detail: `Version ${app.getVersion()}\n\nPrivate browser-native AI — local Ollama models, local-file editing, live web research and 65+ tools. Runs on your machine.`,
+            detail: `Version ${app.getVersion()}\n\nPrivate desktop AI — local Ollama models, local-file editing, live web research and 65+ tools. Runs on your machine with scoped permissions.`,
             buttons: ['OK'],
           }),
         },

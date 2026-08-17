@@ -145,6 +145,8 @@ const PROVIDERS = {
     publicModels: true,     // no API key — the daemon is on the user's machine
     noKey: true,
     isOllama: true,
+    isLocal: true,
+    offlineReady: true,
     keyUrl: 'https://ollama.com/download',
   },
   gemini: {
@@ -178,6 +180,61 @@ const PROVIDERS = {
     preferred: ['gpt-4o-mini', 'gpt-4o', 'o4-mini'],
     keyUrl: 'https://platform.openai.com/api-keys',
   },
+  anthropic: {
+    name: 'Anthropic (Claude)',
+    baseUrl: 'https://api.anthropic.com/v1',
+    models: [
+      'claude-3-7-sonnet-20250219',
+      'claude-3-5-sonnet-20241022',
+      'claude-3-5-haiku-20241022',
+      'claude-3-opus-20240229',
+    ],
+    default: 'claude-3-5-sonnet-20241022',
+    preferred: ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+    keyUrl: 'https://console.anthropic.com/settings/api-keys',
+    isAnthropic: true,
+    needsProxy: true,
+  },
+  xai: {
+    name: 'xAI Grok',
+    baseUrl: 'https://api.x.ai/v1',
+    models: [],
+    default: '',
+    preferred: ['grok-3-mini', 'grok-3', 'grok-2-1212'],
+    keyUrl: 'https://console.x.ai/',
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    models: [],
+    default: '',
+    preferred: ['deepseek-chat', 'deepseek-reasoner'],
+    keyUrl: 'https://platform.deepseek.com/api_keys',
+  },
+  mistral: {
+    name: 'Mistral AI',
+    baseUrl: 'https://api.mistral.ai/v1',
+    models: [],
+    default: '',
+    preferred: ['mistral-small-latest', 'mistral-large-latest', 'codestral-latest'],
+    keyUrl: 'https://console.mistral.ai/api-keys',
+  },
+  perplexity: {
+    name: 'Perplexity (Web-grounded)',
+    baseUrl: 'https://api.perplexity.ai',
+    models: [],
+    default: '',
+    preferred: ['sonar', 'sonar-pro', 'sonar-reasoning'],
+    keyUrl: 'https://www.perplexity.ai/settings/api',
+  },
+  cohere: {
+    name: 'Cohere',
+    baseUrl: 'https://api.cohere.com/compatibility/v1',
+    models: [],
+    default: '',
+    preferred: ['command-r-plus', 'command-r7b-12-2024'],
+    keyUrl: 'https://dashboard.cohere.com/api-keys',
+  },
 }
 
 // Custom providers merged at runtime
@@ -186,6 +243,22 @@ export function registerCustomProviders(custom) { _customProviders = custom || {
 export function getProviders() { return { ...PROVIDERS, ..._customProviders } }
 export function getProviderModels(providerId) { return getProviders()[providerId]?.models || [] }
 export function getDefaultModel(providerId) { return getProviders()[providerId]?.default || '' }
+
+export function normalizeModelName(m) {
+  if (!m) return ''
+  if (typeof m === 'string') {
+    const trimmed = m.trim()
+    return trimmed === '[object Object]' ? '' : trimmed
+  }
+  if (typeof m === 'object') {
+    if (typeof m.id === 'string' && m.id.trim() && m.id !== '[object Object]') return m.id.trim()
+    if (typeof m.name === 'string' && m.name.trim() && m.name !== '[object Object]') return m.name.trim()
+    if (typeof m.model === 'string' && m.model.trim() && m.model !== '[object Object]') return m.model.trim()
+    if (typeof m.value === 'string' && m.value.trim() && m.value !== '[object Object]') return m.value.trim()
+  }
+  const str = String(m || '').trim()
+  return str === '[object Object]' ? '' : str
+}
 
 /**
  * Smart fetch — direct for CORS-friendly providers, proxied via /api/llm-proxy for others.
@@ -196,6 +269,16 @@ export function getDefaultModel(providerId) { return getProviders()[providerId]?
 // which the Vite plugin serves in dev.
 const PROXY_BASE = (import.meta.env.VITE_LLM_PROXY_BASE || '').replace(/\/+$/, '')
 const isLocalhost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+
+/** Extract clean, human-readable message from JSON API errors */
+export function parseProviderError(status, rawText) {
+  try {
+    const data = JSON.parse(rawText)
+    const msg = data.error?.message || data.error?.detail || data.message || data.detail || (typeof data.error === 'string' ? data.error : null)
+    if (msg) return msg
+  } catch { /* not JSON */ }
+  return rawText ? `${status}: ${rawText.slice(0, 300)}` : `Provider request failed (${status})`
+}
 
 /** Private proxy we control: Vite dev plugin on localhost, Worker in prod. */
 export function getProxyEndpoint() {
@@ -314,49 +397,77 @@ export async function streamChat({
   const prov = getProviders()[provider]
   if (!prov) throw new Error(`Unknown provider: ${provider}`)
 
-  // On-device inference never touches the network or a key.
-  if (prov.isLocal) {
+  const cleanModel = normalizeModelName(model) || normalizeModelName(prov.default) || normalizeModelName(prov.preferred?.[0]) || (typeof prov.models?.[0] === 'string' ? prov.models[0] : '')
+
+  // On-device WebGPU inference never touches the network or a key.
+  if (provider === 'local') {
     const { streamLocal } = await import('./localLLM')
-    return streamLocal({ model, messages, temperature, tools, signal, onToken, onToolCall, onDone, onError, onStatus })
+    return streamLocal({ model: cleanModel, messages, temperature, tools, signal, onToken, onToolCall, onDone, onError, onStatus })
   }
 
   const headers = { 'Content-Type': 'application/json' }
-  if (apiKey || !prov.noKey) headers['Authorization'] = `Bearer ${apiKey}`
+  if (prov.isAnthropic) {
+    // Anthropic uses x-api-key instead of Bearer, plus version and browser access headers
+    if (apiKey) headers['x-api-key'] = apiKey
+    headers['anthropic-version'] = '2023-06-01'
+    headers['anthropic-dangerous-direct-browser-access'] = 'true'
+  } else if (apiKey || !prov.noKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`
+  }
   if (provider === 'openrouter') {
     headers['HTTP-Referer'] = 'https://yogatik.app'
     headers['X-Title'] = 'Yogatik'
   }
 
+  let endpoint = `${prov.baseUrl}/chat/completions`
   const body = {
-    model: model || prov.default,
+    model: cleanModel,
     messages,
     temperature,
     stream: true,
   }
+
+  if (prov.isAnthropic) {
+    endpoint = `${prov.baseUrl}/messages`
+    body.max_tokens = 4096
+    let systemPrompt = ''
+    const anthropicMessages = []
+    for (const m of messages) {
+      if (m.role === 'system') {
+        systemPrompt += (systemPrompt ? '\n\n' : '') + m.content
+      } else {
+        anthropicMessages.push(m)
+      }
+    }
+    if (systemPrompt) body.system = systemPrompt
+    body.messages = anthropicMessages.length ? anthropicMessages : [{ role: 'user', content: 'hello' }]
+  }
+
   if (tools && tools.length > 0) {
     body.tools = tools
     // NVIDIA (needsProxy) rejects the tool_choice field with a 400.
     // All other providers accept "auto" fine, so only send it for those.
-    if (!prov.needsProxy) body.tool_choice = 'auto'
+    if (!prov.needsProxy && !prov.isAnthropic) body.tool_choice = 'auto'
   }
 
   try {
-    const resp = await fetchWithRetry(`${prov.baseUrl}/chat/completions`, {
+    const resp = await fetchWithRetry(endpoint, {
       method: 'POST', headers, body: JSON.stringify(body), signal,
     }, prov, { onStatus })
 
     if (!resp.ok) {
       const err = await resp.text()
+      const displayModelName = cleanModel || prov.name || provider
 
       // A renamed/withdrawn model 400s (NVIDIA does not 404 it). Surface it as
       // a model error so the caller prunes it — NOT as "tools rejected", which
       // would waste a second call in prompted mode on the same dead model.
       const modelGone = resp.status === 400 &&
-        /does not exist|not found|unknown model|invalid model|no such model/i.test(err) &&
+        /does not exist|not found|unknown model|invalid model|no such model|no models provided/i.test(err) &&
         /model/i.test(err)
       if (modelGone) {
         onError?.(new Error(
-          `"${model || prov.default}" not found (404). ${err.slice(0, 200)}`
+          `"${displayModelName}" not found or unavailable. ${err.slice(0, 200)}`
         ))
         return
       }
@@ -368,33 +479,38 @@ export async function streamChat({
         // onDone must still fire — the caller awaits it before retrying.
         if (onToolsRejected) { onToolsRejected(); onDone?.(); return }
         return streamChat({
-          provider, apiKey, model, messages, tools: null,
+          provider, apiKey, model: cleanModel, messages, tools: null,
           temperature, signal, onToken, onToolCall, onDone, onError, onStatus,
           retriedWithoutTools: true,
         })
       }
       if (resp.status === 400) {
-        onError?.(new Error(
-          `"${model || prov.default}" rejected the request (400). ` +
-          `${err.slice(0, 200)}`
-        ))
+        const parsed = parseProviderError(resp.status, err)
+        onError?.(new Error(parsed.length > 20 ? parsed : `"${displayModelName}" rejected the request (400): ${parsed}`))
         return
       }
       if (resp.status === 404) {
         onError?.(new Error(
-          `The provider does not serve "${model || prov.default}" on its chat endpoint (404). ` +
+          `The provider does not serve "${displayModelName}" on its chat endpoint (404). ` +
           `It may be a base (non-chat) model or recently withdrawn. Pick another model.`
         ))
         return
       }
-      if ([504, 520, 522, 524].includes(resp.status)) {
+      if (resp.status === 503) {
         onError?.(new Error(
-          `The provider did not respond in time (${resp.status}). Large models on free tiers ` +
-          `can take over 100s to warm up. Try a smaller model, or send the message again.`
+          `The provider is temporarily overloaded or undergoing maintenance (503 Service Unavailable). ` +
+          `Please switch to another model like LLaMA 3.3 70B or retry in a moment.`
         ))
         return
       }
-      onError?.(new Error(`${resp.status}: ${err.slice(0, 300)}`))
+      if ([500, 502, 504, 520, 522, 524].includes(resp.status)) {
+        onError?.(new Error(
+          `The provider encountered a server error (${resp.status}). Large models on free tiers ` +
+          `can experience cold-starts or capacity spikes. Try a smaller/faster model like LLaMA 3.3 70B.`
+        ))
+        return
+      }
+      onError?.(new Error(parseProviderError(resp.status, err)))
       return
     }
 
@@ -428,34 +544,34 @@ export async function streamChat({
         if (!payload || payload === '[DONE]') continue
         sawData = true
         try {
-          const data = JSON.parse(payload)
-          const delta = data.choices?.[0]?.delta
-          if (!delta) continue
+          const parsed = JSON.parse(payload)
+          const delta = parsed.choices?.[0]?.delta
 
-          if (delta.content) onToken?.(delta.content)
+          // Content token (OpenAI delta or Anthropic text_delta)
+          if (delta?.content) {
+            onToken?.(delta.content)
+          } else if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+            onToken?.(parsed.delta.text)
+          }
 
-          if (delta.tool_calls) {
+          // Streaming tool calls (OpenAI/Groq/OpenRouter format)
+          if (delta?.tool_calls) {
             for (const tc of delta.tool_calls) {
               const idx = tc.index ?? 0
-              if (!toolCalls[idx]) toolCalls[idx] = { id: '', name: '', arguments: '' }
-              if (tc.id) toolCalls[idx].id = tc.id
+              if (!toolCalls[idx]) {
+                toolCalls[idx] = { id: tc.id || `call_${idx}`, name: tc.function?.name || '', arguments: '' }
+              }
               if (tc.function?.name) toolCalls[idx].name = tc.function.name
               if (tc.function?.arguments) toolCalls[idx].arguments += tc.function.arguments
             }
           }
-
-          if (data.choices?.[0]?.finish_reason === 'tool_calls' ||
-              data.choices?.[0]?.finish_reason === 'function_call') {
-            for (const tc of Object.values(toolCalls)) {
-              try { tc.parsedArgs = JSON.parse(tc.arguments) } catch { tc.parsedArgs = {} }
-              onToolCall?.(tc)
-            }
-            toolCalls = {}
-          }
-        } catch {}
+        } catch {
+          // Skip unparseable SSE lines
+        }
       }
     }
 
+    // Guard: if stream completed without ANY data events, provider returned empty stream
     if (!sawData) {
       onError?.(new Error('Provider returned no stream data — check model name and API key.'))
       return
@@ -484,21 +600,51 @@ export async function streamChat({
 /** Non-streaming completion (for tool result processing) */
 export async function chatComplete({ provider, apiKey, model, messages, tools, temperature = 0.7, maxTokens, timeoutMs, retries }) {
   const prov = getProviders()[provider]
+  const cleanModel = normalizeModelName(model) || normalizeModelName(prov?.default) || normalizeModelName(prov?.preferred?.[0]) || (typeof prov?.models?.[0] === 'string' ? prov.models[0] : '')
   const headers = { 'Content-Type': 'application/json' }
-  if (apiKey || !prov?.noKey) headers['Authorization'] = `Bearer ${apiKey}`
+  if (prov?.isAnthropic) {
+    if (apiKey) headers['x-api-key'] = apiKey
+    headers['anthropic-version'] = '2023-06-01'
+  } else if (apiKey || !prov?.noKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`
+  }
   if (provider === 'openrouter') {
     headers['HTTP-Referer'] = 'https://yogatik.app'
     headers['X-Title'] = 'Yogatik'
   }
-  const body = { model: model || prov.default, messages, temperature }
+  let endpoint = `${prov.baseUrl}/chat/completions`
+  const body = { model: cleanModel, messages, temperature }
   if (maxTokens) body.max_tokens = maxTokens
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto' }
 
-  const resp = await fetchWithRetry(`${prov.baseUrl}/chat/completions`, {
+  if (prov?.isAnthropic) {
+    endpoint = `${prov.baseUrl}/messages`
+    body.max_tokens = maxTokens || 1024
+    let systemPrompt = ''
+    const anthropicMessages = []
+    for (const m of messages) {
+      if (m.role === 'system') {
+        systemPrompt += (systemPrompt ? '\n\n' : '') + m.content
+      } else {
+        anthropicMessages.push(m)
+      }
+    }
+    if (systemPrompt) body.system = systemPrompt
+    body.messages = anthropicMessages.length ? anthropicMessages : [{ role: 'user', content: 'hello' }]
+  }
+
+  const resp = await fetchWithRetry(endpoint, {
     method: 'POST', headers, body: JSON.stringify(body),
   }, prov, { timeoutMs, retries })
-  if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`)
-  return resp.json()
+  if (!resp.ok) {
+    const raw = await resp.text()
+    throw new Error(parseProviderError(resp.status, raw))
+  }
+  const data = await resp.json()
+  if (prov?.isAnthropic && data.content?.[0]?.text) {
+    return { choices: [{ message: { content: data.content[0].text } }], model: data.model }
+  }
+  return data
 }
 
 /** Non-chat model families to hide from the chat model picker */
@@ -528,7 +674,7 @@ export async function fetchLiveModels(providerId, apiKey) {
 
     const data = await resp.json()
     const modelList = data.data || data.models || []
-    const ids = [...new Set(modelList.map(m => (m.id || m.name || m)).filter(Boolean))]
+    const ids = [...new Set(modelList.map(m => normalizeModelName(m)).filter(id => id && id.length > 0 && id !== '[object Object]'))]
       .filter(id => !NON_CHAT.test(id))
       .sort((a, b) => a.localeCompare(b))
     return ids

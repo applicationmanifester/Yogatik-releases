@@ -69,6 +69,18 @@ describe('web_search (DuckDuckGo)', () => {
     expect(res).toHaveProperty('note')
     expect(res.results).toEqual([])
   })
+
+  it('supports alias argument formats (q, search_query, and raw string)', async () => {
+    proxyText.mockResolvedValue(DDG_HTML)
+    const res1 = await webSearchTool.execute({ q: 'nvidia nim' })
+    expect(res1.results).toHaveLength(2)
+
+    const res2 = await webSearchTool.execute({ search_query: 'nvidia nim' })
+    expect(res2.results).toHaveLength(2)
+
+    const res3 = await webSearchTool.execute('nvidia nim')
+    expect(res3.results).toHaveLength(2)
+  })
 })
 
 describe('web_search (Brave)', () => {

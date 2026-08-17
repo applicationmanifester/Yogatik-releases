@@ -5,9 +5,12 @@
 //   menu       — native app menu + shortcuts
 //   windowState— remember size/position between launches
 
-const { app, BrowserWindow, shell, globalShortcut, ipcMain } = require('electron')
+const { app, BrowserWindow, shell, globalShortcut, ipcMain, desktopCapturer, screen, clipboard } = require('electron')
 const path = require('path')
-const { spawn } = require('child_process')
+const os = require('os')
+const http = require('http')
+const url = require('url')
+const { spawn, exec } = require('child_process')
 
 const { registerFsBridge, loadGrant, getGrantedRoot } = require('./fsBridge.cjs')
 const { enableProviderCors } = require('./cors.cjs')
@@ -17,6 +20,15 @@ const { registerNotifications } = require('./notify.cjs')
 const { initAutoUpdate, checkForUpdates } = require('./updater.cjs')
 const { startScheduler, stopScheduler, registerSchedulerIPC } = require('./scheduler.cjs')
 const { registerSubAgentIPC } = require('./subAgentRunner.cjs')
+const { registerKeychain } = require('./keychain.cjs')
+const { registerClipboard, stopPolling } = require('./clipboardManager.cjs')
+const { registerWatcher, stopAllWatchers } = require('./watcher.cjs')
+const { registerPower } = require('./power.cjs')
+const { registerDialogs } = require('./dialogs.cjs')
+const { registerProcesses } = require('./processes.cjs')
+const { registerPty, killAllPty } = require('./pty.cjs')
+const { registerMcpStdio, killAllMcpStdio } = require('./mcpStdio.cjs')
+const { registerCompanionInput } = require('./companionInput.cjs')
 const windowState = require('./windowState.cjs')
 
 const isDev = !app.isPackaged
@@ -57,10 +69,17 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist-electron', 'index.html'))
   }
 
-  // External links open in the user's browser, not a new Electron window.
+  // External links open in the user's default browser, not inside the Electron window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) { shell.openExternal(url); return { action: 'deny' } }
     return { action: 'allow' }
+  })
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (/^https?:/.test(url) && !url.startsWith('http://localhost:5173')) {
+      event.preventDefault()
+      shell.openExternal(url)
+    }
   })
 
   // Closing hides to the tray (background) instead of quitting; real quit sets
@@ -80,6 +99,7 @@ if (!gotLock) {
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
       mainWindow.focus()
     }
   })
@@ -150,6 +170,17 @@ if (!gotLock) {
     loadGrant()
     registerSchedulerIPC()
     registerSubAgentIPC()
+    // Desktop-only capability modules (safeStorage vault, clipboard history,
+    // file watcher, power/idle, native dialogs, process manager, PTY).
+    registerKeychain()
+    registerClipboard(getWindow)
+    registerWatcher(getWindow)
+    registerPower(getWindow, { pauseScheduler: stopScheduler, resumeScheduler: startScheduler })
+    registerDialogs(getWindow)
+    registerProcesses()
+    registerPty(getWindow)
+    registerMcpStdio()
+    registerCompanionInput()
     startScheduler()
     createWindow()
     createTray(getWindow)
@@ -161,6 +192,58 @@ if (!gotLock) {
     } catch (err) {
       log(`Search sidecar unavailable: ${err.message}`)
     }
+
+    // Desktop system info & window controls
+    ipcMain.handle('desktop:isAlwaysOnTop', () => {
+      return mainWindow ? mainWindow.isAlwaysOnTop() : false
+    })
+
+    ipcMain.handle('desktop:toggleAlwaysOnTop', (_, flag) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return false
+      const current = mainWindow.isAlwaysOnTop()
+      const next = flag !== undefined ? Boolean(flag) : !current
+      mainWindow.setAlwaysOnTop(next)
+      mainWindow.webContents.send('menu', { type: 'always-on-top-changed', value: next })
+      return next
+    })
+
+    ipcMain.handle('desktop:getSystemInfo', () => {
+      return {
+        platform: process.platform,
+        arch: process.arch,
+        cpus: os.cpus()?.length || 1,
+        cpuModel: os.cpus()?.[0]?.model || 'Unknown CPU',
+        totalMemory: os.totalmem(),
+        freeMemory: os.freemem(),
+        uptime: os.uptime(),
+        electronVersion: process.versions.electron,
+        chromeVersion: process.versions.chrome,
+        nodeVersion: process.versions.node,
+      }
+    })
+
+    ipcMain.handle('desktop:showItemInFolder', async (_, p) => {
+      if (!p) return false
+      shell.showItemInFolder(path.normalize(p))
+      return true
+    })
+
+    ipcMain.handle('desktop:openPath', async (_, p) => {
+      if (!p) return false
+      await shell.openPath(path.normalize(p))
+      return true
+    })
+
+    ipcMain.handle('desktop:openExternal', async (_, url) => {
+      if (!url) return false
+      try {
+        if (/^https?:/.test(url)) {
+          await shell.openExternal(url)
+          return true
+        }
+      } catch { /* ignore */ }
+      return false
+    })
 
     // IPC for local search
     ipcMain.handle('local-search', async (_, query, options = {}) => {
@@ -232,11 +315,261 @@ if (!gotLock) {
       })
     })
 
+    // ─── AI Companion & Screen-Watcher IPC Handlers ───────────────────────────
+    let preCompanionBounds = null
+    let isCompanionActive = false
+
+    // 1. Capture primary screen or target window for vision AI analysis
+    ipcMain.handle('desktop:captureScreen', async () => {
+      try {
+        const sources = await desktopCapturer.getSources({
+          types: ['screen', 'window'],
+          thumbnailSize: { width: 1920, height: 1080 },
+        })
+        const primary = sources.find(s => s.id.startsWith('screen:')) || sources[0]
+        if (!primary) return { success: false, error: 'No screen source found' }
+        const dataUrl = primary.thumbnail.toDataURL('image/jpeg', 85)
+        return {
+          success: true,
+          name: primary.name,
+          dataUrl,
+          width: primary.thumbnail.getSize().width,
+          height: primary.thumbnail.getSize().height,
+        }
+      } catch (err) {
+        return { success: false, error: err.message }
+      }
+    })
+
+    // 2. Query the active foreground application & window title (Windows OS)
+    ipcMain.handle('desktop:getActiveWindow', async () => {
+      if (process.platform !== 'win32') {
+        return { success: true, appName: 'Desktop App', title: 'Active Window' }
+      }
+      return new Promise((resolve) => {
+        // PowerShell command to query the active foreground window
+        const psScript = `
+          $sig = @'
+            [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+            [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
+            [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+'@
+          Add-Type -MemberDefinition $sig -Name "Win32Util" -Namespace "Win32" -ErrorAction SilentlyContinue
+          $hwnd = [Win32.Win32Util]::GetForegroundWindow()
+          $sb = New-Object System.Text.StringBuilder 256
+          [void][Win32.Win32Util]::GetWindowText($hwnd, $sb, 256)
+          $pidVal = 0
+          [void][Win32.Win32Util]::GetWindowThreadProcessId($hwnd, [ref]$pidVal)
+          $proc = Get-Process -Id $pidVal -ErrorAction SilentlyContinue
+          [PSCustomObject]@{
+            appName = if ($proc) { $proc.ProcessName } else { "Unknown" }
+            title   = $sb.ToString()
+            pid     = $pidVal
+          } | ConvertTo-Json -Compress
+        `
+        exec(`powershell -NoProfile -NonInteractive -Command "${psScript.replace(/\r?\n/g, ' ')}"`, { timeout: 3000 }, (err, stdout) => {
+          if (err || !stdout.trim()) {
+            resolve({ success: true, appName: 'External Application', title: 'Active Window' })
+            return
+          }
+          try {
+            const data = JSON.parse(stdout.trim())
+            resolve({ success: true, appName: data.appName || 'Application', title: data.title || '', pid: data.pid })
+          } catch {
+            resolve({ success: true, appName: 'External App', title: stdout.trim() })
+          }
+        })
+      })
+    })
+
+    // 3. Toggle Always-on-Top Floating Companion Mode (compact overlay widget)
+    ipcMain.handle('desktop:setCompanionMode', async (_, enable) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return false
+      const next = enable !== undefined ? Boolean(enable) : !isCompanionActive
+      if (next && !isCompanionActive) {
+        preCompanionBounds = mainWindow.getBounds()
+        isCompanionActive = true
+        const primary = screen.getPrimaryDisplay()
+        const workArea = primary.workArea
+        const compWidth = 380
+        const compHeight = 600
+        mainWindow.setAlwaysOnTop(true, 'floating')
+        mainWindow.setBounds({
+          x: Math.round(workArea.x + workArea.width - compWidth - 20),
+          y: Math.round(workArea.y + workArea.height - compHeight - 20),
+          width: compWidth,
+          height: compHeight,
+        })
+      } else if (!next && isCompanionActive) {
+        isCompanionActive = false
+        mainWindow.setAlwaysOnTop(false)
+        if (preCompanionBounds) {
+          mainWindow.setBounds(preCompanionBounds)
+        } else {
+          mainWindow.setSize(1200, 820)
+          mainWindow.center()
+        }
+      }
+      mainWindow.webContents.send('companion-mode-changed', isCompanionActive)
+      return isCompanionActive
+    })
+
+    // 4. Perform synthetic action in target window or desktop (type, hotkey, open, clipboard)
+    ipcMain.handle('desktop:executeAction', async (_, action) => {
+      const { type, text, keys, targetUrl, targetApp } = action || {}
+      try {
+        if (type === 'type' && text) {
+          // Send keystrokes via Windows Forms SendKeys
+          const escaped = text.replace(/[{}+^%~()]/g, '{$&}')
+          exec(`powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${escaped}')"`)
+          return { success: true, action: 'type', text }
+        }
+        if (type === 'hotkey' && keys) {
+          exec(`powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${keys}')"`)
+          return { success: true, action: 'hotkey', keys }
+        }
+        if (type === 'clipboard' && text) {
+          clipboard.writeText(text)
+          return { success: true, action: 'clipboard', length: text.length }
+        }
+        if (type === 'launch' && (targetUrl || targetApp)) {
+          if (targetUrl) await shell.openExternal(targetUrl)
+          else if (targetApp) await shell.openPath(targetApp)
+          return { success: true, action: 'launch', target: targetUrl || targetApp }
+        }
+        return { success: false, error: `Unsupported action type: ${type}` }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    })
+
+    // ─── Native Google OAuth Desktop Bridge ─────────────────────────────────
+    ipcMain.handle('auth:google-desktop', async () => {
+      return new Promise((resolve) => {
+        let server = null
+        let timeoutTimer = null
+
+        const cleanup = () => {
+          if (timeoutTimer) clearTimeout(timeoutTimer)
+          if (server) {
+            try { server.close() } catch {}
+            server = null
+          }
+        }
+
+        server = http.createServer((req, res) => {
+          try {
+            const reqUrl = url.parse(req.url, true)
+            if (reqUrl.pathname === '/callback') {
+              const rawData = reqUrl.query.data
+              if (rawData) {
+                const parsed = JSON.parse(rawData)
+                res.writeHead(200, {
+                  'Content-Type': 'text/html; charset=utf-8',
+                  'Access-Control-Allow-Origin': '*',
+                })
+                res.end(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Signed in to Yogatik Desktop</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0e14; color: #f0f4f8; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .box { background: #121820; border: 1px solid #1e2632; border-radius: 16px; padding: 40px; text-align: center; max-width: 440px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    h1 { color: #ff6b35; font-size: 22px; margin-bottom: 12px; }
+    p { color: #8892b0; font-size: 14px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>✨ Signed in successfully!</h1>
+    <p>You are now authenticated in Yogatik Desktop. You can close this browser tab and return to the application.</p>
+  </div>
+</body>
+</html>`)
+                cleanup()
+                if (mainWindow) {
+                  if (mainWindow.isMinimized()) mainWindow.restore()
+                  mainWindow.show()
+                  mainWindow.focus()
+                }
+                resolve({ success: true, user: parsed, idToken: parsed.idToken })
+                return
+              }
+            }
+            res.writeHead(400, { 'Content-Type': 'text/plain' })
+            res.end('Bad Request')
+          } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'text/plain' })
+            res.end('Internal Error: ' + err.message)
+            cleanup()
+            resolve({ success: false, error: err.message })
+          }
+        })
+
+        // Listen on random available port
+        server.listen(0, '127.0.0.1', () => {
+          const port = server.address().port
+          const callbackUrl = `http://127.0.0.1:${port}/callback`
+          const targetAuthUrl = `https://yogatik.web.app/auth-desktop.html?callback=${encodeURIComponent(callbackUrl)}`
+          shell.openExternal(targetAuthUrl)
+
+          // 2 minute timeout
+          timeoutTimer = setTimeout(() => {
+            cleanup()
+            resolve({ success: false, error: 'Sign-in timed out. Please try again.' })
+          }, 120_000)
+        })
+
+        server.on('error', (err) => {
+          cleanup()
+          resolve({ success: false, error: err.message })
+        })
+      })
+    })
+
     // Global show/focus hotkey (works even when the window is hidden to tray).
     globalShortcut.register('CommandOrControl+Shift+Y', () => {
       if (!mainWindow) return
       if (mainWindow.isVisible() && mainWindow.isFocused()) mainWindow.hide()
       else { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus() }
+    })
+
+    // Global Companion Mode Hotkey (Ctrl+Shift+Space) to summon/toggle floating companion
+    globalShortcut.register('CommandOrControl+Shift+Space', () => {
+      if (!mainWindow) return
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+      mainWindow.webContents.send('toggle-companion-hotkey')
+    })
+
+    // Global "act on my selection" hotkey: copy the foreground selection, then
+    // relay the copied text to the renderer as a ready-to-send prompt.
+    globalShortcut.register('CommandOrControl+Alt+C', () => {
+      const relay = () => {
+        const text = clipboard.readText() || ''
+        if (!mainWindow || mainWindow.isDestroyed()) return
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show(); mainWindow.focus()
+        mainWindow.webContents.send('clipboard-selection-hotkey', { text, at: Date.now() })
+      }
+      if (process.platform === 'win32') {
+        // Send Ctrl+C to the foreground app first, then read after a short beat.
+        exec(`powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^c')"`,
+          () => setTimeout(relay, 250))
+      } else {
+        relay()
+      }
+    })
+
+    // Global quick search hotkey (brings up Yogatik and triggers the search modal)
+    globalShortcut.register('CommandOrControl+Alt+K', () => {
+      if (!mainWindow) return
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+      mainWindow.webContents.send('menu', 'open-palette')
     })
 
     app.on('activate', () => {
@@ -249,6 +582,10 @@ if (!gotLock) {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll()
     stopScheduler()  // Stop the cron daemon gracefully
+    stopPolling()    // Stop the clipboard poller
+    stopAllWatchers()
+    killAllPty()
+    killAllMcpStdio()
     if (searchSidecar) {
       searchSidecar.kill()
     }

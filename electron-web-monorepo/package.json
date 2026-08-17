@@ -1,0 +1,28 @@
+{
+  "name": "electron-web-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo for Electron desktop app and Web app with shared code",
+  "scripts": {
+    "dev:desktop": "pnpm --filter desktop dev",
+    "dev:web": "pnpm --filter web dev",
+    "build:desktop": "pnpm --filter desktop build",
+    "build:web": "pnpm --filter web build",
+    "build:all": "pnpm run build:shared && pnpm run build:desktop && pnpm run build:web",
+    "build:shared": "pnpm --filter shared build",
+    "lint": "pnpm --filter '*' run lint",
+    "typecheck": "pnpm --filter '*' run typecheck",
+    "test": "pnpm --filter '*' run test",
+    "clean": "pnpm --filter '*' run clean && rm -rf node_modules",
+    "electron:build": "pnpm --filter desktop electron:build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}

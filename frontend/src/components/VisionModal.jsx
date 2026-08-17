@@ -30,7 +30,7 @@ export function VisionModal({
   useEffect(() => {
     if (!isOpen) return
     const handler = (e) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onAskVision(visionQ) }
     }
     document.addEventListener('keydown', handler)

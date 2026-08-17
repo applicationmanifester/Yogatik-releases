@@ -11,8 +11,8 @@ function llmProxyPlugin() {
         if (req.method === 'OPTIONS') {
           res.writeHead(204, {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Target-URL',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
             'Access-Control-Max-Age': '86400',
           })
           res.end()
@@ -26,9 +26,11 @@ function llmProxyPlugin() {
           return
         }
 
+        const skip = new Set(['host', 'connection', 'x-target-url'])
         const headers = {}
-        if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type']
-        if (req.headers['authorization']) headers['Authorization'] = req.headers['authorization']
+        for (const [k, v] of Object.entries(req.headers)) {
+          if (!skip.has(k.toLowerCase()) && typeof v === 'string') headers[k] = v
+        }
 
         const chunks = []
         req.on('data', c => chunks.push(c))

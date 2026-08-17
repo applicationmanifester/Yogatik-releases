@@ -16,11 +16,30 @@ export const sttTool = {
     if (SR) {
       return new Promise((resolve) => {
         const r = new SR()
+        let settled = false
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true
+            try { r.stop() } catch {}
+            resolve({ success: false, error: 'Timeout' })
+          }
+        }, 15000)
         r.lang = lang; r.continuous = false; r.interimResults = false
-        r.onresult = (e) => resolve({ success: true, tool: 'stt', engine: 'web-speech', text: e.results[0][0].transcript, confidence: e.results[0][0].confidence })
-        r.onerror = (e) => resolve({ success: false, error: e.error })
+        r.onresult = (e) => {
+          if (!settled) {
+            settled = true
+            clearTimeout(timer)
+            resolve({ success: true, tool: 'stt', engine: 'web-speech', text: e.results[0][0].transcript, confidence: e.results[0][0].confidence })
+          }
+        }
+        r.onerror = (e) => {
+          if (!settled) {
+            settled = true
+            clearTimeout(timer)
+            resolve({ success: false, error: e.error })
+          }
+        }
         r.start()
-        setTimeout(() => { r.stop(); resolve({ success: false, error: 'Timeout' }) }, 15000)
       })
     }
 

@@ -38,6 +38,12 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
   const initialCode = String(children).replace(/\n$/, '')
   const [code, setCode] = useState(initialCode)
 
+  React.useEffect(() => {
+    if (!isEditing) {
+      setCode(String(children).replace(/\n$/, ''))
+    }
+  }, [children, isEditing])
+
   const copy = () => {
     navigator.clipboard.writeText(code)
     setCopied(true)
@@ -47,6 +53,25 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
   const isPreviewable = Boolean(rawLang && ['html', 'svg', 'xml', 'javascript', 'jsx', 'css'].includes(rawLang))
   const isExecutable = Boolean(rawLang && ['javascript', 'js', 'json', 'html', 'python', 'py'].includes(rawLang) && (code.includes('\n') || code.length > 20))
   const isCsv = rawLang === 'csv' || (code.includes(',') && code.includes('\n') && code.split('\n')[0].includes(','))
+  const isPpt = rawLang === 'pptx' || rawLang === 'ppt' || code.includes('.pptx') || code.includes('# Slide 1') || code.includes('Slide 1:')
+
+  const handleDownloadPpt = async () => {
+    try {
+      const { exportPptx } = await import('../tools/independentTools')
+      await exportPptx(code, 'presentation.pptx', true)
+    } catch {
+      // Fallback
+      const blob = new Blob([code], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'presentation.txt'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    }
+  }
 
   const handleDownloadCsv = () => {
     const blob = new Blob([code], { type: 'text/csv' })
@@ -54,6 +79,20 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
     const a = document.createElement('a')
     a.href = url
     a.download = 'spreadsheet_data.csv'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleDownloadFile = () => {
+    const extMap = { javascript: 'js', python: 'py', json: 'json', html: 'html', css: 'css', markdown: 'md', sql: 'sql', sh: 'sh', bash: 'sh' }
+    const ext = extMap[lang] || lang || 'txt'
+    const blob = new Blob([code], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `code_${Date.now().toString(36)}.${ext}`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -151,6 +190,16 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
               <Play size={11} /> {executing ? 'Running…' : 'Run Code'}
             </button>
           )}
+          {isPpt && (
+            <button
+              className="code-block-btn"
+              onClick={handleDownloadPpt}
+              title="Download PowerPoint Presentation (.pptx)"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'linear-gradient(135deg, #ff6b35, #ff8c42)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <FileDown size={11} /> Download .pptx
+            </button>
+          )}
           {isCsv && (
             <button
               className="code-block-btn"
@@ -159,6 +208,16 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
               style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--accent-color, #ff6b35)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
             >
               <FileDown size={11} /> Download CSV
+            </button>
+          )}
+          {!isPpt && !isCsv && code.length > 5 && (
+            <button
+              className="code-block-btn"
+              onClick={handleDownloadFile}
+              title={`Download as .${lang || 'txt'} file`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <FileDown size={11} /> Download
             </button>
           )}
           {onOpenArtifact && (

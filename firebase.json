@@ -29,6 +29,19 @@
       {
         "source": "/sw.js",
         "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      },
+      {
+        "source": "**",
+        "headers": [
+          { "key": "X-Content-Type-Options", "value": "nosniff" },
+          { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+          { "key": "X-Frame-Options", "value": "DENY" },
+          {
+            "comment": "Report-Only first: observe violations without breaking esm.run / WASM / provider calls, then promote to Content-Security-Policy once clean.",
+            "key": "Content-Security-Policy-Report-Only",
+            "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://esm.run https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: data: https:; font-src 'self' data: https:; connect-src 'self' https: wss: blob: data:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+          }
+        ]
       }
     ]
   }

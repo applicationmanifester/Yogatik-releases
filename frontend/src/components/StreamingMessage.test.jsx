@@ -103,4 +103,14 @@ describe('StreamingMessage', () => {
     paint()
     expect(onGrow).toHaveBeenCalledTimes(2)
   })
+
+  it('separates <think> tags into a reasoning block while streaming', () => {
+    const ref = createRef()
+    mount({ ref })
+
+    act(() => ref.current.push('<think>Planning the solution...</think>Here is the final answer.'))
+    paint()
+    expect(host.querySelector('.reasoning-body')?.textContent).toBe('Planning the solution...')
+    expect(host.querySelector('.message-content')?.textContent).toContain('Here is the final answer.')
+  })
 })

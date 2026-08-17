@@ -8,7 +8,11 @@ export const weatherTool = {
       location: { type: 'string', description: 'City name, coordinates, or "current" for device GPS location' },
     }, required: [] },
   },
-  async execute({ location = 'current' } = {}) {
+  async execute(args = {}) {
+    const rawLoc = typeof args === 'string'
+      ? args
+      : (args?.location ?? args?.city ?? args?.place ?? args?.query ?? args?.address ?? 'current')
+    const location = (typeof rawLoc === 'string' && rawLoc.trim()) ? rawLoc.trim() : 'current'
     let latitude = null
     let longitude = null
     let name = ''

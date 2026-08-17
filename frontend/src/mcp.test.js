@@ -1,26 +1,31 @@
 import { describe, it, expect } from 'vitest'
-import { parseRpcBody, mcpToolName, isMcpTool, getMcpSchemas } from './mcp'
+import { parseRpcBody, isSessionError, mcpToolName, isMcpTool } from './mcp'
 
-describe('MCP client helpers', () => {
+describe('mcp transport helpers', () => {
   it('parses a plain JSON-RPC body', () => {
-    const body = parseRpcBody('application/json', '{"jsonrpc":"2.0","id":1,"result":{"ok":true}}')
-    expect(body.result.ok).toBe(true)
+    expect(parseRpcBody('application/json', '{"result":{"ok":true}}')).toEqual({ result: { ok: true } })
   })
 
-  it('parses the last data: frame from an SSE stream', () => {
-    const sse = 'event: message\ndata: {"id":1,"result":{"tools":[]}}\n\ndata: {"id":2,"result":{"final":true}}\n\n'
-    const body = parseRpcBody('text/event-stream', sse)
-    expect(body.result.final).toBe(true)
+  it('parses the last data: frame from an SSE body', () => {
+    const sse = 'event: message\ndata: {"result":1}\n\ndata: {"result":2}\n\n'
+    expect(parseRpcBody('text/event-stream', sse)).toEqual({ result: 2 })
   })
 
-  it('namespaces tool names and recognizes them', () => {
-    const n = mcpToolName('github', 'create_issue')
-    expect(n).toBe('mcp__github__create_issue')
-    expect(isMcpTool(n)).toBe(true)
-    expect(isMcpTool('weather')).toBe(false)
+  it('returns null on unparseable bodies', () => {
+    expect(parseRpcBody('application/json', 'not json')).toBe(null)
   })
 
-  it('returns no schemas before any server connects', () => {
-    expect(getMcpSchemas()).toEqual([])
+  it('detects session / auth errors for reconnect', () => {
+    expect(isSessionError('MCP tools/call failed (401)')).toBe(true)
+    expect(isSessionError('session expired')).toBe(true)
+    expect(isSessionError('Not Found (404)')).toBe(true)
+    expect(isSessionError('rate limit (429)')).toBe(false)
+    expect(isSessionError('network error')).toBe(false)
+  })
+
+  it('namespaces and recognises MCP tool names', () => {
+    expect(mcpToolName('srv', 'read')).toBe('mcp__srv__read')
+    expect(isMcpTool('mcp__srv__read')).toBe(true)
+    expect(isMcpTool('web_search')).toBe(false)
   })
 })

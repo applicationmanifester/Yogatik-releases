@@ -5,6 +5,7 @@ vi.mock('./llm', () => ({ streamChat: vi.fn() }))
 vi.mock('./tools/index', () => ({
   getToolSchemas: vi.fn(() => []),
   executeTool: vi.fn(async () => ({ ok: true })),
+  prioritizeToolSchemas: vi.fn(schemas => schemas),
 }))
 vi.mock('./vision/source', () => ({
   describeWithoutModel: vi.fn(async () => ({ via: 'ocr', text: 'INVOICE TOTAL 42.00' })),

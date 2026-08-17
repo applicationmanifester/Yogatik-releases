@@ -10,7 +10,7 @@ function createTray(getWindow) {
     path.join(__dirname, '..', 'src-tauri', 'icons', '32x32.png'),
   )
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
-  tray.setToolTip('Yogatik')
+  tray.setToolTip('Yogatik Desktop AI')
 
   const sendMenuAction = (action) => {
     const win = getWindow()
@@ -28,14 +28,30 @@ function createTray(getWindow) {
   const menu = Menu.buildFromTemplate([
     { label: 'Open Yogatik', click: show },
     { label: 'New Chat', click: () => { show(); sendMenuAction('new-chat') } },
+    { label: 'Universal Search & Commands', click: () => { show(); sendMenuAction('open-palette') } },
+    { label: 'Model Arena (Compare Mode)', click: () => { show(); sendMenuAction('open-arena') } },
     { type: 'separator' },
+    {
+      label: 'Always on Top',
+      type: 'checkbox',
+      checked: getWindow() ? getWindow().isAlwaysOnTop() : false,
+      click: (item) => {
+        const win = getWindow()
+        if (win && !win.isDestroyed()) {
+          win.setAlwaysOnTop(item.checked)
+          sendMenuAction({ type: 'always-on-top-changed', value: item.checked })
+        }
+      },
+    },
     { label: 'Settings', click: () => { show(); sendMenuAction('open-settings') } },
+    { label: 'Error Diagnostics', click: () => { show(); sendMenuAction('open-diagnostics') } },
     { label: 'Grant Working Folder…', click: () => { show(); sendMenuAction('grant-folder') } },
     { type: 'separator' },
     { label: 'Check for Updates…', click: () => { show(); sendMenuAction('check-updates') } },
     { type: 'separator' },
-    { label: 'Quit', click: () => { app.isQuitting = true; app.quit() } },
+    { label: 'Quit Yogatik', click: () => { app.isQuitting = true; app.quit() } },
   ])
+
   tray.setContextMenu(menu)
   tray.on('click', show)
   return tray

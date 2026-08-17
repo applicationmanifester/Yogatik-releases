@@ -1,12 +1,22 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import ReactDOM from 'react-dom'
 import ReactMarkdown from 'react-markdown'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder } from 'lucide-react'
+import remarkGfm from 'remark-gfm'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Pin, Clock, Bell, Monitor } from 'lucide-react'
 import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate } from './api'
 import { isDesktop, grantFolder, getGrantedRoot } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
+import ToolStatusPanel from './components/ToolStatusPanel'
+import A11yAnnouncer, { announce } from './components/A11yAnnouncer'
+import CrisisCard from './components/CrisisCard'
+import DataDashboard from './components/DataDashboard'
+import OnboardingModal from './components/OnboardingModal'
+import { getProactiveCheckin, markCheckinShown } from './proactive'
+import { recordTurn } from './adaptation'
+import { startTurn } from './telemetry'
 import { MessageBubble } from './components/MessageBubble'
 import { AuthModal } from './components/AuthModal'
 import { ProviderModal } from './components/ProviderModal'
@@ -22,13 +32,21 @@ import { PersonalisePanel } from './components/PersonalisePanel'
 import { SkillsPanel } from './components/SkillsPanel'
 import { runWorkflow } from './workflows'
 import { DemoModal } from './components/DemoModal'
+import { AppOverviewModal } from './components/AppOverviewModal'
+import { McpModal } from './components/McpModal'
+import { FloatingCompanion } from './components/FloatingCompanion'
 import { DownloadModal } from './components/DownloadModal'
+import { DiagnosticsModal } from './components/DiagnosticsModal'
+import { DomainHubModal } from './components/DomainHubModal'
+import { ActiveTimerIndicator } from './components/ActiveTimerIndicator'
+import { openDocumentPip, closeDocumentPip, isDocumentPipSupported } from './pipCompanion'
+import { getErrorLog, clearErrorLog, getDiagnosticsReport, diagnoseError } from './errorLog'
 import { isDbClosedError } from './db'
 import { resolveFeatures } from './features'
 import { setLocalVLMConsent } from './vision/localVLM'
 import { setSemanticConsent } from './semantic'
 import { looksVisionCapable } from './vision/capability'
-import { getProviders as getLLMProviders } from './llm'
+import { getProviders as getLLMProviders, normalizeModelName } from './llm'
 import { prepareImage, isImageFile, imageFromClipboard, imageFromDrop } from './vision/attach'
 import { registerServiceWorker } from './pwa'
 import { requestPersistence, storageReport, formatBytes } from './storage'
@@ -48,13 +66,47 @@ function formatLatency(ms) {
   return `${m}m ${s}s`
 }
 
+function splitReasoning(content) {
+  if (typeof content !== 'string') return { reasoning: '', answer: content }
+  let reasoning = ''
+  const answer = content
+    .replace(/<think>([\s\S]*?)<\/think>/gi, (_, r) => { reasoning += r + '\n'; return '' })
+    .replace(/<think>([\s\S]*)$/i, (_, r) => { reasoning += r; return '' })
+    .trim()
+  return { reasoning: reasoning.trim(), answer }
+}
+
 const SUGGESTIONS = [
-  "What's the weather in New York?",
-  "Generate an image of a futuristic city",
-  "Translate 'hello world' to Japanese",
-  "Calculate the square root of 144",
-  "Search the web for today's AI news",
-  "Summarize this YouTube video",
+  {
+    category: 'Live Research',
+    label: "Search today's top AI & tech breakthroughs",
+    prompt: "Search the web for today's top artificial intelligence and tech news highlights with key takeaways.",
+  },
+  {
+    category: 'Productivity',
+    label: "Draft a polite follow-up email on project status",
+    prompt: "Draft a concise, professional follow-up email asking for an update on a pending project review.",
+  },
+  {
+    category: 'Code Assistant',
+    label: "Debug and optimize a slow query or code snippet",
+    prompt: "Review my code, identify performance bottlenecks, and suggest clean, efficient optimizations.",
+  },
+  {
+    category: 'Creative Gen',
+    label: "Generate a cozy cyberpunk coffee shop image",
+    prompt: "Generate an image of a cozy cyberpunk coffee shop in Tokyo on a rainy evening with warm neon glow.",
+  },
+  {
+    category: 'Learning',
+    label: "Explain complex concepts with everyday analogies",
+    prompt: "Explain how neural networks and large language models work using a simple, relatable everyday analogy.",
+  },
+  {
+    category: 'Daily Planning',
+    label: "Create a 5-day quick meal prep & grocery list",
+    prompt: "Create a balanced 5-day dinner meal plan under 30 minutes with an organized grocery shopping list.",
+  },
 ]
 
 
@@ -78,7 +130,19 @@ function formatDirectTimeAnswer() {
 
 // ─── Main App ───
 export default function App() {
-  const [conversations, setConversations] = useState([{ clientId: `c_def_${Date.now()}`, id: null, title: 'New Chat', messages: [] }])
+  const [conversations, setConversations] = useState([{
+    clientId: `c_def_${Date.now()}`,
+    id: null,
+    title: 'New Chat',
+    messages: [],
+    provider: 'local',
+    model: '',
+    systemPrompt: '',
+    persona: 'default',
+    temperature: 0.7,
+    webSearch: true,
+    tools: true,
+  }])
   const [activeArtifact, setActiveArtifact] = useState(null)
   const [activeIdx, setActiveIdx] = useState(0)
   const [input, setInput] = useState('')
@@ -213,13 +277,82 @@ export default function App() {
   const [showDemoModal, setShowDemoModal] = useState(false)
   const [showDownloadModal, setShowDownloadModal] = useState(false)
   const [showStorageDetails, setShowStorageDetails] = useState(false)
+  const [crisisCard, setCrisisCard] = useState(null)
+  const [checkin, setCheckin] = useState(null)
+  const [showDataDashboard, setShowDataDashboard] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try { return !localStorage.getItem('yogatik_onboarded') } catch { return false }
+  })
   const [showPersonaModal, setShowPersonaModal] = useState(false)
+  const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false)
+  const [showDomainHub, setShowDomainHub] = useState(false)
+  const [showOverviewModal, setShowOverviewModal] = useState(false)
+  const [showMcpModal, setShowMcpModal] = useState(false)
+  const [companionMode, setCompanionMode] = useState(false)
+  const [pipWindow, setPipWindow] = useState(null)
+
+  const handlePopOutPip = useCallback(async () => {
+    if (!isDocumentPipSupported()) {
+      showToast('Document Picture-in-Picture is not supported in this browser. Use Chrome/Edge 116+ or the Desktop app.')
+      return
+    }
+    try {
+      const win = await openDocumentPip({
+        width: 380,
+        height: 620,
+        onClosed: () => {
+          setPipWindow(null)
+          setCompanionMode(false)
+        },
+      })
+      setPipWindow(win)
+      setCompanionMode(false)
+    } catch (e) {
+      showToast(`Could not open Picture-in-Picture: ${e.message}`)
+    }
+  }, [])
+
+  const toggleCompanion = useCallback(async () => {
+    const next = !companionMode
+    setCompanionMode(next)
+    if (typeof window !== 'undefined' && window.__YOGATIK_COMPANION__?.setCompanionMode) {
+      await window.__YOGATIK_COMPANION__.setCompanionMode(next)
+    }
+  }, [companionMode])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.__YOGATIK_COMPANION__) {
+      const unbindHotkey = window.__YOGATIK_COMPANION__.onToggleHotkey?.(() => {
+        setCompanionMode(c => {
+          const next = !c
+          window.__YOGATIK_COMPANION__.setCompanionMode(next)
+          return next
+        })
+      })
+      const unbindMode = window.__YOGATIK_COMPANION__.onModeChanged?.((active) => {
+        setCompanionMode(active)
+      })
+      return () => {
+        unbindHotkey?.()
+        unbindMode?.()
+      }
+    }
+  }, [])
   // Generic confirm modal — replaces native confirm() throughout the app
   const [confirmModal, setConfirmModal] = useState(null) // { msg, okLabel?, cancelLabel?, onOk, onCancel? }
   // Project-name prompt modal — replaces native prompt() in addProject
   const [projectNameModal, setProjectNameModal] = useState(null) // { onSubmit }
   // Restore-mode modal — replaces confirm() in handleRestore
   const [restoreModal, setRestoreModal] = useState(null) // { file }
+  const [apiKeyInput, setApiKeyInput] = useState({})
+  const [savingApiKey, setSavingApiKey] = useState(null)
+  const [errorModalMsg, setErrorModalMsg] = useState(null)
+
+  // Memory-based proactive check-in (once/day, opt-out via proactiveAgent).
+  useEffect(() => {
+    if (features?.proactiveAgent === false) return
+    getProactiveCheckin().then(c => { if (c) setCheckin(c) }).catch(() => {})
+  }, [features])
 
   // Service worker updates + durable storage. Both are fire-and-forget: a
   // browser that refuses either must still get a working app.
@@ -272,6 +405,16 @@ export default function App() {
 
   const loadingMapRef = useRef(loadingMap)
   loadingMapRef.current = loadingMap  // always current — no useEffect lag
+  const isStreamingHereRef = useRef(isStreamingHere)
+  isStreamingHereRef.current = isStreamingHere
+  const isAnyModalOpen = !!(
+    showPalette || showAuthModal || showTerms || showProviderModal ||
+    showPersonalise || showSkills || showPersonaModal || showDomainHub ||
+    showDemoModal || showDiagnosticsModal || confirmModal || projectNameModal ||
+    restoreModal || showDownloadModal || errorModalMsg || arena
+  )
+  const isAnyModalOpenRef = useRef(isAnyModalOpen)
+  isAnyModalOpenRef.current = isAnyModalOpen
 
   // send() reads these refs so it always sees the latest state, even when
   // called from a closure captured during a previous render (e.g. right after
@@ -284,110 +427,173 @@ export default function App() {
   // Provider/model must be persisted: the agent reads them from IndexedDB, so
   // React-only state meant every message silently went to the stored default.
   const setProvider = useCallback((id) => {
-    setProviderState(prev => {
-      if (prev !== id) {
-        const provDef = getLLMProviders()[id]
-        const defModel = provDef?.default_model || provDef?.preferred?.[0] || ''
-        setModel(defModel)
-        setActiveModel(id, defModel).catch(() => {})
-      }
-      return id
-    })
+    const provDef = getLLMProviders()[id]
+    const defModel = provDef?.default_model || provDef?.preferred?.[0] || provDef?.models?.[0] || ''
+    setProviderState(id)
+    setModel(defModel)
     setActiveProvider(id).catch(() => {})
-    setConversations(prev => prev.map((c, i) => {
-      if (i !== activeIdx) return c
-      const provDef = getLLMProviders()[id]
-      const defModel = provDef?.default_model || provDef?.preferred?.[0] || ''
-      const updated = { ...c, provider: id, model: defModel }
-      if (updated.id) {
-        updateConversationModel(updated.id, id, defModel, {
-          systemPrompt: updated.systemPrompt,
-          temperature: updated.temperature,
-          webSearch: updated.webSearch,
-          tools: updated.tools,
-        }).catch(() => {})
-      }
-      return updated
-    }))
-  }, [activeIdx])
-  const chooseModel = useCallback((m, providerId = provider) => {
-    setModel(m)
-    setActiveModel(providerId, m).catch(() => {})
-    setConversations(prev => prev.map((c, i) => {
-      if (i !== activeIdx) return c
-      const updated = { ...c, provider: providerId, model: m }
-      if (updated.id) {
-        updateConversationModel(updated.id, providerId, m, {
-          systemPrompt: updated.systemPrompt,
-          temperature: updated.temperature,
-          webSearch: updated.webSearch,
-          tools: updated.tools,
-        }).catch(() => {})
-      }
-      return updated
-    }))
-  }, [provider, activeIdx])
+    setActiveModel(id, defModel).catch(() => {})
+
+    setConversations(prev => {
+      const curIdx = activeIdxRef.current
+      const targetClientId = prev[curIdx]?.clientId
+      const next = prev.map((c, i) => {
+        if (i !== curIdx && c.clientId !== targetClientId) return c
+        const updated = { ...c, provider: id, model: defModel }
+        if (updated.id) {
+          updateConversationModel(updated.id, id, defModel, {
+            systemPrompt: updated.systemPrompt,
+            persona: updated.persona,
+            temperature: updated.temperature,
+            webSearch: updated.webSearch,
+            tools: updated.tools,
+          }).catch(() => {})
+        }
+        return updated
+      })
+      conversationsRef.current = next
+      return next
+    })
+  }, [])
+
+  const chooseModel = useCallback((m, providerId = null) => {
+    const cleanModel = normalizeModelName(m)
+    setModel(cleanModel)
+    setConversations(prev => {
+      const curIdx = activeIdxRef.current
+      const targetClientId = prev[curIdx]?.clientId
+      const activeConv = prev[curIdx]
+      const pid = providerId || activeConv?.provider || provider
+      setActiveModel(pid, cleanModel).catch(() => {})
+      const next = prev.map((c, i) => {
+        if (i !== curIdx && c.clientId !== targetClientId) return c
+        const updated = { ...c, provider: pid, model: cleanModel }
+        if (updated.id) {
+          updateConversationModel(updated.id, pid, cleanModel, {
+            systemPrompt: updated.systemPrompt,
+            persona: updated.persona,
+            temperature: updated.temperature,
+            webSearch: updated.webSearch,
+            tools: updated.tools,
+          }).catch(() => {})
+        }
+        return updated
+      })
+      conversationsRef.current = next
+      return next
+    })
+  }, [provider])
 
   // Chat preferences persist across reloads like provider and model do.
   const setTemperature = useCallback((v) => {
     setTemperatureState(v)
     setPref('temperature', v).catch(() => {})
-    setConversations(prev => prev.map((c, i) => {
-      if (i !== activeIdx) return c
-      const updated = { ...c, temperature: v }
-      if (updated.id) {
-        updateConversationModel(updated.id, updated.provider, updated.model, {
-          systemPrompt: updated.systemPrompt,
-          temperature: v,
-          webSearch: updated.webSearch,
-          tools: updated.tools,
-        }).catch(() => {})
-      }
-      return updated
-    }))
-  }, [activeIdx])
+    setConversations(prev => {
+      const curIdx = activeIdxRef.current
+      const targetClientId = prev[curIdx]?.clientId
+      const next = prev.map((c, i) => {
+        if (i !== curIdx && c.clientId !== targetClientId) return c
+        const updated = { ...c, temperature: v }
+        if (updated.id) {
+          updateConversationModel(updated.id, updated.provider, updated.model, {
+            systemPrompt: updated.systemPrompt,
+            persona: updated.persona,
+            temperature: v,
+            webSearch: updated.webSearch,
+            tools: updated.tools,
+          }).catch(() => {})
+        }
+        return updated
+      })
+      conversationsRef.current = next
+      return next
+    })
+  }, [])
+
   const setWebSearch = useCallback((v) => {
     setWebSearchState(v)
     setPref('web_search', v).catch(() => {})
-    setConversations(prev => prev.map((c, i) => {
-      if (i !== activeIdx) return c
-      const updated = { ...c, webSearch: v }
-      if (updated.id) {
-        updateConversationModel(updated.id, updated.provider, updated.model, {
-          systemPrompt: updated.systemPrompt,
-          temperature: updated.temperature,
-          webSearch: v,
-          tools: updated.tools,
-        }).catch(() => {})
-      }
-      return updated
-    }))
-  }, [activeIdx])
+    setConversations(prev => {
+      const curIdx = activeIdxRef.current
+      const targetClientId = prev[curIdx]?.clientId
+      const next = prev.map((c, i) => {
+        if (i !== curIdx && c.clientId !== targetClientId) return c
+        const updated = { ...c, webSearch: v }
+        if (updated.id) {
+          updateConversationModel(updated.id, updated.provider, updated.model, {
+            systemPrompt: updated.systemPrompt,
+            persona: updated.persona,
+            temperature: updated.temperature,
+            webSearch: v,
+            tools: updated.tools,
+          }).catch(() => {})
+        }
+        return updated
+      })
+      conversationsRef.current = next
+      return next
+    })
+  }, [])
+
   const setAutoRoute = useCallback((v) => {
     setAutoRouteState(v)
     setPref('auto_route', v).catch(() => {})
   }, [])
+
   const setFallback = useCallback((v) => {
     setFallbackState(v)
     setPref('fallback', v).catch(() => {})
   }, [])
+
   const setToolsEnabled = useCallback((v) => {
     setToolsEnabledState(v)
     setPref('tools_enabled', v).catch(() => {})
-    setConversations(prev => prev.map((c, i) => {
-      if (i !== activeIdx) return c
-      const updated = { ...c, tools: v }
-      if (updated.id) {
-        updateConversationModel(updated.id, updated.provider, updated.model, {
-          systemPrompt: updated.systemPrompt,
-          temperature: updated.temperature,
-          webSearch: updated.webSearch,
-          tools: v,
-        }).catch(() => {})
-      }
-      return updated
-    }))
-  }, [activeIdx])
+    setConversations(prev => {
+      const curIdx = activeIdxRef.current
+      const targetClientId = prev[curIdx]?.clientId
+      const next = prev.map((c, i) => {
+        if (i !== curIdx && c.clientId !== targetClientId) return c
+        const updated = { ...c, tools: v }
+        if (updated.id) {
+          updateConversationModel(updated.id, updated.provider, updated.model, {
+            systemPrompt: updated.systemPrompt,
+            persona: updated.persona,
+            temperature: updated.temperature,
+            webSearch: updated.webSearch,
+            tools: v,
+          }).catch(() => {})
+        }
+        return updated
+      })
+      conversationsRef.current = next
+      return next
+    })
+  }, [])
+
+  const setPersona = useCallback((personaId) => {
+    setActiveTemplate(personaId)
+    setPref('persona', personaId).catch(() => {})
+    setConversations(prev => {
+      const curIdx = activeIdxRef.current
+      const targetClientId = prev[curIdx]?.clientId
+      const next = prev.map((c, i) => {
+        if (i !== curIdx && c.clientId !== targetClientId) return c
+        const updated = { ...c, persona: personaId }
+        if (updated.id) {
+          updateConversationModel(updated.id, updated.provider, updated.model, {
+            systemPrompt: updated.systemPrompt,
+            persona: personaId,
+            temperature: updated.temperature,
+            webSearch: updated.webSearch,
+            tools: updated.tools,
+          }).catch(() => {})
+        }
+        return updated
+      })
+      conversationsRef.current = next
+      return next
+    })
+  }, [])
   /** One updater for every small preference the Personalise panel owns. */
   const updatePref = useCallback((key, value) => {
     setPrefsState(p => ({ ...p, [key]: value }))
@@ -494,6 +700,23 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleGlobalShortcuts)
   }, [liveConfig])
 
+  const [isPinned, setIsPinned] = useState(false)
+
+  // Initialize Always on Top status in desktop build
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.isAlwaysOnTop) {
+      window.__YOGATIK_DESKTOP__.isAlwaysOnTop().then(setIsPinned).catch(() => {})
+    }
+  }, [])
+
+  const togglePin = useCallback(async () => {
+    if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.toggleAlwaysOnTop) {
+      const next = await window.__YOGATIK_DESKTOP__.toggleAlwaysOnTop()
+      setIsPinned(next)
+      showToast(next ? 'Window pinned Always on Top' : 'Window unpinned')
+    }
+  }, [showToast])
+
   const installPwa = async () => {
     if (!pwaPrompt) return
     pwaPrompt.prompt()
@@ -598,17 +821,25 @@ export default function App() {
       // Ctrl+Shift+O or Cmd+Shift+O -> New Chat
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'O' || e.key === 'o')) {
         e.preventDefault()
-        newChatRef.current()
+        newChatRef.current?.()
       }
-      // Escape -> Stop generation (only if THIS chat is generating)
-      if (e.key === 'Escape' && isStreamingHere) {
+      // Alt+D -> Social Media & Domain Intelligence Hub
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault()
-        handleStop()
+        setShowDomainHub(v => !v)
+      }
+      // Escape -> Stop generation (only if THIS chat is generating AND no modal is open)
+      if (e.key === 'Escape') {
+        if (isAnyModalOpenRef.current) return
+        if (isStreamingHereRef.current) {
+          e.preventDefault()
+          handleStopRef.current?.()
+        }
       }
     }
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [isStreamingHere])
+  }, [])
 
 
   // One fetch, not two: getProviders() is an alias of getModels() and the
@@ -641,9 +872,9 @@ export default function App() {
       onSubmit: async (name) => {
         setProjectNameModal(null)
         if (!name?.trim()) return
-        const pid = await createProject(name.trim())
+        const proj = await createProject(name.trim())
         refreshProjects()
-        chooseProject(pid)
+        chooseProject(proj?.id ?? proj)
       }
     })
   }
@@ -667,6 +898,10 @@ export default function App() {
     setProviderStatus(await getAllProviderStatus())
   }
 
+  const showInfoModal = (title, msg) => {
+    setErrorModalMsg({ title, msg, isError: false })
+  }
+
   /** Manual nudge — sync already runs on sign-in and on every key save. */
   const handleSyncNow = async () => {
     setSyncing(true)
@@ -674,7 +909,7 @@ export default function App() {
       const { pulled = 0, pushed = 0 } = await syncCloudKeys()
       refreshKeys()
       refreshModels()
-      setErrorModalMsg(pulled || pushed
+      showInfoModal('Cloud Sync', pulled || pushed
         ? `Synced: ${pulled} key${pulled === 1 ? '' : 's'} brought to this device, ${pushed} uploaded.`
         : 'Everything is already up to date on this device.')
     } catch (e) {
@@ -713,13 +948,32 @@ export default function App() {
   const loadConversations = useCallback(async (projectId = activeProject) => {
     const convs = await getConversations(projectId ?? undefined)
     if (!convs.length) {
-      setConversations([{
-        clientId: `c_def_${Date.now()}`, id: null, title: 'New Chat', messages: [],
-        provider: provider || 'local', model: model || '',
-        systemPrompt: '', temperature: temperature ?? 0.7,
-        webSearch: webSearch ?? true, tools: tools ?? true,
-      }])
+      const activeP = (await getActiveProvider().catch(() => null)) || provider || 'local'
+      const activeM = (await getActiveModel(activeP).catch(() => '')) || model || ''
+      const pref = await getPrefs().catch(() => ({}))
+      const defConv = {
+        clientId: `c_def_${Date.now()}`,
+        id: null,
+        title: 'New Chat',
+        messages: [],
+        provider: activeP,
+        model: activeM,
+        systemPrompt: '',
+        persona: pref?.persona || 'default',
+        temperature: pref?.temperature ?? 0.7,
+        webSearch: pref?.web_search ?? true,
+        tools: pref?.tools_enabled ?? true,
+      }
+      setConversations([defConv])
+      conversationsRef.current = [defConv]
       setActiveIdx(0)
+      activeIdxRef.current = 0
+      setProviderState(activeP)
+      setModel(activeM)
+      if (pref?.temperature != null) setTemperatureState(pref.temperature)
+      if (pref?.web_search != null) setWebSearchState(pref.web_search)
+      if (pref?.tools_enabled != null) setToolsEnabledState(pref.tools_enabled)
+      if (pref?.persona) setActiveTemplate(pref.persona)
       return
     }
     const first = await getConversation(convs[0].id)
@@ -728,23 +982,28 @@ export default function App() {
       id: c.id,
       title: c.title,
       provider: c.provider || provider || 'local',
-      model: c.model !== undefined ? c.model : model || '',
+      model: c.model !== undefined ? c.model : (model || ''),
       systemPrompt: c.settings?.systemPrompt ?? c.systemPrompt ?? '',
-      temperature: c.settings?.temperature ?? c.temperature ?? temperature ?? 0.7,
-      webSearch: c.settings?.webSearch ?? c.webSearch ?? webSearch ?? true,
-      tools: c.settings?.tools ?? c.tools ?? tools ?? true,
+      persona: c.settings?.persona ?? c.persona ?? 'default',
+      temperature: c.settings?.temperature ?? c.temperature ?? (temperature ?? 0.7),
+      webSearch: c.settings?.webSearch ?? c.webSearch ?? (webSearch ?? true),
+      tools: c.settings?.tools ?? c.tools ?? (tools ?? true),
       messages: i === 0 && first ? (first.messages || []).map(hydrate) : [],
     }))
     const filtered = mapped.filter(c => c.title || (c.messages && c.messages.length))
     setConversations(filtered)
-    if (!filtered.length) setActiveIdx(0)
-    else {
+    conversationsRef.current = filtered
+    if (!filtered.length) {
+      setActiveIdx(0)
+      activeIdxRef.current = 0
+    } else {
       const top = filtered[0]
       if (top.provider) setProviderState(top.provider)
       if (top.model !== undefined) setModel(top.model)
       if (top.temperature !== undefined) setTemperatureState(top.temperature)
       if (top.webSearch !== undefined) setWebSearchState(top.webSearch)
       if (top.tools !== undefined) setToolsEnabledState(top.tools)
+      if (top.persona) setActiveTemplate(top.persona)
     }
   }, [activeProject, provider, model, temperature, webSearch, tools])
 
@@ -778,15 +1037,28 @@ export default function App() {
     setAttachedFile(null)
     setAttachedImage(null)
     setVisibleCount(WINDOW_STEP)
+    setShowSkills(false)
+    setShowPersonalise(false)
+    setShowToolPicker(false)
+    setShowPalette(false)
+    setShowProviderModal(false)
+    setShowPersonaModal(false)
+    setShowDemoModal(false)
+    setShowDiagnosticsModal(false)
+
+    const activeP = provider || 'local'
+    const activeM = normalizeModelName(model)
+    const activePersona = activeTemplate || 'default'
 
     const newConv = {
       clientId: `c_new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       id: null,
       title: 'New Chat',
       messages: [],
-      provider: provider || 'local',
-      model: model || '',
+      provider: activeP,
+      model: activeM,
       systemPrompt: '',
+      persona: activePersona,
       temperature: temperature ?? 0.7,
       webSearch: webSearch ?? true,
       tools: tools ?? true,
@@ -796,48 +1068,102 @@ export default function App() {
       // If the top chat is already a brand new empty draft with 0 messages and not streaming, reuse it
       const topIsIdleDraft = prev[0] && !prev[0].id && (!prev[0].messages || prev[0].messages.length === 0) && !loadingMapRef.current[prev[0]?.clientId]
       if (topIsIdleDraft) {
-        return prev.map((c, i) => i === 0 ? newConv : c)
+        const next = [newConv, ...prev.slice(1)]
+        conversationsRef.current = next
+        return next
       }
-      return [newConv, ...prev]
+      const next = [newConv, ...prev]
+      conversationsRef.current = next
+      return next
     })
 
     setActiveIdx(0)
+    activeIdxRef.current = 0
+    setProviderState(newConv.provider)
+    setModel(newConv.model)
+    setTemperatureState(newConv.temperature)
+    setWebSearchState(newConv.webSearch)
+    setToolsEnabledState(newConv.tools)
+    setActiveTemplate(newConv.persona)
+
     if (window.innerWidth <= 768) setSidebarOpen(false)
     setTimeout(() => textareaRef.current?.focus(), 50)
-  }, [provider, model, temperature, webSearch, tools])
+  }, [provider, model, temperature, webSearch, tools, activeTemplate])
 
   const newChatRef = useRef(newChat)
   newChatRef.current = newChat  // always current — no useEffect lag
 
+  // Desktop native menu listener (New Chat, Settings, Palette, Arena, Live, Diagnostics, Grant Folder)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.__YOGATIK_MENU__?.on) return
+    const unlisten = window.__YOGATIK_MENU__.on((action) => {
+      if (typeof action === 'string') {
+        if (action === 'new-chat') newChatRef.current?.()
+        else if (action === 'open-settings') { setSidebarOpen(true); setSettingsOpen(true) }
+        else if (action === 'open-palette') setShowPalette(true)
+        else if (action === 'open-arena') setCompareMode(true)
+        else if (action === 'open-live') startLive()
+        else if (action === 'open-diagnostics') setShowDiagnosticsModal(true)
+        else if (action === 'grant-folder') handleGrantFolder()
+      } else if (action && typeof action === 'object') {
+        if (action.type === 'always-on-top-changed') {
+          setIsPinned(action.value)
+        }
+      }
+    })
+    return () => { if (typeof unlisten === 'function') unlisten() }
+  }, [handleGrantFolder])
+
   /** Jump to a conversation by its stored id — the palette searches messages,
    *  which know their conversation but not its position in the sidebar. */
   const openChatById = useCallback(async (convId) => {
-    const idx = conversations.findIndex(c => c.id === convId)
+    setShowPalette(false)
+    setShowSkills(false)
+    setShowPersonalise(false)
+    setShowToolPicker(false)
+    setShowProviderModal(false)
+    setShowPersonaModal(false)
+    setShowDemoModal(false)
+    const idx = conversationsRef.current.findIndex(c => c.id === convId)
     if (idx >= 0) { switchChat(idx); return }
     const full = await getConversation(convId)
     if (!full) return
     const formatted = {
-      clientId: `c_${full.id}_0`,
+      clientId: `c_${full.id}_${Math.random().toString(36).slice(2, 6)}`,
       ...full,
       provider: full.provider || provider || 'local',
-      model: full.model !== undefined ? full.model : model || '',
+      model: full.model !== undefined ? full.model : (model || ''),
       systemPrompt: full.settings?.systemPrompt ?? full.systemPrompt ?? '',
-      temperature: full.settings?.temperature ?? full.temperature ?? temperature ?? 0.7,
-      webSearch: full.settings?.webSearch ?? full.webSearch ?? webSearch ?? true,
-      tools: full.settings?.tools ?? full.tools ?? tools ?? true,
+      persona: full.settings?.persona ?? full.persona ?? 'default',
+      temperature: full.settings?.temperature ?? full.temperature ?? (temperature ?? 0.7),
+      webSearch: full.settings?.webSearch ?? full.webSearch ?? (webSearch ?? true),
+      tools: full.settings?.tools ?? full.tools ?? (tools ?? true),
       messages: (full.messages || []).map(hydrate),
     }
-    setConversations(prev => [formatted, ...prev])
+    setConversations(prev => {
+      const next = [formatted, ...prev]
+      conversationsRef.current = next
+      return next
+    })
     setActiveIdx(0)
+    activeIdxRef.current = 0
     setVisibleCount(WINDOW_STEP)
     if (window.innerWidth <= 768) setSidebarOpen(false)
-  }, [conversations, provider, model, temperature, webSearch, tools])
+  }, [provider, model, temperature, webSearch, tools])
 
   const switchChat = async (idx) => {
     setActiveIdx(idx)
+    activeIdxRef.current = idx
     setVisibleCount(WINDOW_STEP)
+    setShowSkills(false)
+    setShowPersonalise(false)
+    setShowPalette(false)
+    setShowToolPicker(false)
+    setShowProviderModal(false)
+    setShowPersonaModal(false)
+    setShowDemoModal(false)
     if (window.innerWidth <= 768) setSidebarOpen(false)
-    const c = conversations[idx]
+    const c = conversationsRef.current[idx] || conversations[idx]
     if (!c) return
 
     if (c.provider) setProviderState(c.provider)
@@ -845,48 +1171,70 @@ export default function App() {
     if (c.temperature !== undefined) setTemperatureState(c.temperature)
     if (c.webSearch !== undefined) setWebSearchState(c.webSearch)
     if (c.tools !== undefined) setToolsEnabledState(c.tools)
+    if (c.persona !== undefined) setActiveTemplate(c.persona)
 
-    if (c.id && c.messages.length === 0) {
+    if (c.id && (!c.messages || c.messages.length === 0)) {
       const full = await getConversation(c.id)
       if (full) {
-        setConversations(prev => prev.map((conv, i) =>
-          i === idx ? {
-            ...conv,
-            provider: full.provider || conv.provider,
-            model: full.model !== undefined ? full.model : conv.model,
-            systemPrompt: full.settings?.systemPrompt ?? conv.systemPrompt ?? '',
-            temperature: full.settings?.temperature ?? conv.temperature ?? 0.7,
-            webSearch: full.settings?.webSearch ?? conv.webSearch ?? true,
-            tools: full.settings?.tools ?? conv.tools ?? true,
-            messages: (full.messages || []).map(hydrate),
-          } : conv
-        ))
+        setConversations(prev => {
+          const next = prev.map(conv =>
+            (conv.id === c.id || conv.clientId === c.clientId) ? {
+              ...conv,
+              provider: full.provider || conv.provider,
+              model: full.model !== undefined ? full.model : conv.model,
+              systemPrompt: full.settings?.systemPrompt ?? conv.systemPrompt ?? '',
+              persona: full.settings?.persona ?? conv.persona ?? 'default',
+              temperature: full.settings?.temperature ?? conv.temperature ?? 0.7,
+              webSearch: full.settings?.webSearch ?? conv.webSearch ?? true,
+              tools: full.settings?.tools ?? conv.tools ?? true,
+              messages: (full.messages || []).map(hydrate),
+            } : conv
+          )
+          conversationsRef.current = next
+          return next
+        })
       }
     }
   }
 
   const deleteChat = async (idx) => {
-    const c = conversations[idx]
+    const c = conversationsRef.current[idx] || conversations[idx]
     const cClientId = c?.clientId
+    const cId = c?.id
     const doDelete = async () => {
-      if (c?.id) { try { await deleteConversation(c.id) } catch {} }
+      if (cId) { try { await deleteConversation(cId) } catch {} }
       setVisibleCount(WINDOW_STEP)
       setConversations(prev => {
-        const next = prev.filter((_, i) => i !== idx)
-        return next.length ? next : [{ clientId: `c_def_${Date.now()}`, id: null, title: 'New Chat', messages: [], provider, model, temperature, webSearch, tools }]
+        const next = prev.filter((item, i) => (cClientId ? item.clientId !== cClientId : i !== idx))
+        const fallbackList = next.length ? next : [{
+          clientId: `c_def_${Date.now()}`,
+          id: null,
+          title: 'New Chat',
+          messages: [],
+          provider: provider || 'local',
+          model: model || '',
+          persona: activeTemplate || 'default',
+          temperature: temperature ?? 0.7,
+          webSearch: webSearch ?? true,
+          tools: tools ?? true,
+        }]
+        conversationsRef.current = fallbackList
+        return fallbackList
       })
-      setActiveIdx(prev => Math.max(0, prev >= idx ? prev - 1 : prev))
+      setActiveIdx(prev => {
+        const nextIdx = Math.max(0, prev >= idx ? prev - 1 : prev)
+        activeIdxRef.current = nextIdx
+        return nextIdx
+      })
     }
     if (cClientId && loadingMap[cClientId]) {
       showConfirm(
         'This chat is currently generating a response. Stop generation and delete?',
-        () => {
-          const streamId = streamIdMap[cClientId]
-          if (streamId) stopGeneration(streamId).catch(() => {})
+        async () => {
+          await stopGeneration(cClientId).catch(() => {})
           setLoadingMap(prev => { const n = { ...prev }; delete n[cClientId]; return n })
-          setStreamingMap(prev => { const n = { ...prev }; delete n[cClientId]; return n })
-          setStatusMap(prev => { const n = { ...prev }; delete n[cClientId]; return n })
-          setStreamIdMap(prev => { const n = { ...prev }; delete n[cClientId]; return n })
+          setStreamingMap(prev => ({ ...prev, [cClientId]: '' }))
+          setStatusMap(prev => ({ ...prev, [cClientId]: '' }))
           doDelete()
         },
         { okLabel: 'Stop & Delete' }
@@ -914,17 +1262,16 @@ export default function App() {
 
   const handleStop = async () => {
     const activeClientId = conv?.clientId
-    const streamId = activeClientId ? streamIdMap[activeClientId] : null
-    if (streamId) {
-      await stopGeneration(streamId)
-      setStreamIdMap(prev => ({ ...prev, [activeClientId]: null }))
+    if (activeClientId) {
+      await stopGeneration(activeClientId).catch(() => {})
       setLoadingMap(prev => { const n = { ...prev }; delete n[activeClientId]; return n })
+      setStreamingMap(prev => ({ ...prev, [activeClientId]: '' }))
+      setStatusMap(prev => ({ ...prev, [activeClientId]: '' }))
     }
   }
 
-  const [apiKeyInput, setApiKeyInput] = useState({})
-  const [savingApiKey, setSavingApiKey] = useState(null)
-  const [errorModalMsg, setErrorModalMsg] = useState(null)
+  const handleStopRef = useRef(handleStop)
+  handleStopRef.current = handleStop
 
   const handleAddApiKey = async (pid) => {
     const keyToSave = apiKeyInput[pid]
@@ -956,20 +1303,12 @@ export default function App() {
 
   const handleAutoPick = async (pid = provider) => {
     setAutoPicking(true)
-    showToast('')
     try {
       const res = await autoPickModel(pid, { onProgress: setAutoPickMsg })
       setModel(res.model)
       setProviderStatus(await getAllProviderStatus())
       setMeasuredModels(await getMeasuredModels(pid))
-      const others = res.tried.filter(t => t.model !== res.model && t.ok)
-        .sort((a, b) => a.latencyMs - b.latencyMs)
-        .map(t => `${t.model} (${formatLatency(t.latencyMs)})`)
-      setErrorModalMsg(
-        `Selected ${res.model} — responded in ${formatLatency(res.latencyMs)}.` +
-        (others.length ? `\n\nAlso working: ${others.join(', ')}` : '') +
-        `\n\nChange it any time in the Model box.`
-      )
+      showToast(`Selected ${res.model} (${formatLatency(res.latencyMs)})`)
     } catch (e) {
       setErrorModalMsg(e.message)
     } finally {
@@ -1015,8 +1354,9 @@ export default function App() {
     } catch { setTtsPlaying(false); console.error('TTS failed') }
   }
 
-  const getSystemPrompt = useCallback((query = '', customSystemPrompt = '') => {
-    const t = promptTemplates.find(t => t.id === activeTemplate)
+  const getSystemPrompt = useCallback((query = '', customSystemPrompt = '', convPersona = null) => {
+    const personaToUse = convPersona || activeTemplate
+    const t = promptTemplates.find(tpl => tpl.id === personaToUse)
     const basePrompt = customSystemPrompt || t?.system_prompt || 'You are Yogatik, an intelligent AI assistant.'
 
     let queryContext = ''
@@ -1065,7 +1405,8 @@ export default function App() {
       '- When tools are enabled, prefer multi-step tool chains to build complete, accurate answers.\n' +
       '\nPRESENTATION, DOCUMENT & SLIDE ENHANCEMENT GUIDELINES:\n' +
       '- Present answers with high visual clarity: use clear headers (#, ##), formatted bullet points, bold key terms, and structured Markdown tables.\n' +
-      '- When creating or editing PowerPoint presentations, Word documents, CSV spreadsheets, or reports, call `doc_export` or `doc_enhance` to build high-quality files with slide graphics, calculated totals, and executive styling.\n' +
+      '- When creating PowerPoint presentations (.pptx), structure slides cleanly using horizontal rules (`---`) between slides, `# Slide Title` or `## Slide Title`, formatted bullets with `* **Key Term**: Detailed explanation`, KPI stat callouts (e.g. `+45% Growth`, `$2.5M Revenue`, `99.9% Uptime`), and comparison tables (`| Feature | Value |`).\n' +
+      '- When creating or editing PowerPoint presentations, Word documents, CSV spreadsheets, or reports, call `doc_export` or `doc_enhance` to generate high-quality files with slide graphics, calculated totals, and executive styling.\n' +
       '- When asked to generate visual aids, graphics, icons, or stickers, call the `sticker_generate` or `image_generate` tools.\n' +
       '- When explaining processes or workflows, include Mermaid flowcharts using `diagram` or ```mermaid code blocks.\n' +
       '- Keep document exports (Word .doc, PowerPoint .pptx, CSV) structured into clean sections and slides.'
@@ -1088,7 +1429,7 @@ export default function App() {
     }))
   }
 
-  const send = async (text = input) => {
+  const send = async (text = input, overrideImage = null) => {
     if (compareMode) {
       runCompare(text)
       return
@@ -1100,24 +1441,29 @@ export default function App() {
     if (!targetConv) return
     const targetClientId = targetConv.clientId
 
-    if ((!text.trim() && !attachedFile && !attachedImage) || loadingMapRef.current[targetClientId]) return
-    if (!navigator.onLine) {
-      setErrorModalMsg("You're offline. Yogatik needs a connection to reach the model provider — your chats and documents are safe on this device.")
+    if ((!text.trim() && !attachedFile && !attachedImage && !overrideImage) || loadingMapRef.current[targetClientId]) return
+    const useProvider = targetConv.provider || provider || 'local'
+    let useModel = normalizeModelName(targetConv.model) || normalizeModelName(model)
+    if (!useModel) {
+      const provDef = getLLMProviders()[useProvider]
+      useModel = normalizeModelName(provDef?.default_model) || normalizeModelName(provDef?.default) || normalizeModelName(provDef?.preferred?.[0]) || normalizeModelName(provDef?.models?.[0]) || ''
+    }
+
+    const provDef = getLLMProviders()[useProvider]
+    const isLocalOrOllama = useProvider === 'ollama' || useProvider === 'local' || Boolean(provDef?.isLocal || provDef?.isOllama || provDef?.offlineReady || (provDef?.baseUrl && /localhost|127\.0\.0\.1/i.test(provDef.baseUrl)))
+
+    if (!navigator.onLine && !isLocalOrOllama) {
+      setErrorModalMsg("You're offline. Cloud models require an internet connection.\n\n👉 Switch to Ollama (local) or On-device model in the bottom picker to chat 100% offline without internet!")
       return
     }
 
-    const useProvider = targetConv.provider || provider
-    let useModel = (targetConv.model && targetConv.model.trim()) ? targetConv.model : model
-    if (!useModel) {
-      const provDef = getLLMProviders()[useProvider]
-      useModel = provDef?.default_model || provDef?.preferred?.[0] || ''
-    }
-    const useTemp = targetConv.temperature !== undefined ? targetConv.temperature : temperature
-    const useWeb = targetConv.webSearch !== undefined ? targetConv.webSearch : webSearch
-    const useTools = targetConv.tools !== undefined ? targetConv.tools : tools
+    const usePersona = targetConv.persona || activeTemplate || 'default'
+    const useTemp = targetConv.temperature !== undefined ? targetConv.temperature : (temperature ?? 0.7)
+    const useWeb = targetConv.webSearch !== undefined ? targetConv.webSearch : (webSearch ?? true)
+    const useTools = targetConv.tools !== undefined ? targetConv.tools : (tools ?? true)
 
-    // Auto-switch to a vision model if enabled and current model cannot see natively
-    if (attachedImage && features.autoVision !== false && modelSees === false) {
+    // Auto-switch to a vision model ONLY if user explicitly enabled it in Settings
+    if ((attachedImage || overrideImage) && features.autoVision === true && modelSees === false) {
       const visionCandidate = (providerModels || []).find(m => looksVisionCapable(m))
       if (visionCandidate) {
         chooseModel(visionCandidate, useProvider)
@@ -1128,7 +1474,7 @@ export default function App() {
     // models is populated asynchronously; if it's still empty the provider list
     // hasn't loaded yet — don't block the first send while that fetch is in flight.
     const modelsLoaded = Object.keys(models).length > 0
-    const isProviderReady = !modelsLoaded || models[useProvider]?.available || keyInfo[useProvider]?.configured || useProvider === 'local'
+    const isProviderReady = !modelsLoaded || models[useProvider]?.available || keyInfo[useProvider]?.configured || isLocalOrOllama
 
     if (!isProviderReady) {
       setErrorModalMsg(
@@ -1176,8 +1522,8 @@ export default function App() {
     const isMultiAgent = msgText.startsWith('/collaborate ')
     const collaborateTopic = isMultiAgent ? msgText.replace('/collaborate ', '').trim() : ''
 
-    const sentImage = attachedImage
-    if (sentImage) setAttachedImage(null)
+    const sentImage = overrideImage || attachedImage
+    if (attachedImage) setAttachedImage(null)
 
     const fallbackPrompt = sentImage ? 'What is in this image?' : 'Process the attached file'
     const finalText = fileContext + (isMultiAgent ? collaborateTopic : (msgText || fallbackPrompt))
@@ -1186,7 +1532,16 @@ export default function App() {
       role: 'user', content: displayText, sources: [], createdAt: Date.now(),
       ...(sentImage ? { image: sentImage.thumb } : {}),
     }
-    const updated = { ...targetConv, messages: [...targetConv.messages, userMsg] }
+    const updated = {
+      ...targetConv,
+      provider: useProvider,
+      model: useModel,
+      persona: usePersona,
+      temperature: useTemp,
+      webSearch: useWeb,
+      tools: useTools,
+      messages: [...targetConv.messages, userMsg],
+    }
     const isNewTitle = updated.title === 'New Chat'
     if (isNewTitle) updated.title = (msgText || displayText).trim().slice(0, 40) || 'New Chat'
 
@@ -1195,6 +1550,7 @@ export default function App() {
       if (!convId) {
         const chatSettings = {
           systemPrompt: targetConv.systemPrompt || '',
+          persona: usePersona,
           temperature: useTemp,
           webSearch: useWeb,
           tools: useTools,
@@ -1208,7 +1564,11 @@ export default function App() {
       await saveMessage(convId, userMsg)
     } catch (e) { console.error('Failed to persist message', e) }
 
-    setConversations(prev => prev.map(c => c.clientId === targetClientId ? updated : c))
+    setConversations(prev => {
+      const next = prev.map(c => c.clientId === targetClientId ? updated : c)
+      conversationsRef.current = next
+      return next
+    })
 
     if (!attachedFile && !sentImage && isDirectTimeQuery(msgText)) {
       const assistantMsg = {
@@ -1224,9 +1584,13 @@ export default function App() {
       } catch (e) {
         console.error('Failed to persist direct reply', e)
       }
-      setConversations(prev => prev.map(c =>
-        c.clientId === targetClientId ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
-      ))
+      setConversations(prev => {
+        const next = prev.map(c =>
+          c.clientId === targetClientId ? { ...c, id: convId, messages: [...updated.messages, assistantMsg] } : c
+        )
+        conversationsRef.current = next
+        return next
+      })
       setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
       setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
       setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
@@ -1266,6 +1630,7 @@ export default function App() {
           setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
           setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
           setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+          announce('Response ready')
           const assistantMsg = {
             createdAt: Date.now(),
             role: 'assistant',
@@ -1275,9 +1640,13 @@ export default function App() {
             toolsUsed: [],
           }
           saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
-          setConversations(prev => prev.map(c =>
-            c.clientId === targetClientId ? { ...c, id: convId, messages: [...(c.messages || []), assistantMsg] } : c
-          ))
+          setConversations(prev => {
+            const next = prev.map(c =>
+              c.clientId === targetClientId ? { ...c, id: convId, messages: [...(c.messages || []), assistantMsg] } : c
+            )
+            conversationsRef.current = next
+            return next
+          })
           setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
           delete toolRunMapRef.current[targetClientId]
           delete traceMapRef.current[targetClientId]
@@ -1286,11 +1655,15 @@ export default function App() {
           setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
           setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
           setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
-          setConversations(prev => prev.map(c =>
-            c.clientId === targetClientId
-              ? { ...c, id: convId, messages: [...(c.messages || []), { role: 'assistant', error: String(err), content: '' }] }
-              : c
-          ))
+          setConversations(prev => {
+            const next = prev.map(c =>
+              c.clientId === targetClientId
+                ? { ...c, id: convId, messages: [...(c.messages || []), { role: 'assistant', error: String(err), content: '' }] }
+                : c
+            )
+            conversationsRef.current = next
+            return next
+          })
           setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
           delete toolRunMapRef.current[targetClientId]
           delete traceMapRef.current[targetClientId]
@@ -1299,6 +1672,7 @@ export default function App() {
       return
     }
 
+    const _latTurn = startTurn({ provider: useProvider, model: useModel })
     await streamMessage(
       {
         message: finalText,
@@ -1306,16 +1680,19 @@ export default function App() {
         tools: useTools,
         use_tools: useTools,
         use_web_search: useWeb,
-        system_prompt: getSystemPrompt(finalText, targetConv.systemPrompt),
+        system_prompt: getSystemPrompt(finalText, targetConv.systemPrompt, usePersona),
         temperature: useTemp,
         provider: useProvider,
         model: useModel || undefined,
         channel: targetClientId,
         image: sentImage?.dataUrl || null,
+        // On-device safety screen → surface a soft support card (never blocks).
+        onSafety: (_verdict, card) => { if (card) setCrisisCard(card) },
       },
-      (token) => { content += token; pushStreamContent(content); setStatusMap(prev => ({ ...prev, [targetClientId]: '' })) },
+      (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); setStatusMap(prev => ({ ...prev, [targetClientId]: '' })) },
       (s) => { sources = s },
       (_final, meta) => {
+        _latTurn.done()
         setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
         setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
         setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
@@ -1342,9 +1719,22 @@ export default function App() {
           model: meta?.model || useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined),
         }
         saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
-        setConversations(prev => prev.map(c =>
-          (c.clientId === targetClientId || (convId && c.id === convId)) ? { ...c, id: convId, messages: [...(c.messages || []), assistantMsg] } : c
-        ))
+        // Implicit procedural adaptation — learn interaction preferences from
+        // behaviour (message length, tools leaned on, active style/persona).
+        try {
+          recordTurn({
+            userLen: typeof finalText === 'string' ? finalText.length : 0,
+            tool: (runData.used && runData.used[0]) || undefined,
+            personaName: (activeTemplate && activeTemplate !== 'default') ? activeTemplate : undefined,
+          })
+        } catch { /* never break the turn */ }
+        setConversations(prev => {
+          const next = prev.map(c =>
+            (c.clientId === targetClientId || (convId && c.id === convId)) ? { ...c, id: convId, messages: [...(c.messages || []), assistantMsg] } : c
+          )
+          conversationsRef.current = next
+          return next
+        })
         setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
         setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
         setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
@@ -1367,11 +1757,15 @@ export default function App() {
             getAllProviderStatus().then(setProviderStatus)
           })
         }
-        setConversations(prev => prev.map(c =>
-          (c.clientId === targetClientId || (convId && c.id === convId))
-            ? { ...c, id: convId, messages: [...(c.messages || []), { role: 'assistant', provider: useProvider, model: useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined), error: String(err), content: '' }] }
-            : c
-        ))
+        setConversations(prev => {
+          const next = prev.map(c =>
+            (c.clientId === targetClientId || (convId && c.id === convId))
+              ? { ...c, id: convId, messages: [...(c.messages || []), { role: 'assistant', provider: useProvider, model: useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined), error: String(err), content: '' }] }
+              : c
+          )
+          conversationsRef.current = next
+          return next
+        })
         setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
       },
       (status) => { setStatusMap(prev => ({ ...prev, [targetClientId]: status })) },
@@ -1496,32 +1890,40 @@ export default function App() {
       // into, whatever chat happens to be open.
       let id = liveConvRef.current
       if (!id) {
-      id = await createConversation(`Live — ${new Date().toLocaleString()}`, null, provider, model)
-      liveConvRef.current = id
+        id = await createConversation(`Live — ${new Date().toLocaleString()}`, null, provider, model)
+        liveConvRef.current = id
       }
       await saveMessage(id, msg)
     } catch (e) { console.error('Failed to persist live turn', e) }
-  }, [])
+  }, [provider, model])
 
   const regenerate = async () => {
     if (isStreamingHere) return
-    const msgs = conv?.messages || []
+    const curIdx = activeIdxRef.current
+    const targetConv = conversationsRef.current[curIdx]
+    const msgs = targetConv?.messages || []
     let lastUser = -1
     for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'user') { lastUser = i; break } }
     if (lastUser < 0) return
-    const prompt = msgs[lastUser].content
+    const lastUserMsg = msgs[lastUser]
+    const prompt = lastUserMsg.content
+    const imageToResend = lastUserMsg.image ? { dataUrl: lastUserMsg.image, thumb: lastUserMsg.image, name: 'attached-image' } : null
     // Rewind local state to just before that turn; the stored rows are rebuilt
     // on the next save, and stale trailing rows are pruned here.
     const kept = msgs.slice(0, lastUser)
-    setConversations(prev => prev.map((c, i) => i === activeIdx ? { ...c, messages: kept } : c))
-    if (conv?.id) { try { await trimConversationFrom(conv.id, lastUser) } catch {} }
-    sendRef.current?.(prompt)
+    setConversations(prev => {
+      const next = prev.map((c, i) => i === curIdx ? { ...c, messages: kept } : c)
+      conversationsRef.current = next
+      return next
+    })
+    if (targetConv?.id) { try { await trimConversationFrom(targetConv.id, lastUser) } catch {} }
+    sendRef.current?.(prompt, imageToResend)
   }
 
   const handleBackup = async () => {
     try {
       const c = await downloadBackup()
-      setErrorModalMsg(`Exported ${c.conversations} conversations, ${c.messages} messages and ${c.documents} documents.\n\nAPI keys are not included — add them again after restoring.`)
+      showInfoModal('Backup Exported', `Exported ${c.conversations} conversations, ${c.messages} messages and ${c.documents} documents.\n\nAPI keys are not included — add them again after restoring.`)
     } catch (e) { setErrorModalMsg(e.message) }
   }
 
@@ -1535,7 +1937,7 @@ export default function App() {
       const c = await restoreBackup(file, mode)
       await loadConversations()
       refreshDocs()
-      setErrorModalMsg(`Restored ${c.conversations} conversations, ${c.messages} messages and ${c.documents} documents.`)
+      showInfoModal('Restore Complete', `Restored ${c.conversations} conversations, ${c.messages} messages and ${c.documents} documents.`)
     } catch (e) { setErrorModalMsg(e.message) }
   }
 
@@ -1549,12 +1951,18 @@ export default function App() {
     const [a, b] = compareModels
     if (!a || !b) { setErrorModalMsg('Pick two models to compare.'); return }
 
+    const curIdx = activeIdxRef.current
+    const targetConv = conversationsRef.current[curIdx]
     const userMsg = { role: 'user', content: prompt, createdAt: Date.now() }
     const updated = {
-      ...conv,
-      messages: [...(conv?.messages || []), userMsg],
+      ...targetConv,
+      messages: [...(targetConv?.messages || []), userMsg],
     }
-    setConversations(prev => prev.map((c, i) => i === activeIdx ? updated : c))
+    setConversations(prev => {
+      const next = prev.map((c, i) => i === curIdx ? updated : c)
+      conversationsRef.current = next
+      return next
+    })
 
     setComparing(true)
     setInput('')
@@ -1568,12 +1976,16 @@ export default function App() {
 
   /** Run (or retry) a single compare side. */
   const runCompareSide = (mdl, side, prompt) => {
+    const curIdx = activeIdxRef.current
+    const targetConv = conversationsRef.current[curIdx]
+    const curProv = targetConv?.provider || provider
+    const curTemp = targetConv?.temperature !== undefined ? targetConv.temperature : temperature
     setArena(prev => ({ ...prev, [`response${side}`]: '', [`streaming${side}`]: true }))
     return new Promise(resolve => {
       let out = ''
       streamMessage(
-        { message: prompt, messages: [], provider, model: mdl, use_tools: false, use_web_search: false,
-          temperature, channel: `compare-${side}`, noFallback: true },
+        { message: prompt, messages: [], provider: curProv, model: mdl, use_tools: false, use_web_search: false,
+          temperature: curTemp, channel: `compare-${side}`, noFallback: true },
         (t) => { out += t; setArena(prev => ({ ...prev, [`response${side}`]: out })) },
         () => {},
         () => { setArena(prev => ({ ...prev, [`streaming${side}`]: false })); resolve() },
@@ -1592,7 +2004,9 @@ export default function App() {
   }
 
   const handlePickCompareResponse = (side, content, modelName) => {
-    const convId = conv?.id
+    const curIdx = activeIdxRef.current
+    const targetConv = conversationsRef.current[curIdx]
+    const convId = targetConv?.id
     const assistantMsg = {
       createdAt: Date.now(),
       role: 'assistant',
@@ -1600,9 +2014,13 @@ export default function App() {
       sources: [],
     }
     if (convId) saveMessage(convId, assistantMsg).catch(() => {})
-    setConversations(prev => prev.map((c, i) =>
-      i === activeIdx ? { ...c, messages: [...(c.messages || []), assistantMsg] } : c
-    ))
+    setConversations(prev => {
+      const next = prev.map((c, i) =>
+        i === curIdx ? { ...c, messages: [...(c.messages || []), assistantMsg] } : c
+      )
+      conversationsRef.current = next
+      return next
+    })
     setArena(null)
   }
 
@@ -1616,13 +2034,12 @@ export default function App() {
    */
   const editAndResend = useCallback(async (index, text) => {
     if (isStreamingHere) return
-    const source = conversations[activeIdx]
+    const curIdx = activeIdxRef.current
+    const source = conversationsRef.current[curIdx] || conversations[curIdx]
     const msgs = source?.messages || []
 
     // Find the actual index of the last user message so we rewind in-place
     // when editing it (nothing after it is worth keeping as a separate branch).
-    // The old `-2` heuristic was wrong: it branched even when editing the very
-    // last turn once there was one assistant reply sitting after it.
     const lastUserIdx = msgs.reduceRight(
       (found, m, i) => found >= 0 ? found : m.role === 'user' ? i : -1, -1
     )
@@ -1631,7 +2048,11 @@ export default function App() {
     // The very last turn has nothing after it worth preserving: rewind in place.
     if (isLastTurn) {
       const kept = msgs.slice(0, index)
-      setConversations(prev => prev.map((c, i) => i === activeIdx ? { ...c, messages: kept } : c))
+      setConversations(prev => {
+        const next = prev.map((c, i) => i === curIdx ? { ...c, messages: kept } : c)
+        conversationsRef.current = next
+        return next
+      })
       if (source?.id) { try { await trimConversationFrom(source.id, index) } catch {} }
       setInput(text)
       textareaRef.current?.focus()
@@ -1641,8 +2062,25 @@ export default function App() {
 
     try {
       const forked = await branchConversation(source?.id, index)
-      setConversations(prev => [{ ...forked, messages: (forked.messages || []).map(hydrate) }, ...prev])
+      const newForked = {
+        ...forked,
+        clientId: `c_${forked.id || Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        provider: forked.provider || source?.provider || provider || 'local',
+        model: forked.model !== undefined ? forked.model : (source?.model || model || ''),
+        systemPrompt: forked.settings?.systemPrompt ?? source?.systemPrompt ?? '',
+        persona: forked.settings?.persona ?? source?.persona ?? 'default',
+        temperature: forked.settings?.temperature ?? source?.temperature ?? 0.7,
+        webSearch: forked.settings?.webSearch ?? source?.webSearch ?? true,
+        tools: forked.settings?.tools ?? source?.tools ?? true,
+        messages: (forked.messages || []).map(hydrate),
+      }
+      setConversations(prev => {
+        const next = [newForked, ...prev]
+        conversationsRef.current = next
+        return next
+      })
       setActiveIdx(0)
+      activeIdxRef.current = 0
       setVisibleCount(WINDOW_STEP)
       setInput(text)
       textareaRef.current?.focus()
@@ -1651,11 +2089,11 @@ export default function App() {
     } catch (e) {
       setErrorModalMsg(`Could not branch this conversation.\n\n${e.message}`)
     }
-  }, [loadingMap, conversations, activeIdx])
+  }, [isStreamingHere, provider, model, autoResize, showToast])
 
   const startRename = (idx) => {
     setRenamingIdx(idx)
-    setRenameText(conversations[idx].title)
+    setRenameText(conversationsRef.current[idx]?.title || conversations[idx]?.title || '')
   }
 
   const commitRename = async () => {
@@ -1663,33 +2101,51 @@ export default function App() {
     const title = renameText.trim()
     setRenamingIdx(null)
     if (idx == null || !title) return
-    setConversations(prev => prev.map((c, i) => i === idx ? { ...c, title } : c))
-    const id = conversations[idx]?.id
+    const id = conversationsRef.current[idx]?.id || conversations[idx]?.id
+    const targetClientId = conversationsRef.current[idx]?.clientId || conversations[idx]?.clientId
+    setConversations(prev => {
+      const next = prev.map((c, i) => (targetClientId ? c.clientId === targetClientId : i === idx) ? { ...c, title } : c)
+      conversationsRef.current = next
+      return next
+    })
     if (id) { try { await renameConversation(id, title) } catch {} }
   }
 
   const paletteCommands = useMemo(() => {
     const cmds = [
       { id: 'new', group: 'Chat', label: 'New chat', hint: 'Ctrl+Shift+O', run: newChat },
+      { id: 'compare', group: 'Chat', label: 'Model Arena (Compare 2 models)', hint: 'Side-by-side', run: () => setCompareMode(true) },
       { id: 'regen', group: 'Chat', label: 'Regenerate last reply', run: regenerate },
       { id: 'export', group: 'Chat', label: 'Export this chat as markdown', run: handleExport },
       { id: 'backup', group: 'Data', label: 'Export all data (backup)', run: handleBackup },
       { id: 'import', group: 'Data', label: 'Import a backup file', run: () => backupInput.current?.click() },
       { id: 'theme', group: 'View', label: `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`, run: () => setTheme(t => t === 'dark' ? 'light' : 'dark') },
-      { id: 'settings', group: 'View', label: 'Open settings', run: () => { setSidebarOpen(true); setSettingsOpen(true) } },
+      { id: 'settings', group: 'View', label: 'Open settings & API keys', run: () => { setSidebarOpen(true); setSettingsOpen(true) } },
       { id: 'personalise', group: 'View', label: 'Personalise — voice & interface', run: () => setShowPersonalise(true) },
       { id: 'skills', group: 'View', label: 'Skills & workflows', run: () => setShowSkills(true) },
-      { id: 'tools', group: 'Settings', label: `${tools ? 'Disable' : 'Enable'} AI tools`, run: () => setToolsEnabled(!tools) },
+      { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => setShowToolPicker(true) },
+      { id: 'tools', group: 'Settings', label: `${tools ? 'Disable' : 'Enable'} all AI tools`, run: () => setToolsEnabled(!tools) },
       { id: 'web', group: 'Settings', label: `${webSearch ? 'Disable' : 'Enable'} web research`, run: () => setWebSearch(!webSearch) },
       { id: 'route', group: 'Settings', label: `${autoRoute ? 'Disable' : 'Enable'} auto-routing`, run: () => setAutoRoute(!autoRoute) },
       { id: 'autopick', group: 'Models', label: 'Auto-pick the fastest model', run: () => handleAutoPick() },
+      { id: 'domain-hub', group: 'Navigation', label: '🌐 Social Media & Domain Hub (YouTube, X, Jobs, TikTok...)', hint: 'Alt+D', run: () => setShowDomainHub(true) },
+      { id: 'naukri-jobs', group: 'Jobs & Careers', label: 'Search Tech Jobs on Naukri & Indeed', hint: 'Career AI', run: () => { setInput('Search Naukri and Indeed for Senior React and AI Engineer jobs in Bangalore and Remote. List top openings with salaries and requirements.'); textareaRef.current?.focus(); autoResize(); } },
+      { id: 'youtube-summary', group: 'Video & Media', label: 'Summarize YouTube Video URL', hint: 'Video AI', run: () => { setInput('Please extract transcript, key insights, and timestamps for this YouTube video: '); textareaRef.current?.focus(); autoResize(); } },
+      { id: 'x-thread', group: 'Social Content', label: 'Write Viral X (Twitter) Thread', hint: 'Thread Generator', run: () => { setInput('Write a viral 5-tweet thread explaining how AI agents transform productivity. Number [1/5] to [5/5].'); textareaRef.current?.focus(); autoResize(); } },
+      { id: 'linkedin-post', group: 'Social Content', label: 'Draft High-Impact LinkedIn Post', hint: 'LinkedIn Generator', run: () => { setInput('Draft an engaging, insightful LinkedIn post about emerging AI trends in 2026 with a hook, line-spaced paragraphs, and closing discussion question.'); textareaRef.current?.focus(); autoResize(); } },
+      { id: 'demo', group: 'View', label: 'Take a quick tour / interactive demo', run: () => setShowDemoModal(true) },
+      { id: 'download-pwa', group: 'View', label: 'Install / download desktop app (PWA)', run: () => setShowDownloadModal(true) },
+      { id: 'new-persona', group: 'Personas', label: 'Create new custom persona...', run: () => setShowPersonaModal(true) },
+      { id: 'diagnostics', group: 'Settings', label: 'Error Findings & Diagnostics Inspector', hint: 'Inspect Logs', run: () => setShowDiagnosticsModal(true) },
     ]
+
     for (const [id, p] of Object.entries(models)) {
       cmds.push({
-        id: `prov-${id}`, group: 'Provider', label: `Switch to ${p.name}`,
+        id: `prov-${id}`, group: 'Provider', label: `Switch to provider: ${p.name}`,
         hint: p.available ? undefined : 'no key', run: () => setProvider(id),
       })
     }
+
     for (const m of (models[provider]?.models || []).slice(0, 100)) {
       const ms = measuredModels[m]
       cmds.push({
@@ -1698,12 +2154,34 @@ export default function App() {
         run: () => chooseModel(m),
       })
     }
+
+    promptTemplates.forEach(t => {
+      cmds.push({
+        id: `persona-${t.id}`,
+        group: 'Personas',
+        label: `${t.icon || '🤖'} ${t.name}`,
+        hint: activeTemplate === t.id ? 'active' : 'activate',
+        run: () => setPersona(t.id),
+      })
+    })
+
+    toolPrefs.forEach(t => {
+      cmds.push({
+        id: `tool-pref-${t.name}`,
+        group: 'Tools',
+        label: `${t.enabled ? 'Disable' : 'Enable'} ${t.name.replace(/_/g, ' ')}`,
+        hint: t.group,
+        run: () => toggleTool(t.name, !t.enabled),
+      })
+    })
+
     conversations.forEach((c, i) => {
       if (!c.messages.length) return
-      cmds.push({ id: `conv-${i}`, group: 'Chat', label: c.title, hint: `${c.messages.length} messages`, run: () => switchChat(i) })
+      cmds.push({ id: `conv-${i}`, group: 'Chat', label: c.title, hint: `${c.messages.length} msg${c.messages.length === 1 ? '' : 's'}`, run: () => switchChat(i) })
     })
+
     return cmds
-  }, [models, provider, measuredModels, conversations.length, conversations.map(c => `${c.title}:${c.messages?.length}`).join('|'), theme, tools, webSearch, autoRoute])
+  }, [models, provider, measuredModels, conversations.length, conversations.map(c => `${c.title}:${c.messages?.length}`).join('|'), promptTemplates, toolPrefs, activeTemplate, theme, tools, webSearch, autoRoute])
 
   const providerEntries = Object.entries(models)
   const providerModels = models[provider]?.models || []
@@ -1720,12 +2198,56 @@ export default function App() {
       })
   }, [conversations, convQuery])
 
+  if (companionMode) {
+    return (
+      <FloatingCompanion
+        onExitCompanion={toggleCompanion}
+        onPopOutPip={handlePopOutPip}
+        onNewChat={newChat}
+        onSendPrompt={(p, img) => {
+          setInput(p)
+          sendRef.current?.(p, img)
+        }}
+        isStreaming={isStreamingHere}
+        streamText={streamingMap[conv?.clientId]}
+        messages={allMessages}
+        activeProvider={conv?.provider || provider}
+        activeModel={conv?.model || model}
+      />
+    )
+  }
+
   return (
     <div className="app">
+      {pipWindow && ReactDOM.createPortal(
+        <FloatingCompanion
+          onExitCompanion={() => {
+            closeDocumentPip()
+            setPipWindow(null)
+          }}
+          onNewChat={newChat}
+          onSendPrompt={(p, img) => {
+            setInput(p)
+            sendRef.current?.(p, img)
+          }}
+          isStreaming={isStreamingHere}
+          streamText={streamingMap[conv?.clientId]}
+          messages={allMessages}
+          activeProvider={conv?.provider || provider}
+          activeModel={conv?.model || model}
+        />,
+        pipWindow.document.body
+      )}
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
       <aside className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
         <div className="sidebar-header">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><YogatikLogo size={28} /> Yogatik</h2>
+          <h2
+            onClick={() => setShowOverviewModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}
+            title="About Yogatik & Workflow Overview"
+          >
+            <YogatikLogo size={28} /> Yogatik
+          </h2>
           <button className="icon-btn" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar"><X size={16} /></button>
         </div>
 
@@ -1738,7 +2260,7 @@ export default function App() {
                 <User size={14} />
               )}
               <span>{user.displayName || user.email}</span>
-              <button className="icon-btn" onClick={() => { logout(); setUser(null); setConversations([{ id: null, title: 'New Chat', messages: [] }]); setActiveIdx(0) }} title="Sign out">
+              <button className="icon-btn" onClick={() => { logout(); setUser(null); loadConversations() }} title="Sign out">
                 <LogOut size={14} />
               </button>
             </div>
@@ -1762,6 +2284,18 @@ export default function App() {
         </div>
 
         <button type="button" className="new-chat-btn" onClick={(e) => { e.preventDefault(); newChat(); }} aria-label="New chat"><Plus size={14} /> New Chat</button>
+
+        <button
+          type="button"
+          className="sidebar-search-btn"
+          onClick={() => setShowPalette(true)}
+          title="Search chats, models & commands (Ctrl+K)"
+          aria-label="Universal Search"
+        >
+          <Search size={13} />
+          <span>Search & Commands</span>
+          <kbd>Ctrl+K</kbd>
+        </button>
 
         {conversations.length > 3 && (
           <div className="conv-search">
@@ -1827,12 +2361,11 @@ export default function App() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
             <label style={{ margin: 0 }}><Sparkles size={12} /> Persona</label>
             <div style={{ display: 'flex', gap: '4px' }}>
-              {activeTemplate.startsWith('tmpl-') && (
+              {(conv?.persona || activeTemplate).startsWith('tmpl-') && (
                 <button className="small-btn delete-persona-btn" style={{ padding: '2px 6px', fontSize: '10px', color: '#ff6b6b', height: 'auto', background: 'rgba(255,107,107,0.1)', border: 'none', borderRadius: '3px', cursor: 'pointer' }} onClick={() =>
                   showConfirm('Delete this custom persona?', async () => {
-                    await deleteTemplate(activeTemplate)
-                    setActiveTemplate('default')
-                    await setPref('persona', 'default')
+                    await deleteTemplate(conv?.persona || activeTemplate)
+                    setPersona('default')
                     refreshTemplates()
                   }, { okLabel: 'Delete' })
                 } title="Delete current custom persona">
@@ -1844,7 +2377,7 @@ export default function App() {
               </button>
             </div>
           </div>
-          <select value={activeTemplate} aria-label="Persona" onChange={e => { setActiveTemplate(e.target.value); setPref('persona', e.target.value).catch(() => {}) }}>
+          <select value={conv?.persona || activeTemplate} aria-label="Persona" onChange={e => setPersona(e.target.value)}>
             {promptTemplates.map(t => (
               <option key={t.id} value={t.id}>{t.icon} {t.name}</option>
             ))}
@@ -1856,10 +2389,9 @@ export default function App() {
               <Plus size={11} /> Custom
             </button>
           </div>
-          <select value={provider} aria-label="Provider" onChange={e => {
+          <select value={conv?.provider || provider} aria-label="Provider" onChange={e => {
             const nextProvider = e.target.value
             setProvider(nextProvider)
-            chooseModel('', nextProvider)
           }}>
             {providerEntries.map(([key, val]) => (
               <option key={key} value={key}>
@@ -1869,7 +2401,8 @@ export default function App() {
           </select>
 
           {(() => {
-            const st = providerStatus[provider] || {}
+            const curProv = conv?.provider || provider
+            const st = providerStatus[curProv] || {}
             const label = verifying ? 'Checking model…' : ({
               connected: 'Ready', failed: 'Not working',
               untested: 'Key saved — checking…', 'no-key': 'No API key',
@@ -1885,41 +2418,41 @@ export default function App() {
                   </span>
                 )}
                 {st.hasKey && (
-                  <button className="small-btn" onClick={() => retestProvider(provider)}
-                    disabled={savingApiKey === provider || verifying} aria-label="Re-check this model">
+                  <button className="small-btn" onClick={() => retestProvider(curProv)}
+                    disabled={savingApiKey === curProv || verifying} aria-label="Re-check this model">
                     Retest
                   </button>
                 )}
               </div>
             )
           })()}
-          {providerStatus[provider]?.error && (
-            <div className="conn-error">{providerStatus[provider].error}</div>
+          {providerStatus[conv?.provider || provider]?.error && (
+            <div className="conn-error">{providerStatus[conv?.provider || provider].error}</div>
           )}
 
-          {provider === 'local' ? (
+          {(conv?.provider || provider) === 'local' ? (
             <LocalModelPanel
-              model={model || DEFAULT_LOCAL_MODEL}
-              onModelChange={chooseModel}
-              onReady={(m) => { chooseModel(m); refreshModels() }} />
+              model={conv?.model || model || DEFAULT_LOCAL_MODEL}
+              onModelChange={(m) => chooseModel(m, 'local')}
+              onReady={(m) => { chooseModel(m, 'local'); refreshModels() }} />
           ) : (
             <>
-              <label>API Key {models[provider]?.key_url && <a href={models[provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get free key)</a>}</label>
-              {keyInfo[provider]?.saved ? (
+              <label>API Key {models[conv?.provider || provider]?.key_url && <a href={models[conv?.provider || provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get free key)</a>}</label>
+              {keyInfo[conv?.provider || provider]?.saved ? (
             <div className="key-saved">
               <div className="key-saved-row">
                 <Key size={12} />
-                <code>{keyInfo[provider].masked}</code>
-                <button className="link-btn" onClick={() => forgetKey(provider)}>Forget</button>
+                <code>{keyInfo[conv?.provider || provider].masked}</code>
+                <button className="link-btn" onClick={() => forgetKey(conv?.provider || provider)}>Forget</button>
               </div>
               <div className="key-where">
                 <span title="Stored in this browser's IndexedDB">
                   <Smartphone size={10} /> This device
                 </span>
-                <span title={keyInfo[provider].syncedAt
+                <span title={keyInfo[conv?.provider || provider].syncedAt
                   ? 'Encrypted and synced to your account'
                   : 'Not uploaded anywhere'}>
-                  {keyInfo[provider].syncedAt
+                  {keyInfo[conv?.provider || provider].syncedAt
                     ? <><Cloud size={10} /> Cloud (encrypted)</>
                     : <><CloudOff size={10} /> Not in cloud</>}
                 </span>
@@ -1929,21 +2462,21 @@ export default function App() {
             <div className="key-none">No key stored for this provider.</div>
           )}
 
-          <input type="password" aria-label={`API key for ${models[provider]?.name || provider}`}
-            placeholder={keyInfo[provider]?.saved ? 'Replace key…' : 'Enter API key...'}
-            value={apiKeyInput[provider] !== undefined ? apiKeyInput[provider] : ''}
-            onChange={e => setApiKeyInput({ ...apiKeyInput, [provider]: e.target.value })}
+          <input type="password" aria-label={`API key for ${models[conv?.provider || provider]?.name || (conv?.provider || provider)}`}
+            placeholder={keyInfo[conv?.provider || provider]?.saved ? 'Replace key…' : 'Enter API key...'}
+            value={apiKeyInput[conv?.provider || provider] !== undefined ? apiKeyInput[conv?.provider || provider] : ''}
+            onChange={e => setApiKeyInput({ ...apiKeyInput, [conv?.provider || provider]: e.target.value })}
             style={{ width:'100%',padding:'6px 8px',background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-primary)',fontSize:'12px',marginBottom:'8px' }}
           />
 
           <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-            <button className="small-btn btn-primary" onClick={() => handleAddApiKey(provider)} disabled={savingApiKey === provider}>
-              <Plus size={11} /> {savingApiKey === provider ? 'Verifying...' : 'Add Key'}
+            <button className="small-btn btn-primary" onClick={() => handleAddApiKey(conv?.provider || provider)} disabled={savingApiKey === (conv?.provider || provider)}>
+              <Plus size={11} /> {savingApiKey === (conv?.provider || provider) ? 'Verifying...' : 'Add Key'}
             </button>
-            <button className="small-btn" onClick={() => { setShowProviderModal(true); setEditingProvider(provider) }} title="Edit provider details">
+            <button className="small-btn" onClick={() => { setShowProviderModal(true); setEditingProvider(conv?.provider || provider) }} title="Edit provider details">
               <Plug size={11} /> Edit
             </button>
-            <button className="small-btn" onClick={() => handleRemoveProvider(provider)} title="Remove provider" style={{ color: '#ff4444' }}>
+            <button className="small-btn" onClick={() => handleRemoveProvider(conv?.provider || provider)} title="Remove provider" style={{ color: '#ff4444' }}>
               <Trash2 size={11} /> Remove
             </button>
           </div>
@@ -1951,7 +2484,7 @@ export default function App() {
           </>
           )}
 
-          <div className="cloud-sync" hidden={provider === 'local'}>
+          <div className="cloud-sync" hidden={(conv?.provider || provider) === 'local'}>
             {!user ? (
               <span className="cloud-hint">
                 <CloudOff size={11} /> Keys stay on this device.
@@ -1974,17 +2507,17 @@ export default function App() {
           </div>
 
           {/* ── Model ─────────────────────────────────────────── */}
-          <div className="sidebar-section-title">Model {providerModels.length > 0 && <span className="sidebar-count">{providerModels.length}</span>}</div>
+          <div className="sidebar-section-title">Model {(models[conv?.provider || provider]?.models || []).length > 0 && <span className="sidebar-count">{(models[conv?.provider || provider]?.models || []).length}</span>}</div>
           <ModelPicker
-            models={providerModels}
-            value={model}
+            models={models[conv?.provider || provider]?.models || []}
+            value={conv?.model !== undefined ? conv.model : model}
             measured={measuredModels}
             formatLatency={formatLatency}
-            disabled={!models[provider]?.available}
-            onChange={chooseModel} />
+            disabled={!models[conv?.provider || provider]?.available}
+            onChange={(m) => chooseModel(m, conv?.provider || provider)} />
 
-          <button className="small-btn auto-pick wide" onClick={() => handleAutoPick()}
-            disabled={autoPicking || !models[provider]?.available}
+          <button className="small-btn auto-pick wide" onClick={() => handleAutoPick(conv?.provider || provider)}
+            disabled={autoPicking || !models[conv?.provider || provider]?.available}
             title="Measure a few models and select the fastest that works">
             <Zap size={11} /> {autoPicking ? (autoPickMsg || 'Testing…') : 'Auto-pick fastest'}
           </button>
@@ -2005,18 +2538,18 @@ export default function App() {
 
           {/* ── Response ──────────────────────────────────────── */}
           <div className="sidebar-section-title">Response</div>
-          <label className="slider-label">Temperature <span className="sidebar-count">{temperature}</span></label>
-          <input type="range" aria-label="Response randomness (temperature)" min="0" max="1" step="0.1" value={temperature} onChange={e => setTemperature(parseFloat(e.target.value))} />
+          <label className="slider-label">Temperature <span className="sidebar-count">{conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)}</span></label>
+          <input type="range" aria-label="Response randomness (temperature)" min="0" max="1" step="0.1" value={conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)} onChange={e => setTemperature(parseFloat(e.target.value))} />
 
           {/* ── Tools ─────────────────────────────────────────── */}
           <div className="sidebar-section-title">Tools</div>
           <div className="toggle-row">
             <label><Wrench size={12} /> AI Tools</label>
             <label className="toggle" aria-label="Toggle AI tools">
-              <input type="checkbox" checked={tools} onChange={e => setToolsEnabled(e.target.checked)} /><span className="slider" />
+              <input type="checkbox" checked={conv?.tools !== undefined ? conv.tools : (tools ?? true)} onChange={e => setToolsEnabled(e.target.checked)} /><span className="slider" />
             </label>
           </div>
-          {tools && (
+          {(conv?.tools !== undefined ? conv.tools : (tools ?? true)) && (
             <button className="small-btn tool-picker-toggle wide" onClick={() => setShowToolPicker(true)}>
               <Wrench size={11} /> Choose &amp; Configure Tools
               <span className="tool-count">
@@ -2036,7 +2569,7 @@ export default function App() {
           <div className="toggle-row">
             <label><Globe size={12} /> Web Research</label>
             <label className="toggle" aria-label="Toggle web research">
-              <input type="checkbox" checked={webSearch} disabled={!tools}
+              <input type="checkbox" checked={conv?.webSearch !== undefined ? conv.webSearch : (webSearch ?? true)} disabled={!(conv?.tools !== undefined ? conv.tools : (tools ?? true))}
                 onChange={e => setWebSearch(e.target.checked)} /><span className="slider" />
             </label>
           </div>
@@ -2096,6 +2629,9 @@ export default function App() {
               </div>
               {showStorageDetails && (
                 <div className="storage-details" style={{ fontSize: '11px', marginTop: '8px', padding: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', display: 'flex', flexDirection: 'column', gap: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <button className="small-btn" style={{ padding: '4px 8px' }} onClick={() => setShowDataDashboard(true)}>
+                    View & manage what Yogatik remembers about you
+                  </button>
                   <div>
                     <strong>What is stored here:</strong>
                     <ul style={{ margin: '4px 0', paddingLeft: '16px', listStyleType: 'disc' }}>
@@ -2148,6 +2684,24 @@ export default function App() {
             </span>
           </div>
 
+          <div className="diagnostics-row" style={{ marginTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                <AlertTriangle size={12} style={{ color: 'var(--accent)' }} /> Error Findings &amp; Diagnostics
+              </label>
+              <button
+                className="small-btn info-btn"
+                style={{ padding: '2px 6px', fontSize: 10, height: 'auto', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 3, cursor: 'pointer', color: 'var(--text-color, inherit)' }}
+                onClick={() => setShowDiagnosticsModal(true)}
+              >
+                Inspect Logs
+              </button>
+            </div>
+            <span className="backup-note">
+              On-device ring buffer of runtime failures, provider errors, and system health report.
+            </span>
+          </div>
+
           {docs.length > 0 && (
             <div className="doc-list">
               <label><FileText size={12} /> Documents ({docs.length})</label>
@@ -2172,21 +2726,51 @@ export default function App() {
           </div>
           <div className="header-actions">
             {isDesktop() && (
-              <div className="desktop-folder-indicator" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginRight: 8, color: 'var(--text-secondary)' }}>
-                <Folder size={15} />
-                <span title={grantedRoot || 'No working folder granted'} style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {grantedRoot ? grantedRoot.split(/[/\\]/).pop() || grantedRoot : 'No folder'}
-                </span>
+              <>
+                <div className="desktop-folder-indicator" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginRight: 8, color: 'var(--text-secondary)' }}>
+                  <Folder size={15} />
+                  <span title={grantedRoot || 'No working folder granted'} style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {grantedRoot ? grantedRoot.split(/[/\\]/).pop() || grantedRoot : 'No folder'}
+                  </span>
+                  <button
+                    className="small-btn"
+                    style={{ padding: '2px 8px', fontSize: 11 }}
+                    onClick={handleGrantFolder}
+                    title="Change granted working folder for local filesystem tools (create/edit/read files)"
+                  >
+                    {grantedRoot ? 'Change' : 'Grant folder'}
+                  </button>
+                </div>
                 <button
-                  className="small-btn"
-                  style={{ padding: '2px 8px', fontSize: 11 }}
-                  onClick={handleGrantFolder}
-                  title="Change granted working folder for local filesystem tools (create/edit/read files)"
+                  className={`icon-btn ${isPinned ? 'pinned' : ''}`}
+                  onClick={togglePin}
+                  title={isPinned ? 'Window pinned: Always on Top (click to unpin)' : 'Pin window Always on Top'}
+                  aria-label="Toggle Always on Top"
                 >
-                  {grantedRoot ? 'Change' : 'Grant folder'}
+                  <Pin size={16} />
                 </button>
-              </div>
+              </>
             )}
+            <ActiveTimerIndicator onShowToast={showToast} />
+            <button
+              className={`icon-btn ${companionMode ? 'active' : ''}`}
+              onClick={toggleCompanion}
+              title="Floating AI Companion & Screen Monitor (Ctrl+Shift+Space)"
+              aria-label="Toggle AI Companion Mode"
+              style={companionMode ? { color: '#38bdf8', background: 'rgba(56, 189, 248, 0.15)' } : {}}
+            >
+              <Monitor size={18} />
+            </button>
+            <button
+              className="icon-btn"
+              onClick={() => setShowMcpModal(true)}
+              title="MCP Connectors (Model Context Protocol)"
+              aria-label="MCP Connectors"
+            >
+              <Plug size={18} />
+            </button>
+            <button className="icon-btn domain-hub-header-btn" onClick={() => setShowDomainHub(true)} title="Social Media & Domain Hub (Alt+D)" aria-label="Social Media & Domain Hub"><Globe size={18} /></button>
+            <button className="icon-btn" onClick={() => setShowPalette(true)} title="Universal Search (Ctrl+K)" aria-label="Universal Search"><Search size={18} /></button>
             <button className="icon-btn" onClick={handleExport} title="Export chat" aria-label="Export chat"><Download size={18} /></button>
             <button className="icon-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
@@ -2197,13 +2781,26 @@ export default function App() {
         <div className="messages" ref={scrollerRef} onScroll={onScroll}>
           {allMessages.length === 0 && !isStreamingHere && !arena ? (
             <div className="welcome">
-              <h1 style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center' }}><YogatikLogo size={48} /> Yogatik</h1>
+              <h1
+                onClick={() => setShowOverviewModal(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center', cursor: 'pointer', userSelect: 'none' }}
+                title="Click for App Overview & Workflow"
+              >
+                <YogatikLogo size={48} /> Yogatik
+              </h1>
               <div className="hero-buttons">
                 <button
                   className="hero-btn primary"
                   onClick={() => setShowDemoModal(true)}
                 >
                   <Sparkles size={16} /> Take a Quick Demo
+                </button>
+                <button
+                  className="hero-btn accent"
+                  onClick={() => setShowDomainHub(true)}
+                  title="Explore YouTube, X, Instagram, TikTok, LinkedIn, Naukri & Indeed"
+                >
+                  <Globe size={16} /> Social &amp; Domain Hub
                 </button>
                 <button
                   className="hero-btn secondary"
@@ -2279,7 +2876,17 @@ export default function App() {
                 </div>
               ) : (
                 <div className="suggestions" hidden={!features.suggestions}>
-                  {SUGGESTIONS.map((s, i) => <div key={i} className="suggestion" onClick={() => sendRef.current?.(s)}>{s}</div>)}
+                  {SUGGESTIONS.map((s, i) => {
+                    const text = typeof s === 'string' ? s : (s.prompt || s.label)
+                    const label = typeof s === 'string' ? s : s.label
+                    const category = typeof s === 'object' ? s.category : null
+                    return (
+                      <div key={i} className="suggestion" onClick={() => sendRef.current?.(text)} title={text}>
+                        {category && <span className="suggestion-category">{category}</span>}
+                        <span className="suggestion-text">{label}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -2300,7 +2907,9 @@ export default function App() {
                     onOpenArtifact={(art) => setActiveArtifact(art)}
                     onRegenerate={isLastAssistant && !isStreamingHere ? regenerate : undefined}
                     onEdit={!isStreamingHere ? (text) => editAndResend(absolute, text) : undefined}
-                    onRetry={m.error && !isStreamingHere ? regenerate : undefined} />
+                    onRetry={m.error && !isStreamingHere ? regenerate : undefined}
+                    onOpenSettings={() => { setSidebarOpen(true); setSettingsOpen(true) }}
+                    onAutoPick={() => handleAutoPick(m.provider || provider)} />
                 )
               })}
               {/* Show pending tool results while streaming */}
@@ -2315,6 +2924,7 @@ export default function App() {
               )}
               {isStreamingHere && streamingContent && (() => {
                 const { provider: useProvider = provider, model: useModel = model } = conv || {}
+                const { reasoning, answer } = splitReasoning(streamingContent)
                 return (
                 <div className="message assistant">
                   <div className="message-role">
@@ -2354,7 +2964,13 @@ export default function App() {
                       </ol>
                     </details>
                   )}
-                  <div className="message-content"><ReactMarkdown>{streamingContent}</ReactMarkdown></div>
+                  {reasoning ? (
+                    <details className="reasoning-bubble" open style={{ marginTop: 4 }}>
+                      <summary className="reasoning-summary">Thinking…</summary>
+                      <div className="reasoning-body">{reasoning}</div>
+                    </details>
+                  ) : null}
+                  <div className="message-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{answer || (reasoning ? '' : streamingContent)}</ReactMarkdown></div>
                 </div>
                 )
               })()}
@@ -2418,6 +3034,27 @@ export default function App() {
           )}
         </div>
 
+        <A11yAnnouncer />
+        {checkin && (
+          <div className="checkin-chip" role="note">
+            <button
+              className="checkin-text"
+              title="Start this check-in"
+              onClick={() => { markCheckinShown(); const c = checkin; setCheckin(null); send(c.prompt) }}
+            >
+              💭 {checkin.text}
+            </button>
+            <button
+              className="checkin-dismiss"
+              aria-label="Dismiss check-in"
+              title="Not now"
+              onClick={() => { markCheckinShown(); setCheckin(null) }}
+            >×</button>
+          </div>
+        )}
+        <CrisisCard card={crisisCard} onDismiss={() => setCrisisCard(null)} />
+        <ToolStatusPanel onRetry={(name) => send(`Please retry the ${name} tool.`)} />
+
         <div className={`input-area${dragOver ? ' drag-over' : ''}`}
           onDragOver={e => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
@@ -2429,8 +3066,8 @@ export default function App() {
                 <button
                   key={t.id}
                   type="button"
-                  className={`persona-chip ${activeTemplate === t.id ? 'active' : ''}`}
-                  onClick={() => setActiveTemplate(t.id)}
+                  className={`persona-chip ${(conv?.persona || activeTemplate) === t.id ? 'active' : ''}`}
+                  onClick={() => setPersona(t.id)}
                 >
                   {t.name}
                 </button>
@@ -2450,13 +3087,13 @@ export default function App() {
                 to the message — not buried in the settings drawer. */}
             <ModelPicker
               compact
-              prefix={models[provider]?.name || provider}
-              models={providerModels}
-              value={model}
+              prefix={models[conv?.provider || provider]?.name || (conv?.provider || provider)}
+              models={models[conv?.provider || provider]?.models || []}
+              value={conv?.model !== undefined ? conv.model : model}
               measured={measuredModels}
               formatLatency={formatLatency}
-              disabled={!models[provider]?.available}
-              onChange={chooseModel} />
+              disabled={!models[conv?.provider || provider]?.available}
+              onChange={(m) => chooseModel(m, conv?.provider || provider)} />
             <label className="upload-btn">
               <Upload size={12} /> Upload
               <input type="file" hidden accept="image/*,.pdf,.txt,.md,.csv,.json,.log,.html,.xml,.rtf" onChange={handleUpload} />
@@ -2469,11 +3106,6 @@ export default function App() {
                 aria-label={listening ? 'Stop voice input' : 'Start voice input'}>
                 {listening ? <MicOff size={12} /> : <Mic size={12} />}
                 {listening ? 'Stop' : 'Voice'}
-              </button>
-            )}
-            {isStreamingHere && (
-              <button className="stop-btn" onClick={handleStop} title="Stop generation (Esc)" aria-label="Stop generation (Esc)">
-                <Square size={12} /> Stop (Esc)
               </button>
             )}
             {features.compare && (
@@ -2533,8 +3165,20 @@ export default function App() {
             </div>
           )}
           {!online && (
-            <div className="offline-banner" role="status">
-              <AlertTriangle size={12} /> Offline — messages will fail until the connection returns.
+            <div className="offline-banner" role="status" style={
+              (provider === 'ollama' || provider === 'local' || models[provider]?.is_ollama || models[provider]?.is_local)
+                ? { background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)' }
+                : {}
+            }>
+              {(provider === 'ollama' || provider === 'local' || models[provider]?.is_ollama || models[provider]?.is_local) ? (
+                <>
+                  <Zap size={12} /> Offline Mode Active — Local models &amp; Ollama run 100% offline on this machine.
+                </>
+              ) : (
+                <>
+                  <AlertTriangle size={12} /> Offline — Switch to Ollama (local) or On-device model to chat offline.
+                </>
+              )}
             </div>
           )}
           {attachedFile && (
@@ -2596,9 +3240,26 @@ export default function App() {
             >
               {listening ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
-            <button className="send-btn" aria-label="Send message" onClick={() => sendRef.current?.()} disabled={isStreamingHere || !online || (!input.trim() && !attachedFile && !attachedImage)}>
-              <Send size={18} />
-            </button>
+            {isStreamingHere ? (
+              <button
+                type="button"
+                className="stop-btn"
+                aria-label="Stop generating"
+                onClick={handleStop}
+                title="Stop generating"
+              >
+                <Square size={13} fill="currentColor" /> Stop
+              </button>
+            ) : (
+              <button
+                className="send-btn"
+                aria-label="Send message"
+                onClick={() => sendRef.current?.()}
+                disabled={isStreamingHere || (!input.trim() && !attachedFile && !attachedImage)}
+              >
+                <Send size={18} />
+              </button>
+            )}
           </div>
 
           <div className="composer-footer">
@@ -2746,6 +3407,48 @@ export default function App() {
       )}
       {showAd && <AdModal onClose={() => setShowAd(false)} />}
       {showDemoModal && <DemoModal onClose={() => setShowDemoModal(false)} />}
+      {showOverviewModal && (
+        <AppOverviewModal
+          onClose={() => setShowOverviewModal(false)}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenDemo={() => setShowDemoModal(true)}
+          onOpenDomainHub={() => setShowDomainHub(true)}
+          onOpenMcp={() => setShowMcpModal(true)}
+        />
+      )}
+      <McpModal
+        isOpen={showMcpModal}
+        onClose={() => setShowMcpModal(false)}
+        onShowToast={showToast}
+      />
+      {showDiagnosticsModal && <DiagnosticsModal onClose={() => setShowDiagnosticsModal(false)} />}
+      {showDataDashboard && <DataDashboard onClose={() => setShowDataDashboard(false)} onExport={() => { downloadBackup().catch(() => {}); showToast('Backup exported') }} />}
+      {showOnboarding && (
+        <OnboardingModal
+          templates={promptTemplates}
+          onSkip={() => { try { localStorage.setItem('yogatik_onboarded', '1') } catch {} setShowOnboarding(false) }}
+          onComplete={async ({ persona, style, boundary }) => {
+            try { localStorage.setItem('yogatik_onboarded', '1') } catch {}
+            if (persona && persona !== 'default') setActiveTemplate(persona)
+            // Seed procedural memory so turn 1 already reflects their choices.
+            try {
+              const { remember } = await import('./memory4')
+              const styleText = style === 'concise' ? 'prefers concise replies' : style === 'detailed' ? 'prefers detailed, thorough replies' : 'likes a balance of brevity and detail'
+              await remember({ store: 'procedural', text: styleText, importance: 0.7 })
+              await remember({ store: 'procedural', text: boundary === 'companion' ? 'wants a warm, friendly companion tone' : 'wants a professional, task-focused assistant', importance: 0.6 })
+            } catch { /* db not ready */ }
+            setShowOnboarding(false)
+          }}
+        />
+      )}
+      <DomainHubModal
+        isOpen={showDomainHub}
+        onClose={() => setShowDomainHub(false)}
+        onExecutePrompt={(p) => {
+          setInput(p)
+          sendRef.current?.(p)
+        }}
+      />
       <DownloadModal isOpen={showDownloadModal} onClose={() => setShowDownloadModal(false)} onInstallPwa={installPwa} showPwa={!!showPwaInstall} />
       {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
       {/* Generic confirm modal — no more native confirm() dialogs */}
@@ -2795,15 +3498,18 @@ export default function App() {
         </Modal>
       )}
       {errorModalMsg && (
-        <Modal title="Connection problem" icon={<AlertTriangle size={18} />}
-          onClose={() => setErrorModalMsg(null)} labelledBy="error-title"
+        <Modal
+          title={typeof errorModalMsg === 'object' && errorModalMsg?.title ? errorModalMsg.title : "Notice"}
+          icon={typeof errorModalMsg === 'object' && errorModalMsg?.isError === false ? <Sparkles size={18} /> : <AlertTriangle size={18} />}
+          onClose={() => setErrorModalMsg(null)}
+          labelledBy="error-title"
           footer={
             <div className="modal-actions">
               <button className="btn-primary" onClick={() => setErrorModalMsg(null)}>Got it</button>
             </div>
           }>
           <div style={{ padding: '16px 0', fontSize: 13, lineHeight: 1.5, color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
-            {errorModalMsg}
+            {typeof errorModalMsg === 'object' && errorModalMsg?.msg ? errorModalMsg.msg : String(errorModalMsg)}
           </div>
         </Modal>
       )}

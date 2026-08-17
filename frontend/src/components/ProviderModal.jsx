@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Plug, ExternalLink } from 'lucide-react'
 import { Modal } from './Modal'
 import { addProvider } from '../api'
+import { KEY_STORAGE_DISCLOSURE } from '../crypto'
 
 // ─── Provider Quick Templates ───────────────────────────────────────────────
 // Providers marked `free: true` have a genuinely free tier (no credit card).
@@ -111,6 +112,46 @@ const QUICK_TEMPLATES = {
     keyUrl: 'https://api.together.xyz/settings/api-keys',
     note: 'Fast open-source models at scale',
   },
+  anthropic_direct: {
+    name: 'Anthropic (Direct)',
+    badge: 'Paid',
+    badgeColor: '#f59e0b',
+    baseUrl: 'https://api.anthropic.com/v1',
+    models: ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-opus-4-5'],
+    default: 'claude-sonnet-4-5',
+    keyUrl: 'https://console.anthropic.com/settings/api-keys',
+    note: 'Direct Anthropic API • Claude Sonnet, Haiku, Opus',
+  },
+  xai: {
+    name: 'xAI Grok',
+    badge: 'Paid',
+    badgeColor: '#f59e0b',
+    baseUrl: 'https://api.x.ai/v1',
+    models: ['grok-3-mini', 'grok-3', 'grok-2-1212'],
+    default: 'grok-3-mini',
+    keyUrl: 'https://console.x.ai/',
+    note: 'Elon Musk\'s Grok — web-aware models',
+  },
+  perplexity: {
+    name: 'Perplexity',
+    badge: 'Paid',
+    badgeColor: '#a78bfa',
+    baseUrl: 'https://api.perplexity.ai',
+    models: ['sonar', 'sonar-pro', 'sonar-reasoning'],
+    default: 'sonar',
+    keyUrl: 'https://www.perplexity.ai/settings/api',
+    note: 'Real-time web-grounded answers (Sonar)',
+  },
+  cohere: {
+    name: 'Cohere',
+    badge: 'Paid',
+    badgeColor: '#f59e0b',
+    baseUrl: 'https://api.cohere.com/compatibility/v1',
+    models: ['command-r-plus', 'command-r7b-12-2024'],
+    default: 'command-r-plus',
+    keyUrl: 'https://dashboard.cohere.com/api-keys',
+    note: 'Excellent RAG & enterprise models',
+  },
 }
 
 function ProviderModal({ onClose, onSaved, editProvider }) {
@@ -210,6 +251,7 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
             <input aria-label="Base URL" value={form.base_url} onChange={e => setForm({ ...form, base_url: e.target.value })} placeholder="https://api.example.com/v1" />
             <label>API Key</label>
             <input type="password" aria-label="API key" value={form.api_key} onChange={e => setForm({ ...form, api_key: e.target.value })} placeholder="sk-..." />
+            <p className="field-hint">{KEY_STORAGE_DISCLOSURE}</p>
             <label>Default Model</label>
             <input aria-label="Default model" value={form.default_model} onChange={e => setForm({ ...form, default_model: e.target.value })} placeholder="e.g. llama-3.1-70b" />
             <label>Models (comma-separated)</label>

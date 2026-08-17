@@ -59,7 +59,7 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
   const pick = (m) => { onChange(m); setOpen(false) }
 
   const onKeyDown = (e) => {
-    if (e.key === 'Escape') { setOpen(false); return }
+    if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); return }
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(s + 1, filtered.length - 1)) }
     if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(s - 1, 0)) }
     if (e.key === 'Enter') { e.preventDefault(); if (filtered[sel]) pick(filtered[sel]) }

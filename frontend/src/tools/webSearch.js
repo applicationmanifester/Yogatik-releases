@@ -10,9 +10,23 @@ const MAX_RESULTS = 8
 
 const FRESHNESS = { day: 'pd', week: 'pw', month: 'pm', year: 'py' }
 
+export function sanitizeSearchQuery(query = '') {
+  let q = String(query || '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[#*`_~[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (q.length > 180) {
+    const firstSentence = q.split(/[.?!]/)[0]
+    q = (firstSentence && firstSentence.length >= 10 && firstSentence.length <= 180) ? firstSentence : q.slice(0, 160)
+  }
+  return q.trim()
+}
+
 async function braveSearch(query, key, count, recency) {
+  const cleanQ = sanitizeSearchQuery(query)
   const fresh = FRESHNESS[recency] ? `&freshness=${FRESHNESS[recency]}` : ''
-  const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}${fresh}`
+  const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(cleanQ)}&count=${count}${fresh}`
   const resp = await proxyFetch(url, {
     credentials: true,
     headers: { 'Accept': 'application/json', 'X-Subscription-Token': key },
@@ -30,7 +44,7 @@ async function braveSearch(query, key, count, recency) {
 
 // DuckDuckGo has no freshness parameter, but its query syntax supports both.
 function ddgQuery(query, recency, site) {
-  let q = query
+  let q = sanitizeSearchQuery(query)
   if (site) q += ` site:${site.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}`
   const days = { day: 1, week: 7, month: 30, year: 365 }[recency]
   if (days) {
@@ -45,7 +59,8 @@ function ddgQuery(query, recency, site) {
  * text-heavy pages. Complements DuckDuckGo, which mirrors Bing's index.
  */
 async function marginaliaSearch(query, count) {
-  const html = await proxyText(`https://old-search.marginalia.nu/search?query=${encodeURIComponent(query)}`)
+  const cleanQ = sanitizeSearchQuery(query)
+  const html = await proxyText(`https://old-search.marginalia.nu/search?query=${encodeURIComponent(cleanQ)}`)
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const out = []
   for (const card of [...doc.querySelectorAll('.search-result')].slice(0, count)) {
@@ -62,10 +77,10 @@ async function marginaliaSearch(query, count) {
 }
 
 /** Wikipedia is often the best single answer for definitional queries. */
-/** Wikipedia is often the best single answer for definitional queries. */
 async function wikipediaSearch(query, count) {
   try {
-    const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=${count}&format=json&origin=*`
+    const cleanQ = sanitizeSearchQuery(query)
+    const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQ)}&srlimit=${count}&format=json&origin=*`
     const data = await fetch(url).then(r => r.json()).catch(() => proxyJson(url))
     return (data?.query?.search || []).map(r => ({
       title: r.title,
@@ -81,7 +96,8 @@ async function wikipediaSearch(query, count) {
 /** Google News RSS Search — free keyless real-time news search via rss2json */
 async function googleNewsSearch(query, count) {
   try {
-    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`
+    const cleanQ = sanitizeSearchQuery(query)
+    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cleanQ)}&hl=en-US&gl=US&ceid=US:en`
     // rss2json converts RSS → JSON without CORS issues (Google News blocks datacenter IPs directly)
     const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`
     const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(6000) }).then(r => r.json()).catch(() => null)
@@ -101,7 +117,8 @@ async function googleNewsSearch(query, count) {
 /** ArXiv API Search — free keyless academic & scientific paper search */
 async function arxivSearch(query, count) {
   try {
-    const rssUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&max_results=${count}`
+    const cleanQ = sanitizeSearchQuery(query)
+    const rssUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(cleanQ)}&max_results=${count}`
     const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`
     const resp = await fetch(url).then(r => r.json()).catch(() => null)
     if (resp?.items?.length) {
@@ -131,7 +148,8 @@ async function arxivSearch(query, count) {
 /** Crossref Search — free keyless academic publication search */
 async function crossrefSearch(query, count) {
   try {
-    const url = `https://api.crossref.org/works?query=${encodeURIComponent(query)}&rows=${count}`
+    const cleanQ = sanitizeSearchQuery(query)
+    const url = `https://api.crossref.org/works?query=${encodeURIComponent(cleanQ)}&rows=${count}`
     const data = await proxyJson(url)
     const items = data?.message?.items || []
     return items.map(item => ({
@@ -149,7 +167,8 @@ async function crossrefSearch(query, count) {
 /** Reddit JSON Search — free keyless community & opinion search */
 async function redditSearch(query, count) {
   try {
-    const data = await proxyJson(`https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&limit=${count}`)
+    const cleanQ = sanitizeSearchQuery(query)
+    const data = await proxyJson(`https://www.reddit.com/search.json?q=${encodeURIComponent(cleanQ)}&limit=${count}`)
     const children = data?.data?.children || []
     return children.map(c => {
       const p = c.data
@@ -190,8 +209,9 @@ function mergeResults(lists, count) {
 
 async function duckDuckGoSearch(query, count) {
   try {
-    const html = await proxyText(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`)
-      .catch(() => proxyText(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`))
+    const cleanQ = sanitizeSearchQuery(query)
+    const html = await proxyText(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(cleanQ)}`)
+      .catch(() => proxyText(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(cleanQ)}`))
     const doc = new DOMParser().parseFromString(html, 'text/html')
     const rows = [...doc.querySelectorAll('a.result__url, a.result-link, a.result__a')]
     const snippets = [...doc.querySelectorAll('.result__snippet, td.result-snippet')]
@@ -233,9 +253,16 @@ export const webSearchTool = {
       required: ['query'],
     },
   },
-  async execute({ query, count = 5, recency = 'any', site, engines = 'all' }) {
+  async execute(args = {}) {
+    let rawQuery = typeof args === 'string' ? args : (args?.query ?? args?.q ?? args?.search_query ?? args?.keyword ?? args?.text ?? args?.input ?? args?.terms ?? args?.searchTerm ?? '')
+    if (!rawQuery && typeof args === 'object' && args !== null) {
+      const firstVal = Object.values(args).find(v => typeof v === 'string' && v.trim())
+      if (firstVal) rawQuery = firstVal
+    }
+    const query = sanitizeSearchQuery(typeof rawQuery === 'string' ? rawQuery.trim() : String(rawQuery || '').trim())
+    const { count = 5, recency = 'any', site, engines = 'all' } = (typeof args === 'object' && args !== null) ? args : {}
     const n = Math.min(Math.max(1, count | 0), MAX_RESULTS)
-    if (!query?.trim()) return { error: 'Empty query' }
+    if (!query) return { error: 'Empty query' }
 
     const braveKey = await getSetting('apikey_brave')
     const wide = engines === 'all' && !site

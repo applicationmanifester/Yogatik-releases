@@ -3,25 +3,27 @@
  * sub-tasks to specialist agents (Researcher, Coder, Writer, …) that each run
  * the full agent loop in parallel, then their results are merged and returned.
  *
- * Guards: sub-agents cannot spawn further agents (no infinite recursion), at
- * most 3 run in parallel, and each is tool-scoped to its agent definition.
- * Dynamic imports break the tools ↔ api ↔ agent static cycle.
+ * Guards: sub-agents cannot spawn further agents (no infinite recursion), and
+ * each is tool-scoped to its agent definition. Concurrency runs through the
+ * shared global agent pool — by default as many sub-agents at once as there are
+ * tasks (chat_prefs.max_parallel_agents overrides), a rolling window so a slow
+ * sub-agent no longer stalls the rest, and this fan-out shares one budget with
+ * crew_orchestrator so the two together can't storm the provider's rate limit.
+ * Dynamic imports break the tools ↔ api ↔ agent cycle.
  */
-
-const MAX_PARALLEL = 3
 
 export const spawnAgentsTool = {
   schema: {
     description:
-      'Delegate focused sub-tasks to specialist sub-agents that run in parallel, then get their merged results. ' +
+      'Delegate focused sub-tasks to specialist sub-agents that run concurrently, then get their merged results. ' +
       'Use for complex, multi-part tasks (e.g. research + code + writing). Each sub-agent is one of: ' +
-      'researcher, coder, writer, analyst, planner (or a custom agent id/role). Do NOT use for simple single-step tasks.',
+      'researcher, coder, writer, analyst, planner, or any specialist agent id/role. Do NOT use for simple single-step tasks.',
     parameters: {
       type: 'object',
       properties: {
         tasks: {
           type: 'array',
-          description: 'The sub-tasks to delegate, run in parallel (max 3).',
+          description: 'The sub-tasks to delegate, run concurrently under a shared budget. Provide as many independent sub-tasks as the work needs.',
           items: {
             type: 'object',
             properties: {
@@ -40,8 +42,8 @@ export const spawnAgentsTool = {
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return { success: false, error: 'Provide a non-empty tasks array.' }
     }
-    const [{ streamMessage }, { getAgentById }, { getToolNames }] = await Promise.all([
-      import('../api'), import('../agents'), import('./index'),
+    const [{ streamMessage }, { getAgentById }, { getToolNames }, { runAgentPool }] = await Promise.all([
+      import('../api'), import('../agents'), import('./index'), import('../agentPool'),
     ])
     const allNames = getToolNames()
 
@@ -80,12 +82,8 @@ export const spawnAgentsTool = {
       return { agent: def?.name || agent, role: def?.role || agent, result: text.trim() || '(no output)' }
     }
 
-    // Run in capped-parallel batches.
-    const results = []
-    for (let i = 0; i < tasks.length; i += MAX_PARALLEL) {
-      const batch = tasks.slice(i, i + MAX_PARALLEL)
-      results.push(...await Promise.all(batch.map(runOne)))
-    }
+    // Rolling-window concurrency under the shared global agent budget.
+    const results = await runAgentPool(tasks, runOne)
 
     return {
       success: true,

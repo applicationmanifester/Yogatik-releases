@@ -1,0 +1,32 @@
+appId: com.acme.app
+productName: Acme
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - dist-electron/**
+publish:
+  provider: github
+  owner: acme
+  repo: app
+protocols:
+  - name: Acme Deep Link
+    schemes: [acme]
+fileAssociations:
+  - ext: acme
+    name: Acme Note
+mac:
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+  target: [dmg]
+win:
+  target: [nsis]
+nsis:
+  oneClick: false
+  perMachine: false
+linux:
+  target: [AppImage]
+  category: Utility
