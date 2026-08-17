@@ -8,6 +8,11 @@ name: Build desktop apps (Windows, macOS, Linux)
 # uploaded to ONE GitHub Release, which is what /platforms links to.
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish into, e.g. v3.9.1. Leave blank for desktop-latest.'
+        required: false
+        default: ''
   push:
     tags:
       - 'v*'
@@ -107,8 +112,13 @@ jobs:
         with:
           repository: applicationmanifester/Yogatik-releases
           token: ${{ secrets.RELEASE_TOKEN }}
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-latest' }}
-          name: 'Yogatik Desktop ${{ github.ref_type == ''tag'' && github.ref_name || ''(latest)'' }}'
+          # A tag push uses its own tag. A MANUAL run has no tag context, so it
+          # used to fall back to 'desktop-latest' — which creates a SECOND
+          # release that takes over releases/latest and orphans the assets
+          # already published under the real version. The optional `tag` input
+          # lets a manual run publish into an existing release instead.
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'desktop-latest' }}
+          name: 'Yogatik Desktop ${{ github.ref_type == ''tag'' && github.ref_name || inputs.tag || ''(latest)'' }}'
           body: |
             Desktop builds for Windows, macOS and Linux — download under Assets.
 
