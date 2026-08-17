@@ -127,3 +127,21 @@ describe('/platforms shows the version it is actually serving', () => {
     expect(meta().textContent).not.toMatch(/Invalid|NaN/)
   })
 })
+
+describe('the page states a version exactly once, from the release', () => {
+  it('has no hardcoded version anywhere in the markup', async () => {
+    // The eyebrow pill read "Yogatik for Desktop · v3.8" while the release was
+    // v3.9.2 — stale the moment it shipped, and directly contradicting the live
+    // pill underneath it. Any literal vN.N in the source is the same bug again.
+    await render(['Yogatik-Setup.exe'])
+    const authored = PAGE_SRC
+      .replace(/<!--[\s\S]*?-->/g, '')          // comments may discuss versions
+      .replace(/releases\/[^"'\s]*/g, '')       // asset URLs are not version claims
+    expect(authored).not.toMatch(/\bv\d+\.\d+(\.\d+)?\b/)
+  })
+
+  it('still shows the live version, so nothing was lost by removing it', async () => {
+    await render(['Yogatik-Setup.exe'], { tag: 'v9.9.9' })
+    expect(document.getElementById('release-meta').textContent).toMatch(/v9\.9\.9/)
+  })
+})
