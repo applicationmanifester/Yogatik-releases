@@ -61,6 +61,7 @@ import {
 } from './localFs'
 import { requestPermission } from '../permissions'
 import { terminalRunTool } from './terminalRun'
+import { todoTool } from './todo'
 import {
   uuidTool, passwordTool, numberBaseTool, cronTool, timezoneTool, thesaurusTool, countryTool,
 } from './moretools'
@@ -146,6 +147,7 @@ const ALL_TOOLS = {
   fs_move: fsMoveTool,
   fs_undo: fsUndoTool,
   terminal_run: terminalRunTool,
+  todo: todoTool,
   // Open, keyless utilities + word/country data.
   uuid: uuidTool,
   password_generate: passwordTool,

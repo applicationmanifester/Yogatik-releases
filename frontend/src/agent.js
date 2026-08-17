@@ -4,7 +4,7 @@
  * Uses OpenAI-compatible function calling (works with Groq, OpenRouter, OpenAI).
  */
 
-import { streamChat } from './llm'
+import { streamChat, chatComplete } from './llm'
 import { getToolSchemas, executeTool } from './tools/index'
 import { buildToolPrompt, parseToolCalls, formatToolResults } from './promptedTools'
 import { setVisionContext } from './tools/see'
@@ -15,6 +15,9 @@ import { getActiveSkill, skillDisabledTools } from './skills'
 import { getActiveAgent, agentDisabledTools } from './agents'
 import { getActiveStyleBlock } from './styles'
 import { loadProjectInstructions } from './projectInstructions'
+import { todoBlock } from './todos'
+import { compactHistory } from './compaction'
+import { getTodos } from './tools/todo'
 
 /** Durable memories the user asked to keep, injected so the model recalls them
  *  without needing a memory tool call (like ChatGPT/Claude memory). */
@@ -177,37 +180,6 @@ const LOCAL_HISTORY_BUDGET = 4000
 const MAX_TURNS = 20
 const LOCAL_MAX_TURNS = 6
 
-function windowHistory(history, budget = HISTORY_BUDGET, maxTurns = MAX_TURNS) {
-  const out = []
-  let used = 0
-
-  for (const m of history.slice(-maxTurns).reverse()) {
-    // Multimodal turns are arrays of parts. Stringifying them inlines a whole
-    // base64 image into the prompt as text — megabytes of garbage tokens.
-    if (Array.isArray(m.content)) {
-      const textLen = m.content.reduce((n, p) => n + (p.text?.length || 0), 0)
-      if (used + textLen > budget) break
-      out.push({ role: m.role, content: m.content })
-      used += textLen
-      continue
-    }
-    const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')
-    if (used + content.length <= budget) {
-      out.push({ role: m.role, content })
-      used += content.length
-    } else {
-      const room = budget - used
-      // Only worth keeping a partial message if a useful amount survives.
-      // The ellipsis counts against the budget, hence room - 1.
-      if (room > 500) {
-        out.push({ role: m.role, content: '…' + content.slice(-(room - 1)) })
-      }
-      break
-    }
-  }
-  return out.reverse()
-}
-
 /**
  * Drop payloads the model must never see as text: base64 frames (megabytes of
  * garbage tokens) and blob: URLs, which the model happily pastes into its reply
@@ -320,9 +292,13 @@ export async function runAgent({
   // so guidance lives with the project instead of only on this device.
   const projectBlock = await loadProjectInstructions()
 
+  // The model's own task list, so a long job keeps its thread across turns.
+  let taskBlock = ''
+  try { taskBlock = todoBlock(await getTodos()) } catch { taskBlock = '' }
+
   const systemBase = isLocalProvider
-    ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + projectBlock + (await memoryBlock())
-    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + projectBlock + (await memoryBlock())
+    ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + (await memoryBlock())
+    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + (await memoryBlock())
 
   const hBudget = isLocalProvider ? LOCAL_HISTORY_BUDGET : HISTORY_BUDGET
   const hTurns = isLocalProvider ? LOCAL_MAX_TURNS : MAX_TURNS
@@ -335,9 +311,30 @@ export async function runAgent({
 
   const pastHistory = isCurrentMessageInHistory ? history.slice(0, -1) : history
 
+  // Summarize turns that fall out of the window instead of truncating them —
+  // the old behaviour silently destroyed the start of a long conversation.
+  // Best-effort: on any failure this degrades to the plain window.
+  const windowed = await compactHistory(pastHistory, {
+    budget: hBudget,
+    maxTurns: hTurns,
+    // On-device models are too small to summarize usefully and have no HTTP
+    // endpoint here, so they keep the plain window (compactHistory falls back
+    // when summarize throws).
+    summarize: async (prompt) => {
+      if (isLocalProvider) throw new Error('no compaction for local models')
+      const resp = await chatComplete({
+        provider, model, apiKey,
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 400, temperature: 0.2, timeoutMs: 30000, retries: 0,
+      })
+      // chatComplete returns the raw OpenAI response, not a string.
+      return resp?.choices?.[0]?.message?.content || ''
+    },
+  })
+
   const messages = [
     { role: 'system', content: systemBase },
-    ...windowHistory(pastHistory, hBudget, hTurns),
+    ...windowed,
     { role: 'user', content: userMessage },
   ]
 
