@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import {
   rootIdFor, emptyState, resolveRootIds, resolveWithin,
   materialise, addRoot, removeRoot, setPrimary, rebindChat, migrateLegacyGrant,
+  ensureDefaultRoot, resolveRootPaths,
 } from '../electron/rootsCore.cjs'
 import os from 'node:os'
 import nodePath from 'node:path'
@@ -195,5 +196,69 @@ describe('state transforms', () => {
   it('migrateLegacyGrant does not clobber an existing default', () => {
     const st = { ...emptyState(), bindings: { default: ['b'] }, roots: { b: { path: '/b' } } }
     expect(migrateLegacyGrant(st, '/legacy').bindings.default).toEqual(['b'])
+  })
+})
+
+describe('ensureDefaultRoot — the app provides its own folder', () => {
+  const DEFAULT_DIR = nodePath.join(os.tmpdir(), 'YogatikDefaultTest')
+
+  it('binds a default root and marks that it auto-created one', () => {
+    const st = ensureDefaultRoot(emptyState(), DEFAULT_DIR)
+    expect(st.autoDefaultCreated).toBe(true)
+    expect(resolveRootPaths(st, {})).toEqual([nodePath.resolve(DEFAULT_DIR)])
+  })
+
+  it('a brand-new chat inherits it without any grant', () => {
+    const st = ensureDefaultRoot(emptyState(), DEFAULT_DIR)
+    expect(resolveRootPaths(st, { conversationId: 'never-seen' }))
+      .toEqual([nodePath.resolve(DEFAULT_DIR)])
+  })
+
+  it('never overrides a real grant that already holds the default', () => {
+    const granted = migrateLegacyGrant(emptyState(), nodePath.join(os.tmpdir(), 'RealGrant'))
+    const st = ensureDefaultRoot(granted, DEFAULT_DIR)
+    expect(resolveRootPaths(st, {})).toEqual([nodePath.resolve(nodePath.join(os.tmpdir(), 'RealGrant'))])
+    expect(st.autoDefaultCreated).toBeUndefined()
+  })
+
+  it('does not resurrect the folder after the user removes it', () => {
+    const created = ensureDefaultRoot(emptyState(), DEFAULT_DIR)
+    const id = resolveRootIds(created, {})[0]
+    const removed = removeRoot(created, {}, id)
+    expect(resolveRootPaths(removed, {})).toEqual([])
+
+    // Second launch: marker survives, so nothing is recreated.
+    const relaunched = ensureDefaultRoot(removed, DEFAULT_DIR)
+    expect(resolveRootPaths(relaunched, {})).toEqual([])
+  })
+
+  it('is idempotent across repeated launches', () => {
+    const once = ensureDefaultRoot(emptyState(), DEFAULT_DIR)
+    const twice = ensureDefaultRoot(once, DEFAULT_DIR)
+    expect(Object.keys(twice.roots)).toHaveLength(1)
+    expect(resolveRootPaths(twice, {})).toEqual([nodePath.resolve(DEFAULT_DIR)])
+  })
+
+  it('does not grant hook trust to the folder it created', () => {
+    const st = ensureDefaultRoot(emptyState(), DEFAULT_DIR)
+    expect(st.trustedHookRoots || []).toEqual([])
+  })
+})
+
+describe('state transforms preserve unrelated top-level keys', () => {
+  // clone() rebuilt {version, roots, bindings} and dropped everything else, so
+  // adding or removing ANY root silently wiped trustedHookRoots — hook trust
+  // revoking itself with no user action. Same mechanism would have eaten the
+  // autoDefaultCreated marker on the next mutation, resurrecting the folder.
+  it('keeps trustedHookRoots across an addRoot', () => {
+    const base = { ...emptyState(), trustedHookRoots: ['/home/user/repo'] }
+    const { state } = addRoot(base, {}, nodePath.join(os.tmpdir(), 'Another'))
+    expect(state.trustedHookRoots).toEqual(['/home/user/repo'])
+  })
+
+  it('keeps the auto-created marker across an unrelated addRoot', () => {
+    const created = ensureDefaultRoot(emptyState(), nodePath.join(os.tmpdir(), 'YogatikDefaultTest'))
+    const { state } = addRoot(created, { conversationId: 'c1' }, nodePath.join(os.tmpdir(), 'Extra'))
+    expect(state.autoDefaultCreated).toBe(true)
   })
 })

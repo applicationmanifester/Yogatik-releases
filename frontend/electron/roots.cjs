@@ -12,6 +12,11 @@ let getWindow = () => null
 function storeFile() { return path.join(app.getPath('userData'), 'workspace_roots.json') }
 function legacyFile() { return path.join(app.getPath('userData'), 'granted_folder.txt') }
 
+// Documents, not userData: the user should be able to find, open and back up
+// what the assistant writes, and it must survive an uninstall. On Windows this
+// follows a OneDrive/known-folder redirection, which is what we want.
+function defaultWorkspaceDir() { return path.join(app.getPath('documents'), 'Yogatik') }
+
 function save() {
   try { fs.writeFileSync(storeFile(), JSON.stringify(state, null, 2), 'utf8') } catch { /* ignore */ }
 }
@@ -34,6 +39,25 @@ function load() {
 
   const pruned = core.pruneMissing(state)
   state = pruned.state
+
+  // A fresh install has granted nothing, so the app provides its own folder and
+  // binds it as the global default — every chat inherits it and file work works
+  // out of the box. Runs after migration (a real grant always wins) and after
+  // pruning (so we never create a root prune would drop).
+  //
+  // mkdir is idempotent: an existing Documents/Yogatik from a previous install
+  // is adopted as-is, never emptied. Best effort throughout — if Documents is
+  // read-only or redirected somewhere unwritable, state is left untouched and
+  // the app behaves exactly as before, with the user granting a folder by hand.
+  // Booting must never fail over this.
+  if (!state.autoDefaultCreated) {
+    try {
+      const dir = defaultWorkspaceDir()
+      fs.mkdirSync(dir, { recursive: true })
+      state = core.ensureDefaultRoot(state, dir)
+    } catch { /* unwritable: fall back to a manual grant */ }
+  }
+
   save()
   return state
 }

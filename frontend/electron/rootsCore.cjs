@@ -114,7 +114,12 @@ function resolveWithin(rootPaths, target) {
 
 function clone(state) {
   const st = state || emptyState()
-  return { version: 1, roots: { ...st.roots }, bindings: { ...st.bindings } }
+  // Spread the WHOLE state first. Rebuilding only {version, roots, bindings}
+  // dropped every other top-level key, and since roots.cjs assigns the result
+  // back over the live state, any addRoot/removeRoot silently wiped
+  // trustedHookRoots — hook trust revoking itself with no user action. It also
+  // would have eaten autoDefaultCreated, resurrecting a folder the user removed.
+  return { ...st, version: 1, roots: { ...st.roots }, bindings: { ...st.bindings } }
 }
 
 function chatKey(ctx) {
@@ -191,6 +196,34 @@ function migrateLegacyGrant(state, legacyPath) {
   return st
 }
 
+/**
+ * The app's own working folder, bound as the global default so a fresh install
+ * can do file work without the user granting anything first.
+ *
+ * Runs exactly once per installation. `autoDefaultCreated` outlives the binding
+ * itself, so a user who removes the folder does not get it back on the next
+ * launch — a deliberate choice is never undone. A real grant already holding
+ * `default` (including one migrated from granted_folder.txt) always wins, and
+ * hook trust is deliberately NOT granted: a .yogatik/hooks.json appearing in
+ * here still has to be trusted explicitly.
+ *
+ * Pure. Creating the directory is roots.cjs's job.
+ */
+function ensureDefaultRoot(state, absPath) {
+  const st = clone(state)
+  if (st.autoDefaultCreated) return st
+  if ((st.bindings.default || []).some(id => !!st.roots[id])) return st
+
+  const resolved = path.resolve(absPath)
+  const id = rootIdFor(resolved)
+  st.roots[id] = st.roots[id] || {
+    path: resolved, label: path.basename(resolved) || resolved, addedAt: Date.now(),
+  }
+  st.bindings.default = [id]
+  st.autoDefaultCreated = true
+  return st
+}
+
 /** Drop bindings whose directory has been deleted or unmounted. */
 function pruneMissing(state) {
   const st = clone(state)
@@ -216,4 +249,5 @@ module.exports = {
   rootIdFor, emptyState, bindingKeys, resolveRootIds, resolveRootPaths,
   containingRoot, resolveWithin,
   materialise, addRoot, removeRoot, setPrimary, rebindChat, migrateLegacyGrant, pruneMissing,
+  ensureDefaultRoot,
 }
