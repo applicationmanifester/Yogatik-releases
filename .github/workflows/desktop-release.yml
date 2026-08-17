@@ -1,11 +1,12 @@
 name: Build Windows desktop app
 
-# Manual run (Actions tab → Run workflow) or on a version tag like v3.8.0.
+# MANUAL ONLY. This is the legacy Tauri shell; electron-release.yml is the one
+# that feeds /platforms. It used to fire on 'v*' too, so a single tag ran both
+# workflows and this one published a SECOND release — to the private source
+# repo, whose assets no anonymous visitor can download. Electron is the shipping
+# path; run this by hand if you specifically want a Tauri build.
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
 
 permissions:
   contents: write   # needed to create the Release and upload the .exe
@@ -41,7 +42,9 @@ jobs:
         with:
           projectPath: frontend
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-latest' }}
-          releaseName: 'Yogatik Desktop ${{ github.ref_type == 'tag' && github.ref_name || '(latest)' }}'
+          # Inner quotes MUST be doubled: a single-quoted YAML scalar ends at the
+          # first lone ', so the un-escaped form was a workflow-wide parse error.
+          releaseName: 'Yogatik Desktop ${{ github.ref_type == ''tag'' && github.ref_name || ''(latest)'' }}'
           releaseBody: 'Windows installer (.exe / .msi). Download the .exe under Assets below.'
           releaseDraft: false
           prerelease: false

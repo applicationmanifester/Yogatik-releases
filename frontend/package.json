@@ -1,7 +1,7 @@
 {
   "name": "yogatik",
   "private": true,
-  "version": "3.9.0",
+  "version": "3.9.1",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -14,9 +14,9 @@
     "build:electron": "node ./node_modules/vite/bin/vite.js --configLoader runner build --base=./ --outDir dist-electron",
     "electron:dev": "electron .",
     "electron:build": "npm run build:electron && electron-builder --win nsis --publish never",
-    "electron:build:all": "npm run build:electron && electron-builder -mwl",
-    "electron:build:mac": "npm run build:electron && electron-builder --mac",
-    "electron:build:linux": "npm run build:electron && electron-builder --linux"
+    "electron:build:all": "npm run build:electron && electron-builder -mwl --publish never",
+    "electron:build:mac": "npm run build:electron && electron-builder --mac --publish never",
+    "electron:build:linux": "npm run build:electron && electron-builder --linux --publish never"
   },
   "dependencies": {
     "dexie": "^4.0.0",

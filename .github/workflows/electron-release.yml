@@ -20,6 +20,11 @@ jobs:
     strategy:
       # One platform failing must not discard the other two.
       fail-fast: false
+      # All three jobs publish into ONE release. Run them one at a time so the
+      # first creates it and the rest update it; in parallel they can each reach
+      # the create step before any has finished, which races (duplicate release
+      # or a 422). Releases are rare — serial wall-clock is the cheap trade.
+      max-parallel: 1
       matrix:
         include:
           - os: windows-latest
@@ -57,7 +62,13 @@ jobs:
         working-directory: frontend
         run: ${{ matrix.build }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # NO GH_TOKEN here, deliberately. electron-builder's default publish
+          # policy is onTagOrDraft: given a token + CI + a tag it would try to
+          # upload to build.publish (the MIRROR) using this repo's GITHUB_TOKEN,
+          # which cannot write to another repository — a 403 mid-build. Every
+          # build script also passes --publish never. Publishing is the softprops
+          # step below, with RELEASE_TOKEN, and only there.
+          #
           # Optional — desktop already works without these (direct provider calls,
           # hardcoded Firebase fallback). Set as repo secrets for full parity.
           VITE_LLM_PROXY_BASE: ${{ secrets.VITE_LLM_PROXY_BASE }}
@@ -102,8 +113,8 @@ jobs:
             Desktop builds for Windows, macOS and Linux — download under Assets.
 
             * **Windows** — `Yogatik-Setup.exe`
-            * **macOS** — `Yogatik-*.dmg` (universal: Apple Silicon + Intel)
-            * **Linux** — `Yogatik-*.AppImage` or `.deb`
+            * **macOS** — `Yogatik.dmg` (universal: Apple Silicon + Intel)
+            * **Linux** — `Yogatik.AppImage` or `Yogatik.deb`
 
             These builds are unsigned. macOS will need right-click → Open the
             first time, and Windows SmartScreen may warn; that is expected until
