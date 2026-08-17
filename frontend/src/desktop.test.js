@@ -58,6 +58,7 @@ describe('local filesystem tools (desktop bridge)', () => {
                 return `contents-of-${args.path}`
               }
               if (cmd === 'fs_grant') return '/home/user/work'
+              if (cmd === 'roots_add') return { id: 'r1', path: '/home/user/work', label: 'work' }
               if (cmd === 'fs_list') return [{ name: 'index.js', path: 'index.js', is_dir: false, size: 1024 }]
               if (cmd === 'fs_batch_read') {
                 return args.paths.map(p => ({ path: p, success: true, content: `data-${p}`, size: 100 }))
@@ -138,6 +139,45 @@ describe('local filesystem tools (desktop bridge)', () => {
       expect(await grantFolder()).toBe('/home/user/work')
       expect(await getGrantedRoot()).toBeNull() // mock fs_granted_root returns null
       await expect(clearGrantedFolder()).resolves.toBeUndefined()
+    })
+  })
+
+  describe('workspace context injection', () => {
+    let seen
+
+    beforeEach(() => {
+      seen = []
+      globalThis.window = {
+        __TAURI__: {
+          core: {
+            invoke: async (cmd, args) => {
+              seen.push({ cmd, args })
+              if (cmd === 'fs_read') return 'ok'
+              if (cmd === 'roots_list') return [{ id: 'r1', path: '/w/repo', label: 'repo', primary: true, source: 'chat' }]
+              return null
+            },
+          },
+        },
+      }
+    })
+
+    it('injects the active chat context into every fs call', async () => {
+      const { setWorkspaceContext } = await import('./tools/localFs')
+      setWorkspaceContext(() => ({ conversationId: 7, projectId: 3 }))
+      await fsReadTool.execute({ path: 'a.txt' })
+      expect(seen[0].args.ctx).toEqual({ conversationId: 7, projectId: 3 })
+    })
+
+    it('never exposes ctx as a tool parameter the model can set', () => {
+      expect(Object.keys(fsReadTool.schema.parameters.properties)).not.toContain('ctx')
+    })
+
+    it('listRoots returns the folders bound to the chat', async () => {
+      const { listRoots, setWorkspaceContext } = await import('./tools/localFs')
+      setWorkspaceContext(() => ({ conversationId: 7, projectId: null }))
+      const roots = await listRoots()
+      expect(roots).toHaveLength(1)
+      expect(roots[0].path).toBe('/w/repo')
     })
   })
 

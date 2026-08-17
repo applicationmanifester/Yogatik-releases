@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Pin, Clock, Bell, Monitor } from 'lucide-react'
 import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate } from './api'
-import { isDesktop, grantFolder, getGrantedRoot } from './tools/localFs'
+import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { YogatikLogo } from './components/YogatikLogo'
@@ -52,6 +52,8 @@ import { registerServiceWorker } from './pwa'
 import { requestPersistence, storageReport, formatBytes } from './storage'
 import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clearLocalModelCache } from './localLLM'
 import { isDirectTimeQuery } from './timeQuery'
+import { setPermissionPrompt } from './permissions'
+import PermissionPrompt from './components/PermissionPrompt'
 
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
@@ -203,7 +205,8 @@ export default function App() {
   const [prefs, setPrefsState] = useState({})
   const [showPersonalise, setShowPersonalise] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
-  const [grantedRoot, setGrantedRoot] = useState(null)
+  const [chatRoots, setChatRoots] = useState([])
+  const [rootsOpen, setRootsOpen] = useState(false)
   const [toast, setToast] = useState(null)
   const showToast = useCallback((msg) => {
     setToast(msg)
@@ -214,9 +217,15 @@ export default function App() {
   const showConfirm = useCallback((msg, onOk, { okLabel = 'OK', cancelLabel = 'Cancel', onCancel } = {}) => {
     setConfirmModal({ msg, okLabel, cancelLabel, onOk, onCancel })
   }, [])
-  const handleGrantFolder = useCallback(async () => {
-    const root = await grantFolder()
-    if (root) setGrantedRoot(root)
+  const handleAddFolder = useCallback(async () => {
+    const added = await addRoot()
+    if (added) setChatRoots(await listRoots())
+  }, [])
+  const handleRemoveFolder = useCallback(async (rootId) => {
+    setChatRoots(await removeRoot(rootId))
+  }, [])
+  const handleMakePrimary = useCallback(async (rootId) => {
+    setChatRoots(await setPrimaryRoot(rootId))
   }, [])
   const features = useMemo(() => resolveFeatures(prefs.features), [prefs.features])
   // The vision fallback lives outside React; it needs the toggle, not a prop.
@@ -340,6 +349,8 @@ export default function App() {
   }, [])
   // Generic confirm modal — replaces native confirm() throughout the app
   const [confirmModal, setConfirmModal] = useState(null) // { msg, okLabel?, cancelLabel?, onOk, onCancel? }
+  // One pending tool-permission request at a time: { request, resolve }
+  const [permRequest, setPermRequest] = useState(null)
   // Project-name prompt modal — replaces native prompt() in addProject
   const [projectNameModal, setProjectNameModal] = useState(null) // { onSubmit }
   // Restore-mode modal — replaces confirm() in handleRestore
@@ -394,6 +405,38 @@ export default function App() {
   }, [conversations, keyInfo])
 
   const conv = conversations[activeIdx]
+
+  // Workspace context for the fs_* tools. Ref-backed and assigned during render
+  // (not in an effect) so a tool call fired on the first prompt of a brand-new
+  // chat still sees the right conversation — same fix as sendRef.
+  const wsCtxRef = useRef({ conversationId: null, projectId: null })
+  wsCtxRef.current = {
+    conversationId: conv?.id ?? conv?.clientId ?? null,
+    projectId: activeProject ?? null,
+  }
+  useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
+
+  // Install the approval UI. permissions.js FAILS CLOSED without this, so a
+  // build where the UI never mounts refuses destructive calls rather than
+  // silently running them.
+  useEffect(() => {
+    setPermissionPrompt((request) => new Promise((resolve) => {
+      setPermRequest({ request, resolve })
+    }))
+    return () => setPermissionPrompt(null)
+  }, [])
+
+  const resolvePermission = useCallback((answer) => {
+    setPermRequest(prev => { prev?.resolve(answer); return null })
+  }, [])
+
+  // This chat's folders. Reloads when the chat or project changes, which is what
+  // makes switching chats switch the working folder.
+  useEffect(() => {
+    if (!isDesktop()) return
+    listRoots().then(setChatRoots).catch(() => setChatRoots([]))
+  }, [conv?.id, conv?.clientId, activeProject])
+
   const activeClientId = conv?.clientId
   const isStreamingHere = !!(activeClientId && loadingMap[activeClientId])
   const streamingContent = (activeClientId && streamingMap[activeClientId]) || ''
@@ -778,9 +821,6 @@ export default function App() {
       setModel(await getActiveModel(p) || '')
       setProviderStatus(await getAllProviderStatus())
     }).catch(() => {})
-    if (isDesktop()) {
-      getGrantedRoot().then(setGrantedRoot).catch(() => {})
-    }
     getPrefs().then(pref => {
       if (pref.temperature != null) setTemperatureState(pref.temperature)
       if (pref.web_search != null) setWebSearchState(pref.web_search)
@@ -1104,7 +1144,7 @@ export default function App() {
         else if (action === 'open-arena') setCompareMode(true)
         else if (action === 'open-live') startLive()
         else if (action === 'open-diagnostics') setShowDiagnosticsModal(true)
-        else if (action === 'grant-folder') handleGrantFolder()
+        else if (action === 'grant-folder') handleAddFolder()
       } else if (action && typeof action === 'object') {
         if (action.type === 'always-on-top-changed') {
           setIsPinned(action.value)
@@ -1112,7 +1152,7 @@ export default function App() {
       }
     })
     return () => { if (typeof unlisten === 'function') unlisten() }
-  }, [handleGrantFolder])
+  }, [handleAddFolder])
 
   /** Jump to a conversation by its stored id — the palette searches messages,
    *  which know their conversation but not its position in the sidebar. */
@@ -1374,19 +1414,22 @@ export default function App() {
         '- Present comparative data in structured Markdown tables (| Header 1 | Header 2 |) ready for 1-click CSV export.'
     }
 
-    const folderCtx = grantedRoot
-      ? `\n\nWORKING FOLDER: ${grantedRoot}\n` +
-        `You have full file-system access to this folder via the fs_* tools. ` +
+    const folderCtx = chatRoots.length
+      ? `\n\nWORKING FOLDERS FOR THIS CHAT:\n` +
+        chatRoots.map(r => `- ${r.path}${r.primary ? '  (primary)' : ''}`).join('\n') +
+        `\nYou have full file-system access to these folders via the fs_* tools. ` +
         `Use them proactively when the user asks to create, read, edit, rename, move, delete files or directories:\n` +
-        `- fs_list   → list contents (use path="" for root)\n` +
+        `- fs_list   → list contents\n` +
         `- fs_read   → read a file\n` +
         `- fs_write  → create or overwrite a file\n` +
         `- fs_edit   → patch a file by exact string replacement\n` +
-        `- fs_search → grep across files\n` +
+        `- fs_search → grep across every folder above\n` +
         `- fs_delete → delete a file or empty directory\n` +
         `- fs_mkdir  → create a directory tree\n` +
         `- fs_move   → move or rename a file/directory\n` +
-        `All paths are relative to the working folder above.`
+        `- fs_add_folder → ask the user to grant another folder\n` +
+        `Paths may be absolute, or relative to the primary folder. ` +
+        `Anything outside these folders is refused.`
       : ''
 
     return (
@@ -1411,7 +1454,7 @@ export default function App() {
       '- When explaining processes or workflows, include Mermaid flowcharts using `diagram` or ```mermaid code blocks.\n' +
       '- Keep document exports (Word .doc, PowerPoint .pptx, CSV) structured into clean sections and slides.'
     )
-  }, [promptTemplates, activeTemplate, grantedRoot])
+  }, [promptTemplates, activeTemplate, chatRoots])
 
   const loadingRef = useRef(null)
   useEffect(() => { loadingRef.current = !!(conv?.clientId && loadingMap[conv.clientId]) }, [loadingMap, conv?.clientId])
@@ -1558,6 +1601,9 @@ export default function App() {
         convId = await createConversation(updated.title, null, useProvider, useModel, chatSettings)
         if (!convId) convId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
         updated.id = convId
+        // Folders added while this chat was still a draft are keyed by clientId;
+        // move them onto the real id or they'd be orphaned on the next render.
+        if (targetClientId) await rebindChatRoots(targetClientId, convId)
       } else if (isNewTitle) {
         await renameConversation(convId, updated.title)
       }
@@ -2727,20 +2773,38 @@ export default function App() {
           <div className="header-actions">
             {isDesktop() && (
               <>
-                <div className="desktop-folder-indicator" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginRight: 8, color: 'var(--text-secondary)' }}>
-                  <Folder size={15} />
-                  <span title={grantedRoot || 'No working folder granted'} style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {grantedRoot ? grantedRoot.split(/[/\\]/).pop() || grantedRoot : 'No folder'}
-                  </span>
-                  <button
-                    className="small-btn"
-                    style={{ padding: '2px 8px', fontSize: 11 }}
-                    onClick={handleGrantFolder}
-                    title="Change granted working folder for local filesystem tools (create/edit/read files)"
-                  >
-                    {grantedRoot ? 'Change' : 'Grant folder'}
-                  </button>
-                </div>
+              <div className="desktop-folder-indicator" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginRight: 8, color: 'var(--text-secondary)' }}>
+                <Folder size={15} />
+                <button
+                  className="small-btn"
+                  style={{ padding: '2px 8px', fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  onClick={() => setRootsOpen(o => !o)}
+                  title={chatRoots.length ? chatRoots.map(r => r.path).join('\n') : 'No working folder for this chat'}
+                >
+                  {chatRoots.length === 0
+                    ? 'No folder'
+                    : `${chatRoots[0].label}${chatRoots.length > 1 ? ` +${chatRoots.length - 1}` : ''}`}
+                </button>
+                {rootsOpen && (
+                  <div className="roots-popover" role="dialog" aria-label="Working folders for this chat">
+                    <div className="roots-popover-title">Folders for this chat</div>
+                    {chatRoots.length === 0 && <div className="roots-empty">No folder yet.</div>}
+                    {chatRoots.map(r => (
+                      <div key={r.id} className="roots-row">
+                        <span className="roots-path" title={r.path}>{r.path}</span>
+                        {r.primary
+                          ? <span className="roots-badge">primary</span>
+                          : <button className="small-btn" onClick={() => handleMakePrimary(r.id)}>Make primary</button>}
+                        <button className="icon-btn" aria-label={`Remove ${r.label}`} onClick={() => handleRemoveFolder(r.id)}><Trash2 size={12} /></button>
+                      </div>
+                    ))}
+                    {chatRoots.length > 0 && chatRoots[0].source !== 'chat' && (
+                      <div className="roots-inherited">Inherited from {chatRoots[0].source}. Changing them here affects only this chat.</div>
+                    )}
+                    <button className="small-btn" onClick={handleAddFolder}>Add folder…</button>
+                  </div>
+                )}
+              </div>
                 <button
                   className={`icon-btn ${isPinned ? 'pinned' : ''}`}
                   onClick={togglePin}
@@ -3452,6 +3516,12 @@ export default function App() {
       <DownloadModal isOpen={showDownloadModal} onClose={() => setShowDownloadModal(false)} onInstallPwa={installPwa} showPwa={!!showPwaInstall} />
       {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
       {/* Generic confirm modal — no more native confirm() dialogs */}
+      {permRequest && (
+        <div className="perm-overlay">
+          <PermissionPrompt request={permRequest.request} onResolve={resolvePermission} />
+        </div>
+      )}
+
       {confirmModal && (
         <Modal title="Confirm" onClose={() => { confirmModal.onCancel?.(); setConfirmModal(null) }}
           footer={

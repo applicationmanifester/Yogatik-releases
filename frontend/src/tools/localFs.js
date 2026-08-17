@@ -4,16 +4,19 @@
  * shell (src-tauri) or Electron IPC. In the browser build window.__TAURI__ is absent,
  * so every tool returns an honest "desktop only" note instead of failing silently.
  *
- * Scope safety: the backend stores ONE granted root (chosen via fs_grant's
- * native folder picker) and rejects any path outside it — the model cannot
- * wander the disk. Grant is required once per session before any read/write.
+ * Scope safety: the main process keeps a registry of user-granted directories and
+ * a per-chat binding. Every call carries an opaque ctx {conversationId, projectId}
+ * injected HERE, never a tool parameter — model output influences this module, so
+ * a model-supplied root would make the grant meaningless. Paths may be absolute;
+ * safety is the realpath containment check against that chat's folders.
  *
- * Performance features:
- * - High-speed asynchronous directory walk with standard ignore directory filters (.git, node_modules, dist, etc.)
- * - Parallel worker pool for workspace content searches with automatic binary file skipping
- * - Line-sliced windowed reads (start_line / end_line) for minimal RAM & LLM token consumption
- * - Multi-file concurrent batch read (fs_batch_read) in a single round-trip
- * - Compact workspace file tree generation (fs_file_tree)
+ * Electron: several folders per chat (Claude Code's /add-dir model), inherited
+ * from the project then the global default. Tauri: still ONE root, served by the
+ * fs_grant/fs_granted_root/fs_clear_grant compatibility aliases.
+ *
+ * Performance: ignore-filtered directory walk (.git, node_modules, dist, …),
+ * binary-file skipping during content search, line-windowed reads
+ * (start_line / end_line), multi-file batch read and compact file-tree output.
  */
 
 export function isDesktop() {
@@ -21,10 +24,26 @@ export function isDesktop() {
     (!!window.__TAURI_INTERNALS__ || !!window.__TAURI__)
 }
 
+// The active chat supplies the context for every call. It is injected here, NOT
+// exposed as a tool parameter — the model must never be able to name another
+// chat's folders. App.jsx installs a getter that reads from a ref, because
+// reading React state directly here would capture a stale closure.
+let ctxProvider = () => ({ conversationId: null, projectId: null })
+
+export function setWorkspaceContext(fn) {
+  ctxProvider = typeof fn === 'function' ? fn : () => ({ conversationId: null, projectId: null })
+}
+
+function workspaceCtx() {
+  try { return ctxProvider() || {} } catch { return {} }
+}
+
+export function getWorkspaceCtx() { return workspaceCtx() }
+
 async function invoke(cmd, args) {
   const core = window.__TAURI__?.core
   if (!core?.invoke) throw new Error('Tauri bridge unavailable')
-  return core.invoke(cmd, args)
+  return core.invoke(cmd, { ...(args || {}), ctx: workspaceCtx() })
 }
 
 const DESKTOP_ONLY = {
@@ -42,13 +61,53 @@ async function guard(fn) {
   catch (e) {
     const msg = e?.message || String(e)
     if (/no folder granted|not granted/i.test(msg)) {
-      return { success: false, error: 'No folder is granted yet. Call fs_grant first so the user can pick a working folder.' }
+      return { success: false, error: 'No working folder for this chat. Call fs_add_folder so the user can pick one.' }
     }
     return fail(msg)
   }
 }
 
-/** UI helpers (desktop only) — manage the granted working folder outside the agent loop. */
+/** Shape a bare path (Tauri's single-root reply) like a roots_* entry. */
+function asRoot(p, source) {
+  if (!p) return null
+  return { id: p, path: p, label: String(p).split(/[/\\]/).filter(Boolean).pop() || p, primary: true, source }
+}
+
+/** UI helpers (desktop only) — manage THIS chat's working folders.
+ *  The Tauri shell has no roots_* commands and REJECTS unknown ones, so each
+ *  falls back to the single-root fs_* command rather than silently doing nothing. */
+export async function addRoot() {
+  if (!isDesktop()) return null
+  try { return await invoke('roots_add') }
+  catch {
+    try { return asRoot(await invoke('fs_grant'), 'chat') } catch { return null }
+  }
+}
+export async function listRoots() {
+  if (!isDesktop()) return []
+  try { return (await invoke('roots_list')) || [] }
+  catch {
+    try {
+      const one = asRoot(await invoke('fs_granted_root'), 'default')
+      return one ? [one] : []
+    } catch { return [] }
+  }
+}
+export async function removeRoot(rootId) {
+  if (!isDesktop()) return []
+  try { return (await invoke('roots_remove', { rootId })) || [] } catch { return [] }
+}
+export async function setPrimaryRoot(rootId) {
+  if (!isDesktop()) return []
+  try { return (await invoke('roots_set_primary', { rootId })) || [] } catch { return [] }
+}
+/** A draft chat has no DB id; move its folders across once it is saved. */
+export async function rebindChatRoots(oldId, newId) {
+  if (!isDesktop() || oldId == null || newId == null) return
+  try { await invoke('roots_rebind', { oldId, newId }) } catch { /* ignore */ }
+}
+
+// Legacy single-root helpers, kept one release for the Tauri shell.
 export async function grantFolder() {
   if (!isDesktop()) return null
   try { return await invoke('fs_grant') } catch { return null }
@@ -62,30 +121,78 @@ export async function clearGrantedFolder() {
   try { await invoke('fs_clear_grant') } catch { /* ignore */ }
 }
 
-export const fsGrantTool = {
+/** Undo journal (Electron only) — every fs mutation is snapshotted first. */
+export async function listJournal() {
+  if (!isDesktop()) return []
+  try { return (await invoke('journal_list')) || [] } catch { return [] }
+}
+export async function revertJournalEntry(id) {
+  if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
+  try { return await invoke('journal_revert', { id }) } catch (e) { return fail(e) }
+}
+
+export const fsUndoTool = {
   schema: {
     description:
-      'Open a native folder picker so the user grants Yogatik access to ONE working folder on their computer. ' +
-      'Must be called before any other fs_* tool. All later reads/writes are confined to this folder. Desktop app only.',
+      'Undo a previous file change made in this chat (write, edit, delete, move). ' +
+      'Call with no id to list what can be undone, then call again with the id. ' +
+      'Restores the file or directory exactly as it was before that change. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Journal entry id to revert. Omit to list recent changes.' },
+      },
+      required: [],
+    },
+  },
+  async execute({ id } = {}) {
+    if (!isDesktop()) return DESKTOP_ONLY
+    try {
+      if (!id) {
+        const entries = await listJournal()
+        return ok({
+          tool: 'fs_undo',
+          count: entries.length,
+          entries: entries.slice(0, 25).map(e => ({ id: e.id, op: e.op, target: e.target, at: e.ts })),
+          message: entries.length ? 'Call fs_undo again with one of these ids.' : 'Nothing to undo in this chat.',
+        })
+      }
+      const res = await revertJournalEntry(id)
+      if (!res?.success) return { success: false, error: res?.error || 'Could not undo that change.' }
+      return ok({ tool: 'fs_undo', restored: res.restored, message: `Restored ${res.restored}` })
+    } catch (e) { return fail(e) }
+  },
+}
+
+export const fsAddFolderTool = {
+  schema: {
+    description:
+      'Open a native folder picker so the user grants this chat access to a folder on their computer. ' +
+      'A chat may hold several folders. Call this when no folder is granted yet, or when the user ' +
+      'asks to work somewhere new. Reads and writes are confined to this chat’s folders. Desktop app only.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
   async execute() {
     if (!isDesktop()) return DESKTOP_ONLY
     try {
-      const root = await invoke('fs_grant')
+      const root = await addRoot()
       if (!root) return { success: false, error: 'User cancelled the folder picker.' }
-      return ok({ tool: 'fs_grant', root, message: `Working folder set to ${root}` })
+      const p = typeof root === 'string' ? root : root.path
+      return ok({ tool: 'fs_add_folder', root: p, message: `Added working folder ${p}` })
     } catch (e) { return fail(e) }
   },
 }
 
+// Kept so existing callers and the Tauri shell keep working for one release.
+export const fsGrantTool = fsAddFolderTool
+
 export const fsListTool = {
   schema: {
-    description: 'List files and folders under a path inside the granted folder. Returns names, sizes and type (file/dir). Desktop app only.',
+    description: 'List files and folders under a path in this chat’s folders. Returns names, sizes and type (file/dir). Desktop app only.',
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Relative path inside the granted folder. "" or "." for the root.' },
+        path: { type: 'string', description: 'Absolute path, or relative to this chat’s primary folder. "" or "." for the primary folder.' },
         recursive: { type: 'boolean', description: 'Recurse into subfolders (default false).' },
         include_ignored: { type: 'boolean', description: 'Include build/dependency folders like node_modules/.git (default false).' },
       },
@@ -102,11 +209,11 @@ export const fsListTool = {
 
 export const fsReadTool = {
   schema: {
-    description: 'Read a UTF-8 text file inside the granted folder. Supports line-range windowing (start_line, end_line) for token-efficient reads. Desktop app only.',
+    description: 'Read a UTF-8 text file inside this chat’s folders. Supports line-range windowing (start_line, end_line) for token-efficient reads. Desktop app only.',
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Relative path to the file inside the granted folder.' },
+        path: { type: 'string', description: 'Absolute path, or relative to this chat’s primary folder.' },
         max_bytes: { type: 'number', description: 'Optional byte cap (default 500000).' },
         start_line: { type: 'number', description: 'Optional 1-indexed starting line number.' },
         end_line: { type: 'number', description: 'Optional 1-indexed ending line number.' },
@@ -187,11 +294,11 @@ export const fsFileTreeTool = {
 
 export const fsWriteTool = {
   schema: {
-    description: 'Create or overwrite a text file inside the granted folder. Creates parent folders as needed. Desktop app only.',
+    description: 'Create or overwrite a text file in this chat’s folders. Creates parent folders as needed. Desktop app only.',
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Relative path to write inside the granted folder.' },
+        path: { type: 'string', description: 'Absolute path, or relative to this chat’s primary folder.' },
         content: { type: 'string', description: 'Full UTF-8 text to write.' },
       },
       required: ['path', 'content'],
@@ -214,7 +321,7 @@ export const fsEditTool = {
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Relative path to the file inside the granted folder.' },
+        path: { type: 'string', description: 'Absolute path, or relative to this chat’s primary folder.' },
         old_string: { type: 'string', description: 'Exact text to find.' },
         new_string: { type: 'string', description: 'Replacement text.' },
         replace_all: { type: 'boolean', description: 'Replace every occurrence (default false).' },
@@ -235,7 +342,7 @@ export const fsEditTool = {
 
 export const fsSearchTool = {
   schema: {
-    description: 'Search file contents inside the granted folder for a substring or regex. Parallelized and automatically skips binary files. Desktop app only.',
+    description: 'Search file contents across every folder bound to this chat for a substring or regex. Skips binary files and ignored directories automatically. Returns matching files with line numbers. Desktop app only.',
     parameters: {
       type: 'object',
       properties: {
@@ -266,7 +373,7 @@ export const fsSearchTool = {
 export const fsDeleteTool = {
   schema: {
     description:
-      'Delete a file or directory inside the granted folder. ' +
+      'Delete a file or directory inside this chat’s folders. ' +
       'Set recursive=true to remove a non-empty directory tree. Desktop app only.',
     parameters: {
       type: 'object',
@@ -288,7 +395,7 @@ export const fsDeleteTool = {
 
 export const fsMkdirTool = {
   schema: {
-    description: 'Create a directory (and any missing parent directories) inside the granted folder. Desktop app only.',
+    description: 'Create a directory (and any missing parent directories) inside this chat’s folders. Desktop app only.',
     parameters: {
       type: 'object',
       properties: {
@@ -308,7 +415,7 @@ export const fsMkdirTool = {
 
 export const fsMoveTool = {
   schema: {
-    description: 'Move or rename a file or directory inside the granted folder. Both src and dest must be inside the granted folder. Desktop app only.',
+    description: 'Move or rename a file or directory inside this chat’s folders. Both src and dest must resolve inside them. Desktop app only.',
     parameters: {
       type: 'object',
       properties: {

@@ -56,9 +56,11 @@ import {
 import { pushAmbientSignal, popAmbientSignal } from './http'
 import { getMcpSchemas, isMcpTool, callMcpTool } from '../mcp'
 import {
-  isDesktop, fsGrantTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
+  isDesktop, fsAddFolderTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
   fsDeleteTool, fsMkdirTool, fsMoveTool, fsBatchReadTool, fsFileTreeTool,
+  fsUndoTool, getWorkspaceCtx,
 } from './localFs'
+import { requestPermission } from '../permissions'
 import { terminalRunTool } from './terminalRun'
 import { mcpResourceTool, mcpPromptTool } from './mcpResources'
 import { computerControlTool } from './computerControl'
@@ -67,6 +69,11 @@ import { watchFolderTool } from './watchFolder'
 import { systemStateTool } from './systemState'
 import { processManagerTool } from './processManager'
 import { fileDialogTool } from './fileDialog'
+import { todoTool } from './todo'
+import {
+  gitStatusTool, gitLogTool, gitDiffTool,
+  procStartTool, procOutputTool, procStopTool, procListTool, watchTool,
+} from './devTools'
 import {
   uuidTool, passwordTool, numberBaseTool, cronTool, timezoneTool, thesaurusTool, countryTool,
 } from './moretools'
@@ -224,7 +231,7 @@ const ALL_TOOLS = {
   social_post_generator: socialPostTool,
   // Desktop-only local filesystem tools (Tauri shell). Present in every build;
   // in the browser they return an honest "desktop only" note.
-  fs_grant: fsGrantTool,
+  fs_add_folder: fsAddFolderTool,
   fs_list: fsListTool,
   fs_read: fsReadTool,
   fs_write: fsWriteTool,
@@ -235,7 +242,9 @@ const ALL_TOOLS = {
   fs_move: fsMoveTool,
   fs_batch_read: fsBatchReadTool,
   fs_file_tree: fsFileTreeTool,
+  fs_undo: fsUndoTool,
   terminal_run: terminalRunTool,
+  todo: todoTool,
   // MCP: use resources & prompt templates published by connected servers.
   mcp_resource: mcpResourceTool,
   mcp_prompt: mcpPromptTool,
@@ -246,6 +255,15 @@ const ALL_TOOLS = {
   system_state: systemStateTool,
   process_manager: processManagerTool,
   file_dialog: fileDialogTool,
+  // Desktop dev loop: git, background command runner, polling file watch.
+  git_status: gitStatusTool,
+  git_log: gitLogTool,
+  git_diff: gitDiffTool,
+  proc_start: procStartTool,
+  proc_output: procOutputTool,
+  proc_stop: procStopTool,
+  proc_list: procListTool,
+  watch: watchTool,
   // Open, keyless utilities + word/country data.
   uuid: uuidTool,
   password_generate: passwordTool,
@@ -715,6 +733,13 @@ export async function executeTool(name, args, { signal } = {}) {
   const tool = ALL_TOOLS[cleanName]
   if (!tool) return { success: false, error: `Unknown tool: ${name}` }
   if (signal?.aborted) return { success: false, error: 'Stopped' }
+
+  // Gate anything that writes to or runs on the user's machine. Reads pass
+  // straight through. A refusal is a normal tool result so the model adapts
+  // instead of the turn hanging.
+  const verdict = await requestPermission(cleanName, args || {}, getWorkspaceCtx())
+  if (!verdict.allowed) return { success: false, error: verdict.reason, denied: true }
+
   // Makes Stop reach the tool's own network calls (see tools/http.js).
   pushAmbientSignal(signal)
   try {

@@ -4412,3 +4412,65 @@ body {
 }
 .onb-pill.selected { border-color: var(--accent); color: var(--text-primary); background: var(--accent-glow); }
 .small-btn.primary { background: var(--accent-gradient); color: #fff; border: none; }
+
+/* Per-chat working folders (desktop) — header chip popover */
+.roots-popover {
+  position: absolute; top: 100%; right: 0; margin-top: 6px; z-index: 40;
+  min-width: 320px; max-width: 460px; padding: 10px;
+  background: var(--bg-elevated, #12161f); color: var(--text-primary);
+  border: 1px solid var(--border, #2a3140); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.roots-popover-title { font-weight: 600; font-size: 12px; }
+.roots-empty, .roots-inherited { font-size: 11px; color: var(--text-secondary); }
+.roots-row { display: flex; align-items: center; gap: 6px; }
+.roots-path {
+  flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; direction: rtl; text-align: left;
+}
+.roots-badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 999px;
+  background: var(--accent-soft, #23304a); color: var(--text-secondary);
+}
+@media (max-width: 768px) { .roots-popover { position: fixed; left: 8px; right: 8px; min-width: 0; } }
+
+/* Tool permission approval card */
+.perm-overlay {
+  position: fixed; inset: 0; z-index: 200; display: flex;
+  align-items: center; justify-content: center; padding: 16px;
+  background: rgba(0,0,0,.45);
+}
+.perm-card {
+  width: 100%; max-width: 520px; padding: 14px;
+  background: var(--bg-elevated, #12161f); color: var(--text-primary);
+  border: 1px solid var(--border, #2a3140); border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.5);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.perm-card.perm-destructive { border-color: #b4413c; }
+.perm-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.perm-card.perm-destructive .perm-head { color: #e06c66; }
+.perm-body { display: flex; align-items: flex-start; gap: 8px; }
+.perm-desc {
+  flex: 1; font-size: 12px; line-height: 1.5; word-break: break-all;
+  background: var(--bg-subtle, #0d1119); padding: 8px 10px; border-radius: 8px;
+}
+.perm-note { font-size: 11px; color: var(--text-secondary); }
+.perm-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.perm-allow { border-color: #3d8f5f; }
+.perm-deny { border-color: #b4413c; }
+
+/* Diff preview inside the permission card */
+.perm-diff-wrap { display: flex; flex-direction: column; gap: 4px; }
+.perm-diff-head { display: flex; gap: 10px; font-size: 11px; font-weight: 600; }
+.perm-diff-add { color: #4caf7d; }
+.perm-diff-del { color: #e06c66; }
+.perm-diff {
+  margin: 0; max-height: 260px; overflow: auto; font-size: 11px; line-height: 1.5;
+  background: var(--bg-subtle, #0d1119); border-radius: 8px; padding: 8px 10px;
+  white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.perm-diff .dl-add { color: #4caf7d; }
+.perm-diff .dl-del { color: #e06c66; }
+.perm-diff .dl-ctx { color: var(--text-secondary); }

@@ -2,12 +2,12 @@
  * terminalRunTool — executes CLI shell commands in the desktop app's granted folder.
  */
 
-import { isDesktop } from './localFs'
+import { isDesktop, getWorkspaceCtx } from './localFs'
 
 export const terminalRunTool = {
   schema: {
     description:
-      'Execute a terminal CLI command in the granted directory on the user’s desktop computer. ' +
+      'Execute a terminal CLI command in this chat’s primary working folder. ' +
       'Use to run tests (npm test), build projects, check git status, or execute scripts. ' +
       'Returns stdout, stderr, and exit code. Desktop app only.',
     parameters: {
@@ -28,7 +28,7 @@ export const terminalRunTool = {
       return { success: false, error: 'Terminal bridge is unavailable in this environment.' }
     }
     try {
-      const res = await window.__YOGATIK_TERMINAL__.exec(command, { cwd, timeout })
+      const res = await window.__YOGATIK_TERMINAL__.exec(command, { cwd, timeout, ctx: getWorkspaceCtx() })
       return {
         success: res.success,
         exitCode: res.exitCode,

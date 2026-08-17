@@ -86,6 +86,16 @@ export async function getSkills() {
       .filter(s => s.id && !seen.has(s.id))
       .map(s => ({ ...s, builtin: true, fromPlugin: true }))
   } catch { /* plugins optional */ }
+
+  // Commands defined in the working folder (.yogatik/commands/*.md), so a team
+  // convention can be versioned and shared by cloning. Merged at READ time like
+  // the presets — never persisted, so a repo cannot pollute the user's store.
+  try {
+    const { loadRepoCommands, mergeRepoCommands } = await import('./repoCommands')
+    const repo = (await loadRepoCommands()).filter(s => !hidden.includes(s.id))
+    return mergeRepoCommands([...presets, ...fromPlugins, ...stored], repo)
+  } catch { /* desktop-only / unreadable */ }
+
   return [...presets, ...fromPlugins, ...stored]
 }
 export async function saveSkills(list) { return setSetting(KEY, list || []) }

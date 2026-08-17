@@ -1,0 +1,115 @@
+// Workspace roots: persistence + IPC. All decision logic lives in rootsCore.cjs,
+// which imports no electron so it can be unit-tested.
+
+const { app, ipcMain, dialog } = require('electron')
+const path = require('path')
+const fs = require('fs')
+const core = require('./rootsCore.cjs')
+
+let state = core.emptyState()
+let getWindow = () => null
+
+function storeFile() { return path.join(app.getPath('userData'), 'workspace_roots.json') }
+function legacyFile() { return path.join(app.getPath('userData'), 'granted_folder.txt') }
+
+function save() {
+  try { fs.writeFileSync(storeFile(), JSON.stringify(state, null, 2), 'utf8') } catch { /* ignore */ }
+}
+
+function load() {
+  try {
+    const raw = fs.readFileSync(storeFile(), 'utf8')
+    const parsed = JSON.parse(raw)
+    if (parsed && parsed.roots && parsed.bindings) state = parsed
+  } catch { state = core.emptyState() }
+
+  // One-time migration: the old app-wide grant becomes the global default so
+  // every existing chat inherits exactly the folder it had before.
+  let legacy = null
+  try {
+    const p = fs.readFileSync(legacyFile(), 'utf8').trim()
+    if (p && fs.statSync(p).isDirectory()) legacy = p
+  } catch { /* none */ }
+  if (legacy) state = core.migrateLegacyGrant(state, legacy)
+
+  const pruned = core.pruneMissing(state)
+  state = pruned.state
+  save()
+  return state
+}
+
+/** Absolute paths bound to this call's chat. Empty array when none. */
+function rootPathsFor(ctx) { return core.resolveRootPaths(state, ctx) }
+
+/** Resolve a tool-supplied path, or throw. The single guard for all fs ops. */
+function resolvePath(ctx, target) {
+  return core.resolveWithin(rootPathsFor(ctx), target).absolutePath
+}
+
+function listFor(ctx) {
+  const ids = core.resolveRootIds(state, ctx)
+  const key = ctx?.conversationId != null ? `chat:${ctx.conversationId}` : null
+  const source = key && Array.isArray(state.bindings[key])
+    ? 'chat'
+    : (ctx?.projectId != null && Array.isArray(state.bindings[`project:${ctx.projectId}`]) ? 'project' : 'default')
+  return ids.map((id, i) => ({ id, path: state.roots[id].path, label: state.roots[id].label, primary: i === 0, source }))
+}
+
+function registerRootsIpc(opts = {}) {
+  if (opts.getWindow) getWindow = opts.getWindow
+  load()
+
+  ipcMain.handle('roots_add', async (_e, { ctx } = {}) => {
+    const res = await dialog.showOpenDialog(getWindow(), { properties: ['openDirectory'] })
+    if (res.canceled || !res.filePaths[0]) return null
+    const out = core.addRoot(state, ctx, res.filePaths[0])
+    state = out.state
+    save()
+    return out.root
+  })
+
+  // Prune here as well as at load: a folder can be deleted or a drive unmounted
+  // mid-session, and the popover must stop offering a folder that is gone.
+  ipcMain.handle('roots_list', (_e, { ctx } = {}) => {
+    const pruned = core.pruneMissing(state)
+    if (pruned.removed.length) { state = pruned.state; save() }
+    return listFor(ctx)
+  })
+
+  ipcMain.handle('roots_remove', (_e, { ctx, rootId } = {}) => {
+    state = core.removeRoot(state, ctx, rootId)
+    save()
+    return listFor(ctx)
+  })
+
+  ipcMain.handle('roots_set_primary', (_e, { ctx, rootId } = {}) => {
+    state = core.setPrimary(state, ctx, rootId)
+    save()
+    return listFor(ctx)
+  })
+
+  ipcMain.handle('roots_rebind', (_e, { oldId, newId } = {}) => {
+    state = core.rebindChat(state, oldId, newId)
+    save()
+    return true
+  })
+
+  // ── Compatibility aliases (one release) so the Tauri shell and any existing
+  // caller keep working while src-tauri stays on the single-root model. ──
+  ipcMain.handle('fs_grant', async (_e, { ctx } = {}) => {
+    const res = await dialog.showOpenDialog(getWindow(), { properties: ['openDirectory'] })
+    if (res.canceled || !res.filePaths[0]) return null
+    const out = core.addRoot(state, ctx, res.filePaths[0])
+    state = out.state
+    save()
+    return out.root.path
+  })
+  ipcMain.handle('fs_granted_root', (_e, { ctx } = {}) => rootPathsFor(ctx)[0] || null)
+  ipcMain.handle('fs_clear_grant', (_e, { ctx } = {}) => {
+    for (const r of listFor(ctx)) state = core.removeRoot(state, ctx, r.id)
+    save()
+    return null
+  })
+}
+
+module.exports = { registerRootsIpc, resolvePath, rootPathsFor, load }

@@ -33,24 +33,33 @@ export const spawnAgentsTool = {
             required: ['agent', 'task'],
           },
         },
+        isolate_workspace: {
+          type: 'boolean',
+          description: 'Give each sub-agent its OWN working-folder binding so parallel agents cannot overwrite one another’s files. Off by default; an isolated agent starts with no folders until one is bound to it.',
+        },
       },
       required: ['tasks'],
     },
   },
 
-  async execute({ tasks }) {
+  async execute({ tasks, isolate_workspace: isolateWorkspace = false }) {
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return { success: false, error: 'Provide a non-empty tasks array.' }
     }
-    const [{ streamMessage }, { getAgentById }, { getToolNames }, { runAgentPool }] = await Promise.all([
+    const [{ streamMessage }, { getAgentById }, { getToolNames }, { runAgentPool }, isolation, localFs] = await Promise.all([
       import('../api'), import('../agents'), import('./index'), import('../agentPool'),
+      import('../agentIsolation'), import('./localFs'),
     ])
     const allNames = getToolNames()
 
-    const runOne = async ({ agent, task }) => {
+    const parentId = localFs.getWorkspaceCtx()?.conversationId ?? 'chat'
+    const plan = isolation.planIsolation(parentId, tasks.map(t => t.agent), { isolate: !!isolateWorkspace })
+
+    const runOne = async ({ agent, task }, index) => {
       const def = (await getAgentById(agent)) || null
       // Scope tools to the agent's allowlist and forbid re-delegation.
-      const disabled = new Set(['spawn_agents'])
+      const slot = plan[index] || { conversationId: parentId, isolated: false }
+      const disabled = new Set(isolation.mergeIsolatedDisabled([], { isolated: slot.isolated }))
       if (def?.tools?.length) {
         const allow = new Set(def.tools)
         for (const n of allNames) if (!allow.has(n)) disabled.add(n)
@@ -69,6 +78,7 @@ export const spawnAgentsTool = {
             disabledTools: [...disabled],
             agent_override: def || undefined,
             channel: `subagent-${Math.random().toString(36).slice(2, 8)}`,
+            workspace_id: slot.conversationId,
           },
           (t) => { text += t },
           null,
@@ -83,6 +93,8 @@ export const spawnAgentsTool = {
     }
 
     // Rolling-window concurrency under the shared global agent budget.
+    // runAgentPool passes (item, index), which is exactly what runOne needs to
+    // look up its isolation slot — so pooling and isolation compose directly.
     const results = await runAgentPool(tasks, runOne)
 
     return {

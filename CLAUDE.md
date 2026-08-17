@@ -49,13 +49,22 @@ deps — EXCEPT PTY.
   → composer, __YOGATIK_WATCHER__.onChange → toast, __YOGATIK_NOTIFY_ACTIONS__.on → reply handling.
 
 ## Desktop app — Electron (v3.8, Node-only path)
-- Modular main process: electron/main.cjs (thin orchestrator) + fsBridge.cjs (scoped fs_* IPC, grant
-  persistence, path-escape guards: abs/.. rejected + realpath re-check) + cors.cjs (enableProviderCors)
+- Modular main process: electron/main.cjs (thin orchestrator) + rootsCore.cjs/roots.cjs (PER-CHAT
+  working folders — see below) + fsBridge.cjs (fs_* file OPS only; every handler takes
+  ctx={conversationId,projectId} and delegates containment to roots) + cors.cjs (enableProviderCors)
   + menu.cjs (native menu/shortcuts) + windowState.cjs (remember size/pos/maximized in userData).
+- Per-chat working folders (v3.9): rootsCore.cjs is PURE (imports no electron, so vitest reaches it
+  under jsdom) — rootIdFor, resolveRootIds, resolveWithin, and the state transforms. roots.cjs adds
+  JSON persistence (userData/workspace_roots.json), the native picker and the roots_* IPC. One
+  registry of user-granted dirs + bindings chat:<id> → project:<id> → default; a chat may hold
+  SEVERAL folders (Claude Code's /add-dir model). Mutations materialise the inherited list into an
+  explicit chat binding first, so editing one chat never rewrites a project/global default.
+  roots.test.js = 29 tests.
 - Native menu (menu.cjs): File→New Chat (Ctrl+N), Settings (Ctrl+,), Grant Working Folder (Ctrl+O)
   send a 'menu' IPC action; View has reload/devtools/zoom/fullscreen roles; Help has web/Ollama links +
-  About. preload __YOGATIK_MENU__.on(cb) relays the action; App.jsx subscribes → newChat/setSettingsOpen/
-  pickWorkFolder. Single-instance lock focuses the open window.
+  About. preload exposes __YOGATIK_MENU__.on(cb) to relay the action, but NOTHING in the renderer
+  subscribes yet (`grep -r __YOGATIK_MENU__ frontend/src` → no matches), so those File-menu items are
+  currently inert. Wiring them up is open work. Single-instance lock focuses the open window.
 - frontend/electron/preload.cjs: contextBridge exposes window.__TAURI__.core.invoke → ipcRenderer, so
   tools/localFs.js + the folder chip work UNCHANGED under Electron (no frontend branching). Also sets
   window.__YOGATIK_ELECTRON__ and window.__YOGATIK_MENU__.
@@ -99,19 +108,24 @@ deps — EXCEPT PTY.
 
 ## Desktop app (Tauri v2 — v3.8)
 - src-tauri/lib.rs: scoped local-FS commands (fs_grant/list/read/write/edit/search). ONE granted
-  root (native folder picker via tauri-plugin-dialog), every path resolved against it; `..`/absolute/
-  symlink-escape rejected (resolve()). Browser build has no bridge → tools return "desktop only".
+  root — TAURI SHELL ONLY; the Electron shell is per-chat (see above). Native folder picker via
+  tauri-plugin-dialog, every path resolved against it; `..`/absolute/symlink-escape rejected
+  (resolve()). Browser build has no bridge → tools return "desktop only".
+  The renderer's addRoot()/listRoots() call roots_* first and FALL BACK to fs_grant/fs_granted_root:
+  Tauri rejects unknown commands, so calling roots_* unconditionally left folder-granting dead there.
 - tauri.conf.json: withGlobalTauri:true (exposes window.__TAURI__.core.invoke, so NO npm @tauri dep in
   web bundle), csp:null (app calls many external APIs), targets nsis+msi, icons in src-tauri/icons/.
 - capabilities/default.json grants core+dialog+shell. Icons generated from public/icon-1024.png
   (or `npm run desktop:icon`).
 - Web side: tools/localFs.js (isDesktop() + fs_* tools, registered in tools/index.js). App welcome
   shows "Desktop app" link → /platforms when !isDesktop().
-- Grant PERSISTS across restarts: fs_grant writes root to app_config_dir/granted_folder.txt, setup()
-  restores it (only if the dir still exists). fs_clear_grant removes it. UI: desktop-only header chip
-  (App.jsx, .work-folder-chip) shows the folder basename + Change/revoke; helpers grantFolder/
-  getGrantedRoot/clearGrantedFolder in localFs.js. Single-instance plugin focuses the open window on
-  a 2nd launch. desktop.test.js = 8 tests.
+- Grant PERSISTS across restarts: Tauri writes the root to app_config_dir/granted_folder.txt;
+  Electron persists the registry + bindings to userData/workspace_roots.json and MIGRATES an existing
+  granted_folder.txt into the `default` binding on first run, so every pre-existing chat inherits the
+  folder it already had. UI: desktop-only header chip (App.jsx, .roots-popover) lists THIS chat's
+  folders with add/remove/make-primary and marks inherited ones; helpers addRoot/listRoots/
+  removeRoot/setPrimaryRoot/rebindChatRoots in localFs.js. Single-instance plugin focuses the open
+  window on a 2nd launch. desktop.test.js = 12 tests.
 - Ollama availability is gated on the daemon actually answering: getModels() sets available =
   liveModels.length>0 for isOllama (else "Ready" but every message fails when the daemon is down);
   exposes is_ollama on the payload.
@@ -198,13 +212,25 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 
 ## Run
 - Dev: `cd frontend && npm install && npm run dev`
-- Test: `cd frontend && npm test` (vitest, 184 tests)
+- Test: `cd frontend && npm test` (vitest, 358 tests)
 - Build: `cd frontend && npm run build` (static files in dist/)
 - Deploy: Upload `dist/` to Vercel/Netlify/GitHub Pages
 
 ## No backend required. No API keys required to start — user enters their own key in settings.
 
 ## Gotchas (learned the hard way)
+- Working folders are PER CHAT on Electron (v3.9). Absolute paths are ALLOWED now — safety is the
+  realpath containment check against that chat's bound roots, not a ban on absolute paths. The old
+  "abs/.. rejected" rule only worked because there was exactly one root.
+- resolveWithin anchors its realpath re-check on the nearest EXISTING ancestor. Checking only when
+  the target already existed let a symlinked parent dir be used to fs_write OUTSIDE a root.
+- The renderer NEVER sends a filesystem path as "the root". It sends an opaque conversationId and
+  main looks up the binding. Model output influences the renderer, so a renderer-supplied root would
+  make the whole grant model meaningless. ctx is injected in localFs.invoke, never a tool parameter.
+- terminal:exec requires a folder bound to the CALLING chat. It must never fall back to process.cwd()
+  — that is the app's own install directory.
+- rootsCore.cjs must not `require('electron')`: vitest only collects src/**/*.test.js under jsdom,
+  where that throws. That split is the only reason the containment logic is testable at all.
 - sw.js must skip non-GET + cross-origin, else it caches POSTs and fakes 408s
 - Never copy upstream content-length when re-streaming (truncates SSE)
 - Agent: ONE assistant msg with all tool_calls, then tool msgs (NVIDIA 400s otherwise)
@@ -762,7 +788,7 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   was decorative.
 - Passes through filters + `--watch`.
 
-## Tests (npm test — 315)
+## Tests (npm test — 358)
 - smoke.test.jsx mounts <App/> in jsdom with ./api stubbed: lint cannot catch a component
   that THROWS on first render. Config include covers *.test.{js,jsx}; test-setup.js stubs
   scrollIntoView/scrollTo/matchMedia (jsdom has none, all are called on mount).
@@ -771,7 +797,9 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - streaming render (6), retrieval (18), agent loop (32, incl. 3 stop paths), live protocol (19), vision heuristic (4), vision policy (8),
   cascade echo guard (3), live voice queue (7), tools (26), relay policy (8), zero-key boot (3),
   chat search (9), chunk-reload guard (4), image attach routing (6), agent image policy (4),
-  key sync (5), search parsers (7), routing (11), crypto (11), migration (9), features (5), video timeline (13), video audio+speech (12)
+  key sync (5), search parsers (7), routing (11), crypto (11), migration (9), features (5), video timeline (13), video audio+speech (12),
+  workspace roots (29: id hashing, chat→project→default resolution, containment incl. symlink escape
+  on a not-yet-existing target, state transforms, legacy migration), desktop bridge (12)
 - web_search is a METASEARCH: ddg+marginalia+wikipedia(+brave) merged. Tests must stub
   proxyJson too, or Wikipedia answers every query and "no results" can never happen.
   wikipediaSearch went through bare fetch — no timeout/retry, unmockable; now proxyJson.

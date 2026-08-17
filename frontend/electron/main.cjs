@@ -12,7 +12,8 @@ const http = require('http')
 const url = require('url')
 const { spawn, exec } = require('child_process')
 
-const { registerFsBridge, loadGrant, getGrantedRoot } = require('./fsBridge.cjs')
+const { registerFsBridge, initJournal } = require('./fsBridge.cjs')
+const { registerRootsIpc, rootPathsFor, resolvePath } = require('./roots.cjs')
 const { enableProviderCors } = require('./cors.cjs')
 const { buildMenu } = require('./menu.cjs')
 const { createTray } = require('./tray.cjs')
@@ -29,6 +30,17 @@ const { registerProcesses } = require('./processes.cjs')
 const { registerPty, killAllPty } = require('./pty.cjs')
 const { registerMcpStdio, killAllMcpStdio } = require('./mcpStdio.cjs')
 const { registerCompanionInput } = require('./companionInput.cjs')
+// Complementary modules from the per-chat-folders work. Different IPC channels
+// (underscore-style) so they coexist with the colon-style ones above:
+//   bgProcesses    — start/stream LONG-RUNNING commands (vs processes.cjs, which
+//                    lists and kills OS processes)
+//   mcpStdioClient — main-side MCP handshake + tools/call (vs mcpStdio.cjs, a
+//                    lower-level RPC passthrough the renderer drives)
+//   fsWatcher      — polling drain model (vs watcher.cjs's named watchers)
+const { registerBgProcessIpc, killAllBgProcesses } = require('./bgProcesses.cjs')
+const { registerGitIpc } = require('./git.cjs')
+const { registerFsWatcherIpc, stopAllFsWatchers } = require('./fsWatcher.cjs')
+const { registerMcpStdioClientIpc, stopAllMcpStdioClients } = require('./mcpStdioClient.cjs')
 const windowState = require('./windowState.cjs')
 
 const isDev = !app.isPackaged
@@ -88,7 +100,11 @@ function createWindow() {
     if (!app.isQuitting) { e.preventDefault(); mainWindow.hide() }
   })
 
-  buildMenu(mainWindow, { getRoot: getGrantedRoot, onCheckUpdates: () => checkForUpdates(() => mainWindow) })
+  // The native menu has no chat context, so it shows the global default folder.
+  buildMenu(mainWindow, {
+    getRoot: () => rootPathsFor({})[0] || null,
+    onCheckUpdates: () => checkForUpdates(() => mainWindow),
+  })
 }
 
 // Single instance: focus the existing window on a second launch.
@@ -165,10 +181,19 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     enableProviderCors()
-    registerFsBridge({ getWindow })
+    // Roots first: it loads the state fsBridge resolves every path against.
+    registerRootsIpc({ getWindow })
+    // Undo journal for file mutations; lives beside the roots registry.
+    initJournal(path.join(app.getPath('userData'), 'yogatik-journal'))
+    registerFsBridge()
+    // Dev loop: background processes + hooks, git, file watching. All scoped to
+    // the calling chat's bound roots by the same resolver the fs tools use.
+    registerBgProcessIpc({ rootPathsFor, resolvePath, getTrustState: () => ({ trustedHookRoots: [] }) })
+    registerGitIpc({ rootPathsFor })
+    registerFsWatcherIpc({ rootPathsFor })
+    registerMcpStdioClientIpc()
     registerNotifications(getWindow)
-    loadGrant()
-    registerSchedulerIPC()
+    registerSchedulerIPC({ getWindow })
     registerSubAgentIPC()
     // Desktop-only capability modules (safeStorage vault, clipboard history,
     // file watcher, power/idle, native dialogs, process manager, PTY).
@@ -264,9 +289,19 @@ if (!gotLock) {
     })
 
     // IPC for desktop terminal shell command execution
-    ipcMain.handle('terminal:exec', async (_, { command, cwd, timeout = 30000 }) => {
-      const root = getGrantedRoot() || process.cwd()
-      const workingDir = cwd ? path.resolve(root, cwd) : root
+    ipcMain.handle('terminal:exec', async (_, { ctx, command, cwd, timeout = 30000 }) => {
+      // A folder must be bound to THIS chat — never fall back to the app's own
+      // install directory (process.cwd()), and never run in another chat's folder.
+      const roots = rootPathsFor(ctx)
+      if (!roots.length) {
+        return { success: false, exitCode: -1, stdout: '', stderr: 'No working folder for this chat. Ask the user to add one.', killed: false }
+      }
+      let workingDir
+      try {
+        workingDir = resolvePath(ctx, cwd || '.')
+      } catch (e) {
+        return { success: false, exitCode: -1, stdout: '', stderr: `Invalid working directory: ${e.message}`, killed: false }
+      }
 
       return new Promise((resolve) => {
         const isWin = process.platform === 'win32'
@@ -586,6 +621,9 @@ if (!gotLock) {
     stopAllWatchers()
     killAllPty()
     killAllMcpStdio()
+    killAllBgProcesses()   // never orphan a background process on quit
+    stopAllFsWatchers()
+    stopAllMcpStdioClients()
     if (searchSidecar) {
       searchSidecar.kill()
     }
