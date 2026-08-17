@@ -2,6 +2,15 @@
 // is what evicts the previous build's precached shell. Leaving it unchanged
 // across a deploy lets an old index.html linger for returning visitors.
 const CACHE_NAME = 'yogatik-v4';
+// Eviction is scoped to caches WE own. The Cache API is shared across the whole
+// origin, so third parties keep their weights here too: WebLLM in webllm/model,
+// webllm/wasm and webllm/config, Transformers.js (MiniLM, SmolVLM, Whisper,
+// Kokoro) in transformers-cache — up to ~1.7GB the user consented to download.
+// A blanket `k !== CACHE_NAME` sweep threw all of it away on every deploy, and
+// because WebLLM memoises its Cache handle and then calls cache.add(), deleting
+// the store mid-download surfaced as "Failed to execute 'add' on 'Cache':
+// Request failed" rather than anything legible.
+const CACHE_PREFIX = 'yogatik-';
 const STATIC_ASSETS = ['/', '/index.html', '/icon-192.svg', '/icon-512.svg'];
 
 self.addEventListener('install', (e) => {
@@ -23,7 +32,11 @@ self.addEventListener('activate', (e) => {
       try { await self.registration.navigationPreload.enable(); } catch { /* unsupported */ }
     }
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+    await Promise.all(
+      keys
+        .filter(k => k.startsWith(CACHE_PREFIX) && k !== CACHE_NAME)
+        .map(k => caches.delete(k)),
+    );
     await self.clients.claim();
   })());
 });

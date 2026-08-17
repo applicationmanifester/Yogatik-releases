@@ -17,8 +17,14 @@ export class ErrorBoundary extends React.Component {
 
   reload = () => {
     // A stale cached bundle is a common cause — clear cache before reloading.
+    // Only OUR caches: a stale bundle only ever lives in yogatik-*, while the
+    // rest of the origin's caches hold consented model weights (webllm/*,
+    // transformers-cache) worth up to ~1.7GB. Wiping those to fix a bad chunk
+    // silently cost the user the entire download.
     if ('caches' in window) {
-      caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))).finally(() => location.reload())
+      caches.keys()
+        .then(ks => Promise.all(ks.filter(k => k.startsWith('yogatik-')).map(k => caches.delete(k))))
+        .finally(() => location.reload())
     } else {
       location.reload()
     }
