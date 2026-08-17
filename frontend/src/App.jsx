@@ -186,6 +186,7 @@ export default function App() {
   const [storage, setStorage] = useState(null)
   const [docs, setDocs] = useState([])
   const [convQuery, setConvQuery] = useState('')
+  const [showAllTools, setShowAllTools] = useState(false)
   const [providerStatus, setProviderStatus] = useState({})
   const [verifying, setVerifying] = useState(false)
   const [keyInfo, setKeyInfo] = useState({})
@@ -2259,6 +2260,29 @@ export default function App() {
   // date boundaries are testable rather than a clock-dependent render detail.
   const convGroups = useMemo(() => groupConversations(visibleConvs), [visibleConvs])
 
+  // Hero tool badges. The curated names are the ones that read as capabilities
+  // at a glance; anything not actually registered in TOOL_ICONS is filtered out
+  // rather than rendering a blank chip, and the preview is topped up from
+  // whatever remains so it never looks sparse if a name is renamed later.
+  const { heroTools, hiddenToolCount } = useMemo(() => {
+    const all = Object.entries(TOOL_ICONS)
+    const CURATED = [
+      'web_search', 'deep_research', 'image_generate', 'code_execute', 'video_render',
+      'doc_search', 'weather', 'translate', 'ocr', 'chart', 'diagram', 'memory',
+    ]
+    const picked = CURATED.filter(n => TOOL_ICONS[n]).map(n => [n, TOOL_ICONS[n]])
+    const seen = new Set(picked.map(([n]) => n))
+    const topUp = all.filter(([n]) => !seen.has(n)).slice(0, Math.max(0, 12 - picked.length))
+    const preview = [...picked, ...topUp]
+    // Counted off the PREVIEW, not off what is currently rendered. Deriving it
+    // from the rendered list made it 0 once expanded, which hid the toggle and
+    // left "Show fewer" unreachable — expanding was a one-way door.
+    return {
+      heroTools: showAllTools ? all : preview,
+      hiddenToolCount: all.length - preview.length,
+    }
+  }, [showAllTools])
+
   if (companionMode) {
     return (
       <FloatingCompanion
@@ -2913,34 +2937,30 @@ export default function App() {
                     ? <><Share2 size={16} /> Share Yogatik</>
                     : <><Download size={16} /> Install App</>}
                 </button>
-                {/* Cross-surface pointer. In the desktop shell the useful link is
-                    OUT to the web app (phones and tablets have no desktop build);
-                    in a browser it is IN to the download page. main.cjs opens
-                    https:// links in the system browser, so this behaves on both. */}
-                {isDesktop() ? (
-                  <a
-                    className="hero-cross-link"
-                    href="https://yogatik.web.app/"
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Open Yogatik in a browser — use it on your phone or tablet"
-                  >
-                    <Smartphone size={14} /> Use on phone or tablet
-                  </a>
-                ) : (
-                  <a
-                    className="hero-cross-link"
-                    href="/platforms"
-                    title="Download the Yogatik desktop app for Windows, macOS or Linux"
-                  >
-                    <Monitor size={14} /> Get the desktop app
-                  </a>
-                )}
+                {/* The cross-surface link used to sit here as a fourth call to
+                    action. It is redundant now: "Install App" opens the platform
+                    modal, which already offers BOTH the desktop app and the PWA,
+                    and the link itself is permanent in the sidebar footer rather
+                    than only on an empty screen. Three actions, not four. */}
               </div>
+              {/* Every tool at once was a ~60-badge wall: it out-weighed the starter
+                  prompts below it, and a list that long is scanned by nobody. A
+                  recognisable dozen makes the point ("this thing does a lot"), and
+                  the rest stay one click away for anyone actually shopping. */}
               <div className="tool-badges">
-                {Object.entries(TOOL_ICONS).map(([name, Icon]) => (
-                  <span key={name} className="tool-badge"><Icon size={14} /> {name.replace('_', ' ')}</span>
+                {heroTools.map(([name, Icon]) => (
+                  <span key={name} className="tool-badge"><Icon size={14} /> {name.replace(/_/g, ' ')}</span>
                 ))}
+                {hiddenToolCount > 0 && (
+                  <button
+                    type="button"
+                    className="tool-badge tool-badge-more"
+                    onClick={() => setShowAllTools(v => !v)}
+                    aria-expanded={showAllTools}
+                  >
+                    {showAllTools ? 'Show fewer' : `+${hiddenToolCount} more tools`}
+                  </button>
+                )}
               </div>
               {!user && <p className="welcome-hint">Sign in to save your chat history across sessions.</p>}
               {localBoot && !localBoot.ready && !localBoot.error ? (

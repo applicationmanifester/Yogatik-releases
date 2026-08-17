@@ -5,8 +5,10 @@ import { Download, Monitor, Smartphone, Check } from 'lucide-react'
 export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
   if (!isOpen) return null
 
-  // GitHub release download URL or fallback installer download link
-  const desktopExeUrl = 'https://github.com/yogatik/yogatik/releases/latest/download/Yogatik-Setup.exe'
+  // No hardcoded release URL here any more. It pointed at github.com/yogatik/
+  // yogatik — a repo that does not exist — so the download button 404'd for
+  // every user. /platforms owns the real links (applicationmanifester/
+  // Yogatik-releases) in ONE place, so there is nothing here to drift again.
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Get Yogatik App">
@@ -22,7 +24,7 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
           marginBottom: 20,
           alignItems: 'stretch' 
         }}>
-          {/* Windows Desktop App Card */}
+          {/* Desktop App Card — all three platforms, via /platforms */}
           <div style={{
             background: 'var(--bg-tertiary)',
             border: '1px solid var(--accent)',
@@ -49,8 +51,8 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                 <Monitor size={24} style={{ color: 'var(--accent)' }} />
                 <div>
-                  <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Desktop App (Windows)</h4>
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Yogatik-Setup.exe · Electron</span>
+                  <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Desktop App</h4>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Windows · macOS · Linux</span>
                 </div>
               </div>
               <ul style={{ margin: '16px 0', paddingLeft: 18, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
@@ -60,9 +62,13 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
               </ul>
             </div>
 
+            {/* Goes to /platforms, not straight at the .exe. The direct link
+                handed a Windows installer to every visitor, including the macOS
+                and Linux ones this card claims to serve; /platforms detects the
+                OS and offers all three. No `download` attribute either — that
+                only makes sense pointing at a file. */}
             <a
-              href={desktopExeUrl}
-              download="Yogatik-Setup.exe"
+              href="/platforms"
               className="btn-primary"
               style={{
                 display: 'inline-flex',
@@ -79,7 +85,7 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
                 cursor: 'pointer',
               }}
             >
-              <Download size={18} /> Download Yogatik.exe
+              <Download size={18} /> Choose your platform
             </a>
           </div>
 

@@ -4496,6 +4496,21 @@ body {
   background: var(--bg-tertiary);
 }
 
+/* The expander is a badge that reads as an action: same chip geometry so the
+   grid stays even, accent-tinted so it is not mistaken for a 13th tool. */
+.tool-badge-more {
+  cursor: pointer;
+  font: inherit;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: background var(--transition), border-color var(--transition);
+}
+.tool-badge-more:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border-color: var(--accent);
+}
+
 /* ── Sidebar: recency groups + footer ─────────────────────────────────────── */
 
 /* Date headers ride above the list while scrolling, so the group a chat belongs
