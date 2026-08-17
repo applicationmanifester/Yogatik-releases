@@ -401,8 +401,9 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
       }
       onStatus?.(`${getLLMProviders()[pid]?.name || pid} failed — trying ${getLLMProviders()[next]?.name || next}…`)
     }
-    logError('llm_stream', 'No provider with a working key could answer.', null, { provider, chain })
-    onError?.('No provider with a working key could answer.')
+    const exhausted = chainExhaustedMessage(chain, getLLMProviders())
+    logError('llm_stream', exhausted, null, { provider, chain })
+    onError?.(exhausted)
   } catch (err) {
     logError('llm_stream_uncaught', err.message, err.stack, { provider, model })
     onError?.(err.message)
@@ -1193,12 +1194,41 @@ export async function ensureTested(id, model) {
   return testProvider(id, model)
 }
 
+/**
+ * What to say when every provider in the fallback chain failed.
+ *
+ * The old text was always "No provider with a working key could answer." —
+ * wrong for keyless providers like Ollama, which needs no key at all, so it
+ * sent people hunting for a key problem when the daemon simply was not running.
+ */
+export function chainExhaustedMessage(chain = [], providers = {}) {
+  const list = Array.isArray(chain) ? chain : []
+  const keyless = list.filter(id => providers?.[id]?.noKey)
+  const cloud = list.filter(id => !providers?.[id]?.noKey)
+  const name = id => providers?.[id]?.name || id
+
+  if (list.length && keyless.length === list.length) {
+    return `${keyless.map(name).join(' and ')} did not respond. ` +
+      'That model runs on your own machine — check the service is running ' +
+      '(for Ollama: run `ollama serve`), or add a cloud provider key in Settings.'
+  }
+  if (keyless.length && cloud.length) {
+    return `No provider could answer. Check the API key for ${cloud.map(name).join(', ')}, ` +
+      `and that ${keyless.map(name).join(' and ')} is running locally.`
+  }
+  return 'No provider with a working key could answer.'
+}
+
 /** Providers retire models without warning; 410 means this one is gone. */
 export function isRetiredModelError(msg = '') {
   return /\b410\b/.test(msg) ||
     /end of life|no longer available/i.test(msg) ||
-    // NVIDIA answers 404 "page not found" for a model it does not serve.
-    (/\b404\b/.test(msg) && /not found/i.test(msg)) ||
+    // NVIDIA answers 404 for a model it does not serve. Match BOTH phrasings:
+    // the raw upstream "page not found", and the message llm.js itself builds —
+    // 'does not serve "<model>" on its chat endpoint (404)'. Matching only
+    // "not found" meant a 404'd model was never pruned, so a dead selection
+    // stuck and every send failed until the user changed model by hand.
+    (/\b404\b/.test(msg) && /not found|does not serve/i.test(msg)) ||
     // …and 400 "The model X does not exist" when it renames/withdraws one.
     (/model/i.test(msg) && /does not exist|no such model|unknown model|invalid model/i.test(msg))
 }
