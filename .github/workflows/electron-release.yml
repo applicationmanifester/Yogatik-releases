@@ -88,13 +88,13 @@ jobs:
       # while downloads stay free and unmetered.
       #
       # Requires a secret RELEASE_TOKEN: a fine-grained PAT with Contents:
-      # read-write on applicationmanifester/yogatik-releases. The built-in
+      # read-write on applicationmanifester/Yogatik-releases. The built-in
       # GITHUB_TOKEN cannot write to another repository.
       - name: Publish to public mirror Release
         if: env.RELEASE_TOKEN != ''
         uses: softprops/action-gh-release@v2
         with:
-          repository: applicationmanifester/yogatik-releases
+          repository: applicationmanifester/Yogatik-releases
           token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-latest' }}
           name: 'Yogatik Desktop ${{ github.ref_type == ''tag'' && github.ref_name || ''(latest)'' }}'
@@ -128,4 +128,4 @@ jobs:
           echo "::warning::RELEASE_TOKEN is not set, so nothing was published."
           echo "Binaries are still attached to this run as artefacts."
           echo "Add a fine-grained PAT with Contents: read-write on"
-          echo "applicationmanifester/yogatik-releases as the RELEASE_TOKEN secret."
+          echo "applicationmanifester/Yogatik-releases as the RELEASE_TOKEN secret."
