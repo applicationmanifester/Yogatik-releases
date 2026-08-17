@@ -43,7 +43,6 @@ function runSw(existingCacheNames) {
     match: async () => undefined,
   }
 
-  // eslint-disable-next-line no-new-func
   new Function('self', 'caches', 'fetch', 'Response', src)(
     self, caches, async () => ({ ok: true, clone: () => ({}) }), { error: () => ({}) },
   )

@@ -53,6 +53,7 @@ import { requestPersistence, storageReport, formatBytes } from './storage'
 import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clearLocalModelCache } from './localLLM'
 import { isDirectTimeQuery } from './timeQuery'
 import { isInstalledApp, shareYogatik } from './share'
+import { groupConversations } from './convGroups'
 import { setPermissionPrompt } from './permissions'
 import PermissionPrompt from './components/PermissionPrompt'
 
@@ -2254,6 +2255,10 @@ export default function App() {
       })
   }, [conversations, convQuery])
 
+  // Bucketed for the sidebar. Grouping is pure and lives in convGroups.js so the
+  // date boundaries are testable rather than a clock-dependent render detail.
+  const convGroups = useMemo(() => groupConversations(visibleConvs), [visibleConvs])
+
   if (companionMode) {
     return (
       <FloatingCompanion
@@ -2307,25 +2312,8 @@ export default function App() {
           <button className="icon-btn" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar"><X size={16} /></button>
         </div>
 
-        <div className="auth-section">
-          {user ? (
-            <div className="user-info">
-              {user.photoURL ? (
-                <img src={user.photoURL} alt="" style={{ width: 20, height: 20, borderRadius: '50%' }} />
-              ) : (
-                <User size={14} />
-              )}
-              <span>{user.displayName || user.email}</span>
-              <button className="icon-btn" onClick={() => { logout(); setUser(null); loadConversations() }} title="Sign out">
-                <LogOut size={14} />
-              </button>
-            </div>
-          ) : (
-            <button className="auth-btn" onClick={requestSignIn} aria-label="Sign in">
-              <LogIn size={14} /> Sign In
-            </button>
-          )}
-        </div>
+        {/* Identity lives in the FOOTER now, not above the chat list: it is not
+            navigation, and it was occupying the most valuable row in the panel. */}
 
         <div className="project-bar">
           <select value={activeProject ?? ''} aria-label="Project"
@@ -2353,20 +2341,18 @@ export default function App() {
           <kbd>Ctrl+K</kbd>
         </button>
 
-        {conversations.length > 3 && (
-          <div className="conv-search">
-            <Search size={12} />
-            <input aria-label="Search conversations" value={convQuery} onChange={e => setConvQuery(e.target.value)}
-              placeholder="Search chats..." />
-            {convQuery && (
-              <button className="icon-btn" onClick={() => setConvQuery('')} aria-label="Clear search"><X size={11} /></button>
-            )}
-          </div>
-        )}
+        {/* One search, not two. This used to be a SECOND input four rows below
+            the Ctrl+K button, filtering titles by substring. The palette already
+            searches chats — BM25 over titles AND message bodies (chatSearch.js) —
+            so it strictly supersedes this. convQuery is still honoured by
+            visibleConvs, so a search driven from the palette keeps working. */}
 
         <div className="sidebar-scroll">
         <div className="conversation-list">
-          {visibleConvs.map(({ c, i }) => (
+          {convGroups.map(group => (
+          <div key={group.label} className="conv-group">
+            <div className="conv-group-label">{group.label}</div>
+            {group.items.map(({ c, i }) => (
             <div key={i} className={`conversation-item ${i === activeIdx ? 'active' : ''}`}
               onClick={() => switchChat(i)} onDoubleClick={() => startRename(i)}>
               {renamingIdx === i ? (
@@ -2395,6 +2381,8 @@ export default function App() {
                 </span>
               )}
             </div>
+            ))}
+          </div>
           ))}
           {convQuery && visibleConvs.length === 0 && (
             <div className="conv-empty">No chats match "{convQuery}"</div>
@@ -2405,9 +2393,14 @@ export default function App() {
         <div className={`settings ${settingsOpen ? 'open' : 'closed'}`}>
           <button className="settings-toggle" onClick={() => setSettingsOpen(v => !v)}
             aria-expanded={settingsOpen} aria-controls="settings-body">
+            {/* Reads as "Settings" now. Labelling it with the provider name meant
+                the only way into model, tools and keys was a row that looked like
+                a status readout. The provider stays visible as a subtitle, and the
+                dot keeps its at-a-glance connection state. */}
             <span className="settings-toggle-main">
-              <Plug size={12} />
-              <span>{models[provider]?.name || provider}</span>
+              <Sliders size={12} />
+              <span className="settings-toggle-label">Settings</span>
+              <span className="settings-toggle-sub">{models[provider]?.name || provider}</span>
               <span className={`conn-dot conn-dot-inline conn-${providerStatus[provider]?.state || 'no-key'}`} />
             </span>
             <ChevronDown size={14} className={settingsOpen ? 'chev open' : 'chev'} />
@@ -2771,6 +2764,41 @@ export default function App() {
             </div>
           )}
           </div>
+        </div>
+
+        {/* Footer: identity, plus the cross-surface link. Both used to be
+            elsewhere — identity above the chat list where it crowded navigation,
+            and the desktop/web link only inside the hero, so it disappeared the
+            moment a conversation existed. */}
+        <div className="sidebar-footer">
+          {isDesktop() ? (
+            <a className="sidebar-footer-link" href="https://yogatik.web.app/" target="_blank" rel="noreferrer"
+              title="Open Yogatik in a browser — use it on your phone or tablet">
+              <Smartphone size={13} /> <span>Use on phone or tablet</span>
+            </a>
+          ) : (
+            <a className="sidebar-footer-link" href="/platforms"
+              title="Download the Yogatik desktop app for Windows, macOS or Linux">
+              <Monitor size={13} /> <span>Get the desktop app</span>
+            </a>
+          )}
+          {user ? (
+            <div className="user-info">
+              {user.photoURL ? (
+                <img src={user.photoURL} alt="" style={{ width: 20, height: 20, borderRadius: '50%' }} />
+              ) : (
+                <User size={14} />
+              )}
+              <span>{user.displayName || user.email}</span>
+              <button className="icon-btn" onClick={() => { logout(); setUser(null); loadConversations() }} title="Sign out">
+                <LogOut size={14} />
+              </button>
+            </div>
+          ) : (
+            <button className="auth-btn" onClick={requestSignIn} aria-label="Sign in">
+              <LogIn size={14} /> Sign In
+            </button>
+          )}
         </div>
       </aside>
 
