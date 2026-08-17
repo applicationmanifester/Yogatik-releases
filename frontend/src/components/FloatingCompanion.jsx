@@ -92,11 +92,11 @@ function CompanionMessageContent({ content }) {
       while ((m = inlineRegex.exec(lineContent)) !== null) {
         if (m.index > cur) tokens.push(lineContent.slice(cur, m.index))
         if (m[2]) {
-          tokens.push(<strong key={m.index} style={{ color: '#38bdf8', fontWeight: 600 }}>{m[2]}</strong>)
+          tokens.push(<strong key={m.index} style={{ color: 'var(--accent)', fontWeight: 600 }}>{m[2]}</strong>)
         } else if (m[3]) {
           tokens.push(
             <code key={m.index} style={{
-              background: 'rgba(255,255,255,0.08)',
+              background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)',
               padding: '1px 4px',
               borderRadius: 3,
               fontFamily: 'monospace',
@@ -116,7 +116,7 @@ function CompanionMessageContent({ content }) {
           position: 'relative',
         }}>
           {isBullet && (
-            <span style={{ position: 'absolute', left: 2, color: '#38bdf8', fontSize: '0.9em' }}>•</span>
+            <span style={{ position: 'absolute', left: 2, color: 'var(--accent)', fontSize: '0.9em' }}>•</span>
           )}
           {tokens.length ? tokens : lineContent}
         </div>
@@ -132,8 +132,8 @@ function CompanionMessageContent({ content }) {
         }
         return (
           <div key={idx} style={{
-            background: '#090d16',
-            border: '1px solid rgba(56, 189, 248, 0.25)',
+            background: 'var(--code-bg)',
+            border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
             borderRadius: 6,
             overflow: 'hidden',
             margin: '4px 0',
@@ -143,10 +143,10 @@ function CompanionMessageContent({ content }) {
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '3px 8px',
-              background: 'rgba(255,255,255,0.04)',
-              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
+              borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 6%, transparent)',
               fontSize: 9.5,
-              color: '#94a3b8',
+              color: 'var(--text-secondary)',
               fontWeight: 600,
               textTransform: 'uppercase',
             }}>
@@ -156,7 +156,7 @@ function CompanionMessageContent({ content }) {
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: copiedCodeIdx === idx ? '#22c55e' : '#94a3b8',
+                  color: copiedCodeIdx === idx ? 'var(--success)' : 'var(--text-secondary)',
                   cursor: 'pointer',
                   fontSize: 9.5,
                   display: 'flex',
@@ -174,7 +174,7 @@ function CompanionMessageContent({ content }) {
               padding: '6px 8px',
               fontSize: 11,
               fontFamily: 'Consolas, Monaco, "Courier New", monospace',
-              color: '#e2e8f0',
+              color: 'var(--text-primary)',
               overflowX: 'auto',
               whiteSpace: 'pre',
               lineHeight: 1.4,
@@ -492,11 +492,11 @@ export function FloatingCompanion({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '0 12px',
-        background: `rgba(10, 14, 20, ${opacityLevel})`,
+        background: `color-mix(in srgb, var(--bg-secondary) ${Math.round(opacityLevel * 100)}%, transparent)`,
         backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(56, 189, 248, 0.35)',
+        border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
         borderRadius: 12,
-        color: '#f8fafc',
+        color: 'var(--text-primary)',
         boxSizing: 'border-box',
         WebkitAppRegion: 'drag',
         userSelect: 'none',
@@ -504,8 +504,8 @@ export function FloatingCompanion({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <YogatikLogo size={20} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#38bdf8' }}>AI COMPANION</span>
-            <span style={{ fontSize: 9.5, color: '#94a3b8', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>AI COMPANION</span>
+            <span style={{ fontSize: 9.5, color: 'var(--text-secondary)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {monitoredApp.appName}
             </span>
           </div>
@@ -515,10 +515,10 @@ export function FloatingCompanion({
           <button
             onClick={() => handleQuickAction('Inspect my active screen and tell me what to do next')}
             style={{
-              background: 'rgba(56, 189, 248, 0.15)',
-              border: '1px solid rgba(56, 189, 248, 0.3)',
+              background: 'color-mix(in srgb, var(--accent) 15%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
               borderRadius: 6,
-              color: '#38bdf8',
+              color: 'var(--accent)',
               fontSize: 11,
               padding: '4px 8px',
               cursor: 'pointer',
@@ -533,7 +533,7 @@ export function FloatingCompanion({
             className="icon-btn"
             onClick={() => setIsCompact(false)}
             title="Expand Companion View"
-            style={{ padding: 4, color: '#94a3b8' }}
+            style={{ padding: 4, color: 'var(--text-secondary)' }}
           >
             <ChevronDown size={14} />
           </button>
@@ -541,7 +541,7 @@ export function FloatingCompanion({
             className="icon-btn"
             onClick={onExitCompanion}
             title="Expand to Full Workstation"
-            style={{ padding: 4, color: '#94a3b8' }}
+            style={{ padding: 4, color: 'var(--text-secondary)' }}
           >
             <Maximize2 size={13} />
           </button>
@@ -559,13 +559,13 @@ export function FloatingCompanion({
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
-      background: `rgba(10, 14, 20, ${opacityLevel})`,
+      background: `color-mix(in srgb, var(--bg-secondary) ${Math.round(opacityLevel * 100)}%, transparent)`,
       backdropFilter: 'blur(28px)',
-      color: '#f8fafc',
+      color: 'var(--text-primary)',
       fontFamily: 'system-ui, -apple-system, sans-serif',
       boxSizing: 'border-box',
       overflow: 'hidden',
-      border: '1px solid rgba(56, 189, 248, 0.35)',
+      border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
       boxShadow: '0 16px 48px rgba(0,0,0,0.75)',
     }}>
       {/* 1. Companion Top Header Bar */}
@@ -574,29 +574,29 @@ export function FloatingCompanion({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '7px 12px',
-        background: 'linear-gradient(90deg, rgba(56, 189, 248, 0.2), rgba(168, 85, 247, 0.2))',
-        borderBottom: '1px solid rgba(255,255,255,0.08)',
+        background: 'linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent) 4%, transparent))',
+        borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
         WebkitAppRegion: 'drag',
         userSelect: 'none',
         flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <YogatikLogo size={18} />
-          <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.04em', color: '#38bdf8' }}>
+          <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.04em', color: 'var(--accent)' }}>
             AI COMPANION
           </span>
           <span style={{
             fontSize: 9,
             padding: '1px 5px',
             borderRadius: 10,
-            background: isDesktopEnv ? 'rgba(34, 197, 94, 0.2)' : 'rgba(56, 189, 248, 0.2)',
-            color: isDesktopEnv ? '#22c55e' : '#38bdf8',
+            background: isDesktopEnv ? 'color-mix(in srgb, var(--success) 20%, transparent)' : 'color-mix(in srgb, var(--accent) 20%, transparent)',
+            color: isDesktopEnv ? 'var(--success)' : 'var(--accent)',
             display: 'flex',
             alignItems: 'center',
             gap: 3,
             fontWeight: 700,
           }}>
-            <span style={{ width: 5, height: 5, borderRadius: '50%', background: isDesktopEnv ? '#22c55e' : '#38bdf8' }} />
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: isDesktopEnv ? 'var(--success)' : 'var(--accent)' }} />
             {isDesktopEnv ? 'OS DESKTOP' : 'WEB PiP'}
           </span>
         </div>
@@ -608,7 +608,7 @@ export function FloatingCompanion({
               className="icon-btn"
               onClick={onNewChat}
               title="New Topic / Clean Slate"
-              style={{ padding: 4, color: '#94a3b8' }}
+              style={{ padding: 4, color: 'var(--text-secondary)' }}
             >
               <Plus size={13} />
             </button>
@@ -619,7 +619,7 @@ export function FloatingCompanion({
             className="icon-btn"
             onClick={cycleOpacity}
             title={`Opacity: ${Math.round(opacityLevel * 100)}% (Click to toggle translucency)`}
-            style={{ padding: 4, color: opacityLevel < 0.9 ? '#38bdf8' : '#94a3b8' }}
+            style={{ padding: 4, color: opacityLevel < 0.9 ? 'var(--accent)' : 'var(--text-secondary)' }}
           >
             <Sliders size={13} />
           </button>
@@ -629,7 +629,7 @@ export function FloatingCompanion({
             className="icon-btn"
             onClick={() => setSpeechEnabled(s => !s)}
             title={speechEnabled ? 'Voice Output Enabled (Speaking answers)' : 'Enable Voice Response Audio'}
-            style={{ padding: 4, color: speechEnabled ? '#22c55e' : '#64748b' }}
+            style={{ padding: 4, color: speechEnabled ? 'var(--success)' : 'var(--text-muted)' }}
           >
             {speechEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
           </button>
@@ -640,7 +640,7 @@ export function FloatingCompanion({
               className="icon-btn"
               onClick={onPopOutPip}
               title="Pop out Always-on-Top Floating Window (Document Picture-in-Picture)"
-              style={{ padding: 4, color: '#38bdf8' }}
+              style={{ padding: 4, color: 'var(--accent)' }}
             >
               <ExternalLink size={13} />
             </button>
@@ -651,7 +651,7 @@ export function FloatingCompanion({
             className="icon-btn"
             onClick={() => setIsCompact(true)}
             title="Compact Mini Dock"
-            style={{ padding: 4, color: '#94a3b8' }}
+            style={{ padding: 4, color: 'var(--text-secondary)' }}
           >
             <ChevronUp size={14} />
           </button>
@@ -661,7 +661,7 @@ export function FloatingCompanion({
             className="icon-btn"
             onClick={onExitCompanion}
             title="Expand to Full Workstation"
-            style={{ padding: 4, color: '#94a3b8' }}
+            style={{ padding: 4, color: 'var(--text-secondary)' }}
           >
             <Maximize2 size={13} />
           </button>
@@ -671,8 +671,8 @@ export function FloatingCompanion({
       {/* 2. Active App Monitor & Continuous Radar Strip */}
       <div style={{
         padding: '5px 12px',
-        background: 'rgba(255,255,255,0.02)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        background: 'color-mix(in srgb, var(--text-primary) 2%, transparent)',
+        borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 6%, transparent)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -680,10 +680,10 @@ export function FloatingCompanion({
         flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
-          <Monitor size={12} color="#38bdf8" style={{ flexShrink: 0 }} />
-          <span style={{ color: '#94a3b8', flexShrink: 0 }}>Watching:</span>
+          <Monitor size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+          <span style={{ color: 'var(--text-secondary)', flexShrink: 0 }}>Watching:</span>
           <strong style={{
-            color: '#e2e8f0',
+            color: 'var(--text-primary)',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
@@ -697,10 +697,10 @@ export function FloatingCompanion({
           <button
             onClick={() => setAutoWatch(a => !a)}
             style={{
-              background: autoWatch ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${autoWatch ? 'rgba(34, 197, 94, 0.4)' : 'rgba(255,255,255,0.1)'}`,
+              background: autoWatch ? 'color-mix(in srgb, var(--success) 15%, transparent)' : 'color-mix(in srgb, var(--text-primary) 5%, transparent)',
+              border: `1px solid ${autoWatch ? 'color-mix(in srgb, var(--success) 40%, transparent)' : 'color-mix(in srgb, var(--text-primary) 10%, transparent)'}`,
               borderRadius: 4,
-              color: autoWatch ? '#22c55e' : '#94a3b8',
+              color: autoWatch ? 'var(--success)' : 'var(--text-secondary)',
               fontSize: 10,
               padding: '2px 6px',
               cursor: 'pointer',
@@ -719,10 +719,10 @@ export function FloatingCompanion({
             onClick={() => handleCaptureScreen(false)}
             disabled={scanning}
             style={{
-              background: 'rgba(56, 189, 248, 0.12)',
-              border: '1px solid rgba(56, 189, 248, 0.3)',
+              background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
               borderRadius: 4,
-              color: '#38bdf8',
+              color: 'var(--accent)',
               fontSize: 10,
               padding: '2px 6px',
               cursor: 'pointer',
@@ -743,7 +743,7 @@ export function FloatingCompanion({
           position: 'relative',
           padding: '6px 12px',
           background: 'rgba(0,0,0,0.55)',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 6%, transparent)',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
@@ -756,7 +756,7 @@ export function FloatingCompanion({
               style={{
                 height: 42,
                 borderRadius: 4,
-                border: '1px solid rgba(56, 189, 248, 0.4)',
+                border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
                 display: 'block',
               }}
@@ -768,16 +768,16 @@ export function FloatingCompanion({
               background: 'rgba(0,0,0,0.7)',
               borderRadius: 2,
               padding: 1,
-              color: '#38bdf8',
+              color: 'var(--accent)',
             }}>
               <ZoomIn size={8} />
             </div>
           </div>
 
-          <div style={{ flex: 1, minWidth: 0, fontSize: 10.5, color: '#94a3b8' }}>
-            <div style={{ color: '#e2e8f0', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ flex: 1, minWidth: 0, fontSize: 10.5, color: 'var(--text-secondary)' }}>
+            <div style={{ color: 'var(--text-primary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
               Screen Frame Ready
-              <span style={{ fontSize: 8.5, padding: '0 4px', borderRadius: 3, background: '#22c55e22', color: '#22c55e' }}>Multimodal</span>
+              <span style={{ fontSize: 8.5, padding: '0 4px', borderRadius: 3, background: 'var(--success)22', color: 'var(--success)' }}>Multimodal</span>
             </div>
             <div style={{ fontSize: 9.5, opacity: 0.8 }}>
               {screenMeta?.source || 'Display'} · {screenMeta?.time || 'Just now'}
@@ -790,10 +790,10 @@ export function FloatingCompanion({
               onClick={handleExtractOcr}
               disabled={ocrLoading}
               style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'color-mix(in srgb, var(--text-primary) 6%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
                 borderRadius: 4,
-                color: '#e2e8f0',
+                color: 'var(--text-primary)',
                 fontSize: 9.5,
                 padding: '3px 6px',
                 cursor: 'pointer',
@@ -808,7 +808,7 @@ export function FloatingCompanion({
 
             <button
               onClick={() => { setScreenPreview(null); setOcrText(null) }}
-              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 3 }}
+              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 3 }}
               title="Clear preview"
             >
               <X size={13} />
@@ -836,9 +836,9 @@ export function FloatingCompanion({
           <img
             src={screenPreview}
             alt="Screen Zoom"
-            style={{ maxWidth: '100%', maxHeight: '80%', borderRadius: 6, border: '1px solid rgba(56, 189, 248, 0.5)' }}
+            style={{ maxWidth: '100%', maxHeight: '80%', borderRadius: 6, border: '1px solid color-mix(in srgb, var(--accent) 50%, transparent)' }}
           />
-          <span style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 8 }}>Click anywhere to close</span>
+          <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 8 }}>Click anywhere to close</span>
         </div>
       )}
 
@@ -848,7 +848,7 @@ export function FloatingCompanion({
         display: 'flex',
         gap: 4,
         overflowX: 'auto',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 5%, transparent)',
         flexShrink: 0,
       }}>
         {['all', 'code', 'write', 'data', 'autopilot'].map(cat => (
@@ -856,9 +856,9 @@ export function FloatingCompanion({
             key={cat}
             onClick={() => setCategoryFilter(cat)}
             style={{
-              background: categoryFilter === cat ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${categoryFilter === cat ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255,255,255,0.08)'}`,
-              color: categoryFilter === cat ? '#38bdf8' : '#94a3b8',
+              background: categoryFilter === cat ? 'color-mix(in srgb, var(--accent) 20%, transparent)' : 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
+              border: `1px solid ${categoryFilter === cat ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'color-mix(in srgb, var(--text-primary) 8%, transparent)'}`,
+              color: categoryFilter === cat ? 'var(--accent)' : 'var(--text-secondary)',
               borderRadius: 12,
               fontSize: 10,
               fontWeight: 600,
@@ -870,7 +870,7 @@ export function FloatingCompanion({
               gap: 3,
             }}
           >
-            {cat === detectedCategory && <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#38bdf8' }} />}
+            {cat === detectedCategory && <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)' }} />}
             {cat}
           </button>
         ))}
@@ -882,7 +882,7 @@ export function FloatingCompanion({
         gap: 5,
         padding: '5px 10px 7px',
         overflowX: 'auto',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 6%, transparent)',
         flexShrink: 0,
       }}>
         {filteredPills.map((pill, idx) => (
@@ -890,7 +890,7 @@ export function FloatingCompanion({
             key={idx}
             onClick={() => handleQuickAction(pill.prompt, true)}
             style={{
-              background: 'rgba(255,255,255,0.04)',
+              background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
               border: `1px solid ${pill.color}33`,
               borderRadius: 8,
               color: pill.color,
@@ -924,12 +924,12 @@ export function FloatingCompanion({
           <div style={{
             margin: 'auto',
             textAlign: 'center',
-            color: '#64748b',
+            color: 'var(--text-muted)',
             padding: 16,
           }}>
             <Bot size={28} style={{ opacity: 0.4, margin: '0 auto 8px' }} />
-            <div style={{ fontWeight: 700, color: '#94a3b8', fontSize: 12.5 }}>Companion Ready</div>
-            <div style={{ fontSize: 11, marginTop: 4, color: '#64748b', lineHeight: 1.4 }}>
+            <div style={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12.5 }}>Companion Ready</div>
+            <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)', lineHeight: 1.4 }}>
               Click any quick action pill above or type below.<br />
               Press <strong>Ctrl+Enter</strong> to capture screen &amp; analyze with multimodal AI.
             </div>
@@ -941,10 +941,10 @@ export function FloatingCompanion({
                 marginTop: 10,
                 padding: '2px 8px',
                 borderRadius: 12,
-                background: 'rgba(56, 189, 248, 0.1)',
-                border: '1px solid rgba(56, 189, 248, 0.25)',
+                background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
                 fontSize: 10,
-                color: '#38bdf8'
+                color: 'var(--accent)'
               }}>
                 <Sparkles size={10} /> Powered by {activeModel}
               </div>
@@ -960,9 +960,9 @@ export function FloatingCompanion({
               maxWidth: '94%',
               padding: '7px 11px',
               borderRadius: 8,
-              background: m.role === 'user' ? 'rgba(56, 189, 248, 0.18)' : 'rgba(255,255,255,0.05)',
-              border: m.role === 'user' ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid rgba(255,255,255,0.08)',
-              color: '#f1f5f9',
+              background: m.role === 'user' ? 'color-mix(in srgb, var(--accent) 18%, transparent)' : 'color-mix(in srgb, var(--text-primary) 5%, transparent)',
+              border: m.role === 'user' ? '1px solid color-mix(in srgb, var(--accent) 30%, transparent)' : '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
+              color: 'var(--text-primary)',
               fontSize: 11.5,
               position: 'relative',
               wordBreak: 'break-word',
@@ -976,7 +976,7 @@ export function FloatingCompanion({
                   maxHeight: 70,
                   borderRadius: 4,
                   marginBottom: 6,
-                  border: '1px solid rgba(255,255,255,0.15)',
+                  border: '1px solid color-mix(in srgb, var(--text-primary) 15%, transparent)',
                   display: 'block',
                 }}
               />
@@ -989,7 +989,7 @@ export function FloatingCompanion({
                   style={{
                     background: 'none',
                     border: 'none',
-                    color: '#94a3b8',
+                    color: 'var(--text-secondary)',
                     cursor: 'pointer',
                     fontSize: 9.5,
                     display: 'flex',
@@ -999,7 +999,7 @@ export function FloatingCompanion({
                   }}
                   title="Copy message"
                 >
-                  {copiedId === idx ? <CheckCircle2 size={10} color="#22c55e" /> : <Copy size={10} />}
+                  {copiedId === idx ? <CheckCircle2 size={10} color="var(--success)" /> : <Copy size={10} />}
                   {copiedId === idx ? 'Copied' : 'Copy'}
                 </button>
               </div>
@@ -1013,9 +1013,9 @@ export function FloatingCompanion({
             maxWidth: '94%',
             padding: '7px 11px',
             borderRadius: 8,
-            background: 'rgba(168, 85, 247, 0.15)',
-            border: '1px solid rgba(168, 85, 247, 0.3)',
-            color: '#f1f5f9',
+            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--accent) 28%, transparent)',
+            color: 'var(--text-primary)',
             fontSize: 11.5,
             wordBreak: 'break-word',
           }}>
@@ -1028,8 +1028,8 @@ export function FloatingCompanion({
       {/* 6. Companion Input Bar */}
       <form onSubmit={handleSubmit} style={{
         padding: '7px 10px',
-        background: 'rgba(255,255,255,0.03)',
-        borderTop: '1px solid rgba(255,255,255,0.08)',
+        background: 'color-mix(in srgb, var(--text-primary) 3%, transparent)',
+        borderTop: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
         display: 'flex',
         alignItems: 'center',
         gap: 6,
@@ -1040,8 +1040,8 @@ export function FloatingCompanion({
           type="button"
           onClick={toggleVoice}
           style={{
-            background: listening ? '#ef4444' : 'rgba(255,255,255,0.06)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            background: listening ? 'var(--error)' : 'color-mix(in srgb, var(--text-primary) 6%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
             borderRadius: '50%',
             width: 28,
             height: 28,
@@ -1060,7 +1060,7 @@ export function FloatingCompanion({
               position: 'absolute',
               inset: -3,
               borderRadius: '50%',
-              border: '2px solid #ef4444',
+              border: '2px solid var(--error)',
               animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite',
             }} />
           )}
@@ -1076,7 +1076,7 @@ export function FloatingCompanion({
           style={{
             flex: 1,
             background: 'rgba(0,0,0,0.35)',
-            border: '1px solid rgba(255,255,255,0.12)',
+            border: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 11.5,
@@ -1090,12 +1090,12 @@ export function FloatingCompanion({
           type="button"
           onClick={() => setContinuousVoice(c => !c)}
           style={{
-            background: continuousVoice ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255,255,255,0.04)',
-            border: `1px solid ${continuousVoice ? 'rgba(34, 197, 94, 0.4)' : 'rgba(255,255,255,0.08)'}`,
+            background: continuousVoice ? 'color-mix(in srgb, var(--success) 20%, transparent)' : 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
+            border: `1px solid ${continuousVoice ? 'color-mix(in srgb, var(--success) 40%, transparent)' : 'color-mix(in srgb, var(--text-primary) 8%, transparent)'}`,
             borderRadius: 6,
             width: 28,
             height: 28,
-            color: continuousVoice ? '#22c55e' : '#64748b',
+            color: continuousVoice ? 'var(--success)' : 'var(--text-muted)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1112,7 +1112,7 @@ export function FloatingCompanion({
           type="submit"
           disabled={!input.trim() || isStreaming}
           style={{
-            background: 'linear-gradient(135deg, #38bdf8, #818cf8)',
+            background: 'linear-gradient(135deg, var(--accent), #818cf8)',
             border: 'none',
             borderRadius: 6,
             width: 28,
