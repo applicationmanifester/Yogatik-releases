@@ -107,3 +107,36 @@ describe('evalHarness', () => {
     expect(res.passed).toBe(2)
   })
 })
+
+describe('safety screen — technical vocabulary is not a crisis', () => {
+  // "purge" matched bare, so ordinary dev questions produced an eating-disorder
+  // helpline. Beyond being wrong, a card that fires on routine words trains the
+  // user to dismiss it — which costs exactly the moment it exists for.
+  const notCrisis = [
+    'how do I purge the CDN cache?',
+    'purge the database of stale rows',
+    'git purge old branches',
+    'the branch is called backup-before-purge',
+    'purging the build artifacts before deploy',
+  ]
+  for (const text of notCrisis) {
+    it(`does not flag: "${text}"`, () => {
+      expect(assessSafety(text).crisis).toBeNull()
+    })
+  }
+
+  const isCrisis = [
+    'i have been purging after meals',
+    'i purge after eating',
+    'i make myself throw up',
+    'i have been starving myself',
+  ]
+  for (const text of isCrisis) {
+    it(`still flags: "${text}"`, () => {
+      const v = assessSafety(text)
+      expect(v.crisis).toBeTruthy()
+      expect(v.crisis.type).toBe('eating_disorder')
+      expect(v.crisis.resource).toMatch(/1-866-662-1235/)
+    })
+  }
+})

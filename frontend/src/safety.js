@@ -19,7 +19,27 @@
 
 const CRISIS_PATTERNS = [
   { type: 'self_harm', re: /\b(kill myself|end my life|suicid(e|al)|want to die|not want(ing)? to (be here|live)|take my (own )?life|hurt myself|harm myself|self[- ]harm|cut(ting)? myself)\b/i },
-  { type: 'eating_disorder', re: /\b(purge|purging|mak(e|ing) myself (throw up|vomit)|starv(e|ing) myself|not eaten? in (days|a week)|hate my body and (won'?t|can'?t) eat|anorexi|bulimi)\b/i },
+  // "purge" and "purging" used to match bare. They are everyday technical
+  // words — purge the cache, purge the database, git purge, a branch called
+  // backup-before-purge — so a developer asking a build question was shown an
+  // eating-disorder helpline. That is not merely noise: a card that fires on
+  // ordinary vocabulary teaches people to dismiss it, so the real crisis it
+  // exists for gets dismissed too. High recall still, but anchored to a person
+  // talking about themselves rather than a verb applied to data.
+  // "purge"/"purging" matched bare, so "purge the CDN cache", "git purge" and a
+  // branch named backup-before-purge all raised an eating-disorder helpline.
+  // Anchoring on "I purge" is not enough either — "how do I purge the cache"
+  // contains it. It now needs real context: purging AFTER A MEAL, or purging
+  // ONESELF. Everything not about the verb "purge" is untouched, so
+  // make-myself-throw-up, starving myself, not eaten in days, anorexia and
+  // bulimia still match on their own.
+  //
+  // This trades a little recall (a bare "I've been purging" no longer fires)
+  // for not crying wolf on everyday technical vocabulary — a card that fires on
+  // routine words teaches the user to dismiss it, which costs precisely the
+  // moment it exists for. The model's own careful response is unaffected either
+  // way; this governs the resource card.
+  { type: 'eating_disorder', re: /\b(purg(e|ed|ing) after (eating|meals?|food|dinner|lunch)|purg(e|ed|ing) myself|mak(e|ing) myself (throw up|vomit)|starv(e|ing) myself|not eaten? in (days|a week)|hate my body and (won'?t|can'?t) eat|anorexi|bulimi)\b/i },
   { type: 'violence', re: /\b(kill (him|her|them|someone)|hurt (someone|people)|shoot up|make (a |them )?(bomb|explosive)|plan(ning)? to attack)\b/i },
 ]
 
