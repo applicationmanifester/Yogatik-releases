@@ -5,9 +5,7 @@
  */
 
 import * as db from './db'
-import { runAgent } from './agent'
 import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels, chatComplete, proxyAvailable, normalizeModelName } from './llm'
-import { getToolNames } from './tools/index'
 import { isDesktop } from './tools/localFs'
 import { chunkText } from './retrieval'
 import { invalidateDocIndex } from './tools/documents'
@@ -307,6 +305,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
       let failure = null
       let produced = false
 
+      const { runAgent } = await import('./agent')
       await runAgent({
         provider: pid, apiKey: key, model: mdl,
         history: body.messages || [],
@@ -353,6 +352,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
             activeMdl = fallbackMdl
             onStatus?.(`${mdl || pid} unavailable — trying ${fallbackMdl}…`)
             failure = null
+            const { runAgent } = await import('./agent')
             await runAgent({
               provider: pid, apiKey: key, model: fallbackMdl,
               history: body.messages || [],
@@ -1528,12 +1528,24 @@ export async function setToolsEnabledBulk(names, enabled) {
 
 export async function getTools() {
   const disabled = new Set(await getDisabledTools())
+  // Dynamic import: api.js is on the startup path, and a static import of the
+  // tool barrel pulled all ~141 tools into the first-paint bundle even though
+  // this list is only ever needed by the settings UI.
+  const { getToolNames } = await import('./tools/index')
   return getToolNames().map(name => ({
     name,
     enabled: !disabled.has(name),
     group: TOOL_GROUPS[name] || 'Other',
   }))
 }
+
+/*
+ * NOTE: agent.js and tools/index.js are imported DYNAMICALLY above, not at the
+ * top of this file. api.js is on the startup path, and agent.js statically
+ * imports the ~141-tool barrel — a static import here dragged every tool
+ * (finance, video, vision, quant …) into the first-paint bundle even though
+ * none of it is needed until the user actually sends a message.
+ */
 
 /** Grouping drives the settings UI only — the agent sees a flat list. */
 export const TOOL_GROUPS = {

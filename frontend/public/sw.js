@@ -1,4 +1,7 @@
-const CACHE_NAME = 'yogatik-v3';
+// Bumped on release: activate() deletes every cache whose name differs, which
+// is what evicts the previous build's precached shell. Leaving it unchanged
+// across a deploy lets an old index.html linger for returning visitors.
+const CACHE_NAME = 'yogatik-v4';
 const STATIC_ASSETS = ['/', '/index.html', '/icon-192.svg', '/icon-512.svg'];
 
 self.addEventListener('install', (e) => {
