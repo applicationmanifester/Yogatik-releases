@@ -37,6 +37,32 @@ export function diagnoseError(error) {
   const msg = typeof error === 'string' ? error : (error?.message || String(error || ''))
   const lower = msg.toLowerCase()
 
+  // On-device model storage, checked FIRST because its wording is unambiguous
+  // and two later tests would otherwise claim it. WebLLM streams its weights
+  // through the Cache API, so a failure here is the local disk with no provider
+  // involved: "Failed to execute 'add' on 'Cache'" fell through to the generic
+  // bucket and blamed "the model provider", while a QuotaExceededError was
+  // caught by the bare `quota` test below and reported as a provider rate limit
+  // offering Auto-Pick — an action that cannot free disk space.
+  if (
+    lower.includes("on 'cache'") ||
+    lower.includes('quotaexceedederror') ||
+    lower.includes('exceeded the quota') ||
+    (lower.includes('storage') && lower.includes('full'))
+  ) {
+    const outOfSpace = lower.includes('quota') || lower.includes('full')
+    return {
+      type: 'model_storage',
+      category: 'On-Device Model Storage',
+      title: outOfSpace ? 'Not Enough Space for the Model' : 'Model Download Interrupted',
+      suggestion: outOfSpace
+        ? 'The on-device weights could not be saved — this site is out of browser storage. Free up disk space, or remove a downloaded model in Settings, then retry.'
+        : 'The on-device weights could not be saved, so the download stopped partway. Retry to resume — the parts already downloaded are kept.',
+      actionType: 'retry',
+      actionLabel: 'Retry Download',
+    }
+  }
+
   if (lower.includes('401') || lower.includes('invalid api key') || lower.includes('unauthorized') || lower.includes('incorrect api key') || lower.includes('authentication') || lower.includes('invalid_api_key')) {
     return {
       type: 'auth',

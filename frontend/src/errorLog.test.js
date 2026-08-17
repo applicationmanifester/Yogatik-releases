@@ -53,3 +53,31 @@ describe('diagnoseError', () => {
     expect(report.recentErrors[0].message).toBe('Test error report')
   })
 })
+
+describe('diagnoseError — on-device model storage', () => {
+  // The literal string from a real report (WebLLM, provider "local"). It has no
+  // provider in it at all: WebLLM streams weights through the Cache API, so this
+  // is local disk. It used to fall through to the generic bucket and tell the
+  // user "an unexpected response was received from the model provider".
+  it('recognises a Cache API write failure as a local download problem', () => {
+    const d = diagnoseError("Failed to execute 'add' on 'Cache': Request failed")
+    expect(d.type).toBe('model_storage')
+    expect(d.category).toBe('On-Device Model Storage')
+    expect(d.suggestion).not.toMatch(/provider/i)
+  })
+
+  it('reports a browser storage quota failure as disk space, not a rate limit', () => {
+    const d = diagnoseError("QuotaExceededError: Failed to execute 'put' on 'Cache': Quota exceeded.")
+    expect(d.type).toBe('model_storage')
+    // The bare `quota` test would otherwise claim a provider rate limit and
+    // offer Auto-Pick, which cannot fix a full disk.
+    expect(d.actionType).not.toBe('autopick')
+    expect(d.title).toMatch(/space/i)
+  })
+
+  it('still treats a genuine provider quota error as a rate limit', () => {
+    const d = diagnoseError('429: You exceeded your current quota, please check your plan and billing details')
+    expect(d.type).toBe('quota')
+    expect(d.actionType).toBe('autopick')
+  })
+})
