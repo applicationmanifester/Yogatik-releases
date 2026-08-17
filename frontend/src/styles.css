@@ -32,7 +32,11 @@
   --bg-input: #edf0f5;
   --text-primary: #1a2332;
   --text-secondary: #556677;
-  --text-muted: #8899aa;
+  /* Was #8899aa — only 2.92:1 on the white --bg-secondary, the WORST contrast
+     in either theme. Measured, not guessed: #5f7182 is 5.03:1, clearing AA with
+     headroom while staying visibly lighter than --text-secondary (5.91:1), so
+     muted still reads as muted. */
+  --text-muted: #5f7182;
   --accent: #d4570a;
   --accent-hover: #e8752e;
   --accent-glow: rgba(212, 87, 10, 0.1);
