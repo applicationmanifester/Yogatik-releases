@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Pin, Clock, Bell, Monitor } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Pin, Clock, Bell, Monitor } from 'lucide-react'
 import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
@@ -52,6 +52,7 @@ import { registerServiceWorker } from './pwa'
 import { requestPersistence, storageReport, formatBytes } from './storage'
 import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clearLocalModelCache } from './localLLM'
 import { isDirectTimeQuery } from './timeQuery'
+import { isInstalledApp, shareYogatik } from './share'
 import { setPermissionPrompt } from './permissions'
 import PermissionPrompt from './components/PermissionPrompt'
 
@@ -217,6 +218,15 @@ export default function App() {
   const showConfirm = useCallback((msg, onOk, { okLabel = 'OK', cancelLabel = 'Cancel', onCancel } = {}) => {
     setConfirmModal({ msg, okLabel, cancelLabel, onOk, onCancel })
   }, [])
+  // Once the app IS installed, prompting to install it is noise — offer to
+  // pass it on instead. Covers Electron, Tauri and an installed PWA.
+  const installed = useMemo(() => isInstalledApp(), [])
+  const handleShare = useCallback(async () => {
+    const outcome = await shareYogatik()
+    if (outcome === 'copied') showToast('Link copied — share it anywhere')
+    else if (outcome === 'failed') showToast('Could not share. Copy the link from the address bar.')
+  }, [showToast])
+
   const handleAddFolder = useCallback(async () => {
     const added = await addRoot()
     if (added) setChatRoots(await listRoots())
@@ -2868,9 +2878,12 @@ export default function App() {
                 </button>
                 <button
                   className="hero-btn secondary"
-                  onClick={() => setShowDownloadModal(true)}
+                  onClick={installed ? handleShare : () => setShowDownloadModal(true)}
+                  title={installed ? 'Share Yogatik with someone' : 'Install Yogatik as an app'}
                 >
-                  <Download size={16} /> Install App
+                  {installed
+                    ? <><Share2 size={16} /> Share Yogatik</>
+                    : <><Download size={16} /> Install App</>}
                 </button>
               </div>
               <div className="tool-badges">
