@@ -55,7 +55,9 @@
       {
         "from": "bin/search-sidecar",
         "to": "search-sidecar",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "publish": [
@@ -82,5 +84,11 @@
       ],
       "category": "Utility"
     }
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/applicationmanifester/Yogatik.git"
+  },
+  "description": "Yogatik — private, browser-native AI assistant with local file tools.",
+  "author": "applicationmanifester"
 }
