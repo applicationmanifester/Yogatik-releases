@@ -11,23 +11,25 @@ Each gap is evidenced against this codebase, not assumed.
 
 | § | Gap | Status |
 |---|---|---|
-| 1 | Permission system | **Done** — `permissions.js`, 27 tests |
+| 1 | Permission system | **Done** — `permissions.js`, 32 tests |
 | 2 | Undo / journal | **Done** — `journalCore.cjs` + `fs_undo`, 12 tests |
 | 3 | Diff preview | **Done** — `diffPreview.js`, 11 tests |
 | 4 | Search fix | **Done** — `searchFilter.cjs`, 17 tests |
-| 5 | Git awareness | Not started |
+| 5 | Git awareness | **Done** — `gitCore.cjs`/`git.cjs`, 17 tests |
 | 6 | Task tracking | **Done** — `todos.js` + `todo` tool, 15 tests |
 | 7 | Context compaction | **Done** — `compaction.js`, 15 tests |
 | 8 | Project instructions | **Done** — `projectInstructions.js`, 14 tests |
-| 9 | MCP stdio | Not started |
-| 10 | Hooks | **Partial** — config parsing/matching + trust model done (13 tests); the main-process runner is not wired |
-| 11 | Background processes | Not started |
-| 12 | File watching | Not started |
-| 13 | Sub-agent isolation | Not started |
+| 9 | MCP stdio | **Done** — `mcpStdioCore.cjs`/`mcpStdio.cjs`, 12 tests |
+| 10 | Hooks | **Done (not enabled)** — config, matching, trust model and runner all exist (13 tests), but main wires an EMPTY trust list, so no hook can fire until a trust UI is added. Deliberate. |
+| 11 | Background processes | **Done** — `procCore.cjs`/`processes.cjs`, 11 tests |
+| 12 | File watching | **Done** — `watcher.cjs` (bare fs.watch, no chokidar) |
+| 13 | Sub-agent isolation | **Done** — `agentIsolation.js`, 13 tests, opt-in |
 | 14 | Repo commands | **Done** — `repoCommands.js`, 12 tests |
 
-Suite: 494 tests. **Everything Electron-side is unit-tested but has not been
-exercised in a running app** — see the verification note at the end.
+All fourteen implemented. Suite: **552 tests**, 0 lint errors, build clean.
+
+**Everything Electron-side is unit-tested but has NOT been exercised in a running
+app** — see the verification note at the end. That gap is now larger, not smaller.
 
 ---
 
