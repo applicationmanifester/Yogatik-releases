@@ -52,8 +52,9 @@ import { registerServiceWorker } from './pwa'
 import { requestPersistence, storageReport, formatBytes } from './storage'
 import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clearLocalModelCache } from './localLLM'
 import { isDirectTimeQuery } from './timeQuery'
-import { isInstalledApp, shareYogatik } from './share'
+import { isInstalledApp, shareYogatik, nativeShareAvailable } from './share'
 import { groupConversations } from './convGroups'
+import { ShareSheet } from './components/ShareSheet'
 import { shouldNotifyTurn, notificationBody, notificationTitle, cleanReply } from './desktopNotify'
 import { setPermissionPrompt } from './permissions'
 import PermissionPrompt from './components/PermissionPrompt'
@@ -225,9 +226,14 @@ export default function App() {
   // pass it on instead. Covers Electron, Tauri and an installed PWA.
   const installed = useMemo(() => isInstalledApp(), [])
   const handleShare = useCallback(async () => {
+    // Prefer the platform's own sheet — on a phone or in Edge it lists every
+    // installed app, which nothing we build can match. Electron has no
+    // navigator.share and Windows exposes no Share charm to it, so there the
+    // old code fell through to a silent clipboard copy and Share looked broken.
+    if (!nativeShareAvailable()) { setShowShareSheet(true); return }
     const outcome = await shareYogatik()
     if (outcome === 'copied') showToast('Link copied — share it anywhere')
-    else if (outcome === 'failed') showToast('Could not share. Copy the link from the address bar.')
+    else if (outcome === 'failed') setShowShareSheet(true)
   }, [showToast])
 
   const handleAddFolder = useCallback(async () => {
@@ -288,6 +294,7 @@ export default function App() {
   const [pwaPrompt, setPwaPrompt] = useState(null)
   const [showPwaInstall, setShowPwaInstall] = useState(false)
   const [showAd, setShowAd] = useState(false)
+  const [showShareSheet, setShowShareSheet] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
   const chatCountRef = useRef(0)
   const toolRunMapRef = useRef({}) // per-chat tool results: { [clientId]: { results: {}, used: [] } }
@@ -3595,6 +3602,7 @@ export default function App() {
         </Modal>
       )}
       {showAd && <AdModal onClose={() => setShowAd(false)} />}
+      {showShareSheet && <ShareSheet onClose={() => setShowShareSheet(false)} />}
       {showDemoModal && <DemoModal onClose={() => setShowDemoModal(false)} />}
       {showOverviewModal && (
         <AppOverviewModal

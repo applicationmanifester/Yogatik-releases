@@ -51,3 +51,32 @@ export async function shareYogatik() {
     return 'failed'
   }
 }
+
+/** True when the OS/browser offers its own share sheet (mobile, Edge, Safari). */
+export function nativeShareAvailable() {
+  return typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+}
+
+/**
+ * Targets for our own sheet, used when the platform has none of its own.
+ *
+ * Electron does not expose navigator.share, and Windows has no Electron API for
+ * the native Share charm, so the desktop app silently degraded to a clipboard
+ * copy — the user pressed Share and appeared to get nothing. These are plain
+ * https/mailto links, which main.cjs already opens in the system browser, so
+ * one implementation covers desktop and web.
+ */
+export function shareTargets(payload = buildShareText()) {
+  const url = encodeURIComponent(payload.url)
+  const text = encodeURIComponent(payload.text)
+  const both = encodeURIComponent(payload.clipboard)
+  const title = encodeURIComponent(payload.title)
+  return [
+    { id: 'whatsapp', label: 'WhatsApp', href: `https://wa.me/?text=${both}` },
+    { id: 'telegram', label: 'Telegram', href: `https://t.me/share/url?url=${url}&text=${text}` },
+    { id: 'x', label: 'X', href: `https://twitter.com/intent/tweet?text=${text}&url=${url}` },
+    { id: 'linkedin', label: 'LinkedIn', href: `https://www.linkedin.com/sharing/share-offsite/?url=${url}` },
+    { id: 'reddit', label: 'Reddit', href: `https://www.reddit.com/submit?url=${url}&title=${title}` },
+    { id: 'email', label: 'Email', href: `mailto:?subject=${title}&body=${both}` },
+  ]
+}
