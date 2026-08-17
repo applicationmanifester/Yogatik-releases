@@ -71,6 +71,7 @@ import { processManagerTool } from './processManager'
 import { fileDialogTool } from './fileDialog'
 import { todoTool } from './todo'
 import { financeTool } from './finance'
+import { marketDataTool } from './marketData'
 import {
   gitStatusTool, gitLogTool, gitDiffTool,
   procStartTool, procOutputTool, procStopTool, procListTool, watchTool,
@@ -247,6 +248,7 @@ const ALL_TOOLS = {
   terminal_run: terminalRunTool,
   todo: todoTool,
   finance_analytics: financeTool,
+  market_data: marketDataTool,
   // MCP: use resources & prompt templates published by connected servers.
   mcp_resource: mcpResourceTool,
   mcp_prompt: mcpPromptTool,
