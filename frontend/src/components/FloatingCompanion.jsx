@@ -47,6 +47,10 @@ import {
   isDocumentPipSupported,
 } from '../pipCompanion'
 import { describeWithoutModel } from '../vision/source'
+import {
+  contextChanged, shouldObserve, shouldSpeak, buildObservationPrompt,
+  OBSERVE_INTERVAL_MS,
+} from '../companionAwareness'
 
 // ─── Simple In-Companion Markdown & Code Block Formatter ────────────────────
 function CompanionMessageContent({ content }) {
@@ -211,8 +215,16 @@ export function FloatingCompanion({
   const [speechEnabled, setSpeechEnabled] = useState(false)
   const [isCompact, setIsCompact] = useState(false)
   const [opacityLevel, setOpacityLevel] = useState(0.96) // 0.96 (Solid), 0.85 (Frosted), 0.72 (Translucent)
-  const [categoryFilter, setCategoryFilter] = useState('all') // 'all' | 'code' | 'write' | 'data' | 'autopilot'
+  // null = follow whatever the active window suggests. Showing all twelve
+  // actions at once put more chrome above the chat than the chat itself had,
+  // and the component already knows which category fits — using that beats
+  // making the user filter by hand. An explicit tab click pins it.
+  const [categoryFilter, setCategoryFilter] = useState(null) // null (auto) | 'all' | 'code' | 'write' | 'data' | 'autopilot'
   const [monitoredApp, setMonitoredApp] = useState({ appName: activeApp, title: activeTitle })
+  // Ambient awareness. Off by default: it spends tokens and interrupts, so it
+  // is something the user turns on, not something that happens to them.
+  const [ambient, setAmbient] = useState(false)
+  const ambientRef = useRef({ lastObservedAt: 0, lastSpokeAt: 0, spokenCount: 0, seen: null, seenAt: 0 })
   const [copiedId, setCopiedId] = useState(null)
   const [ocrLoading, setOcrLoading] = useState(false)
   const [ocrText, setOcrText] = useState(null)
@@ -411,6 +423,47 @@ export function FloatingCompanion({
     onSendPrompt?.(`${prefix}${actionPrompt}`, imgPayload)
   }
 
+
+  // ── Ambient awareness ────────────────────────────────────────────────────
+  // Noticing is cheap and frequent (a window title); speaking is rare and has
+  // to clear every gate in companionAwareness. The prompt licenses silence and
+  // a SILENT reply is dropped by App before it reaches the transcript, so the
+  // common case costs one small call and says nothing.
+  useEffect(() => {
+    if (!ambient) return undefined
+    const id = setInterval(async () => {
+      const now = Date.now()
+      const st = ambientRef.current
+      if (!shouldObserve({ enabled: ambient, open: true, streaming: isStreaming, now, lastObservedAt: st.lastObservedAt })) return
+      st.lastObservedAt = now
+
+      const ctx = { appName: monitoredApp.appName, title: monitoredApp.title }
+      const changed = contextChanged(st.seen, ctx)
+      if (changed) { st.seen = ctx; st.seenAt = now; return }   // let it settle first
+
+      if (!shouldSpeak({
+        changed: !!st.seen && st.seenAt > (st.lastSpokeAt || 0),
+        settledMs: now - (st.seenAt || now),
+        streaming: isStreaming,
+        userTyping: !!input.trim(),
+        now,
+        lastSpokeAt: st.lastSpokeAt,
+        spokenCount: st.spokenCount,
+      })) return
+
+      st.lastSpokeAt = now
+      st.spokenCount += 1
+      let img = null
+      try {
+        const dataUrl = await handleCaptureScreen(true)
+        if (dataUrl) img = buildAttachment(dataUrl, screenMeta?.width, screenMeta?.height)
+      } catch { /* no screen source; the prompt still names the window */ }
+      onSendPrompt?.(buildObservationPrompt(ctx), img)
+    }, OBSERVE_INTERVAL_MS)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ambient, isStreaming, monitoredApp.appName, monitoredApp.title, input])
+
   const handleSubmit = async (e) => {
     e?.preventDefault()
     if (!input.trim() || isStreaming) return
@@ -476,9 +529,10 @@ export function FloatingCompanion({
     { cat: 'autopilot', label: 'Make Diagram', icon: <Layers size={11} />, prompt: 'Create a Mermaid flowchart diagram representing what is on my screen', color: '#8b5cf6' },
   ]
 
-  const filteredPills = categoryFilter === 'all'
+  const effectiveCategory = categoryFilter ?? detectedCategory
+  const filteredPills = effectiveCategory === 'all'
     ? quickActionPills
-    : quickActionPills.filter(p => p.cat === categoryFilter)
+    : quickActionPills.filter(p => p.cat === effectiveCategory)
 
   // -------------------------------------------------------------
   // Compact Mini Pill / Dock View
@@ -714,6 +768,30 @@ export function FloatingCompanion({
             {autoWatch ? 'Live Vision' : 'Manual'}
           </button>
 
+          {/* Ambient awareness. Opt-in on purpose: it spends tokens on a timer
+              and can interrupt, so the user turns it on rather than meeting it. */}
+          <button
+            onClick={() => setAmbient(v => !v)}
+            style={{
+              background: ambient ? 'color-mix(in srgb, var(--accent) 18%, transparent)' : 'color-mix(in srgb, var(--text-primary) 5%, transparent)',
+              border: `1px solid ${ambient ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'color-mix(in srgb, var(--text-primary) 10%, transparent)'}`,
+              borderRadius: 4,
+              color: ambient ? 'var(--accent)' : 'var(--text-secondary)',
+              fontSize: 10,
+              padding: '2px 6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3,
+            }}
+            title={ambient
+              ? 'Thinking ahead: watches what you switch to and speaks only when it has something useful'
+              : 'Let the companion notice context changes and speak up when useful'}
+          >
+            <Zap size={10} />
+            {ambient ? 'Thinking ahead' : 'Reactive'}
+          </button>
+
           {/* Manual Snapshot Scan */}
           <button
             onClick={() => handleCaptureScreen(false)}
@@ -856,9 +934,9 @@ export function FloatingCompanion({
             key={cat}
             onClick={() => setCategoryFilter(cat)}
             style={{
-              background: categoryFilter === cat ? 'color-mix(in srgb, var(--accent) 20%, transparent)' : 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
-              border: `1px solid ${categoryFilter === cat ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'color-mix(in srgb, var(--text-primary) 8%, transparent)'}`,
-              color: categoryFilter === cat ? 'var(--accent)' : 'var(--text-secondary)',
+              background: effectiveCategory === cat ? 'color-mix(in srgb, var(--accent) 20%, transparent)' : 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
+              border: `1px solid ${effectiveCategory === cat ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'color-mix(in srgb, var(--text-primary) 8%, transparent)'}`,
+              color: effectiveCategory === cat ? 'var(--accent)' : 'var(--text-secondary)',
               borderRadius: 12,
               fontSize: 10,
               fontWeight: 600,

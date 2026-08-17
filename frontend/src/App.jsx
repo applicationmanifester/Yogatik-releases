@@ -2338,7 +2338,10 @@ export default function App() {
         onPopOutPip={handlePopOutPip}
         onNewChat={newChat}
         onSendPrompt={(p, img) => {
-          setInput(p)
+          // An ambient observation is not something the user typed, so it must
+          // not land in the composer — otherwise their half-written question is
+          // overwritten by the companion thinking to itself.
+          if (!p.startsWith('[Ambient check')) setInput(p)
           sendRef.current?.(p, img)
         }}
         isStreaming={isStreamingHere}
@@ -2360,7 +2363,9 @@ export default function App() {
           }}
           onNewChat={newChat}
           onSendPrompt={(p, img) => {
-            setInput(p)
+            // See the note on the other companion mount: an ambient observation
+            // must not overwrite what the user is part-way through typing.
+            if (!p.startsWith('[Ambient check')) setInput(p)
             sendRef.current?.(p, img)
           }}
           isStreaming={isStreamingHere}
