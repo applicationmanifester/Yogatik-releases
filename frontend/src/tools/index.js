@@ -70,6 +70,7 @@ import { systemStateTool } from './systemState'
 import { processManagerTool } from './processManager'
 import { fileDialogTool } from './fileDialog'
 import { todoTool } from './todo'
+import { financeTool } from './finance'
 import {
   gitStatusTool, gitLogTool, gitDiffTool,
   procStartTool, procOutputTool, procStopTool, procListTool, watchTool,
@@ -245,6 +246,7 @@ const ALL_TOOLS = {
   fs_undo: fsUndoTool,
   terminal_run: terminalRunTool,
   todo: todoTool,
+  finance_analytics: financeTool,
   // MCP: use resources & prompt templates published by connected servers.
   mcp_resource: mcpResourceTool,
   mcp_prompt: mcpPromptTool,
