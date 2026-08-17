@@ -74,8 +74,31 @@ function retryAfterMs(resp, cap = 4000) {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
+/**
+ * Desktop reads the open web DIRECTLY.
+ *
+ * The Electron main process now strips CORS for every host (see
+ * electron/cors.cjs), so there is no reason to bounce a public page through a
+ * relay: direct gives the real bytes, full status codes and no shared rate
+ * limit, while relays return markdown (jina), rewrite content, or 429 because
+ * thousands of users share their egress IP. Relays remain the fallback for the
+ * browser build and for anything the direct attempt cannot reach.
+ */
+const isElectron = typeof window !== 'undefined' && !!window.__YOGATIK_ELECTRON__
+
 export async function proxyFetch(url, { credentials = false, ...init } = {}) {
   const signal = init.signal ?? ambientSignal()
+
+  if (isElectron) {
+    try {
+      const resp = await fetch(url, { ...init, signal, redirect: 'follow' })
+      if (resp.ok) return resp
+      // A real 4xx/5xx from the site itself is the honest answer for most
+      // statuses; only bot-walls and rate limits are worth a relay retry from a
+      // different egress IP.
+      if (![403, 429, 451, 503].includes(resp.status)) return resp
+    } catch { /* offline, DNS failure, or the site refused — fall through */ }
+  }
   // The host beat every relay including ours a moment ago; skip the whole
   // cascade rather than reprint the same four failures.
   if (hostBlocked(url)) {
