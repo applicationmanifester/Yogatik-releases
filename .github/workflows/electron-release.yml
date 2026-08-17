@@ -35,6 +35,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.name }}
 
+    env:
+      # Publishing to the public mirror needs a PAT; GITHUB_TOKEN cannot write
+      # to another repository. Absent = build and upload artefacts, skip publish.
+      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -76,11 +81,21 @@ jobs:
             frontend/release-electron/*.blockmap
             frontend/release-electron/latest*.yml
 
-      # All three runners publish into the SAME release, so one tag carries
-      # Windows, macOS and Linux downloads.
-      - name: Publish to Release
+      # All three runners publish into the SAME release on the PUBLIC MIRROR
+      # repo. The source repo is private, and GitHub release assets on a private
+      # repo need an authenticated account — a public download link cannot work
+      # against it. The mirror holds binaries only, so the source stays private
+      # while downloads stay free and unmetered.
+      #
+      # Requires a secret RELEASE_TOKEN: a fine-grained PAT with Contents:
+      # read-write on applicationmanifester/yogatik-releases. The built-in
+      # GITHUB_TOKEN cannot write to another repository.
+      - name: Publish to public mirror Release
+        if: env.RELEASE_TOKEN != ''
         uses: softprops/action-gh-release@v2
         with:
+          repository: applicationmanifester/yogatik-releases
+          token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-latest' }}
           name: 'Yogatik Desktop ${{ github.ref_type == ''tag'' && github.ref_name || ''(latest)'' }}'
           body: |
@@ -105,4 +120,12 @@ jobs:
             frontend/release-electron/*.blockmap
             frontend/release-electron/latest*.yml
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Warn when the mirror token is missing
+        if: env.RELEASE_TOKEN == ''
+        run: |
+          echo "::warning::RELEASE_TOKEN is not set, so nothing was published."
+          echo "Binaries are still attached to this run as artefacts."
+          echo "Add a fine-grained PAT with Contents: read-write on"
+          echo "applicationmanifester/yogatik-releases as the RELEASE_TOKEN secret."
