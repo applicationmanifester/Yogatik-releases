@@ -25,6 +25,16 @@ function AdModal({ onClose }) {
     return () => clearTimeout(t)
   }, [countdown])
 
+  // Return to the chat by itself once the time is up. Leaving a "Continue"
+  // button as the only way out charged the user a click for an ad they had
+  // already sat through — and when the slot never fills, that click is the
+  // only thing the modal ever actually did.
+  useEffect(() => {
+    if (countdown > 0) return
+    const t = setTimeout(() => onClose?.(), 200)
+    return () => clearTimeout(t)
+  }, [countdown, onClose])
+
   // Nothing to show without a real slot. Guard sits after the hooks so the
   // hook order stays identical on every render.
   if (!adsConfigured) return null

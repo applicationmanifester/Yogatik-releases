@@ -1536,7 +1536,7 @@ export default function App() {
       setErrorModalMsg(
         `🔑 API Key Required for ${models[useProvider]?.name || useProvider}\n\n` +
         `To send messages using ${models[useProvider]?.name || useProvider}, please add your API key in the left sidebar.\n\n` +
-        `👉 Click "get free key" in the sidebar to claim a free key in seconds, paste it into the API Key field, and click "+ Add Key"!`
+        `👉 Click "get the key" in the sidebar to get a key in seconds, paste it into the API Key field, and click "+ Add Key"!`
       )
       setSidebarOpen(true)
       setSettingsOpen(true)
@@ -1823,7 +1823,12 @@ export default function App() {
         delete traceMapRef.current[targetClientId]
         getTodayUsage().then(setUsage).catch(() => {})
         chatCountRef.current++
-        if (adsConfigured && chatCountRef.current % 10 === 0) setShowAd(true)
+        // Never on desktop. The Electron shell loads the app with loadFile(),
+        // so it runs from file:// — no domain for AdSense to match against the
+        // approved site, no referrer, and serving there is against its policy.
+        // The slot can never fill, so the gate was pure friction: a blocking
+        // wait and an empty box, earning nothing.
+        if (adsConfigured && !isDesktop() && chatCountRef.current % 10 === 0) setShowAd(true)
       },
       (err) => {
         setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
@@ -2546,7 +2551,7 @@ export default function App() {
               onReady={(m) => { chooseModel(m, 'local'); refreshModels() }} />
           ) : (
             <>
-              <label>API Key {models[conv?.provider || provider]?.key_url && <a href={models[conv?.provider || provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get free key)</a>}</label>
+              <label>API Key {models[conv?.provider || provider]?.key_url && <a href={models[conv?.provider || provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get the key)</a>}</label>
               {keyInfo[conv?.provider || provider]?.saved ? (
             <div className="key-saved">
               <div className="key-saved-row">

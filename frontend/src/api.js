@@ -276,7 +276,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
   const provDef = getLLMProviders()[provider]
   const isKeyless = provDef?.isLocal || provDef?.noKey || provDef?.isOllama || provider === 'ollama' || provider === 'local'
   if (!apiKey && !isKeyless) {
-    onError?.(`No API key for ${provDef?.name || provider}. Open Settings and add one${provDef?.keyUrl ? ` — free key at ${provDef.keyUrl}` : ''}.`)
+    onError?.(`No API key for ${provDef?.name || provider}. Open Settings and add one${provDef?.keyUrl ? ` — get a key at ${provDef.keyUrl}` : ''}.`)
     return
   }
 

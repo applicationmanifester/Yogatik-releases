@@ -6,7 +6,7 @@
 
 const PROVIDERS = {
   nvidia: {
-    name: 'NVIDIA (Free)',
+    name: 'NVIDIA',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     models: [
       // Chat / Instruct models
@@ -150,7 +150,7 @@ const PROVIDERS = {
     keyUrl: 'https://ollama.com/download',
   },
   gemini: {
-    name: 'Gemini (Free)',
+    name: 'Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     models: [],
     default: '',
@@ -158,7 +158,7 @@ const PROVIDERS = {
     keyUrl: 'https://aistudio.google.com/apikey',
   },
   groq: {
-    name: 'Groq (Free)',
+    name: 'Groq',
     baseUrl: 'https://api.groq.com/openai/v1',
     models: [],
     default: '',
