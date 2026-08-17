@@ -39,6 +39,10 @@
     .dl{display:block;text-align:center;background:var(--brand);color:#fff;font-weight:700;font-size:14.5px;padding:11px;border-radius:10px;transition:.2s}
     .dl:hover{background:var(--brand2)}
     .dl.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+    /* A build that is not published yet. Reads as deliberately pending rather
+       than broken — the alternative was a button that 404s. */
+    .dl.dl-unavailable{background:transparent;border:1px dashed var(--line);color:var(--muted);cursor:not-allowed}
+    .dl.dl-unavailable:hover{background:transparent}
     .dl.ghost:hover{border-color:var(--brand)}
     .soon{position:absolute;top:16px;right:16px;font-size:10.5px;font-weight:700;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
     .note{font-size:12.5px;color:var(--muted);margin-top:10px}
@@ -99,8 +103,16 @@
             macOS
           </div>
           <div class="sub">Universal (Apple Silicon &amp; Intel)</div>
-          <a class="dl" id="mac-dl" href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/Yogatik.dmg">Download for macOS</a>
-          <div class="note">Unsigned build — right-click the app and choose <b>Open</b> the first time.</div>
+          <!-- Starts UNAVAILABLE and is enabled only once the release really
+               contains the .dmg. Defaulting to a live link promised a download
+               that 404s, and the failure mode matters: if the API call cannot
+               run (offline, or GitHub's 60/hr anonymous limit on a public page)
+               the page must fall back to the truth, not to a broken promise. -->
+          <a class="dl dl-unavailable" id="mac-dl" aria-disabled="true"
+             data-href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/Yogatik.dmg"
+             data-label="Download for macOS"
+             data-note="Unsigned build — right-click the app and choose <b>Open</b> the first time.">Build coming soon</a>
+          <div class="note">Not published yet — track it on the <a href="https://github.com/applicationmanifester/Yogatik-releases/releases" style="color:inherit">releases page</a>.</div>
         </div>
 
         <div class="card">
@@ -109,8 +121,11 @@
             Linux
           </div>
           <div class="sub">AppImage &amp; .deb</div>
-          <a class="dl" id="linux-dl" href="https://github.com/applicationmanifester/Yogatik-releases/releases">Download for Linux</a>
-          <div class="note">Pick the <b>.AppImage</b> (chmod +x, then run) or <b>.deb</b> from the release assets.</div>
+          <a class="dl dl-unavailable" id="linux-dl" aria-disabled="true"
+             data-href="https://github.com/applicationmanifester/Yogatik-releases/releases"
+             data-label="Download for Linux"
+             data-note="Pick the <b>.AppImage</b> (chmod +x, then run) or <b>.deb</b> from the release assets.">Build coming soon</a>
+          <div class="note">Not published yet — track it on the <a href="https://github.com/applicationmanifester/Yogatik-releases/releases" style="color:inherit">releases page</a>.</div>
         </div>
       </div>
 
@@ -178,15 +193,77 @@
       var exe = 'https://github.com/' + repo + '/releases/latest/download/Yogatik-Setup.exe';
       b.setAttribute('href', exe);
 
-      // Auto-start the download for Windows visitors, once per browser.
-      var isWin = /Windows/i.test(navigator.userAgent);
-      if (isWin && !localStorage.getItem('yogatik_autodl')) {
+      // Ask the release what it ACTUALLY contains before offering anything.
+      // The three cards advertise Windows, macOS and Linux, but macOS and Linux
+      // cannot be cross-compiled and only appear once CI publishes them — so a
+      // static link hands those visitors a 404, which is the whole failure this
+      // page exists to avoid. Driven by the live asset list, the cards light up
+      // by themselves when the builds land; no edit here, nothing to forget.
+      var WANT = {
+        'win-dl': ['Yogatik-Setup.exe'],
+        'mac-dl': ['Yogatik.dmg'],
+        'linux-dl': ['Yogatik.AppImage', 'Yogatik.deb'],
+      };
+
+      function startWinDownload() {
+        if (!/Windows/i.test(navigator.userAgent)) return;
+        if (localStorage.getItem('yogatik_autodl')) return;
         localStorage.setItem('yogatik_autodl', '1');
         var a = document.createElement('a');
         a.href = exe; a.download = 'Yogatik-Setup.exe';
         document.body.appendChild(a);
         setTimeout(function () { a.click(); a.remove(); }, 800);
       }
+
+      fetch('https://api.github.com/repos/' + repo + '/releases/latest', {
+        headers: { Accept: 'application/vnd.github+json' },
+      })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (rel) {
+          var have = {};
+          (rel.assets || []).forEach(function (as) { have[as.name] = true; });
+
+          Object.keys(WANT).forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var ready = WANT[id].some(function (n) { return have[n]; });
+            var note = el.parentNode.querySelector('.note');
+
+            if (ready) {
+              // Promote a pending card once its asset actually exists. This is
+              // what makes the page self-maintaining: publish the mac/Linux
+              // builds and they appear here with no edit to this file.
+              if (!el.classList.contains('dl-unavailable')) return;
+              el.classList.remove('dl-unavailable');
+              el.removeAttribute('aria-disabled');
+              if (el.getAttribute('data-href')) el.setAttribute('href', el.getAttribute('data-href'));
+              if (el.getAttribute('data-label')) el.textContent = el.getAttribute('data-label');
+              if (note && el.getAttribute('data-note')) note.innerHTML = el.getAttribute('data-note');
+              return;
+            }
+
+            // Withdraw a card whose asset has gone (a pulled or retagged release).
+            if (el.classList.contains('dl-unavailable')) return;
+            el.classList.add('dl-unavailable');
+            el.setAttribute('aria-disabled', 'true');
+            el.removeAttribute('href');
+            el.textContent = 'Build coming soon';
+            if (note) {
+              note.innerHTML = 'Not published yet — see the ' +
+                '<a href="https://github.com/' + repo + '/releases" style="color:inherit">releases page</a>.';
+            }
+          });
+
+          // Only auto-download once the installer is confirmed present.
+          if (have['Yogatik-Setup.exe']) startWinDownload();
+        })
+        .catch(function () {
+          // Offline, rate-limited, or the API is unreachable. Cards keep their
+          // authored state, which is now the SAFE one: Windows live (that asset
+          // is known to exist), mac and Linux pending. The page degrades to the
+          // truth instead of promising a download it cannot confirm.
+          startWinDownload();
+        });
     })();
 
     // Reset the once-per-browser guard if the user explicitly clicks the button.
