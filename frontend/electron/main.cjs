@@ -21,6 +21,7 @@ const { registerSubAgentIPC } = require('./subAgentRunner.cjs')
 const { registerProcessIpc, killAll } = require('./processes.cjs')
 const { registerGitIpc } = require('./git.cjs')
 const { registerWatcherIpc, stopAll: stopWatchers } = require('./watcher.cjs')
+const { registerMcpStdioIpc, stopAll: stopMcpStdio } = require('./mcpStdio.cjs')
 const windowState = require('./windowState.cjs')
 
 const isDev = !app.isPackaged
@@ -163,6 +164,7 @@ if (!gotLock) {
     registerProcessIpc({ rootPathsFor, resolvePath, getTrustState: () => ({ trustedHookRoots: [] }) })
     registerGitIpc({ rootPathsFor })
     registerWatcherIpc({ rootPathsFor })
+    registerMcpStdioIpc()
     registerNotifications(getWindow)
     registerSchedulerIPC({ getWindow })
     registerSubAgentIPC()
@@ -277,6 +279,7 @@ if (!gotLock) {
     stopScheduler()  // Stop the cron daemon gracefully
     killAll()        // never orphan a background process on quit
     stopWatchers()
+    stopMcpStdio()
     if (searchSidecar) {
       searchSidecar.kill()
     }

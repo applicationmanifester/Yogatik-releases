@@ -31,24 +31,33 @@ export const spawnAgentsTool = {
             required: ['agent', 'task'],
           },
         },
+        isolate_workspace: {
+          type: 'boolean',
+          description: 'Give each sub-agent its OWN working-folder binding so parallel agents cannot overwrite one another’s files. Off by default; an isolated agent starts with no folders until one is bound to it.',
+        },
       },
       required: ['tasks'],
     },
   },
 
-  async execute({ tasks }) {
+  async execute({ tasks, isolate_workspace: isolateWorkspace = false }) {
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return { success: false, error: 'Provide a non-empty tasks array.' }
     }
-    const [{ streamMessage }, { getAgentById }, { getToolNames }] = await Promise.all([
+    const [{ streamMessage }, { getAgentById }, { getToolNames }, isolation, localFs] = await Promise.all([
       import('../api'), import('../agents'), import('./index'),
+      import('../agentIsolation'), import('./localFs'),
     ])
     const allNames = getToolNames()
 
-    const runOne = async ({ agent, task }) => {
+    const parentId = localFs.getWorkspaceCtx()?.conversationId ?? 'chat'
+    const plan = isolation.planIsolation(parentId, tasks.map(t => t.agent), { isolate: !!isolateWorkspace })
+
+    const runOne = async ({ agent, task }, index) => {
       const def = (await getAgentById(agent)) || null
       // Scope tools to the agent's allowlist and forbid re-delegation.
-      const disabled = new Set(['spawn_agents'])
+      const slot = plan[index] || { conversationId: parentId, isolated: false }
+      const disabled = new Set(isolation.mergeIsolatedDisabled([], { isolated: slot.isolated }))
       if (def?.tools?.length) {
         const allow = new Set(def.tools)
         for (const n of allNames) if (!allow.has(n)) disabled.add(n)
@@ -67,6 +76,7 @@ export const spawnAgentsTool = {
             disabledTools: [...disabled],
             agent_override: def || undefined,
             channel: `subagent-${Math.random().toString(36).slice(2, 8)}`,
+            workspace_id: slot.conversationId,
           },
           (t) => { text += t },
           null,
@@ -84,7 +94,9 @@ export const spawnAgentsTool = {
     const results = []
     for (let i = 0; i < tasks.length; i += MAX_PARALLEL) {
       const batch = tasks.slice(i, i + MAX_PARALLEL)
-      results.push(...await Promise.all(batch.map(runOne)))
+      // Pass the GLOBAL index: batch.map's own index restarts at 0 each batch,
+      // which would give every batch after the first the wrong isolation slot.
+      results.push(...await Promise.all(batch.map((t, j) => runOne(t, i + j))))
     }
 
     return {

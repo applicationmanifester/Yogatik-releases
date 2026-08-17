@@ -14,6 +14,7 @@ const FS_COMMANDS = new Set([
   'hooks_run', 'hooks_list',
   'git_run', 'git_status', 'git_log', 'git_diff',
   'watch_start', 'watch_stop', 'watch_changes',
+  'mcp_stdio_start', 'mcp_stdio_call', 'mcp_stdio_stop', 'mcp_stdio_list',
 ])
 
 function invoke(cmd, args) {
