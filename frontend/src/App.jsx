@@ -54,6 +54,7 @@ import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clear
 import { isDirectTimeQuery } from './timeQuery'
 import { isInstalledApp, shareYogatik } from './share'
 import { groupConversations } from './convGroups'
+import { shouldNotifyTurn, notificationBody, notificationTitle, cleanReply } from './desktopNotify'
 import { setPermissionPrompt } from './permissions'
 import PermissionPrompt from './components/PermissionPrompt'
 
@@ -1754,6 +1755,28 @@ export default function App() {
         setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
         setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
         setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+
+        // Tell the user their answer arrived if they looked away. The desktop
+        // shell has supported rich notifications since v3.13 and nothing ever
+        // called them, so a long question answered into an unfocused window
+        // produced no signal at all. hasReply puts an inline box on the
+        // notification, so they can carry on without switching back.
+        try {
+          if (shouldNotifyTurn({
+            isDesktop: isDesktop(),
+            hidden: typeof document !== 'undefined' && document.hidden,
+            focused: typeof document !== 'undefined' && document.hasFocus(),
+            aborted: !!meta?.aborted,
+            error: meta?.error,
+            hasText: !!content.trim(),
+          }) && typeof window.__YOGATIK_NOTIFY__ === 'function') {
+            window.__YOGATIK_NOTIFY__({
+              title: notificationTitle(conversationsRef.current?.[activeIdxRef.current]?.title),
+              body: notificationBody(content),
+              hasReply: true,
+            })
+          }
+        } catch { /* notifications are a courtesy; never break a finished turn */ }
         if (!content.trim() && meta?.aborted) {
           setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
           setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
@@ -1919,6 +1942,19 @@ export default function App() {
 
   const sendRef = useRef(send)
   sendRef.current = send  // always current — no useEffect lag
+
+  // Inline reply typed into the OS notification. main.cjs relays it as
+  // 'notification-action'; nothing listened before, so the reply box the
+  // notification offered went nowhere. Goes through sendRef for the same
+  // reason every other deferred caller does: `send` is recreated each render.
+  useEffect(() => {
+    const bridge = window.__YOGATIK_NOTIFY_ACTIONS__
+    if (!bridge?.on) return undefined
+    return bridge.on((payload) => {
+      const text = cleanReply(payload?.reply)
+      if (text) sendRef.current?.(text)
+    })
+  }, [])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && (!e.shiftKey || e.ctrlKey || e.metaKey)) {
