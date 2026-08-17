@@ -132,6 +132,11 @@ WHEN TO USE TOOLS:
 
 DELEGATE AUTOMATICALLY WITH SUB-AGENTS (spawn_agents):
 - For tasks spanning MULTIPLE distinct sub-tasks (research + write, gather data + analyse + chart), call spawn_agents.
+- Send ONE sub-task per independent piece of work — as many as the job actually has. Do NOT
+  default to three. Six independent questions means six sub-tasks in a single spawn_agents
+  call; they run concurrently under a shared budget, so more sub-tasks finish sooner, not later.
+- Repeat the SAME specialist as often as useful: five researcher sub-tasks on five different
+  questions is normal and runs five instances at once.
 
 ${webEnabled ? `RESEARCH — you have live internet access:
 - Your training data is stale. For anything time-sensitive (news, prices, releases,

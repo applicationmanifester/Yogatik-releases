@@ -10,11 +10,37 @@ import { bitrateForQuality } from './edit'
  * (a 60s video takes 60s) and produces WebM, so it is only used where WebCodecs
  * is missing.
  *
- * The muxer is pulled from esm.run for the same reason WebLLM is: it keeps a
+ * The muxer is a real dependency (was esm.run-only, which broke rendering offline). It keeps a
  * dependency out of the bundle for the users who never render a video.
  */
 
 const MUXER_CDN = 'https://esm.run/mp4-muxer@5.2.2'
+
+/**
+ * Load the MP4 muxer.
+ *
+ * It used to come ONLY from esm.run at render time, which made video rendering
+ * silently depend on a live CDN fetch — offline, or from the packaged app's
+ * file:// origin, the import failed, the WebCodecs path threw, and rendering
+ * fell back to realtime MediaRecorder or failed outright. mp4-muxer is now a
+ * real dependency (MIT, ~50KB) and is lazily imported so it still code-splits
+ * out of the main bundle. The CDN stays as a fallback for the rare case where
+ * the local copy is unavailable.
+ */
+async function loadMuxer() {
+  try {
+    return await import('mp4-muxer')
+  } catch (localErr) {
+    try {
+      return await import(/* @vite-ignore */ MUXER_CDN)
+    } catch {
+      throw new Error(
+        'Could not load the MP4 muxer. The bundled copy failed (' +
+        (localErr?.message || 'unknown') + ') and the CDN fallback is unreachable — ' +
+        'check your connection, or the video will fall back to a lower-quality path.')
+    }
+  }
+}
 
 // Ordered by quality; the first one the hardware admits to supporting wins.
 const H264_CANDIDATES = ['avc1.640028', 'avc1.4D0028', 'avc1.42E01F', 'avc1.42001F']
@@ -143,7 +169,7 @@ export async function encodeVideo({ canvas, drawFrame, totalFrames, fps, audio, 
 }
 
 async function encodeWithWebCodecs({ canvas, drawFrame, totalFrames, fps, audio, onProgress, signal, quality }) {
-  const { Muxer, ArrayBufferTarget } = await import(/* @vite-ignore */ MUXER_CDN)
+  const { Muxer, ArrayBufferTarget } = await loadMuxer()
   const width = canvas.width
   const height = canvas.height
 

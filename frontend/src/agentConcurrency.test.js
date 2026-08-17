@@ -67,3 +67,33 @@ describe('multiple agent instances at once', () => {
     expect(startOrder.length).toBe(4)
   })
 })
+
+describe('no hidden cap at 3', () => {
+  beforeEach(() => { _resetAgentPool() })
+
+  // The user reported "never more than 3 at a time". The pool itself does not
+  // cap at 3 — auto concurrency is one slot per task, up to the ceiling.
+  it('runs 10 sub-tasks with 10 running at once', async () => {
+    _resetAgentPool()
+    let running = 0, peak = 0
+    const tasks = Array.from({ length: 10 }, (_, i) => i)
+    await runAgentPool(tasks, async () => {
+      running++; peak = Math.max(peak, running)
+      await wait(25)
+      running--
+    })
+    expect(peak).toBe(10)
+  })
+
+  it('runs 16 at once — the documented ceiling', async () => {
+    _resetAgentPool()
+    let running = 0, peak = 0
+    await runAgentPool(Array.from({ length: 16 }, (_, i) => i), async () => {
+      running++; peak = Math.max(peak, running)
+      await wait(20)
+      running--
+    })
+    expect(peak).toBe(16)
+    expect(peak).toBe(MAX_CONCURRENCY)
+  })
+})
