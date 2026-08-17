@@ -16,6 +16,8 @@ import {
   riskParityWeights, riskContributions, efficientFrontier, beta,
   portfolioReturn, portfolioVolatility,
 } from '../portfolio'
+import { sma, ema, rsi, macd, bollinger, atr, stochastic, crossoverSignal } from '../indicators'
+import { backtest, versusBuyHold, holdSignal } from '../backtest'
 
 function fail(e) { return { success: false, error: typeof e === 'string' ? e : (e?.message || String(e)) } }
 const pct = (x) => (x == null ? null : `${(x * 100).toFixed(2)}%`)
@@ -33,7 +35,7 @@ export const financeTool = {
       properties: {
         operation: {
           type: 'string',
-          description: 'One of: dcf | npv | irr | cagr | analyze | var | option | implied_vol | portfolio | beta',
+          description: 'One of: dcf | npv | irr | cagr | analyze | var | option | implied_vol | portfolio | beta | indicators | backtest',
         },
         cashflows: {
           type: 'array',
@@ -74,6 +76,17 @@ export const financeTool = {
         },
         long_only: { type: 'boolean', description: 'For "portfolio": forbid short positions.' },
         benchmark: { type: 'array', items: { type: 'number' }, description: 'Benchmark returns — for "beta".' },
+        highs: { type: 'array', items: { type: 'number' }, description: 'High prices — needed for atr/stochastic.' },
+        lows: { type: 'array', items: { type: 'number' }, description: 'Low prices — needed for atr/stochastic.' },
+        period: { type: 'number', description: 'Indicator lookback (default 14 for rsi/atr, 20 for sma/bollinger).' },
+        strategy: {
+          type: 'string',
+          description: 'For "backtest": "sma_cross" (fast/slow moving-average crossover) or "rsi" (buy oversold, sell overbought).',
+        },
+        fast: { type: 'number', description: 'Fast period for sma_cross (default 10).' },
+        slow: { type: 'number', description: 'Slow period for sma_cross (default 30).' },
+        cost_bps: { type: 'number', description: 'Trading cost per position change, in basis points.' },
+        allow_short: { type: 'boolean', description: 'Allow short positions in a backtest (default true).' },
       },
       required: ['operation'],
     },
@@ -217,8 +230,74 @@ export const financeTool = {
             success: true, tool: 'finance_analytics', operation: 'beta',
             beta: beta(args.prices?.length ? returnsFromPrices(args.prices) : args.cashflows, args.benchmark),
           }
+        case 'indicators': {
+          const px = args.prices
+          if (!Array.isArray(px) || px.length < 2) return fail('Provide a prices array.')
+          const per = args.period
+          const out = {
+            success: true, tool: 'finance_analytics', operation: 'indicators',
+            observations: px.length,
+            sma: sma(px, per || 20),
+            ema: ema(px, per || 20),
+            rsi: rsi(px, per || 14),
+            macd: macd(px),
+            bollinger: bollinger(px, { period: per || 20 }),
+          }
+          if (Array.isArray(args.highs) && Array.isArray(args.lows)) {
+            out.atr = atr(args.highs, args.lows, px, per || 14)
+            out.stochastic = stochastic(args.highs, args.lows, px, { period: per || 14 })
+          }
+          const last = (a) => (Array.isArray(a) ? [...a].reverse().find(x => x != null) ?? null : null)
+          out.latest = {
+            price: px[px.length - 1],
+            sma: last(out.sma), ema: last(out.ema), rsi: last(out.rsi),
+            macd: last(out.macd.macd), macd_signal: last(out.macd.signal),
+          }
+          return out
+        }
+        case 'backtest': {
+          const px = args.prices
+          if (!Array.isArray(px) || px.length < 3) return fail('Provide a prices array with at least three points.')
+          const strat = String(args.strategy || 'sma_cross').toLowerCase()
+
+          let held
+          if (strat === 'rsi') {
+            const r = rsi(px, args.period || 14)
+            // Buy oversold, sell overbought, hold in between.
+            let pos = 0
+            held = r.map(v => {
+              if (v == null) return 0
+              if (v < 30) pos = 1
+              else if (v > 70) pos = -1
+              return pos
+            })
+          } else {
+            const f = sma(px, args.fast || 10)
+            const sl = sma(px, args.slow || 30)
+            held = holdSignal(crossoverSignal(f, sl))
+          }
+
+          const r = backtest(px, held, {
+            costBps: args.cost_bps ?? 0,
+            allowShort: args.allow_short !== false,
+          })
+          return {
+            success: true, tool: 'finance_analytics', operation: 'backtest',
+            strategy: strat,
+            ...r,
+            comparison: versusBuyHold(r),
+            formatted: {
+              strategy_return: pct(r.totalReturn),
+              buy_hold_return: pct(r.buyHoldReturn),
+              win_rate: r.winRate == null ? null : pct(r.winRate),
+              exposure: pct(r.exposure),
+            },
+            caveat: 'Signals are applied on the following bar, so there is no lookahead. ' +
+              'This is a historical simulation on one series and is not a prediction.',
+          }
+        }
         default:
-          return fail(`Unknown operation "${args.operation}". Use dcf, npv, irr, cagr, analyze, var, option, implied_vol, portfolio or beta.`)
+          return fail(`Unknown operation "${args.operation}". Use dcf, npv, irr, cagr, analyze, var, option, implied_vol, portfolio, beta, indicators or backtest.`)
       }
     } catch (e) {
       return fail(e)

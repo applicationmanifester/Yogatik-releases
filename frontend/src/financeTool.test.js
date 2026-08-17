@@ -58,3 +58,35 @@ describe('finance_analytics tool', () => {
     expect(r.error).toMatch(/below the discount rate/i)
   })
 })
+
+describe('finance_analytics — indicators and backtest', () => {
+  const trend = Array.from({ length: 80 }, (_, i) => 100 + i * 0.5 + Math.sin(i / 4) * 3)
+
+  it('computes indicators aligned to the price series', async () => {
+    const r = await financeTool.execute({ operation: 'indicators', prices: trend })
+    expect(r.success).toBe(true)
+    expect(r.sma).toHaveLength(trend.length)
+    expect(r.rsi).toHaveLength(trend.length)
+    expect(r.latest.price).toBe(trend[trend.length - 1])
+    expect(r.latest.rsi).toBeGreaterThan(0)
+  })
+
+  it('runs an sma_cross backtest and compares with buy-and-hold', async () => {
+    const r = await financeTool.execute({ operation: 'backtest', prices: trend, strategy: 'sma_cross' })
+    expect(r.success).toBe(true)
+    expect(r.equityCurve).toHaveLength(trend.length)
+    expect(r.comparison.buyHoldReturn).toBeGreaterThan(0)
+    expect(r.caveat).toMatch(/lookahead/i)
+  })
+
+  it('trading costs reduce the backtested return', async () => {
+    const free = await financeTool.execute({ operation: 'backtest', prices: trend, cost_bps: 0 })
+    const paid = await financeTool.execute({ operation: 'backtest', prices: trend, cost_bps: 100 })
+    expect(paid.totalReturn).toBeLessThanOrEqual(free.totalReturn)
+  })
+
+  it('refuses a series too short to backtest', async () => {
+    const r = await financeTool.execute({ operation: 'backtest', prices: [1, 2] })
+    expect(r.success).toBe(false)
+  })
+})
