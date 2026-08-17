@@ -22,14 +22,21 @@ function card(id) {
 }
 
 /** Load the page and run its inline scripts with a stubbed release. */
-async function render(assetNames, { failApi = false } = {}) {
+async function render(assetNames, { failApi = false, tag = 'v3.9.1', publishedAt = '2026-08-17T18:00:00Z' } = {}) {
   document.documentElement.innerHTML = PAGE_SRC
     .replace(/<!doctype html>/i, '')
     .replace(/<\/?html[^>]*>/gi, '')
 
   global.fetch = vi.fn(() => failApi
     ? Promise.reject(new TypeError('Failed to fetch'))
-    : Promise.resolve({ ok: true, json: () => Promise.resolve({ assets: assetNames.map(name => ({ name })) }) }))
+    : Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({
+        tag_name: tag,
+        published_at: publishedAt,
+        assets: assetNames.map(name => ({ name, size: /\.exe$/.test(name) ? 120874971 : 1024 })),
+      }),
+    }))
 
   // jsdom does not execute scripts injected via innerHTML; run them by hand.
   for (const tag of document.querySelectorAll('script')) {
@@ -89,5 +96,34 @@ describe('/platforms reflects what the release actually contains', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Windows NT 10.0', configurable: true })
     await render(['Yogatik.dmg'])
     expect(localStorage.getItem('yogatik_autodl')).toBeNull()
+  })
+})
+
+describe('/platforms shows the version it is actually serving', () => {
+  const meta = () => document.getElementById('release-meta')
+
+  it('shows the release tag and installer size', async () => {
+    await render(['Yogatik-Setup.exe'])
+    expect(meta().hidden).toBe(false)
+    expect(meta().textContent).toMatch(/Version\s*v3\.9\.1/)
+    expect(meta().textContent).toMatch(/115 MB/)   // 120874971 bytes
+  })
+
+  it('tracks whatever the release says, rather than a hardcoded number', async () => {
+    await render(['Yogatik-Setup.exe'], { tag: 'v4.2.0' })
+    expect(meta().textContent).toMatch(/v4\.2\.0/)
+  })
+
+  it('stays hidden when the release cannot be read', async () => {
+    // A wrong or stale version is worse than none on a download page.
+    await render([], { failApi: true })
+    expect(meta().hidden).toBe(true)
+  })
+
+  it('omits the date rather than printing an invalid one', async () => {
+    await render(['Yogatik-Setup.exe'], { publishedAt: null })
+    expect(meta().hidden).toBe(false)
+    expect(meta().textContent).toMatch(/v3\.9\.1/)
+    expect(meta().textContent).not.toMatch(/Invalid|NaN/)
   })
 })
