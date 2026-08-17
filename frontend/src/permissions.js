@@ -28,6 +28,18 @@ export const TOOL_RISK = {
   fs_move: 'write',
   fs_delete: 'destructive',
   terminal_run: 'destructive',
+  // proc_start spawns a shell exactly like terminal_run — the only difference
+  // is that it keeps running, which makes it MORE consequential, not less.
+  proc_start: 'destructive',
+  // Reading output, stopping a process you started, and read-only git are safe.
+  proc_output: 'read',
+  proc_stop: 'read',
+  proc_list: 'read',
+  git_status: 'read',
+  git_log: 'read',
+  git_diff: 'read',
+  watch: 'read',
+  fs_undo: 'write',
 }
 
 /** Unknown tools are 'read': this layer must not silently gate the other 80

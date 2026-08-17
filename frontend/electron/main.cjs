@@ -18,6 +18,9 @@ const { registerNotifications } = require('./notify.cjs')
 const { initAutoUpdate, checkForUpdates } = require('./updater.cjs')
 const { startScheduler, stopScheduler, registerSchedulerIPC } = require('./scheduler.cjs')
 const { registerSubAgentIPC } = require('./subAgentRunner.cjs')
+const { registerProcessIpc, killAll } = require('./processes.cjs')
+const { registerGitIpc } = require('./git.cjs')
+const { registerWatcherIpc, stopAll: stopWatchers } = require('./watcher.cjs')
 const windowState = require('./windowState.cjs')
 
 const isDev = !app.isPackaged
@@ -155,6 +158,11 @@ if (!gotLock) {
     // Undo journal for file mutations; lives beside the roots registry.
     initJournal(path.join(app.getPath('userData'), 'yogatik-journal'))
     registerFsBridge()
+    // Dev loop: background processes + hooks, git, file watching. All scoped to
+    // the calling chat's bound roots by the same resolver the fs tools use.
+    registerProcessIpc({ rootPathsFor, resolvePath, getTrustState: () => ({ trustedHookRoots: [] }) })
+    registerGitIpc({ rootPathsFor })
+    registerWatcherIpc({ rootPathsFor })
     registerNotifications(getWindow)
     registerSchedulerIPC({ getWindow })
     registerSubAgentIPC()
@@ -267,6 +275,8 @@ if (!gotLock) {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll()
     stopScheduler()  // Stop the cron daemon gracefully
+    killAll()        // never orphan a background process on quit
+    stopWatchers()
     if (searchSidecar) {
       searchSidecar.kill()
     }

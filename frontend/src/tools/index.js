@@ -63,6 +63,10 @@ import { requestPermission } from '../permissions'
 import { terminalRunTool } from './terminalRun'
 import { todoTool } from './todo'
 import {
+  gitStatusTool, gitLogTool, gitDiffTool,
+  procStartTool, procOutputTool, procStopTool, procListTool, watchTool,
+} from './devTools'
+import {
   uuidTool, passwordTool, numberBaseTool, cronTool, timezoneTool, thesaurusTool, countryTool,
 } from './moretools'
 import { spawnAgentsTool } from './spawnAgents'
@@ -148,6 +152,15 @@ const ALL_TOOLS = {
   fs_undo: fsUndoTool,
   terminal_run: terminalRunTool,
   todo: todoTool,
+  // Desktop dev loop: git, background processes, file watching.
+  git_status: gitStatusTool,
+  git_log: gitLogTool,
+  git_diff: gitDiffTool,
+  proc_start: procStartTool,
+  proc_output: procOutputTool,
+  proc_stop: procStopTool,
+  proc_list: procListTool,
+  watch: watchTool,
   // Open, keyless utilities + word/country data.
   uuid: uuidTool,
   password_generate: passwordTool,

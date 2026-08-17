@@ -10,6 +10,10 @@ const FS_COMMANDS = new Set([
   'fs_delete', 'fs_mkdir', 'fs_move',
   'roots_add', 'roots_list', 'roots_remove', 'roots_set_primary', 'roots_rebind',
   'journal_list', 'journal_revert',
+  'proc_start', 'proc_output', 'proc_stop', 'proc_list',
+  'hooks_run', 'hooks_list',
+  'git_run', 'git_status', 'git_log', 'git_diff',
+  'watch_start', 'watch_stop', 'watch_changes',
 ])
 
 function invoke(cmd, args) {
