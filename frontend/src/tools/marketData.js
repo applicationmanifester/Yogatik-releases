@@ -12,7 +12,8 @@
 
 import { proxyText, proxyJson } from './http'
 import {
-  parseStooqCsv, parseCoinbaseCandles, parseWorldBank, toStooqSymbol, lastN,
+  parseStooqCsv, parseCoinbaseCandles, parseWorldBank, parseYahooChart,
+  toStooqSymbol, lastN, YAHOO_RANGES,
   isBotChallenge,
 } from '../marketData'
 import { analyzeSeries } from '../finance'
@@ -25,7 +26,7 @@ export const marketDataTool = {
   schema: {
     description:
       'Fetch historical market prices or economic indicators without an API key. ' +
-      'Sources: Stooq (stocks, indices, FX), Coinbase (crypto) and the World Bank (economic data). ' +
+      'Sources: Yahoo Finance (stocks, indices, FX), Coinbase (crypto) and the World Bank (economic data). ' +
       'Returns a price series you can pass straight to finance_analytics for volatility, Sharpe, ' +
       'drawdown or portfolio work. Use this when you need real numbers rather than recalled ones.',
     parameters: {
@@ -37,7 +38,11 @@ export const marketDataTool = {
         },
         symbol: {
           type: 'string',
-          description: 'Ticker: AAPL, MSFT, ^spx, eurusd for stock; BTC-USD, ETH-USD for crypto.',
+          description: 'Ticker. Stocks: AAPL, MSFT; non-US needs a suffix (INFY.NS, BMW.DE); indices start with ^ (^GSPC, ^NSEI). Crypto: BTC-USD, ETH-USD.',
+        },
+        range: {
+          type: 'string',
+          description: 'History window for stocks: 1d, 5d, 1mo, 3mo, 6mo, 1y (default), 2y, 5y, 10y, ytd, max.',
         },
         indicator: {
           type: 'string',
@@ -57,25 +62,40 @@ export const marketDataTool = {
 
     try {
       if (kind === 'stock') {
-        if (!args.symbol) return fail('Provide a symbol, e.g. AAPL or ^spx.')
-        const sym = toStooqSymbol(args.symbol)
-        const csv = await proxyText(`https://stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&i=d`)
-        // Distinguish "bad ticker" from "we were served a bot check" — they
-        // need completely different actions from the user.
-        if (isBotChallenge(csv)) {
-          return fail('Stooq served a browser check instead of data, so no prices came back. ' +
-            'This usually happens from a datacenter or VPN connection. Try again on a normal ' +
-            'home connection, or use kind:"crypto" (Coinbase), which needs no such check.')
+        if (!args.symbol) return fail('Provide a symbol, e.g. AAPL, ^GSPC or INFY.NS.')
+        const sym = String(args.symbol).trim()
+        const range = YAHOO_RANGES.includes(String(args.range)) ? args.range : '1y'
+
+        // Yahoo first: keyless, real JSON, and it does NOT serve a browser
+        // check. Stooq is a fallback only — it answers datacenter and VPN
+        // connections with an HTML JavaScript challenge.
+        let s2 = null
+        try {
+          const json = await proxyJson(
+            `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}` +
+            `?range=${range}&interval=1d`)
+          s2 = parseYahooChart(json, sym)
+        } catch { s2 = null }
+
+        if (!s2 || !s2.observations) {
+          try {
+            const csv = await proxyText(`https://stooq.com/q/d/l/?s=${encodeURIComponent(toStooqSymbol(sym))}&i=d`)
+            if (!isBotChallenge(csv)) {
+              const alt = parseStooqCsv(csv, sym)
+              if (alt.observations) s2 = alt
+            }
+          } catch { /* fallback unavailable too */ }
         }
-        let s = parseStooqCsv(csv, args.symbol)
-        if (!s.observations) {
-          return fail(`No data for "${args.symbol}" (tried Stooq symbol "${sym}"). ` +
-            'US tickers need no suffix here, but other markets do — try e.g. bmw.de, or ^spx for an index.')
+
+        if (!s2 || !s2.observations) {
+          return fail(`No price data for "${sym}". Yahoo returned nothing and the Stooq fallback ` +
+            'was unavailable. Check the ticker — non-US markets need a suffix (INFY.NS, BMW.DE) ' +
+            'and indices start with ^ (^GSPC, ^NSEI).')
         }
-        if (args.limit) s = lastN(s, args.limit)
+        if (args.limit) s2 = lastN(s2, args.limit)
         return {
-          success: true, tool: 'market_data', ...s,
-          analysis: args.analyze && s.observations > 1 ? analyzeSeries(s.prices) : undefined,
+          success: true, tool: 'market_data', ...s2,
+          analysis: args.analyze && s2.observations > 1 ? analyzeSeries(s2.prices) : undefined,
         }
       }
 

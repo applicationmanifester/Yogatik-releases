@@ -27,7 +27,12 @@ export default function OnboardingModal({ templates = [], onComplete, onSkip }) 
   const [style, setStyle] = React.useState('balanced')
   const [boundary, setBoundary] = React.useState('assistant')
 
-  const personaOptions = [{ id: 'default', name: 'Default', description: 'General-purpose' }, ...templates.slice(0, 5)]
+  // The built-in Default is prepended, so drop any template that is also
+  // called Default — otherwise the picker lists it twice.
+  const personaOptions = [
+    { id: 'default', name: 'Default', description: 'General-purpose' },
+    ...templates.filter(t => String(t?.name || '').trim().toLowerCase() !== 'default').slice(0, 5),
+  ]
 
   const finish = () => onComplete?.({ persona, style, boundary })
 

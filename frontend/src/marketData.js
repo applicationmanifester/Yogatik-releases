@@ -3,8 +3,10 @@
  * price series, so the network half stays thin and this half stays testable.
  *
  * All sources here are KEYLESS, matching the app's "works with no API key"
- * stance: Stooq (equities/indices/FX, CSV), Coinbase (crypto candles, JSON)
- * and the World Bank (economic indicators, JSON).
+ * stance: Yahoo Finance (equities/indices/FX, JSON), Coinbase (crypto candles)
+ * and the World Bank (economic indicators). Stooq is kept only as a fallback —
+ * it serves an HTML browser check to datacenter and VPN connections, which is
+ * exactly the failure a user hit in the wild.
  *
  * No third-party code — this is our own parsing over public HTTP endpoints.
  */
@@ -130,6 +132,40 @@ export function parseWorldBank(json) {
     rows: out,
   }
 }
+
+/**
+ * Yahoo Finance chart API: { chart: { result: [{ meta, timestamp[], indicators:
+ * { quote: [{ open, high, low, close, volume }] } }] } }.
+ * Rows where close is null are gaps (holidays, halts) and are dropped rather
+ * than carried forward as a flat price, which would understate volatility.
+ */
+export function parseYahooChart(json, symbol = '') {
+  const r = json?.chart?.result?.[0]
+  const ts = r?.timestamp
+  const q = r?.indicators?.quote?.[0]
+  if (!Array.isArray(ts) || !q || !Array.isArray(q.close)) return series(symbol, 'yahoo', [])
+
+  const rows = []
+  for (let i = 0; i < ts.length; i++) {
+    const close = q.close[i]
+    if (!isNum(close) || !isNum(ts[i])) continue
+    rows.push({
+      date: new Date(ts[i] * 1000).toISOString().slice(0, 10),
+      open: q.open?.[i] ?? null,
+      high: q.high?.[i] ?? null,
+      low: q.low?.[i] ?? null,
+      close,
+      volume: isNum(q.volume?.[i]) ? q.volume[i] : null,
+    })
+  }
+  const out = series(symbol || r?.meta?.symbol || '', 'yahoo', rows)
+  out.currency = r?.meta?.currency ?? null
+  out.exchange = r?.meta?.fullExchangeName ?? null
+  return out
+}
+
+/** Yahoo range strings it accepts; anything else is rejected upstream. */
+export const YAHOO_RANGES = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max']
 
 /**
  * Map a user-typed symbol to a Stooq ticker.

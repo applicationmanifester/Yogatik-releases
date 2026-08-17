@@ -192,3 +192,58 @@ describe('isBotChallenge', () => {
     expect(isBotChallenge(null)).toBe(false)
   })
 })
+
+import { parseYahooChart, YAHOO_RANGES } from './marketData'
+
+describe('parseYahooChart', () => {
+  // Real shape, taken from a live AAPL response.
+  const payload = {
+    chart: { result: [{
+      meta: { symbol: 'AAPL', currency: 'USD', fullExchangeName: 'NasdaqGS' },
+      timestamp: [1767225600, 1767312000, 1767398400],
+      indicators: { quote: [{
+        open: [300, 305, 303], high: [310, 308, 306], low: [298, 300, 299],
+        close: [308.26, 304.91, 302.25], volume: [1000, 1100, 900],
+      }] },
+    }] },
+  }
+
+  it('parses into the common series shape', () => {
+    const s = parseYahooChart(payload, 'AAPL')
+    expect(s.source).toBe('yahoo')
+    expect(s.observations).toBe(3)
+    expect(s.prices).toEqual([308.26, 304.91, 302.25])
+  })
+
+  it('keeps OHLCV and carries currency/exchange metadata', () => {
+    const s = parseYahooChart(payload, 'AAPL')
+    expect(s.rows[0].open).toBe(300)
+    expect(s.rows[0].volume).toBe(1000)
+    expect(s.currency).toBe('USD')
+    expect(s.exchange).toBe('NasdaqGS')
+  })
+
+  // Yahoo emits null for holidays and halts. Carrying the previous price
+  // forward would invent flat days and understate volatility.
+  it('drops null closes rather than carrying a price forward', () => {
+    const gappy = JSON.parse(JSON.stringify(payload))
+    gappy.chart.result[0].indicators.quote[0].close[1] = null
+    const s = parseYahooChart(gappy, 'AAPL')
+    expect(s.observations).toBe(2)
+    expect(s.prices).toEqual([308.26, 302.25])
+  })
+
+  it('is empty for an error payload or junk', () => {
+    expect(parseYahooChart({ chart: { result: null, error: 'Not Found' } }, 'X').observations).toBe(0)
+    expect(parseYahooChart(null, 'X').observations).toBe(0)
+    expect(parseYahooChart({}, 'X').observations).toBe(0)
+  })
+
+  it('falls back to the symbol in meta when none is passed', () => {
+    expect(parseYahooChart(payload).symbol).toBe('AAPL')
+  })
+
+  it('offers the ranges Yahoo actually accepts', () => {
+    for (const r of ['1d', '1mo', '1y', 'max']) expect(YAHOO_RANGES).toContain(r)
+  })
+})

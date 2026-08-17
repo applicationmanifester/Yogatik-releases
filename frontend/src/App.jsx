@@ -2885,6 +2885,29 @@ export default function App() {
                     ? <><Share2 size={16} /> Share Yogatik</>
                     : <><Download size={16} /> Install App</>}
                 </button>
+                {/* Cross-surface pointer. In the desktop shell the useful link is
+                    OUT to the web app (phones and tablets have no desktop build);
+                    in a browser it is IN to the download page. main.cjs opens
+                    https:// links in the system browser, so this behaves on both. */}
+                {isDesktop() ? (
+                  <a
+                    className="hero-cross-link"
+                    href="https://yogatik.web.app/"
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open Yogatik in a browser — use it on your phone or tablet"
+                  >
+                    <Smartphone size={14} /> Use on phone or tablet
+                  </a>
+                ) : (
+                  <a
+                    className="hero-cross-link"
+                    href="/platforms"
+                    title="Download the Yogatik desktop app for Windows, macOS or Linux"
+                  >
+                    <Monitor size={14} /> Get the desktop app
+                  </a>
+                )}
               </div>
               <div className="tool-badges">
                 {Object.entries(TOOL_ICONS).map(([name, Icon]) => (

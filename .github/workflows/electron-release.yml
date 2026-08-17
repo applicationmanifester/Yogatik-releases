@@ -1,7 +1,11 @@
-name: Build Windows desktop app (Electron)
+name: Build desktop apps (Windows, macOS, Linux)
 
-# Manual run (Actions tab -> Run workflow) or on a version tag like v3.8.0.
-# No Rust toolchain needed — just Node. Produces a downloadable .exe.
+# Manual run (Actions tab -> Run workflow) or on a version tag like v3.9.0.
+#
+# WHY A MATRIX: macOS installers cannot be cross-compiled — electron-builder
+# needs a real macOS runner to produce a .dmg, and AppImage/deb want Linux
+# tooling. Each OS therefore builds on its own runner and every artefact is
+# uploaded to ONE GitHub Release, which is what /platforms links to.
 on:
   workflow_dispatch:
   push:
@@ -12,8 +16,25 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      # One platform failing must not discard the other two.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            build: npm run electron:build
+          - os: macos-latest
+            name: macOS
+            build: npm run electron:build:mac
+          - os: ubuntu-latest
+            name: Linux
+            build: npm run electron:build:linux
+
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,9 +48,9 @@ jobs:
         working-directory: frontend
         run: npm install
 
-      - name: Build Electron installer
+      - name: Build desktop app
         working-directory: frontend
-        run: npm run electron:build
+        run: ${{ matrix.build }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Optional — desktop already works without these (direct provider calls,
@@ -37,14 +58,51 @@ jobs:
           VITE_LLM_PROXY_BASE: ${{ secrets.VITE_LLM_PROXY_BASE }}
           VITE_AUTH_DOMAIN: ${{ secrets.VITE_AUTH_DOMAIN }}
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          # These builds are unsigned; skip signing/notarisation discovery rather
+          # than failing the job on a missing certificate.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: yogatik-${{ matrix.name }}
+          if-no-files-found: warn
+          path: |
+            frontend/release-electron/*.exe
+            frontend/release-electron/*.dmg
+            frontend/release-electron/*.zip
+            frontend/release-electron/*.AppImage
+            frontend/release-electron/*.deb
+            frontend/release-electron/*.blockmap
+            frontend/release-electron/latest*.yml
+
+      # All three runners publish into the SAME release, so one tag carries
+      # Windows, macOS and Linux downloads.
       - name: Publish to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-latest' }}
-          name: 'Yogatik Desktop ${{ github.ref_type == 'tag' && github.ref_name || '(latest)' }}'
-          body: 'Windows installer (.exe). Download it under Assets below. latest.yml + .blockmap enable in-app auto-update.'
+          name: 'Yogatik Desktop ${{ github.ref_type == ''tag'' && github.ref_name || ''(latest)'' }}'
+          body: |
+            Desktop builds for Windows, macOS and Linux — download under Assets.
+
+            * **Windows** — `Yogatik-Setup.exe`
+            * **macOS** — `Yogatik-*.dmg` (universal: Apple Silicon + Intel)
+            * **Linux** — `Yogatik-*.AppImage` or `.deb`
+
+            These builds are unsigned. macOS will need right-click → Open the
+            first time, and Windows SmartScreen may warn; that is expected until
+            code-signing certificates are added.
+
+            `latest*.yml` and `.blockmap` enable in-app auto-update.
+          fail_on_unmatched_files: false
           files: |
             frontend/release-electron/*.exe
+            frontend/release-electron/*.dmg
+            frontend/release-electron/*.zip
+            frontend/release-electron/*.AppImage
+            frontend/release-electron/*.deb
             frontend/release-electron/*.blockmap
-            frontend/release-electron/latest.yml
+            frontend/release-electron/latest*.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

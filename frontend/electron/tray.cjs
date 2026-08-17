@@ -7,7 +7,10 @@ let tray = null
 
 function createTray(getWindow) {
   const icon = nativeImage.createFromPath(
-    path.join(__dirname, '..', 'src-tauri', 'icons', '32x32.png'),
+    // electron/icon.ico is the only icon that both EXISTS and is shipped:
+    // build.files covers electron/** but never src-tauri/**, and that
+    // directory is absent entirely — the tray showed a blank square.
+    path.join(__dirname, 'icon.ico'),
   )
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
   tray.setToolTip('Yogatik Desktop AI')
