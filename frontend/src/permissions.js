@@ -91,6 +91,42 @@ export function describeCall(tool, args = {}) {
   }
 }
 
+/**
+ * Compute the patch a write would apply, by reading the file's current
+ * contents. Returns null when there is nothing useful to show (new file with no
+ * prior version, non-file tool, or the read failed).
+ */
+async function buildDiffPreview(tool, args = {}) {
+  if (tool !== 'fs_write' && tool !== 'fs_edit') return null
+  const { isDesktop } = await import('./tools/localFs')
+  if (!isDesktop()) return null
+
+  const core = window.__TAURI__?.core
+  if (!core?.invoke) return null
+
+  const { getWorkspaceCtx } = await import('./tools/localFs')
+  let before = ''
+  try {
+    before = await core.invoke('fs_read', { path: args.path, ctx: getWorkspaceCtx() }) || ''
+  } catch { before = '' } // new file
+
+  let after
+  if (tool === 'fs_write') {
+    after = args.content ?? ''
+  } else {
+    const { oldString, newString, replaceAll } = args
+    if (!oldString || !before.includes(oldString)) return null
+    after = replaceAll
+      ? before.split(oldString).join(newString ?? '')
+      : before.replace(oldString, newString ?? '')
+  }
+
+  const { unifiedDiff, lineDiff, summarizeDiff } = await import('./diffPreview')
+  const text = unifiedDiff(before, after, { maxLines: 120 })
+  if (text === 'No changes.') return { text, ...summarizeDiff([]) }
+  return { text, ...summarizeDiff(lineDiff(before, after)) }
+}
+
 // ── Runtime wiring ──────────────────────────────────────────────────────────
 
 const RULES_KEY = 'permission_rules'
@@ -142,6 +178,11 @@ export async function requestPermission(tool, args, ctx = {}) {
     return { allowed: false, reason: 'Denied: no approval UI is available to confirm this action.' }
   }
 
+  // Show the actual patch for a write — approving "write src/app.js" tells you
+  // nothing; approving a visible diff does. Best-effort: never block on it.
+  let diff = null
+  try { diff = await buildDiffPreview(tool, args) } catch { diff = null }
+
   let answer
   try {
     answer = await promptFn({
@@ -150,6 +191,7 @@ export async function requestPermission(tool, args, ctx = {}) {
       ctx,
       risk: riskOf(tool),
       description: describeCall(tool, args),
+      diff,
     })
   } catch {
     return { allowed: false, reason: 'Denied: the approval prompt failed.' }

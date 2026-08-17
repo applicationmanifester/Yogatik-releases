@@ -12,7 +12,7 @@ import { ShieldAlert, Terminal, FileWarning, Trash2 } from 'lucide-react'
  */
 export default function PermissionPrompt({ request, onResolve }) {
   if (!request) return null
-  const { tool, args, risk, description } = request
+  const { tool, args, risk, description, diff } = request
   const destructive = risk === 'destructive'
 
   const Icon = tool === 'terminal_run' ? Terminal : (tool === 'fs_delete' ? Trash2 : FileWarning)
@@ -30,6 +30,23 @@ export default function PermissionPrompt({ request, onResolve }) {
         <Icon size={14} />
         <code className="perm-desc">{description}</code>
       </div>
+
+      {diff?.text && (
+        <div className="perm-diff-wrap">
+          <div className="perm-diff-head">
+            <span className="perm-diff-add">+{diff.added ?? 0}</span>
+            <span className="perm-diff-del">−{diff.removed ?? 0}</span>
+          </div>
+          <pre className="perm-diff">
+            {diff.text.split('\n').map((line, i) => (
+              <div
+                key={i}
+                className={line.startsWith('+') ? 'dl-add' : line.startsWith('-') ? 'dl-del' : 'dl-ctx'}
+              >{line}</div>
+            ))}
+          </pre>
+        </div>
+      )}
 
       {tool === 'terminal_run' && (
         <div className="perm-note">This runs on your computer with your account’s permissions.</div>
