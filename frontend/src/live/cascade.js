@@ -162,6 +162,30 @@ export function stripWakeWord(text = '', wake = '') {
  * Chrome often reports confidence 0 for continuous finals, so 0 is treated as
  * "unknown" and never rejected — only a real, low positive score is.
  */
+/** Consecutive `network` failures before we stop trusting the cloud recogniser. */
+export const NETWORK_FAILS_BEFORE_LOCAL = 2
+
+/**
+ * What to do about a Web Speech error.
+ *
+ * `network` was treated as transient and retried with backoff forever. It is
+ * not transient on a desktop install: Web Speech streams audio to Google to
+ * transcribe it, so a machine that is offline — or an Ollama-only setup that
+ * never expected to need the internet — fails every single time, re-emitting
+ * the same toast. After a couple of those, switch to on-device Whisper, which
+ * is the whole point of the offline promise.
+ *
+ * @returns {'fatal'|'ignore'|'retry'|'fallback'}
+ */
+export function classifySpeechError(code, consecutiveNetworkFails = 0) {
+  if (code === 'not-allowed' || code === 'service-not-allowed') return 'fatal'
+  if (code === 'no-speech' || code === 'aborted') return 'ignore'
+  if (code === 'network' || code === 'service-not-available') {
+    return consecutiveNetworkFails + 1 >= NETWORK_FAILS_BEFORE_LOCAL ? 'fallback' : 'retry'
+  }
+  return 'retry'
+}
+
 export function shouldRejectNoise(text = '', confidence = 0) {
   const t = String(text).trim()
   if (t.length < 2) return true
@@ -203,6 +227,42 @@ export function createCascadeSession({
   let chainIndex = 0
 
   let recog = null
+  let networkFails = 0
+  let localRecognizer = null
+
+  /**
+   * Web Speech could not reach its cloud service. Hand the microphone to
+   * on-device Whisper and carry on — same handleUtterance, so commands, the
+   * wake word, the echo guard and the turn queue all behave identically.
+   */
+  async function startLocalRecognition() {
+    if (localRecognizer || closed) return
+    try { recog?.abort?.() } catch { /* already dead */ }
+    emit({ type: 'status', message: 'Speech service unreachable — switching to on-device speech.' })
+    try {
+      const { createLocalRecognizer } = await import('./localSTT')
+      localRecognizer = await createLocalRecognizer({
+        lang,
+        onStatus: (message) => emit({ type: 'status', message }),
+        onFinal: (text) => {
+          // Muted and echo handling mirror the Web Speech path; without the echo
+          // guard the assistant transcribes its own voice and answers itself.
+          if (muted || closed) return
+          if ((speaking || abort || (Date.now() - speechEndedAt) < ECHO_TAIL_MS) && isEcho(text, spokenAloud)) return
+          if (speaking || abort) interrupt()
+          handleUtterance(text, 1)
+        },
+        onError: (err) => emit({ type: 'error', message: `On-device speech: ${err.message}` }),
+      })
+    } catch (err) {
+      localRecognizer = null
+      emit({
+        type: 'error',
+        message: 'Speech recognition is unavailable: the cloud service could not be reached and on-device speech failed to start. You can still type in the transcript panel.',
+      })
+      void err
+    }
+  }
   let cam = null
   let screen = null
   let closed = false
@@ -564,13 +624,19 @@ export function createCascadeSession({
 
     recog.onerror = (e) => {
       clearEndpoint()
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      const verdict = classifySpeechError(e.error, networkFails)
+      if (verdict === 'ignore') return
+      if (verdict === 'fatal') {
         recogFatal = true   // restarting a denied mic spins forever
         emit({ type: 'error', message: 'Microphone access was blocked. Allow it in your browser and try again.' })
         return
       }
-      if (e.error === 'no-speech' || e.error === 'aborted') return
-      // network / audio-capture are transient — back off rather than hammer.
+      if (verdict === 'fallback') {
+        recogFatal = true   // stop the retry storm; the cloud ear is not coming back
+        startLocalRecognition()
+        return
+      }
+      if (e.error === 'network' || e.error === 'service-not-available') networkFails++
       restartDelay = Math.min(restartDelay ? restartDelay * 2 : 500, 8000)
       emit({ type: 'error', message: `Speech recognition failed: ${e.error}` })
     }
@@ -655,6 +721,10 @@ export function createCascadeSession({
     closed = true
     document.removeEventListener('visibilitychange', onVisibility)
     try { recog?.abort() } catch {}
+    // Releases the mic track, the AudioContext and the segmentation timer;
+    // leaking those keeps the OS mic indicator lit after the call ends.
+    try { localRecognizer?.stop() } catch { /* already stopped */ }
+    localRecognizer = null
     speaker.close()
     abort?.abort()
     clearSharedVisualSource(cam)
