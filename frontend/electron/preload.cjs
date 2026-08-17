@@ -11,7 +11,7 @@ const FS_COMMANDS = new Set([
   'roots_add', 'roots_list', 'roots_remove', 'roots_set_primary', 'roots_rebind',
   'journal_list', 'journal_revert',
   'proc_start', 'proc_output', 'proc_stop', 'proc_list',
-  'hooks_run', 'hooks_list',
+  'hooks_run', 'hooks_list', 'hooks_trust', 'hooks_trusted',
   'git_run', 'git_status', 'git_log', 'git_diff',
   'watch_start', 'watch_stop', 'watch_changes',
   'mcp_stdio_start', 'mcp_stdio_call', 'mcp_stdio_stop', 'mcp_stdio_list',

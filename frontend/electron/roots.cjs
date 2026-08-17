@@ -41,6 +41,23 @@ function load() {
 /** Absolute paths bound to this call's chat. Empty array when none. */
 function rootPathsFor(ctx) { return core.resolveRootPaths(state, ctx) }
 
+/**
+ * Hook trust. A .yogatik/hooks.json arrives INSIDE a repository, so cloning a
+ * project must never be enough to run commands. Trust is per-root, explicit,
+ * and stored here in userData — never in the repo itself.
+ */
+function getTrustState() {
+  return { trustedHookRoots: Array.isArray(state.trustedHookRoots) ? state.trustedHookRoots : [] }
+}
+
+function setHookTrust(rootPath, trusted) {
+  const list = new Set(getTrustState().trustedHookRoots)
+  if (trusted) list.add(rootPath); else list.delete(rootPath)
+  state.trustedHookRoots = [...list]
+  save()
+  return getTrustState()
+}
+
 /** Resolve a tool-supplied path, or throw. The single guard for all fs ops. */
 function resolvePath(ctx, target) {
   return core.resolveWithin(rootPathsFor(ctx), target).absolutePath
@@ -88,6 +105,17 @@ function registerRootsIpc(opts = {}) {
     return listFor(ctx)
   })
 
+  ipcMain.handle('hooks_trust', (_e, { ctx, trusted } = {}) => {
+    const root = rootPathsFor(ctx)[0]
+    if (!root) return { success: false, error: 'No working folder for this chat.' }
+    return { success: true, root, ...setHookTrust(root, !!trusted) }
+  })
+
+  ipcMain.handle('hooks_trusted', (_e, { ctx } = {}) => {
+    const root = rootPathsFor(ctx)[0]
+    return { root: root || null, trusted: !!root && getTrustState().trustedHookRoots.includes(root) }
+  })
+
   ipcMain.handle('roots_rebind', (_e, { oldId, newId } = {}) => {
     state = core.rebindChat(state, oldId, newId)
     save()
@@ -112,4 +140,4 @@ function registerRootsIpc(opts = {}) {
   })
 }
 
-module.exports = { registerRootsIpc, resolvePath, rootPathsFor, load }
+module.exports = { registerRootsIpc, resolvePath, rootPathsFor, load, getTrustState, setHookTrust }

@@ -13,7 +13,7 @@ const url = require('url')
 const { spawn, exec } = require('child_process')
 
 const { registerFsBridge, initJournal } = require('./fsBridge.cjs')
-const { registerRootsIpc, rootPathsFor, resolvePath } = require('./roots.cjs')
+const { registerRootsIpc, rootPathsFor, resolvePath, getTrustState } = require('./roots.cjs')
 const { enableProviderCors } = require('./cors.cjs')
 const { buildMenu } = require('./menu.cjs')
 const { createTray } = require('./tray.cjs')
@@ -188,7 +188,7 @@ if (!gotLock) {
     registerFsBridge()
     // Dev loop: background processes + hooks, git, file watching. All scoped to
     // the calling chat's bound roots by the same resolver the fs tools use.
-    registerBgProcessIpc({ rootPathsFor, resolvePath, getTrustState: () => ({ trustedHookRoots: [] }) })
+    registerBgProcessIpc({ rootPathsFor, resolvePath, getTrustState })
     registerGitIpc({ rootPathsFor })
     registerFsWatcherIpc({ rootPathsFor })
     registerMcpStdioClientIpc()

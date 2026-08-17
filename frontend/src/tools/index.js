@@ -72,6 +72,7 @@ import { fileDialogTool } from './fileDialog'
 import { todoTool } from './todo'
 import { financeTool } from './finance'
 import { marketDataTool } from './marketData'
+import { videoEditTool } from './videoEdit'
 import {
   gitStatusTool, gitLogTool, gitDiffTool,
   procStartTool, procOutputTool, procStopTool, procListTool, watchTool,
@@ -218,6 +219,7 @@ const ALL_TOOLS = {
   youtube: youtubeTool,
   see: seeTool,
   video_render: videoRenderTool,
+  video_edit: videoEditTool,
   diagram_render: diagramRenderTool,
   code_format: codeFormatTool,
   text_analytics: textAnalyticsTool,
