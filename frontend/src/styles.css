@@ -23,6 +23,26 @@
   --source-bg: #1a1408;
   --radius: 12px;
   --transition: 200ms ease;
+
+  /* ── Alias tokens ────────────────────────────────────────────────────────
+     These were never defined, so every `var(--bg-elevated, #12161f)` fell
+     through to its hardcoded fallback — and every one of those fallbacks is a
+     DARK value. Anything styled with them stayed dark in the light theme: the
+     per-chat folder popover, surfaces, dim text, hairline borders.
+     Defining them here (dark values identical to the old fallbacks, so the
+     dark theme is unchanged) and overriding them under [data-theme="light"]
+     fixes all eleven at once, without touching the rules that use them. */
+  --border-color: rgba(255, 255, 255, 0.12);
+  --bg: #0e1116;
+  --bg-surface: #1e1e2e;
+  --bg-elevated: #12161f;
+  --bg-subtle: #0d1119;
+  --text: #f2f4f8;
+  --text-dim: #9aa4b2;
+  --accent-color: #ff6b35;
+  --accent-soft: #23304a;
+  --accent-text: #000;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 [data-theme="light"] {
@@ -45,6 +65,19 @@
   --user-bg: #fef3e8;
   --code-bg: #edf0f5;
   --source-bg: #fef7ed;
+
+  /* Light counterparts of the alias tokens. Without these the popover and
+     friends kept their dark fallbacks on a white page. */
+  --border-color: rgba(0, 0, 0, 0.12);
+  --bg: #f5f7fa;
+  --bg-surface: #e8ecf1;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #edf0f5;
+  --text: #1a2332;
+  --text-dim: #5f7182;
+  --accent-color: #d4570a;
+  --accent-soft: #fdece1;
+  --accent-text: #ffffff;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
