@@ -10,6 +10,12 @@ import {
   npv, irr, dcf, cagr, analyzeSeries, valueAtRisk, conditionalVaR,
   sharpe, sortino, volatility, maxDrawdown, returnsFromPrices,
 } from '../finance'
+import { blackScholes, greeks, impliedVolatility, binomial } from '../options'
+import {
+  covarianceMatrix, correlationMatrix, minVarianceWeights, tangencyWeights,
+  riskParityWeights, riskContributions, efficientFrontier, beta,
+  portfolioReturn, portfolioVolatility,
+} from '../portfolio'
 
 function fail(e) { return { success: false, error: typeof e === 'string' ? e : (e?.message || String(e)) } }
 const pct = (x) => (x == null ? null : `${(x * 100).toFixed(2)}%`)
@@ -27,7 +33,7 @@ export const financeTool = {
       properties: {
         operation: {
           type: 'string',
-          description: 'One of: dcf | npv | irr | cagr | analyze | var',
+          description: 'One of: dcf | npv | irr | cagr | analyze | var | option | implied_vol | portfolio | beta',
         },
         cashflows: {
           type: 'array',
@@ -49,6 +55,25 @@ export const financeTool = {
         periods_per_year: { type: 'number', description: 'Observations per year for annualising: 252 daily (default), 52 weekly, 12 monthly.' },
         risk_free_rate: { type: 'number', description: 'Annual risk-free rate as a decimal (default 0).' },
         confidence: { type: 'number', description: 'VaR confidence between 0 and 1 (default 0.95).' },
+        spot: { type: 'number', description: 'Underlying price — for option/implied_vol.' },
+        strike: { type: 'number', description: 'Strike price — for option/implied_vol.' },
+        time_years: { type: 'number', description: 'Time to expiry in years, e.g. 0.5 for six months.' },
+        volatility: { type: 'number', description: 'Annual volatility as a decimal, e.g. 0.2 for 20%.' },
+        dividend_yield: { type: 'number', description: 'Continuous dividend yield as a decimal (default 0).' },
+        option_type: { type: 'string', description: '"call" or "put" (default call).' },
+        american: { type: 'boolean', description: 'Price American (early-exercise) style using a binomial tree.' },
+        market_price: { type: 'number', description: 'Observed option price — for implied_vol.' },
+        returns_by_asset: {
+          type: 'array',
+          items: { type: 'array', items: { type: 'number' } },
+          description: 'For "portfolio": one return series per asset, all the same length.',
+        },
+        expected_returns: {
+          type: 'array', items: { type: 'number' },
+          description: 'For "portfolio": expected annual return per asset, used for the max-Sharpe portfolio.',
+        },
+        long_only: { type: 'boolean', description: 'For "portfolio": forbid short positions.' },
+        benchmark: { type: 'array', items: { type: 'number' }, description: 'Benchmark returns — for "beta".' },
       },
       required: ['operation'],
     },
@@ -124,8 +149,76 @@ export const financeTool = {
             max_drawdown: args.prices?.length ? maxDrawdown(args.prices).maxDrawdown : null,
           }
         }
+        case 'option': {
+          const o = {
+            spot: args.spot, strike: args.strike, timeYears: args.time_years,
+            volatility: args.volatility, rate: args.discount_rate ?? args.risk_free_rate ?? 0,
+            dividendYield: args.dividend_yield ?? 0, type: args.option_type || 'call',
+          }
+          const european = blackScholes(o)
+          const g = greeks(o)
+          const american = args.american ? binomial(o, { steps: 300, american: true }) : null
+          return {
+            success: true, tool: 'finance_analytics', operation: 'option',
+            price: american ?? european,
+            europeanPrice: european,
+            americanPrice: american,
+            earlyExercisePremium: american == null ? null : american - european,
+            greeks: {
+              delta: g.delta, gamma: g.gamma,
+              vega_per_1pct: g.vegaPer1Pct, theta_per_day: g.thetaPerDay, rho_per_1pct: g.rhoPer1Pct,
+            },
+          }
+        }
+        case 'implied_vol': {
+          const iv = impliedVolatility({
+            spot: args.spot, strike: args.strike, timeYears: args.time_years,
+            rate: args.risk_free_rate ?? 0, dividendYield: args.dividend_yield ?? 0,
+            type: args.option_type || 'call', marketPrice: args.market_price,
+          })
+          return iv == null
+            ? fail('No volatility reproduces that price — the quote may violate arbitrage bounds or be stale.')
+            : { success: true, tool: 'finance_analytics', operation: 'implied_vol', impliedVolatility: iv, implied_vol_pct: pct(iv) }
+        }
+        case 'portfolio': {
+          const series = args.returns_by_asset
+          const cov = covarianceMatrix(series)
+          const longOnly = !!args.long_only
+          const minVar = minVarianceWeights(cov, { longOnly })
+          const parity = riskParityWeights(cov)
+          const out = {
+            success: true, tool: 'finance_analytics', operation: 'portfolio',
+            assets: series.length,
+            correlation: correlationMatrix(series),
+            minVariance: {
+              weights: minVar,
+              volatility: portfolioVolatility(minVar, cov),
+              riskContributions: riskContributions(minVar, cov),
+            },
+            riskParity: {
+              weights: parity,
+              volatility: portfolioVolatility(parity, cov),
+              riskContributions: riskContributions(parity, cov),
+            },
+          }
+          if (Array.isArray(args.expected_returns) && args.expected_returns.length === series.length) {
+            const tan = tangencyWeights(cov, args.expected_returns, { riskFreeRate: rf, longOnly })
+            out.maxSharpe = {
+              weights: tan,
+              expectedReturn: portfolioReturn(tan, args.expected_returns),
+              volatility: portfolioVolatility(tan, cov),
+            }
+            out.efficientFrontier = efficientFrontier(cov, args.expected_returns, { points: 8, riskFreeRate: rf })
+          }
+          return out
+        }
+        case 'beta':
+          return {
+            success: true, tool: 'finance_analytics', operation: 'beta',
+            beta: beta(args.prices?.length ? returnsFromPrices(args.prices) : args.cashflows, args.benchmark),
+          }
         default:
-          return fail(`Unknown operation "${args.operation}". Use dcf, npv, irr, cagr, analyze or var.`)
+          return fail(`Unknown operation "${args.operation}". Use dcf, npv, irr, cagr, analyze, var, option, implied_vol, portfolio or beta.`)
       }
     } catch (e) {
       return fail(e)
