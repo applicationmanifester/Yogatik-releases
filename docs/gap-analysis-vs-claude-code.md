@@ -7,6 +7,28 @@ service. Yogatik keeps working with any provider, offline where possible.
 
 Each gap is evidenced against this codebase, not assumed.
 
+## Status (updated 2026-08-17)
+
+| § | Gap | Status |
+|---|---|---|
+| 1 | Permission system | **Done** — `permissions.js`, 27 tests |
+| 2 | Undo / journal | **Done** — `journalCore.cjs` + `fs_undo`, 12 tests |
+| 3 | Diff preview | **Done** — `diffPreview.js`, 11 tests |
+| 4 | Search fix | **Done** — `searchFilter.cjs`, 17 tests |
+| 5 | Git awareness | Not started |
+| 6 | Task tracking | **Done** — `todos.js` + `todo` tool, 15 tests |
+| 7 | Context compaction | **Done** — `compaction.js`, 15 tests |
+| 8 | Project instructions | **Done** — `projectInstructions.js`, 14 tests |
+| 9 | MCP stdio | Not started |
+| 10 | Hooks | **Partial** — config parsing/matching + trust model done (13 tests); the main-process runner is not wired |
+| 11 | Background processes | Not started |
+| 12 | File watching | Not started |
+| 13 | Sub-agent isolation | Not started |
+| 14 | Repo commands | **Done** — `repoCommands.js`, 12 tests |
+
+Suite: 494 tests. **Everything Electron-side is unit-tested but has not been
+exercised in a running app** — see the verification note at the end.
+
 ---
 
 ## Tier 1 — Safety. These are the real gaps.
@@ -265,3 +287,38 @@ Every item here is a real gap, but they are not equal. §1, §2 and §4 are the 
 would change day-to-day use most; §8 is the cheapest genuine win. Several items (§5, §9, §11)
 are multi-day pieces of work that deserve their own spec-and-plan cycle rather than being
 squeezed in.
+
+---
+
+## Verification status — read this before trusting any of it
+
+The 494 unit tests are real and they pass, but they do **not** prove the desktop
+app works. Nothing below has been exercised in a running Electron build:
+
+- the permission modal actually rendering (the broker **fails closed**, so if the
+  UI never mounts, every write is silently refused — worse than no gate)
+- the journal's IPC round-trip and `fs_undo` against real files
+- pruned `fs_search` inside the app rather than in a synthetic harness
+- project instructions being picked up from a real working folder
+- repo commands appearing in the skills list
+
+Run this and exercise those five paths before building anything on top:
+
+```
+cd frontend && npm run electron:build
+```
+
+## Remaining work, honestly sized
+
+- **§5 git** — `isomorphic-git` (MIT, pure JS, needs no installed git). Multi-day.
+- **§9 MCP stdio** — spawn servers in main, bridge JSON-RPC over IPC. Multi-day;
+  unlocks most of the MCP ecosystem.
+- **§11 background processes** — `terminal_start`/`_output`/`_stop` with streaming.
+  Multi-day, and the prerequisite for any real dev loop (dev servers, watch mode).
+- **§10 hooks runner** — the parsing and trust model are done; the main-process
+  executor still needs writing, gated on the permission broker.
+- **§12 file watching**, **§13 sub-agent isolation** — smaller, and both benefit
+  from §5 and §11 landing first.
+
+Each of §5, §9 and §11 deserves its own spec → plan → implement cycle rather
+than being squeezed into a batch.
