@@ -95,8 +95,123 @@ function buildTree(rawNodes, { epoch = 0, maxNodes = MAX_NODES } = {}) {
   return { text, truncated, interactiveCount, nodeCount: withRefs.length }
 }
 
+// The ref → element mapping lives IN THE PAGE (window.__yogatikRefs__), not in
+// main. Main stores only the epoch number. Resolution re-measures the element at
+// action time, so an element that moved but still exists is still clicked
+// correctly, and main never holds a stale DOM handle.
+//
+// Both sources interpolate ONLY Number()-coerced values — no caller string ever
+// reaches the evaluated code.
+function walkerSource(epoch) {
+  return `(() => {
+  const INTERACTIVE_SEL = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[role=switch],[contenteditable=true],[onclick],[tabindex]:not([tabindex="-1"])';
+  const roleOf = (el) => {
+    const explicit = el.getAttribute && el.getAttribute('role');
+    if (explicit) return explicit;
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'a') return el.hasAttribute('href') ? 'link' : 'generic';
+    if (tag === 'button' || tag === 'summary') return 'button';
+    if (tag === 'select') return 'combobox';
+    if (tag === 'textarea') return 'textbox';
+    if (tag === 'img') return 'img';
+    if (/^h[1-6]$/.test(tag)) return 'heading';
+    if (tag === 'input') {
+      const t = (el.type || 'text').toLowerCase();
+      if (t === 'checkbox') return 'checkbox';
+      if (t === 'radio') return 'radio';
+      if (t === 'submit' || t === 'button' || t === 'reset') return 'button';
+      if (t === 'search') return 'searchbox';
+      if (t === 'hidden') return 'hidden';
+      return 'textbox';
+    }
+    if (tag === 'nav') return 'navigation';
+    if (tag === 'main') return 'main';
+    if (tag === 'form') return 'form';
+    if (tag === 'li') return 'listitem';
+    return 'generic';
+  };
+  const nameOf = (el) => {
+    const aria = el.getAttribute && el.getAttribute('aria-label');
+    if (aria) return aria.trim();
+    const labelledby = el.getAttribute && el.getAttribute('aria-labelledby');
+    if (labelledby) {
+      const t = document.getElementById(labelledby);
+      if (t && t.innerText) return t.innerText.trim();
+    }
+    if (el.tagName === 'IMG') return (el.alt || '').trim();
+    if (el.tagName === 'INPUT') {
+      return (el.getAttribute('aria-label') || el.placeholder || el.value || el.name || '').trim();
+    }
+    const title = el.getAttribute && el.getAttribute('title');
+    if (title) return title.trim();
+    return '';
+  };
+  const isVisible = (el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    const s = window.getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0';
+  };
+  const refs = [];
+  const nodes = [];
+  const walk = (el, depth) => {
+    if (!el || nodes.length > 2000) return;
+    const tag = el.tagName ? el.tagName.toLowerCase() : '';
+    if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'svg') return;
+    const role = roleOf(el);
+    if (role !== 'hidden') {
+      const visible = isVisible(el);
+      const interactive = visible && el.matches && el.matches(INTERACTIVE_SEL);
+      let own = '';
+      for (const c of el.childNodes) {
+        if (c.nodeType === 3) own += c.nodeValue;
+      }
+      own = own.replace(/\\s+/g, ' ').trim();
+      if (interactive || own) {
+        if (interactive) refs.push(el);
+        nodes.push({
+          depth, role,
+          name: nameOf(el),
+          text: own,
+          visible,
+          interactive: !!interactive,
+        });
+      }
+    }
+    for (const child of el.children) walk(child, depth + 1);
+  };
+  walk(document.body, 0);
+  window.__yogatikRefs__ = refs;
+  window.__yogatikRefEpoch__ = ${Number(epoch) || 0};
+  return {
+    url: location.href,
+    title: document.title,
+    nodes,
+  };
+})()`
+}
+
+// Resolves one ref index to a fresh viewport-relative centre point. Returns null
+// when the element is gone, so the caller can report a stale ref instead of
+// clicking empty space.
+function refResolverSource(index) {
+  return `(() => {
+  const el = (window.__yogatikRefs__ || [])[${Number(index) || 0}];
+  if (!el || !el.isConnected) return null;
+  el.scrollIntoView({ block: 'center', inline: 'center' });
+  const r = el.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return null;
+  return {
+    x: Math.round(r.left + r.width / 2),
+    y: Math.round(r.top + r.height / 2),
+    tag: el.tagName.toLowerCase(),
+  };
+})()`
+}
+
 module.exports = {
   MAX_TEXT, MAX_NODES, MAX_INDENT, INTERACTIVE_ROLES,
+  walkerSource, refResolverSource,
   truncateText, isInteractive, nodeLabel,
   simplify, assignRefs, parseRef, isStaleRef,
   formatTree, buildTree,

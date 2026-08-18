@@ -3,6 +3,7 @@ import {
   nodeLabel, isInteractive, truncateText,
   simplify, assignRefs, parseRef, isStaleRef,
   formatTree, buildTree,
+  walkerSource, refResolverSource,
 } from '../../electron/browserTree.cjs'
 
 describe('browserTree — node classification', () => {
@@ -151,5 +152,36 @@ describe('browserTree — buildTree', () => {
     expect(out.interactiveCount).toBe(0)
     expect(out.truncated).toBe(false)
     expect(typeof out.text).toBe('string')
+  })
+})
+
+describe('browserTree — injected sources', () => {
+  it('walker is a self-contained expression that sets the epoch', () => {
+    const src = walkerSource(7)
+    expect(typeof src).toBe('string')
+    expect(src).toContain('__yogatikRefs__')
+    expect(src).toContain('7')
+  })
+
+  it('walker source is a single evaluatable expression', () => {
+    // executeJavaScript evaluates an expression; a bare statement list would
+    // return undefined and the read would silently come back empty.
+    expect(walkerSource(1).trim().startsWith('(')).toBe(true)
+  })
+
+  it('resolver references the ref registry by index', () => {
+    const src = refResolverSource(4)
+    expect(src).toContain('__yogatikRefs__')
+    expect(src).toContain('[4]')
+  })
+
+  it('resolver is a single evaluatable expression', () => {
+    expect(refResolverSource(0).trim().startsWith('(')).toBe(true)
+  })
+
+  it('coerces a non-numeric index rather than interpolating it', () => {
+    // The index reaches this from a parsed ref, but a stray string must never
+    // land inside the evaluated source.
+    expect(refResolverSource('1); alert(1); //')).toContain('[0]')
   })
 })
