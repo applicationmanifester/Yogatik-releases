@@ -7,6 +7,7 @@ import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvide
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
 import { ArtifactPanel } from './components/ArtifactPanel'
+import { BrowserPanel } from './components/BrowserPanel'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
 import ToolStatusPanel from './components/ToolStatusPanel'
@@ -294,6 +295,8 @@ export default function App() {
   const [pwaPrompt, setPwaPrompt] = useState(null)
   const [showPwaInstall, setShowPwaInstall] = useState(false)
   const [showAd, setShowAd] = useState(false)
+  // Docked agent browser: { url } while panel mode is showing one.
+  const [browserPanel, setBrowserPanel] = useState(null)
   const [showShareSheet, setShowShareSheet] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
   const chatCountRef = useRef(0)
@@ -434,6 +437,27 @@ export default function App() {
     conversationId: conv?.id ?? conv?.clientId ?? null,
     projectId: activeProject ?? null,
   }
+
+
+  // A browsing session carries logged-in state. It must not follow the user into
+  // an unrelated chat, so switching conversations ends it.
+  const browserConvId = conv?.id ?? conv?.clientId ?? null
+  useEffect(() => {
+    const b = typeof window !== 'undefined' && window.__YOGATIK_BROWSER__
+    if (!b) return
+    setBrowserPanel(null)
+    return () => { try { b.close({ conversationId: browserConvId }) } catch { /* ignore */ } }
+  }, [browserConvId])
+
+  // Anything that should visually cover the docked browser must detach it first:
+  // a WebContentsView composites above the DOM, so an overlay would be painted
+  // UNDER it. settingsOpen matters most — that drawer docks where the panel does.
+  const browserOccluded = !!(
+    settingsOpen || showPersonalise || showSkills || showToolPicker || showAd ||
+    showPalette || showProviderModal || showAuthModal || showDataDashboard ||
+    showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact
+  )
+
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
 
   // Install the approval UI. permissions.js FAILS CLOSED without this, so a
@@ -1879,6 +1903,11 @@ export default function App() {
         runData.results[toolName] = toolResult
         toolRunMapRef.current[targetClientId] = runData
         setPendingToolResultsMap(prev => ({ ...prev, [targetClientId]: { ...(prev[targetClientId] || {}), [toolName]: toolResult } }))
+        // The docked browser only exists while something is in it.
+        if (toolResult?.tool === 'browser_control') {
+          if (toolResult.mode === 'panel') setBrowserPanel({ url: toolResult.url || '' })
+          else if (toolResult.mode === 'window') setBrowserPanel(null)
+        }
         const trace = traceMapRef.current[targetClientId] || []
         const step = [...trace].reverse().find(s => s.tool === toolName && s.status === 'running')
         if (step) step.status = toolResult?.success === false ? 'error' : 'done'
@@ -3570,6 +3599,22 @@ export default function App() {
       )}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={handleAuth} />}
       {features.artifacts && activeArtifact && <ArtifactPanel artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />}
+      {browserPanel && (
+        <BrowserPanel
+          conversationId={browserConvId}
+          url={browserPanel.url}
+          occluded={browserOccluded}
+          onPopOut={() => {
+            window.__YOGATIK_BROWSER__?.setMode({ conversationId: browserConvId, display: 'window' })
+            updatePref('browser_display_mode', 'window')
+            setBrowserPanel(null)
+          }}
+          onClose={() => {
+            window.__YOGATIK_BROWSER__?.close({ conversationId: browserConvId })
+            setBrowserPanel(null)
+          }}
+        />
+      )}
       {showPersonaModal && (
         <Modal title="Create Custom Persona" icon={<Sparkles size={16} />} onClose={() => setShowPersonaModal(false)}>
           <form onSubmit={async (e) => {

@@ -25,6 +25,7 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
   const neural = prefs.live_voice_engine !== 'system'
   const speed = prefs.voice_speed ?? 1
   const rounds = Math.max(3, Math.min(20, Number(prefs.max_tool_rounds) || 8))
+  const browserSurface = prefs.browser_display_mode === 'panel' ? 'panel' : 'window'
   const [previewing, setPreviewing] = useState(false)
 
   const gender = GENDER.male.includes(voice) ? 'male' : 'female'
@@ -127,6 +128,27 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
             id="p-rounds" type="range" min="3" max="20" step="1" value={rounds}
             onChange={e => onChange('max_tool_rounds', Number(e.target.value))}
           />
+        </div>
+      </section>
+
+      <section className="personalise-group">
+        <h4><Sliders size={13} /> Browser surface</h4>
+        <p className="personalise-hint">
+          Where the assistant opens web pages it needs to actually use. A separate
+          window gives it room; docked keeps it beside the conversation.
+          Desktop app only.
+        </p>
+        <div className="toggle-row">
+          <label htmlFor="p-browser-surface">Show the browser in</label>
+          <select
+            id="p-browser-surface"
+            className="style-select"
+            value={browserSurface}
+            onChange={e => onChange('browser_display_mode', e.target.value)}
+          >
+            <option value="window">A separate window</option>
+            <option value="panel">A panel in the app</option>
+          </select>
         </div>
       </section>
 
