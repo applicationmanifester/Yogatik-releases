@@ -34,7 +34,42 @@ function nodeLabel(node) {
   return node.role || ''
 }
 
+// A node earns a place in the tree if it can be acted on, or if it says
+// something. Everything else is layout scaffolding the model does not need.
+function simplify(rawNodes) {
+  const list = Array.isArray(rawNodes) ? rawNodes : []
+  return list.filter(n => {
+    if (!n) return false
+    if (n.visible === false) return false
+    if (isInteractive(n)) return true
+    return !!((n.name || '').trim() || (n.text || '').trim())
+  })
+}
+
+// Refs carry their epoch so a stale one is detectable rather than silently
+// resolving to whatever now sits at that index.
+function assignRefs(nodes, epoch) {
+  let i = 0
+  return (nodes || []).map(n => (
+    isInteractive(n) ? { ...n, ref: `ref_${epoch}_${i++}` } : { ...n }
+  ))
+}
+
+function parseRef(ref) {
+  if (typeof ref !== 'string') return null
+  const m = /^ref_(\d+)_(\d+)$/.exec(ref)
+  if (!m) return null
+  return { epoch: Number(m[1]), index: Number(m[2]) }
+}
+
+function isStaleRef(ref, currentEpoch) {
+  const parsed = parseRef(ref)
+  if (!parsed) return true
+  return parsed.epoch !== currentEpoch
+}
+
 module.exports = {
   MAX_TEXT, MAX_NODES, INTERACTIVE_ROLES,
   truncateText, isInteractive, nodeLabel,
+  simplify, assignRefs, parseRef, isStaleRef,
 }
