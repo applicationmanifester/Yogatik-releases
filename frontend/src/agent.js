@@ -5,6 +5,7 @@
  */
 
 import { streamChat, chatComplete } from './llm'
+import { visibleAnswer as sharedVisibleAnswer } from './reasoning'
 import { getToolSchemas, prioritizeToolSchemas, executeTool } from './tools/index'
 import { buildToolPrompt, parseToolCalls, formatToolResults } from './promptedTools'
 import { setVisionContext } from './tools/see'
@@ -606,12 +607,9 @@ export async function runAgent({
     }
   }
 
-  // Reasoning is not an answer: a reply that is only <think>…</think> leaves the
-  // user with a blank bubble. Handles an unclosed block too (cut-off streams).
-  const visibleAnswer = (text) => String(text || '')
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/<think>[\s\S]*$/i, '')
-    .trim()
+  // Reasoning is not an answer: a reply that is only <think>…</think> leaves
+  // the user with a blank bubble. Shared with the bubble and the activity panel.
+  const visibleAnswer = (text) => sharedVisibleAnswer(text)
 
   // Last resort: the tools DID run, so surface what they returned rather than
   // throwing that work away behind an empty bubble.

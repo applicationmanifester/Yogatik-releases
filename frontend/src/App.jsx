@@ -2,12 +2,14 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Pin, Clock, Bell, Monitor } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Pin, Clock, Bell, Monitor, Activity } from 'lucide-react'
 import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { BrowserPanel } from './components/BrowserPanel'
+import { ActivityPanel } from './components/ActivityPanel'
+import { startActivityTurn, publishStream, publishStep, endActivityTurn } from './activityStream'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
 import ToolStatusPanel from './components/ToolStatusPanel'
@@ -314,6 +316,7 @@ export default function App() {
   const [showAd, setShowAd] = useState(false)
   // Docked agent browser: { url } while panel mode is showing one.
   const [browserPanel, setBrowserPanel] = useState(null)
+  const [showActivity, setShowActivity] = useState(false)
   const [showShareSheet, setShowShareSheet] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
   const chatCountRef = useRef(0)
@@ -1779,6 +1782,7 @@ export default function App() {
       return
     }
 
+    startActivityTurn()
     const _latTurn = startTurn({ provider: useProvider, model: useModel })
     await streamMessage(
       {
@@ -1796,7 +1800,7 @@ export default function App() {
         // On-device safety screen → surface a soft support card (never blocks).
         onSafety: (_verdict, card) => { if (card) setCrisisCard(card) },
       },
-      (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); setStatusMap(prev => ({ ...prev, [targetClientId]: '' })) },
+      (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); publishStream(content); setStatusMap(prev => ({ ...prev, [targetClientId]: '' })) },
       (s) => { sources = s },
       (_final, meta) => {
         _latTurn.done()
@@ -1876,6 +1880,7 @@ export default function App() {
         // approved site, no referrer, and serving there is against its policy.
         // The slot can never fill, so the gate was pure friction: a blocking
         // wait and an empty box, earning nothing.
+        endActivityTurn()
         if (adsConfigured && !isDesktop() && chatCountRef.current % 10 === 0) setShowAd(true)
       },
       (err) => {
@@ -1910,8 +1915,16 @@ export default function App() {
         for (const t of detectedTools) {
           if (!runData.used.includes(t)) runData.used.push(t)
           const trace = traceMapRef.current[targetClientId] || []
-          trace.push({ tool: t, args: args || undefined, status: 'running' })
+          trace.push({ tool: t, args: args || undefined, status: 'running', startedAt: Date.now() })
           traceMapRef.current[targetClientId] = trace
+          // Same data, live: keyed by position so the settle below replaces it.
+          publishStep({
+            id: `${targetClientId}:${trace.length - 1}`,
+            name: t,
+            status: 'running',
+            startedAt: Date.now(),
+            detail: args ? String(JSON.stringify(args)).slice(0, 160) : undefined,
+          })
         }
         toolRunMapRef.current[targetClientId] = runData
       },
@@ -1926,8 +1939,17 @@ export default function App() {
           else if (toolResult.mode === 'window') setBrowserPanel(null)
         }
         const trace = traceMapRef.current[targetClientId] || []
-        const step = [...trace].reverse().find(s => s.tool === toolName && s.status === 'running')
+        const idx = [...trace].reverse().findIndex(s => s.tool === toolName && s.status === 'running')
+        const step = idx === -1 ? null : trace[trace.length - 1 - idx]
         if (step) step.status = toolResult?.success === false ? 'error' : 'done'
+        if (step) {
+          publishStep({
+            id: `${targetClientId}:${trace.length - 1 - idx}`,
+            status: step.status,
+            ms: step.startedAt ? Date.now() - step.startedAt : undefined,
+            detail: toolResult?.error ? String(toolResult.error).slice(0, 200) : undefined,
+          })
+        }
       }
     )
   }
@@ -2932,6 +2954,15 @@ export default function App() {
             <h1>{conv?.title || 'New Chat'}</h1>
           </div>
           <div className="header-actions">
+            <button
+              className={`icon-btn${showActivity ? ' active' : ''}`}
+              onClick={() => setShowActivity(v => !v)}
+              title="Thinking & actions — what the model is reasoning and running"
+              aria-label="Toggle thinking and actions panel"
+              aria-pressed={showActivity}
+            >
+              <Activity size={17} />
+            </button>
             {isDesktop() && (
               <>
               <div ref={rootsWrapRef} className="desktop-folder-indicator" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginRight: 8, color: 'var(--text-secondary)' }}>
@@ -3622,6 +3653,7 @@ export default function App() {
       )}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={handleAuth} />}
       {features.artifacts && activeArtifact && <ArtifactPanel artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />}
+      {showActivity && <ActivityPanel onClose={() => setShowActivity(false)} />}
       {browserPanel && (
         <BrowserPanel
           conversationId={browserConvId}
