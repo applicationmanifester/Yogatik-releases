@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "dexie": "^4.0.0",
+    "electron-updater": "^6.3.9",
     "firebase": "^12.17.1",
     "lucide-react": "^0.460.0",
     "mp4-muxer": "^5.2.2",
@@ -36,7 +37,6 @@
     "autoprefixer": "^10.5.4",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
-    "electron-updater": "^6.3.9",
     "eslint": "^9.15.0",
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.0.0",
@@ -55,7 +55,8 @@
     "files": [
       "dist-electron/**/*",
       "electron/**/*",
-      "bin/**/*"
+      "bin/**/*",
+      "!electron/browserHarness/**"
     ],
     "extraResources": [
       {

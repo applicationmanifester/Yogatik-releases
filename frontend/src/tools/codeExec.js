@@ -77,7 +77,10 @@ export const codeExecTool = {
       'Execute Python in the browser (Pyodide WASM). STATEFUL: variables, imports and installed ' +
       'packages persist across calls in this conversation, like a Jupyter kernel. numpy/pandas/etc. ' +
       'from imports load automatically; top-level await is supported. Pass packages[] to pip-install ' +
-      'pure-Python wheels via micropip, or reset:true to clear the kernel.',
+      'pure-Python wheels via micropip, or reset:true to clear the kernel. ' +
+      'IT CANNOT REACH THE REAL MACHINE: no access to the user’s files, no OS or shell commands, ' +
+      'no starting servers, no installing system software. To run a real command use terminal_run; ' +
+      'to start a dev server use proc_start; to read the user’s files use fs_read/fs_list.',
     parameters: {
       type: 'object',
       properties: {

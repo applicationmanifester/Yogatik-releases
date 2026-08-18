@@ -9,7 +9,11 @@ export const terminalRunTool = {
     description:
       'Execute a terminal CLI command in this chat’s primary working folder. ' +
       'Use to run tests (npm test), build projects, check git status, or execute scripts. ' +
-      'Returns stdout, stderr, and exit code. Desktop app only.',
+      'Returns stdout, stderr, and exit code. ' +
+      'It WAITS for the command to finish and times out (default 30s), so it is the wrong tool ' +
+      'for anything long-running: use proc_start for dev servers, watch-mode tests and streaming ' +
+      'builds. Needs a working folder granted for this chat — if none is bound, ask the user to ' +
+      'add one instead of concluding you cannot run commands. Desktop app only.',
     parameters: {
       type: 'object',
       properties: {
