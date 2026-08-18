@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   nodeLabel, isInteractive, truncateText,
   simplify, assignRefs, parseRef, isStaleRef,
+  formatTree, buildTree,
 } from '../../electron/browserTree.cjs'
 
 describe('browserTree — node classification', () => {
@@ -94,5 +95,61 @@ describe('browserTree — refs', () => {
     expect(isStaleRef('ref_1_0', 2)).toBe(true)
     expect(isStaleRef('ref_2_0', 2)).toBe(false)
     expect(isStaleRef('garbage', 2)).toBe(true)
+  })
+})
+
+describe('browserTree — formatting', () => {
+  it('indents by depth and shows refs', () => {
+    const nodes = [
+      { depth: 0, role: 'heading', name: 'Login' },
+      { depth: 1, role: 'textbox', name: 'Email', ref: 'ref_1_0' },
+      { depth: 1, role: 'button', name: 'Go', ref: 'ref_1_1' },
+    ]
+    expect(formatTree(nodes).split('\n')).toEqual([
+      'heading "Login"',
+      '  textbox "Email" [ref_1_0]',
+      '  button "Go" [ref_1_1]',
+    ])
+  })
+
+  it('caps indentation so a deep page stays readable', () => {
+    const out = formatTree([{ depth: 40, role: 'button', name: 'X', ref: 'ref_1_0' }])
+    expect(out.startsWith(' '.repeat(20))).toBe(true)
+    expect(out.startsWith(' '.repeat(22))).toBe(false)
+  })
+})
+
+describe('browserTree — buildTree', () => {
+  const raw = (n) => Array.from({ length: n }, (_, i) => ({
+    depth: 0, role: 'button', name: `B${i}`, visible: true,
+  }))
+
+  it('builds a tree with refs and reports the interactive count', () => {
+    const out = buildTree(raw(3), { epoch: 5 })
+    expect(out.truncated).toBe(false)
+    expect(out.interactiveCount).toBe(3)
+    expect(out.text).toContain('[ref_5_0]')
+    expect(out.text).toContain('[ref_5_2]')
+  })
+
+  it('truncates past the node budget and says so', () => {
+    const out = buildTree(raw(20), { epoch: 1, maxNodes: 5 })
+    expect(out.truncated).toBe(true)
+    expect(out.text).toContain('B0')
+    expect(out.text).not.toContain('B19')
+    expect(out.text).toMatch(/truncated/i)
+  })
+
+  it('numbers refs before truncating so kept refs stay resolvable', () => {
+    const out = buildTree(raw(20), { epoch: 1, maxNodes: 3 })
+    expect(out.text).toContain('[ref_1_0]')
+    expect(out.interactiveCount).toBe(20)
+  })
+
+  it('survives an empty page', () => {
+    const out = buildTree([], { epoch: 1 })
+    expect(out.interactiveCount).toBe(0)
+    expect(out.truncated).toBe(false)
+    expect(typeof out.text).toBe('string')
   })
 })

@@ -68,8 +68,36 @@ function isStaleRef(ref, currentEpoch) {
   return parsed.epoch !== currentEpoch
 }
 
+const MAX_INDENT = 10
+
+function formatTree(nodes) {
+  return (nodes || []).map(n => {
+    const pad = '  '.repeat(Math.min(Number(n.depth) || 0, MAX_INDENT))
+    const label = truncateText(nodeLabel(n))
+    const ref = n.ref ? ` [${n.ref}]` : ''
+    return `${pad}${n.role || 'node'} "${label}"${ref}`
+  }).join('\n')
+}
+
+// Refs are assigned BEFORE truncation: a ref that survives into the visible
+// slice must resolve to the same element the page-side walker registered, and
+// the page registers every interactive node it saw, not just the ones we print.
+function buildTree(rawNodes, { epoch = 0, maxNodes = MAX_NODES } = {}) {
+  const kept = simplify(rawNodes)
+  const withRefs = assignRefs(kept, epoch)
+  const interactiveCount = withRefs.filter(n => n.ref).length
+  const truncated = withRefs.length > maxNodes
+  const slice = truncated ? withRefs.slice(0, maxNodes) : withRefs
+  let text = formatTree(slice)
+  if (truncated) {
+    text += `\n… truncated: showing ${maxNodes} of ${withRefs.length} nodes`
+  }
+  return { text, truncated, interactiveCount, nodeCount: withRefs.length }
+}
+
 module.exports = {
-  MAX_TEXT, MAX_NODES, INTERACTIVE_ROLES,
+  MAX_TEXT, MAX_NODES, MAX_INDENT, INTERACTIVE_ROLES,
   truncateText, isInteractive, nodeLabel,
   simplify, assignRefs, parseRef, isStaleRef,
+  formatTree, buildTree,
 }
