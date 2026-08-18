@@ -184,7 +184,16 @@ body {
   flex-direction: column;
   min-height: 0;
 }
-.settings.open { max-height: 58vh; }
+.settings.open {
+  max-height: 58vh;
+  /* 58vh is a CAP, not a floor. On a short window the fixed chrome (header,
+     new-chat, search, footer) plus 58vh exceeds the sidebar, and because
+     .sidebar is overflow:hidden the surplus is clipped silently — which hid the
+     Sign In button entirely. Allow it to shrink past the cap; .settings-body
+     already scrolls its own content. */
+  flex-shrink: 1;
+  min-height: 0;
+}
 .settings-toggle {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; padding: 10px 8px; margin: 0;
@@ -4565,6 +4574,11 @@ body {
 
 .sidebar-footer {
   margin-top: auto;
+  /* .sidebar is overflow:hidden, so without this the footer shrinks below its
+     own content on a short viewport and its LAST child — the Sign In button —
+     is clipped out of sight with no scrollbar to reach it. The scroll region
+     above must give up the space instead. */
+  flex-shrink: 0;
   padding: 8px;
   display: flex;
   flex-direction: column;

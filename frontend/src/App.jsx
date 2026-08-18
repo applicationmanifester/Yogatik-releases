@@ -2879,8 +2879,8 @@ export default function App() {
         <div className="sidebar-footer">
           {isDesktop() ? (
             <a className="sidebar-footer-link" href="https://yogatik.web.app/" target="_blank" rel="noreferrer"
-              title="Open Yogatik in a browser — use it on your phone or tablet">
-              <Smartphone size={13} /> <span>Use on phone or tablet</span>
+              title="Open the Yogatik web app in a browser on your mobile or tablet">
+              <Smartphone size={13} /> <span>Use web app on mobile/tab</span>
             </a>
           ) : (
             <a className="sidebar-footer-link" href="/platforms"
