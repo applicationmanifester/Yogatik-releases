@@ -4,11 +4,13 @@ import { watchFolderTool } from './watchFolder'
 import { systemStateTool } from './systemState'
 import { processManagerTool } from './processManager'
 import { fileDialogTool } from './fileDialog'
+import { browserControlTool } from './browserControl'
 import { sealKey, openKey, isSealed } from '../desktopKeychain'
 
 const BRIDGES = [
   '__YOGATIK_CLIPBOARD__', '__YOGATIK_WATCHER__', '__YOGATIK_POWER__',
   '__YOGATIK_PROCESS__', '__YOGATIK_DIALOG__', '__YOGATIK_KEYCHAIN__', '__YOGATIK_DESKTOP__',
+  '__YOGATIK_BROWSER__',
 ]
 
 describe('desktop-only capability tools', () => {
@@ -42,6 +44,50 @@ describe('desktop-only capability tools', () => {
 
   it('file_dialog returns desktop-only note in the browser', async () => {
     const res = await fileDialogTool.execute({ action: 'open' })
+    expect(res.success).toBe(false)
+  })
+
+  it('browser_control returns desktop-only note in the browser', async () => {
+    const res = await browserControlTool.execute({ action: 'navigate', url: 'https://example.com' })
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/desktop app/i)
+  })
+
+  it('browser_control rejects an unknown action', async () => {
+    window.__YOGATIK_BROWSER__ = { navigate: async () => ({ success: true }) }
+    const res = await browserControlTool.execute({ action: 'teleport' })
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/unsupported/i)
+  })
+
+  it('browser_control requires a url to navigate', async () => {
+    window.__YOGATIK_BROWSER__ = { navigate: async () => ({ success: true }) }
+    const res = await browserControlTool.execute({ action: 'navigate' })
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/url/i)
+  })
+
+  it('browser_control passes the conversation id through as an opaque key', async () => {
+    let seen = null
+    window.__YOGATIK_BROWSER__ = { read: async (p) => { seen = p; return { success: true, tree: '' } } }
+    await browserControlTool.execute({ action: 'read' })
+    expect(seen).toHaveProperty('conversationId')
+  })
+
+  it('browser_control lets the model override the surface per call', async () => {
+    let seen = null
+    window.__YOGATIK_BROWSER__ = { read: async (p) => { seen = p; return { success: true } } }
+    await browserControlTool.execute({ action: 'read', display: 'panel' })
+    expect(seen.display).toBe('panel')
+  })
+
+  it('browser_control refuses a click with neither ref nor coordinates', async () => {
+    window.__YOGATIK_BROWSER__ = {
+      click: async (p) => (p.ref || (typeof p.x === 'number' && typeof p.y === 'number')
+        ? { success: true }
+        : { success: false, error: 'Provide either a ref (preferred) or x and y' }),
+    }
+    const res = await browserControlTool.execute({ action: 'click' })
     expect(res.success).toBe(false)
   })
 

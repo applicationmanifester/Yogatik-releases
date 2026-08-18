@@ -64,6 +64,7 @@ import { requestPermission } from '../permissions'
 import { terminalRunTool } from './terminalRun'
 import { mcpResourceTool, mcpPromptTool } from './mcpResources'
 import { computerControlTool } from './computerControl'
+import { browserControlTool } from './browserControl'
 import { clipboardAccessTool } from './clipboardAccess'
 import { watchFolderTool } from './watchFolder'
 import { systemStateTool } from './systemState'
@@ -149,7 +150,7 @@ export const browserAutopilotTool = {
     type: 'function',
     function: {
       name: 'browser_autopilot',
-      description: 'Autonomous browser worker that navigates to a URL, extracts structured content, evaluates web elements, or monitors page updates (like Strawberry Browser).',
+      description: 'Fetch a web page\'s static HTML and extract its text, optionally focused on a query. Does NOT run JavaScript, log in, click, or see what a page renders — for that use browser_control (desktop app). Good for quick text extraction from simple public pages.',
       parameters: {
         type: 'object',
         properties: {
@@ -293,6 +294,7 @@ const ALL_TOOLS = {
   desktop_action: desktopActionTool,
   computer_control: computerControlTool,
   browser_autopilot: browserAutopilotTool,
+  browser_control: browserControlTool,
   // Open Public API Tools (Keyless, Free, Browser-Native)
   drug_info: drugInfoTool,
   crypto_price: cryptoPriceTool,
@@ -348,6 +350,14 @@ const TOOL_ALIASES = {
   scroll: 'computer_control',
   press_key: 'computer_control',
   keyboard: 'computer_control',
+  // Real in-app browser (desktop). Deliberately NOT aliased to
+  // browser_autopilot, which only fetches static HTML.
+  browse: 'browser_control',
+  open_url: 'browser_control',
+  web_browse: 'browser_control',
+  browser: 'browser_control',
+  click_element: 'browser_control',
+  browser_read: 'browser_control',
   // Desktop-native capability aliases
   clipboard: 'clipboard_access',
   read_clipboard: 'clipboard_access',

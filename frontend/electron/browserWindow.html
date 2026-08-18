@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Yogatik Browser</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font: 13px system-ui, sans-serif; background: #0a0e14; color: #e6e6e6; }
+  #bar { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 8px;
+         background: #11151c; border-bottom: 1px solid #232936; overflow-x: auto; }
+  .tab { display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 5px 10px;
+         border-radius: 8px; background: #1a1f29; cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
+  .tab.active { background: #2a3140; outline: 1px solid #3d4757; }
+  .tab span { overflow: hidden; text-overflow: ellipsis; }
+  .tab button { background: none; border: 0; color: #8b93a3; cursor: pointer; font-size: 14px; padding: 0 2px; }
+  .tab button:hover { color: #fff; }
+  #hint { margin-left: auto; color: #6b7280; font-size: 11px; padding-right: 4px; flex: 0 0 auto; }
+</style>
+<div id="bar"><span id="hint">Yogatik is browsing</span></div>
+<script>
+  const bar = document.getElementById('bar')
+  const hint = document.getElementById('hint')
+  // Called from main via executeJavaScript. Text is set with textContent, never
+  // innerHTML — page titles are attacker-controlled strings.
+  window.__setTabs = (tabs, activeId) => {
+    for (const el of [...bar.querySelectorAll('.tab')]) el.remove()
+    for (const t of tabs) {
+      const el = document.createElement('div')
+      el.className = 'tab' + (t.tabId === activeId ? ' active' : '')
+      const label = document.createElement('span')
+      label.textContent = t.title || t.url || 'New tab'
+      el.appendChild(label)
+      const x = document.createElement('button')
+      x.textContent = '×'
+      x.title = 'Close tab'
+      x.onclick = (e) => { e.stopPropagation(); window.__tabAction && window.__tabAction('close', t.tabId) }
+      el.appendChild(x)
+      el.onclick = () => window.__tabAction && window.__tabAction('select', t.tabId)
+      bar.insertBefore(el, hint)
+    }
+  }
+</script>

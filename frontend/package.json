@@ -16,7 +16,8 @@
     "electron:build": "npm run build:electron && electron-builder --win nsis --publish never",
     "electron:build:all": "npm run build:electron && electron-builder -mwl --publish never",
     "electron:build:mac": "npm run build:electron && electron-builder --mac --publish never",
-    "electron:build:linux": "npm run build:electron && electron-builder --linux --publish never"
+    "electron:build:linux": "npm run build:electron && electron-builder --linux --publish never",
+    "test:browser": "electron electron/browserHarness/run.cjs"
   },
   "dependencies": {
     "dexie": "^4.0.0",

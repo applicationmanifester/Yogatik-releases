@@ -1127,6 +1127,7 @@ body {
   .suggestions { gap: 6px; }
   .suggestion { padding: 8px 12px; font-size: 12px; }
   .artifact-panel { width: 100%; min-width: unset; }
+  .browser-panel { width: 100%; min-width: unset; }
   .arena-grid { grid-template-columns: 1fr; }
   .upload-area { flex-wrap: wrap; }
   .generated-image { max-height: 300px; }
@@ -4676,3 +4677,38 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+
+/* Docked browser. The WebContentsView composites ABOVE this DOM, so
+   .browser-panel-hole is deliberately empty — it only measures where the
+   native view should sit. */
+.browser-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 50%;
+  min-width: 360px;
+  height: 100%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+}
+.browser-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.browser-panel-url {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.browser-panel-hole { flex: 1; min-height: 0; }

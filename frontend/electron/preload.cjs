@@ -157,6 +157,27 @@ contextBridge.exposeInMainWorld('__YOGATIK_DIALOG__', {
   readPicked: (path) => ipcRenderer.invoke('dialog:read-picked', path),
 })
 
+// Real browser the agent can drive and the user can watch. Web builds have no
+// equivalent — cross-origin iframes are refused and opaque.
+contextBridge.exposeInMainWorld('__YOGATIK_BROWSER__', {
+  navigate: (p) => ipcRenderer.invoke('browser:navigate', p || {}),
+  read: (p) => ipcRenderer.invoke('browser:read', p || {}),
+  click: (p) => ipcRenderer.invoke('browser:click', p || {}),
+  type: (p) => ipcRenderer.invoke('browser:type', p || {}),
+  key: (p) => ipcRenderer.invoke('browser:key', p || {}),
+  scroll: (p) => ipcRenderer.invoke('browser:scroll', p || {}),
+  screenshot: (p) => ipcRenderer.invoke('browser:screenshot', p || {}),
+  newTab: (p) => ipcRenderer.invoke('browser:new-tab', p || {}),
+  listTabs: (p) => ipcRenderer.invoke('browser:list-tabs', p || {}),
+  selectTab: (p) => ipcRenderer.invoke('browser:select-tab', p || {}),
+  closeTab: (p) => ipcRenderer.invoke('browser:close-tab', p || {}),
+  history: (p) => ipcRenderer.invoke('browser:history', p || {}),
+  setMode: (p) => ipcRenderer.invoke('browser:set-mode', p || {}),
+  setBounds: (p) => ipcRenderer.invoke('browser:set-bounds', p || {}),
+  setDetached: (p) => ipcRenderer.invoke('browser:set-detached', p || {}),
+  close: (p) => ipcRenderer.invoke('browser:close', p || {}),
+})
+
 // Process manager (list + guarded kill).
 contextBridge.exposeInMainWorld('__YOGATIK_PROCESS__', {
   list: (opts) => ipcRenderer.invoke('process:list', opts || {}),
