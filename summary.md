@@ -1,147 +1,164 @@
-# Real browser control for the Yogatik desktop app (v3.16)
+# Yogatik 3.10.0 — release summary
 
 **Date:** 2026-08-18
-**Branch:** `feat/desktop-browser-control` → merged to `main` (`3b17be1`)
-**Commits:** 12 + merge commit · 19 files · +1555 / −6
+**Version:** 3.9.3 → **3.10.0** (minor: new capability, not just fixes)
+**Range:** `17242f1..HEAD` · 26 commits · 39 files · +5117 / −237
+**Tests:** 1180 passing (91 files) · lint 0 errors · pushed to `origin/main`
 
 ---
 
-## Why this exists
+## Headline: the desktop app can now use a real browser
 
-Yogatik could *fetch* web pages but could not *use* one. It could not log in,
-click a button, fill a form, scroll a feed, or see what a page rendered after
-its JavaScript ran.
+Yogatik could *fetch* web pages but could not *use* one — no logging in, no
+clicking, no filling forms, no seeing what a page rendered after its JavaScript
+ran.
 
-That is a hard wall in the browser build, not a missing feature. Driving an
-arbitrary external site from inside a page means iframing it, and cross-origin
-iframes are refused outright by `X-Frame-Options` / `frame-ancestors` on most
-real sites — and are opaque to the parent even when allowed. There is no web API
-to screenshot another origin or click inside it.
+That is a hard wall in the browser build, not an oversight. Driving an external
+site from inside a page means iframing it, and cross-origin iframes are refused
+by `X-Frame-Options`/`frame-ancestors` on most real sites and are opaque to the
+parent even when allowed. There is no web API to screenshot another origin or
+click inside it.
 
-The desktop shell has no such limit. Electron's `WebContentsView` is a real
-top-level browsing context. This ships that capability.
+Electron's `WebContentsView` is a real top-level browsing context, so the desktop
+app can. One tool, `browser_control`, drives real tabs the user can watch — in a
+dedicated window **or** docked in-app.
 
----
+### Design decisions worth remembering
 
-## What was built
+**Refs, not pixels.** `read` returns the page as a tree where every interactive
+element carries a `[ref_N]` handle. The model names *what* it wants; the code
+computes *where*. A coordinate miss is silent — it clicks the wrong thing and the
+agent proceeds as if it worked.
 
-One tool, `browser_control`, driving real `WebContentsView` tabs the user can
-watch.
+**Stale refs fail loudly.** Refs are epoch-tagged; the epoch bumps on navigation
+and on every read. A superseded ref returns `{stale: true}` and is **never**
+downgraded to a coordinate click.
 
-| Area | Behaviour |
-|---|---|
-| **Surfaces** | A dedicated browser window with a tab strip, **or** a panel docked in the app. Both host the *same* views. |
-| **Targeting** | `read` returns the page as a tree where every interactive element carries a `[ref_N]` handle. Clicks and typing address elements by ref. |
-| **Tabs** | Open, list, select, close; pop-ups become real tabs. |
-| **Session scope** | Keyed by conversation; destroyed on chat switch. |
-| **Web build** | Honest `"Browser control runs only in the Yogatik desktop app."` |
-
-### Actions
-
-`navigate` · `read` · `click` / `double_click` / `right_click` · `type` · `key` ·
-`scroll` · `screenshot` · `new_tab` · `list_tabs` · `select_tab` · `close_tab` ·
-`back` / `forward` · `set_mode` · `close`
-
----
-
-## Design decisions worth remembering
-
-**Refs, not pixels.** `computer_control` is coordinate-only because it drives
-*other* applications, where there is no way in. Inside our own view we can run
-JavaScript, so the model names *what* it wants and the code computes *where*. A
-coordinate miss is silent — it clicks the wrong thing and the agent proceeds as
-if it worked.
-
-**Stale refs fail loudly.** A ref is meaningless once the page navigates or
-re-renders. Refs are epoch-tagged (`ref_<epoch>_<n>`), the epoch bumps on
-main-frame navigation and on every read, and a superseded ref returns
-`{stale: true}`. It is **never** downgraded to a coordinate click — that is the
-exact failure the tree exists to prevent.
-
-**Refs are numbered before truncation.** A ref printed in the visible slice must
-resolve to the element the page registered, so the page registers every
-interactive node it saw, not just the ones printed.
+**Refs are numbered before truncation**, so a ref printed in the visible slice
+still resolves to the element the page registered.
 
 **The ref map lives in the page.** `window.__yogatikRefs__` holds live element
-references; main stores only the epoch and re-measures at action time. Main never
-holds a stale DOM handle, and an element that moved but still exists is still
-clicked correctly.
+references; main stores only the epoch and re-measures at action time. An element
+that moved but still exists is still clicked correctly.
 
-**One set of views, two surfaces.** `setMode` re-parents; it never rebuilds. Tabs,
-cookies, history and refs survive a switch.
+**One set of views, two surfaces.** `setMode` re-parents; it never rebuilds, so
+tabs, cookies, history and refs survive a switch.
 
-**Sessions die with the chat.** A browsing session carries logged-in state. An
-authenticated tab must not follow the user into an unrelated conversation.
+**Sessions die with the chat** — an authenticated tab must not follow the user
+into an unrelated conversation.
 
-**Pure/glue split.** `browserTree.cjs` requires no Electron, so vitest reaches it
-under jsdom — the same split as `rootsCore.cjs` / `roots.cjs`, and the only reason
-the interesting logic is testable at all.
+### Two crashes caught by real-Electron verification
 
----
+Neither was reachable by unit tests, because vitest runs under jsdom.
 
-## Two crashes caught by real-Electron verification
+1. **A native, uncatchable crash.** `setMode` destroyed the `BrowserWindow` while
+   its `WebContentsView`s were alive; closing one afterwards killed the process —
+   not a JS throw, so no `try/catch` would have helped. Both `setMode` and the
+   last-tab path now **hide** the window; `destroySession` is the only place it is
+   destroyed, and it closes every view first.
+2. **A paint race.** `capturePage` failed with `UnknownVizError` on a cold
+   capture. `screenshot` now shows the surface, waits, and retries once.
 
-Neither was reachable by a unit test, because vitest runs under jsdom and
-`WebContentsView` needs a real Electron app.
-
-**1. A native, uncatchable crash.** `setMode` destroyed the `BrowserWindow` while
-its `WebContentsView`s were still alive. Closing one of those orphaned views
-afterwards killed the process — not a JS throw, so no `try/catch` would have
-helped. Both `setMode` and the last-tab path now **hide** the window;
-`destroySession` is the only place it is destroyed, and it closes every view
-first.
-
-**2. A paint race.** `capturePage` failed with `UnknownVizError` on a cold capture
-right after the surface was created. `screenshot` now shows the surface, waits,
-and retries once.
+The throwaway harness that found them is now in the repo as `npm run test:browser`
+(28 checks) — it asserts a click by ref *actually fires the page's handler*, typed
+text lands in the real input, and a stale ref is refused.
 
 ---
 
-## A correction shipped alongside
+## Agent reliability
 
-`browser_autopilot` described itself as an *"Autonomous browser worker that
-navigates to a URL… (like Strawberry Browser)"*. It is actually `proxyFetch` plus
-regex tag-stripping — a `web_extract` duplicate that cannot run JavaScript, log
-in, or click anything.
+**Empty replies (`"The model returned an empty response"`).** The tool loop had a
+guard for the cap-hit case but none for "loop ended with nothing visible", so a
+model that fell silent after tool results ended the turn blank and threw the
+tool's work away. It now asks once for a plain-prose answer, then surfaces the
+gathered tool results rather than a blank bubble. The retry shares the cap-hit
+path's forced pass, so a model that only ever emits tool calls still costs at most
+initial + 8 rounds + 1.
 
-Left alone, the model would have kept choosing the fake browser over the real one.
-Its description now says plainly what it does. It was **not** deleted — the web
-build still needs static extraction. The new `browse` / `open_url` / `web_browse`
-aliases point at `browser_control`, never at it.
+**"I have no shell/terminal access."** The assistant refused real work on the
+desktop build while holding `terminal_run`, `proc_start`, `fs_*`,
+`browser_control` and `computer_control`. It was not malfunctioning: the system
+prompt opened with *"access to powerful browser-native tools"* on every surface,
+and `agent.js` never consulted `isDesktop`. It believed what it was told.
+`buildSystemPrompt` now states the runtime — desktop says it has a real shell,
+filesystem and browser and must never claim otherwise; web says desktop-only
+tools will refuse, so say so plainly.
+
+**Tool selection.** `code_execute` never said what it *cannot* do, so the model
+reached for the Pyodide sandbox when it needed the real machine. It now names
+`terminal_run` / `proc_start` / `fs_read` instead. `terminal_run` never mentioned
+that it waits and times out at 30s — which is why `npm run dev` under it looked
+broken rather than simply being the wrong tool.
+
+**`browser_autopilot` was overclaiming.** It describes itself as navigating pages
+"like Strawberry Browser" but is `proxyFetch` plus regex tag-stripping — a
+`web_extract` duplicate that cannot run JavaScript, log in, or click. Left alone
+the model would keep choosing the fake browser over the real one. Description
+corrected; not deleted, since the web build still needs static extraction.
+
+**Video renders that produced nothing.** `video_render` was called ten times in
+one turn with steadily worse arguments — `elements[]`, then `[]`, then `[{}]` —
+before telling the user to run ffmpeg locally. A scene with no `type` defaulted to
+an empty "text" scene: it drew nothing, reported success, and taught a guessing
+model nothing. `normalizeSpec` now rejects a scene carrying neither a type nor any
+content, names the invented field back, and shows a worked example.
 
 ---
 
-## Files
+## New: live reasoning + actions panel
 
-| File | Role |
-|---|---|
-| `frontend/electron/browserTree.cjs` | **Pure.** Walker + resolver sources, simplification, ref assignment, truncation, staleness. No `require('electron')`. |
-| `frontend/electron/browserControl.cjs` | Sessions, tabs, both surfaces, IPC, teardown. |
-| `frontend/electron/browserWindow.html` | Tab strip for window mode. |
-| `frontend/electron/browserWindowPreload.cjs` | One-channel preload so the tab buttons work. |
-| `frontend/electron/browserHarness/` | Real-Electron integration harness (`npm run test:browser`). |
-| `frontend/src/tools/browserControl.js` | The `browser_control` tool. |
-| `frontend/src/components/BrowserPanel.jsx` | Panel chrome + bounds reporting. |
-| `frontend/src/tools/browserTree.test.js` | 25 unit tests. |
+The data already existed — the per-message *"Steps, thoughts & actions taken"*
+disclosure and the `<think>` panel — but only *after* the turn, collapsed, one
+message at a time. There is now a docked panel (header **Activity** icon) showing
+tools as they start with running timers and results, and reasoning as it streams.
 
-Modified: `main.cjs`, `preload.cjs`, `tools/index.js`, `App.jsx`,
-`PersonalisePanel.jsx`, `agents.js`, `styles.css`, `package.json`, `CLAUDE.md`.
+`activityStream.js` is an imperative DOM-free pub/sub. It is deliberately **not**
+React state in App: routing streaming tokens through App state re-renders the
+whole shell every frame, which is the bug `StreamingMessage.jsx` exists to avoid.
+Notifications coalesce to one animation frame — pinned by a test asserting three
+publishes yield one notification.
+
+Extracting the shared `splitReasoning` into `reasoning.js` exposed a real bug: an
+**unclosed `<think>` was discarded** rather than captured, so reasoning stayed
+invisible until `</think>` arrived. Now captured as it streams, which also
+improves the existing inline Thinking panel.
+
+The inline disclosure is untouched, so nothing regresses when the panel is shut.
 
 ---
 
-## The layering gotcha (read before touching the panel)
+## UI and infrastructure
 
-A `WebContentsView` is composited **above** the renderer's DOM. `z-index` does not
-apply to it and React markup cannot occlude it.
+**Sign In was invisible.** Not hidden — *clipped*. `.sidebar` is
+`overflow: hidden`, and `.settings.open` held a fixed `58vh` via a `flex-shrink:0`
+rule meant for the closed toggle. On a short window that plus the fixed chrome
+exceeded the sidebar, `.sidebar-scroll` collapsed to 0, and the footer's last
+child fell outside the hidden overflow with no scrollbar to reach it. `58vh` is
+now a cap rather than a floor. Measured: the button sat 44px below the edge at
+560px height; it now ends 18px above it and still fits at 460px.
 
-So `BrowserPanel.jsx` is *chrome around a hole*: it reports its content rect and
-main positions the native view to match. Any overlay that should cover the panel
-would otherwise be painted **underneath** it — hence `browserOccluded` in
-`App.jsx`, which detaches the view while a modal is open. `settingsOpen` matters
-most, since that drawer docks exactly where the panel does.
+**Auto-update never worked in production.** `electron-updater` was a
+`devDependency`, and electron-builder never packages those — so
+`require('electron-updater')` threw in every shipped build and the guard in
+`updater.cjs` swallowed it silently. Verified by parsing the built `app.asar`
+before and after. **3.10.0 is the first build whose updater is actually
+packaged**, so users on 3.9.x must install manually; auto-update starts working
+for 3.10.0 → next.
 
-Renderer-supplied *bounds* are safe (a rectangle escapes nothing) and are **not**
-an exception to the rule that the renderer never names a filesystem root.
+**CI's `e2e` job had failed on every run since it was added.** It installed a
+Playwright browser then ran `npm run e2e` — a script that did not exist, alongside
+no `@playwright/test`, no config and no specs. Now filled in: four smoke tests
+against the **production bundle**, covering what the jsdom suite structurally
+cannot (a broken build output, a 404ing chunk, a browser-only crash). Console
+assertions filter the noise a keyless CI browser always emits so it does not
+become a flake generator.
+
+**Folders popover could not be dismissed** — a `role="dialog"` with no close
+button, no Escape and no outside-click. All three added, listeners bound only
+while open.
+
+Also: `Use on phone or tablet` → `Use web app on mobile/tab`; the browser test
+harness is excluded from the installer.
 
 ---
 
@@ -149,41 +166,54 @@ an exception to the rule that the renderer never names a filesystem root.
 
 | Check | Result |
 |---|---|
-| `npm test` | **1152 passed / 89 files** |
+| `npm test` | **1180 passed / 91 files** |
 | `npm run lint` | **0 errors** (88 pre-existing warnings) |
-| `npm run build` (web) | ✅ |
-| `npm run build:electron` | ✅ |
-| `npm run test:browser` | **28/28** in a real Electron app |
-
-The harness asserts what mocks cannot: that a click by ref **actually fires the
-page's handler**, that typed text lands in the real input, and that a stale ref is
-refused rather than clicking blind.
+| `npm run e2e` | 4/4 against the production bundle |
+| `npm run test:browser` | 28/28 in a real Electron app |
+| Web + Electron renderer builds | ✅ |
+| Installer | signed, v3.10.0, blockmap + `latest.yml` |
 
 ---
 
-## Not done
+## Open items
 
-**The running app has not been driven by hand.** The code paths are covered by the
-harness, but nobody has launched the desktop app and browsed with it. Worth doing
-before shipping, specifically:
+**1. Installer needs a repackage.** The last `electron-builder` run failed with
+`EPERM` on `win-unpacked` because six Yogatik processes were running and held the
+files. Close the app and rebuild — the code is committed and pushed; only the
+`.exe` lags.
 
-- Ask the agent to open a site and read it → separate window with a tab strip.
-- Search on a real site by ref → text lands, results load.
-- Switch **Browser surface** to *A panel in the app*, then open the settings
-  drawer over it → the native view should detach, not be painted under.
-- Open two tabs, switch chats → the browser should close entirely.
+**2. Nothing is deployed to the web.** `yogatik.web.app` still serves the old
+bundle (`index-CW6oFTEX.js`), confirmed by fetching it and grepping for the new
+wording. **None of these fixes are live on the web app.**
 
-Panel occlusion in particular depends on real layout that cannot be asserted
-headlessly.
+**3. No release tag.** Users do not get 3.10.0 until `git tag v3.10.0 && git push
+origin v3.10.0`. CI publishes on the tag into the `Yogatik-releases` repo, and its
+version guard now matches at 3.10.0.
 
-**Also out of scope** (deliberate): downloads through the agent's browser, cookie
-persistence across restarts beyond Electron's default, extensions/CDP, recording
-browsing as a replayable workflow, mobile emulation, and any hard technical
-guardrail on risky actions — safety is prompt-level, matching `computer_control`.
+**4. Desktop UI not driven by hand.** The browser panel's occlusion behaviour and
+the renamed footer link were verified by measurement and by reading source, not by
+using the packaged app. Worth a pass before shipping.
+
+---
+
+## Recommended next
+
+From reviewing an external feature analysis: roughly 60% of its "future roadmap"
+already ships (computer use, cron, command palette, local FS sync, share target,
+memory dashboard, workflows, WebLLM, forkable plugin bundles). The genuinely
+missing, highest-value item is **pre-flight token estimation with hard budget
+caps** — the usage meter is post-hoc and estimated at ~4 chars/token, so BYOK
+users discover cost only after spending it. Self-contained, no backend.
+
+Two suggestions should be actively **rejected**: a user PIN for local key storage
+(already considered and rejected — *"a passphrase nobody remembers protects a key
+nobody can use"*; desktop already uses the OS keychain), and a community registry
+of executable JS/Python tools (breaks `plugins.js`'s central property that no
+arbitrary code runs, in an app holding users' API keys).
 
 ---
 
 ## Design docs
 
-- Spec: `docs/superpowers/specs/2026-08-18-desktop-browser-control-design.md`
-- Plan: `docs/superpowers/plans/2026-08-18-desktop-browser-control.md`
+- `docs/superpowers/specs/2026-08-18-desktop-browser-control-design.md`
+- `docs/superpowers/plans/2026-08-18-desktop-browser-control.md`
