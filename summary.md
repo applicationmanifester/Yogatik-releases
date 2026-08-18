@@ -1,249 +1,188 @@
 # Yogatik — Session Summary
 
-Covers this session's work end to end: per-chat desktop folders, a real safety
-layer, a finance/quant suite, video rendering fixes, and shipping the app to
-web plus a multi-platform desktop mirror. 1011 tests passing, 0 lint errors.
+Started with a 404 on the desktop download page. Ended with a working
+three-platform release pipeline, two releases published automatically, and a
+long tail of bugs found while looking for something else.
 
-*(This replaces a prior copy of this file that described an unrelated earlier
-session — agents subsystem, cloud sync, live-mode echo fix, etc. That work is
-not part of what's below; see git history around commits before this session
-if you need it.)*
+26 commits (plus this one) · 49 files · +2551 / −327 · **1121 tests across 88 files, 0 lint errors**
 
----
-
-## Per-chat working folders (Electron desktop)
-
-Replaced the single app-wide granted folder with a per-chat model, mirroring
-how a `claude` session owns its launch directory (Claude Code's `/add-dir`).
-
-- **`electron/rootsCore.cjs`** — pure resolution logic (no `require('electron')`,
-  so vitest reaches it under jsdom): root-id hashing, `chat → project → default`
-  binding resolution, `resolveWithin` containment (realpath re-check anchored on
-  the nearest *existing* ancestor — closes a symlink-escape gap the old guard had).
-- **`electron/roots.cjs`** — JSON persistence, native folder picker, `roots_*`
-  IPC. Migrates the old single `granted_folder.txt` into every chat's default
-  binding on first run, so nothing breaks for existing users.
-- **`fsBridge.cjs`** reduced to file operations only; every handler takes
-  `ctx = {conversationId, projectId}`.
-- Renderer: `setWorkspaceContext()` injects ctx into every tool call — never a
-  model-supplied parameter, since the model influences the renderer and a
-  model-named root would make the whole grant model meaningless.
-- Header popover lists a chat's folders with add/remove/make-primary, marks
-  inherited ones.
-
-## Permission broker (the safety floor everything else depends on)
-
-`disabled_tools` was a global on/off switch and nothing else — with `fs_delete`
-and `terminal_run` enabled, the model could delete anything or run any shell
-command with zero confirmation.
-
-- **`permissions.js`** — tools classified `read | write | destructive`. Reads
-  pass straight through; anything above that **fails closed**: no approval UI
-  installed, or the UI throws, and the call is denied. Deny always beats allow.
-  No "always allow" offered for destructive calls.
-- Rules layer chat → project → global, same shape as the folder bindings.
-- Approval card shows the **actual diff** for a write (`diffPreview.js`, pure
-  LCS diff, context-trimmed and capped) — approving "write src/app.js" tells
-  you nothing; approving a visible patch does.
-- Verified end-to-end, not just unit-tested: a test proves `executeTool('terminal_run', {command:'rm -rf /'})` is blocked with no UI installed.
-
-## Undo journal
-
-Every `fs_write` / `fs_edit` / `fs_delete` / `fs_move` snapshots the prior state
-(files and whole directory trees) to `userData/yogatik-journal` before touching
-disk. New `fs_undo` tool lists recent changes and restores one. Pruned by age
-(14d) and size (200MB). Recording never throws — journalling must not block an
-operation the user already approved.
-
-## Search fix
-
-`fs_search` used to walk up to 20,000 entries and read *every file* as UTF-8 —
-no `.gitignore`, no binary detection, no size cap. On a repo with
-`node_modules` this read hundreds of MB into strings. Now prunes `.git`/
-`node_modules`/etc. and anything `.gitignore` excludes *before* touching disk,
-skips binaries by NUL-byte sniff, caps files at 2MB. Measured: 4 files visited
-instead of 400+, 9ms, on a synthetic tree.
-
-## Dev-loop tools
-
-Git (`git_status`/`log`/`diff` via the system binary, argument array only,
-read-only subcommands enforced), background processes (`proc_start`/`output`/
-`stop` — `terminal_run` was fire-and-wait with a 30s cap, so a dev server was
-impossible), file watching (`fs.watch`, no new dependency), stdio MCP transport
-(most published MCP servers are npx-launched stdio, and the app could only
-reach HTTP ones), hooks (config + trust model — **deliberately inert** until a
-trust UI exists, since a hooks file arrives inside a repo and cloning one must
-never be enough to run commands), repo-defined commands
-(`.yogatik/commands/*.md` merge into skills at read time), context compaction
-(long conversations were truncated with an ellipsis; now summarized), a
-per-chat task list, and sub-agent workspace isolation (opt-in; an isolated
-agent can't call `fs_add_folder`, since that would defeat the isolation).
-
-## Finance & quant suite (all pure, on-device, no API key)
-
-Independent implementation — inspired by a public terminal app's feature list,
-but **no code taken from it**: that project is AGPL-3.0, and the source here
-is proprietary/unlicensed, so copying would force a licence change including
-network disclosure. Every formula is written from the published equations
-(Black-Scholes 1973, Merton 1973, Markowitz 1952), which aren't copyrightable.
-
-- **`finance.js`** — DCF (Gordon terminal value; refuses when `g ≥ r` rather
-  than returning a confident Infinity), NPV, IRR (bisection, can't diverge),
-  CAGR, Sharpe/Sortino (`null`, not `Infinity`, when there's no variation),
-  max drawdown, historical VaR, expected shortfall.
-- **`options.js`** — Black-Scholes-Merton, full Greeks (also in trader units:
-  per 1% vol, per day, per 1% rate — raw values are routinely misread by
-  100×/365×), implied vol by bisection (Newton diverges when vega collapses
-  deep ITM/OTM), a CRR binomial tree for American exercise. Validated against
-  the canonical reference case: call 10.4506, put 5.5735, ATM delta 0.6368,
-  put-call parity to 1e-6.
-- **`portfolio.js`** — covariance/correlation, Gauss-Jordan inverse,
-  min-variance and tangency (max-Sharpe) weights, risk parity, efficient
-  frontier, beta. Weights unconstrained unless `long_only` is asked for.
-- **`indicators.js` + `backtest.js`** — SMA/EMA/RSI(Wilder)/MACD/Bollinger/ATR/
-  stochastic, all aligned to the input with `null` during warm-up. Backtester's
-  entire point is the **one-bar delay**: a signal from bar *i*'s close can only
-  be traded from bar *i+1* — same-bar execution is lookahead bias, the main
-  reason a backtest looks great and loses money live. A test asserts a
-  final-bar signal yields exactly zero return.
-- **`marketData.js`** — keyless price history. Stooq was demoted to fallback
-  after it was measured serving an HTML browser check to datacenter/VPN
-  connections in the wild; **Yahoo Finance is now primary**, verified live.
-  World Bank for economic indicators. Coinbase's candle tuple
-  `[time, low, high, open, close, volume]` is *not* intuitive OHLC — pinned by
-  a test after nearly getting it backwards.
-- Exposed as `finance_analytics` and `market_data` tools, granted to the
-  agents whose role actually needs them (15 presets regranted — `agent_finance`
-  existed but couldn't call `finance_analytics` until this pass).
-
-## Video
-
-- **Root cause of "cannot generate videos"**: the MP4 muxer was fetched from a
-  CDN *at render time* and wasn't a dependency at all. Offline (the user's own
-  diagnostics showed `onLine:false`), the import failed and rendering broke.
-  `mp4-muxer` is now a real, lazily-imported dependency — ships as a 31KB chunk
-  inside the app, works offline. CDN kept only as a fallback.
-- Quality presets (`draft`/`standard`/`high`/`max`) threaded into the encoder;
-  previously hardcoded to a single bitrate curve.
-- **`video/edit.js`** — pure trim/concat/speed planning (timecode parsing,
-  clamped trims, `segmentAtFrame`, speed changes that *report*
-  `audioNeedsResample` instead of silently producing chipmunk audio).
-- **`video/decode.js` + `video_edit` tool** — real editing of an *existing*
-  video (previously impossible — nothing could open a file). Seeks an
-  off-screen `<video>` and repaints into the existing encoder; deliberately not
-  WebCodecs `VideoDecoder`, which would need an MP4 demuxer as a new
-  dependency. States its limits up front rather than on discovery: **no
-  audio** (the source track isn't decoded), seek accuracy depends on
-  keyframes, runs at seek speed.
-
-## Concurrency
-
-"Never more than 3 agents at once" was never a pool limit — proved with tests
-running 10 and 16 concurrently (the documented ceiling; `agentPool.js` is
-auto-concurrency, one slot per task). The 3 came from the model, because the
-delegation prompt said *when* to spawn sub-agents but never *how many*. Prompt
-now says explicitly: size the batch to the work, repeating the same specialist
-is normal.
-
-## Open web access (desktop)
-
-CORS was stripped for a 10-host provider allowlist only, so every other page
-read bounced through public relays (rate-limited, content-rewriting, or
-markdown-only). Desktop now gets permissive CORS for **all** hosts and
-`proxyFetch` tries direct first, relays only as fallback.
-
-Safety: general web reads go **anonymous** — cookies stripped, `Origin`
-removed, normal browser UA — because a blanket CORS bypass makes every
-cross-origin response readable by the renderer, which model output
-influences. A test written for that exact boundary caught a real hole
-introduced in the same change: `[^/]*\.?firebaseapp\.com` also matched
-`notfirebaseapp.com`, which would have sent session cookies to a lookalike
-domain. Fixed to `(?:[^/]*\.)?`.
-
-## Bug fixes surfaced by real diagnostics
-
-- **Stuck-model bug**: `isRetiredModelError` matched a 404 only when the
-  message said "not found" — but the message the app itself emits says "does
-  not serve … (404)". A retired model was never pruned, so the dead selection
-  stuck and every send failed until the user changed model by hand.
-- **Misleading Ollama error**: "No provider with a working key could answer"
-  for a provider that needs no key. Message now names keyless providers and
-  says to start the service.
-- **Misaligned chat bubbles**: `.message.user` had `margin-left: 60px`
-  overriding the shared `margin: 0 auto` centring.
-
-## Web app, PWA and multi-platform desktop shipping
-
-- Service worker cache bumped (was unchanged across the whole session, which
-  would have left stale precached shells for returning visitors).
-- `api.js` no longer statically imports the agent/tool graph — deferred until
-  a message is actually sent (measured: didn't shrink the bundle on its own,
-  because two other files still import it eagerly; reported honestly rather
-  than claimed as a win).
-- Mobile: no horizontal body drift, 16px inputs (stops iOS zoom-on-focus),
-  44px touch targets, `prefers-reduced-motion` honoured.
-- Blank tray icon fixed — pointed at a `src-tauri/icons/` path that doesn't
-  exist and was never shipped by `build.files` anyway. Added `public/favicon.ico`.
-- Duplicate "Default" in onboarding — a hardcoded entry collided with an
-  identically-named template.
-- **Desktop now builds for Windows, macOS and Linux** via a CI matrix (macOS
-  installers cannot be cross-compiled from Windows — a real macOS runner is
-  required). Artifact names pinned (`Yogatik-Setup.exe`, `Yogatik.dmg`,
-  `Yogatik.AppImage`, `Yogatik.deb`) so `/platforms` links resolve.
-- **Source repo is private**, so GitHub release assets there are not publicly
-  downloadable. Binaries now publish to a separate **public mirror repo**
-  (`applicationmanifester/Yogatik-releases`) via a scoped `RELEASE_TOKEN` PAT
-  (Contents: read-write on the mirror only) — source stays private, downloads
-  stay free and unmetered. Workflow degrades gracefully without the secret:
-  still builds and uploads artifacts to the run, emits an explicit
-  `::warning::` naming what to add, never fails opaquely.
-- Cross-surface links added: desktop app points *out* to the web app (for
-  phones/tablets, which have no desktop build); the web app points *in* to
-  `/platforms`.
-
-## Process notes
-
-- **170 uncommitted files rescued** early in the session — work that existed
-  only in the working tree with no commit, no branch, no backup. Two files
-  literally named `nul` (a Windows-reserved device name) had been silently
-  breaking every `git add -A` since Aug 11, which is almost certainly why the
-  backlog had grown that large.
-- **A 178MB build artifact** got swept into a commit by that rescue
-  (`terminal/dist-electron-fresh/win-unpacked/Yogatik`), which GitHub's
-  100MB limit then rejected on push. Purged from the *unpushed* history with
-  `git filter-branch` (explicit user permission obtained first; a backup ref
-  `backup-before-purge` was kept). Build-output directories are now
-  gitignored so this can't recur.
-- Duplicate implementations from two parallel lines of work (this session's
-  and an earlier uncommitted line) were merged by **keeping both** where they
-  served different purposes (a task-manager `processes.cjs` alongside a
-  command-runner `bgProcesses.cjs`; two MCP transports; two file watchers)
-  rather than picking a winner and discarding functionality.
-
-## Verification discipline used throughout
-
-- Every new module has unit tests written *before* the implementation, run to
-  fail, then made to pass (TDD).
-- Claims about live systems were checked, not assumed: endpoints tested with
-  real HTTP calls before being wired into tools (Coinbase confirmed working,
-  Stooq confirmed serving a bot-check, World Bank confirmed timing out from
-  this network), the CORS security boundary was tested and caught its own bug,
-  the release mirror's write access was confirmed by an actual push.
-- Where a fix didn't achieve its goal (the `api.js` lazy-import not shrinking
-  the bundle), that was reported plainly rather than presented as a win.
+*(This file is replaced each session. The previous copy described per-chat
+desktop folders, the safety layer and the finance suite — see git history
+before `109d228` if you need it.)*
 
 ---
 
-## Open follow-ups
+## The release pipeline
 
-- **`RELEASE_TOKEN` secret** still needs adding to the private source repo
-  (Settings → Secrets → Actions) for the desktop-release workflow to actually
-  publish to the public mirror — without it, builds succeed but stay
-  attached to the Actions run instead of appearing on `/platforms`.
-- **Hooks execution** is wired but inert until a trust UI ships (by design —
-  see Dev-loop tools above).
-- **`api.js`'s static import of the agent/tool graph** is not fully resolved;
-  `live/session.js` and one other module still pull it in eagerly, so the
-  startup-bundle win is not yet realised.
-- Code-signing certificates are not in place for any platform — builds are
-  unsigned (Gatekeeper/SmartScreen will warn on first run).
+`/platforms` 404'd for every visitor. The cause was not one thing but four,
+each hidden behind the last, and every one of them failed **silently** — green
+jobs, working downloads, nothing in the UI to suggest a problem.
+
+**1. The workflow could not have published even with everything else right**
+(`109d228`)
+
+- `electron:build:mac/linux` lacked `--publish never` while `GH_TOKEN` was set.
+  electron-builder defaults to `onTagOrDraft`, so both jobs would have tried to
+  upload to the *mirror* using the *source* repo's token — a 403 mid-build.
+  Windows was safe only by accident of already passing the flag.
+- `desktop-release.yml` had **never been valid YAML**: `releaseName` closed its
+  single-quoted scalar at the first inner quote. GitHub rejected the whole file.
+- The legacy Tauri workflow fired on the same `v*` tag, publishing a second
+  release into the *private* repo whose assets nobody can download.
+- Three jobs raced to create one release → `max-parallel: 1`.
+
+**2. A Tailwind ghost broke every CI build** (`d6aabc2`) — the real blocker.
+
+`frontend/` had no PostCSS config, so Vite walked **up** and found one at the
+repo root declaring a `tailwindcss` plugin. Tailwind was never a dependency of
+either `package.json`; it resolved on the dev machine only from
+`C:\Users\<user>\node_modules`, **outside the repo entirely**. That is why local
+builds passed while all three runners died at `Cannot find module 'tailwindcss'`.
+
+Tailwind was never used — not one `@tailwind` or `@apply` directive, and its
+content globs pointed at a `./src` that does not exist at the root. Both root
+configs deleted. `autoprefixer` kept and made a real devDependency: `styles.css`
+hand-writes `-webkit-backdrop-filter` in only 8 of 19 `backdrop-filter` rules,
+so dropping it would have quietly killed blur on Safari.
+
+**3. `RELEASE_TOKEN` was granted "repository advisories", not Contents.**
+A fine-grained PAT scoped to the right repo with the wrong permission. The
+publish step 403'd while every job stayed green.
+
+**4. The tag predated its own fix.** `v3.9.1` pointed 14 commits back and still
+contained the broken config, so "re-run the tag build" would have failed
+identically. Cut `v3.9.2` from `main` instead.
+
+**Result:** `v3.9.2` and `v3.9.3` both published end to end — Windows, macOS
+(universal), Linux (AppImage + deb), with `latest*.yml` for auto-update on all
+three. Verified anonymously, not from an authenticated session.
+
+### Known issue — needs one action
+
+`v3.9.3`'s `latest-mac.yml` and `latest-linux.yml` report **3.9.2** while
+`latest.yml` reports 3.9.3. Downloads work on every platform; **auto-update is
+stalled on macOS and Linux** because the updater reads its own version back.
+
+Caused by the `tag` input added in `48fc97d`: a `workflow_dispatch` builds the
+*branch*, not the tag, so a dispatch started before the version bump produced
+3.9.2 binaries filed under `v3.9.3`. `99591a8` now fails such a run immediately
+with both versions named. **Fix: re-run the TAG-triggered `v3.9.3` build** (not
+the "Run workflow" button) so the correct manifests overwrite the wrong ones.
+
+---
+
+## Bugs found while looking for something else
+
+**The service worker was deleting users' downloaded AI models** (`a7897db`).
+`activate()` swept every cache whose name differed from the app shell's:
+
+```js
+keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+```
+
+The Cache API is origin-wide, so that deleted `webllm/model`, `webllm/wasm`,
+`webllm/config` and `transformers-cache` — **up to ~1.7GB of consented download,
+on every deploy.** Worse, WebLLM memoises its Cache handle, so a worker
+activating mid-download deleted the store underneath an in-flight `add()`,
+surfacing as the opaque `Failed to execute 'add' on 'Cache': Request failed`
+that started the investigation. Eviction is now scoped to a `yogatik-` prefix.
+`ErrorBoundary`'s reload had the same blanket sweep.
+
+**Disk-full reported as a provider rate limit** (`b86a6d1`). `diagnoseError`
+matched bare `quota`, so running out of space mid-download produced "Rate Limit
+or Quota Exceeded" and offered Auto-Pick — an action that cannot free disk, for
+a failure no provider was involved in.
+
+**`clone()` silently wiped hook trust** (`1247101`). It rebuilt only
+`{version, roots, bindings}`, dropping every other top-level key — and
+`roots.cjs` assigns the result back over live state, so any add/remove of a root
+revoked `trustedHookRoots` with no user action.
+
+**Ollama was hidden from the desktop picker** (`e270458`). `getModels()` skipped
+`desktop && p.isLocal` to hide the 750MB WebLLM provider, but Ollama carries
+`isLocal` too. The comment directly above said *"Ollama is the local path
+there"* and the code removed it. A second guard was needed on the sibling
+branch, or unhiding it would have listed WebLLM's weights instead of the
+daemon's.
+
+**A download button that had been 404 for every user** (`bc18ca9`). The modal
+linked to `github.com/yogatik/yogatik` — a repo that does not exist. Deleted
+rather than corrected: `/platforms` owns those links in one place now.
+
+**11 undefined CSS tokens pinning the light theme dark** (`e9483d1`).
+`var(--bg-elevated, #12161f)` and ten siblings were used but never defined, so
+the hardcoded *dark* fallback always won. Anything using them ignored the theme
+— the folder popover was just the one that got opened.
+
+**The crisis card fired on "purge the cache"** (`7031b47`). The eating-disorder
+pattern matched bare `purge`/`purging` — everyday technical vocabulary, right
+down to this repo's own `backup-before-purge` branch. Now requires real context
+(purging *after a meal*, or *oneself*). A card that cries wolf on routine words
+teaches the user to dismiss it, which costs precisely the moment it exists for.
+
+**Live speech could never work offline** (`5897c7c`). Web Speech is a *cloud*
+service; cascade classed `network` as transient and retried forever, so a
+desktop install running a local Ollama model had everything on-device except the
+ear. `whisper.js` had existed since v3.6 but only triggered when Web Speech was
+*absent*, never when it *failed*. Two failures now hand off to on-device Whisper
+with silence-segmented capture, routed through the same `handleUtterance` so the
+echo guard still stops it answering its own voice.
+
+---
+
+## Requested work
+
+- **Default working folder** (`1247101`) — `Documents/Yogatik` created on first
+  launch and bound as the global default, so a fresh install can do file work
+  without granting anything. A real grant always wins; removal is never undone.
+- **Sidebar** (`1f6b5b4`) — two search inputs collapsed to one, identity moved
+  to a footer, chats grouped by recency, the settings disclosure relabelled from
+  a provider-status readout to "Settings".
+- **Welcome screen** (`bc18ca9`) — 72 tool badges → 12 with "+60 more", four
+  CTAs → three.
+- **Logo** (`5b30a4c`) — face and bars scaled ~1.28×, filling 72% of the viewBox
+  instead of 56%, across all eight assets. Rasters rendered from the same SVG so
+  they cannot drift; the `.ico` rebuilt as a 6-entry PNG container (11KB vs the
+  old 143KB).
+- **`/platforms`** (`ebb797d`, `578cb2f`, `96408fa`) — cards read the release's
+  real asset list and default to *pending*, so a missing build is never offered
+  as a download; they promote themselves when assets land. Version pill reads
+  from the same lookup. A test rejects any hardcoded `vN.N` in the markup.
+- **Share sheet** (`0835701`) — Electron exposes no `navigator.share` and
+  Windows has no Share-charm API, so "Share Yogatik" silently copied a link.
+  Six targets plus a visible, selectable link with Copy.
+- **Desktop notifications** (`3f6be7f`) — `notify.cjs` had supported action
+  buttons and inline reply since v3.13 with **zero callers**. A finished turn
+  now notifies when the window is hidden or unfocused, and the inline reply
+  routes into `send()`.
+- **Companion** (`eafe012`, `a2578e5`) — 74 hardcoded colours → shared tokens
+  (it was Tailwind's slate/sky palette, which is why it looked like a different
+  product); chips follow the detected context (4 instead of 12); opt-in ambient
+  awareness where noticing is cheap and frequent but speaking must clear every
+  gate — settle time, cooldown, session cap, not while typing — and the prompt
+  licenses silence explicitly.
+
+---
+
+## Outstanding
+
+1. **Re-run the tag-triggered `v3.9.3` build** to fix the macOS/Linux update
+   manifests (see Known issue above).
+2. **Rotate the `RELEASE_TOKEN` PAT** — it was pasted into the session
+   transcript. Everything it was needed for is published.
+3. Desktop users need `v3.9.3` (or the re-run) for any of the desktop-only
+   fixes; the web deploy carries the code but installers lag the tag.
+
+## Notes for next time
+
+- **"Works locally" was never evidence.** The Tailwind ghost resolved from a
+  directory outside the repo. A local build proves nothing about CI.
+- **Green does not mean published.** Three separate failures this session were
+  invisible in the Actions tab: the skipped publish step, the 403, and the
+  version-mismatched manifests. Check the *assets*.
+- **CSS colour transitions defeat script-based checks.** Three times a
+  `getComputedStyle` read returned a mid-transition value and looked like a
+  theme bug; twice it nearly caused a "fix" to working code. Create the probe
+  element *after* setting the theme, and wait past the transition.
+- **Read a file before overwriting it.** `share.test.js` was clobbered with
+  `cat >` and only caught because the test count fell by one.
