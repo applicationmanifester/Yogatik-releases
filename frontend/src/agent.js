@@ -577,9 +577,31 @@ export async function runAgent({
     }
   }
 
+  // Reasoning is not an answer: a reply that is only <think>…</think> leaves the
+  // user with a blank bubble. Handles an unclosed block too (cut-off streams).
+  const visibleAnswer = (text) => String(text || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/i, '')
+    .trim()
+
+  // Last resort: the tools DID run, so surface what they returned rather than
+  // throwing that work away behind an empty bubble.
+  const summariseToolResults = (results) => {
+    const names = Object.keys(results || {})
+    if (!names.length) return ''
+    return names.map((n) => {
+      let body
+      try { body = typeof results[n] === 'string' ? results[n] : JSON.stringify(results[n]) }
+      catch { body = '[unserialisable result]' }
+      if (body && body.length > 600) body = body.slice(0, 600) + '…'
+      return '**' + n + '**' + '\n\n' + body
+    }).join('\n\n')
+  }
+
   let fullContent = ''   // everything shown to the user, across all rounds
   let roundContent = ''  // text from the current round only
   let toolCallsToProcess = []
+  let forcedFinal = false  // a 'stop using tools, answer now' pass already ran
 
   const processStream = () => new Promise((resolve, reject) => {
     toolCallsToProcess = []
@@ -789,8 +811,43 @@ export async function runAgent({
           'so far, and note briefly if anything remained uncertain.',
       })
       onStatus?.('Finalizing answer…')
+      forcedFinal = true
       await processStream()
       if (toolMode === 'prompted') harvestPromptedCalls()
+    }
+
+    // A turn that ends with nothing visible is indistinguishable from a crash.
+    // Weak/quantised models routinely fall silent after tool results, and some
+    // emit only <think>. The cap-hit path above already forces a synthesis pass;
+    // this is the same failure when the cap was never reached. Ask once, then be
+    // honest rather than blank.
+    throwIfAborted()
+    if (!visibleAnswer(fullContent)) {
+      // Only ask again if the cap-hit path has not already asked. Stacking two
+      // identical "answer now" passes just burns a round on a model that is
+      // already failing to answer.
+      if (!forcedFinal) {
+        toolCallsToProcess = []
+        messages.push({
+          role: 'user',
+          content: 'You produced no visible answer. Do NOT request any more tools and do ' +
+            'not reply with reasoning alone. Give your best, complete final answer now in ' +
+            'plain prose, using the tool results already gathered.',
+        })
+        onStatus?.('Finalizing answer…')
+        forcedFinal = true
+        await processStream()
+        if (toolMode === 'prompted') harvestPromptedCalls()
+      }
+
+      if (!visibleAnswer(fullContent)) {
+        const gathered = summariseToolResults(toolResults)
+        const fallback = gathered
+          ? 'I could not compose a final answer this turn. Here are the tool results I gathered:\n\n' + gathered
+          : 'I could not produce an answer this turn. Please try Regenerate, or switch to a stronger model.'
+        fullContent = fallback
+        onToken?.(fallback)
+      }
     }
 
     throwIfAborted()

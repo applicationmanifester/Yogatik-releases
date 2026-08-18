@@ -528,3 +528,66 @@ describe('prompted mode text release', () => {
     expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ content: '[Here is some text with brackets]' }))
   })
 })
+
+describe('empty final answer', () => {
+  // Reported in the field: a tool ran, then the follow-up call produced neither
+  // text nor tool calls, so the turn ended and the user got an empty bubble
+  // ("The model returned an empty response"). The cap-hit path already forces a
+  // final synthesis pass; this is the same failure with the cap never reached.
+  it('forces a final pass when the turn would otherwise end with no answer', async () => {
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'fs_read', parsedArgs: {} }] },
+      {},                                    // model says nothing after the results
+      { tokens: ['The file lists three routes.'] },
+    ])
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'The file lists three routes.' }),
+    )
+    expect(streamChat).toHaveBeenCalledTimes(3)
+    const last = streamChat.mock.calls.at(-1)[0]
+    expect(last.messages.at(-1).content).toMatch(/answer now|final answer/i)
+  })
+
+  it('never hands back an empty answer even if the retry also says nothing', async () => {
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'fs_read', parsedArgs: {} }] },
+      {},
+      {},
+    ])
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+
+    const { content } = onDone.mock.calls[0][0]
+    expect(content.trim()).not.toBe('')
+    expect(content).toMatch(/could not|no answer|tool results/i)
+  })
+
+  it('treats a reasoning-only reply as empty and asks for the answer', async () => {
+    scriptRounds([
+      { tokens: ['<think>weighing options</think>'] },
+      { tokens: ['42.'] },
+    ])
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+
+    expect(onDone.mock.calls[0][0].content).toContain('42.')
+    expect(streamChat).toHaveBeenCalledTimes(2)
+  })
+
+  it('does NOT add a round when the model already answered', async () => {
+    scriptRounds([{ tokens: ['Done.'] }])
+    await runAgent({ ...base, onDone: vi.fn() })
+    expect(streamChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT retry after the user pressed Stop', async () => {
+    const ctrl = new AbortController()
+    streamChat.mockImplementation(async (opts) => { ctrl.abort(); opts.onDone() })
+    const onDone = vi.fn()
+    await runAgent({ ...base, signal: ctrl.signal, onDone })
+    expect(streamChat).toHaveBeenCalledTimes(1)
+  })
+})
