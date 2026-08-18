@@ -57,17 +57,20 @@ identically. Cut `v3.9.2` from `main` instead.
 (universal), Linux (AppImage + deb), with `latest*.yml` for auto-update on all
 three. Verified anonymously, not from an authenticated session.
 
-### Known issue — needs one action
+### Resolved after a tag re-run
 
-`v3.9.3`'s `latest-mac.yml` and `latest-linux.yml` report **3.9.2** while
-`latest.yml` reports 3.9.3. Downloads work on every platform; **auto-update is
-stalled on macOS and Linux** because the updater reads its own version back.
+`v3.9.3` first published with `latest-mac.yml` and `latest-linux.yml` reporting
+**3.9.2** while `latest.yml` reported 3.9.3. Downloads worked everywhere, every
+job was green, and auto-update was silently dead on two platforms — the updater
+reads its own version back and concludes it is current. **Now fixed:** all three
+manifests report 3.9.3 after re-running the tag build.
 
 Caused by the `tag` input added in `48fc97d`: a `workflow_dispatch` builds the
 *branch*, not the tag, so a dispatch started before the version bump produced
 3.9.2 binaries filed under `v3.9.3`. `99591a8` now fails such a run immediately
-with both versions named. **Fix: re-run the TAG-triggered `v3.9.3` build** (not
-the "Run workflow" button) so the correct manifests overwrite the wrong ones.
+with both versions named, rather than spending twenty minutes building the
+wrong thing. Tag-triggered runs cannot hit it: they check out the tag, so the
+versions cannot disagree.
 
 ---
 
@@ -166,12 +169,13 @@ echo guard still stops it answering its own voice.
 
 ## Outstanding
 
-1. **Re-run the tag-triggered `v3.9.3` build** to fix the macOS/Linux update
-   manifests (see Known issue above).
-2. **Rotate the `RELEASE_TOKEN` PAT** — it was pasted into the session
-   transcript. Everything it was needed for is published.
-3. Desktop users need `v3.9.3` (or the re-run) for any of the desktop-only
-   fixes; the web deploy carries the code but installers lag the tag.
+Nothing blocking. The `v3.9.3` re-run corrected the update manifests, and the
+`RELEASE_TOKEN` PAT has been rotated.
+
+Desktop users pick up the desktop-only fixes — Ollama in the picker, the share
+sheet, Live speech falling back on-device, the folder popover theming, the
+companion — via auto-update or a fresh download; the web deploy carried the
+code but installers lag the tag by design.
 
 ## Notes for next time
 
