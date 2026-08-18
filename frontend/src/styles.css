@@ -289,7 +289,7 @@ body {
 .toggle input:checked + .slider::before { transform: translateX(16px); background: white; }
 
 /* Chat area */
-.chat-area { flex: 1; display: flex; flex-direction: column; }
+.chat-area { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .chat-header {
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
@@ -4733,18 +4733,22 @@ body {
 /* Docked activity panel: the model's reasoning and tool actions, live. Shares
    the Canvas/Browser geometry so the three right-hand surfaces feel like one. */
 .activity-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 42%;
-  min-width: 320px;
+  /* A COLUMN, not an overlay. At 42% absolutely positioned it covered the
+     conversation it was describing — the chat was unreadable while the panel
+     was open. As a flex sibling of .chat-area the chat simply narrows and
+     stays usable, and a fixed rail is plenty: the content is one tool name
+     and a duration per row. */
+  position: relative;
+  flex: 0 0 300px;
+  width: 300px;
+  min-width: 0;
+  max-width: 34vw;
   height: 100%;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  z-index: 100;
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
 }
 .activity-header {
   display: flex;
@@ -4801,5 +4805,14 @@ body {
   padding: 8px 10px;
 }
 @media (max-width: 768px) {
-  .activity-panel { width: 100%; min-width: unset; }
+  /* No room to sit beside the chat on a phone — overlay it instead. */
+  .activity-panel {
+    position: absolute;
+    top: 0; right: 0;
+    width: 100%;
+    max-width: none;
+    flex: none;
+    z-index: 100;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+  }
 }
