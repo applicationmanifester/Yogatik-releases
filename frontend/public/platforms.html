@@ -179,7 +179,7 @@
         <div class="feature"><div class="ic">🎙️</div><h3>Live voice &amp; vision</h3><p>Talk face-to-face with on-device speech, share your camera or screen, and generate images, video and narration — right on your GPU.</p></div>
       </div>
       <div class="steps">
-        <div class="step"><div class="n">1</div><div><h4>Download &amp; install</h4><p>Your download starts automatically. Run <code>Yogatik-Setup.exe</code> and pick where to install — takes under a minute.</p></div></div>
+        <div class="step"><div class="n">1</div><div><h4>Download &amp; install</h4><p>Click <strong>Download for Windows</strong> above, then run <code>Yogatik-Setup.exe</code> and pick where to install — takes under a minute.</p></div></div>
         <div class="step"><div class="n">2</div><div><h4>Add a model</h4><p>Enter a free API key in Settings, or install <a href="https://ollama.com/download" style="color:var(--brand2)">Ollama</a> and pick <strong>Ollama (local)</strong> to run entirely offline.</p></div></div>
         <div class="step"><div class="n">3</div><div><h4>Grant a folder (optional)</h4><p>Point the agent at a working folder to unlock local file reading and editing. Everything else works without it.</p></div></div>
       </div>
@@ -222,16 +222,6 @@
         'mac-dl': ['Yogatik.dmg'],
         'linux-dl': ['Yogatik.AppImage', 'Yogatik.deb'],
       };
-
-      function startWinDownload() {
-        if (!/Windows/i.test(navigator.userAgent)) return;
-        if (localStorage.getItem('yogatik_autodl')) return;
-        localStorage.setItem('yogatik_autodl', '1');
-        var a = document.createElement('a');
-        a.href = exe; a.download = 'Yogatik-Setup.exe';
-        document.body.appendChild(a);
-        setTimeout(function () { a.click(); a.remove(); }, 800);
-      }
 
       fetch('https://api.github.com/repos/' + repo + '/releases/latest', {
         headers: { Accept: 'application/vnd.github+json' },
@@ -290,24 +280,22 @@
                 '<a href="https://github.com/' + repo + '/releases" style="color:inherit">releases page</a>.';
             }
           });
-
-          // Only auto-download once the installer is confirmed present.
-          if (have['Yogatik-Setup.exe']) startWinDownload();
         })
         .catch(function () {
           // Offline, rate-limited, or the API is unreachable. Cards keep their
           // authored state, which is now the SAFE one: Windows live (that asset
           // is known to exist), mac and Linux pending. The page degrades to the
           // truth instead of promising a download it cannot confirm.
-          startWinDownload();
         });
     })();
 
-    // Reset the once-per-browser guard if the user explicitly clicks the button.
-    (function () {
-      var b = document.getElementById('win-dl');
-      if (b) b.addEventListener('click', function () { localStorage.removeItem('yogatik_autodl'); });
-    })();
+    // No automatic download. Fetching a 114MB executable because someone
+    // opened a page is a drive-by download: the visitor never consented, it
+    // burns their bandwidth, and browsers and AV treat unsolicited .exe
+    // transfers as hostile. The buttons below do it on a real click.
+    // (The old guard was also self-defeating — clicking the button CLEARED it,
+    // so every later visit downloaded the installer again.)
+    try { localStorage.removeItem('yogatik_autodl'); } catch (e) { /* ignore */ }
   </script>
 </body>
 </html>
