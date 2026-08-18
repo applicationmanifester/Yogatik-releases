@@ -72,7 +72,11 @@ function listTabs(s) {
 // ── Surfaces ──────────────────────────────────────────────────────────────
 
 function createWindowSurface(s) {
-  if (s.win && !s.win.isDestroyed()) return s.win
+  if (s.win && !s.win.isDestroyed()) {
+    // A mode switch hides this window rather than destroying it (see setMode).
+    if (!s.win.isVisible()) s.win.show()
+    return s.win
+  }
   s.win = new BrowserWindow({
     width: 1100,
     height: 800,
@@ -148,12 +152,12 @@ function setMode(s, mode) {
       if (prev.contentView.children.includes(t.view)) prev.contentView.removeChildView(t.view)
     }
   }
-  if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
-    const win = s.win
-    s.win = null
-    win.removeAllListeners('closed') // this is a re-parent, not a session end
-    win.destroy()
-  }
+  // HIDE, never destroy. Destroying a BrowserWindow while its WebContentsViews
+  // are still alive orphans them, and closing an orphaned view later crashes the
+  // process natively (not a catchable throw) — verified on Electron 43.
+  // destroySession() is the only place a browser window is destroyed, and it
+  // closes every view FIRST.
+  if (s.mode === 'window' && s.win && !s.win.isDestroyed()) s.win.hide()
   s.mode = next
   showActive(s)
   return s.mode
@@ -246,13 +250,9 @@ function closeTab(s, tabId) {
   safe(() => t.view.webContents.close())
   s.tabs.delete(tabId)
   if (s.activeTabId === tabId) s.activeTabId = [...s.tabs.keys()][0] || null
-  // Last tab closed: drop the surface, but keep the session so the next call reopens.
-  if (!s.tabs.size && s.mode === 'window' && s.win && !s.win.isDestroyed()) {
-    const win = s.win
-    s.win = null
-    win.removeAllListeners('closed')
-    win.destroy()
-  }
+  // Last tab closed: hide the surface, but keep the session so the next call
+  // reopens it. Hidden rather than destroyed for the same reason as setMode.
+  if (!s.tabs.size && s.mode === 'window' && s.win && !s.win.isDestroyed()) s.win.hide()
   showActive(s)
   return { success: true, tabs: listTabs(s) }
 }
@@ -385,14 +385,28 @@ async function scroll(s, { tabId, ref, amount = -400 } = {}) {
   return { success: true, scrolled: amount }
 }
 
+// capturePage fails with UnknownVizError when the view has not been composited
+// yet — a cold capture right after the surface is created loses the race. Make
+// sure the surface is on screen, then retry once before giving up.
 async function screenshot(s, tabId) {
   const t = tabFor(s, tabId)
   if (!t) return { success: false, error: 'No such tab' }
+  const attempt = () => t.view.webContents.capturePage()
   try {
-    const img = await t.view.webContents.capturePage()
-    return { success: true, image: img.toDataURL() }
-  } catch (e) {
-    return { success: false, error: e.message }
+    const img = await attempt()
+    if (!img.isEmpty()) return { success: true, image: img.toDataURL() }
+    throw new Error('empty capture')
+  } catch {
+    try {
+      const h = host(s)
+      if (h && !h.isDestroyed() && !h.isVisible()) h.show()
+      showActive(s)
+      await new Promise(r => setTimeout(r, 350))
+      const img = await attempt()
+      return { success: true, image: img.toDataURL() }
+    } catch (e2) {
+      return { success: false, error: `Could not capture the page (${e2.message}). The browser may still be painting.` }
+    }
   }
 }
 

@@ -498,7 +498,15 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   Its description used to claim it "navigates to a URL... like Strawberry Browser", which would make the
   model pick it over the real tool; it now says plainly that it does not run JavaScript. The browse/
   open_url/web_browse aliases point at browser_control, never at it.
-- Tests: browserTree.test.js (25) + 6 browser cases in desktopCapabilities.test.js.
+- NEVER destroy a BrowserWindow while its WebContentsViews are still alive: the views are orphaned and
+  closing one later crashes the process NATIVELY (uncatchable). setMode and the last-tab path therefore
+  HIDE the window; destroySession is the only place it is destroyed, and it closes every view first.
+- capturePage throws UnknownVizError on a view that has not been composited yet (cold capture right
+  after the surface is created). screenshot() shows the surface, waits, and retries once.
+- Tests: browserTree.test.js (25) + 6 browser cases in desktopCapabilities.test.js. The Electron glue
+  is covered by `npm run test:browser` (electron/browserHarness/run.cjs, 28 checks) — a real Electron
+  app driving real tabs against a local fixture, asserting that a click by ref FIRES the page handler,
+  typed text lands in the real input, and a stale ref is refused. It caught both crashes above.
 
 ## MCP overhaul + plugin system (v3.15)
 - mcp.js is now transport-aware: 'http' (Streamable HTTP/SSE via fetch, CORS-gated) OR 'stdio'
