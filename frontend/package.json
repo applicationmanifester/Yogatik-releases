@@ -17,7 +17,9 @@
     "electron:build:all": "npm run build:electron && electron-builder -mwl --publish never",
     "electron:build:mac": "npm run build:electron && electron-builder --mac --publish never",
     "electron:build:linux": "npm run build:electron && electron-builder --linux --publish never",
-    "test:browser": "electron electron/browserHarness/run.cjs"
+    "test:browser": "electron electron/browserHarness/run.cjs",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "dexie": "^4.0.0",
@@ -32,6 +34,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.0",
     "@types/react": "^18.3.12",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.5.4",

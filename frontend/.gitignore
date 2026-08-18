@@ -1,3 +1,7 @@
 
 dist-electron
 release-electron
+
+# Playwright
+playwright-report/
+test-results/
