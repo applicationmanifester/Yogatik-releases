@@ -45,8 +45,12 @@ deps — EXCEPT PTY.
   Enable: `npm i node-pty && npx electron-rebuild -f -w node-pty`. Bridge __YOGATIK_PTY__ only (no agent
   tool — streaming interactive doesn't fit one function-call return; it's for a future terminal panel).
 - preload.cjs also exposes __YOGATIK_DND__.getPathForFile (webUtils) → real path for a dropped File.
-- Remaining optional UX wiring in App.jsx (not yet done): subscribe __YOGATIK_CLIPBOARD__.onSelectionHotkey
-  → composer, __YOGATIK_WATCHER__.onChange → toast, __YOGATIK_NOTIFY_ACTIONS__.on → reply handling.
+- STILL UNWIRED (audited 2026-08-18 — main emits, nothing in the renderer listens, so these features
+  do not exist for the user): __YOGATIK_CLIPBOARD__.onSelectionHotkey → composer (the Ctrl+Alt+C global
+  hotkey fires and is relayed into the void), __YOGATIK_WATCHER__.onChange → toast, and
+  __YOGATIK_DND__.getPathForFile (a file dropped on the desktop window still yields an opaque blob).
+  __YOGATIK_NOTIFY_ACTIONS__ IS wired now (App.jsx + desktopNotify.js). __YOGATIK_PTY__ is
+  deliberately tool-less, see above.
 
 ## Desktop app — Electron (v3.8, Node-only path)
 - Modular main process: electron/main.cjs (thin orchestrator) + rootsCore.cjs/roots.cjs (PER-CHAT
@@ -62,9 +66,9 @@ deps — EXCEPT PTY.
   roots.test.js = 29 tests.
 - Native menu (menu.cjs): File→New Chat (Ctrl+N), Settings (Ctrl+,), Grant Working Folder (Ctrl+O)
   send a 'menu' IPC action; View has reload/devtools/zoom/fullscreen roles; Help has web/Ollama links +
-  About. preload exposes __YOGATIK_MENU__.on(cb) to relay the action, but NOTHING in the renderer
-  subscribes yet (`grep -r __YOGATIK_MENU__ frontend/src` → no matches), so those File-menu items are
-  currently inert. Wiring them up is open work. Single-instance lock focuses the open window.
+  About. preload exposes __YOGATIK_MENU__.on(cb) to relay the action, and App.jsx SUBSCRIBES to it
+  (the File-menu items work). This was inert for a long time and the note here said so — verify with
+  `grep -rn __YOGATIK_MENU__ frontend/src` before trusting either claim. Wiring them up is open work. Single-instance lock focuses the open window.
 - frontend/electron/preload.cjs: contextBridge exposes window.__TAURI__.core.invoke → ipcRenderer, so
   tools/localFs.js + the folder chip work UNCHANGED under Electron (no frontend branching). Also sets
   window.__YOGATIK_ELECTRON__ and window.__YOGATIK_MENU__.
@@ -460,6 +464,49 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - Desktop Operator agent gained computer_control + a look-then-act system prompt.
 - Tests: computerControl.test.js (9). Total 519.
 
+## Reliability fixes (v3.10.0 release)
+- agent.js NEVER ends a turn empty. The cap-hit path already forced a synthesis pass; the same failure
+  with the cap NOT reached was unguarded, so a model that fell silent after tool results produced a
+  blank bubble ("The model returned an empty response"). runAgent checks visibleAnswer(fullContent)
+  — reasoning stripped, since <think> alone is not an answer — asks once for plain prose, then falls
+  back to summarising the tool results it already has. forcedFinal is shared with the cap path so a
+  model that only ever emits tool calls still costs at most initial + 8 rounds + 1.
+- agent.js buildSystemPrompt now STATES THE RUNTIME (platformBlock()). It used to open with "access to
+  powerful browser-native tools" on every surface and never consulted isDesktop, so the desktop build
+  refused real work — "I have no shell/terminal access, no Node.js runtime" — while holding
+  terminal_run, proc_start, fs_*, browser_control and computer_control. It was believing the prompt.
+  Desktop: told it has a real shell/filesystem/browser and must ask for a working folder rather than
+  declare a task impossible. Web: told desktop-only tools WILL REFUSE, so say so plainly.
+- code_execute's description now says what it CANNOT do (no files, no OS commands, no servers) and
+  names terminal_run/proc_start/fs_read instead; terminal_run says it WAITS and times out at 30s, so
+  proc_start is the tool for dev servers. The model was reaching for the Pyodide sandbox for real work.
+- video/timeline.js normalizeSpec REJECTS a scene with neither a type nor content. It used to default
+  to an empty "text" scene, which rendered BLANK and reported success — a model guessing the shape got
+  no signal and retried ten times with worse arguments before telling the user to run ffmpeg. The error
+  names the invented field back ("Unknown field: elements") and shows a real scene.
+- electron-updater moved devDependencies → dependencies. electron-builder never packages devDeps, so
+  require('electron-updater') threw in every shipped build and updater.cjs's guard swallowed it:
+  auto-update was a silent no-op in production while working in dev. Verify after packaging by parsing
+  release-electron/win-unpacked/resources/app.asar — do NOT trust a truncated string scan of the file.
+- .sidebar is overflow:hidden, and `.sidebar > .settings { flex-shrink: 0 }` (meant for the CLOSED
+  toggle) pinned the OPEN panel at max-height 58vh. On a short window that plus the fixed chrome
+  exceeded the sidebar, .sidebar-scroll collapsed to 0 and the footer's last child — Sign In — was
+  clipped with no scrollbar to reach it. 58vh is now a cap, not a floor.
+
+## e2e (npm run e2e) — Playwright, 4 smoke specs
+- frontend/playwright.config.js + frontend/e2e/. The config BUILDS and serves dist/ itself, so CI runs
+  nothing but `npm run e2e`. The job in ci.yml existed since before this and had NEVER passed: it
+  installed a browser then ran a script that did not exist (no @playwright/test, no config, no specs).
+- Covers what vitest structurally cannot: it mounts App under jsdom, so a broken build output, a chunk
+  that 404s, or a module that only explodes in a real browser all pass there. Specs assert a keyless
+  first run boots with no uncaught errors, the composer accepts input, the manifest is served, and a
+  reload keeps the shell.
+- Console-error assertions ignore favicon/service-worker/Firebase/WebGPU noise, which a keyless offline
+  CI browser always emits — without that filter this becomes a flake generator, and the job is
+  continue-on-error so a flake would rot silently.
+- getByLabel('Message') matches THREE elements (routing toggle, textarea, send button). Use
+  getByRole('textbox', { name: 'Message', exact: true }).
+
 ## Real browser control (v3.16) — desktop only
 - THE GAP THIS FILLS: the web build cannot drive a page at all. Cross-origin iframes are refused by
   X-Frame-Options on most real sites and are opaque to the parent even when allowed, and there is no
@@ -472,7 +519,7 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   browserTree.test.js = 25.
 - electron/browserControl.cjs owns per-conversation sessions of WebContentsView tabs. ONE set of views,
   TWO surfaces: window mode parents them to a dedicated BrowserWindow (browserWindow.html tab strip +
-  browserWindowPreload.cjs, a one-channel preload so the tab buttons are not inert like __YOGATIK_MENU__),
+  browserWindowPreload.cjs, a one-channel preload so the tab buttons actually do something),
   panel mode parents the SAME views to the main window. setMode RE-PARENTS; it never rebuilds, so tabs,
   cookies, history and refs survive a switch.
 - A WebContentsView composites ABOVE the renderer DOM — z-index does not apply. BrowserPanel.jsx is
