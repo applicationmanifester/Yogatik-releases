@@ -32,6 +32,16 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const even = (n) => Math.round(n / 2) * 2
 
 /** Normalise, clamp and validate an author-supplied spec. Throws on garbage. */
+// Fields a scene may legitimately carry. Anything else is a model guessing at
+// the shape, and naming it back is far more useful than ignoring it.
+const KNOWN_SCENE_FIELDS = new Set([
+  'type', 'duration', 'narration', 'text', 'subtitle', 'heading',
+  'bullets', 'image_url', 'url', 'caption', 'motion', 'data',
+])
+const CONTENT_FIELDS = [
+  'text', 'subtitle', 'heading', 'bullets', 'image_url', 'url', 'caption', 'data',
+]
+
 export function normalizeSpec(spec = {}) {
   const scenes = Array.isArray(spec.scenes) ? spec.scenes : []
   if (!scenes.length) throw new Error('A video needs at least one scene.')
@@ -44,6 +54,28 @@ export function normalizeSpec(spec = {}) {
   let cursor = 0
   const out = []
   for (const [i, raw] of scenes.entries()) {
+    // A scene with neither a type nor any content used to default to an empty
+    // "text" scene: it rendered BLANK, reported success, and taught a guessing
+    // model nothing — which is how one field-reported render turned into ten
+    // rounds of increasingly desperate arguments. Fail loudly and say what a
+    // scene actually looks like.
+    const hasType = raw?.type != null && String(raw.type).trim() !== ''
+    const hasContent = CONTENT_FIELDS.some((k) => {
+      const v = raw?.[k]
+      return Array.isArray(v) ? v.length > 0 : v != null && String(v).trim() !== ''
+    })
+    if (!hasType && !hasContent) {
+      const unknown = Object.keys(raw || {}).filter((k) => !KNOWN_SCENE_FIELDS.has(k))
+      const named = unknown.length
+        ? ` Unknown field${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}.`
+        : ''
+      throw new Error(
+        `Scene ${i + 1}: nothing to show.${named} Every scene needs a type ` +
+        `(${SCENE_TYPES.join(', ')}) and its own content — for example ` +
+        `{"type":"title","text":"Hello"} or {"type":"text","heading":"Why","bullets":["a","b"]}.`,
+      )
+    }
+
     const type = String(raw?.type || 'text').toLowerCase()
     if (!SCENE_TYPES.includes(type)) {
       throw new Error(`Scene ${i + 1}: unknown type "${type}". Use one of ${SCENE_TYPES.join(', ')}.`)

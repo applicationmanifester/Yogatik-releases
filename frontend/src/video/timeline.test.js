@@ -10,6 +10,34 @@ const spec = (over = {}) => normalizeSpec({
 })
 
 describe('normalizeSpec', () => {
+  // A model that guesses the scene shape used to get a SILENTLY BLANK video:
+  // a scene with no `type` defaulted to "text" with no heading and no bullets,
+  // so nothing was drawn, nothing was reported, and the model retried with ever
+  // worse arguments — ten rounds of it, in the field.
+  it('rejects a scene carrying no recognisable content', () => {
+    expect(() => normalizeSpec({ scenes: [{ duration: 3 }] })).toThrow(/scene 1/i)
+  })
+
+  it('names the unknown field a guessing model invented', () => {
+    expect(() => normalizeSpec({
+      scenes: [{ duration: 3, elements: [{ type: 'text', content: 'Hi' }] }],
+    })).toThrow(/elements/)
+  })
+
+  it('lists the valid scene types in the error', () => {
+    expect(() => normalizeSpec({ scenes: [{}] })).toThrow(/title|text|image|bars/)
+  })
+
+  it('still accepts a typed scene with real content', () => {
+    const s = normalizeSpec({ scenes: [{ type: 'title', text: 'Hello', duration: 2 }] })
+    expect(s.scenes).toHaveLength(1)
+  })
+
+  it('still accepts an untyped scene that HAS content (back-compat)', () => {
+    const s = normalizeSpec({ scenes: [{ heading: 'H', bullets: ['a'], duration: 2 }] })
+    expect(s.scenes[0].type).toBe('text')
+  })
+
   it('lays scenes end to end in frames', () => {
     const s = spec({ fps: 30 })
     expect(s.scenes[0]).toMatchObject({ startFrame: 0, endFrame: 60 })
