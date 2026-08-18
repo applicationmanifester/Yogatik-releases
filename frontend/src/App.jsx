@@ -213,6 +213,23 @@ export default function App() {
   const [showSkills, setShowSkills] = useState(false)
   const [chatRoots, setChatRoots] = useState([])
   const [rootsOpen, setRootsOpen] = useState(false)
+  const rootsWrapRef = useRef(null)
+
+  // The folders popover is a role="dialog": Escape and a click outside must
+  // dismiss it, not just a second click on the chip that opened it.
+  useEffect(() => {
+    if (!rootsOpen) return
+    const onKey = (e) => { if (e.key === 'Escape') setRootsOpen(false) }
+    const onDown = (e) => {
+      if (rootsWrapRef.current && !rootsWrapRef.current.contains(e.target)) setRootsOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+    }
+  }, [rootsOpen])
   const [toast, setToast] = useState(null)
   const showToast = useCallback((msg) => {
     setToast(msg)
@@ -2917,7 +2934,7 @@ export default function App() {
           <div className="header-actions">
             {isDesktop() && (
               <>
-              <div className="desktop-folder-indicator" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginRight: 8, color: 'var(--text-secondary)' }}>
+              <div ref={rootsWrapRef} className="desktop-folder-indicator" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginRight: 8, color: 'var(--text-secondary)' }}>
                 <Folder size={15} />
                 <button
                   className="small-btn"
@@ -2931,7 +2948,13 @@ export default function App() {
                 </button>
                 {rootsOpen && (
                   <div className="roots-popover" role="dialog" aria-label="Working folders for this chat">
-                    <div className="roots-popover-title">Folders for this chat</div>
+                    <div className="roots-popover-head">
+                      <span className="roots-popover-title">Folders for this chat</span>
+                      <button className="icon-btn" onClick={() => setRootsOpen(false)}
+                        title="Close" aria-label="Close folders">
+                        <X size={14} />
+                      </button>
+                    </div>
                     {chatRoots.length === 0 && <div className="roots-empty">No folder yet.</div>}
                     {chatRoots.map(r => (
                       <div key={r.id} className="roots-row">

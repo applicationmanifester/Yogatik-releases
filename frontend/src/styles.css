@@ -4473,6 +4473,9 @@ body {
   box-shadow: 0 10px 30px rgba(0,0,0,.35);
   display: flex; flex-direction: column; gap: 8px;
 }
+.roots-popover-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
 .roots-popover-title { font-weight: 600; font-size: 12px; }
 .roots-empty, .roots-inherited { font-size: 11px; color: var(--text-secondary); }
 .roots-row { display: flex; align-items: center; gap: 6px; }
