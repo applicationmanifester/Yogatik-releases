@@ -30,6 +30,7 @@ const { registerProcesses } = require('./processes.cjs')
 const { registerPty, killAllPty } = require('./pty.cjs')
 const { registerMcpStdio, killAllMcpStdio } = require('./mcpStdio.cjs')
 const { registerCompanionInput } = require('./companionInput.cjs')
+const { registerBrowserControl, destroyAllSessions } = require('./browserControl.cjs')
 // Complementary modules from the per-chat-folders work. Different IPC channels
 // (underscore-style) so they coexist with the colon-style ones above:
 //   bgProcesses    — start/stream LONG-RUNNING commands (vs processes.cjs, which
@@ -206,6 +207,7 @@ if (!gotLock) {
     registerPty(getWindow)
     registerMcpStdio()
     registerCompanionInput()
+    registerBrowserControl(getWindow)
     startScheduler()
     createWindow()
     createTray(getWindow)
@@ -624,6 +626,7 @@ if (!gotLock) {
     killAllBgProcesses()   // never orphan a background process on quit
     stopAllFsWatchers()
     stopAllMcpStdioClients()
+    destroyAllSessions()   // close any agent browser windows and their tabs
     if (searchSidecar) {
       searchSidecar.kill()
     }
