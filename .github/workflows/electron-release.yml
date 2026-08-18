@@ -59,6 +59,24 @@ jobs:
         with:
           node-version: 22
 
+      # A dispatch builds the BRANCH, not the tag, so publishing it into a
+      # release named for a different version silently ships mismatched
+      # latest*.yml — the updater then reads the old version back and never
+      # offers the upgrade. Fail loudly instead of producing that quietly.
+      - name: Refuse to publish a build whose version does not match the tag
+        if: github.ref_type != 'tag' && inputs.tag != ''
+        shell: bash
+        run: |
+          pkg=$(node -p "require('./frontend/package.json').version")
+          want="${{ inputs.tag }}"
+          want="${want#v}"
+          if [ "$pkg" != "$want" ]; then
+            echo "::error::Refusing to publish into ${{ inputs.tag }}: this branch builds $pkg."
+            echo "Re-run the tag-triggered build, or bump package.json to $want first."
+            exit 1
+          fi
+          echo "package.json $pkg matches ${{ inputs.tag }}"
+
       - name: Install dependencies
         working-directory: frontend
         run: npm install
