@@ -212,7 +212,7 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 
 ## Run
 - Dev: `cd frontend && npm install && npm run dev`
-- Test: `cd frontend && npm test` (vitest, 989 tests)
+- Test: `cd frontend && npm test` (vitest, 1152 tests)
 - Build: `cd frontend && npm run build` (static files in dist/)
 - Deploy: Upload `dist/` to Vercel/Netlify/GitHub Pages
 
@@ -459,6 +459,46 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   act, and to confirm before anything that submits/sends/deletes/purchases.
 - Desktop Operator agent gained computer_control + a look-then-act system prompt.
 - Tests: computerControl.test.js (9). Total 519.
+
+## Real browser control (v3.16) — desktop only
+- THE GAP THIS FILLS: the web build cannot drive a page at all. Cross-origin iframes are refused by
+  X-Frame-Options on most real sites and are opaque to the parent even when allowed, and there is no
+  web API to screenshot or click inside another origin. web_extract/web_search/browser_autopilot only
+  fetch static HTML. A WebContentsView is a genuine top-level browsing context, so the desktop app can.
+- electron/browserTree.cjs is PURE (no require('electron'), so vitest reaches it under jsdom):
+  walkerSource/refResolverSource (the injected page scripts), simplify/assignRefs/buildTree/formatTree,
+  parseRef/isStaleRef. Same split as rootsCore.cjs — it is the only reason the tree logic is testable.
+  Both injected sources interpolate ONLY Number()-coerced values, locked by a test like companionInput.
+  browserTree.test.js = 25.
+- electron/browserControl.cjs owns per-conversation sessions of WebContentsView tabs. ONE set of views,
+  TWO surfaces: window mode parents them to a dedicated BrowserWindow (browserWindow.html tab strip +
+  browserWindowPreload.cjs, a one-channel preload so the tab buttons are not inert like __YOGATIK_MENU__),
+  panel mode parents the SAME views to the main window. setMode RE-PARENTS; it never rebuilds, so tabs,
+  cookies, history and refs survive a switch.
+- A WebContentsView composites ABOVE the renderer DOM — z-index does not apply. BrowserPanel.jsx is
+  therefore chrome around a hole: it reports its content rect via browser:set-bounds and main positions
+  the view to match. Any overlay that should cover the panel would be painted UNDER it, so App computes
+  browserOccluded (settingsOpen matters most — that drawer docks exactly where the panel does) and the
+  panel calls browser:set-detached. Renderer-supplied BOUNDS are safe (a rectangle escapes nothing);
+  this is NOT an exception to "the renderer never names a filesystem root".
+- Refs are epoch-tagged (ref_<epoch>_<n>); the epoch bumps on main-frame navigation and on every read.
+  The ref->element map lives in the PAGE (window.__yogatikRefs__); main stores only the epoch and
+  re-measures at action time, so a moved-but-present element is still clicked correctly. A stale ref
+  returns {stale:true} and is NEVER downgraded to a coordinate click — clicking the wrong element looks
+  exactly like success, which is the whole failure the tree exists to prevent.
+- Refs are numbered BEFORE truncation: a ref printed in the visible slice must resolve to the element
+  the page registered, and the page registers every interactive node it saw, not just the printed ones.
+- Sessions are keyed by conversationId (injected via getWorkspaceCtx, never a tool parameter) and
+  destroyed on chat switch: an authenticated tab must not follow the user into an unrelated chat.
+- navigate() resolves on a 30s timeout with whatever rendered rather than hanging the turn, and ignores
+  did-fail-load code -3 (ERR_ABORTED), which same-page redirects raise routinely.
+- Surface = the model's display param > chat_prefs.browser_display_mode > 'window'. PersonalisePanel
+  sets the default; the panel pop-out button also writes it, so the user's last physical choice wins.
+- browser_autopilot is NOT a browser: it is proxyFetch + regex tag-stripping (a web_extract duplicate).
+  Its description used to claim it "navigates to a URL... like Strawberry Browser", which would make the
+  model pick it over the real tool; it now says plainly that it does not run JavaScript. The browse/
+  open_url/web_browse aliases point at browser_control, never at it.
+- Tests: browserTree.test.js (25) + 6 browser cases in desktopCapabilities.test.js.
 
 ## MCP overhaul + plugin system (v3.15)
 - mcp.js is now transport-aware: 'http' (Streamable HTTP/SSE via fetch, CORS-gated) OR 'stdio'
@@ -826,7 +866,7 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   was decorative.
 - Passes through filters + `--watch`.
 
-## Tests (npm test — 989)
+## Tests (npm test — 1152)
 - smoke.test.jsx mounts <App/> in jsdom with ./api stubbed: lint cannot catch a component
   that THROWS on first render. Config include covers *.test.{js,jsx}; test-setup.js stubs
   scrollIntoView/scrollTo/matchMedia (jsdom has none, all are called on mount).
