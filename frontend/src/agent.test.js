@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // streamChat is the only network edge; drive it from a scripted queue.
 vi.mock('./llm', () => ({ streamChat: vi.fn() }))
@@ -589,5 +589,43 @@ describe('empty final answer', () => {
     const onDone = vi.fn()
     await runAgent({ ...base, signal: ctrl.signal, onDone })
     expect(streamChat).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('runtime platform awareness', () => {
+  // The model used to be told it had "browser-native tools" and nothing else,
+  // so on the desktop build it confidently refused real work: "I cannot run a
+  // dev server — I have no shell/terminal access, no Node.js runtime." It was
+  // believing the system prompt, not misbehaving.
+  afterEach(() => { delete window.__YOGATIK_ELECTRON__ })
+
+  const systemOf = () => streamChat.mock.calls[0][0].messages[0].content
+
+  it('tells the model it has REAL machine access in the desktop app', async () => {
+    window.__YOGATIK_ELECTRON__ = true
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, onDone: vi.fn() })
+
+    const sys = systemOf()
+    expect(sys).toMatch(/desktop app/i)
+    expect(sys).toMatch(/terminal_run/)
+    expect(sys).toMatch(/proc_start/)
+    expect(sys).toMatch(/never say you have no shell/i)
+  })
+
+  it('tells the model desktop-only tools will refuse in the web build', async () => {
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, onDone: vi.fn() })
+
+    const sys = systemOf()
+    expect(sys).toMatch(/browser/i)
+    expect(sys).toMatch(/will refuse/i)
+  })
+
+  it('never claims browser-native tools on desktop', async () => {
+    window.__YOGATIK_ELECTRON__ = true
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, onDone: vi.fn() })
+    expect(systemOf()).not.toMatch(/browser-native tools/i)
   })
 })

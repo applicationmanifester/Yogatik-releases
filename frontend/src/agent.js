@@ -88,6 +88,34 @@ export function isSocialQuery(text) {
   return isSocialTarget && isSocialAction
 }
 
+// What the model is ALLOWED to believe about its own reach. Without this the
+// prompt said "browser-native tools" on every surface, so the desktop build
+// confidently refused real work — "I have no shell/terminal access, no Node.js
+// runtime" — while holding a real shell, filesystem and browser. It was
+// believing the prompt, not malfunctioning.
+function isDesktopRuntime() {
+  if (typeof window === 'undefined') return false
+  return !!(window.__YOGATIK_ELECTRON__ || window.__TAURI__)
+}
+
+function platformBlock() {
+  if (isDesktopRuntime()) {
+    return `RUNTIME: You are running inside the Yogatik DESKTOP APP, with REAL access to this computer.
+You CAN: run shell commands (terminal_run for commands that finish quickly, proc_start for
+long-running ones such as dev servers, watch-mode tests and streaming builds), read and write the
+user's files (fs_read/fs_write/fs_list/fs_search), drive a real web browser (browser_control),
+control the mouse and keyboard (computer_control), read the clipboard, and inspect processes.
+NEVER say you have no shell, no terminal, no filesystem, or no Node.js runtime — you have all of them.
+File and terminal tools act inside folders the user granted for THIS chat. When none is granted the
+tool says so: ask the user to grant a folder, do not declare the task impossible.
+Do not tell the user to run a command themselves when you can run it.`
+  }
+  return `RUNTIME: You are running as a web app inside the user's browser, so you have no shell,
+no filesystem and no host OS. Tools marked "desktop app only" (terminal_run, proc_start, fs_*,
+browser_control, computer_control, clipboard_access) WILL REFUSE here. If the user needs one, say
+plainly that it requires the Yogatik desktop app — never improvise or pretend you ran it.`
+}
+
 function buildSystemPrompt({ webEnabled, persona, planMode }) {
   const now = new Date()
   const today = now.toLocaleDateString('en-US', {
@@ -98,7 +126,8 @@ function buildSystemPrompt({ webEnabled, persona, planMode }) {
   })
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
-  return `You are Yogatik, a helpful AI assistant with access to powerful browser-native tools.
+  return `You are Yogatik, a helpful AI assistant with access to a powerful toolset.
+${platformBlock()}
 CURRENT SYSTEM CLOCK: ${today} at ${time} (${timeZone}).
 CRITICAL TIME INSTRUCTION: If the user asks for the current time, date, or timezone, you MUST report this exact local time: ${time} on ${today} (${timeZone}). Do NOT invent any other time.
 
