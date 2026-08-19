@@ -25,3 +25,41 @@ export function splitReasoning(content) {
 export function visibleAnswer(content) {
   return splitReasoning(content).answer
 }
+
+/**
+ * Reasoning models return their scratch-work in a SEPARATE streaming field —
+ * `reasoning_content` on DeepSeek-R1 and NVIDIA's reasoning models, `reasoning`
+ * on OpenRouter — not inline in `content`. llm.js read only `delta.content`, so
+ * that thinking was silently discarded and the Thinking panel was always empty
+ * for exactly the models that have the most to show.
+ *
+ * Rather than teach every consumer a second channel, wrap it in <think> tags as
+ * it streams. splitReasoning already understands those everywhere: the message
+ * bubble, the activity panel, and the agent's empty-answer guard.
+ */
+export function createReasoningTagger() {
+  let open = false
+  return {
+    /** Text from the reasoning channel. Opens the block on first use. */
+    reasoning(text) {
+      if (!text) return ''
+      const prefix = open ? '' : '<think>'
+      open = true
+      return prefix + text
+    },
+    /** Text from the answer channel. Closes any open reasoning block first. */
+    content(text) {
+      if (!text) return ''
+      const prefix = open ? '</think>' : ''
+      open = false
+      return prefix + text
+    },
+    /** End of stream: close the block if the model only ever reasoned. */
+    end() {
+      const out = open ? '</think>' : ''
+      open = false
+      return out
+    },
+    isOpen() { return open },
+  }
+}

@@ -4,6 +4,8 @@
  * API key stored in IndexedDB, never sent to any backend.
  */
 
+import { createReasoningTagger } from './reasoning'
+
 const PROVIDERS = {
   nvidia: {
     name: 'NVIDIA',
@@ -528,6 +530,8 @@ export async function streamChat({
     let buffer = ''
     let toolCalls = {}
     let sawData = false
+    // Per-stream: wraps the provider's separate reasoning channel in <think>.
+    const reasoningTagger = createReasoningTagger()
 
     while (true) {
       const { done, value } = await reader.read()
@@ -547,11 +551,27 @@ export async function streamChat({
           const parsed = JSON.parse(payload)
           const delta = parsed.choices?.[0]?.delta
 
+          // Reasoning channel FIRST. Reasoning models stream their scratch-work
+          // in a SEPARATE field — reasoning_content on DeepSeek/NVIDIA,
+          // reasoning on OpenRouter, thinking_delta on Anthropic. Reading only
+          // delta.content discarded all of it, so the Thinking panel stayed
+          // empty for exactly the models that reason most. The tagger wraps it
+          // in <think> so splitReasoning handles it everywhere, instead of
+          // teaching every consumer about a second channel.
+          const reasonDelta = delta?.reasoning_content ?? delta?.reasoning
+            ?? (parsed.type === 'thinking_delta' ? parsed.delta?.thinking : null)
+          if (reasonDelta) {
+            const out = reasoningTagger.reasoning(reasonDelta)
+            if (out) onToken?.(out)
+          }
+
           // Content token (OpenAI delta or Anthropic text_delta)
           if (delta?.content) {
-            onToken?.(delta.content)
+            const out = reasoningTagger.content(delta.content)
+            if (out) onToken?.(out)
           } else if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-            onToken?.(parsed.delta.text)
+            const out = reasoningTagger.content(parsed.delta.text)
+            if (out) onToken?.(out)
           }
 
           // Streaming tool calls (OpenAI/Groq/OpenRouter format)
@@ -582,6 +602,11 @@ export async function streamChat({
       try { tc.parsedArgs = JSON.parse(tc.arguments) } catch { tc.parsedArgs = {} }
       onToolCall?.(tc)
     }
+
+    // A reply that was ALL reasoning leaves the block open; close it so the
+    // consumer sees reasoning rather than a half-open tag.
+    const tail = reasoningTagger.end()
+    if (tail) onToken?.(tail)
 
     onDone?.()
   } catch (err) {
