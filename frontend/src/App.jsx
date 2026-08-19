@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Pin, Clock, Bell, Monitor, Activity } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity } from 'lucide-react'
 import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
@@ -23,7 +23,6 @@ import { startTurn } from './telemetry'
 import { MessageBubble } from './components/MessageBubble'
 import { AuthModal } from './components/AuthModal'
 import { ProviderModal } from './components/ProviderModal'
-import { AdModal, adsConfigured } from './components/AdModal'
 import { Modal } from './components/Modal'
 import { TermsModal, TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 import { LocalModelPanel } from './components/LocalModelPanel'
@@ -318,13 +317,11 @@ export default function App() {
   const [editingProvider, setEditingProvider] = useState(null)
   const [pwaPrompt, setPwaPrompt] = useState(null)
   const [showPwaInstall, setShowPwaInstall] = useState(false)
-  const [showAd, setShowAd] = useState(false)
   // Docked agent browser: { url } while panel mode is showing one.
   const [browserPanel, setBrowserPanel] = useState(null)
   const [showActivity, setShowActivity] = useState(false)
   const [showShareSheet, setShowShareSheet] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
-  const chatCountRef = useRef(0)
   const toolRunMapRef = useRef({}) // per-chat tool results: { [clientId]: { results: {}, used: [] } }
   const traceMapRef = useRef({})   // per-chat activity steps: { [clientId]: [...] }
   const messagesEnd = useRef(null)
@@ -478,7 +475,7 @@ export default function App() {
   // a WebContentsView composites above the DOM, so an overlay would be painted
   // UNDER it. settingsOpen matters most — that drawer docks where the panel does.
   const browserOccluded = !!(
-    settingsOpen || showPersonalise || showSkills || showToolPicker || showAd ||
+    settingsOpen || showPersonalise || showSkills || showToolPicker ||
     showPalette || showProviderModal || showAuthModal || showDataDashboard ||
     showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact
   )
@@ -812,22 +809,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleGlobalShortcuts)
   }, [liveConfig])
 
-  const [isPinned, setIsPinned] = useState(false)
 
-  // Initialize Always on Top status in desktop build
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.isAlwaysOnTop) {
-      window.__YOGATIK_DESKTOP__.isAlwaysOnTop().then(setIsPinned).catch(() => {})
-    }
-  }, [])
-
-  const togglePin = useCallback(async () => {
-    if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.toggleAlwaysOnTop) {
-      const next = await window.__YOGATIK_DESKTOP__.toggleAlwaysOnTop()
-      setIsPinned(next)
-      showToast(next ? 'Window pinned Always on Top' : 'Window unpinned')
-    }
-  }, [showToast])
 
   const installPwa = async () => {
     if (!pwaPrompt) return
@@ -1244,10 +1226,6 @@ export default function App() {
         else if (action === 'open-live') startLive()
         else if (action === 'open-diagnostics') setShowDiagnosticsModal(true)
         else if (action === 'grant-folder') handleAddFolder()
-      } else if (action && typeof action === 'object') {
-        if (action.type === 'always-on-top-changed') {
-          setIsPinned(action.value)
-        }
       }
     })
     return () => { if (typeof unlisten === 'function') unlisten() }
@@ -1915,14 +1893,7 @@ export default function App() {
         delete toolRunMapRef.current[targetClientId]
         delete traceMapRef.current[targetClientId]
         getTodayUsage().then(setUsage).catch(() => {})
-        chatCountRef.current++
-        // Never on desktop. The Electron shell loads the app with loadFile(),
-        // so it runs from file:// — no domain for AdSense to match against the
-        // approved site, no referrer, and serving there is against its policy.
-        // The slot can never fill, so the gate was pure friction: a blocking
-        // wait and an empty box, earning nothing.
         endActivityTurn()
-        if (adsConfigured && !isDesktop() && chatCountRef.current % 10 === 0) setShowAd(true)
       },
       (err) => {
         setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
@@ -3049,14 +3020,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-                <button
-                  className={`icon-btn ${isPinned ? 'pinned' : ''}`}
-                  onClick={togglePin}
-                  title={isPinned ? 'Window pinned: Always on Top (click to unpin)' : 'Pin window Always on Top'}
-                  aria-label="Toggle Always on Top"
-                >
-                  <Pin size={16} />
-                </button>
               </>
             )}
             <ActiveTimerIndicator onShowToast={showToast} />
@@ -3752,7 +3715,6 @@ export default function App() {
           </form>
         </Modal>
       )}
-      {showAd && <AdModal onClose={() => setShowAd(false)} />}
       {showShareSheet && <ShareSheet onClose={() => setShowShareSheet(false)} />}
       {showDemoModal && <DemoModal onClose={() => setShowDemoModal(false)} />}
       {showOverviewModal && (

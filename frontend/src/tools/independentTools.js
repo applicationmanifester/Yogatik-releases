@@ -1245,10 +1245,38 @@ export const docExportTool = {
       required: ['filename', 'format', 'content'],
     },
   },
-  async execute({ filename, format, content }) {
+  async execute({ filename, format, content, title, text, markdown } = {}) {
+    // Schema-required is not runtime-present: models omit arguments routinely,
+    // and this used to call filename.replace() and format.toLowerCase() before
+    // checking anything, so a missing name crashed the export entirely rather
+    // than producing a document. Recover what we can, then say what is missing.
+    const body = [content, text, markdown].find((v) => typeof v === 'string' && v.trim())
+    if (!body) {
+      return {
+        success: false,
+        error: 'Nothing to export: pass the document text in "content".',
+      }
+    }
+
+    // A filename can be recovered from the title, or from the document's first
+    // heading, before giving up.
+    const firstHeading = (body.match(/^\s*#\s+(.+)$/m) || [])[1]
+    let name = [filename, title, firstHeading, 'document']
+      .find((v) => typeof v === 'string' && v.trim())
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, '-')
+      .slice(0, 120)
+
+    // Format follows the explicit argument, else the extension already on the
+    // name, else a Word document.
+    const extFromName = (name.match(/\\.([a-z0-9]{2,5})$/i) || [])[1]
+    const requestedExt = String(format || extFromName || 'doc').toLowerCase()
+    if (!extFromName) name = `${name}.${requestedExt}`
+
+    filename = name
+    content = body
     let outContent = content
     let mimeType = 'application/msword'
-    const requestedExt = format.toLowerCase()
 
     if (['ppt', 'pptx', 'powerpoint', 'presentation', 'slides'].includes(requestedExt)) {
       const pptResult = await exportPptx(content, filename, false)
