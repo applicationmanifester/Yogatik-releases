@@ -629,3 +629,66 @@ describe('runtime platform awareness', () => {
     expect(systemOf()).not.toMatch(/browser-native tools/i)
   })
 })
+
+describe('repeated tool calls', () => {
+  // Seen twice in the field: video_render called TEN times in one turn with
+  // steadily worse arguments, and web_search NINE times with the same ones. The
+  // round cap bounded it, but nothing stopped a model re-issuing a call it had
+  // already made — so a failing tool was retried until the budget ran out.
+  const callsTo = (name) => executeTool.mock.calls.filter((c) => c[0] === name)
+
+  it('runs an identical call only once per turn', async () => {
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'web_search', parsedArgs: { query: 'ai news' } }] },
+      { toolCalls: [{ id: '2', name: 'web_search', parsedArgs: { query: 'ai news' } }] },
+      { tokens: ['Here you go.'] },
+    ])
+    await runAgent({ ...base, onDone: vi.fn() })
+    expect(callsTo('web_search')).toHaveLength(1)
+  })
+
+  it('still runs the same tool with different arguments', async () => {
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'web_search', parsedArgs: { query: 'a' } }] },
+      { toolCalls: [{ id: '2', name: 'web_search', parsedArgs: { query: 'b' } }] },
+      { tokens: ['ok'] },
+    ])
+    await runAgent({ ...base, onDone: vi.fn() })
+    expect(callsTo('web_search')).toHaveLength(2)
+  })
+
+  it('ignores key ORDER when deciding a call is a repeat', async () => {
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'weather', parsedArgs: { city: 'x', units: 'c' } }] },
+      { toolCalls: [{ id: '2', name: 'weather', parsedArgs: { units: 'c', city: 'x' } }] },
+      { tokens: ['ok'] },
+    ])
+    await runAgent({ ...base, onDone: vi.fn() })
+    expect(callsTo('weather')).toHaveLength(1)
+  })
+
+  it('does not re-run a call that FAILED — that is the flail case', async () => {
+    executeTool.mockResolvedValue({ success: false, error: 'bad scene' })
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'video_render', parsedArgs: { scenes: [] } }] },
+      { toolCalls: [{ id: '2', name: 'video_render', parsedArgs: { scenes: [] } }] },
+      { toolCalls: [{ id: '3', name: 'video_render', parsedArgs: { scenes: [] } }] },
+      { tokens: ['I could not build it.'] },
+    ])
+    await runAgent({ ...base, onDone: vi.fn() })
+    expect(callsTo('video_render')).toHaveLength(1)
+  })
+
+  it('tells the model the repeat was not executed', async () => {
+    executeTool.mockResolvedValue({ success: true, data: 1 })
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'weather', parsedArgs: { city: 'x' } }] },
+      { toolCalls: [{ id: '2', name: 'weather', parsedArgs: { city: 'x' } }] },
+      { tokens: ['ok'] },
+    ])
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+    const sent = JSON.stringify(streamChat.mock.calls.at(-1)[0].messages)
+    expect(sent).toMatch(/already called|repeated/i)
+  })
+})

@@ -117,6 +117,20 @@ browser_control, computer_control, clipboard_access) WILL REFUSE here. If the us
 plainly that it requires the Yogatik desktop app — never improvise or pretend you ran it.`
 }
 
+// Key order must not make two identical calls look different, so sort it.
+function callSignature(name, args) {
+  const stable = (v) => {
+    if (Array.isArray(v)) return v.map(stable)
+    if (v && typeof v === 'object') {
+      return Object.keys(v).sort().reduce((acc, k) => { acc[k] = stable(v[k]); return acc }, {})
+    }
+    return v
+  }
+  let payload
+  try { payload = JSON.stringify(stable(args ?? {})) } catch { payload = String(args) }
+  return `${name}::${payload}`
+}
+
 function buildSystemPrompt({ webEnabled, persona, planMode }) {
   const now = new Date()
   const today = now.toLocaleDateString('en-US', {
@@ -506,6 +520,9 @@ export async function runAgent({
 
   const toolResults = {}
   const sources = []
+  // Every distinct tool call made this turn, keyed by name + arguments, so an
+  // identical one is answered from here instead of being run again.
+  const seenCalls = new Map()
 
   if (webAvailable && userMessage) {
     if (isSocialQuery(userMessage)) {
@@ -750,7 +767,24 @@ export async function runAgent({
             if ((tc.name === 'web_search' || tc.name === 'deep_research') && (!args.query && !args.q && !args.search_query && !args.keyword && !args.text)) {
               args = { query: userMessage, ...args }
             }
-            return await executeTool(tc.name, args, { signal })
+            // A model that re-issues a call it already made this turn is stuck,
+            // not making progress: running it again costs a round, can cost
+            // money, and returns the same thing. Hand back what it already got,
+            // labelled, so it either uses the result or changes approach.
+            const sig = callSignature(tc.name, args)
+            if (seenCalls.has(sig)) {
+              const prev = seenCalls.get(sig)
+              return {
+                ...prev,
+                repeated: true,
+                note: `You already called ${tc.name} with exactly these arguments in this turn. ` +
+                  'This is the result you were given. Do not call it again — use it, try ' +
+                  'materially different arguments, or answer with what you have.',
+              }
+            }
+            const result = await executeTool(tc.name, args, { signal })
+            seenCalls.set(sig, result)
+            return result
           } catch (e) {
             return { error: e?.message || String(e) }
           }
