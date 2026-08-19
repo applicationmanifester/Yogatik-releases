@@ -184,6 +184,11 @@ export default function App() {
   const [pendingToolResultsMap, setPendingToolResultsMap] = useState({})
   const [ttsPlaying, setTtsPlaying] = useState(false)
   const [attachedFile, setAttachedFile] = useState(null)
+  // Real OS path for a file DROPPED on the desktop window. The browser only
+  // hands over an opaque blob; webUtils.getPathForFile recovers where it
+  // actually lives, so the agent can fs_read/fs_write the real file instead of
+  // only seeing a copy of its text.
+  const [attachedFilePath, setAttachedFilePath] = useState(null)
   const [attachedImage, setAttachedImage] = useState(null)   // { dataUrl, thumb, name, width, height }
   const [dragOver, setDragOver] = useState(false)
   const [modelSees, setModelSees] = useState(null)   // null = unknown yet
@@ -1133,6 +1138,36 @@ export default function App() {
     if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 280) + 'px' }
   }, [])
 
+  // Global Ctrl+Alt+C copies whatever is selected in ANY application and relays
+  // it here. main.cjs has always sent this event; nothing in the renderer
+  // listened, so the hotkey fired into the void and the feature did not exist.
+  //
+  // It lands in the composer rather than sending: capture must be reversible,
+  // and the user usually wants to add an instruction ("summarise this") before
+  // it goes anywhere.
+  useEffect(() => {
+    const bridge = typeof window !== 'undefined' && window.__YOGATIK_CLIPBOARD__
+    if (!bridge || typeof bridge.onSelectionHotkey !== 'function') return
+    return bridge.onSelectionHotkey((payload) => {
+      const captured = String(payload?.text || '').trim()
+      if (!captured) return
+      setInput((prev) => {
+        const base = prev.replace(/\s+$/, '')
+        return base ? base + '\n\n' + captured : captured
+      })
+      // After the value lands, put the caret at the end so typing continues
+      // naturally, and grow the box to fit what was just pasted in.
+      setTimeout(() => {
+        const ta = textareaRef.current
+        if (!ta) return
+        ta.focus()
+        ta.selectionStart = ta.selectionEnd = ta.value.length
+        autoResize()
+      }, 0)
+      try { announce('Captured selection') } catch { /* announcer optional */ }
+    })
+  }, [autoResize])
+
   const newChat = useCallback(() => {
     // Don't stop other chats — let them keep streaming in background
     setConvQuery('')
@@ -1622,7 +1657,13 @@ export default function App() {
       } catch (err) {
         fileContext = `[File upload failed: ${err.message}] `
       }
+      // A dropped file exists on disk. Say where, so the agent can operate on
+      // the real thing rather than only the text extracted from it.
+      if (attachedFilePath) {
+        fileContext += `[This file is on disk at: ${attachedFilePath} — you can read or edit it directly with the fs_* tools if the folder is granted for this chat.] `
+      }
       setAttachedFile(null)
+      setAttachedFilePath(null)
       refreshDocs()
     }
 
@@ -1985,7 +2026,12 @@ export default function App() {
     const img = imageFromDrop(e)
     if (img) { attachImage(img); return }
     const file = e.dataTransfer?.files?.[0]
-    if (file) setAttachedFile(file)
+    if (file) {
+      setAttachedFile(file)
+      let real = null
+      try { real = window.__YOGATIK_DND__?.getPathForFile?.(file) || null } catch { real = null }
+      setAttachedFilePath(real)
+    }
   }
 
   const handleEnhancePrompt = async () => {
