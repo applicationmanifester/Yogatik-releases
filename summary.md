@@ -1,9 +1,10 @@
-# Yogatik 3.10.0 — release summary
+# Yogatik 3.10.2 — release summary
 
 **Date:** 2026-08-18
-**Version:** 3.9.3 → **3.10.0** (minor: new capability, not just fixes)
-**Range:** `17242f1..HEAD` · 26 commits · 39 files · +5117 / −237
-**Tests:** 1180 passing (91 files) · lint 0 errors · pushed to `origin/main`
+**Version:** 3.9.3 → **3.10.2** (minor: new capability, not just fixes)
+**Range:** `17242f1..HEAD` · 32 commits · 42 files · +5336 / −260
+**Tests:** 1189 passing (92 files) · lint 0 errors
+**Status:** pushed · **web deployed and verified live** · tagged `v3.10.2`
 
 ---
 
@@ -96,6 +97,23 @@ broken rather than simply being the wrong tool.
 the model would keep choosing the fake browser over the real one. Description
 corrected; not deleted, since the web build still needs static extraction.
 
+**Repeated tool calls.** Seen twice in the field: `video_render` called ten
+times in one turn, `web_search` nine times with identical arguments. The round
+cap bounded the damage but nothing stopped the repetition itself, so a failing
+tool was retried until the budget ran out. Calls are now keyed by name plus
+arguments (key order normalised), and a repeat is answered from the first
+call's result with a note telling the model to use it, change the arguments
+materially, or answer. This matters most for the failing case — re-running a
+call that just failed cannot produce a different answer.
+
+**Static extraction gave up on renderable pages.** Asked to read a JavaScript
+SPA, the assistant reported the content unreadable and stopped. Correct about
+`web_extract`, which only ever sees static HTML — but a dead end, because on
+desktop `browser_control` renders that page fine. The empty-result branch now
+carries the next step in the *result* (the trick `youtube`'s `transcript_note`
+already uses), and names `browser_control` only when the bridge is actually
+present, so the web build is never promised a tool that will refuse.
+
 **Video renders that produced nothing.** `video_render` was called ten times in
 one turn with steadily worse arguments — `elements[]`, then `[]`, then `[{}]` —
 before telling the user to run ffmpeg locally. A scene with no `type` defaulted to
@@ -137,13 +155,29 @@ child fell outside the hidden overflow with no scrollbar to reach it. `58vh` is
 now a cap rather than a floor. Measured: the button sat 44px below the edge at
 560px height; it now ends 18px above it and still fits at 460px.
 
+**The activity panel covered the chat it described.** At 42% wide and
+`position: absolute` it sat on top of the conversation, so reading the answer
+while watching the tools was impossible — the whole point of having both. It is
+now a flex sibling of `.chat-area` rather than an overlay, at a 300px rail, so
+the chat narrows instead of being hidden. Measured at 1280px: panel 538px →
+300px, overlap gone, sidebar + chat + panel now sum exactly to the viewport.
+Below 768px it reverts to a full-width overlay.
+
+**`/platforms` downloaded the installer before anyone asked.** Opening the page
+fetched a 114MB `.exe` on its own, 800ms after load, with no click — a drive-by
+download the visitor never consented to, and one browsers and AV treat as
+hostile. It also repeated: the once-per-browser guard was *cleared by clicking
+the download button*, so anyone who downloaded deliberately got another
+automatic copy on every later visit. Removed entirely; the buttons now need a
+real click.
+
 **Auto-update never worked in production.** `electron-updater` was a
 `devDependency`, and electron-builder never packages those — so
 `require('electron-updater')` threw in every shipped build and the guard in
 `updater.cjs` swallowed it silently. Verified by parsing the built `app.asar`
-before and after. **3.10.0 is the first build whose updater is actually
-packaged**, so users on 3.9.x must install manually; auto-update starts working
-for 3.10.0 → next.
+before and after. **3.10.2 is the first published build whose updater is actually
+packaged** (3.10.0 was built but never released), so users on 3.9.x must install
+manually; auto-update starts working from 3.10.2 onward.
 
 **CI's `e2e` job had failed on every run since it was added.** It installed a
 Playwright browser then ran `npm run e2e` — a script that did not exist, alongside
@@ -166,33 +200,58 @@ harness is excluded from the installer.
 
 | Check | Result |
 |---|---|
-| `npm test` | **1180 passed / 91 files** |
+| `npm test` | **1189 passed / 92 files** |
 | `npm run lint` | **0 errors** (88 pre-existing warnings) |
 | `npm run e2e` | 4/4 against the production bundle |
 | `npm run test:browser` | 28/28 in a real Electron app |
 | Web + Electron renderer builds | ✅ |
-| Installer | signed, v3.10.0, blockmap + `latest.yml` |
+| Installer | signed, blockmap + `latest.yml` (CI rebuilds at 3.10.2) |
+| Live web app | serving the built bundle; fixes confirmed by fetching it |
+
+---
+
+## Shipped
+
+**Web app is live.** Deployed after the lint/test gates, serving the bundle built
+from this work. Verified by fetching the live files rather than trusting the
+deploy output: the duplicate-call breaker, the runtime block, the `web_extract`
+escalation and the corrected tool descriptions are all present, and
+`startWinDownload` on `/platforms` went **3 → 0** — the drive-by download is gone
+from production.
+
+Hosting only, deliberately: `deploy.bat` also pushes `firestore:rules`, but no
+security rules changed here and publishing them is a separate, riskier action.
+
+**Tagged `v3.10.2`.** An earlier `v3.10.1` tag was refused by CI because the
+branch built `3.10.0` — the version guard doing exactly its job, since an
+installer labelled one version while reporting another would hand the updater the
+wrong number. Rather than force it through, `package.json` and the tag were made
+to agree at 3.10.2. CI builds and publishes into `Yogatik-releases` from there.
 
 ---
 
 ## Open items
 
-**1. Installer needs a repackage.** The last `electron-builder` run failed with
-`EPERM` on `win-unpacked` because six Yogatik processes were running and held the
-files. Close the app and rebuild — the code is committed and pushed; only the
-`.exe` lags.
+**1. Watch the CI release run.** The macOS and Linux jobs were also failing on the
+earlier attempt. The version-mismatch step is fixed; if those two fail for other
+reasons it is a separate problem and needs their logs.
 
-**2. Nothing is deployed to the web.** `yogatik.web.app` still serves the old
-bundle (`index-CW6oFTEX.js`), confirmed by fetching it and grepping for the new
-wording. **None of these fixes are live on the web app.**
+**2. 3.9.x users must install manually.** Their copy carries the updater that was
+never packaged, so it cannot fetch this release. Auto-update works from 3.10.2
+onward.
 
-**3. No release tag.** Users do not get 3.10.0 until `git tag v3.10.0 && git push
-origin v3.10.0`. CI publishes on the tag into the `Yogatik-releases` repo, and its
-version guard now matches at 3.10.0.
+**3. The local installer is stale** (built at 3.10.0). CI produces the real
+release artefacts — do not distribute the local `.exe`.
 
 **4. Desktop UI not driven by hand.** The browser panel's occlusion behaviour and
 the renamed footer link were verified by measurement and by reading source, not by
-using the packaged app. Worth a pass before shipping.
+using the packaged app. Worth a pass.
+
+**5. Two bridges are still dead**, as `CLAUDE.md` records:
+`__YOGATIK_CLIPBOARD__.onSelectionHotkey` — the global Ctrl+Alt+C hotkey fires and
+main relays it, but nothing in the renderer listens — and
+`__YOGATIK_DND__.getPathForFile`, so a file dropped on the desktop window still
+yields an opaque blob. Both are features users cannot reach today.
 
 ---
 
