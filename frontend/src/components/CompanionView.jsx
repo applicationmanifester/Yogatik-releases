@@ -3,7 +3,7 @@ import { Send, X, Eye, EyeOff, Zap, ShieldCheck, Square, GripHorizontal } from '
 import { streamMessage } from '../api'
 import { subscribeActivity } from '../activityStream'
 import { createWatchState, shouldLook, noteLook, setPaused } from '../companion/watch'
-import { classifyAction } from '../companion/policy'
+import { createActionGate, MODES } from '../companion/gate'
 
 /**
  * The floating companion: a small always-on-top assistant that stays with the
@@ -31,6 +31,22 @@ export function CompanionView() {
   const bodyRef = useRef(null)
 
   const bridge = () => (typeof window !== 'undefined' && window.__YOGATIK_COMPANION_WIN__) || null
+
+  // The gate asks by putting a card on screen and WAITING for the click. The
+  // promise it returns is what the Allow/Skip buttons resolve, so an action is
+  // genuinely blocked until a human answers rather than merely announced.
+  const askUser = useCallback(({ reason, risk, step }) => new Promise((resolve) => {
+    setPending({ reason, risk, step, resolve })
+  }), [])
+
+  const gateRef = useRef(null)
+  if (!gateRef.current) {
+    gateRef.current = createActionGate({ mode: MODES.ASK, confirm: askUser })
+  }
+  // Flipping the chip must change what the RUNNING gate does, not just the label.
+  useEffect(() => {
+    gateRef.current.setMode(mode === 'auto' ? MODES.AUTO : MODES.ASK)
+  }, [mode])
 
   // Mirror the live action feed the main window already publishes.
   useEffect(() => subscribeActivity((snap) => {
@@ -63,7 +79,17 @@ export function CompanionView() {
 
   const stop = useCallback(() => {
     try { abortRef.current?.abort() } catch { /* already gone */ }
+    // A half-answered question must not outlive the run that asked it.
+    setPending((p) => { try { p?.resolve(false) } catch { /* ignore */ } return null })
     setBusy(false)
+  }, [])
+
+  // The agent runs in this window, so hand it the gate. Anything that routes
+  // tool calls through window.__YOGATIK_ACTION_GATE__ is checked before it runs;
+  // without this the classifier would be decoration.
+  useEffect(() => {
+    window.__YOGATIK_ACTION_GATE__ = gateRef.current
+    return () => { delete window.__YOGATIK_ACTION_GATE__ }
   }, [])
 
   // Screen watching. Paced by companion/watch so it cannot become a token
@@ -138,7 +164,10 @@ export function CompanionView() {
 
         {pending && (
           <div className="companion-confirm">
-            <div className="companion-confirm-why">{pending.reason}</div>
+            <div className="companion-confirm-why">
+              <strong>{pending.risk === 'confirm' ? 'Needs your OK' : 'Confirm'}</strong>
+              <div>{pending.reason}</div>
+            </div>
             <div className="companion-confirm-actions">
               <button onClick={() => { pending.resolve(true); setPending(null) }}>Allow once</button>
               <button className="ghost" onClick={() => { pending.resolve(false); setPending(null) }}>Skip</button>
@@ -170,4 +199,4 @@ export function CompanionView() {
 
 export default CompanionView
 /** Exposed for tests: the rail the confirm dialog is driven by. */
-export { classifyAction }
+export { createActionGate }
