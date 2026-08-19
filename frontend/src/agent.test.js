@@ -692,3 +692,59 @@ describe('repeated tool calls', () => {
     expect(sent).toMatch(/already called|repeated/i)
   })
 })
+
+describe('action gate', () => {
+  // The companion window installs window.__YOGATIK_ACTION_GATE__. When it is
+  // there the rail is real; when it is not, ordinary chat must be untouched.
+  afterEach(() => { delete window.__YOGATIK_ACTION_GATE__ })
+
+  const oneToolThenAnswer = () => scriptRounds([
+    { toolCalls: [{ id: '1', name: 'fs_write', parsedArgs: { path: 'a.txt', content: 'x' } }] },
+    { tokens: ['done'] },
+  ])
+
+  it('runs tools normally when no gate is installed', async () => {
+    oneToolThenAnswer()
+    await runAgent({ ...base, onDone: vi.fn() })
+    expect(executeTool).toHaveBeenCalledWith('fs_write', expect.anything(), expect.anything())
+  })
+
+  it('does NOT execute a tool the gate refuses', async () => {
+    window.__YOGATIK_ACTION_GATE__ = async () => ({ allowed: false, reason: 'Declined.' })
+    oneToolThenAnswer()
+    await runAgent({ ...base, onDone: vi.fn() })
+    const calls = executeTool.mock.calls.filter((c) => c[0] === 'fs_write')
+    expect(calls).toHaveLength(0)
+  })
+
+  it('tells the model the call was blocked, so it can adapt', async () => {
+    window.__YOGATIK_ACTION_GATE__ = async () => ({ allowed: false, reason: 'Declined.' })
+    oneToolThenAnswer()
+    await runAgent({ ...base, onDone: vi.fn() })
+    const sent = JSON.stringify(streamChat.mock.calls.at(-1)[0].messages)
+    expect(sent).toMatch(/not run|did not approve/i)
+  })
+
+  it('executes when the gate allows', async () => {
+    window.__YOGATIK_ACTION_GATE__ = async () => ({ allowed: true })
+    oneToolThenAnswer()
+    await runAgent({ ...base, onDone: vi.fn() })
+    expect(executeTool.mock.calls.filter((c) => c[0] === 'fs_write')).toHaveLength(1)
+  })
+
+  it('FAILS CLOSED when the gate itself throws', async () => {
+    window.__YOGATIK_ACTION_GATE__ = async () => { throw new Error('gate exploded') }
+    oneToolThenAnswer()
+    await runAgent({ ...base, onDone: vi.fn() })
+    expect(executeTool.mock.calls.filter((c) => c[0] === 'fs_write')).toHaveLength(0)
+  })
+
+  it('passes the tool name and arguments to the gate so it can judge them', async () => {
+    let seen = null
+    window.__YOGATIK_ACTION_GATE__ = async (step) => { seen = step; return { allowed: true } }
+    oneToolThenAnswer()
+    await runAgent({ ...base, onDone: vi.fn() })
+    expect(seen.tool).toBe('fs_write')
+    expect(seen.args).toMatchObject({ path: 'a.txt' })
+  })
+})

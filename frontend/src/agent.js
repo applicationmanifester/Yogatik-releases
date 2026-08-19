@@ -99,6 +99,24 @@ function isDesktopRuntime() {
   return !!(window.__YOGATIK_ELECTRON__ || window.__TAURI__)
 }
 
+// The companion window installs an action gate. When one is present EVERY tool
+// call is checked before it runs, which is what makes autopilot's rail real
+// rather than advisory. The main window installs none, so ordinary chat is
+// untouched.
+//
+// Fails CLOSED: a gate that throws blocks the call. A rail that opens when it
+// breaks is not a rail.
+async function gateAllows(name, args) {
+  const gate = (typeof window !== 'undefined' && window.__YOGATIK_ACTION_GATE__) || null
+  if (typeof gate !== 'function') return { allowed: true }
+  try {
+    const d = await gate({ tool: name, action: args?.action, args, label: args?.label })
+    return { allowed: !!d?.allowed, reason: d?.reason || '' }
+  } catch (e) {
+    return { allowed: false, reason: `The action gate failed (${e?.message || e}), so the call was not made.` }
+  }
+}
+
 function platformBlock() {
   if (isDesktopRuntime()) {
     return `RUNTIME: You are running inside the Yogatik DESKTOP APP, with REAL access to this computer.
@@ -781,6 +799,18 @@ export async function runAgent({
                   'This is the result you were given. Do not call it again — use it, try ' +
                   'materially different arguments, or answer with what you have.',
               }
+            }
+            const decision = await gateAllows(tc.name, args)
+            if (!decision.allowed) {
+              // Report it as a normal tool result so the model can adapt —
+              // announce, choose another route, or ask the user directly.
+              const blocked = {
+                success: false,
+                blocked: true,
+                error: `Not run — the user did not approve this action. ${decision.reason || ''}`.trim(),
+              }
+              seenCalls.set(sig, blocked)
+              return blocked
             }
             const result = await executeTool(tc.name, args, { signal })
             seenCalls.set(sig, result)
