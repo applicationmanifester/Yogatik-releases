@@ -129,6 +129,29 @@ export function diagnoseError(error) {
     }
   }
 
+  // A tool rejecting its own arguments is not a provider failure. This used to
+  // fall through to the generic bucket below and announce "Model Execution
+  // Failed — an unexpected response was received from the model provider",
+  // which sends the user to check an API key over an argument the model simply
+  // forgot. Checked late, so a genuine 401/429/5xx above still wins.
+  if (
+    /\b[a-z_]+ is required\b/i.test(msg) ||
+    /missing required (parameter|argument|field)/i.test(msg) ||
+    /\brequired to \w+/i.test(msg) ||
+    /invalid argument/i.test(msg) ||
+    /\bprovide a \w+/i.test(msg) ||
+    /\bmust be a\b/i.test(msg)
+  ) {
+    return {
+      type: 'tool_input',
+      category: 'Tool Input',
+      title: 'Tool Called Without a Required Value',
+      suggestion: 'The model left out something the tool needs. This is usually fixed by retrying — ask again, or say more specifically what you want.',
+      actionType: 'retry',
+      actionLabel: 'Try Again',
+    }
+  }
+
   return {
     type: 'general',
     category: 'Provider / Execution Error',

@@ -81,3 +81,39 @@ describe('diagnoseError — on-device model storage', () => {
     expect(d.actionType).toBe('autopick')
   })
 })
+
+describe('tool-argument errors are not provider failures', () => {
+  // Field report: fs_search returned "query is required" and the UI announced
+  // "Model Execution Failed — an unexpected response was received from the
+  // model provider". That sends the user to check their API key over a missing
+  // argument the model simply forgot.
+  const cases = [
+    'query is required',
+    'path is required',
+    'command is required',
+    'Missing required parameter: url',
+    'text is required to type',
+    'Provide a job title or role to search for.',
+    'url is required to navigate',
+    'Invalid argument: depth must be a number',
+  ]
+
+  for (const msg of cases) {
+    it(`classifies "${msg}" as a tool input problem`, () => {
+      const d = diagnoseError(msg)
+      expect(d.category).not.toMatch(/provider/i)
+      expect(d.suggestion).not.toMatch(/model provider/i)
+      expect(d.type).toBe('tool_input')
+    })
+  }
+
+  it('still blames the provider for a genuine provider failure', () => {
+    const d = diagnoseError('502 Bad Gateway from upstream')
+    expect(d.type).not.toBe('tool_input')
+  })
+
+  it('does not hijack an auth error that happens to say "required"', () => {
+    const d = diagnoseError('401 Unauthorized: API key required')
+    expect(d.type).not.toBe('tool_input')
+  })
+})

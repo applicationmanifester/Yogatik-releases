@@ -6,6 +6,10 @@
 
 import { streamChat, chatComplete } from './llm'
 import { visibleAnswer as sharedVisibleAnswer } from './reasoning'
+// Readable summaries for the last-resort path. The inline version pasted raw
+// JSON — a whole file's contents plus internal bookkeeping — which is barely
+// better than the blank bubble it replaced.
+import { summariseToolResults } from './toolSummary'
 import { getToolSchemas, prioritizeToolSchemas, executeTool } from './tools/index'
 import { buildToolPrompt, parseToolCalls, formatToolResults } from './promptedTools'
 import { setVisionContext } from './tools/see'
@@ -645,20 +649,6 @@ export async function runAgent({
   // Reasoning is not an answer: a reply that is only <think>…</think> leaves
   // the user with a blank bubble. Shared with the bubble and the activity panel.
   const visibleAnswer = (text) => sharedVisibleAnswer(text)
-
-  // Last resort: the tools DID run, so surface what they returned rather than
-  // throwing that work away behind an empty bubble.
-  const summariseToolResults = (results) => {
-    const names = Object.keys(results || {})
-    if (!names.length) return ''
-    return names.map((n) => {
-      let body
-      try { body = typeof results[n] === 'string' ? results[n] : JSON.stringify(results[n]) }
-      catch { body = '[unserialisable result]' }
-      if (body && body.length > 600) body = body.slice(0, 600) + '…'
-      return '**' + n + '**' + '\n\n' + body
-    }).join('\n\n')
-  }
 
   let fullContent = ''   // everything shown to the user, across all rounds
   let roundContent = ''  // text from the current round only
