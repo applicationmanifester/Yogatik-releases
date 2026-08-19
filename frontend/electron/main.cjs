@@ -31,6 +31,7 @@ const { registerPty, killAllPty } = require('./pty.cjs')
 const { registerMcpStdio, killAllMcpStdio } = require('./mcpStdio.cjs')
 const { registerCompanionInput } = require('./companionInput.cjs')
 const { registerBrowserControl, destroyAllSessions } = require('./browserControl.cjs')
+const { registerCompanion, toggle: toggleCompanion, destroy: destroyCompanion } = require('./companionWindow.cjs')
 // Complementary modules from the per-chat-folders work. Different IPC channels
 // (underscore-style) so they coexist with the colon-style ones above:
 //   bgProcesses    — start/stream LONG-RUNNING commands (vs processes.cjs, which
@@ -208,6 +209,7 @@ if (!gotLock) {
     registerMcpStdio()
     registerCompanionInput()
     registerBrowserControl(getWindow)
+    registerCompanion({ dev: isDev })
     startScheduler()
     createWindow()
     createTray(getWindow)
@@ -574,11 +576,10 @@ if (!gotLock) {
 
     // Global Companion Mode Hotkey (Ctrl+Shift+Space) to summon/toggle floating companion
     globalShortcut.register('CommandOrControl+Shift+Space', () => {
-      if (!mainWindow) return
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.show()
-      mainWindow.focus()
-      mainWindow.webContents.send('toggle-companion-hotkey')
+      // Toggles the real floating companion window. This used to raise the MAIN
+      // window and send 'toggle-companion-hotkey', which nothing listened for —
+      // so the "floating companion" was only ever the app coming to the front.
+      toggleCompanion()
     })
 
     // Global "act on my selection" hotkey: copy the foreground selection, then
@@ -627,6 +628,7 @@ if (!gotLock) {
     stopAllFsWatchers()
     stopAllMcpStdioClients()
     destroyAllSessions()   // close any agent browser windows and their tabs
+    destroyCompanion()     // and the floating companion
     if (searchSidecar) {
       searchSidecar.kill()
     }

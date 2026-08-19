@@ -178,6 +178,16 @@ contextBridge.exposeInMainWorld('__YOGATIK_BROWSER__', {
   close: (p) => ipcRenderer.invoke('browser:close', p || {}),
 })
 
+// The floating companion window (always-on-top mini assistant).
+contextBridge.exposeInMainWorld('__YOGATIK_COMPANION_WIN__', {
+  toggle: () => ipcRenderer.invoke('companion:toggle'),
+  show: () => ipcRenderer.invoke('companion:show'),
+  hide: () => ipcRenderer.invoke('companion:hide'),
+  close: () => ipcRenderer.invoke('companion:close'),
+  resize: (p) => ipcRenderer.invoke('companion:resize', p || {}),
+  setAlwaysOnTop: (on) => ipcRenderer.invoke('companion:set-always-on-top', { on }),
+})
+
 // Process manager (list + guarded kill).
 contextBridge.exposeInMainWorld('__YOGATIK_PROCESS__', {
   list: (opts) => ipcRenderer.invoke('process:list', opts || {}),
