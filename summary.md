@@ -175,9 +175,10 @@ real click.
 `devDependency`, and electron-builder never packages those — so
 `require('electron-updater')` threw in every shipped build and the guard in
 `updater.cjs` swallowed it silently. Verified by parsing the built `app.asar`
-before and after. **3.10.2 is the first published build whose updater is actually
-packaged** (3.10.0 was built but never released), so users on 3.9.x must install
-manually; auto-update starts working from 3.10.2 onward.
+before and after. **3.10.0 was the first published build whose updater is
+actually packaged**, so users on 3.9.x must install manually — their copy cannot
+fetch anything. Auto-update works from 3.10.0 onward, which includes this
+release.
 
 **CI's `e2e` job had failed on every run since it was added.** It installed a
 Playwright browser then ran `npm run e2e` — a script that did not exist, alongside
@@ -232,13 +233,14 @@ to agree at 3.10.2. CI builds and publishes into `Yogatik-releases` from there.
 
 ## Open items
 
-**1. Watch the CI release run.** The macOS and Linux jobs were also failing on the
-earlier attempt. The version-mismatch step is fixed; if those two fail for other
-reasons it is a separate problem and needs their logs.
+**1. ~~Watch the CI release run.~~ Done.** `v3.10.2` published to
+`Yogatik-releases` with 11 assets — Windows, macOS and Linux all built, and the
+published `latest.yml` reports 3.10.2. The macOS/Linux jobs that failed on the
+earlier attempt were failing only on the version guard.
 
 **2. 3.9.x users must install manually.** Their copy carries the updater that was
-never packaged, so it cannot fetch this release. Auto-update works from 3.10.2
-onward.
+never packaged, so it cannot fetch this release. 3.10.0 users auto-update to
+3.10.2 normally.
 
 **3. The local installer is stale** (built at 3.10.0). CI produces the real
 release artefacts — do not distribute the local `.exe`.
