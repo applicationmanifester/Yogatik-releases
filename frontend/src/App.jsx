@@ -8,7 +8,6 @@ import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRo
 import { runMultiAgentDebate } from './multiAgent'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { BrowserPanel } from './components/BrowserPanel'
-import { TerminalPanel } from './components/TerminalPanel'
 import { ActivityPanel } from './components/ActivityPanel'
 import { startActivityTurn, publishStream, publishStep, endActivityTurn } from './activityStream'
 import { YogatikLogo } from './components/YogatikLogo'
@@ -37,7 +36,7 @@ import { runWorkflow } from './workflows'
 import { DemoModal } from './components/DemoModal'
 import { AppOverviewModal } from './components/AppOverviewModal'
 import { McpModal } from './components/McpModal'
-
+import { FloatingCompanion } from './components/FloatingCompanion'
 import { DownloadModal } from './components/DownloadModal'
 import { DiagnosticsModal } from './components/DiagnosticsModal'
 import { DomainHubModal } from './components/DomainHubModal'
@@ -61,7 +60,6 @@ import { ShareSheet } from './components/ShareSheet'
 import { shouldNotifyTurn, notificationBody, notificationTitle, cleanReply } from './desktopNotify'
 import { setPermissionPrompt } from './permissions'
 import PermissionPrompt from './components/PermissionPrompt'
-import TerminalTrigger from './components/TerminalTrigger'
 
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
@@ -191,7 +189,7 @@ export default function App() {
   // only seeing a copy of its text.
   const [attachedFilePath, setAttachedFilePath] = useState(null)
   const [attachedImage, setAttachedImage] = useState(null)   // { dataUrl, thumb, name, width, height }
-
+  const [dragOver, setDragOver] = useState(false)
   const [modelSees, setModelSees] = useState(null)   // null = unknown yet
   const [updateReady, setUpdateReady] = useState(null)   // () => apply
   const [storage, setStorage] = useState(null)
@@ -205,55 +203,15 @@ export default function App() {
   const [usage, setUsage] = useState({})
   const [arena, setArena] = useState(null)
   const [comparing, setComparing] = useState(false)
-
-
-
-
-  useEffect(() => {
-    if (!window.__YOGATIK_CLIPBOARD__) return
-    const unsub = window.__YOGATIK_CLIPBOARD__.onSelectionHotkey?.((text) => {
-      setInput((prev) => prev + (prev ? '\n' : '') + text)
-    })
-    return () => unsub?.()
-  }, [])
-
-  // Desktop bridge listeners — file watcher toasts
-  useEffect(() => {
-    if (!window.__YOGATIK_WATCHER__) return
-    const unsub = window.__YOGATIK_WATCHER__.onChange?.(({ id, type, path }) => {
-      if (window.__YOGATIK_NOTIFY__) {
-        window.__YOGATIK_NOTIFY__(`File changed: ${path}`, `Type: ${type}`)
-      }
-    })
-    return () => unsub?.()
-  }, [])
-
-  // Desktop bridge — drop handler for real OS paths
-  useEffect(() => {
-    const handleDrop = async (e) => {
-      if (!window.__YOGATIK_DND__ || !e.dataTransfer?.files?.length) return
-      e.preventDefault()
-      for (const file of e.dataTransfer.files) {
-        try {
-          const realPath = await window.__YOGATIK_DND__.getPathForFile?.(file)
-          if (realPath) {
-            setAttachedFilePath(realPath)
-            setInput((prev) => prev + (prev ? '\n' : '') + `[Dropped file: ${realPath}]`)
-          }
-        } catch (err) { console.error('DND path resolve failed', err) }
-      }
-    }
-    window.addEventListener('drop', handleDrop)
-    return () => window.removeEventListener('drop', handleDrop)
-  }, [])
-
+  const [compareMode, setCompareMode] = useState(false)
+  const [liveConfig, setLiveConfig] = useState(null)   // non-null = call in progress
   const liveConvRef = useRef(null)                     // transcript's own conversation
-
+  const [compareModels, setCompareModels] = useState(['', ''])
   const [projects, setProjects] = useState([])
   const [activeProject, setActiveProjectState] = useState(null)
   const [syncing, setSyncing] = useState(false)
   const [autoPicking, setAutoPicking] = useState(false)
-Msg] = useState('')
+  const [autoPickMsg, setAutoPickMsg] = useState('')
   const [autoRoute, setAutoRouteState] = useState(false)
   const [fallback, setFallbackState] = useState(true)
   const [prefs, setPrefsState] = useState({})
@@ -3706,7 +3664,7 @@ Msg] = useState('')
       {features.artifacts && activeArtifact && <ArtifactPanel artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />}
       {showActivity && <ActivityPanel onClose={() => setShowActivity(false)} />}
       {browserPanel && (
-
+        <BrowserPanel
           conversationId={browserConvId}
           url={browserPanel.url}
           occluded={browserOccluded}
