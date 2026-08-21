@@ -83,6 +83,21 @@ const PROVIDERS = {
       'zyphra/zamba2-7b-instruct',
       'nvidia/llama3-chatqa-1.5-70b',
       'bigcode/starcoder2-15b',
+      // Qwen LLM, Coder, Vision-Language & Reasoning Series
+      'qwen/qwen-2.5-72b-instruct',
+      'qwen/qwen-2.5-coder-32b-instruct',
+      'qwen/qwen-2.5-coder-7b-instruct',
+      'qwen/qwen-2.5-vl-72b-instruct',
+      'qwen/qwen-2.5-vl-7b-instruct',
+      'qwen/qwen2-vl-72b-instruct',
+      'qwen/qwen2-vl-7b-instruct',
+      'qwen/qwq-32b-preview',
+      'qwen/qwen-vl-max',
+      // Image Generation & Vision Diffusion Models
+      'black-forest-labs/flux.1-schnell',
+      'black-forest-labs/flux.1-dev',
+      'stabilityai/stable-diffusion-3-medium',
+      'stabilityai/sdxl-turbo',
       // Embedding / Safety / Special (available but not typical chat)
       'nvidia/nv-embed-v1',
       'nvidia/nv-embedqa-e5-v5',

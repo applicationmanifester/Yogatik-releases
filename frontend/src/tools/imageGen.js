@@ -112,7 +112,11 @@ export const imageGenTool = {
       height: { type: 'number', description: 'Custom height in pixels.' },
       style: { type: 'string', enum: ['photorealistic', 'cinematic', 'anime', '3d_render', 'concept_art', 'macro'], description: 'Visual aesthetic style enhancer (default: photorealistic)' },
       lighting: { type: 'string', enum: ['cinematic', 'golden_hour', 'studio', 'cyberpunk', 'chiaroscuro'], description: 'Lighting atmospheric preset (default: cinematic)' },
-      model: { type: 'string', enum: ['flux', 'turbo'], description: 'flux = best quality (default), turbo = ultra-fast speed.' },
+      model: {
+        type: 'string',
+        enum: ['flux', 'turbo', 'flux-realism', 'flux-anime', 'flux-3d', 'flux-cablyai', 'midjourney', 'dall-e-3', 'qwen-image', 'sdxl'],
+        description: 'Image generation engine: flux (default high-fidelity), turbo (fastest), flux-realism (photorealism), flux-anime (anime art), flux-3d (3D render), midjourney, dall-e-3, qwen-image, sdxl.',
+      },
       negative: { type: 'string', description: 'What to avoid in the image (optional).' },
       seed: { type: 'number', description: 'Reproducible seed number (optional).' },
     }, required: ['prompt'] },
