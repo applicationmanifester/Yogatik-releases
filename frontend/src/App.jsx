@@ -23,6 +23,7 @@ import { startTurn } from './telemetry'
 import { MessageBubble } from './components/MessageBubble'
 import { AuthModal } from './components/AuthModal'
 import { ProviderModal } from './components/ProviderModal'
+import { SettingsModal } from './components/SettingsModal'
 import { Modal } from './components/Modal'
 import { TermsModal, TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 import { LocalModelPanel } from './components/LocalModelPanel'
@@ -340,6 +341,8 @@ export default function App() {
     try { return !localStorage.getItem('yogatik_onboarded') } catch { return false }
   })
   const [showPersonaModal, setShowPersonaModal] = useState(false)
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [settingsModalTab, setSettingsModalTab] = useState('providers')
   const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false)
   const [showDomainHub, setShowDomainHub] = useState(false)
   const [showOverviewModal, setShowOverviewModal] = useState(false)
@@ -2599,7 +2602,19 @@ export default function App() {
           </button>
 
           <div className="settings-body" id="settings-body" hidden={!settingsOpen}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+          <button
+            className="small-btn primary wide settings-center-trigger"
+            style={{
+              margin: '8px 0 10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              gap: 6, padding: '8px 12px', background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
+              color: '#fff', fontWeight: 600, borderRadius: 8, border: 0, boxShadow: '0 2px 8px rgba(37,99,235,0.3)'
+            }}
+            onClick={() => { setSettingsModalTab('providers'); setShowSettingsModal(true); }}
+          >
+            <Sliders size={13} /> Open Settings Center
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
             <label style={{ margin: 0 }}><Sparkles size={12} /> Persona</label>
             <div style={{ display: 'flex', gap: '4px' }}>
               {(conv?.persona || activeTemplate).startsWith('tmpl-') && (
@@ -3609,6 +3624,35 @@ export default function App() {
         onSaved={() => { refreshModels(); setEditingProvider(null) }}
         editProvider={editingProvider ? { id: editingProvider, ...models[editingProvider] } : null}
       />}
+      {showSettingsModal && (
+        <SettingsModal
+          initialTab={settingsModalTab}
+          onClose={() => setShowSettingsModal(false)}
+          providersData={models}
+          keyInfo={keyInfo}
+          activeProvider={conv?.provider || provider}
+          activeModel={conv?.model !== undefined ? conv.model : model}
+          onSelectProvider={(pid) => setProvider(pid)}
+          onSelectModel={(m, pid) => chooseModel(m, pid)}
+          onProviderSaved={() => refreshModels()}
+          temperature={conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)}
+          onTemperatureChange={(t) => setTemperature(t)}
+          autoRoute={autoRoute}
+          onAutoRouteToggle={(v) => setAutoRoute(v)}
+          fallback={fallback}
+          onFallbackToggle={(v) => setFallback(v)}
+          webSearch={conv?.webSearch !== undefined ? conv.webSearch : (webSearch ?? true)}
+          onWebSearchToggle={(v) => setWebSearch(v)}
+          toolsEnabled={conv?.tools !== undefined ? conv.tools : (tools ?? true)}
+          onToolsToggle={(v) => setToolsEnabled(v)}
+          toolPrefs={toolPrefs}
+          onToolPrefChange={(name, en) => toggleTool(name, en)}
+          prefs={prefs}
+          onPrefChange={(k, v) => updatePref(k, v)}
+          user={user}
+          onSignIn={requestSignIn}
+        />
+      )}
       {liveConfig && (
         <LiveView
           engine={liveConfig.engine}

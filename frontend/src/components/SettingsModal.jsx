@@ -1,0 +1,990 @@
+import React, { useState, useEffect, useMemo } from 'react'
+import {
+  Sliders, Server, Cpu, Wrench, Palette, Volume2, Cloud, Activity,
+  Key, Plus, Trash2, Check, RefreshCw, Eye, EyeOff, ExternalLink,
+  Shield, Zap, Globe, Sparkles, Download, Upload, AlertCircle, Copy,
+  CheckCircle2, XCircle, HardDrive, HelpCircle
+} from 'lucide-react'
+import { Modal } from './Modal'
+import { ModelPicker } from './ModelPicker'
+import { FEATURES, resolveFeatures, FEATURE_DEFAULTS } from '../features'
+import { VOICE_LABELS, DEFAULT_VOICE } from '../video/speech'
+import {
+  getModels, saveProviderApiKey, removeProvider, testProvider,
+  addProvider, exportConversation, downloadBackup, restoreBackup,
+  syncCloudKeys, pushCloudData, pullCloudData, cloudSyncStatus,
+  requestTTS, stopTTS
+} from '../api'
+import { getDiagnosticsReport, getErrorLog, clearErrorLog } from '../errorLog'
+
+const QUICK_TEMPLATES = {
+  nvidia: {
+    name: 'NVIDIA NIM',
+    badge: 'Free tier',
+    badgeColor: '#22c55e',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    models: ['meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct', 'openai/gpt-oss-20b'],
+    default: 'meta/llama-3.3-70b-instruct',
+    keyUrl: 'https://build.nvidia.com',
+    note: '1000 free credits/month • 100+ models',
+  },
+  gemini: {
+    name: 'Google Gemini',
+    badge: 'Free tier',
+    badgeColor: '#22c55e',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+    default: 'gemini-2.5-flash',
+    keyUrl: 'https://aistudio.google.com/apikey',
+    note: '1500 req/day free • Multimodal',
+  },
+  groq: {
+    name: 'Groq',
+    badge: 'Free tier',
+    badgeColor: '#22c55e',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
+    default: 'llama-3.3-70b-versatile',
+    keyUrl: 'https://console.groq.com/keys',
+    note: 'Ultra-low latency LPU inference',
+  },
+  openrouter: {
+    name: 'OpenRouter',
+    badge: '280+ models',
+    badgeColor: '#a78bfa',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    models: ['meta-llama/llama-3.3-70b-instruct:free', 'qwen/qwen-2.5-72b-instruct', 'deepseek/deepseek-r1:free'],
+    default: 'meta-llama/llama-3.3-70b-instruct:free',
+    keyUrl: 'https://openrouter.ai/keys',
+    note: 'Qwen, Claude, GPT-4, Llama, DeepSeek & more',
+  },
+  anthropic: {
+    name: 'Anthropic (Claude)',
+    badge: 'Paid',
+    badgeColor: '#f59e0b',
+    baseUrl: 'https://api.anthropic.com/v1',
+    models: ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+    default: 'claude-3-7-sonnet-20250219',
+    keyUrl: 'https://console.anthropic.com/settings/api-keys',
+    note: 'Official Claude Sonnet & Opus',
+  },
+  openai: {
+    name: 'OpenAI',
+    badge: 'Paid',
+    badgeColor: '#f59e0b',
+    baseUrl: 'https://api.openai.com/v1',
+    models: ['gpt-4o', 'gpt-4o-mini', 'o4-mini'],
+    default: 'gpt-4o',
+    keyUrl: 'https://platform.openai.com/api-keys',
+    note: 'Official OpenAI GPT-4o & Reasoning',
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    badge: 'Affordable',
+    badgeColor: '#38bdf8',
+    baseUrl: 'https://api.deepseek.com/v1',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+    default: 'deepseek-chat',
+    keyUrl: 'https://platform.deepseek.com/api_keys',
+    note: 'DeepSeek V3 & R1 reasoning models',
+  },
+}
+
+const GENDER = {
+  female: ['af_heart', 'af_nova', 'bf_emma'],
+  male: ['am_michael', 'am_puck', 'bm_george'],
+}
+
+export function SettingsModal({
+  onClose,
+  initialTab = 'providers',
+  providersData = {},
+  keyInfo = {},
+  activeProvider = 'nvidia',
+  activeModel = '',
+  onSelectProvider,
+  onSelectModel,
+  onProviderSaved,
+  temperature = 0.7,
+  onTemperatureChange,
+  autoRoute = false,
+  onAutoRouteToggle,
+  fallback = true,
+  onFallbackToggle,
+  webSearch = true,
+  onWebSearchToggle,
+  toolsEnabled = true,
+  onToolsToggle,
+  toolPrefs = [],
+  onToolPrefChange,
+  prefs = {},
+  onPrefChange,
+  user = null,
+  onSignIn,
+}) {
+  const [activeTab, setActiveTab] = useState(initialTab)
+  const [providers, setProviders] = useState(providersData)
+  const [keys, setKeys] = useState(keyInfo)
+  const [keyInputs, setKeyInputs] = useState({})
+  const [showKey, setShowKey] = useState({})
+  const [testingId, setTestingId] = useState(null)
+  const [testResults, setTestResults] = useState({})
+  const [savingKeyId, setSavingKeyId] = useState(null)
+
+  // Custom provider form
+  const [showCustomForm, setShowCustomForm] = useState(false)
+  const [customForm, setCustomForm] = useState({ id: '', name: '', base_url: '', api_key: '', default_model: '', models: '' })
+  const [customError, setCustomError] = useState('')
+
+  // Sync & Storage status
+  const [syncState, setSyncState] = useState({ enabled: false, syncing: false, at: null })
+  const [storageEstimate, setStorageEstimate] = useState(null)
+  const [copiedReport, setCopiedReport] = useState(false)
+  const [errorLogs, setErrorLogs] = useState([])
+
+  // Voice Preview
+  const [previewingVoice, setPreviewingVoice] = useState(false)
+
+  const features = resolveFeatures(prefs.features)
+  const voice = prefs.live_voice_local || DEFAULT_VOICE
+  const neuralVoice = prefs.live_voice_engine !== 'system'
+  const gender = GENDER.male.includes(voice) ? 'male' : 'female'
+
+  useEffect(() => {
+    getModels().then(setProviders).catch(() => {})
+    if (navigator?.storage?.estimate) {
+      navigator.storage.estimate().then(setStorageEstimate).catch(() => {})
+    }
+    cloudSyncStatus().then(st => setSyncState(s => ({ ...s, ...st }))).catch(() => {})
+    setErrorLogs(getErrorLog().slice(0, 15))
+  }, [])
+
+  const handleTestProvider = async (id) => {
+    setTestingId(id)
+    setTestResults(prev => ({ ...prev, [id]: null }))
+    try {
+      const res = await testProvider(id)
+      setTestResults(prev => ({ ...prev, [id]: res }))
+    } catch (e) {
+      setTestResults(prev => ({ ...prev, [id]: { success: false, error: e.message } }))
+    } finally {
+      setTestingId(null)
+    }
+  }
+
+  const handleSaveApiKey = async (id) => {
+    const rawKey = keyInputs[id]?.trim()
+    if (!rawKey) return
+    setSavingKeyId(id)
+    try {
+      await saveProviderApiKey(id, rawKey)
+      setKeyInputs(prev => ({ ...prev, [id]: '' }))
+      const updated = await getModels()
+      setProviders(updated)
+      onProviderSaved?.()
+      await handleTestProvider(id)
+    } catch (e) {
+      setTestResults(prev => ({ ...prev, [id]: { success: false, error: e.message } }))
+    } finally {
+      setSavingKeyId(null)
+    }
+  }
+
+  const handleRemove = async (id) => {
+    if (!window.confirm(`Remove provider ${providers[id]?.name || id}?`)) return
+    try {
+      await removeProvider(id)
+      const updated = await getModels()
+      setProviders(updated)
+      onProviderSaved?.()
+    } catch (e) {
+      alert(`Could not remove: ${e.message}`)
+    }
+  }
+
+  const handleAddCustomProvider = async () => {
+    if (!customForm.id || !customForm.name || !customForm.base_url) {
+      setCustomError('Please fill in Provider ID, Name, and Base URL.')
+      return
+    }
+    setCustomError('')
+    try {
+      await addProvider({
+        id: customForm.id.toLowerCase().replace(/[^a-z0-9-_]/g, '-'),
+        name: customForm.name,
+        base_url: customForm.base_url,
+        api_key: customForm.api_key,
+        default_model: customForm.default_model,
+        models: customForm.models ? customForm.models.split(',').map(s => s.trim()).filter(Boolean) : [],
+      })
+      setShowCustomForm(false)
+      setCustomForm({ id: '', name: '', base_url: '', api_key: '', default_model: '', models: '' })
+      const updated = await getModels()
+      setProviders(updated)
+      onProviderSaved?.()
+    } catch (e) {
+      setCustomError(e.message)
+    }
+  }
+
+  const handleSyncNow = async () => {
+    setSyncState(s => ({ ...s, syncing: true }))
+    try {
+      await syncCloudKeys()
+      await pushCloudData()
+      const st = await cloudSyncStatus()
+      setSyncState(s => ({ ...s, ...st, syncing: false }))
+    } catch {
+      setSyncState(s => ({ ...s, syncing: false }))
+    }
+  }
+
+  const handleCopyDiagnostics = () => {
+    const report = getDiagnosticsReport()
+    navigator.clipboard.writeText(JSON.stringify(report, null, 2))
+    setCopiedReport(true)
+    setTimeout(() => setCopiedReport(false), 2000)
+  }
+
+  const handleVoicePreview = async () => {
+    if (previewingVoice) {
+      stopTTS()
+      setPreviewingVoice(false)
+      return
+    }
+    setPreviewingVoice(true)
+    try {
+      await requestTTS('Welcome to Yogatik. Your high-performance AI workspace is active.', {
+        onEnd: () => setPreviewingVoice(false)
+      })
+    } catch {
+      setPreviewingVoice(false)
+    }
+  }
+
+  const currentProviderDef = providers[activeProvider] || {}
+  const currentModelList = currentProviderDef.models || []
+
+  return (
+    <Modal
+      title="Settings & System Preferences"
+      icon={<Sliders size={18} />}
+      onClose={onClose}
+      className="settings-modal"
+    >
+      <div className="settings-container">
+        {/* Navigation Sidebar */}
+        <nav className="settings-nav" aria-label="Settings Categories">
+          <button
+            className={`settings-nav-item ${activeTab === 'providers' ? 'active' : ''}`}
+            onClick={() => setActiveTab('providers')}
+          >
+            <Server size={15} />
+            <span>Providers &amp; Keys</span>
+            {Object.values(providers).filter(p => p.available).length > 0 && (
+              <span className="settings-badge green">{Object.values(providers).filter(p => p.available).length} Active</span>
+            )}
+          </button>
+
+          <button
+            className={`settings-nav-item ${activeTab === 'models' ? 'active' : ''}`}
+            onClick={() => setActiveTab('models')}
+          >
+            <Cpu size={15} />
+            <span>Model &amp; Inference</span>
+          </button>
+
+          <button
+            className={`settings-nav-item ${activeTab === 'tools' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tools')}
+          >
+            <Wrench size={15} />
+            <span>Tools &amp; Agents</span>
+            {toolsEnabled && <span className="settings-badge blue">Enabled</span>}
+          </button>
+
+          <button
+            className={`settings-nav-item ${activeTab === 'appearance' ? 'active' : ''}`}
+            onClick={() => setActiveTab('appearance')}
+          >
+            <Palette size={15} />
+            <span>Appearance &amp; UX</span>
+          </button>
+
+          <button
+            className={`settings-nav-item ${activeTab === 'voice' ? 'active' : ''}`}
+            onClick={() => setActiveTab('voice')}
+          >
+            <Volume2 size={15} />
+            <span>Voice &amp; Audio</span>
+          </button>
+
+          <button
+            className={`settings-nav-item ${activeTab === 'sync' ? 'active' : ''}`}
+            onClick={() => setActiveTab('sync')}
+          >
+            <Cloud size={15} />
+            <span>Privacy &amp; Sync</span>
+          </button>
+
+          <button
+            className={`settings-nav-item ${activeTab === 'diagnostics' ? 'active' : ''}`}
+            onClick={() => setActiveTab('diagnostics')}
+          >
+            <Activity size={15} />
+            <span>Diagnostics &amp; Health</span>
+          </button>
+        </nav>
+
+        {/* Content Pane */}
+        <main className="settings-content">
+          {/* TAB 1: PROVIDERS & KEYS */}
+          {activeTab === 'providers' && (
+            <section className="settings-pane">
+              <div className="settings-pane-header">
+                <div>
+                  <h3 className="settings-pane-title">AI Providers &amp; API Keys</h3>
+                  <p className="settings-pane-subtitle">
+                    Configure endpoints, connect API keys, or add custom OpenAI-compatible proxies. All keys are encrypted locally on your device.
+                  </p>
+                </div>
+                <button className="settings-btn primary" onClick={() => setShowCustomForm(true)}>
+                  <Plus size={13} /> Add Custom Provider
+                </button>
+              </div>
+
+              {/* Custom Provider Modal Form */}
+              {showCustomForm && (
+                <div className="settings-card highlight" style={{ marginBottom: 16 }}>
+                  <div className="settings-card-header">
+                    <h4>Add Custom OpenAI-Compatible Endpoint</h4>
+                    <button className="icon-btn" onClick={() => setShowCustomForm(false)}><XCircle size={14} /></button>
+                  </div>
+                  {customError && <div className="settings-alert error">{customError}</div>}
+                  <div className="settings-form-grid">
+                    <div>
+                      <label>Provider ID</label>
+                      <input
+                        placeholder="e.g. together-ai, local-vllm"
+                        value={customForm.id}
+                        onChange={e => setCustomForm({ ...customForm, id: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label>Display Name</label>
+                      <input
+                        placeholder="e.g. Together AI, vLLM Local Server"
+                        value={customForm.name}
+                        onChange={e => setCustomForm({ ...customForm, name: e.target.value })}
+                      />
+                    </div>
+                    <div className="span-2">
+                      <label>Base URL (must support /chat/completions)</label>
+                      <input
+                        placeholder="https://api.together.xyz/v1 or http://localhost:8000/v1"
+                        value={customForm.base_url}
+                        onChange={e => setCustomForm({ ...customForm, base_url: e.target.value })}
+                      />
+                    </div>
+                    <div className="span-2">
+                      <label>API Key (Optional for local servers)</label>
+                      <input
+                        type="password"
+                        placeholder="Bearer token or leave blank"
+                        value={customForm.api_key}
+                        onChange={e => setCustomForm({ ...customForm, api_key: e.target.value })}
+                      />
+                    </div>
+                    <div className="span-2">
+                      <label>Models (Comma-separated slugs)</label>
+                      <input
+                        placeholder="qwen/qwen-2.5-72b-instruct, meta-llama/Llama-3.3-70B-Instruct"
+                        value={customForm.models}
+                        onChange={e => setCustomForm({ ...customForm, models: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="settings-actions-row">
+                    <button className="settings-btn secondary" onClick={() => setShowCustomForm(false)}>Cancel</button>
+                    <button className="settings-btn primary" onClick={handleAddCustomProvider}>Save Provider</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Provider List Grid */}
+              <div className="settings-providers-grid">
+                {Object.entries(providers).map(([id, prov]) => {
+                  const tpl = QUICK_TEMPLATES[id]
+                  const hasKey = prov.available
+                  const testRes = testResults[id]
+                  const isTesting = testingId === id
+                  const isSaving = savingKeyId === id
+                  const isCur = activeProvider === id
+
+                  return (
+                    <div key={id} className={`settings-provider-card ${isCur ? 'active-provider' : ''}`}>
+                      <div className="settings-provider-header">
+                        <div className="provider-info-meta">
+                          <div className="provider-name-row">
+                            <span className="provider-name">{prov.name || id}</span>
+                            {isCur && <span className="settings-badge active-tag">In Use</span>}
+                            {prov.available ? (
+                              <span className="settings-badge green">Ready</span>
+                            ) : (
+                              <span className="settings-badge gray">Key Needed</span>
+                            )}
+                          </div>
+                          <span className="provider-model-count">
+                            {(prov.models || []).length} models available
+                          </span>
+                        </div>
+
+                        {tpl?.keyUrl && (
+                          <a
+                            href={tpl.keyUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="get-key-link"
+                            title="Get API Key from provider portal"
+                          >
+                            Get Key <ExternalLink size={10} />
+                          </a>
+                        )}
+                      </div>
+
+                      {/* API Key Input & Action Row */}
+                      {!prov.isLocal && !prov.isOllama && (
+                        <div className="provider-key-box">
+                          <div className="key-input-wrapper">
+                            <Key size={12} className="key-icon" />
+                            <input
+                              type={showKey[id] ? 'text' : 'password'}
+                              placeholder={hasKey ? '•••••••••••••••• (Saved)' : 'Paste API key…'}
+                              value={keyInputs[id] !== undefined ? keyInputs[id] : ''}
+                              onChange={e => setKeyInputs({ ...keyInputs, [id]: e.target.value })}
+                            />
+                            <button
+                              type="button"
+                              className="key-peek-btn"
+                              onClick={() => setShowKey(k => ({ ...k, [id]: !k[id] }))}
+                              title={showKey[id] ? 'Hide' : 'Show'}
+                            >
+                              {showKey[id] ? <EyeOff size={12} /> : <Eye size={12} />}
+                            </button>
+                          </div>
+
+                          <div className="provider-btns-row">
+                            {keyInputs[id] ? (
+                              <button
+                                className="settings-btn primary sm"
+                                onClick={() => handleSaveApiKey(id)}
+                                disabled={isSaving}
+                              >
+                                {isSaving ? 'Verifying…' : 'Save Key'}
+                              </button>
+                            ) : (
+                              <button
+                                className="settings-btn secondary sm"
+                                onClick={() => handleTestProvider(id)}
+                                disabled={isTesting || !hasKey}
+                              >
+                                <Zap size={11} /> {isTesting ? 'Testing…' : 'Test Latency'}
+                              </button>
+                            )}
+
+                            {!isCur && (
+                              <button
+                                className="settings-btn ghost sm"
+                                onClick={() => onSelectProvider?.(id)}
+                              >
+                                Select
+                              </button>
+                            )}
+
+                            {!prov.builtin && (
+                              <button
+                                className="settings-btn danger-ghost sm"
+                                onClick={() => handleRemove(id)}
+                                title="Delete provider"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Test Result Message */}
+                      {testRes && (
+                        <div className={`provider-test-msg ${testRes.success ? 'success' : 'error'}`}>
+                          {testRes.success ? (
+                            <>
+                              <CheckCircle2 size={12} /> Connected ({testRes.latencyMs}ms) · Model {testRes.model}
+                            </>
+                          ) : (
+                            <>
+                              <AlertCircle size={12} /> {testRes.error || 'Connection check failed'}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* TAB 2: MODEL & INFERENCE */}
+          {activeTab === 'models' && (
+            <section className="settings-pane">
+              <div className="settings-pane-header">
+                <div>
+                  <h3 className="settings-pane-title">Model &amp; Generation Parameters</h3>
+                  <p className="settings-pane-subtitle">
+                    Control default models, temperature, multi-modal vision behavior, and intelligent routing.
+                  </p>
+                </div>
+              </div>
+
+              <div className="settings-section-card">
+                <h4>Active Provider &amp; Model</h4>
+                <div className="settings-form-grid">
+                  <div>
+                    <label>Default Provider</label>
+                    <select
+                      value={activeProvider}
+                      onChange={e => onSelectProvider?.(e.target.value)}
+                    >
+                      {Object.entries(providers).map(([id, p]) => (
+                        <option key={id} value={id}>
+                          {p.name || id} {p.available ? '🟢' : '⚪'} ({(p.models || []).length} models)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label>Selected Model ({currentModelList.length} total in catalog)</label>
+                    <ModelPicker
+                      models={currentModelList}
+                      value={activeModel}
+                      onChange={m => onSelectModel?.(m, activeProvider)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-section-card">
+                <h4>Sampling &amp; Creativity</h4>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Temperature ({temperature})</span>
+                    <span className="setting-desc">
+                      {temperature <= 0.2 ? '🎯 Precise & Deterministic (Ideal for coding & structured data)' :
+                       temperature <= 0.7 ? '⚖️ Balanced (Great for general conversation & analysis)' :
+                       '🎨 Highly Creative (Best for brainstorming & creative writing)'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={temperature}
+                      onChange={e => onTemperatureChange?.(parseFloat(e.target.value))}
+                      style={{ width: 140 }}
+                    />
+                    <span className="setting-val-pill">{temperature}</span>
+                  </div>
+                </div>
+
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Auto-Route Models</span>
+                    <span className="setting-desc">Automatically route coding tasks to code-specialized models and quick queries to fast inference.</span>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={autoRoute}
+                      onChange={e => onAutoRouteToggle?.(e.target.checked)}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Provider Auto-Failover</span>
+                    <span className="setting-desc">Automatically switch to a backup active provider if the primary endpoint rate-limits or times out.</span>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={fallback}
+                      onChange={e => onFallbackToggle?.(e.target.checked)}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Auto-switch Vision Model</span>
+                    <span className="setting-desc">Automatically upgrade to a multimodal vision model when an image or screenshot is attached.</span>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={features.autoVision}
+                      onChange={e => onPrefChange?.('features', { ...features, autoVision: e.target.checked })}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* TAB 3: TOOLS & AGENTS */}
+          {activeTab === 'tools' && (
+            <section className="settings-pane">
+              <div className="settings-pane-header">
+                <div>
+                  <h3 className="settings-pane-title">AI Tools &amp; Autonomous Agents</h3>
+                  <p className="settings-pane-subtitle">
+                    Enable system tools, web search engines, browser automation, and multi-agent coordination.
+                  </p>
+                </div>
+              </div>
+
+              <div className="settings-section-card">
+                <h4>Master Tool Controls</h4>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Enable Function Calling / AI Tools</span>
+                    <span className="setting-desc">Allows models to run calculations, search the web, inspect code, and generate media.</span>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={toolsEnabled}
+                      onChange={e => onToolsToggle?.(e.target.checked)}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Deep Web Research</span>
+                    <span className="setting-desc">Iterative 3-hop research with citation indexing, GitHub repos, and Academic paper parsing.</span>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={webSearch}
+                      disabled={!toolsEnabled}
+                      onChange={e => onWebSearchToggle?.(e.target.checked)}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Plan &amp; Execution Gates (Plan Mode)</span>
+                    <span className="setting-desc">For complex multi-step tasks, produce a verified architectural plan before touching files.</span>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={features.planMode}
+                      onChange={e => onPrefChange?.('features', { ...features, planMode: e.target.checked })}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+              </div>
+
+              <div className="settings-section-card">
+                <h4>Tool Permission Policies ({toolPrefs.filter(t => t.enabled).length}/{toolPrefs.length} Enabled)</h4>
+                <div className="tool-prefs-grid">
+                  {toolPrefs.map(t => (
+                    <div key={t.id} className="tool-pref-item">
+                      <div className="tool-pref-info">
+                        <span className="tool-pref-name">{t.name || t.id}</span>
+                        <span className="tool-pref-desc">{t.description || 'System agent utility'}</span>
+                      </div>
+                      <label className="toggle sm">
+                        <input
+                          type="checkbox"
+                          checked={t.enabled}
+                          onChange={e => onToolPrefChange?.(t.id, e.target.checked)}
+                        />
+                        <span className="slider" />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* TAB 4: APPEARANCE & UX */}
+          {activeTab === 'appearance' && (
+            <section className="settings-pane">
+              <div className="settings-pane-header">
+                <div>
+                  <h3 className="settings-pane-title">Appearance &amp; User Experience</h3>
+                  <p className="settings-pane-subtitle">
+                    Personalize your interface aesthetics, starter suggestions, and artifact display panels.
+                  </p>
+                </div>
+              </div>
+
+              <div className="settings-section-card">
+                <h4>Workspace Features</h4>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Artifacts Side-Panel</span>
+                    <span className="setting-desc">Open generated code, SVG diagrams, and markdown documents in an interactive split-view.</span>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={features.artifacts}
+                      onChange={e => onPrefChange?.('features', { ...features, artifacts: e.target.checked })}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Tool Execution Cards</span>
+                    <span className="setting-desc">Display rich visual cards for tool inputs, live progress, and structured outputs.</span>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={features.toolCards}
+                      onChange={e => onPrefChange?.('features', { ...features, toolCards: e.target.checked })}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Starter Suggestions</span>
+                    <span className="setting-desc">Show prompt starter inspiration cards on empty chats.</span>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={features.suggestions}
+                      onChange={e => onPrefChange?.('features', { ...features, suggestions: e.target.checked })}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Prompt Enhancer</span>
+                    <span className="setting-desc">One-click button to polish and expand prompt instructions before sending.</span>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={features.enhance}
+                      onChange={e => onPrefChange?.('features', { ...features, enhance: e.target.checked })}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* TAB 5: VOICE & AUDIO */}
+          {activeTab === 'voice' && (
+            <section className="settings-pane">
+              <div className="settings-pane-header">
+                <div>
+                  <h3 className="settings-pane-title">Voice &amp; Audio Synthesis</h3>
+                  <p className="settings-pane-subtitle">
+                    Configure local neural speech generation (Kokoro on-device) and live voice call audio.
+                  </p>
+                </div>
+              </div>
+
+              <div className="settings-section-card">
+                <h4>Speech Engine</h4>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Natural Neural Voice (On-Device)</span>
+                    <span className="setting-desc">High-fidelity 24kHz neural synthesis. Runs 100% locally on your device without sending voice data to the cloud.</span>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={neuralVoice}
+                      onChange={e => onPrefChange?.('live_voice_engine', e.target.checked ? 'neural' : 'system')}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+
+                {neuralVoice && (
+                  <>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-name">Voice Persona</span>
+                        <span className="setting-desc">Select the vocal timbre and personality for text-to-speech.</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <select
+                          value={voice}
+                          onChange={e => onPrefChange?.('live_voice_local', e.target.value)}
+                        >
+                          {GENDER[gender].map(id => (
+                            <option key={id} value={id}>{VOICE_LABELS[id] || id}</option>
+                          ))}
+                        </select>
+                        <button className="settings-btn secondary sm" onClick={handleVoicePreview}>
+                          {previewingVoice ? 'Stop' : 'Test Voice'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* TAB 6: PRIVACY & CLOUD SYNC */}
+          {activeTab === 'sync' && (
+            <section className="settings-pane">
+              <div className="settings-pane-header">
+                <div>
+                  <h3 className="settings-pane-title">Privacy, Backup &amp; Encrypted Sync</h3>
+                  <p className="settings-pane-subtitle">
+                    Your chats, keys, and documents are stored locally in IndexedDB with zero telemetry.
+                  </p>
+                </div>
+              </div>
+
+              <div className="settings-section-card">
+                <h4>End-to-End Encrypted Cloud Sync</h4>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">Encrypted Sync</span>
+                    <span className="setting-desc">
+                      {user ? `Connected to ${user.email}. Keys and chats are client-side encrypted before syncing.` : 'Sign in to automatically sync keys and chats securely across your devices.'}
+                    </span>
+                  </div>
+                  {user ? (
+                    <button className="settings-btn primary sm" onClick={handleSyncNow} disabled={syncState.syncing}>
+                      <RefreshCw size={12} className={syncState.syncing ? 'spinning' : ''} />
+                      {syncState.syncing ? 'Syncing…' : 'Sync Now'}
+                    </button>
+                  ) : (
+                    <button className="settings-btn primary sm" onClick={onSignIn}>
+                      Sign In to Sync
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="settings-section-card">
+                <h4>Local Storage &amp; Backup</h4>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-name">On-Device Storage Footprint</span>
+                    <span className="setting-desc">
+                      {storageEstimate ? `Using approx ${(storageEstimate.usage / (1024 * 1024)).toFixed(1)} MB of local storage.` : 'IndexedDB client-side database.'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="settings-btn secondary sm" onClick={() => downloadBackup()}>
+                      <Download size={12} /> Backup All (.json)
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* TAB 7: DIAGNOSTICS & SYSTEM */}
+          {activeTab === 'diagnostics' && (
+            <section className="settings-pane">
+              <div className="settings-pane-header">
+                <div>
+                  <h3 className="settings-pane-title">System Diagnostics &amp; Health</h3>
+                  <p className="settings-pane-subtitle">
+                    Inspect error logs, network latency reports, and export diagnostics for pairing &amp; troubleshooting.
+                  </p>
+                </div>
+                <button className="settings-btn secondary" onClick={handleCopyDiagnostics}>
+                  {copiedReport ? <Check size={13} /> : <Copy size={13} />}
+                  {copiedReport ? 'Copied to Clipboard!' : 'Copy Diagnostics Report'}
+                </button>
+              </div>
+
+              <div className="settings-section-card">
+                <h4>Environment Status</h4>
+                <div className="diagnostics-summary-grid">
+                  <div className="diag-stat-card">
+                    <span className="diag-stat-label">Platform</span>
+                    <span className="diag-stat-val">Desktop (Electron)</span>
+                  </div>
+                  <div className="diag-stat-card">
+                    <span className="diag-stat-label">Active Provider</span>
+                    <span className="diag-stat-val">{activeProvider}</span>
+                  </div>
+                  <div className="diag-stat-card">
+                    <span className="diag-stat-label">Active Model</span>
+                    <span className="diag-stat-val" style={{ fontSize: 11 }}>{activeModel || 'Auto'}</span>
+                  </div>
+                  <div className="diag-stat-card">
+                    <span className="diag-stat-label">System Health</span>
+                    <span className="diag-stat-val text-green">Optimal</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-section-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <h4>Recent Event &amp; Error Log</h4>
+                  {errorLogs.length > 0 && (
+                    <button className="settings-btn ghost sm" onClick={() => { clearErrorLog(); setErrorLogs([]) }}>
+                      Clear Log
+                    </button>
+                  )}
+                </div>
+                {errorLogs.length === 0 ? (
+                  <div className="settings-empty-logs">
+                    <CheckCircle2 size={16} className="text-green" /> No errors recorded. System running smoothly.
+                  </div>
+                ) : (
+                  <div className="settings-log-viewer">
+                    {errorLogs.map((log, idx) => (
+                      <div key={idx} className="settings-log-item">
+                        <span className="log-time">{new Date(log.time || Date.now()).toLocaleTimeString()}</span>
+                        <span className="log-msg">{log.message || JSON.stringify(log)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+        </main>
+      </div>
+    </Modal>
+  )
+}
