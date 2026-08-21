@@ -672,12 +672,10 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
   return data
 }
 
-/** Non-chat model families to hide from the chat model picker */
-const NON_CHAT = /(^|\/)(.*(embed|rerank|retrieval|ocr|parse|tts|stt|asr|whisper|riva|dall-e|whisperx|moderation|guard|nemoguard|safety|clip|sana|flux|stable-diffusion|sdxl|image|audio|video|edify|molmim|esm|diffdock|genmol|proteinmpnn|rfdiffusion|alphafold|codegen).*)$/i
-
 /**
  * Fetch available models dynamically from provider's /v1/models endpoint.
  * Providers flagged `publicModels` (NVIDIA) work without a key.
+ * Loads all models exposed by the provider.
  */
 export async function fetchLiveModels(providerId, apiKey) {
   const prov = getProviders()[providerId]
@@ -700,10 +698,10 @@ export async function fetchLiveModels(providerId, apiKey) {
     const data = await resp.json()
     const modelList = data.data || data.models || []
     const ids = [...new Set(modelList.map(m => normalizeModelName(m)).filter(id => id && id.length > 0 && id !== '[object Object]'))]
-      .filter(id => !NON_CHAT.test(id))
       .sort((a, b) => a.localeCompare(b))
     return ids
   } catch {
     return []
   }
 }
+
