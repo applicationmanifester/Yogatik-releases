@@ -71,9 +71,18 @@ export const textToAudioTool = {
     let pcmParts = []
     let sampleRate = SAMPLE_RATE
     try {
-      for (const part of chunk(clean)) {
+      const chunks = chunk(clean)
+      const silenceLen = Math.round(sampleRate * 0.12) // 120ms natural breathing gap
+      const silence = new Float32Array(silenceLen)
+
+      for (let idx = 0; idx < chunks.length; idx++) {
+        const part = chunks[idx]
         const { pcm, sampleRate: sr } = await synthesize(part, { voice: useVoice, speed })
-        if (pcm?.length) { pcmParts.push(pcm); sampleRate = sr || sampleRate }
+        if (pcm?.length) {
+          pcmParts.push(pcm)
+          if (idx < chunks.length - 1) pcmParts.push(silence)
+          sampleRate = sr || sampleRate
+        }
       }
     } catch (e) {
       return { success: false, error: `On-device voice could not load: ${e?.message || e}. It needs WebGPU/WASM and a one-time ~90MB download.` }
@@ -85,7 +94,18 @@ export const textToAudioTool = {
     let off = 0
     for (const p of pcmParts) { merged.set(p, off); off += p.length }
 
-    // Peak-normalise to -1 dBFS so narration is at a consistent, healthy volume.
+    // Broadcast vocal polish: Soft-knee compression to tame dynamic peaks and elevate subtle articulation
+    for (let i = 0; i < merged.length; i++) {
+      const v = merged[i]
+      const absV = Math.abs(v)
+      if (absV > 0.45) {
+        const excess = absV - 0.45
+        const compressed = 0.45 + excess * 0.55
+        merged[i] = (v < 0 ? -1 : 1) * compressed
+      }
+    }
+
+    // Peak-normalise to -1 dBFS (0.89)
     let peak = 0
     for (let i = 0; i < merged.length; i++) { const a = Math.abs(merged[i]); if (a > peak) peak = a }
     if (peak > 0) {

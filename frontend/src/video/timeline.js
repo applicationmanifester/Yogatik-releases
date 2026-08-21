@@ -24,7 +24,7 @@ export const THEME = {
   font: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif',
 }
 
-const DEFAULT_SECONDS = { title: 3, text: 4.5, image: 4, bars: 5, outro: 2.5 }
+const DEFAULT_SECONDS = { title: 3, text: 4.5, image: 4, bars: 5, outro: 2.5, quote: 4, metric: 3.5 }
 export const SCENE_TYPES = Object.keys(DEFAULT_SECONDS)
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
@@ -37,9 +37,11 @@ const even = (n) => Math.round(n / 2) * 2
 const KNOWN_SCENE_FIELDS = new Set([
   'type', 'duration', 'narration', 'text', 'subtitle', 'heading',
   'bullets', 'image_url', 'url', 'caption', 'motion', 'data',
+  'quote', 'author', 'metric', 'label',
 ])
 const CONTENT_FIELDS = [
   'text', 'subtitle', 'heading', 'bullets', 'image_url', 'url', 'caption', 'data',
+  'quote', 'author', 'metric', 'label',
 ]
 
 export function normalizeSpec(spec = {}) {

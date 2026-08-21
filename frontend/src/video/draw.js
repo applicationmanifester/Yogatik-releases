@@ -191,6 +191,69 @@ function drawBars(ctx, scene, t, { W, H, theme }) {
   })
 }
 
+function drawQuote(ctx, scene, t, { W, H, theme }) {
+  const pad = W * 0.12
+  const text = scene.quote || scene.text || ''
+  const author = scene.author || scene.subtitle || ''
+
+  const p = ease.out(Math.min(1, t * 2.2))
+  ctx.globalAlpha = p
+
+  // Elegant large quotation mark background icon
+  ctx.fillStyle = `${theme.accent}1f`
+  ctx.font = `italic 900 ${px(H * 0.38)} serif`
+  ctx.textAlign = 'left'
+  ctx.fillText('“', pad - W * 0.04, H * 0.38)
+
+  const { size, lines } = fitFont(ctx, `"${text}"`, {
+    max: H * 0.08, min: H * 0.042, weight: '500', family: theme.font, maxWidth: W - pad * 2, maxLines: 4,
+  })
+  const lh = size * 1.3
+  let y = H * 0.4 - (lines.length * lh) / 2 + size
+
+  ctx.textAlign = 'center'
+  ctx.fillStyle = theme.fg
+  ctx.font = `500 italic ${px(size)} ${theme.font}`
+  for (const line of lines) { ctx.fillText(line, W / 2, y); y += lh }
+
+  if (author) {
+    y += size * 0.4
+    ctx.fillStyle = theme.accent
+    ctx.font = `600 ${px(size * 0.48)} ${theme.font}`
+    ctx.fillText(`— ${author}`, W / 2, y)
+  }
+  ctx.globalAlpha = 1
+}
+
+function drawMetric(ctx, scene, t, { W, H, theme }) {
+  const metric = scene.metric || scene.heading || scene.text || '100%'
+  const label = scene.label || scene.subtitle || scene.caption || ''
+  const p = ease.out(Math.min(1, t * 2.5))
+
+  ctx.textAlign = 'center'
+  const metricSize = H * 0.22
+  const labelSize = H * 0.055
+
+  // Metric value with glowing accent
+  ctx.globalAlpha = p
+  ctx.fillStyle = theme.accent
+  ctx.font = `800 ${px(metricSize)} ${theme.font}`
+  ctx.fillText(metric, W / 2, H * 0.5)
+
+  // Label card
+  if (label) {
+    ctx.fillStyle = theme.fg
+    ctx.font = `500 ${px(labelSize)} ${theme.font}`
+    ctx.fillText(label, W / 2, H * 0.5 + labelSize * 1.6)
+  }
+
+  // Accent underline
+  const barW = W * 0.16 * p
+  ctx.fillStyle = theme.accent2
+  ctx.fillRect((W - barW) / 2, H * 0.5 + labelSize * 2.2, barW, Math.max(3, H * 0.006))
+  ctx.globalAlpha = 1
+}
+
 /**
  * Burnt-in subtitles for the narration. The MP4 carries no subtitle track, and
  * a spoken video with no on-screen text is unusable muted or deaf.
@@ -206,11 +269,16 @@ function drawSubtitle(ctx, scene, t, { W, H, theme }) {
   const bottom = H * 0.955
   const top = bottom - boxH
 
-  ctx.fillStyle = '#000000a8'
+  ctx.fillStyle = '#000000bf'
   const w = Math.min(W * 0.88, Math.max(...lines.map(l => ctx.measureText(l).width)) + size * 1.4)
   const x = (W - w) / 2
   if (ctx.roundRect) {
-    ctx.beginPath(); ctx.roundRect(x, top, w, boxH, size * 0.35); ctx.fill()
+    ctx.beginPath()
+    ctx.roundRect(x, top, w, boxH, size * 0.35)
+    ctx.fill()
+    ctx.strokeStyle = '#ffffff22'
+    ctx.lineWidth = 1
+    ctx.stroke()
   } else ctx.fillRect(x, top, w, boxH)
 
   ctx.textAlign = 'center'
@@ -219,7 +287,15 @@ function drawSubtitle(ctx, scene, t, { W, H, theme }) {
   for (const line of lines) { ctx.fillText(line, W / 2, y); y += size * 1.3 }
 }
 
-const PAINTERS = { title: drawTitle, outro: drawTitle, text: drawText, image: drawImage, bars: drawBars }
+const PAINTERS = {
+  title: drawTitle,
+  outro: drawTitle,
+  text: drawText,
+  image: drawImage,
+  bars: drawBars,
+  quote: drawQuote,
+  metric: drawMetric,
+}
 
 /** Paint one frame of the whole video. */
 export function paintFrame(ctx, spec, { scene, t, alpha }) {
@@ -251,3 +327,4 @@ export function paintFrame(ctx, spec, { scene, t, alpha }) {
   }
   ctx.restore()
 }
+
