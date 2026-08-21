@@ -13,6 +13,7 @@
 
 import { getWorkspaceCtx } from './localFs'
 import { getSetting } from '../db'
+import { extractReadable } from './readability'
 
 function bridge() {
   return (typeof window !== 'undefined' && window.__YOGATIK_BROWSER__) || null
@@ -61,6 +62,7 @@ export const browserControlTool = {
               'navigate', 'read', 'click', 'double_click', 'right_click', 'type', 'key',
               'scroll', 'screenshot', 'new_tab', 'list_tabs', 'select_tab', 'close_tab',
               'back', 'forward', 'set_mode', 'close',
+              'wait_for', 'fill_form', 'evaluate', 'extract_text',
             ],
             description: 'What to do.',
           },
@@ -78,13 +80,29 @@ export const browserControlTool = {
             enum: ['window', 'panel'],
             description: 'Show the browser in a separate window or docked in the app. Omit to use the user\'s preferred surface.',
           },
+          selector: {
+            type: 'string',
+            description: 'CSS selector for wait_for action — waits until this element appears in the DOM.',
+          },
+          timeout: {
+            type: 'number',
+            description: 'Timeout in milliseconds for wait_for (default 10000).',
+          },
+          fields: {
+            type: 'object',
+            description: 'For fill_form: an object mapping ref handles to values, e.g. {"ref_3": "hello", "ref_5": "world"}.',
+          },
+          expression: {
+            type: 'string',
+            description: 'JavaScript expression to evaluate in the page context for the evaluate action.',
+          },
         },
         required: ['action'],
       },
     },
   },
 
-  async execute({ action, url, ref, x, y, text, submit, keys, amount, tabId, display } = {}) {
+  async execute({ action, url, ref, x, y, text, submit, keys, amount, tabId, display, selector, timeout, fields, expression } = {}) {
     const b = bridge()
     if (!b) return DESKTOP_ONLY
     const base = await ctx(display)
@@ -134,6 +152,75 @@ export const browserControlTool = {
           return { tool: 'browser_control', action, ...(await b.setMode(base)) }
         case 'close':
           return { tool: 'browser_control', action, ...(await b.close(base)) }
+        case 'wait_for': {
+          if (!selector && !ref) return { success: false, error: 'selector or ref is required for wait_for' }
+          const waitTimeout = Math.min(Math.max(1000, timeout || 10000), 30000)
+          try {
+            if (b.waitFor) {
+              return { tool: 'browser_control', action, ...(await b.waitFor({ ...base, tabId, selector, ref, timeout: waitTimeout })) }
+            }
+            // Fallback: poll via read until element appears
+            const start = Date.now()
+            while (Date.now() - start < waitTimeout) {
+              const page = await b.read({ ...base, tabId })
+              const tree = page?.tree || page?.text || ''
+              if (selector && tree.includes(selector)) return { tool: 'browser_control', action, success: true, found: selector }
+              if (ref && tree.includes(ref)) return { tool: 'browser_control', action, success: true, found: ref }
+              await new Promise(r => setTimeout(r, 500))
+            }
+            return { success: false, error: `Timeout: element not found after ${waitTimeout}ms` }
+          } catch (e) {
+            return { success: false, error: e?.message || String(e) }
+          }
+        }
+        case 'fill_form': {
+          if (!fields || typeof fields !== 'object') return { success: false, error: 'fields object is required for fill_form, e.g. {"ref_3": "value"}' }
+          const results = []
+          for (const [fieldRef, value] of Object.entries(fields)) {
+            try {
+              const r = await b.type({ ...base, tabId, ref: fieldRef, text: String(value), submit: false })
+              results.push({ ref: fieldRef, success: r?.success !== false })
+            } catch (e) {
+              results.push({ ref: fieldRef, success: false, error: e?.message })
+            }
+          }
+          return { tool: 'browser_control', action, success: true, filled: results }
+        }
+        case 'evaluate': {
+          if (!expression) return { success: false, error: 'expression is required for evaluate' }
+          if (b.evaluate) {
+            return { tool: 'browser_control', action, ...(await b.evaluate({ ...base, tabId, expression })) }
+          }
+          return { success: false, error: 'evaluate is not supported by this browser bridge version' }
+        }
+        case 'extract_text': {
+          // Read the rendered DOM HTML and run readability extraction on it
+          try {
+            let html = ''
+            if (b.getPageHtml) {
+              html = await b.getPageHtml({ ...base, tabId })
+            } else if (b.evaluate) {
+              const result = await b.evaluate({ ...base, tabId, expression: 'document.documentElement.outerHTML' })
+              html = result?.result || result?.value || ''
+            } else {
+              return { success: false, error: 'extract_text needs getPageHtml or evaluate support in the browser bridge' }
+            }
+            if (!html || html.length < 100) return { success: false, error: 'No HTML could be read from the page' }
+            const page = extractReadable(html, { maxChars: 12000 })
+            return {
+              tool: 'browser_control', action, success: true,
+              title: page.title,
+              text: page.text,
+              words: page.words,
+              tables: page.tables,
+              code_blocks: page.code_blocks,
+              json_ld: page.json_ld,
+              images: page.images,
+            }
+          } catch (e) {
+            return { success: false, error: `extract_text failed: ${e?.message || e}` }
+          }
+        }
         default:
           return { success: false, error: `Unsupported action: ${action}` }
       }

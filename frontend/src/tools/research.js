@@ -9,9 +9,9 @@ import { webSearchTool } from './webSearch'
 import { extractReadable } from './readability'
 import { chunkText, buildIndex, search as bm25, tokenize } from '../retrieval'
 
-const PER_PAGE_CHARS = 4000      // what the model finally sees, per page
-const EXTRACT_CHARS = 24000     // what we keep to rank against the question
-const FETCH_TIMEOUT = 12000
+const PER_PAGE_CHARS = 6000      // what the model finally sees, per page
+const EXTRACT_CHARS = 36000     // what we keep to rank against the question
+const FETCH_TIMEOUT = 15000
 
 /**
  * Search engines want keywords, but the model tends to forward the user's
@@ -107,6 +107,70 @@ function extractStructuredMetrics(pages) {
     key_takeaways: bullets.length ? bullets : undefined,
     extracted_metrics: metrics.length ? metrics : undefined,
   }
+}
+
+/**
+ * Extract structured tables from HTML pages into { headers, rows } JSON.
+ */
+function extractTablesFromHtml(html) {
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const tables = []
+    for (const table of [...doc.querySelectorAll('table')].slice(0, 5)) {
+      const headers = [...table.querySelectorAll('thead th, thead td, tr:first-child th')]
+        .map(th => (th.textContent || '').replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+      const rows = []
+      for (const tr of [...table.querySelectorAll('tbody tr, tr')].slice(headers.length ? 0 : 1, 20)) {
+        const cells = [...tr.querySelectorAll('td, th')]
+          .map(td => (td.textContent || '').replace(/\s+/g, ' ').trim())
+        if (cells.some(c => c.length > 0)) rows.push(cells)
+      }
+      if (headers.length >= 2 && rows.length >= 1) {
+        tables.push({ headers, rows: rows.slice(0, 15) })
+      }
+    }
+    return tables.length ? tables : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Extract citation/reference DOI links and arXiv IDs from page text.
+ */
+function extractCitations(pages) {
+  const citations = []
+  const seen = new Set()
+  const doiPattern = /\b10\.\d{4,}\/[^\s"'<>]+/g
+  const arxivPattern = /\barxiv:\s*(\d{4}\.\d{4,5})/gi
+  for (const p of pages) {
+    const text = p.text || p.content || ''
+    for (const m of text.matchAll(doiPattern)) {
+      const doi = m[0].replace(/[.,;:)]+$/, '')
+      if (!seen.has(doi)) { seen.add(doi); citations.push({ type: 'doi', id: doi, url: `https://doi.org/${doi}`, source_page: p.url || p.title }) }
+    }
+    for (const m of text.matchAll(arxivPattern)) {
+      const id = m[1]
+      if (!seen.has(id)) { seen.add(id); citations.push({ type: 'arxiv', id, url: `https://arxiv.org/abs/${id}`, source_page: p.url || p.title }) }
+    }
+  }
+  return citations.length ? citations.slice(0, 20) : undefined
+}
+
+/**
+ * Confidence scoring: how trustworthy is each finding based on
+ * number of corroborating sources and domain authority.
+ */
+function computeConfidence(pages) {
+  if (!pages.length) return { overall: 'low', score: 0 }
+  const avgAuth = pages.reduce((sum, p) => sum + scoreDomain(p.url || ''), 0) / pages.length
+  const sourceCount = pages.length
+  let score = Math.min(1, (sourceCount / 5) * 0.5 + (avgAuth / 2.5) * 0.5)
+  let level = 'low'
+  if (score >= 0.7) level = 'high'
+  else if (score >= 0.4) level = 'medium'
+  return { overall: level, score: Number(score.toFixed(2)), sources: sourceCount, avg_authority: Number(avgAuth.toFixed(2)) }
 }
 
 /**
@@ -239,7 +303,7 @@ export const researchTool = {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'What to research' },
-        depth: { type: 'number', description: 'How many pages to read (1-5, default 3)' },
+        depth: { type: 'number', description: 'How many pages to read (1-8, default 3)' },
         recency: {
           type: 'string',
           enum: ['any', 'day', 'week', 'month', 'year'],
@@ -264,7 +328,7 @@ export const researchTool = {
     const query = typeof rawQuery === 'string' ? rawQuery.trim() : String(rawQuery || '').trim()
     if (!query) return { error: 'Empty query' }
     const { depth = 3, recency = 'any', site, follow_up = false } = (typeof args === 'object' && args !== null) ? args : {}
-    const n = Math.min(Math.max(1, depth | 0), 5)
+    const n = Math.min(Math.max(1, depth | 0), 8)
     const subQueries = decomposeQuery(query)
 
     // Execute sub-queries concurrently for comprehensive coverage
@@ -313,19 +377,25 @@ export const researchTool = {
     // Second hop: chase the terms the first round surfaced. This is what makes
     // the difference between "one search" and actual research.
     if (follow_up && pages.length) {
-      const leads = followUpTerms(
-        pages.map(p => ({ content: p.text })), query,
-      ).slice(0, 3)
-      if (leads.length) {
-        const second = await webSearchTool.execute({
+      const MAX_HOPS = 3
+      let currentPages = pages
+      for (let hop = 0; hop < MAX_HOPS - 1; hop++) {
+        const leads = followUpTerms(
+          currentPages.map(p => ({ content: p.text })), query,
+        ).slice(0, 3)
+        if (!leads.length) break
+        const hopSearch = await webSearchTool.execute({
           query: `${query} ${leads.join(' ')}`, count: 4, recency, site,
         })
-        const seen = new Set(pages.map(p => p.url))
-        const more = (second.results || [])
+        const seen = new Set(allPages.map(p => p.url))
+        const more = (hopSearch.results || [])
           .filter(r => !seen.has(r.url) && !LOW_YIELD.test(r.url))
           .slice(0, 3)
+        if (!more.length) break
         const fetched = (await Promise.all(more.map(r => fetchPage(r.url)))).filter(Boolean)
-        allPages = markDuplicates([...pages, ...fetched])
+        if (!fetched.length) break
+        allPages = markDuplicates([...allPages, ...fetched])
+        currentPages = fetched // next hop uses newly fetched pages for term discovery
       }
     }
 
@@ -343,14 +413,26 @@ export const researchTool = {
       }
     })
 
+    // Extract structured tables from raw HTML of fetched pages
+    const structuredTables = []
+    for (const p of allPages) {
+      if (p._html) {
+        const tables = extractTablesFromHtml(p._html)
+        if (tables) structuredTables.push({ source: p.url, tables })
+      }
+    }
+
     return {
       success: true,
       tool: 'deep_research',
       query,
       sub_queries: subQueries.length > 1 ? subQueries : undefined,
       fetched_at: new Date().toISOString(),
-      hops: follow_up ? 2 : 1,
+      hops: follow_up ? Math.min(3, allPages.length > pages.length ? 2 + (allPages.length - pages.length > 3 ? 1 : 0) : 1) : 1,
+      confidence: computeConfidence(allPages),
       structured_findings: extractStructuredMetrics(allPages),
+      structured_tables: structuredTables.length ? structuredTables : undefined,
+      citations: extractCitations(rendered),
       cross_check: findConflicts(rendered),
       related_terms: followUpTerms(rendered, query),
       pages: rendered,

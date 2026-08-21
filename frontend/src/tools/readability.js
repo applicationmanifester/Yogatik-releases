@@ -50,12 +50,108 @@ function meta(doc) {
   }
 }
 
+// ─── Structured Data Extractors ────────────────────────────────────────────
+
+/** Extract HTML tables into structured { headers, rows } arrays. */
+function extractTables(root) {
+  const tables = []
+  for (const table of [...root.querySelectorAll('table')].slice(0, 5)) {
+    const headers = [...table.querySelectorAll('thead th, thead td, tr:first-child th')]
+      .map(th => (th.textContent || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+    const rows = []
+    const bodyRows = [...table.querySelectorAll('tbody tr, tr')].slice(headers.length ? 0 : 1, 25)
+    for (const tr of bodyRows) {
+      const cells = [...tr.querySelectorAll('td, th')]
+        .map(td => (td.textContent || '').replace(/\s+/g, ' ').trim())
+      if (cells.some(c => c.length > 0)) rows.push(cells)
+    }
+    if (headers.length >= 2 && rows.length >= 1) {
+      tables.push({ headers, rows: rows.slice(0, 20) })
+    }
+  }
+  return tables.length ? tables : undefined
+}
+
+/** Extract <pre><code> blocks with language detection. */
+function extractCodeBlocks(root) {
+  const blocks = []
+  for (const pre of [...root.querySelectorAll('pre')].slice(0, 8)) {
+    const code = pre.querySelector('code') || pre
+    const text = (code.textContent || '').trim()
+    if (text.length < 10) continue
+
+    // Detect language from class names (e.g. "language-python", "hljs-javascript")
+    let language = ''
+    const cls = (code.className || '') + ' ' + (pre.className || '')
+    const langMatch = cls.match(/(?:language-|lang-|hljs-)(\w+)/i)
+    if (langMatch) language = langMatch[1]
+    else if (/\bpython\b/i.test(cls)) language = 'python'
+    else if (/\bjavascript|js\b/i.test(cls)) language = 'javascript'
+    else if (/\btypescript|ts\b/i.test(cls)) language = 'typescript'
+    else if (/\bbash|shell|sh\b/i.test(cls)) language = 'bash'
+
+    blocks.push({ language: language || 'unknown', code: text.slice(0, 2000) })
+  }
+  return blocks.length ? blocks : undefined
+}
+
+/** Parse JSON-LD / schema.org structured data from the page. */
+function extractJsonLd(doc) {
+  const results = []
+  for (const script of [...doc.querySelectorAll('script[type="application/ld+json"]')].slice(0, 5)) {
+    try {
+      const data = JSON.parse(script.textContent || '{}')
+      if (!data || typeof data !== 'object') continue
+      // Flatten arrays (some pages wrap in [])
+      const items = Array.isArray(data) ? data : [data]
+      for (const item of items.slice(0, 3)) {
+        const type = item['@type'] || 'Unknown'
+        const entry = { type }
+        if (item.name) entry.name = String(item.name).slice(0, 200)
+        if (item.headline) entry.headline = String(item.headline).slice(0, 200)
+        if (item.description) entry.description = String(item.description).slice(0, 300)
+        if (item.datePublished) entry.datePublished = item.datePublished
+        if (item.author) entry.author = typeof item.author === 'string' ? item.author : (item.author?.name || '')
+        if (item.aggregateRating) entry.rating = item.aggregateRating
+        if (item.mainEntity?.acceptedAnswer) entry.answer = String(item.mainEntity.acceptedAnswer.text || '').slice(0, 500)
+        results.push(entry)
+      }
+    } catch { /* malformed JSON-LD, skip */ }
+  }
+  return results.length ? results : undefined
+}
+
+/** Extract image alt texts and figure captions for visual context. */
+function extractImageContext(root) {
+  const images = []
+  for (const img of [...root.querySelectorAll('img[alt], figure img')].slice(0, 10)) {
+    const alt = (img.getAttribute('alt') || '').trim()
+    const figure = img.closest('figure')
+    const caption = figure ? (figure.querySelector('figcaption')?.textContent || '').trim() : ''
+    const src = img.getAttribute('src') || ''
+    if ((alt.length > 5 || caption.length > 5) && !/placeholder|spacer|pixel|tracking/i.test(src)) {
+      images.push({
+        alt: alt.slice(0, 200) || undefined,
+        caption: caption.slice(0, 300) || undefined,
+        src: src.slice(0, 500) || undefined,
+      })
+    }
+  }
+  return images.length ? images : undefined
+}
+
+// ─── Main Extraction ───────────────────────────────────────────────────────
+
 /**
- * @returns {{title,text,truncated,words,published,author,site,description}}
+ * @returns {{title,text,truncated,words,published,author,site,description,tables,code_blocks,json_ld,images}}
  */
 export function extractReadable(html, { maxChars = 6000 } = {}) {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const info = meta(doc)
+
+  // Extract JSON-LD before stripping scripts
+  const json_ld = extractJsonLd(doc)
 
   // Always safe to drop.
   doc.querySelectorAll('script, style, noscript, svg, iframe').forEach(el => el.remove())
@@ -83,6 +179,11 @@ export function extractReadable(html, { maxChars = 6000 } = {}) {
     }
   }
   const root = best || doc.body
+
+  // Extract structured data from the content root
+  const tables = extractTables(root)
+  const code_blocks = extractCodeBlocks(root)
+  const images = extractImageContext(root)
 
   // Keep block structure: headings and list items become lines, so the model
   // sees where sections start instead of one undifferentiated paragraph.
@@ -113,5 +214,9 @@ export function extractReadable(html, { maxChars = 6000 } = {}) {
     text: truncated ? text.slice(0, maxChars) : text,
     truncated,
     words: text.split(/\s+/).length,
+    tables,
+    code_blocks,
+    json_ld,
+    images,
   }
 }

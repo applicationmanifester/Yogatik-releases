@@ -50,6 +50,10 @@ export const webExtractTool = {
         text: page.text,
         words: page.words,
         truncated: page.truncated,
+        tables: page.tables || undefined,
+        code_blocks: page.code_blocks || undefined,
+        json_ld: page.json_ld || undefined,
+        images: page.images || undefined,
       }
     } catch (e) {
       return { success: false, error: `Could not fetch the page: ${e.message}`, url }

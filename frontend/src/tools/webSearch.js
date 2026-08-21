@@ -6,7 +6,7 @@
 import { proxyFetch, proxyText, proxyJson } from './http'
 import { getSetting } from '../db'
 
-const MAX_RESULTS = 8
+const MAX_RESULTS = 12
 
 const FRESHNESS = { day: 'pd', week: 'pw', month: 'pm', year: 'py' }
 
@@ -164,6 +164,79 @@ async function crossrefSearch(query, count) {
   }
 }
 
+/** GitHub Public Search — find repos, code, and README snippets (keyless) */
+async function githubSearch(query, count) {
+  try {
+    const cleanQ = sanitizeSearchQuery(query)
+    const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(cleanQ)}&sort=stars&per_page=${count}`
+    const resp = await fetch(url, { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(8000) })
+    if (!resp.ok) return []
+    const data = await resp.json()
+    return (data?.items || []).slice(0, count).map(r => ({
+      title: `${r.full_name} ⭐${r.stargazers_count}`,
+      url: r.html_url,
+      snippet: (r.description || '').slice(0, 250),
+      published: r.updated_at || undefined,
+      engine: 'github',
+    }))
+  } catch {
+    return []
+  }
+}
+
+/** Semantic Scholar — free keyless academic paper search with citation counts */
+async function semanticScholarSearch(query, count) {
+  try {
+    const cleanQ = sanitizeSearchQuery(query)
+    const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(cleanQ)}&limit=${count}&fields=title,url,abstract,year,citationCount,influentialCitationCount`
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) }).catch(() => proxyFetch(url))
+    if (!resp.ok) return []
+    const data = await resp.json()
+    return (data?.data || []).slice(0, count).map(p => ({
+      title: `${p.title || ''} (${p.year || '?'}, ${p.citationCount || 0} cites)`,
+      url: p.url || `https://www.semanticscholar.org/paper/${p.paperId}`,
+      snippet: (p.abstract || '').slice(0, 250),
+      published: p.year ? `${p.year}` : undefined,
+      engine: 'semantic_scholar',
+    })).filter(r => r.title && r.url)
+  } catch {
+    return []
+  }
+}
+
+/** StackOverflow/StackExchange Search — programming Q&A with accepted answers */
+async function stackOverflowSearch(query, count) {
+  try {
+    const cleanQ = sanitizeSearchQuery(query)
+    const url = `https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&q=${encodeURIComponent(cleanQ)}&site=stackoverflow&pagesize=${count}&filter=default`
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) })
+    if (!resp.ok) return []
+    const data = await resp.json()
+    return (data?.items || []).slice(0, count).map(q => ({
+      title: `${q.title || ''} [${q.score || 0}↑${q.is_answered ? ' ✓' : ''}]`,
+      url: q.link || '',
+      snippet: (q.tags || []).join(', '),
+      published: q.creation_date ? new Date(q.creation_date * 1000).toISOString() : undefined,
+      engine: 'stackoverflow',
+    })).filter(r => r.url && r.title)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Intent-based smart engine routing — picks the optimal engine mix per query.
+ */
+function detectSearchIntent(query) {
+  const q = (query || '').toLowerCase()
+  if (/\b(code|coding|debug|error|exception|function|api|library|npm|pip|package|github|repo|repository|syntax|compile|runtime|stack trace|import|module)\b/.test(q)) return 'code'
+  if (/\b(paper|research|study|journal|ieee|arxiv|conference|citation|doi|abstract|methodology|hypothesis|experiment|findings|literature)\b/.test(q)) return 'academic'
+  if (/\b(news|latest|today|yesterday|breaking|announced|released|launched|update|election|crisis|event)\b/.test(q)) return 'news'
+  if (/\b(review|opinion|reddit|forum|community|discuss|experience|recommend|best|worst|comparison|vs|versus)\b/.test(q)) return 'community'
+  if (/\b(how to|tutorial|guide|learn|example|step by step|setup|install|configure)\b/.test(q)) return 'howto'
+  return 'general'
+}
+
 /** Reddit JSON Search — free keyless community & opinion search */
 async function redditSearch(query, count) {
   try {
@@ -266,6 +339,7 @@ export const webSearchTool = {
 
     const braveKey = await getSetting('apikey_brave')
     const wide = engines === 'all' && !site
+    const intent = detectSearchIntent(query)
 
     const tasks = []
     if (braveKey) {
@@ -273,15 +347,40 @@ export const webSearchTool = {
     }
     tasks.push(duckDuckGoSearch(ddgQuery(query, recency, site), n).catch(() => []))
     if (wide) {
-      tasks.push(googleNewsSearch(query, 3).catch(() => []))
-      tasks.push(wikipediaSearch(query, 2).catch(() => []))
-      tasks.push(marginaliaSearch(query, 3).catch(() => []))
-      if (/paper|arxiv|study|research|algorithm|model|code|math|science|physics|ai/i.test(query)) {
-        tasks.push(arxivSearch(query, 2).catch(() => []))
-        tasks.push(crossrefSearch(query, 2).catch(() => []))
-      }
-      if (/review|opinion|problem|issue|reddit|forum|fix|discussion/i.test(query)) {
+      // Smart engine routing based on detected intent
+      if (intent === 'code' || intent === 'howto') {
+        tasks.push(githubSearch(query, 3).catch(() => []))
+        tasks.push(stackOverflowSearch(query, 3).catch(() => []))
+        tasks.push(wikipediaSearch(query, 2).catch(() => []))
+      } else if (intent === 'academic') {
+        tasks.push(arxivSearch(query, 3).catch(() => []))
+        tasks.push(crossrefSearch(query, 3).catch(() => []))
+        tasks.push(semanticScholarSearch(query, 3).catch(() => []))
+        tasks.push(wikipediaSearch(query, 2).catch(() => []))
+      } else if (intent === 'news') {
+        tasks.push(googleNewsSearch(query, 4).catch(() => []))
         tasks.push(redditSearch(query, 2).catch(() => []))
+        tasks.push(wikipediaSearch(query, 2).catch(() => []))
+      } else if (intent === 'community') {
+        tasks.push(redditSearch(query, 3).catch(() => []))
+        tasks.push(stackOverflowSearch(query, 2).catch(() => []))
+        tasks.push(googleNewsSearch(query, 2).catch(() => []))
+        tasks.push(wikipediaSearch(query, 2).catch(() => []))
+      } else {
+        // General: wide net across all engines
+        tasks.push(googleNewsSearch(query, 3).catch(() => []))
+        tasks.push(wikipediaSearch(query, 2).catch(() => []))
+        tasks.push(marginaliaSearch(query, 3).catch(() => []))
+        tasks.push(githubSearch(query, 2).catch(() => []))
+        tasks.push(semanticScholarSearch(query, 2).catch(() => []))
+        if (/paper|arxiv|study|research|algorithm|model|code|math|science|physics|ai/i.test(query)) {
+          tasks.push(arxivSearch(query, 2).catch(() => []))
+          tasks.push(crossrefSearch(query, 2).catch(() => []))
+        }
+        if (/review|opinion|problem|issue|reddit|forum|fix|discussion/i.test(query)) {
+          tasks.push(redditSearch(query, 2).catch(() => []))
+          tasks.push(stackOverflowSearch(query, 2).catch(() => []))
+        }
       }
     }
 
@@ -293,7 +392,7 @@ export const webSearchTool = {
       }
       const used = [...new Set(results.flatMap(r => r.engines || []))]
       return {
-        query, recency, site,
+        query, recency, site, intent,
         engine: used.join('+') || (braveKey ? 'brave' : 'duckduckgo'),
         engines_queried: tasks.length,
         count: results.length,
