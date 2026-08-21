@@ -80,6 +80,15 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     retries: 2,
   },
   {
+    id: 'latex_equation_solver',
+    name: 'LaTeX Equation Solver & SymPy Verifier',
+    description: 'Convert LaTeX formulas from IEEE/arXiv papers into verified Python/SymPy expressions',
+    category: 'code',
+    version: '1.0.0',
+    timeoutMs: 15000,
+    retries: 2,
+  },
+  {
     id: 'deep_research',
     name: 'Deep Research',
     description: 'Comprehensive multi-source research with citations',
@@ -751,6 +760,36 @@ export const toolRegistry = new ToolRegistryImpl();
 // Bind academic & advanced tool executors
 import { unifiedAcademicSearch, generateAcademicPaperTemplate } from './academic';
 import { executeVectorSearch, executeBibtexExport, executeCitationNetwork, executeMathEvaluation } from './advancedTools';
+import { convertLatexToPython, generateSympyScript, extractVariables } from './latexSolver';
+
+toolRegistry.setExecutor('latex_equation_solver', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const latex = String(params.latex || params.equation || '');
+    const pythonExpr = convertLatexToPython(latex);
+    const variables = extractVariables(pythonExpr);
+    const sympyScript = generateSympyScript(latex);
+
+    return {
+      success: true,
+      data: {
+        rawLatex: latex,
+        pythonExpression: pythonExpr,
+        variables,
+        sympyVerificationScript: sympyScript,
+      },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'LaTeX equation conversion failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
 
 toolRegistry.setExecutor('vector_search', async (params: Record<string, unknown>, context) => {
   const startTime = Date.now();
