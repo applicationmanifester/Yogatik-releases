@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity, Bot } from 'lucide-react'
 import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
@@ -32,6 +32,7 @@ import { ArenaView } from './components/ArenaView'
 import { LiveView } from './components/LiveView'
 import { PersonalisePanel } from './components/PersonalisePanel'
 import { SkillsPanel } from './components/SkillsPanel'
+import { AgentsPanel } from './components/AgentsPanel'
 import { runWorkflow } from './workflows'
 import { DemoModal } from './components/DemoModal'
 import { AppOverviewModal } from './components/AppOverviewModal'
@@ -217,6 +218,7 @@ export default function App() {
   const [prefs, setPrefsState] = useState({})
   const [showPersonalise, setShowPersonalise] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
+  const [showAgents, setShowAgents] = useState(false)
   const [chatRoots, setChatRoots] = useState([])
   const [rootsOpen, setRootsOpen] = useState(false)
   const rootsWrapRef = useRef(null)
@@ -2326,6 +2328,7 @@ export default function App() {
       { id: 'settings', group: 'View', label: 'Open settings & API keys', run: () => { setSidebarOpen(true); setSettingsOpen(true) } },
       { id: 'personalise', group: 'View', label: 'Personalise — voice & interface', run: () => setShowPersonalise(true) },
       { id: 'skills', group: 'View', label: 'Skills & workflows', run: () => setShowSkills(true) },
+      { id: 'agents-panel', group: 'View', label: '🤖 Specialized Agents Panel (Researcher, Modeller, Swarms...)', hint: 'Specialist AI', run: () => setShowAgents(true) },
       { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => setShowToolPicker(true) },
       { id: 'tools', group: 'Settings', label: `${tools ? 'Disable' : 'Enable'} all AI tools`, run: () => setToolsEnabled(!tools) },
       { id: 'web', group: 'Settings', label: `${webSearch ? 'Disable' : 'Enable'} web research`, run: () => setWebSearch(!webSearch) },
@@ -3046,6 +3049,14 @@ export default function App() {
             </button>
             <button
               className="icon-btn"
+              onClick={() => setShowAgents(true)}
+              title="Specialized Agents & Swarms (Researcher, Modeller, Director...)"
+              aria-label="Specialized Agents"
+            >
+              <Bot size={18} />
+            </button>
+            <button
+              className="icon-btn"
               onClick={() => setShowMcpModal(true)}
               title="MCP Connectors (Model Context Protocol)"
               aria-label="MCP Connectors"
@@ -3615,6 +3626,12 @@ export default function App() {
         <SkillsPanel
           onClose={() => setShowSkills(false)}
           onRunWorkflow={runWorkflowNow}
+        />
+      )}
+      {showAgents && (
+        <AgentsPanel
+          onClose={() => setShowAgents(false)}
+          onToast={showToast}
         />
       )}
       {showPersonalise && (
