@@ -89,6 +89,42 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     retries: 2,
   },
   {
+    id: 'ieee_venue_search',
+    name: 'IEEE Venue-Targeted Search',
+    description: 'Search specific IEEE Transactions journals (TVLSI, TCAD, TPAMI, TC, etc.) with date range and sort by recency or citations',
+    category: 'web',
+    version: '1.0.0',
+    timeoutMs: 20000,
+    retries: 2,
+  },
+  {
+    id: 'research_gap_analyzer',
+    name: 'Research Gap Analyzer',
+    description: 'Analyze paper abstracts to extract limitations, future work directions, and methodology weaknesses',
+    category: 'data',
+    version: '1.0.0',
+    timeoutMs: 5000,
+    retries: 1,
+  },
+  {
+    id: 'research_proposal_generator',
+    name: 'Research Proposal Generator',
+    description: 'Synthesize a structured IEEE-quality research proposal with problem statement, objectives, and methodology from gap analysis',
+    category: 'data',
+    version: '1.0.0',
+    timeoutMs: 5000,
+    retries: 1,
+  },
+  {
+    id: 'ieee_research_workflow',
+    name: 'IEEE Research Workflow Orchestrator',
+    description: 'End-to-end pipeline: search IEEE papers → analyze gaps → recommend base paper → generate research proposal with DOIs',
+    category: 'web',
+    version: '1.0.0',
+    timeoutMs: 60000,
+    retries: 1,
+  },
+  {
     id: 'deep_research',
     name: 'Deep Research',
     description: 'Comprehensive multi-source research with citations',
@@ -912,6 +948,90 @@ toolRegistry.setExecutor('paper_regenerator', async (params: Record<string, unkn
         correlationId: context.correlationId,
         timestamp: Date.now(),
       },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+// ─── IEEE Research Agent Tool Executors ──────────────────────────────────────
+import {
+  searchIEEEOpenAlex,
+  analyzeResearchGaps,
+  generateResearchProposal,
+  executeResearchWorkflow,
+  IEEE_VENUES,
+} from './ieeeResearchAgent';
+
+toolRegistry.setExecutor('ieee_venue_search', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const query = String(params.query || '');
+    const venueKey = String(params.venue || params.venueKey || 'TVLSI') as keyof typeof IEEE_VENUES;
+    const fromYear = typeof params.fromYear === 'number' ? params.fromYear : undefined;
+    const toYear = typeof params.toYear === 'number' ? params.toYear : undefined;
+    const sortBy = (params.sortBy === 'relevance' || params.sortBy === 'cited_by_count') ? params.sortBy : 'date';
+    const limit = typeof params.limit === 'number' ? params.limit : 10;
+
+    const papers = await searchIEEEOpenAlex({ query, venueKey, fromYear, toYear, sortBy, limit });
+    return { success: true, data: papers, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'IEEE venue search failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+toolRegistry.setExecutor('research_gap_analyzer', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const papers = Array.isArray(params.papers) ? params.papers as any[] : [];
+    const gaps = analyzeResearchGaps(papers);
+    return { success: true, data: gaps, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Research gap analysis failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+toolRegistry.setExecutor('research_proposal_generator', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const topic = String(params.topic || '');
+    const gaps = Array.isArray(params.gaps) ? params.gaps as any[] : [];
+    const basePapers = Array.isArray(params.papers) ? params.papers as any[] : [];
+    const targetVenue = String(params.targetVenue || 'IEEE Transactions on VLSI Systems');
+    const proposal = generateResearchProposal(topic, gaps, basePapers, targetVenue);
+    return { success: true, data: proposal, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Research proposal generation failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+toolRegistry.setExecutor('ieee_research_workflow', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const topic = String(params.topic || params.query || '');
+    const venueKey = String(params.venue || params.venueKey || 'TVLSI') as keyof typeof IEEE_VENUES;
+    const limit = typeof params.limit === 'number' ? params.limit : 10;
+    const result = await executeResearchWorkflow(topic, venueKey, limit);
+    return { success: true, data: result, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'IEEE research workflow failed', correlationId: context.correlationId, timestamp: Date.now() },
       durationMs: Date.now() - startTime,
       timestamp: Date.now(),
     };
