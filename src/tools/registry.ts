@@ -44,6 +44,42 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     retries: 1,
   },
   {
+    id: 'vector_search',
+    name: 'Vector Semantic Search',
+    description: 'Search client-side vector database using cosine similarity for private document RAG',
+    category: 'data',
+    version: '1.0.0',
+    timeoutMs: 5000,
+    retries: 2,
+  },
+  {
+    id: 'bibtex_export',
+    name: 'BibTeX Exporter',
+    description: 'Export academic and IEEE citations to formatted BibTeX format',
+    category: 'utility',
+    version: '1.0.0',
+    timeoutMs: 5000,
+    retries: 2,
+  },
+  {
+    id: 'citation_graph',
+    name: 'Citation Network Builder',
+    description: 'Construct interactive node-link citation networks from academic literature',
+    category: 'data',
+    version: '1.0.0',
+    timeoutMs: 5000,
+    retries: 2,
+  },
+  {
+    id: 'math_eval',
+    name: 'Symbolic Math Evaluator',
+    description: 'Evaluate mathematical, scientific, and trigonometric formulas',
+    category: 'code',
+    version: '1.0.0',
+    timeoutMs: 1000,
+    retries: 2,
+  },
+  {
     id: 'deep_research',
     name: 'Deep Research',
     description: 'Comprehensive multi-source research with citations',
@@ -712,8 +748,70 @@ class ToolRegistryImpl implements ToolRegistry {
 // Singleton instance
 export const toolRegistry = new ToolRegistryImpl();
 
-// Bind academic tool executors
+// Bind academic & advanced tool executors
 import { unifiedAcademicSearch, generateAcademicPaperTemplate } from './academic';
+import { executeVectorSearch, executeBibtexExport, executeCitationNetwork, executeMathEvaluation } from './advancedTools';
+
+toolRegistry.setExecutor('vector_search', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const data = await executeVectorSearch(params);
+    return { success: true, data, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Vector search failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+toolRegistry.setExecutor('bibtex_export', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const data = await executeBibtexExport(params);
+    return { success: true, data, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'BibTeX export failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+toolRegistry.setExecutor('citation_graph', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const data = await executeCitationNetwork(params);
+    return { success: true, data, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Citation graph failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+toolRegistry.setExecutor('math_eval', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const expression = String(params.expression || '0');
+    const data = executeMathEvaluation(expression);
+    return { success: true, data, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Math evaluation failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
 
 toolRegistry.setExecutor('academic_search', async (params: Record<string, unknown>, context) => {
   const startTime = Date.now();
