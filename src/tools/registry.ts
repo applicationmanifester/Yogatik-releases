@@ -125,6 +125,15 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     retries: 1,
   },
   {
+    id: 'unpaywall_pdf_resolver',
+    name: 'Open Access & Unpaywall PDF Hunter',
+    description: 'Find legal, free open-access full-text PDFs for IEEE/paywalled DOIs via Unpaywall, institutional repositories, and author preprints',
+    category: 'web',
+    version: '1.0.0',
+    timeoutMs: 15000,
+    retries: 2,
+  },
+  {
     id: 'deep_research',
     name: 'Deep Research',
     description: 'Comprehensive multi-source research with citations',
@@ -1032,6 +1041,34 @@ toolRegistry.setExecutor('ieee_research_workflow', async (params: Record<string,
     return {
       success: false,
       error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'IEEE research workflow failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+import { resolveUnpaywallPdf, findFullTextPdf } from './pdfResolver';
+
+toolRegistry.setExecutor('unpaywall_pdf_resolver', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const doi = String(params.doi || params.query || '');
+    const data = await resolveUnpaywallPdf(doi);
+    const fallbackPdf = !data?.pdfUrl ? await findFullTextPdf(doi) : null;
+    return {
+      success: true,
+      data: {
+        ...data,
+        pdfUrl: data?.pdfUrl || fallbackPdf || null,
+        isOa: Boolean(data?.isOa || fallbackPdf),
+      },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Open access PDF lookup failed', correlationId: context.correlationId, timestamp: Date.now() },
       durationMs: Date.now() - startTime,
       timestamp: Date.now(),
     };
