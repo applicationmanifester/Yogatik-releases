@@ -227,7 +227,7 @@ const MessageBubble = React.memo(function MessageBubble({
     return 'AI Model'
   }, [msg.model, msg.provider])
 
-  let reasoning = '', answer = msg.content
+  let reasoning = '', answer = typeof msg.content === 'string' ? msg.content : String(msg.content ?? '')
 
   // Failed turns are rendered with actionable diagnosis, resolution recommendations, and copy tools
   if (msg.error) {
@@ -423,7 +423,7 @@ const MessageBubble = React.memo(function MessageBubble({
         <img src={msg.image} alt="Attached image" className="msg-image"
           onClick={() => window.open(msg.image, '_blank', 'noopener')} />
       )}
-      {(() => { const s = splitReasoning(msg.content); reasoning = s.reasoning; answer = s.answer; return null })()}
+      {(() => { const s = splitReasoning(typeof msg.content === 'string' ? msg.content : String(msg.content ?? '')); reasoning = s.reasoning; answer = s.answer; return null })()}
       {reasoning && (
         <details className="reasoning-panel">
           <summary>Thinking</summary>

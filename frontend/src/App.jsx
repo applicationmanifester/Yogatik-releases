@@ -1026,7 +1026,7 @@ export default function App() {
   }
 
   const hydrate = (m) => ({
-    role: m.role, content: m.content,
+    role: m.role, content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.filter(p => p.type === 'text').map(p => p.text).join('\n') : String(m.content ?? '')),
     sources: m.sources || [],
     toolResults: m.toolResults || undefined,
     toolsUsed: m.toolsUsed || undefined,
