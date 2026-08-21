@@ -8,7 +8,7 @@ const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:n
  * restored to whatever opened it. Every dialog in the app uses this so the
  * keyboard behaviour can't drift apart between them.
  */
-export function Modal({ title, icon, onClose, children, footer, labelledBy = 'modal-title' }) {
+export function Modal({ title, icon, onClose, children, footer, labelledBy = 'modal-title', className = '' }) {
   const ref = useRef(null)
   const restoreTo = useRef(null)
 
@@ -41,10 +41,10 @@ export function Modal({ title, icon, onClose, children, footer, labelledBy = 'mo
   }, [onClose])
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className={`modal-overlay ${className ? `${className}-overlay` : ''}`} onClick={onClose}>
       <div
         ref={ref}
-        className="modal"
+        className={`modal ${className}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}

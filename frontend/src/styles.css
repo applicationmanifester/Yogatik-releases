@@ -4910,19 +4910,36 @@ html[data-companion="1"], html[data-companion="1"] body, html[data-companion="1"
 .companion-input button:disabled { opacity: .45; cursor: default; }
 
 /* ── Redesigned Settings Center ─────────────────────────────────── */
-.settings-modal .modal-content {
-  max-width: 960px !important;
+.modal.settings-modal {
   width: 95vw !important;
-  height: 85vh !important;
-  max-height: 720px !important;
+  max-width: 1060px !important;
+  height: 88vh !important;
+  max-height: 820px !important;
   padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  border-radius: 18px !important;
+  background: var(--bg-secondary, #11141c) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+}
+
+.modal.settings-modal .modal-header {
+  padding: 16px 24px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  background: rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+}
+
+.modal.settings-modal .modal-header h2 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary, #f8fafc);
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-radius: 16px;
-  background: var(--bg-secondary, #14171f);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  align-items: center;
+  gap: 10px;
 }
 
 .settings-container {
@@ -4933,13 +4950,14 @@ html[data-companion="1"], html[data-companion="1"] body, html[data-companion="1"
 }
 
 .settings-nav {
-  width: 220px;
-  background: rgba(0, 0, 0, 0.22);
+  width: 230px;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.28);
   border-right: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  padding: 14px 10px;
+  padding: 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   overflow-y: auto;
 }
 
@@ -5341,3 +5359,79 @@ html[data-companion="1"], html[data-companion="1"] body, html[data-companion="1"
   justify-content: center;
   gap: 8px;
 }
+
+.settings-card {
+  background: var(--bg-card, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-card.highlight {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.settings-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.settings-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.settings-form-grid .span-2 {
+  grid-column: span 2;
+}
+
+.settings-form-grid label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary, #94a3b8);
+  margin-bottom: 4px;
+}
+
+.settings-form-grid input, .settings-form-grid select {
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--text-primary, #f8fafc);
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.settings-form-grid input:focus, .settings-form-grid select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.settings-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.settings-alert {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.settings-alert.error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
