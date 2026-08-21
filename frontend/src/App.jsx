@@ -1150,6 +1150,18 @@ export default function App() {
     })
   }, [autoResize])
 
+  // Live File Watcher: Show transient notifications when files are modified in granted directories
+  useEffect(() => {
+    const watcherBridge = typeof window !== 'undefined' && window.__YOGATIK_WATCHER__
+    if (!watcherBridge || typeof watcherBridge.onChange !== 'function') return
+    return watcherBridge.onChange((payload) => {
+      if (!payload?.path) return
+      try {
+        announce(`File modified: ${payload.path}`)
+      } catch {}
+    })
+  }, [])
+
   const newChat = useCallback(() => {
     // Don't stop other chats — let them keep streaming in background
     setConvQuery('')
