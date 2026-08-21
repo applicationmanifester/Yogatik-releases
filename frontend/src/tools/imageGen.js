@@ -63,31 +63,61 @@ export function pollinationsUrl(prompt, { width = 1024, height = 1024, seed, mod
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${p.toString()}`
 }
 
-const DEFAULT_NEGATIVE = 'blurry, low quality, distorted, deformed, extra limbs, bad anatomy, watermark, text, jpeg artifacts'
+const DEFAULT_NEGATIVE = 'blurry, low quality, distorted, deformed, extra limbs, bad anatomy, watermark, text, signature, jpeg artifacts, overexposed, low resolution, amateur, grainy, draft'
+
+/**
+ * Intelligent Prompt Enhancer for high-fidelity photorealism / 4k detail
+ */
+function enrichImagePrompt(prompt, style = 'photorealistic') {
+  const p = prompt.trim()
+  if (p.length > 250) return p // User already provided detailed description
+
+  const styleEnhancers = {
+    photorealistic: 'hyperrealistic, highly detailed 8k resolution, cinematic lighting, photorealistic textures, masterpiece, octane render, sharp focus, 35mm lens photography',
+    cinematic: 'epic cinematic shot, volumetric lighting, atmospheric fog, 8k wallpaper, photorealistic color grading, dramatic contrast, unreal engine 5 render',
+    anime: 'masterpiece anime illustration, highly detailed lines, vibrant color palette, Makoto Shinkai style, studio ghibli lighting, sharp details',
+    '3d_render': 'award winning 3D digital art, raytraced reflections, subsurface scattering, ambient occlusion, polished 3D render, Pixar style',
+    concept_art: 'highly detailed concept art, intricate digital painting, atmospheric composition, artstation trending, matte painting',
+  }
+
+  const suffix = styleEnhancers[style] || styleEnhancers.photorealistic
+  return `${p}, ${suffix}`
+}
 
 export const imageGenTool = {
   schema: {
-    description: 'Generate a high-quality image from a text prompt (Flux model, prompt auto-enhanced).',
+    description: 'Generate a high-fidelity image from a text prompt with 8K details, cinematic lighting, and negative prompt filtering.',
     parameters: { type: 'object', properties: {
       prompt: { type: 'string', description: 'Detailed image description — the more specific, the better.' },
-      width: { type: 'number', description: 'Width in pixels (default 1024). Use 1280×720 for 16:9.' },
+      width: { type: 'number', description: 'Width in pixels (default 1024). Use 1280×720 for 16:9 widescreen or 1024×1024 for square.' },
       height: { type: 'number', description: 'Height in pixels (default 1024)' },
-      model: { type: 'string', enum: ['flux', 'turbo'], description: 'flux = best quality (default), turbo = faster/lower.' },
+      style: { type: 'string', enum: ['photorealistic', 'cinematic', 'anime', '3d_render', 'concept_art'], description: 'Visual aesthetic style enhancer (default: photorealistic)' },
+      model: { type: 'string', enum: ['flux', 'turbo'], description: 'flux = best quality (default), turbo = high speed.' },
       negative: { type: 'string', description: 'What to avoid in the image (optional).' },
+      seed: { type: 'number', description: 'Reproducible seed number (optional).' },
     }, required: ['prompt'] },
   },
-  async execute({ prompt, width = 1024, height = 1024, model = 'flux', negative }) {
-    const url = pollinationsUrl(prompt, { width, height, model, enhance: true, negative: negative || DEFAULT_NEGATIVE })
+  async execute({ prompt, width = 1024, height = 1024, style = 'photorealistic', model = 'flux', negative, seed }) {
+    const refinedPrompt = enrichImagePrompt(prompt, style)
+    const url = pollinationsUrl(refinedPrompt, {
+      width,
+      height,
+      model,
+      seed,
+      enhance: true,
+      negative: negative ? `${DEFAULT_NEGATIVE}, ${negative}` : DEFAULT_NEGATIVE,
+    })
     let resp
     try { resp = await fetchImage(url) } catch (e) { return { success: false, error: `Image generation failed: ${e.message}` } }
     if (!resp.ok) return { success: false, error: `Image generation failed (${resp.status})` }
     const blob = await resp.blob()
     if (!blob.size) return { success: false, error: 'Image generation returned no data' }
     return {
-      success: true, tool: 'image_generate', prompt, model,
+      success: true, tool: 'image_generate', prompt, refinedPrompt, model,
       image_url: url,
       display_url: URL.createObjectURL(blob),
       bytes: blob.size,
+      resolution: `${width}x${height}`,
     }
   }
 }
