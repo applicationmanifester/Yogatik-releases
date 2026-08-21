@@ -134,6 +134,33 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     retries: 2,
   },
   {
+    id: 'overleaf_packager',
+    name: 'Overleaf LaTeX & BibTeX Project Bundler',
+    description: 'Bundle IEEE academic papers, IEEEtran.cls templates, and BibTeX citations into Overleaf-ready project files',
+    category: 'utility',
+    version: '1.0.0',
+    timeoutMs: 15000,
+    retries: 2,
+  },
+  {
+    id: 'verilog_testbench_generator',
+    name: 'Verilog / SystemVerilog Verification Suite',
+    description: 'Parse Verilog/SystemVerilog RTL modules, detect errors, and generate automated testbenches with SVA assertions',
+    category: 'code',
+    version: '1.0.0',
+    timeoutMs: 15000,
+    retries: 2,
+  },
+  {
+    id: 'research_swarm_review',
+    name: 'Multi-Agent Research Swarm Reviewer',
+    description: 'Execute simulated 3-agent peer-review consensus (Architect, Verifier, Reviewer) to critique and refine research drafts',
+    category: 'ai',
+    version: '1.0.0',
+    timeoutMs: 30000,
+    retries: 1,
+  },
+  {
     id: 'deep_research',
     name: 'Deep Research',
     description: 'Comprehensive multi-source research with citations',
@@ -1121,6 +1148,74 @@ toolRegistry.setExecutor('deep_research', async (params: Record<string, unknown>
     return {
       success: false,
       error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Deep research failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+import { buildOverleafProject } from './overleafPackager';
+import { parseVerilogModule } from './verilogTools';
+import { runResearchSwarmReview } from './researchSwarm';
+
+toolRegistry.setExecutor('overleaf_packager', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const data = {
+      title: String(params.title || 'Untitled IEEE Paper'),
+      authors: Array.isArray(params.authors) ? (params.authors as string[]) : ['Author Name'],
+      abstract: String(params.abstract || ''),
+      keywords: Array.isArray(params.keywords) ? (params.keywords as string[]) : ['VLSI', 'Verification'],
+      introduction: String(params.introduction || ''),
+      relatedWork: String(params.relatedWork || ''),
+      methodology: String(params.methodology || ''),
+      experimentalResults: String(params.experimentalResults || ''),
+      conclusion: String(params.conclusion || ''),
+      bibtexEntries: Array.isArray(params.bibtexEntries) ? (params.bibtexEntries as string[]) : [],
+    };
+    const bundle = buildOverleafProject(data);
+    return { success: true, data: bundle, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Overleaf packaging failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+toolRegistry.setExecutor('verilog_testbench_generator', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const code = String(params.code || params.verilog || '');
+    const analysis = parseVerilogModule(code);
+    return { success: true, data: analysis, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Verilog testbench generation failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+toolRegistry.setExecutor('research_swarm_review', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const proposal = {
+      title: String(params.title || ''),
+      problemStatement: String(params.problemStatement || ''),
+      methodology: String(params.methodology || ''),
+      expectedOutcome: String(params.expectedOutcome || ''),
+    };
+    const report = runResearchSwarmReview(proposal);
+    return { success: true, data: report, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Research swarm review failed', correlationId: context.correlationId, timestamp: Date.now() },
       durationMs: Date.now() - startTime,
       timestamp: Date.now(),
     };
