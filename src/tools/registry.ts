@@ -1075,5 +1075,57 @@ toolRegistry.setExecutor('unpaywall_pdf_resolver', async (params: Record<string,
   }
 });
 
+import { multiEngineSearch, executeWebExtraction, executeDeepResearch } from './webAutomation';
+
+toolRegistry.setExecutor('web_search', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const query = String(params.query || params.q || '');
+    const limit = typeof params.limit === 'number' ? params.limit : 8;
+    const results = await multiEngineSearch(query, limit);
+    return { success: true, data: results, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Web search failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+toolRegistry.setExecutor('web_extract', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const url = String(params.url || '');
+    const data = await executeWebExtraction(url);
+    return { success: true, data, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Web extraction failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+toolRegistry.setExecutor('deep_research', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const topic = String(params.topic || params.query || '');
+    const maxSources = typeof params.maxSources === 'number' ? params.maxSources : 6;
+    const report = await executeDeepResearch(topic, maxSources);
+    return { success: true, data: report, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Deep research failed', correlationId: context.correlationId, timestamp: Date.now() },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
 // Re-export types for convenience
 export type { ToolDefinition, ToolCategory, ToolExecutor, ToolExecutionContext, ToolResult } from '@/types/tool';
