@@ -50,7 +50,8 @@ export const ToolErrorDetails: React.FC<ToolErrorDetailsProps> = ({
     };
   }, [onDismiss]);
 
-  const formatTimestamp = (ts: number) => {
+  const formatTimestamp = (ts?: number) => {
+    if (!ts) return 'N/A';
     return new Date(ts).toLocaleString(undefined, {
       hour: '2-digit',
       minute: '2-digit',
@@ -59,12 +60,14 @@ export const ToolErrorDetails: React.FC<ToolErrorDetailsProps> = ({
     });
   };
 
+  const isRecoverable = error.recoverable ?? error.retryable ?? false;
+
   const copyError = () => {
     const errorText = `
 Error: ${error.code}
 Message: ${error.message}
 Timestamp: ${formatTimestamp(error.timestamp)}
-Recoverable: ${error.recoverable ? 'Yes' : 'No'}
+Recoverable: ${isRecoverable ? 'Yes' : 'No'}
 Correlation ID: ${error.correlationId ?? 'N/A'}
 Details: ${JSON.stringify(error.details, null, 2)}
     `.trim();
@@ -102,8 +105,8 @@ Details: ${JSON.stringify(error.details, null, 2)}
           <dd>{formatTimestamp(error.timestamp)}</dd>
 
           <dt>Recoverable</dt>
-          <dd className={error.recoverable ? 'recoverable' : 'not-recoverable'}>
-            {error.recoverable ? 'Yes' : 'No'}
+          <dd className={isRecoverable ? 'recoverable' : 'not-recoverable'}>
+            {isRecoverable ? 'Yes' : 'No'}
           </dd>
 
           {error.correlationId && (
@@ -128,7 +131,7 @@ Details: ${JSON.stringify(error.details, null, 2)}
         <button className="btn-copy" onClick={copyError}>
           Copy Error
         </button>
-        {onRetry && error.recoverable && (
+        {onRetry && isRecoverable && (
           <button className="btn-retry" onClick={onRetry}>
             Retry
           </button>

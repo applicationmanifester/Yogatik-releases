@@ -180,7 +180,7 @@ AI ChatBot/
 │   │       ├── CodeBlock.jsx, ArtifactPanel.jsx, ArenaView.jsx
 │   │       ├── ErrorBoundary.jsx, YogatikLogo.jsx
 │   │       ├── ToolResultCard.jsx (+ TOOL_ICONS), MessageBubble.jsx
-│   │       └── AuthModal.jsx, ProviderModal.jsx, AdModal.jsx
+│   │       └── AuthModal.jsx, ProviderModal.jsx
 │   ├── index.html
 │   ├── package.json
 │   └── vite.config.js

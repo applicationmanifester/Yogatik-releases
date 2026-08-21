@@ -226,9 +226,9 @@ export const selectCategoryCounts = () =>
         if (catCounts) {
           catCounts.total++;
           // Use a type-safe way to increment the status count
-          const statusKey = toolState.status as keyof typeof catCounts;
+          const statusKey = toolState.status;
           if (statusKey in catCounts) {
-            (catCounts as Record<string, number>)[statusKey]++;
+            catCounts[statusKey as keyof typeof catCounts]++;
           }
         }
       }

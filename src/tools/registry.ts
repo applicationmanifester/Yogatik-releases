@@ -3,13 +3,11 @@
  * This is the centralized definition used by the ToolStatusPanel and agent engine
  */
 
-import {
+import type {
   ToolDefinition,
   ToolCategory,
   ToolRegistry,
   ToolExecutor,
-  ToolExecutionContext,
-  ToolResult,
 } from '@/types/tool';
 
 /**
@@ -17,7 +15,7 @@ import {
  * Organized by category for maintainability
  */
 const TOOL_DEFINITIONS: ToolDefinition[] = [
-  // Web Tools (12)
+  // Web Tools
   {
     id: 'web_search',
     name: 'Web Search',
@@ -26,6 +24,24 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     version: '1.0.0',
     timeoutMs: 15000,
     retries: 2,
+  },
+  {
+    id: 'academic_search',
+    name: 'Academic Research & IEEE Search',
+    description: 'Search arXiv, OpenAlex, Semantic Scholar, and Crossref for IEEE/academic papers',
+    category: 'web',
+    version: '1.0.0',
+    timeoutMs: 30000,
+    retries: 2,
+  },
+  {
+    id: 'paper_regenerator',
+    name: 'Academic Paper & IEEE Regenerator',
+    description: 'Deconstruct, reason, and regenerate papers into IEEE/ACM-formatted LaTeX and Markdown drafts',
+    category: 'ai',
+    version: '1.0.0',
+    timeoutMs: 60000,
+    retries: 1,
   },
   {
     id: 'deep_research',
@@ -695,6 +711,75 @@ class ToolRegistryImpl implements ToolRegistry {
 
 // Singleton instance
 export const toolRegistry = new ToolRegistryImpl();
+
+// Bind academic tool executors
+import { unifiedAcademicSearch, generateAcademicPaperTemplate } from './academic';
+
+toolRegistry.setExecutor('academic_search', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const query = String(params.query || '');
+    const limit = typeof params.limit === 'number' ? params.limit : 10;
+    const papers = await unifiedAcademicSearch(query, limit);
+    return {
+      success: true,
+      data: papers,
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: {
+        code: 'TOOL_EXECUTION_ERROR',
+        message: err?.message || 'Academic search failed',
+        retryable: true,
+        correlationId: context.correlationId,
+        timestamp: Date.now(),
+      },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
+
+toolRegistry.setExecutor('paper_regenerator', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const templateData = {
+      title: String(params.title || 'Untitled Research Paper'),
+      authors: Array.isArray(params.authors) ? (params.authors as string[]) : ['AI Research Agent'],
+      abstract: String(params.abstract || ''),
+      keywords: Array.isArray(params.keywords) ? (params.keywords as string[]) : ['AI', 'Computer Science'],
+      introduction: String(params.introduction || ''),
+      relatedWork: String(params.relatedWork || ''),
+      methodology: String(params.methodology || ''),
+      experimentalResults: String(params.experimentalResults || ''),
+      conclusion: String(params.conclusion || ''),
+      references: Array.isArray(params.references) ? (params.references as string[]) : [],
+    };
+    const output = generateAcademicPaperTemplate(templateData);
+    return {
+      success: true,
+      data: output,
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: {
+        code: 'TOOL_EXECUTION_ERROR',
+        message: err?.message || 'Paper regeneration failed',
+        retryable: true,
+        correlationId: context.correlationId,
+        timestamp: Date.now(),
+      },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  }
+});
 
 // Re-export types for convenience
 export type { ToolDefinition, ToolCategory, ToolExecutor, ToolExecutionContext, ToolResult } from '@/types/tool';

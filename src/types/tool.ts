@@ -42,10 +42,12 @@ export interface ToolResult<T = unknown> {
 }
 
 export interface ToolError {
-  code: ToolErrorCode;
+  code: ToolErrorCode | string;
   message: string;
   details?: Record<string, unknown>;
-  retryable: boolean;
+  retryable?: boolean;
+  recoverable?: boolean;
+  timestamp?: number;
   correlationId: string;
 }
 
