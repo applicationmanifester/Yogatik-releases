@@ -811,9 +811,10 @@ async function loadCustomProviders() {
 
 const MODEL_TTL = 6 * 60 * 60 * 1000 // 6h
 
-/** Cached live-model lookup: serves cache instantly, refreshes in background. */
+/** Cached live-model lookup: serves cache instantly, refreshes in background. Merges any user-saved custom models. */
 async function cachedModels(id, key, fallback) {
   const cache = await db.getSetting(`models_${id}`)
+  const customAdded = await db.getSetting(`user_models_${id}`, [])
   const fresh = cache && Date.now() - cache.ts < MODEL_TTL && cache.list?.length
   const refresh = async () => {
     try {
@@ -822,9 +823,30 @@ async function cachedModels(id, key, fallback) {
       return fetched
     } catch { return [] }
   }
-  if (fresh) { refresh(); return cache.list }              // stale-while-revalidate
-  const fetched = await refresh()
-  return fetched?.length ? fetched : (cache?.list?.length ? cache.list : fallback)
+  let baseList
+  if (fresh) {
+    refresh()
+    baseList = cache.list
+  } else {
+    const fetched = await refresh()
+    baseList = fetched?.length ? fetched : (cache?.list?.length ? cache.list : fallback)
+  }
+  if (Array.isArray(customAdded) && customAdded.length > 0) {
+    return [...new Set([...customAdded.map(normalizeModelName).filter(Boolean), ...(baseList || [])])]
+  }
+  return baseList
+}
+
+/** Explicitly register a user-specified custom model for any provider so it stays permanently in the dropdown. */
+export async function addCustomModelToProvider(providerId, modelName) {
+  const clean = normalizeModelName(modelName)
+  if (!clean || !providerId) return
+  const existing = await db.getSetting(`user_models_${providerId}`, [])
+  const list = Array.isArray(existing) ? existing : []
+  if (!list.includes(clean)) {
+    await db.setSetting(`user_models_${providerId}`, [clean, ...list])
+  }
+  await setActiveModel(providerId, clean)
 }
 
 export async function getModels() {

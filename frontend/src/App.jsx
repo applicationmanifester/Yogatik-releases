@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity, Bot } from 'lucide-react'
-import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate } from './api'
+import { streamMessage, stopGeneration, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
 import { ArtifactPanel } from './components/ArtifactPanel'
@@ -570,12 +570,27 @@ export default function App() {
   const chooseModel = useCallback((m, providerId = null) => {
     const cleanModel = normalizeModelName(m)
     setModel(cleanModel)
+    const curIdx = activeIdxRef.current
+    const targetClientId = conversationsRef.current[curIdx]?.clientId
+    const activeConv = conversationsRef.current[curIdx]
+    const pid = providerId || activeConv?.provider || provider
+    if (cleanModel) {
+      addCustomModelToProvider(pid, cleanModel).catch(() => {})
+      setModels(prev => {
+        const prov = prev[pid]
+        if (!prov) return prev
+        const existing = prov.models || []
+        if (existing.includes(cleanModel)) return prev
+        return {
+          ...prev,
+          [pid]: {
+            ...prov,
+            models: [cleanModel, ...existing],
+          },
+        }
+      })
+    }
     setConversations(prev => {
-      const curIdx = activeIdxRef.current
-      const targetClientId = prev[curIdx]?.clientId
-      const activeConv = prev[curIdx]
-      const pid = providerId || activeConv?.provider || provider
-      setActiveModel(pid, cleanModel).catch(() => {})
       const next = prev.map((c, i) => {
         if (i !== curIdx && c.clientId !== targetClientId) return c
         const updated = { ...c, provider: pid, model: cleanModel }

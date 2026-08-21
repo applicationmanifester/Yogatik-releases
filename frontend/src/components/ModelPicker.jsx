@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
-import { ChevronDown, Search, Check, Zap, X } from 'lucide-react'
+import { ChevronDown, Search, Check, Zap, X, Plus } from 'lucide-react'
 
 /**
  * Model selector.
@@ -62,11 +62,16 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
     if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); return }
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(s + 1, filtered.length - 1)) }
     if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(s - 1, 0)) }
-    if (e.key === 'Enter') { e.preventDefault(); if (filtered[sel]) pick(filtered[sel]) }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (filtered[sel]) pick(filtered[sel])
+      else if (q.trim()) pick(q.trim())
+    }
   }
 
   const label = value || 'Auto (provider default)'
   const current = measured[value]
+  const cleanQ = q.trim()
 
   return (
     <div className={`model-picker${compact ? ' compact' : ''}`} ref={boxRef}>
@@ -87,7 +92,7 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
           <div className="model-search">
             <Search size={12} />
             <input ref={inputRef} value={q} onChange={e => { setQ(e.target.value); setSel(0) }}
-              onKeyDown={onKeyDown} placeholder={`Filter ${ordered.length} models…`} aria-label="Filter models" />
+              onKeyDown={onKeyDown} placeholder={`Filter or enter custom model…`} aria-label="Filter models" />
             {q && <button className="icon-btn" onClick={() => setQ('')} aria-label="Clear filter"><X size={11} /></button>}
           </div>
 
@@ -95,6 +100,14 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
             <button className={`model-option ${!value ? 'active' : ''}`} onClick={() => pick('')}>
               <span className="model-name">Auto (provider default)</span>
             </button>
+
+            {cleanQ && !models.includes(cleanQ) && (
+              <button className="model-option custom-add" onClick={() => pick(cleanQ)}
+                style={{ background: 'rgba(59, 130, 246, 0.12)', color: '#60a5fa', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <Plus size={12} className="model-tick" />
+                <span className="model-name">Use custom model: <strong>"{cleanQ}"</strong></span>
+              </button>
+            )}
 
             {filtered.map((m, i) => {
               const st = measured[m]
@@ -116,10 +129,9 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
               )
             })}
 
-            {!filtered.length && (
+            {!filtered.length && !cleanQ && (
               <div className="model-empty">
-                No model matches "{q}".
-                <button className="link-btn" onClick={() => pick(q.trim())}>Use it anyway</button>
+                No models available.
               </div>
             )}
           </div>
