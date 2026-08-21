@@ -1,6 +1,6 @@
 /**
  * Academic Research & Paper Synthesis Engine
- * Uses open-access, keyless academic APIs: arXiv, OpenAlex, Semantic Scholar, Crossref
+ * Direct Crossref, IEEE DOI Resolver, arXiv, OpenAlex, Semantic Scholar
  */
 
 export interface AcademicPaper {
@@ -23,6 +23,55 @@ export interface CitationNode {
   year?: number;
   citations: number;
   references: string[];
+}
+
+/**
+ * Direct DOI Lookup (Crossref API) — works on all IEEE Transactions & journals (e.g. 10.1109/...)
+ */
+export async function lookupDOI(doi: string): Promise<AcademicPaper | null> {
+  try {
+    const cleanDoi = doi.trim().replace(/^https?:\/\/doi\.org\//i, '');
+    const url = `https://api.crossref.org/works/${encodeURIComponent(cleanDoi)}`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const item = data.message;
+    if (!item) return null;
+
+    const authors = (item.author || []).map((a: any) => `${a.given || ''} ${a.family || ''}`.trim()).filter(Boolean);
+    const title = Array.isArray(item.title) ? item.title[0] : (item.title || 'Untitled');
+    const venue = Array.isArray(item['container-title']) ? item['container-title'][0] : item['container-title'];
+    const year = item.published?.['date-parts']?.[0]?.[0] || item.created?.['date-parts']?.[0]?.[0];
+    
+    // Abstract cleaning (Crossref often embeds JATS XML tags like <jats:p>)
+    let abstract = item.abstract || '';
+    abstract = abstract.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // Check Open Access link
+    let openAccessPdfUrl: string | undefined;
+    if (Array.isArray(item.link)) {
+      const pdfLink = item.link.find((l: any) => l['content-type'] === 'application/pdf');
+      if (pdfLink) openAccessPdfUrl = pdfLink.URL;
+    }
+
+    return {
+      id: item.DOI,
+      title,
+      authors,
+      year,
+      venue,
+      doi: item.DOI,
+      abstract,
+      openAccessPdfUrl,
+      citationCount: item['is-referenced-by-count'] || 0,
+      url: `https://doi.org/${item.DOI}`,
+      source: 'crossref',
+    };
+  } catch (error) {
+    console.warn('Crossref DOI lookup failed:', error);
+    return null;
+  }
 }
 
 /**
@@ -170,9 +219,17 @@ export async function searchSemanticScholar(query: string, maxResults = 5): Prom
 }
 
 /**
- * Unified multi-source academic paper search
+ * Unified multi-source academic paper search (supports DOI or keyword queries)
  */
 export async function unifiedAcademicSearch(query: string, limit = 10): Promise<AcademicPaper[]> {
+  const trimmed = query.trim();
+  
+  // If query is a DOI (e.g. "10.1109/TPAMI.2023.1234567" or "https://doi.org/10.1109/...")
+  if (/^(https?:\/\/doi\.org\/)?10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+$/i.test(trimmed)) {
+    const doiResult = await lookupDOI(trimmed);
+    if (doiResult) return [doiResult];
+  }
+
   const [arxivResults, openAlexResults, semanticResults] = await Promise.all([
     searchArxiv(query, Math.ceil(limit / 2)),
     searchOpenAlex(query, Math.ceil(limit / 2)),
