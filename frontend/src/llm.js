@@ -139,6 +139,7 @@ const PROVIDERS = {
       'nvidia/llama-3.3-nemotron-super-49b-v1.5',
     ],
     keyUrl: 'https://build.nvidia.com',
+    publicModels: true,
     needsProxy: true,
   },
   local: {
