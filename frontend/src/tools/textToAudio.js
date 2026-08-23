@@ -1,7 +1,7 @@
 /**
- * text_to_audio — turn text into a downloadable narrated audio file (WAV),
- * spoken by the on-device Kokoro voice. Open (Apache-2.0 model), keyless, runs
- * entirely in the browser. Reuses the exact TTS pipeline the video narrator uses.
+ * text_to_audio — turn text into a downloadable narrated audio file (WAV or MP3),
+ * spoken by either the on-device Kokoro voice (Apache-2.0, 100% private, free)
+ * or the ElevenLabs cloud voice API (studio-grade quality, custom clones).
  *
  * Unlike the `tts` tool (which plays through the speakers and returns nothing to
  * hold), this produces a real file the user can save, share, or replay — a
@@ -9,7 +9,8 @@
  */
 
 import { synthesize, cleanForSpeech, VOICES, DEFAULT_VOICE, SAMPLE_RATE } from '../video/speech'
-import { saveMedia } from '../db'
+import { synthesizeElevenLabs, getElevenLabsApiKey, DEFAULT_ELEVENLABS_VOICE } from './elevenLabs'
+import { saveMedia, getSetting } from '../db'
 
 const MAX_CHARS = 8000
 
@@ -49,24 +50,56 @@ function encodeWav(pcm, sampleRate) {
 export const textToAudioTool = {
   schema: {
     description:
-      'Narrate text into a downloadable audio file (WAV) using an on-device voice — no key, no cloud. ' +
+      'Narrate text into a downloadable audio file (WAV/MP3) using on-device neural voice (Kokoro) or ElevenLabs studio cloud voices. ' +
       'Use when the user wants to LISTEN to something as a file: an audio summary, a read-aloud of an article, ' +
       'a spoken note, or a single-voice "audio overview". For a quick speak-aloud with no file, use tts instead.',
     parameters: {
       type: 'object',
       properties: {
         text: { type: 'string', description: 'The text to narrate. Plain prose reads best.' },
-        voice: { type: 'string', enum: Object.keys(VOICES), description: Object.entries(VOICES).map(([k, v]) => `${k}: ${v}`).join('; ') },
+        voice: { type: 'string', description: 'Voice ID or preset name (e.g. af_heart, af_nova, bf_emma, or an ElevenLabs voice ID).' },
+        engine: { type: 'string', enum: ['kokoro', 'elevenlabs'], description: 'TTS engine: kokoro (on-device, default) or elevenlabs (cloud API).' },
         speed: { type: 'number', description: 'Speaking speed 0.6-1.5 (default 1)' },
       },
       required: ['text'],
     },
   },
-  async execute({ text, voice, speed = 1 }) {
+  async execute({ text, voice, engine, speed = 1 }) {
     const clean = cleanForSpeech(text)
     if (!clean) return { success: false, error: 'No speakable text provided.' }
     if (clean.length > MAX_CHARS) return { success: false, error: `Text too long (${clean.length} chars). Max ${MAX_CHARS}.` }
 
+    const preferredEngine = engine || (await getSetting('live_voice_engine', 'neural'))
+    const elevenLabsKey = await getElevenLabsApiKey()
+
+    // Route to ElevenLabs if requested or selected
+    if ((preferredEngine === 'elevenlabs' || engine === 'elevenlabs') && elevenLabsKey) {
+      try {
+        const useVoiceId = voice && !VOICES[voice] ? voice : (await getSetting('voice_elevenlabs_id', DEFAULT_ELEVENLABS_VOICE))
+        const res = await synthesizeElevenLabs({ text: clean, voiceId: useVoiceId, apiKey: elevenLabsKey })
+        const filename = `yogatik-elevenlabs-${Date.now()}.mp3`
+        let mediaId = null
+        try { mediaId = await saveMedia({ blob: res.blob, mime: 'audio/mpeg', filename }) } catch { /* transient */ }
+
+        return {
+          success: true,
+          tool: 'text_to_audio',
+          engine: 'elevenlabs',
+          media_id: mediaId,
+          audio_url: res.audioUrl,
+          filename,
+          mime: 'audio/mpeg',
+          voice: useVoiceId,
+          bytes: res.blob.size,
+          display: 'The studio-quality ElevenLabs audio is shown to the user with a player and a download button.',
+        }
+      } catch (e) {
+        // Gracefully fall through to on-device Kokoro TTS on cloud failure
+        console.warn('ElevenLabs synthesis failed, falling back to on-device voice:', e)
+      }
+    }
+
+    // Default: On-device Kokoro TTS
     const useVoice = VOICES[voice] ? voice : DEFAULT_VOICE
     let pcmParts = []
     let sampleRate = SAMPLE_RATE
@@ -121,6 +154,7 @@ export const textToAudioTool = {
     return {
       success: true,
       tool: 'text_to_audio',
+      engine: 'kokoro',
       media_id: mediaId,
       audio_url: URL.createObjectURL(blob),
       filename,

@@ -95,7 +95,13 @@ export const spawnAgentsTool = {
     // Rolling-window concurrency under the shared global agent budget.
     // runAgentPool passes (item, index), which is exactly what runOne needs to
     // look up its isolation slot — so pooling and isolation compose directly.
-    const results = await runAgentPool(tasks, runOne)
+    const pooled = await runAgentPool(tasks, runOne)
+    // A sub-agent that throws comes back as a bare { error } slot. Left as-is the
+    // card rendered an empty box (no agent, no role, no result) and the model was
+    // never told which specialist failed.
+    const results = pooled.map((r, i) => (r && r.error && !r.result)
+      ? { agent: tasks[i]?.agent || 'agent', role: tasks[i]?.agent || 'agent', result: `(failed: ${r.error})`, error: r.error }
+      : r)
 
     return {
       success: true,

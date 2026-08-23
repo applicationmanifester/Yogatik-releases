@@ -63,7 +63,13 @@ self.addEventListener('fetch', (e) => {
     e.respondWith((async () => {
       try {
         const resp = (await e.preloadResponse) || await fetch(req);
-        caches.open(CACHE_NAME).then(c => c.put('/index.html', resp.clone())).catch(() => {});
+        // Only cache a GOOD response. Storing a 404/500/503 here poisons the
+        // offline fallback: every later offline navigation would serve the
+        // error page instead of the app shell, until the next deploy.
+        if (resp && resp.ok) {
+          const clone = resp.clone();
+          caches.open(CACHE_NAME).then(c => c.put('/index.html', clone)).catch(() => {});
+        }
         return resp;
       } catch {
         return (await caches.match('/index.html')) || Response.error();

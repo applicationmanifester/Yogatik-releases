@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Yogatik tools — 177 browser-native AI tools, no backend</title>
+<meta name="description" content="The complete catalogue of Yogatik's tools: web research, code execution, documents, files and shell, image and video generation, agents, finance and dozens of open-data APIs." />
+<meta property="og:title" content="Yogatik tool catalogue" />
+<meta property="og:description" content="Every tool the assistant can call, grouped by what it is for." />
+<link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+<link rel="canonical" href="https://yogatik.web.app/tools" />
+<link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+<div class="wrap wide">
+
+<header>
+  <a class="logo" href="/"><img src="/icon-192.svg" alt="" /> Yogatik</a>
+  <nav class="site">
+    <a href="/guide">Guide</a>
+    <a href="/tools" aria-current="page">Tools</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/platforms">Desktop</a>
+    <a href="/faq">FAQ</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <span class="pill">Catalogue</span>
+  <h1>Every tool, and what it is for</h1>
+  <p class="lead">
+    The assistant has 177 tools available. You never call them by name — the model decides
+    which to use, your browser runs it, and the result appears as a card in the
+    conversation. Almost all of them are free and keyless; the handful that need a key say
+    so. Tools marked <strong>desktop</strong> need the
+    <a href="/platforms">desktop app</a>, because a web page is not permitted to touch your
+    filesystem or run commands.
+  </p>
+</div>
+
+<main>
+
+<section class="card">
+  <h3 style="margin-top:0">How tool calling works here</h3>
+  <p>
+    The model is shown a ranked, capped list of tools relevant to what you asked. It replies
+    with a call, the browser executes it locally, and the result is fed back for the next
+    step — repeating until the model has what it needs to answer. Models that cannot do
+    native function calling fall back to a text protocol automatically, so they keep their
+    tools instead of losing them.
+  </p>
+</section>
+
+<section>
+  <h2>Web &amp; research</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>web_search</code></td><td>Search the live web using the local desktop search sidecar (Electron only).</td></tr>
+    <tr><td><code>deep_research</code></td><td>Research a topic on the live web: runs a search, then reads the top result pages in parallel and returns their extracted text with source URLs, publication dates and authors.</td></tr>
+    <tr><td><code>web_extract</code></td><td>Read a specific web page and return its main article text, with title, author and publication date.</td></tr>
+    <tr><td><code>browser_control</code></td><td>Open and USE a real web browser the user can watch: navigate, read the page structure, click, type, scroll and manage tabs.</td></tr>
+    <tr><td><code>browser_autopilot</code></td><td>Fetch a web page's static HTML and extract its text, optionally focused on a query.</td></tr>
+    <tr><td><code>link_preview</code></td><td>Get a link preview (title, description, image) for a URL.</td></tr>
+    <tr><td><code>youtube</code></td><td>Get YouTube video information and best-effort caption transcript when available.</td></tr>
+    <tr><td><code>wikipedia</code></td><td>Look up an encyclopedia article on Wikipedia and return its summary, or search Wikipedia by topic.</td></tr>
+    <tr><td><code>scholar</code></td><td>Search academic literature (OpenAlex, plus arXiv preprints).</td></tr>
+    <tr><td><code>stackoverflow</code></td><td>Search Stack Overflow for programming problems and return the accepted or highest-voted answers.</td></tr>
+    <tr><td><code>hackernews</code></td><td>Search Hacker News discussions.</td></tr>
+    <tr><td><code>archive</code></td><td>Find an archived snapshot of a URL in the Internet Archive Wayback Machine.</td></tr>
+    <tr><td><code>wayback_archive</code></td><td>Check if a website, article, or URL has historical snapshots archived on the Internet Archive Wayback Machine.</td></tr>
+    <tr><td><code>rss_feed</code></td><td>Read RSS/Atom feed (presets: hackernews, bbc, techcrunch, reddit_tech, arxiv_ai).</td></tr>
+    <tr><td><code>firecrawl</code></td><td>Firecrawl deep web crawler and RAG Markdown dataset engine (inspired by mendableai/firecrawl).</td></tr>
+    <tr><td><code>lightpanda</code></td><td>Lightpanda ultra-fast headless browser and RAG scraper (inspired by lightpanda-io/browser).</td></tr>
+    <tr><td><code>web_automate</code></td><td>Execute multi-step web automations: batch extraction from multiple URLs in parallel, HTML table scraping into structured data, change tracking / diff monitoring, or RSS monitoring.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Documents &amp; knowledge</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>doc_search</code></td><td>Search the documents the user has uploaded in this app (PDF, text, markdown, CSV, JSON).</td></tr>
+    <tr><td><code>doc_list</code></td><td>List the documents the user has uploaded, with sizes.</td></tr>
+    <tr><td><code>local_vault_search</code></td><td>Search 100% locally across all stored user documents, notes, and past conversation history in IndexedDB.</td></tr>
+    <tr><td><code>pdf_extract</code></td><td>Extract text from a PDF file.</td></tr>
+    <tr><td><code>summarize</code></td><td>Summarize a block of text into key sentences.</td></tr>
+    <tr><td><code>doc_export</code></td><td>Convert Markdown or structured text into Microsoft Word (.doc), PowerPoint presentation (.pptx), CSV spreadsheet (.csv), HTML, or formatted JSON for 1-click downloading.</td></tr>
+    <tr><td><code>doc_enhance</code></td><td>Enhance and edit generated documents (PPT presentations, Word DOCs, CSV spreadsheets, Markdown reports) by adding topic illustration images to slides, auto-generating summary data tables, calculating CSV totals/averages, or adding executive styling.</td></tr>
+    <tr><td><code>document_generator</code></td><td>Generate professional, standalone documents completely client-side in multiple open-source formats: Word documents (.doc/.docx), interactive HTML5 presentation slide decks, printable business invoices, awards/certificates, or spreadsheets.</td></tr>
+    <tr><td><code>md_to_pdf</code></td><td>Convert markdown text to a polished, downloadable PDF (headings, lists, tables, code, blockquotes).</td></tr>
+    <tr><td><code>text_analytics</code></td><td>Analyze text for readability metrics, word/sentence counts, sentiment polarity, and reading time.</td></tr>
+    <tr><td><code>keyword_extract</code></td><td>Extract the most important keywords and keyphrases from text using local frequency analysis.</td></tr>
+    <tr><td><code>entity_extract</code></td><td>Extract likely people, organizations, locations, dates, numbers, emails, and URLs from text.</td></tr>
+    <tr><td><code>query_refine</code></td><td>Refine a messy user query into a cleaner search query, a few focused subqueries, and an intent label.</td></tr>
+    <tr><td><code>turbovec</code></td><td>TurboQuant vector database and RAG search engine.</td></tr>
+    <tr><td><code>memory</code></td><td>Durable, on-device memory across sessions.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Code &amp; data</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>code_execute</code></td><td>Execute Python in the browser (Pyodide WASM).</td></tr>
+    <tr><td><code>js_execute</code></td><td>Execute JavaScript in a sandboxed Web Worker (no DOM, no network to the page, no app access).</td></tr>
+    <tr><td><code>code_format</code></td><td>Clean, format, and fix indentation on source code snippets (JavaScript, HTML, CSS, JSON, Python, SQL).</td></tr>
+    <tr><td><code>code_review_diff</code></td><td>Perform Alibaba Open Code Review on git diffs or patch strings with line-level defect classification (SECURITY, BUG_RISK, PERFORMANCE, DESIGN, STYLE).</td></tr>
+    <tr><td><code>code_review_scan</code></td><td>Deep audit and scan an entire source file for security flaws, bug risks, performance pitfalls, and design flaws without needing a git diff.</td></tr>
+    <tr><td><code>code_review_pr</code></td><td>Generate an executive PR review report with overall risk score (0-100) and automated merge verdict (APPROVE, COMMENT, REQUEST_CHANGES).</td></tr>
+    <tr><td><code>diff</code></td><td>Compare two texts and show differences.</td></tr>
+    <tr><td><code>regex</code></td><td>Test, find, or replace using regular expressions.</td></tr>
+    <tr><td><code>data_convert</code></td><td>Convert between JSON and CSV (RFC 4180, Excel-safe), or prettify/minify JSON.</td></tr>
+    <tr><td><code>data_stats</code></td><td>Compute numerical statistics (mean, median, min, max, std dev, counts) on CSV or JSON datasets.</td></tr>
+    <tr><td><code>hash</code></td><td>Generate hash, encode/decode, or create UUID.</td></tr>
+    <tr><td><code>uuid</code></td><td>Generate random UUID v4 identifiers (RFC 4122).</td></tr>
+    <tr><td><code>number_base</code></td><td>Convert an integer between bases (2–36).</td></tr>
+    <tr><td><code>numbat</code></td><td>Perplexity AI Numbat agent runtime security, pre-action interception, and behavioral threat detection harness.</td></tr>
+    <tr><td><code>repo_finder</code></td><td>GitHub repository finder, similarity discovery, and open-source intelligence tool.</td></tr>
+    <tr><td><code>fprime</code></td><td>NASA F Prime (F´) flight software generator and topology validator.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Files, shell &amp; desktop</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>fs_read</code></td><td>Read a UTF-8 text file inside this chat’s folders.</td></tr>
+    <tr><td><code>fs_write</code></td><td>Create or overwrite a text file in this chat’s folders.</td></tr>
+    <tr><td><code>fs_edit</code></td><td>Edit an existing text file by exact string replacement (like a targeted patch).</td></tr>
+    <tr><td><code>fs_list</code></td><td>List files and folders under a path in this chat’s folders.</td></tr>
+    <tr><td><code>fs_search</code></td><td>Search file contents across every folder bound to this chat for a substring or regex.</td></tr>
+    <tr><td><code>fs_find_files</code></td><td>Find files across the workspace by filename, glob pattern (e.g.</td></tr>
+    <tr><td><code>fs_batch_read</code></td><td>Read multiple text files in parallel inside the active workspace in a single round-trip.</td></tr>
+    <tr><td><code>fs_batch_write</code></td><td>Create or overwrite multiple files across workspace in a single round-trip.</td></tr>
+    <tr><td><code>fs_file_tree</code></td><td>Generate a compact ASCII directory tree of the workspace up to a specified depth.</td></tr>
+    <tr><td><code>fs_file_info</code></td><td>Inspect detailed metadata, file size, line counts, extension, and integrity stats for a file.</td></tr>
+    <tr><td><code>fs_replace_content</code></td><td>Replace a single contiguous block of text in an existing file.</td></tr>
+    <tr><td><code>fs_multi_replace</code></td><td>Perform multiple non-contiguous block replacements across a file in a single atomic transaction.</td></tr>
+    <tr><td><code>fs_delete</code></td><td>Delete a file or directory inside this chat’s folders.</td></tr>
+    <tr><td><code>fs_mkdir</code></td><td>Create a directory (and any missing parent directories) inside this chat’s folders.</td></tr>
+    <tr><td><code>fs_move</code></td><td>Move or rename a file or directory inside this chat’s folders.</td></tr>
+    <tr><td><code>fs_undo</code></td><td>Undo a previous file change made in this chat (write, edit, delete, move).</td></tr>
+    <tr><td><code>fs_add_folder</code></td><td>Open a native folder picker so the user grants this chat access to a folder on their computer.</td></tr>
+    <tr><td><code>terminal_run</code></td><td>Execute a terminal CLI command in this chat’s primary working folder.</td></tr>
+    <tr><td><code>proc_start</code></td><td>Start a LONG-RUNNING command in the background (dev server, watch-mode tests, a build that streams output) and return immediately with a process id.</td></tr>
+    <tr><td><code>proc_output</code></td><td>Read the output of a background process started with proc_start, and whether it is still running.</td></tr>
+    <tr><td><code>proc_stop</code></td><td>Stop a background process started with proc_start.</td></tr>
+    <tr><td><code>proc_list</code></td><td>List the background processes running for this chat.</td></tr>
+    <tr><td><code>git_status</code></td><td>Show git status for this chat’s working folder: current branch, and which files are staged, modified or untracked.</td></tr>
+    <tr><td><code>git_log</code></td><td>Show recent git commits (hash, author, date, subject) for this chat’s working folder.</td></tr>
+    <tr><td><code>git_diff</code></td><td>Show the git diff for this chat’s working folder — what has actually changed, line by line.</td></tr>
+    <tr><td><code>watch</code></td><td>Watch this chat’s working folders for changes made outside the app, or read which files have changed since the last check.</td></tr>
+    <tr><td><code>watch_folder</code></td><td>Start, stop, or list file-system watchers on a path inside the granted folder.</td></tr>
+    <tr><td><code>clipboard_access</code></td><td>Read the user’s current clipboard (text and images), read recent clipboard history, or write text to the clipboard.</td></tr>
+    <tr><td><code>file_dialog</code></td><td>Open a native file/folder picker or save dialog and return real OS paths.</td></tr>
+    <tr><td><code>process_manager</code></td><td>List running processes on the user’s computer, or terminate one by PID.</td></tr>
+    <tr><td><code>system_state</code></td><td>Report the desktop machine’s power and idle state: how long the user has been idle, and whether the device is on battery or AC power.</td></tr>
+    <tr><td><code>screen_inspect</code></td><td>Capture the desktop screen and inspect the active foreground application window (title, process, visual UI context, and OCR text).</td></tr>
+    <tr><td><code>desktop_action</code></td><td>Perform an OS-level synthetic action in the active application window or desktop (type text, trigger hotkeys, open apps/URLs, or copy to clipboard).</td></tr>
+    <tr><td><code>computer_control</code></td><td>Control the mouse and keyboard across any application on the user’s computer: click or double-click at a screen coordinate, move the pointer, scroll, or press a named key/combo (enter, tab, escape, ctrl+c, ctrl+shift+t, f5…).</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Images, audio &amp; video</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>image_generate</code></td><td>Generate a high-fidelity image from a text prompt with 8K details, cinematic lighting, aspect ratios, and negative prompt filtering.</td></tr>
+    <tr><td><code>sticker_generate</code></td><td>Generate a sticker, icon, badge, or graphic illustration from a text prompt.</td></tr>
+    <tr><td><code>image_info</code></td><td>Get image dimensions, size, and basic metadata.</td></tr>
+    <tr><td><code>chart</code></td><td>Generate a chart/graph from data.</td></tr>
+    <tr><td><code>diagram</code></td><td>Generate a diagram from Mermaid syntax (flowchart, sequence, class, etc.).</td></tr>
+    <tr><td><code>diagram_render</code></td><td>Generate visual Mermaid.js flowcharts, mind maps, sequence diagrams, or entity graphs.</td></tr>
+    <tr><td><code>ocr</code></td><td>Extract text from an image using OCR.</td></tr>
+    <tr><td><code>unlimited_ocr</code></td><td>Baidu Unlimited-OCR long-context document parser and LaTeX formula recognition engine (inspired by baidu/Unlimited-OCR).</td></tr>
+    <tr><td><code>qr_generate</code></td><td>Generate a QR code from text/URL.</td></tr>
+    <tr><td><code>qr_read</code></td><td>Read/decode a QR code from an image.</td></tr>
+    <tr><td><code>video_render</code></td><td>Render a real video file (MP4) in the browser from a scene list — titles, bullet slides, images with Ken Burns motion, and animated bar charts, with cross-fades and spoken narration.</td></tr>
+    <tr><td><code>video_edit</code></td><td>Edit an EXISTING video: trim to a time range, change speed, resize or re-encode at a different quality.</td></tr>
+    <tr><td><code>audio_edit</code></td><td>Get audio file information (duration, channels, sample rate).</td></tr>
+    <tr><td><code>tts</code></td><td>Speak text aloud through the device speakers.</td></tr>
+    <tr><td><code>stt</code></td><td>Record from the microphone and transcribe it.</td></tr>
+    <tr><td><code>text_to_audio</code></td><td>Narrate text into a downloadable audio file (WAV/MP3) using on-device neural voice (Kokoro) or ElevenLabs studio cloud voices.</td></tr>
+    <tr><td><code>podcast_generate</code></td><td>Generate a multi-speaker audio podcast / conversational overview (Host &amp; Guest discussion) from a topic or script using studio ElevenLabs voices or on-device neural voices.</td></tr>
+    <tr><td><code>audio_overview</code></td><td>Generate a multi-speaker audio podcast / conversational overview (Host &amp; Guest discussion) from a topic or script using studio ElevenLabs voices or on-device neural voices.</td></tr>
+    <tr><td><code>see</code></td><td>Look through the user's camera and answer a question about what is visible.</td></tr>
+    <tr><td><code>color_palette</code></td><td>Extract dominant colors from an image or convert color formats.</td></tr>
+    <tr><td><code>threeui</code></td><td>ThreeUI 3D web component and procedural Three.js generator (inspired by MengTo/threeui).</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Agents &amp; automation</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>spawn_agents</code></td><td>Delegate focused sub-tasks to specialist sub-agents that run concurrently, then get their merged results.</td></tr>
+    <tr><td><code>crew_orchestrator</code></td><td>Execute multi-agent autonomous crew workflows inspired by CrewAI, AutoGen, and LangGraph.</td></tr>
+    <tr><td><code>auto_skills</code></td><td>Manage auto-generated skills learned from successful problem-solving sessions.</td></tr>
+    <tr><td><code>scheduler</code></td><td>Manage background scheduled jobs, alarms, timers, and reminders.</td></tr>
+    <tr><td><code>timer</code></td><td>Set, list, or cancel alarms, countdown timers, and reminders in the browser.</td></tr>
+    <tr><td><code>todo</code></td><td>Track the steps of a multi-step task for this conversation.</td></tr>
+    <tr><td><code>agent_reach</code></td><td>Agent-Reach multi-platform intelligence gathering &amp; open web reader (inspired by Panniantong/Agent-Reach).</td></tr>
+    <tr><td><code>guardrails</code></td><td>Guardrails &amp; Rebuff safety enforcement engine (inspired by guardrails-ai and protectai/rebuff).</td></tr>
+    <tr><td><code>semantica_record_decision</code></td><td>Record an auditable, structured AI decision in the Context Graph with reasoning, category, confidence, and metadata for compliance and precedent search.</td></tr>
+    <tr><td><code>semantica_trace_causal_chain</code></td><td>Trace the causal ancestry (upstream causes) and impact tree (downstream effects) of a specific AI decision node.</td></tr>
+    <tr><td><code>semantica_find_precedents</code></td><td>Find past similar AI decisions and precedents matching a query scenario or context.</td></tr>
+    <tr><td><code>semantica_context_graph</code></td><td>Inspect, query neighbors, detect semantic conflicts, or extract entity-relation triplets in the Context Graph.</td></tr>
+    <tr><td><code>semantica_audit_export</code></td><td>Export regulator-ready audit trails of AI decisions and knowledge graphs in JSON, CSV, Markdown, or W3C PROV-O RDF/Turtle format.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Finance &amp; markets</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>finance_analytics</code></td><td>Run financial valuation and risk maths exactly, on-device: DCF valuation, NPV, IRR, CAGR, and risk statistics for a price series (volatility, Sharpe, Sortino, max drawdown, Value at Risk, expected shortfall).</td></tr>
+    <tr><td><code>market_data</code></td><td>Fetch historical market prices or economic indicators without an API key.</td></tr>
+    <tr><td><code>crypto_price</code></td><td>Look up live cryptocurrency prices, 24-hour price change percentage, 24h high/low, and trading volume.</td></tr>
+    <tr><td><code>currency</code></td><td>Convert between currencies at European Central Bank reference rates, or list rates.</td></tr>
+    <tr><td><code>world_bank</code></td><td>Retrieve official macroeconomic and developmental statistics from the World Bank Open Data catalog for 218+ countries.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Everyday &amp; open data</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>weather</code></td><td>Get current weather and 7-day forecast for a location.</td></tr>
+    <tr><td><code>air_quality</code></td><td>Current air quality (US + European AQI, PM2.5, PM10, ozone, NO₂, CO) and pollen for a location.</td></tr>
+    <tr><td><code>calculator</code></td><td>Evaluate a mathematical expression.</td></tr>
+    <tr><td><code>unit_convert</code></td><td>Convert between units (length, weight, volume, temperature).</td></tr>
+    <tr><td><code>translate</code></td><td>Translate text between languages.</td></tr>
+    <tr><td><code>grammar_check</code></td><td>Proofread text for grammar, spelling, punctuation and style using LanguageTool.</td></tr>
+    <tr><td><code>geocode</code></td><td>Convert a place name into coordinates and structured address data using OpenStreetMap, or reverse a coordinate pair into a place.</td></tr>
+    <tr><td><code>solar_times</code></td><td>Calculate precise astronomical and solar times for any latitude and longitude (or city location).</td></tr>
+    <tr><td><code>earthquake</code></td><td>Recent earthquakes from the USGS feed, optionally near a location.</td></tr>
+    <tr><td><code>iss_location</code></td><td>Track the real-time orbital location, latitude, longitude, altitude, velocity, and visibility of the International Space Station (ISS).</td></tr>
+    <tr><td><code>dictionary</code></td><td>Define an English word: meanings, part of speech, pronunciation, synonyms and example usage.</td></tr>
+    <tr><td><code>thesaurus</code></td><td>Find synonyms, antonyms, rhymes, or related words for a word (Datamuse, open + keyless).</td></tr>
+    <tr><td><code>books</code></td><td>Search Open Library (Internet Archive) for books by title, author or subject.</td></tr>
+    <tr><td><code>gutenberg</code></td><td>Search Project Gutenberg for public-domain books and optionally fetch the full text.</td></tr>
+    <tr><td><code>country_info</code></td><td>Look up facts about a country: capital, population, region, currencies, languages, timezones, calling code, flag.</td></tr>
+    <tr><td><code>package_info</code></td><td>Look up a software package or repository: current version, licence, dependencies, maintenance status and links.</td></tr>
+    <tr><td><code>drug_info</code></td><td>Look up official prescription and over-the-counter (OTC) drug information from the US Food &amp; Drug Administration (FDA) database.</td></tr>
+    <tr><td><code>chemical_info</code></td><td>Look up chemical compound properties, molecular structures, and formulas from the National Institutes of Health (NIH) PubChem database.</td></tr>
+    <tr><td><code>nobel_prize</code></td><td>Search the official Nobel Foundation database for Nobel Prize winners, categories, citations, and laureates.</td></tr>
+    <tr><td><code>trivia_quiz</code></td><td>Generate verified trivia questions and answers across diverse categories (Science, Computers, Mathematics, History, Geography, Books, Film, General Knowledge).</td></tr>
+    <tr><td><code>postal_lookup</code></td><td>Look up geographic location, city, state, province, latitude, and longitude for any postal code or ZIP code worldwide across 60+ countries.</td></tr>
+    <tr><td><code>nasa_apod</code></td><td>Fetch NASA Astronomy Picture of the Day (APOD).</td></tr>
+    <tr><td><code>nasa_asteroids</code></td><td>Track near-Earth asteroids and comets using NASA Near Earth Object Web Service (NeoWs).</td></tr>
+    <tr><td><code>itunes_search</code></td><td>Search Apple iTunes catalog for songs, music tracks, albums, artists, podcasts, and audiobooks.</td></tr>
+    <tr><td><code>art_institute</code></td><td>Search 100,000+ world-class artworks from the Art Institute of Chicago collection.</td></tr>
+    <tr><td><code>dns_lookup</code></td><td>Perform browser-native DNS lookups via Google and Cloudflare DNS-over-HTTPS.</td></tr>
+    <tr><td><code>activity_suggest</code></td><td>Find curated activities and ideas to overcome boredom, learn a new hobby, or plan social events.</td></tr>
+    <tr><td><code>jokes</code></td><td>Generate funny programming, developer, and general humor jokes with setups and punchlines.</td></tr>
+    <tr><td><code>animal_facts</code></td><td>Get verified feline &amp; canine animal facts, cat trivia, and dog breed intelligence.</td></tr>
+    <tr><td><code>meal_recipe</code></td><td>Search culinary recipes, ingredients with measurements, cuisine origin, and step-by-step cooking instructions from TheMealDB.</td></tr>
+    <tr><td><code>cocktail_recipe</code></td><td>Search drink recipes, cocktails, and non-alcoholic mocktails from TheCocktailDB.</td></tr>
+    <tr><td><code>federal_register</code></td><td>Search official US Government executive orders, presidential proclamations, federal agency regulations, and public rules from the Federal Register API.</td></tr>
+    <tr><td><code>bible_scripture</code></td><td>Look up Bible verses, passages, and chapters across multiple public translations (World English Bible, King James Version, etc.) via the Bible API.</td></tr>
+    <tr><td><code>wikimedia_feed</code></td><td>Retrieve Wikipedia official featured content feed for today or any date: Today in History ("On this day" historical anniversaries), today's Featured Article, and Picture of the Day.</td></tr>
+    <tr><td><code>user_profile_gen</code></td><td>Generate realistic mock user profiles, testing personas, and synthetic identity data (name, email, street address, city, country, phone, age, username, avatar photo).</td></tr>
+    <tr><td><code>whois</code></td><td>Lookup WHOIS information for a domain.</td></tr>
+    <tr><td><code>ip_lookup</code></td><td>Lookup geolocation data for an IP address.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Security research</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>deepsec</code></td><td>Run Deepsec — the 5-stage agent-powered security audit harness (Scan, Investigate, Revalidate, Enrich, Export) to detect logic vulnerabilities, injection flaws, SSRF, path traversal, RCE, broken access control, and hardcoded secrets with remediations.</td></tr>
+    <tr><td><code>hexstrike_recon</code></td><td>Perform defensive reconnaissance and technology fingerprinting on a target domain, URL, or endpoint.</td></tr>
+    <tr><td><code>hexstrike_audit_headers</code></td><td>Audit HTTP response headers and CORS configuration against industry security benchmarks (OWASP, NIST).</td></tr>
+    <tr><td><code>hexstrike_vuln_scan</code></td><td>Scan code, endpoint configurations, or architecture descriptions for OWASP Top 10 security weaknesses, generating CVSS v3.1 metrics and exact defensive fixes.</td></tr>
+    <tr><td><code>hexstrike_attack_surface</code></td><td>Map and categorize application attack surfaces (public APIs, authenticated admin routes, file uploaders, third-party integrations) with exposure indices.</td></tr>
+    <tr><td><code>hexstrike_generate_playbook</code></td><td>Generate an executive security report and tactical engineering remediation playbook with exact code patches and incident response steps.</td></tr>
+    <tr><td><code>cloudflare_os</code></td><td>Cloudflare OS workspace, Gatekeeper capability security, and sandboxed Gadget runtime (inspired by cloudflare/cloudflare-os).</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Social &amp; careers</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>social_search</code></td><td>Search live posts, tweets, threads, discussions, and creators across social media platforms.</td></tr>
+    <tr><td><code>social_post_generator</code></td><td>Format and structure high-converting social media posts and scripts.</td></tr>
+    <tr><td><code>job_search</code></td><td>Search job openings, career opportunities, and hiring posts across Naukri, Indeed, LinkedIn Jobs, and Glassdoor.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Connectors</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>mcp_resource</code></td><td>Access data published by connected MCP servers as "resources" (documents, records, files the server exposes).</td></tr>
+    <tr><td><code>mcp_prompt</code></td><td>Use prompt templates published by connected MCP servers.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>More</h2>
+  <table>
+    <tr><th>Tool</th><th>What it does</th></tr>
+    <tr><td><code>web_automation</code></td><td>Execute multi-step web automations: batch extraction from multiple URLs in parallel, HTML table scraping into structured data, change tracking / diff monitoring, or RSS monitoring.</td></tr>
+    <tr><td><code>password_generate</code></td><td>Generate a strong random password or passphrase with a rough entropy/strength estimate.</td></tr>
+    <tr><td><code>cron_next</code></td><td>Parse a 5-field cron expression (min hour day-of-month month day-of-week) and list its next run times.</td></tr>
+    <tr><td><code>timezone</code></td><td>Convert a time between IANA time zones, or show the current time in one or more zones (world clock).</td></tr>
+    <tr><td><code>alarm</code></td><td>Set, list, or cancel alarms, countdown timers, and reminders in the browser.</td></tr>
+    <tr><td><code>sub_agent_runner</code></td><td>Manage isolated sub-agents that run in separate processes with their own terminals and Python RPC servers.</td></tr>
+    <tr><td><code>tv_shows</code></td><td>Search television series and streaming show metadata from TVMaze.</td></tr>
+  </table>
+</section>
+<section class="card">
+  <h2 style="margin-top:0">Try any of these now</h2>
+  <p>No account. Add a free API key and the whole catalogue is live.</p>
+  <a class="cta" href="/">Open the web app</a>
+  <a class="cta ghost" href="/guide">Read the guide</a>
+</section>
+
+</main>
+
+<footer>
+  <nav>
+    <a href="/">App</a>
+    <a href="/guide">Guide</a>
+    <a href="/tools">Tools</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/platforms">Desktop</a>
+    <a href="/faq">FAQ</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+  </nav>
+  <p>Yogatik &middot; a private, browser-native AI assistant.</p>
+</footer>
+
+</div>
+</body>
+</html>

@@ -41,8 +41,10 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     # Playwright smoke test — runs the app against a mocked provider in a real
-    # browser. Non-blocking until the spec set grows.
-    continue-on-error: true
+    # browser. This is the ONLY job that exercises the built app the way a user
+    # loads it: vitest never builds, so a broken bundle passes every unit test.
+    # It blocks: a job that cannot fail cannot tell you anything, and this one
+    # sat green while it was running a script that did not exist.
     steps:
       - name: Checkout
         uses: actions/checkout@v4

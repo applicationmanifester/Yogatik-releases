@@ -28,6 +28,6 @@ export const hashTool = {
     const enc = new TextEncoder().encode(text)
     const hash = await crypto.subtle.digest(alg, enc)
     const hex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('')
-    return { success: true, tool: 'hash', result: hex, algorithm }
+    return { success: true, tool: 'hash', result: hex, algorithm, input_length: text.length }
   }
 }

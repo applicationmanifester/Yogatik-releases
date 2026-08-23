@@ -152,6 +152,29 @@ export function diagnoseError(error) {
     }
   }
 
+  // Workspace / desktop-capability refusals. These are the most common tool
+  // failures in the desktop build and they are not provider failures at all:
+  // "No working folder for this chat" used to be reported as "Model Execution
+  // Failed — an unexpected response was received from the model provider",
+  // sending the user to re-enter an API key when the fix is to grant a folder.
+  if (
+    /working folder|no folder granted|not granted|fs_grant|fs_add_folder/i.test(msg) ||
+    /desktop app|desktop only|electron build/i.test(msg) ||
+    /escapes the granted folder|absolute paths are not allowed/i.test(msg)
+  ) {
+    const needsFolder = /working folder|no folder granted|not granted|fs_grant|fs_add_folder/i.test(msg)
+    return {
+      type: 'workspace',
+      category: 'Workspace Access',
+      title: needsFolder ? 'No Working Folder for This Chat' : 'Not Available in This Build',
+      suggestion: needsFolder
+        ? 'This tool needs a folder on your computer. Use the folder button in the header to add one to this chat, then ask again.'
+        : 'This capability exists only in the Yogatik desktop app, and the browser build cannot provide it.',
+      actionType: needsFolder ? 'retry' : 'none',
+      actionLabel: needsFolder ? 'Try Again' : '',
+    }
+  }
+
   return {
     type: 'general',
     category: 'Provider / Execution Error',

@@ -22,12 +22,17 @@ export const TOOL_RISK = {
   fs_read: 'read',
   fs_list: 'read',
   fs_search: 'read',
+  fs_file_info: 'read',
   fs_write: 'write',
   fs_edit: 'write',
+  fs_replace_content: 'write',
+  fs_multi_replace: 'write',
+  fs_batch_write: 'write',
   fs_mkdir: 'write',
   fs_move: 'write',
   fs_delete: 'destructive',
   terminal_run: 'destructive',
+  terminal_exec: 'destructive',
   // proc_start spawns a shell exactly like terminal_run — the only difference
   // is that it keeps running, which makes it MORE consequential, not less.
   proc_start: 'destructive',

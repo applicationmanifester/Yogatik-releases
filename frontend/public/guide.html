@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Yogatik Guide — getting started with a browser-native AI assistant</title>
+<meta name="description" content="How to use Yogatik: add a free API key, run local models with Ollama, upload documents for Q&amp;A, use voice and vision, and grant a working folder in the desktop app." />
+<meta property="og:title" content="Yogatik Guide" />
+<meta property="og:description" content="Add a key, pick a model, and use 177 browser-native tools — a practical walkthrough." />
+<link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+<link rel="canonical" href="https://yogatik.web.app/guide" />
+<link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="logo" href="/"><img src="/icon-192.svg" alt="" /> Yogatik</a>
+  <nav class="site">
+    <a href="/guide" aria-current="page">Guide</a>
+    <a href="/tools">Tools</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/platforms">Desktop</a>
+    <a href="/faq">FAQ</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <span class="pill">Guide</span>
+  <h1>Getting started with Yogatik</h1>
+  <p class="lead">
+    Yogatik is an AI assistant that runs entirely in your browser. There is no account,
+    no server holding your conversations, and no subscription — you bring an API key from
+    a provider you choose, or run a model on your own machine. This page walks through
+    setting it up and using the parts that are not obvious.
+  </p>
+</div>
+
+<main>
+
+<section>
+  <h2>1. Choose how the model runs</h2>
+  <p>
+    Yogatik never ships its own inference. You pick where the thinking happens, and the
+    trade-off is roughly speed versus privacy:
+  </p>
+  <table>
+    <tr><th>Option</th><th>What you need</th><th>Notes</th></tr>
+    <tr>
+      <td><strong>Groq</strong></td>
+      <td>A free API key from console.groq.com</td>
+      <td>The fastest way to start. Generous free tier, very low latency.</td>
+    </tr>
+    <tr>
+      <td><strong>OpenRouter</strong></td>
+      <td>A key from openrouter.ai</td>
+      <td>Access to 100+ models from many vendors through one key, pay per token.</td>
+    </tr>
+    <tr>
+      <td><strong>OpenAI / Anthropic</strong></td>
+      <td>Your own provider key</td>
+      <td>Use the frontier models directly if you already pay for them.</td>
+    </tr>
+    <tr>
+      <td><strong>Ollama</strong></td>
+      <td>Ollama running on your machine</td>
+      <td>No key, no cloud, works offline. Best in the desktop app.</td>
+    </tr>
+    <tr>
+      <td><strong>On-device (WebGPU)</strong></td>
+      <td>Nothing — it downloads a small model</td>
+      <td>Runs in the browser itself. A few hundred MB, cached after the first load.</td>
+    </tr>
+  </table>
+  <p>
+    Open <strong>Settings</strong>, paste a key, and it is stored in your browser's
+    IndexedDB. If you sign in, keys are encrypted and synced so the same key works on your
+    other devices — see <a href="/privacy">Privacy</a> for exactly how that is done.
+  </p>
+</section>
+
+<section>
+  <h2>2. Pick a model — or let the app pick</h2>
+  <p>
+    The model picker sits in the composer, next to the message box, because which model
+    answers is a per-message decision rather than a buried setting. Two helpers are worth
+    knowing:
+  </p>
+  <ul>
+    <li><strong>Auto-pick</strong> measures the response time of several candidate models
+      in parallel and selects the fastest one that actually answers. It runs automatically
+      the first time a key is verified.</li>
+    <li><strong>Auto-routing</strong> classifies each message — code, reasoning, writing or
+      a quick question — and routes it to the fastest model measured as good at that class.
+      Off by default; enable it in Settings.</li>
+  </ul>
+  <p class="note">
+    Providers retire models without warning. When one disappears, Yogatik detects the
+    provider's error, drops the dead model from its cache and clears the selection rather
+    than failing repeatedly on a model that no longer exists.
+  </p>
+</section>
+
+<section>
+  <h2>3. Ask something that uses a tool</h2>
+  <p>
+    Yogatik ships 177 tools that run in the browser. You never invoke them by name — the
+    model decides, the browser executes, and the result comes back as a card in the
+    conversation. Some things to try:
+  </p>
+  <div class="grid">
+    <div class="card">
+      <h3>Live web research</h3>
+      <p>“What changed in the EU AI Act this month?” — searches several engines, reads the
+        pages in parallel and cites its sources.</p>
+    </div>
+    <div class="card">
+      <h3>Run code</h3>
+      <p>“Fit a curve to this data and plot it.” — executes real Python (via Pyodide) in a
+        WASM sandbox, and the kernel keeps its state between messages.</p>
+    </div>
+    <div class="card">
+      <h3>Documents</h3>
+      <p>Drop a PDF into the chat and ask about it. Text is extracted and indexed locally;
+        nothing is uploaded anywhere.</p>
+    </div>
+    <div class="card">
+      <h3>Make things</h3>
+      <p>Images, charts, diagrams, QR codes, narrated video, spoken audio — all generated
+        on your device or through free, keyless services.</p>
+    </div>
+  </div>
+  <p>See the <a href="/tools">full tool catalogue</a> for everything that is available.</p>
+</section>
+
+<section>
+  <h2>4. Documents and long context</h2>
+  <p>
+    Uploaded files are chunked and indexed in your browser with BM25, a classical keyword
+    ranking algorithm. Small documents are injected into the prompt whole; larger ones are
+    searched, and only the passages that match your question are sent to the model. That
+    keeps long documents usable without a vector database or an embedding download.
+  </p>
+  <p>
+    An optional semantic re-ranking mode adds a small embedding model on top for queries
+    where wording differs from the source text. It is off by default because it costs a
+    ~23&nbsp;MB download, and it asks before fetching anything.
+  </p>
+</section>
+
+<section>
+  <h2>5. Voice, camera and live mode</h2>
+  <p>
+    <strong>Live mode</strong> turns the assistant into a call: you speak, it listens,
+    answers aloud, and can look through your camera or shared screen. With a Gemini key it
+    uses a realtime audio connection; with any other provider it runs a speech →
+    model → speech pipeline in the browser instead.
+  </p>
+  <p>
+    Vision is treated as an app capability rather than one vendor's feature. If your chosen
+    model can see images, frames are sent to it. If it cannot, Yogatik falls back to
+    on-device OCR or a small local vision model and passes a written description instead —
+    and tells you which happened rather than pretending.
+  </p>
+</section>
+
+<section>
+  <h2>6. The desktop app: files, shell and a real browser</h2>
+  <p>
+    The <a href="/platforms">desktop build</a> is the same app in a native shell, plus
+    three things a web page is not allowed to do:
+  </p>
+  <ul>
+    <li><strong>A working folder.</strong> Grant one folder and the assistant can read,
+      search, create and edit files inside it. Every path is resolved against that grant,
+      symlink escapes included, so nothing outside it can be touched.</li>
+    <li><strong>A shell.</strong> Run tests, builds and git commands in that folder, with
+      long-running processes handled separately from one-shot commands.</li>
+    <li><strong>A real browser.</strong> The assistant can drive an actual browsing
+      context — log in, fill forms, click through an app — rather than just fetching
+      static HTML.</li>
+  </ul>
+  <p class="note">
+    Folders are bound per chat, so a work project and a personal one never see each other's
+    files. Anything that writes to disk or runs a command asks for approval first, and you
+    can remember the answer for that chat, that project, or everywhere.
+  </p>
+</section>
+
+<section>
+  <h2>7. Skills, agents and workflows</h2>
+  <ul>
+    <li><strong>Skills</strong> bundle a system prompt, a set of allowed tools and starter
+      prompts. Activate one and the assistant is scoped to that job.</li>
+    <li><strong>Agents</strong> are named specialists — researcher, coder, writer, analyst,
+      planner — that can delegate to each other and run in parallel.</li>
+    <li><strong>Workflows</strong> chain several prompts in order, passing the previous
+      answer forward with <code>{{last}}</code> placeholders.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Keyboard shortcuts</h2>
+  <table>
+    <tr><th>Shortcut</th><th>Action</th></tr>
+    <tr><td><code>Ctrl</code> + <code>K</code></td><td>Command palette — chats, models, tools, panels</td></tr>
+    <tr><td><code>Ctrl</code> + <code>Shift</code> + <code>O</code></td><td>New chat</td></tr>
+    <tr><td><code>Alt</code> + <code>D</code></td><td>Social &amp; domain hub</td></tr>
+    <tr><td><code>Ctrl</code> + <code>,</code></td><td>Settings (desktop)</td></tr>
+    <tr><td><code>Ctrl</code> + <code>O</code></td><td>Grant a working folder (desktop)</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0">Start using it</h2>
+  <p>No sign-up. Add a free key and the whole toolset is available immediately.</p>
+  <a class="cta" href="/">Open the web app</a>
+  <a class="cta ghost" href="/platforms">Get the desktop app</a>
+</section>
+
+</main>
+
+<footer>
+  <nav>
+    <a href="/">App</a>
+    <a href="/guide">Guide</a>
+    <a href="/tools">Tools</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/platforms">Desktop</a>
+    <a href="/faq">FAQ</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+  </nav>
+  <p>Yogatik · a private, browser-native AI assistant.</p>
+</footer>
+
+</div>
+</body>
+</html>

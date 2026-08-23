@@ -6,7 +6,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const FS_COMMANDS = new Set([
   'fs_grant', 'fs_granted_root', 'fs_clear_grant',
-  'fs_list', 'fs_read', 'fs_write', 'fs_edit', 'fs_search',
+  'fs_list', 'fs_read', 'fs_write', 'fs_edit', 'fs_search', 'fs_find_files',
   'fs_delete', 'fs_mkdir', 'fs_move', 'fs_batch_read', 'fs_file_tree',
   'roots_add', 'roots_list', 'roots_remove', 'roots_set_primary', 'roots_rebind',
   'journal_list', 'journal_revert',

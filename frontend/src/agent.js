@@ -607,7 +607,10 @@ export async function runAgent({
     ])]
   }
   const rawSchemas = toolsEnabled ? getToolSchemas(effectiveDisabled) : null
-  const schemas = (rawSchemas && userMessage) ? prioritizeToolSchemas(rawSchemas, userMessage) : rawSchemas
+  // ALWAYS go through the prioritiser: it both ranks and caps. Sending the whole
+  // registry was ~32k tokens of schemas on every turn (and over OpenAI's 128-tool
+  // limit); the ranking above decides which ones survive the cap.
+  const schemas = rawSchemas ? prioritizeToolSchemas(rawSchemas, userMessage || '') : rawSchemas
 
   // 'native' → OpenAI-style tools array. 'prompted' → JSON protocol in the
   // system prompt, for models that 400 on a tools array.

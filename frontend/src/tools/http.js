@@ -19,7 +19,6 @@ import { getProxyEndpoint } from '../llm'
 const PUBLIC_RELAYS = [
   'https://api.allorigins.win/raw?url=',
   'https://corsproxy.io/?url=',
-  'https://thingproxy.freeboard.io/fetch/',
   'https://api.codetabs.com/v1/proxy?quest=',
 ]
 

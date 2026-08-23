@@ -22,6 +22,17 @@ describe('sanitize', () => {
     const out = sanitizeSvg('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>')
     expect(out).toMatch(/rect/)
   })
+  it('strips a handler on the ROOT svg element, not just on descendants', () => {
+    // querySelectorAll('*') never matches the node it is called on, so the root
+    // — the one element an attacker fully controls here — was skipped.
+    const out = sanitizeSvg('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><rect/></svg>')
+    expect(out).not.toMatch(/onload/i)
+    expect(out).toMatch(/rect/)
+  })
+  it('strips a javascript: url on the root', () => {
+    const out = sanitizeSvg('<svg xmlns="http://www.w3.org/2000/svg" href="javascript:alert(1)"><rect/></svg>')
+    expect(out).not.toMatch(/javascript:/i)
+  })
 })
 
 describe('shouldNudgeBackup', () => {

@@ -6,10 +6,11 @@ import {
   Telescope, FileSearch, Files, ExternalLink, Sliders,
   BookOpen, GraduationCap, MessageSquare, Archive, BookA, Library,
   Package, BookMarked, Banknote, Activity, Film, Sparkles, Copy, Check, Users, Clock,
-  Briefcase, Share2, AlarmClock, Bell, Plug, Monitor, MousePointer, Compass, Laptop
+  Briefcase, Share2, AlarmClock, Bell, Plug, Monitor, MousePointer, Compass, Laptop,
+  AlertTriangle
 } from 'lucide-react'
 import { getMedia } from '../db'
-import { diagnoseError } from '../errorLog'
+import { diagnoseError, logError } from '../errorLog'
 import { sanitizeSvg } from '../sanitize'
 
 // Standardised, friendly failure card: a plain-language line from diagnoseError
@@ -99,11 +100,12 @@ export const TOOL_ICONS = {
  * revoke it on unmount.
  */
 function RenderedVideo({ result }) {
-  const [src, setSrc] = React.useState(result.video_url || null)
+  const [src, setSrc] = React.useState(result.video_url && !result.video_url.startsWith('blob:') ? result.video_url : null)
   const [gone, setGone] = React.useState(false)
 
   React.useEffect(() => {
-    if (src || !result.media_id) return
+    if (src && !src.startsWith('blob:')) return
+    if (!result.media_id) return
     let url = null
     let cancelled = false
     getMedia(result.media_id).then((row) => {
@@ -113,7 +115,7 @@ function RenderedVideo({ result }) {
       setSrc(url)
     }).catch(() => setGone(true))
     return () => { cancelled = true; if (url) URL.revokeObjectURL(url) }
-  }, [result.media_id, src])
+  }, [result.media_id])
 
   const mb = result.bytes ? (result.bytes / 1048576).toFixed(1) : null
 
@@ -121,7 +123,16 @@ function RenderedVideo({ result }) {
     <div className="tool-result-card">
       <div className="tool-result-header"><Film size={14} /> Rendered Video</div>
       {src
-        ? <video src={src} className="generated-video" controls playsInline preload="metadata" />
+        ? <video src={src} className="generated-video" controls playsInline preload="metadata" onError={() => {
+            if (result.media_id) {
+              getMedia(result.media_id).then(row => {
+                if (row?.blob) setSrc(URL.createObjectURL(row.blob))
+                else setGone(true)
+              }).catch(() => setGone(true))
+            } else {
+              setGone(true)
+            }
+          }} />
         : <p className="tool-detail">{gone ? 'This video was cleared to make room for newer ones.' : 'Loading video…'}</p>}
       <p className="tool-prompt">
         {result.resolution} · {result.fps}fps · {result.duration_sec}s{mb ? ` · ${mb} MB` : ''}
@@ -138,12 +149,13 @@ function RenderedVideo({ result }) {
 }
 
 /** On-device narration audio. Same media-store recovery as video. */
-function RenderedAudio({ result }) {
-  const [src, setSrc] = React.useState(result.audio_url || null)
+function RenderedAudio({ result, title = 'Narrated Audio' }) {
+  const [src, setSrc] = React.useState(result.audio_url && !result.audio_url.startsWith('blob:') ? result.audio_url : null)
   const [gone, setGone] = React.useState(false)
 
   React.useEffect(() => {
-    if (src || !result.media_id) return
+    if (src && !src.startsWith('blob:')) return
+    if (!result.media_id) return
     let url = null, cancelled = false
     getMedia(result.media_id).then((row) => {
       if (cancelled) return
@@ -152,20 +164,117 @@ function RenderedAudio({ result }) {
       setSrc(url)
     }).catch(() => setGone(true))
     return () => { cancelled = true; if (url) URL.revokeObjectURL(url) }
-  }, [result.media_id, src])
+  }, [result.media_id])
 
   return (
     <div className="tool-result-card">
-      <div className="tool-result-header"><Volume2 size={14} /> Narrated Audio</div>
+      <div className="tool-result-header"><Volume2 size={14} /> {title}</div>
       {src
-        ? <audio src={src} controls preload="metadata" style={{ width: '100%', marginTop: 6 }} />
+        ? <audio src={src} controls preload="metadata" style={{ width: '100%', marginTop: 6 }} onError={() => {
+            if (result.media_id) {
+              getMedia(result.media_id).then(row => {
+                if (row?.blob) setSrc(URL.createObjectURL(row.blob))
+                else setGone(true)
+              }).catch(() => setGone(true))
+            } else {
+              setGone(true)
+            }
+          }} />
         : <p className="tool-detail">{gone ? 'This audio was cleared to make room for newer files.' : 'Loading audio…'}</p>}
       <p className="tool-prompt">
-        {result.duration_sec}s · {result.voice}{result.bytes ? ` · ${(result.bytes / 1048576).toFixed(1)} MB` : ''}
+        {result.duration_sec}s · {result.voice || 'elevenlabs/kokoro'}{result.bytes ? ` · ${(result.bytes / 1048576).toFixed(1)} MB` : ''}
       </p>
       {src && (
-        <a className="small-btn" href={src} download={result.filename}>
-          <FileDown size={12} /> Download WAV
+        <a className="small-btn" href={src} download={result.filename || 'audio.wav'}>
+          <FileDown size={12} /> Download Audio
+        </a>
+      )}
+    </div>
+  )
+}
+
+/** On-device or generated image. Recovers cleanly from media-store if blob URL is stale. */
+function RenderedImage({ result, isSticker = false }) {
+  const initialUrl = (result.image_url && !result.image_url.startsWith('blob:'))
+    ? result.image_url
+    : (result.display_url && !result.display_url.startsWith('blob:'))
+      ? result.display_url
+      : null
+  const [src, setSrc] = React.useState(initialUrl)
+  const [gone, setGone] = React.useState(false)
+
+  React.useEffect(() => {
+    if (src && !src.startsWith('blob:')) return
+    if (!result.media_id) {
+      if (result.image_url) setSrc(result.image_url)
+      else if (result.display_url) setSrc(result.display_url)
+      return
+    }
+    let url = null, cancelled = false
+    getMedia(result.media_id).then((row) => {
+      if (cancelled) return
+      if (!row?.blob) {
+        if (result.image_url && !result.image_url.startsWith('blob:')) setSrc(result.image_url)
+        else setGone(true)
+        return
+      }
+      url = URL.createObjectURL(row.blob)
+      setSrc(url)
+    }).catch(() => {
+      if (result.image_url && !result.image_url.startsWith('blob:')) setSrc(result.image_url)
+      else setGone(true)
+    })
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url) }
+  }, [result.media_id, result.image_url, result.display_url])
+
+  const title = isSticker ? `Sticker Graphic (${result.style || 'Vector'})` : 'Generated Image'
+  const filename = isSticker
+    ? `sticker_${(result.prompt || 'graphic').toLowerCase().replace(/\s+/g, '_')}.png`
+    : (result.filename || 'generated_image.png')
+
+  return (
+    <div className="tool-result-card" style={isSticker ? { borderLeft: '4px solid var(--accent-color, #ff6b35)' } : {}}>
+      <div className="tool-result-header">{isSticker ? <Sparkles size={14} /> : <Image size={14} />} {title}</div>
+      {src ? (
+        <div style={isSticker ? { textAlign: 'center', background: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 8, margin: '8px 0' } : {}}>
+          <img
+            src={src}
+            alt={result.prompt || 'Generated graphic'}
+            className="generated-image"
+            style={isSticker ? { maxHeight: 220, objectFit: 'contain' } : {}}
+            loading="lazy"
+            onError={() => {
+              if (result.image_url && !result.image_url.startsWith('blob:') && src !== result.image_url) {
+                setSrc(result.image_url)
+              } else if (result.media_id) {
+                getMedia(result.media_id).then(row => {
+                  if (row?.blob) setSrc(URL.createObjectURL(row.blob))
+                  else setGone(true)
+                }).catch(() => setGone(true))
+              } else {
+                setGone(true)
+              }
+            }}
+          />
+        </div>
+      ) : (
+        <p className="tool-detail">{gone ? 'This image was cleared to make room for newer ones.' : 'Loading image…'}</p>
+      )}
+      {result.prompt && <p className="tool-prompt">Prompt: "{result.prompt}"</p>}
+      {src && (
+        <a
+          href={src}
+          download={filename}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: 'var(--accent-color, #ff6b35)', color: '#fff',
+            textDecoration: 'none', padding: '4px 10px', borderRadius: 6,
+            fontSize: 12, fontWeight: 600, marginTop: 6,
+          }}
+        >
+          <FileDown size={14} /> Download {isSticker ? 'Sticker Graphic' : 'Image'}
         </a>
       )}
     </div>
@@ -202,9 +311,10 @@ function RenderedFiles({ files }) {
  * that for every animation frame of the surrounding answer was pure waste.
  * Results are immutable once produced, so identity comparison is enough.
  */
-const ToolResultCard = React.memo(function ToolResultCard({ tool, result }) {
-  if (tool === 'text_to_audio' && result?.success !== false && (result.audio_url || result.media_id)) {
-    return <RenderedAudio result={result} />
+const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result }) {
+  if ((tool === 'text_to_audio' || tool === 'podcast_generate' || tool === 'audio_overview') && result?.success !== false && (result.audio_url || result.media_id)) {
+    const title = tool === 'podcast_generate' ? 'Generated Multi-Speaker Podcast' : tool === 'audio_overview' ? 'Audio Overview / Briefing' : 'Narrated Audio'
+    return <RenderedAudio result={result} title={title} />
   }
   const Icon = TOOL_ICONS[tool] || Wrench
   if (!result || result.success === false) {
@@ -225,62 +335,12 @@ const ToolResultCard = React.memo(function ToolResultCard({ tool, result }) {
     )
   }
 
-  if (tool === 'image_generate' && result.image_url) {
-    const imgSrc = result.display_url || result.image_url
-    return (
-      <div className="tool-result-card">
-        <div className="tool-result-header"><Image size={14} /> Generated Image</div>
-        <img src={imgSrc} alt={result.prompt}
-          className="generated-image" loading="lazy"
-          onError={e => {
-            if (result.image_url && e.currentTarget.src !== result.image_url) {
-              e.currentTarget.src = result.image_url
-            }
-          }} />
-        <p className="tool-prompt">Prompt: "{result.prompt}"</p>
-        <a
-          href={imgSrc}
-          download="generated_image.png"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: 'var(--accent-color, #ff6b35)', color: '#fff',
-            textDecoration: 'none', padding: '4px 10px', borderRadius: 6,
-            fontSize: 12, fontWeight: 600, marginTop: 6,
-          }}
-        >
-          <FileDown size={14} /> Download Image
-        </a>
-      </div>
-    )
+  if (tool === 'image_generate' && (result.image_url || result.display_url || result.media_id)) {
+    return <RenderedImage result={result} isSticker={false} />
   }
 
-  if (tool === 'sticker_generate' && (result.display_url || result.image_url)) {
-    const imgSrc = result.display_url || result.image_url
-    return (
-      <div className="tool-result-card" style={{ borderLeft: '4px solid var(--accent-color, #ff6b35)' }}>
-        <div className="tool-result-header"><Sparkles size={14} /> Sticker Graphic ({result.style || 'Vector'})</div>
-        <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 8, margin: '8px 0' }}>
-          <img src={imgSrc} alt={result.prompt} className="generated-image" style={{ maxHeight: 220, objectFit: 'contain' }} />
-        </div>
-        <p className="tool-prompt">Prompt: "{result.prompt}"</p>
-        <a
-          href={imgSrc}
-          download={`sticker_${(result.prompt || 'graphic').toLowerCase().replace(/\s+/g, '_')}.png`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: 'var(--accent-color, #ff6b35)', color: '#fff',
-            textDecoration: 'none', padding: '4px 10px', borderRadius: 6,
-            fontSize: 12, fontWeight: 600, marginTop: 6,
-          }}
-        >
-          <FileDown size={14} /> Download Sticker Graphic
-        </a>
-      </div>
-    )
+  if (tool === 'sticker_generate' && (result.image_url || result.display_url || result.media_id)) {
+    return <RenderedImage result={result} isSticker={true} />
   }
 
   if (tool === 'video_render' && (result.video_url || result.media_id)) {
@@ -352,7 +412,10 @@ const ToolResultCard = React.memo(function ToolResultCard({ tool, result }) {
              </div>
            </>
          )}
-         {(result.output && !result.stdout && !result.stderr) && (
+         {/* `output` is what code_execute actually returns; it must still render when
+             the script ALSO wrote a warning to stderr, or the answer disappears and
+             only the warning is shown. */}
+         {(result.output && !result.stdout) && (
            <>
              <div className="code-output" style={{ position: 'relative' }}>
                <CopyButton text={result.output} title="Copy output" style={{
@@ -650,7 +713,16 @@ const ToolResultCard = React.memo(function ToolResultCard({ tool, result }) {
 
   if (tool === 'diagram' && result.svg) {
     const svg = sanitizeSvg(result.svg)
-    if (!svg) return null
+    // Rendering nothing at all left a silent hole: the tool reported success and
+    // the user saw no card and no reason. Say what happened instead.
+    if (!svg) {
+      return (
+        <div className="tool-result-card">
+          <div className="tool-result-header"><GitCompare size={14} /> Diagram</div>
+          <p className="tool-detail">The diagram could not be displayed — its SVG was empty or did not survive sanitisation.</p>
+        </div>
+      )
+    }
     return (
       <div className="tool-result-card">
         <div className="tool-result-header"><GitCompare size={14} /> Diagram</div>
@@ -661,10 +733,20 @@ const ToolResultCard = React.memo(function ToolResultCard({ tool, result }) {
   }
 
   if (tool === 'diff') {
+    // result.diff is an ARRAY of {type,line,content|old,new} — rendering it raw
+    // threw React #31 ("objects are not valid as a React child") and killed the app.
+    const hunks = Array.isArray(result.diff) ? result.diff : []
+    const text = typeof result.diff === 'string'
+      ? result.diff
+      : hunks.map(h => h.type === 'change'
+        ? `@${h.line}\n- ${h.old}\n+ ${h.new}`
+        : `@${h.line}\n${h.type === 'add' ? '+' : '-'} ${h.content}`).join('\n')
+    // similarity is already a percentage (0–100), not a ratio.
+    const pct = Number(result.similarity)
     return (
       <div className="tool-result-card">
-        <div className="tool-result-header"><GitCompare size={14} /> Diff — {(result.similarity * 100).toFixed(1)}% similar</div>
-        <pre className="code-output">{result.diff}</pre>
+        <div className="tool-result-header"><GitCompare size={14} /> Diff{Number.isFinite(pct) ? ` — ${pct.toFixed(1)}% similar` : ''}{typeof result.changes === 'number' ? ` · ${result.changes} change${result.changes === 1 ? '' : 's'}` : ''}</div>
+        <pre className="code-output">{text || 'No differences.'}</pre>
       </div>
     )
   }
@@ -1096,6 +1178,49 @@ const ToolResultCard = React.memo(function ToolResultCard({ tool, result }) {
 
   return null
 })
+
+/**
+ * A card renders a tool result whose shape we do not fully control: 178 tools,
+ * MCP servers, and whatever a model talked one of them into returning. Every
+ * branch reads fields positionally, so one wrong type — an array where a string
+ * belongs — throws during render.
+ *
+ * Without a boundary here that throw unmounts the WHOLE app: React tears down to
+ * the nearest boundary, and the only one was at the root in main.jsx. That is
+ * exactly how a diff result took down a running chat. Containing it per card
+ * costs one wrapper and turns a total loss into one unreadable card among many.
+ */
+class CardBoundary extends React.Component {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  componentDidCatch(error) {
+    // Still report it — a silent fallback would hide a real contract break.
+    logError('crash', `ToolResultCard(${this.props.tool}): ${error?.message || 'render failed'}`, error?.stack, { tool: this.props.tool })
+  }
+  render() {
+    if (!this.state.failed) return this.props.children
+    const { tool, result } = this.props
+    let raw = ''
+    try { raw = JSON.stringify(result, null, 2) } catch { raw = String(result) }
+    return (
+      <div className="tool-result-card">
+        <div className="tool-result-header">
+          <AlertTriangle size={14} /> {String(tool || 'tool').replace(/_/g, ' ')} — result could not be displayed
+        </div>
+        <p className="tool-detail">The tool ran; this card could not render its output. The raw result is below.</p>
+        <pre className="code-output" style={{ maxHeight: 220, overflow: 'auto' }}>{raw}</pre>
+      </div>
+    )
+  }
+}
+
+function ToolResultCard({ tool, result, ...rest }) {
+  return (
+    <CardBoundary tool={tool} result={result}>
+      <ToolResultCardInner tool={tool} result={result} {...rest} />
+    </CardBoundary>
+  )
+}
 
 // ─── Message ───
 

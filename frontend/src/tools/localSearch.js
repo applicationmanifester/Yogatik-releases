@@ -44,12 +44,25 @@ export const localSearchTool = {
     }
 
     try {
-      return await window.__YOGATIK_SEARCH__.search(args.query, {
+      const raw = await window.__YOGATIK_SEARCH__.search(args.query, {
         count: args.count,
         recency: args.recency,
         site: args.site,
         engines: args.engines,
       })
+      // Normalise to the web_search shape so the result CARD renders it as a
+      // source list instead of dumping raw JSON, and so the model sees the same
+      // fields it does for web_search.
+      const results = raw?.results || raw?.items || (Array.isArray(raw) ? raw : [])
+      if (!results.length) return webSearchTool.execute(args)
+      return {
+        success: true,
+        tool: 'web_search',
+        query: raw?.query || args.query,
+        engine: raw?.engine || 'local-sidecar',
+        count: results.length,
+        results,
+      }
     } catch (err) {
       // Fallback to web search on any error
       console.warn('[localSearch] Sidecar failed, falling back to web search:', err.message)

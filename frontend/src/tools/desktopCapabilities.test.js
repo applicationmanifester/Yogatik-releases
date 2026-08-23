@@ -117,7 +117,12 @@ describe('desktop-only capability tools', () => {
     const res = await watchFolderTool.execute({ action: 'start', path: 'src' })
     expect(res.success).toBe(true)
     expect(res.id).toBe('w1')
-    expect(window.__YOGATIK_WATCHER__.start).toHaveBeenCalledWith('src', { recursive: true })
+    // ctx is injected by the tool (never a model-supplied parameter) so main can
+    // resolve THIS chat's folder instead of a global "granted root".
+    expect(window.__YOGATIK_WATCHER__.start).toHaveBeenCalledWith(
+      'src',
+      expect.objectContaining({ recursive: true, ctx: expect.anything() }),
+    )
   })
 
   it('system_state reports idle + battery via the bridge', async () => {

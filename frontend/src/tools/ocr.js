@@ -18,6 +18,7 @@ export const ocrTool = {
     }, required: ['image_url'] },
   },
   async execute({ image_url, lang = 'eng' }) {
+    if (typeof image_url !== 'string' || !image_url.trim()) return { success: false, error: 'image_url is required' }
     const Tesseract = await loadTesseract()
     const { data: { text, confidence } } = await Tesseract.recognize(image_url, lang)
     return { success: true, tool: 'ocr', text: text.trim(), confidence, lang }

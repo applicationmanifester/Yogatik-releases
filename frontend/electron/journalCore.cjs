@@ -43,8 +43,16 @@ function createJournal({ storeDir, maxBytes = 200 * 1024 * 1024, maxAgeMs = 14 *
         .split(/\r?\n/).filter(Boolean)
         .map(l => { try { return JSON.parse(l) } catch { return null } })
         .filter(Boolean)
+        // Append order is the only reliable ordering: several ops inside one
+        // millisecond share a ts, and a stable sort then leaves the OLDEST first
+        // — "newest first" silently returned the wrong entry, and revert-the-last
+        // reverted the wrong file.
+        .map((e, i) => ({ ...e, _seq: i }))
     } catch { return [] }
   }
+
+  // Newest first, with append order breaking same-millisecond ties.
+  const newestFirst = (a, b) => (b.ts - a.ts) || (b._seq - a._seq)
 
   function append(entry) {
     try { fs.appendFileSync(indexFile, JSON.stringify(entry) + '\n', 'utf8') } catch { /* best effort */ }
@@ -100,7 +108,7 @@ function createJournal({ storeDir, maxBytes = 200 * 1024 * 1024, maxAgeMs = 14 *
   function list(chatId) {
     const all = readIndex()
     const filtered = chatId == null ? all : all.filter(e => e.chatId === String(chatId))
-    return filtered.slice().sort((a, b) => b.ts - a.ts)
+    return filtered.slice().sort(newestFirst)
   }
 
   /** Drop entries past the age/size caps and delete their blobs. */
@@ -109,7 +117,7 @@ function createJournal({ storeDir, maxBytes = 200 * 1024 * 1024, maxAgeMs = 14 *
     const now = Date.now()
     const kept = []
     let bytes = 0
-    for (const e of all.slice().sort((a, b) => b.ts - a.ts)) {
+    for (const e of all.slice().sort(newestFirst)) {
       let size = 0
       try { size = e.blob ? fs.statSync(e.blob).size : 0 } catch { size = 0 }
       const tooOld = now - e.ts > maxAgeMs
@@ -121,7 +129,14 @@ function createJournal({ storeDir, maxBytes = 200 * 1024 * 1024, maxAgeMs = 14 *
       kept.push(e)
     }
     try {
-      fs.writeFileSync(indexFile, kept.map(e => JSON.stringify(e)).join('\n') + (kept.length ? '\n' : ''), 'utf8')
+      // Rewrite in APPEND order (oldest first) and drop the read-time _seq:
+      // the index is ordered by construction, and writing it back newest-first
+      // would invert the file and make every later ordering wrong.
+      const lines = kept
+        .slice()
+        .sort((a, b) => a._seq - b._seq)
+        .map(({ _seq, ...e }) => JSON.stringify(e))
+      fs.writeFileSync(indexFile, lines.join('\n') + (lines.length ? '\n' : ''), 'utf8')
     } catch { /* ignore */ }
     return { kept: kept.length, dropped: all.length - kept.length }
   }

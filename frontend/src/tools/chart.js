@@ -10,6 +10,10 @@ export const chartTool = {
     }, required: ['type', 'labels', 'values'] },
   },
   async execute({ type, title = '', labels, values }) {
+    if (!Array.isArray(values) || !values.length) {
+      return { success: false, error: 'values must be a non-empty array of numbers' }
+    }
+    if (labels && !Array.isArray(labels)) return { success: false, error: 'labels must be an array of strings' }
     const canvas = document.createElement('canvas')
     canvas.width = 600; canvas.height = 400
     const ctx = canvas.getContext('2d')

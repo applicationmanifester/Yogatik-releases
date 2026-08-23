@@ -93,7 +93,11 @@ export const seeTool = {
           success: false,
           error: e?.name === 'NotAllowedError'
             ? 'Camera access was denied. Allow it in the browser address bar to let me see.'
-            : `Could not open the camera: ${e?.message || e}`,
+            // No mediaDevices at all (insecure origin, or a webview without one)
+            // surfaced as a raw "Cannot read properties of undefined".
+            : (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia)
+              ? 'No camera is available here. A camera needs a secure (https) page and a device with one attached.'
+              : `Could not open the camera: ${e?.message || e}`,
         }
       }
     }

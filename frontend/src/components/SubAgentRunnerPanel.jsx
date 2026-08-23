@@ -221,6 +221,14 @@ export function SubAgentRunnerPanel({ isOpen, onClose, onToast }) {
       </div>
 
       <div className="side-panel-content">
+        {/* The runner spawns real OS processes, so the browser build has nothing
+            behind these controls. Better to say it than to look functional. */}
+        {!window.__YOGATIK_SUBAGENT__ && (
+          <p className="tool-detail" style={{ marginBottom: 12 }}>
+            Isolated sub-agents run as separate processes in the Yogatik desktop app.
+            In the browser, use the Agents panel — it delegates in-page instead.
+          </p>
+        )}
         {/* Agents List */}
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
           <h4 className="side-panel-section-title">

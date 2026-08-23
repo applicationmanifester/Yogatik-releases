@@ -131,6 +131,19 @@ export async function revertJournalEntry(id) {
   try { return await invoke('journal_revert', { id }) } catch (e) { return fail(e) }
 }
 
+/** Lifecycle hooks trust management (Electron only). */
+export async function getHookTrust() {
+  if (!isDesktop()) return { root: null, trusted: false }
+  try { return (await invoke('hooks_trusted')) || { root: null, trusted: false } }
+  catch { return { root: null, trusted: false } }
+}
+
+export async function setHookTrust(trusted) {
+  if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
+  try { return await invoke('hooks_trust', { trusted: !!trusted }) }
+  catch (e) { return fail(e) }
+}
+
 export const fsUndoTool = {
   schema: {
     description:
@@ -340,9 +353,82 @@ export const fsEditTool = {
   },
 }
 
+export const fsFindFilesTool = {
+  schema: {
+    name: 'fs_find_files',
+    description: 'Find files across the workspace by filename, glob pattern (e.g. "**/*.jsx", "*.test.js"), or extension. Fast path discovery without scanning file contents. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        pattern: { type: 'string', description: 'Filename, substring, or glob pattern to search for (e.g. "*.json", "src/**/*.jsx").' },
+        extension: { type: 'string', description: 'Optional file extension filter (e.g. "js", "png", "md").' },
+        max_depth: { type: 'number', description: 'Maximum directory recursion depth (default 10).' },
+        limit: { type: 'number', description: 'Maximum number of matching file paths to return (default 100).' },
+        include_ignored: { type: 'boolean', description: 'Whether to include node_modules, .git, and dist folders (default false).' },
+      },
+      required: ['pattern'],
+    },
+  },
+  async execute({ pattern = '', extension = '', max_depth = 10, limit = 100, include_ignored = false } = {}) {
+    if (!pattern && !extension) return fail('Either pattern or extension is required')
+    return guard(async () => {
+      let files = []
+      try {
+        files = await invoke('fs_find_files', {
+          pattern: pattern || '*',
+          extension: extension || undefined,
+          maxDepth: max_depth,
+          limit,
+          includeIgnored: !!include_ignored,
+        })
+      } catch {
+        const list = await invoke('fs_list', { recursive: true, maxDepth: max_depth }).catch(() => [])
+        // fs_list returns `is_dir` (snake), not `isDir` — the old filter kept
+        // every directory and reported folders as matching "files".
+        files = (Array.isArray(list) ? list : [])
+          .filter(f => !f.is_dir && !f.isDir)
+          .map(f => f.path || f.name)
+      }
+
+      const normPattern = (pattern || '').toLowerCase()
+      const normExt = extension ? extension.toLowerCase().replace(/^\./, '') : ''
+      const ignoredPaths = ['node_modules', '.git', 'dist', 'build', '.next', '.cache', 'coverage']
+
+      let matched = (files || []).filter(p => {
+        const pNorm = String(p).toLowerCase().replace(/\\/g, '/')
+        if (!include_ignored && ignoredPaths.some(ig => pNorm.includes(`/${ig}/`) || pNorm.startsWith(`${ig}/`))) {
+          return false
+        }
+        if (normExt && !pNorm.endsWith(`.${normExt}`)) {
+          return false
+        }
+        if (pattern && pattern !== '*') {
+          const simpleGlob = normPattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*')
+          try {
+            const re = new RegExp(simpleGlob)
+            return re.test(pNorm) || pNorm.includes(normPattern)
+          } catch {
+            return pNorm.includes(normPattern)
+          }
+        }
+        return true
+      })
+
+      matched = matched.slice(0, limit)
+      return ok({
+        tool: 'fs_find_files',
+        pattern,
+        extension: extension || undefined,
+        count: matched.length,
+        files: matched,
+      })
+    })
+  },
+}
+
 export const fsSearchTool = {
   schema: {
-    description: 'Search file contents across every folder bound to this chat for a substring or regex. Skips binary files and ignored directories automatically. Returns matching files with line numbers. Desktop app only.',
+    description: 'Search file contents across every folder bound to this chat for a substring or regex. Skips binary files and ignored directories automatically. Returns matching files with line numbers and optional surrounding context lines. Desktop app only.',
     parameters: {
       type: 'object',
       properties: {
@@ -351,11 +437,12 @@ export const fsSearchTool = {
         regex: { type: 'boolean', description: 'Treat query as a regex (default false).' },
         max_results: { type: 'number', description: 'Cap on matches returned (default 100).' },
         case_sensitive: { type: 'boolean', description: 'Match case sensitively (default false).' },
+        context_lines: { type: 'number', description: 'Surrounding before/after lines of code to include with each match (default 0).' },
       },
       required: ['query'],
     },
   },
-  async execute({ query, glob = '', regex = false, max_results = 100, case_sensitive = false } = {}) {
+  async execute({ query, glob = '', regex = false, max_results = 100, case_sensitive = false, context_lines = 0 } = {}) {
     if (!query) return fail('query is required')
     return guard(async () => {
       const matches = await invoke('fs_search', {
@@ -364,8 +451,9 @@ export const fsSearchTool = {
         regex: !!regex,
         maxResults: max_results || 100,
         caseSensitive: !!case_sensitive,
+        contextLines: context_lines || 0,
       })
-      return ok({ tool: 'fs_search', query, count: matches.length, matches })
+      return ok({ tool: 'fs_search', query, count: matches?.length || 0, matches: matches || [] })
     })
   },
 }
@@ -433,3 +521,189 @@ export const fsMoveTool = {
     })
   },
 }
+
+export const fsReplaceContentTool = {
+  schema: {
+    name: 'fs_replace_content',
+    description: 'Replace a single contiguous block of text in an existing file. Ensures exact matching and safe line replacement. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Relative or absolute path of file to edit.' },
+        target_content: { type: 'string', description: 'Exact string to be replaced.' },
+        replacement_content: { type: 'string', description: 'New string to replace target_content with.' },
+        allow_multiple: { type: 'boolean', description: 'Replace all occurrences if true (default false).' },
+      },
+      required: ['path', 'target_content', 'replacement_content'],
+    },
+  },
+  async execute({ path, target_content, replacement_content, allow_multiple = false } = {}) {
+    if (!path || target_content == null || replacement_content == null) {
+      return fail('path, target_content, and replacement_content are required')
+    }
+    return guard(async () => {
+      const readRes = await invoke('fs_read', { path, maxBytes: 5000000 })
+      const original = typeof readRes === 'string' ? readRes : (readRes?.content || '')
+      if (!original.includes(target_content)) {
+        return fail(`target_content not found in ${path}`)
+      }
+      if (!allow_multiple) {
+        const firstIdx = original.indexOf(target_content)
+        const secondIdx = original.indexOf(target_content, firstIdx + 1)
+        if (secondIdx !== -1) {
+          return fail(`target_content appears multiple times in ${path}. Specify allow_multiple=true or provide a more specific chunk.`)
+        }
+      }
+      const updated = allow_multiple
+        ? original.replaceAll(target_content, replacement_content)
+        : original.replace(target_content, replacement_content)
+
+      await invoke('fs_write', { path, content: updated })
+      return ok({
+        tool: 'fs_replace_content',
+        path,
+        replaced: true,
+        bytes: updated.length,
+        message: `Successfully modified ${path}`,
+      })
+    })
+  },
+}
+
+export const fsMultiReplaceTool = {
+  schema: {
+    name: 'fs_multi_replace',
+    description: 'Perform multiple non-contiguous block replacements across a file in a single atomic transaction. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path of file to modify.' },
+        chunks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              target: { type: 'string', description: 'Exact text segment to replace.' },
+              replacement: { type: 'string', description: 'New replacement text.' },
+            },
+            required: ['target', 'replacement'],
+          },
+          description: 'Array of { target, replacement } replacement chunks.',
+        },
+      },
+      required: ['path', 'chunks'],
+    },
+  },
+  async execute({ path, chunks = [] } = {}) {
+    if (!path || !Array.isArray(chunks) || !chunks.length) {
+      return fail('path and non-empty chunks array are required')
+    }
+    return guard(async () => {
+      const readRes = await invoke('fs_read', { path, maxBytes: 5000000 })
+      let content = typeof readRes === 'string' ? readRes : (readRes?.content || '')
+      
+      let appliedCount = 0
+      for (const chunk of chunks) {
+        if (!content.includes(chunk.target)) {
+          return fail(`Target chunk not found in file: "${chunk.target.slice(0, 40)}..."`)
+        }
+        content = content.replace(chunk.target, chunk.replacement)
+        appliedCount++
+      }
+
+      await invoke('fs_write', { path, content })
+      return ok({
+        tool: 'fs_multi_replace',
+        path,
+        appliedChunks: appliedCount,
+        bytes: content.length,
+        message: `Successfully applied ${appliedCount} edits to ${path}`,
+      })
+    })
+  },
+}
+
+export const fsFileInfoTool = {
+  schema: {
+    name: 'fs_file_info',
+    description: 'Inspect detailed metadata, file size, line counts, extension, and integrity stats for a file. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path of file to inspect.' },
+      },
+      required: ['path'],
+    },
+  },
+  async execute({ path } = {}) {
+    if (!path) return fail('path is required')
+    return guard(async () => {
+      const readRes = await invoke('fs_read', { path, maxBytes: 5000000 })
+      const text = typeof readRes === 'string' ? readRes : (readRes?.content || '')
+      const lines = text.split('\n')
+      const ext = path.includes('.') ? path.split('.').pop().toLowerCase() : 'txt'
+
+      return ok({
+        tool: 'fs_file_info',
+        path,
+        extension: ext,
+        bytes: text.length,
+        linesCount: lines.length,
+        wordsCount: text.split(/\s+/).filter(Boolean).length,
+        isEmpty: text.length === 0,
+      })
+    })
+  },
+}
+
+export const fsBatchWriteTool = {
+  schema: {
+    name: 'fs_batch_write',
+    description: 'Create or overwrite multiple files across workspace in a single round-trip. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: 'Relative path of file.' },
+              content: { type: 'string', description: 'Full UTF-8 content to write.' },
+            },
+            required: ['path', 'content'],
+          },
+          description: 'Array of files to write ({ path, content }).',
+        },
+      },
+      required: ['files'],
+    },
+  },
+  async execute({ files = [] } = {}) {
+    if (!Array.isArray(files) || !files.length) return fail('files array is required and must not be empty')
+    return guard(async () => {
+      const written = []
+      for (const f of files) {
+        if (f.path) {
+          await invoke('fs_write', { path: f.path, content: f.content ?? '' })
+          written.push({ path: f.path, bytes: (f.content ?? '').length })
+        }
+      }
+      return ok({ tool: 'fs_batch_write', count: written.length, written })
+    })
+  },
+}
+
+export function stripAnsi(str = '') {
+  return typeof str === 'string'
+    ? str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
+    : ''
+}
+
+// NOTE: terminal_exec used to live here — a second, near-identical shell tool
+// competing with terminal_run for the same job and the same IPC bridge. Its
+// extras (a non-interactive env, ANSI stripping, a duration) are folded into
+// terminalRun.js, and `terminal_exec` survives only as an alias in the registry.
+// Nothing is re-exported from here: terminalRun.js imports stripAnsi from this
+// file, so an export back the other way would make the two modules circular.
+

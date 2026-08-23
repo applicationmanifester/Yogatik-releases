@@ -1,7 +1,21 @@
-import { describe, it, expect } from 'vitest'
-import { shouldNotifyTurn, notificationBody, notificationTitle, cleanReply } from './desktopNotify'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import {
+  shouldNotifyTurn,
+  notificationBody,
+  notificationTitle,
+  cleanReply,
+  sendDesktopTurnNotification,
+} from './desktopNotify'
 
 const base = { isDesktop: true, hidden: true, focused: false, aborted: false, error: null, hasText: true }
+
+beforeEach(() => {
+  delete window.__YOGATIK_NOTIFY__
+})
+
+afterEach(() => {
+  delete window.__YOGATIK_NOTIFY__
+})
 
 describe('shouldNotifyTurn', () => {
   it('notifies when the window is hidden', () => {
@@ -31,6 +45,31 @@ describe('shouldNotifyTurn', () => {
 
   it('stays silent when the reply is empty', () => {
     expect(shouldNotifyTurn({ ...base, hasText: false })).toBe(false)
+  })
+})
+
+describe('sendDesktopTurnNotification', () => {
+  it('fires notification when window is hidden in desktop environment', async () => {
+    const notifyMock = vi.fn().mockResolvedValue({ id: 'n1' })
+    window.__YOGATIK_NOTIFY__ = notifyMock
+
+    // Mock document.hidden
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true })
+
+    const res = await sendDesktopTurnNotification({
+      conversationTitle: 'Quarterly Audit',
+      text: 'Analysis is complete.',
+      aborted: false,
+      error: null,
+      hasText: true,
+    })
+
+    expect(res).toEqual({ id: 'n1' })
+    expect(notifyMock).toHaveBeenCalledWith({
+      title: 'Yogatik — Quarterly Audit',
+      body: 'Analysis is complete.',
+      hasReply: true,
+    })
   })
 })
 

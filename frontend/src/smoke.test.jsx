@@ -18,6 +18,7 @@ vi.mock('./api', () => {
     'ensureTested', 'autoPickModel', 'setToolEnabled', 'setToolsEnabledBulk', 'setPref',
     'createProject', 'deleteProject', 'setActiveProject', 'acceptTerms', 'downloadBackup',
     'restoreBackup', 'forgetApiKey', 'enableCloudSync', 'disableCloudSync', 'pruneRetiredModel',
+    'updateConversationModel', 'branchConversation', 'createTemplate', 'deleteTemplate', 'addCustomModelToProvider',
   ]) api[n] = vi.fn(async () => undefined)
   for (const n of [
     'getConversations', 'getTemplates', 'listDocuments', 'getTools', 'getProjects',
@@ -59,8 +60,8 @@ async function mount() {
     root.render(<App />)
   })
   // Two flushes: the zero-key check is a chain of awaits before any setState.
-  await act(async () => { await new Promise(r => setTimeout(r, 0)) })
-  await act(async () => { await new Promise(r => setTimeout(r, 0)) })
+  await act(async () => { await new Promise(r => setTimeout(r, 50)) })
+  await act(async () => { await new Promise(r => setTimeout(r, 50)) })
   spy.mockRestore()
   return errors.filter(e => !/not wrapped in act/.test(e))
 }

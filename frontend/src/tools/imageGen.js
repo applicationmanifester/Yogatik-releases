@@ -1,4 +1,6 @@
-// Pollinations.ai — free, no key, CORS-friendly
+// Pollinations.ai — free, no key, CORS-friendly with resilient multi-tier fallback
+import { proxyFetch } from './http'
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 // In-memory LRU cache for generated image blobs (speeds up repeats & video scene builders)
@@ -22,8 +24,8 @@ export function resetImageRateGate() {
   IMAGE_CACHE.clear()
 }
 
-/** Fetch an image URL, rate-gated and retried. Resolves with a Response. */
-export function fetchImage(url, { retries = 3, signal } = {}) {
+/** Fetch an image URL, rate-gated and retried with automatic proxy fallback. Resolves with a Response. */
+export function fetchImage(url, { retries = 2, signal } = {}) {
   const run = _chain.then(async () => {
     let lastErr
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -31,16 +33,25 @@ export function fetchImage(url, { retries = 3, signal } = {}) {
       try {
         const resp = await fetch(url, { signal })
         if (resp.ok) return resp
-        if (resp.status === 429 || resp.status >= 500) {
-          const ra = parseFloat(resp.headers.get('retry-after'))
-          await sleep(ra ? ra * 1000 : Math.min(8000, 600 * 2 ** attempt) + Math.random() * 200)
-          lastErr = new Error(`Image service busy (${resp.status})`)
+        // If 403 (Cloudflare/WAF block or model restriction) or 429/500, attempt proxyFetch
+        if (resp.status === 403 || resp.status === 429 || resp.status >= 500) {
+          try {
+            const proxyResp = await proxyFetch(url, { signal })
+            if (proxyResp.ok) return proxyResp
+          } catch {}
+          const ra = parseFloat(resp.headers?.get?.('retry-after'))
+          await sleep(ra ? ra * 1000 : Math.min(6000, 500 * 2 ** attempt) + Math.random() * 200)
+          lastErr = new Error(`Image service status (${resp.status})`)
           continue
         }
         return resp
       } catch (e) {
         lastErr = e
-        await sleep(Math.min(8000, 600 * 2 ** attempt))
+        try {
+          const proxyResp = await proxyFetch(url, { signal })
+          if (proxyResp.ok) return proxyResp
+        } catch {}
+        await sleep(Math.min(6000, 500 * 2 ** attempt))
       }
     }
     throw lastErr || new Error('Image request failed')
@@ -64,7 +75,8 @@ export function pollinationsUrl(prompt, { width = 1024, height = 1024, seed, mod
   const p = new URLSearchParams({
     width: String(width), height: String(height),
     seed: String(seed ?? Math.floor(Math.random() * 999999)),
-    model, nologo: 'true', nofeed: 'true',
+    model: model || 'flux',
+    nologo: 'true', nofeed: 'true',
   })
   if (enhance) p.set('enhance', 'true')
   if (negative) p.set('negative_prompt', negative)
@@ -77,7 +89,7 @@ const DEFAULT_NEGATIVE = 'blurry, low quality, distorted, deformed, extra limbs,
  * Intelligent Prompt Enhancer for high-fidelity photorealism / 8k intricate detail
  */
 function enrichImagePrompt(prompt, style = 'photorealistic', lighting = 'cinematic') {
-  const p = prompt.trim()
+  const p = (prompt || '').trim()
   if (p.length > 300) return p // User already provided detailed description
 
   const lightingEnhancers = {
@@ -114,45 +126,74 @@ export const imageGenTool = {
       lighting: { type: 'string', enum: ['cinematic', 'golden_hour', 'studio', 'cyberpunk', 'chiaroscuro'], description: 'Lighting atmospheric preset (default: cinematic)' },
       model: {
         type: 'string',
-        enum: ['flux', 'turbo', 'flux-realism', 'flux-anime', 'flux-3d', 'flux-cablyai', 'midjourney', 'dall-e-3', 'qwen-image', 'sdxl'],
-        description: 'Image generation engine: flux (default high-fidelity), turbo (fastest), flux-realism (photorealism), flux-anime (anime art), flux-3d (3D render), midjourney, dall-e-3, qwen-image, sdxl.',
+        enum: ['flux', 'turbo', 'flux-realism', 'flux-anime', 'flux-3d', 'midjourney', 'dall-e-3', 'sdxl'],
+        description: 'Image generation engine: flux (default high-fidelity), turbo (fastest), flux-realism, flux-anime, flux-3d.',
       },
       negative: { type: 'string', description: 'What to avoid in the image (optional).' },
       seed: { type: 'number', description: 'Reproducible seed number (optional).' },
     }, required: ['prompt'] },
   },
   async execute({ prompt, aspect_ratio = '1:1', width, height, style = 'photorealistic', lighting = 'cinematic', model = 'flux', negative, seed }) {
+    if (typeof prompt !== 'string' || !prompt.trim()) return { success: false, error: 'prompt is required' }
     const dims = ASPECT_RATIOS[aspect_ratio] || ASPECT_RATIOS['1:1']
     const finalW = width || dims.width
     const finalH = height || dims.height
 
     const refinedPrompt = enrichImagePrompt(prompt, style, lighting)
-    const url = pollinationsUrl(refinedPrompt, {
-      width: finalW,
-      height: finalH,
-      model,
-      seed,
-      enhance: true,
-      negative: negative ? `${DEFAULT_NEGATIVE}, ${negative}` : DEFAULT_NEGATIVE,
-    })
 
-    // Check LRU cache
-    if (IMAGE_CACHE.has(url)) {
-      const cached = IMAGE_CACHE.get(url)
-      return {
-        success: true, tool: 'image_generate', prompt, refinedPrompt, model,
-        image_url: url,
-        display_url: cached.displayUrl,
-        bytes: cached.bytes,
-        resolution: `${finalW}x${finalH}`,
-        cached: true,
+    // Models to attempt in order of preference (fallback on 403 auth restrictions)
+    const candidateModels = [model, 'flux', 'turbo'].filter((m, i, arr) => m && arr.indexOf(m) === i)
+
+    let lastResp = null
+    let lastUrl = ''
+    let chosenModel = model
+
+    for (const candModel of candidateModels) {
+      const url = pollinationsUrl(refinedPrompt, {
+        width: finalW,
+        height: finalH,
+        model: candModel,
+        seed,
+        enhance: candModel === 'flux' || candModel === 'turbo',
+        negative: negative ? `${DEFAULT_NEGATIVE}, ${negative}` : DEFAULT_NEGATIVE,
+      })
+      lastUrl = url
+      chosenModel = candModel
+
+      // Check LRU cache
+      if (IMAGE_CACHE.has(url)) {
+        const cached = IMAGE_CACHE.get(url)
+        return {
+          success: true, tool: 'image_generate', prompt, refinedPrompt, model: candModel,
+          image_url: url,
+          display_url: cached.displayUrl,
+          bytes: cached.bytes,
+          resolution: `${finalW}x${finalH}`,
+          cached: true,
+        }
+      }
+
+      try {
+        const resp = await fetchImage(url)
+        if (resp.ok) {
+          lastResp = resp
+          break
+        }
+        // If 403 on a non-default model, proceed to fallback model
+        if (resp.status === 403) continue
+      } catch (e) {
+        // Continue to fallback model on failure
       }
     }
 
-    let resp
-    try { resp = await fetchImage(url) } catch (e) { return { success: false, error: `Image generation failed: ${e.message}` } }
-    if (!resp.ok) return { success: false, error: `Image generation failed (${resp.status})` }
-    const blob = await resp.blob()
+    if (!lastResp || !lastResp.ok) {
+      return {
+        success: false,
+        error: `Image generation service unavailable (${lastResp?.status || 'network error'}). Please try again.`,
+      }
+    }
+
+    const blob = await lastResp.blob()
     if (!blob.size) return { success: false, error: 'Image generation returned no data' }
 
     const displayUrl = URL.createObjectURL(blob)
@@ -160,11 +201,11 @@ export const imageGenTool = {
       const oldestKey = IMAGE_CACHE.keys().next().value
       IMAGE_CACHE.delete(oldestKey)
     }
-    IMAGE_CACHE.set(url, { displayUrl, bytes: blob.size })
+    IMAGE_CACHE.set(lastUrl, { displayUrl, bytes: blob.size })
 
     return {
-      success: true, tool: 'image_generate', prompt, refinedPrompt, model,
-      image_url: url,
+      success: true, tool: 'image_generate', prompt, refinedPrompt, model: chosenModel,
+      image_url: lastUrl,
       display_url: displayUrl,
       bytes: blob.size,
       resolution: `${finalW}x${finalH}`,
@@ -181,11 +222,25 @@ export const stickerGenTool = {
     }, required: ['prompt'] },
   },
   async execute({ prompt, style = 'vector sticker' }) {
+    if (typeof prompt !== 'string' || !prompt.trim()) return { success: false, error: 'prompt is required' }
     const enhancedPrompt = `high quality ${style}, die-cut outline, vibrant sticker graphic, isolated white background, ${prompt}`
-    const url = pollinationsUrl(enhancedPrompt, { width: 1024, height: 1024, model: 'flux', enhance: true })
-    let resp
-    try { resp = await fetchImage(url) } catch (e) { return { success: false, error: `Sticker generation failed: ${e.message}` } }
-    if (!resp.ok) return { success: false, error: `Sticker generation failed (${resp.status})` }
+    const candidateModels = ['flux', 'turbo']
+    let resp = null
+    let lastUrl = ''
+
+    for (const candModel of candidateModels) {
+      const url = pollinationsUrl(enhancedPrompt, { width: 1024, height: 1024, model: candModel, enhance: true })
+      lastUrl = url
+      try {
+        const r = await fetchImage(url)
+        if (r.ok) {
+          resp = r
+          break
+        }
+      } catch {}
+    }
+
+    if (!resp || !resp.ok) return { success: false, error: `Sticker generation failed (${resp?.status || 'service unavailable'})` }
     const blob = await resp.blob()
     if (!blob.size) return { success: false, error: 'Sticker generation returned no data' }
     return {
@@ -193,7 +248,7 @@ export const stickerGenTool = {
       tool: 'sticker_generate',
       prompt,
       style,
-      image_url: url,
+      image_url: lastUrl,
       display_url: URL.createObjectURL(blob),
       bytes: blob.size,
     }

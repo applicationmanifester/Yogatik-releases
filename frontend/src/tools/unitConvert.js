@@ -26,10 +26,22 @@ export const unitConvertTool = {
     }, required: ['value', 'from', 'to'] },
   },
   async execute({ value, from, to }) {
+    if (typeof from !== 'string' || typeof to !== 'string' || !Number.isFinite(Number(value))) {
+      return { success: false, error: 'value (number), from and to are all required, e.g. {value: 5, from: "km", to: "mi"}' }
+    }
     const f = from.toLowerCase(), t = to.toLowerCase()
     const conv = CONVERSIONS[f]?.[t]
     if (conv === undefined) return { success: false, error: `Cannot convert ${from} to ${to}` }
-    const result = typeof conv === 'function' ? conv(value) : value * conv
-    return { success: true, tool: 'unit_convert', value, from, to, result: Math.round(result * 10000) / 10000 }
+    const raw = typeof conv === 'function' ? conv(value) : value * conv
+    const result = Math.round(raw * 10000) / 10000
+    // The card renders formatted/output and copies it — returning only `result`
+    // left the result box and the Copy button empty.
+    return {
+      success: true, tool: 'unit_convert', value, from, to, result,
+      formatted: `${result.toLocaleString()} ${t}`,
+      output: `${result} ${t}`,
+      formula: typeof conv === 'function' ? `${f} → ${t}` : `× ${conv}`,
+      explanation: `${value.toLocaleString()} ${f} = ${result.toLocaleString()} ${t}`,
+    }
   }
 }

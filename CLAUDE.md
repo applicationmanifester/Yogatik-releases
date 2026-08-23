@@ -45,12 +45,19 @@ deps — EXCEPT PTY.
   Enable: `npm i node-pty && npx electron-rebuild -f -w node-pty`. Bridge __YOGATIK_PTY__ only (no agent
   tool — streaming interactive doesn't fit one function-call return; it's for a future terminal panel).
 - preload.cjs also exposes __YOGATIK_DND__.getPathForFile (webUtils) → real path for a dropped File.
-- STILL UNWIRED (audited 2026-08-18 — main emits, nothing in the renderer listens, so these features
-  do not exist for the user): __YOGATIK_CLIPBOARD__.onSelectionHotkey → composer (the Ctrl+Alt+C global
-  hotkey fires and is relayed into the void), __YOGATIK_WATCHER__.onChange → toast, and
-  __YOGATIK_DND__.getPathForFile (a file dropped on the desktop window still yields an opaque blob).
-  __YOGATIK_NOTIFY_ACTIONS__ IS wired now (App.jsx + desktopNotify.js). __YOGATIK_PTY__ is
-  deliberately tool-less, see above.
+- RE-AUDITED 2026-08-23: the "still unwired" list is obsolete — clipboard hotkey, watcher onChange,
+  DND getPathForFile, notify actions and the menu are all consumed in App.jsx now. What was actually
+  broken was one layer down, and silently:
+  - pty.cjs and watcher.cjs both `require('./fsBridge.cjs').getGrantedRoot`, which fsBridge does NOT
+    export. Every pty:spawn and watcher:start threw "getGrantedRoot is not a function", so the PTY and
+    watch_folder had never worked. Both use rootPathsFor(ctx) from roots.cjs now, and pty refuses
+    rather than falling back to process.cwd() (the app's own install dir).
+  - TerminalPanel showed "PTY LIVE" whenever the bridge OBJECT existed (not when node-pty was
+    installed), called a non-existent start(), and used write(text) against a write(id, data)
+    signature — a shell that looked live and swallowed every keystroke. It spawns, keeps the session
+    id, filters pty:data by id and kills on close.
+  - A cross-check of every window.__YOGATIK_*__ call against preload and every preload channel against
+    ipcMain.handle is worth re-running after any bridge change; it is what found these.
 
 ## Desktop app — Electron (v3.8, Node-only path)
 - Modular main process: electron/main.cjs (thin orchestrator) + rootsCore.cjs/roots.cjs (PER-CHAT
@@ -259,6 +266,175 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - Stooq answers 200 with an HTML JavaScript browser check from datacenter IPs (measured
   2026-08-17), which parses to an empty series. isBotChallenge detects it so the user is not
   told their ticker is wrong. Same class as the YouTube datacenter note above.
+
+## Tool result contract (audited 2026-08-23)
+- ToolResultCard branches read FIELD NAMES the tool must actually return. Drift here is silent:
+  best case an empty card, worst case React #31. Fixed: diff (array-of-objects rendered into a
+  <pre> = crash + `similarity*100` double-scaled), unit_convert (formatted/output/formula/
+  explanation never returned → empty result + empty Copy), translate (source_text/source_lang/
+  target_lang vs original/source/target), whois (creation_date/expiration_date vs events[]),
+  rss_feed (feed_title vs source), hash (input_length). Add a card branch => add the fields.
+- terminal_exec invoked 'terminal_run' through the FS preload bridge, which whitelists only fs_*/
+  roots_*/proc_* — every call died as "Unknown command". Shell goes through __YOGATIK_TERMINAL__.
+- terminal:exec ignored the caller's env (CI/PAGER/GIT_TERMINAL_PROMPT), so commands could hang
+  on a prompt until the 30s kill.
+- A non-zero exit code is a RESULT, not a tool failure. terminal_run used to return success:false
+  with no `error` field, which the error log printed as "terminal_run: Unknown error" — no working
+  folder, a bad cwd and a failing test all looked identical. exitCode -1 (never started) is the
+  only error case now.
+
+- cardContract.test.js is the regression harness for the above (12). Adding a card branch means
+  adding an assertion there, or the next drift is silent again.
+- code_execute returns `output`, never `stdout`. The card hid `output` whenever stderr existed, so a
+  script that printed an answer AND a warning showed only the warning. `stdout || String(result)`
+  also threw away the returned value whenever anything was printed.
+- spawn_agents: runAgentPool yields a bare `{ error }` slot for a sub-agent that threw. Rendered as-is
+  that was an empty card and the model never learned which specialist failed — mapped to the normal
+  {agent,role,result} shape now.
+- journalCore list/prune sorted on `ts` alone. Several ops inside one millisecond share a ts and a
+  stable sort then puts the OLDEST first: "newest first" returned the wrong entry. Tie-break on
+  append order (_seq, assigned at read). prune() also REWROTE the index newest-first, inverting the
+  file — it writes back in append order and strips _seq.
+- translate.test.js used to hit the live MyMemory API: it failed offline, in CI and on quota. Stubbed.
+
+- fs_find_files was registered, aliased five ways and scored 210 ("find files"/"glob"/"where is") but
+  NO ipcMain handler existed and the preload whitelist rejected the name. It fell back to a full
+  recursive fs_list that filtered on `f.isDir` while fs_list returns `is_dir` — so directories came
+  back as matching files, and node_modules was walked. Real handler in fsBridge (name/glob/ext,
+  gitignore-pruned, depth- and count-capped), name whitelisted, fallback filter fixed.
+- walk() ignored opts.maxDepth (hardcoded 40); callers asking for a shallow scan got a full one.
+
+## What the model is SHOWN about tools (audited 2026-08-23) — schemaContract.test.js (7)
+- THREE schema shapes live in the registry: bare {description,parameters} (most), a full
+  {type:'function',function:{…}} envelope (screen_inspect, desktop_action, browser_autopilot,
+  browser_control), and FLAT {name,description,parameters} with no `schema` key at all
+  (semantica_*, code_review_*). getToolSchemas spread all three blindly, so the last two reached
+  the model as `{type:'function',function:{name, …nested}}` — a NAME WITH NO DESCRIPTION AND NO
+  PARAMETERS. 12 tools, silently. That is why browser_autopilot kept winning over the real
+  browser_control. toFunctionSchema() normalises all three; the test rejects a nested envelope,
+  a missing description, a non-object parameters, and a `required` naming a missing property.
+- TOOL BUDGET: all 178 schemas serialise to ~128KB ≈ 32k tokens, sent on EVERY turn — that alone
+  overflows an 8k/16k context and exceeds OpenAI's 128-function request cap. prioritizeToolSchemas
+  ranked but never truncated, so ranking changed nothing. It now caps at MAX_TOOLS_PER_REQUEST=64
+  (~9.8k tokens) and agent.js always routes through it.
+- CORE_TOOL_SCORES is the floor that makes the cap safe: keyword boosts only fire when the message
+  mentions the thing, so a follow-up like "now do the same for the other file" would otherwise drop
+  fs_*/terminal_run/browser_control/spawn_agents mid-task and the model would announce it has no
+  file access while holding fs_read.
+- An alias must never shadow a registered tool. `watch` was both (real tool in devTools + alias for
+  watch_folder): the model read one description and reached a different tool with different actions.
+  executeTool prefers a registered name over an alias now, and the alias is gone.
+
+## Security + SW (audited 2026-08-23)
+- sanitize.js scrub() ran `root.querySelectorAll('*')`, which NEVER matches the node it is called
+  on. For sanitizeSvg the root IS the attacker-controlled element, so `<svg onload="…">` kept its
+  handler and fired the moment it hit dangerouslySetInnerHTML. Scrubs [root, ...descendants] now;
+  2 tests in enhancements.test.js. sanitizeHtml was unaffected (its root is our own <body>).
+- Only ONE dangerouslySetInnerHTML sink exists (ToolResultCard diagram) and it is sanitised.
+- sw.js navigate handler cached the response WITHOUT checking resp.ok, so a 404/503 during a deploy
+  was stored as /index.html and every later offline navigation served the error page until the next
+  deploy. swCache.test.js drives the real fetch handler for both cases (6 tests).
+- cors-proxy: credentialed-host check is exact-match (no suffix trick), retry-after is copied AND
+  exposed, credentials never reach an unvetted host. Verified, unchanged.
+- react-hooks/exhaustive-deps is deliberately NOT enabled: the warnings are mount-only effects and
+  ref-based reads (App branch/rename, ModelPicker snapshot-on-open). Checked, no stale-closure bug.
+
+- MISSING-ARG BEHAVIOUR: 18 tools answered a call with a missing required argument by leaking a raw
+  TypeError ("Cannot read properties of undefined (reading 'split')"). The model cannot act on that,
+  so it retries the same broken call — and for code_execute/ocr/diagram/image_* it first paid a
+  multi-MB WASM download to get there. Every tool names the missing argument now; schemaContract.test
+  calls all 178 with {} and fails on a raw TypeError. Sweep time went 10.5s → 53ms.
+- executeTool's catch used `err.message` alone: a thrown string, or an error object without
+  `message`, produced error:undefined → another "Unknown error" in the log.
+- A blanket schema-driven required-args guard was considered and REJECTED: ~13 tools legitimately
+  succeed with no args (web_search returns {error} without success:false, mcp_* default their action,
+  fs_find_files accepts pattern OR extension), so validation belongs in the tool.
+
+## Crash containment (2026-08-23) — ToolResultCard.test.jsx (44)
+- There was exactly ONE ErrorBoundary, at the root in main.jsx. A throw inside any tool card
+  therefore unmounted the WHOLE APP — that is why a malformed diff result blanked a live chat
+  rather than spoiling one card. CardBoundary now wraps each card: it logs the crash (never
+  silent) and falls back to a "result could not be displayed" card holding the raw JSON.
+- Rendering all 40 card branches with a result whose every field is an object crashed 34 of them.
+  Hardening 34 branches individually was rejected as clutter; containment is the structural fix
+  and the test feeds every branch that hostile result.
+- diagram returned `null` when sanitizeSvg produced nothing: the tool reported success and the
+  user saw NO card and no reason. It says so now.
+- diagnoseError had no bucket for workspace/desktop refusals, so "No working folder for this chat"
+  was reported as "Model Execution Failed — an unexpected response was received from the model
+  provider", sending the user to re-enter an API key. New `workspace` bucket, checked late so a
+  real 401/429/5xx still wins.
+- TerminalPanel.test.jsx had ENCODED the broken PTY contract (start(), write(text)) — the test
+  passed because it asserted the bug. It pins spawn()/write(id,data), id-filtered output, and
+  "bridge present but node-pty missing ⇒ stay on the web sandbox".
+
+## The build is not covered by the tests (2026-08-23) — buildGuards.test.js
+- `src/hooks/useToast.js` held JSX in a `.js` file and main.jsx imported it, so `npm run build`
+  AND `npm run dev` failed outright — while all 1400+ tests passed, because vitest transforms
+  each test's own import graph and never builds the app. Renamed to .jsx (Vite resolves the
+  extensionless import unchanged).
+- buildGuards.test.js parses every src/**/*.js with ESBUILD, the same tool the build uses. A regex
+  for "<" does not work: HTML inside template literals (docGenerator, chatExport, threeui) looks
+  exactly like JSX and is perfectly valid JS. The file runs under `// @vitest-environment node` —
+  esbuild refuses to start when jsdom's TextEncoder does not return a real Uint8Array.
+- RUN A REAL BUILD before believing a green suite. `npx vite build` in a Linux checkout is the
+  cheapest way; the main chunk is ~1.23MB (395KB gzip) and rollup warns about it.
+
+## CSP is enforced in index.html (2026-08-23) — cspGuard.test.js (4)
+- index.html carries an ENFORCED <meta> CSP; firebase.json serves the same policy Report-Only.
+  BOTH apply and a browser intersects them, so the meta is the strict one that actually blocks.
+- The revision added at 11:53 allowlisted connect-src and broke the app on the web: it named
+  `api.nvidia.com` while llm.js dials `integrate.api.nvidia.com`, and omitted the Cloudflare proxy
+  worker, huggingface.co, pollinations, open-meteo, mymemory, every open-data API and every public
+  relay. script-src also omitted https://esm.run, which ten modules dynamic-import (WebLLM,
+  Transformers.js, Kokoro, mermaid, qrcode, html2pdf). A CSP refusal is opaque: the app cannot
+  catch it, report it, or fall back — the tool just fails.
+- connect-src CANNOT be an allowlist here. The user configures their own provider, tools call
+  dozens of keyless hosts, and desktop talks to localhost daemons. It is `https: wss: blob: data:`,
+  matching firebase.json. The directives that do the real hardening (object-src none,
+  frame-ancestors none, base-uri self, form-action self) are kept.
+- cspGuard.test.js parses the meta out of index.html and cross-checks every provider baseUrl in
+  llm.js against connect-src. Nothing else in the suite loads index.html at all.
+
+## Coverage added where it was structurally missing (2026-08-23)
+- ONE shell tool now. terminal_exec was a near-duplicate of terminal_run — same IPC bridge, same job,
+  both scored ~200 for shell phrasing, so the model chose between two near-identical descriptions
+  every turn and one wasted a slot in the 64-tool budget. Its extras (non-interactive env, ANSI
+  stripping, durationMs) are folded into terminalRun.js; `terminal_exec` is an alias. PRESETS must
+  use canonical names, not aliases: agents.js listed terminal_exec, which agents.test caught.
+- llmTransport.test.js (15): agent.test.js drives the loop with a fake streamChat, so SSE parsing,
+  retry/backoff, abort, the tools-rejected fallback and provider body shaping were untested. Pins
+  the documented invariants: an AbortError still fires onDone; a 400 naming a missing MODEL is a
+  model error, not "tools rejected"; onToolsRejected must also call onDone or the agent hangs;
+  NVIDIA gets no tool_choice; Anthropic hoists `system` and uses x-api-key (its target host rides
+  in X-Target-URL because it is proxied).
+- electronFsBridge.test.js (12): drives the REAL fs_* handlers against a REAL temp dir through the
+  REAL roots registry. vitest hands .cjs to Node's CJS loader, so neither vi.mock nor a Vite alias
+  reaches `require('electron')` — the test patches Module._load and loads the modules with
+  createRequire (an ESM import would give fsBridge a SECOND copy of roots.cjs with unloaded state,
+  and every handler would answer "no folder granted"). test/electron-stub.cjs records ipcMain
+  handlers. It immediately found a real bug: `Number(maxDepth) || 10` swallowed a deliberate
+  maxDepth:0, so "this folder only" walked ten levels.
+- ci.yml e2e is no longer continue-on-error. It is the only job that BUILDS the app the way a user
+  loads it, and it sat green for months while running a script that did not exist.
+
+## Finished UI that nothing imported (2026-08-23) — buildGuards.test.js reachability
+- App.jsx wired 34 components; FIVE complete panels were never imported by anything, so no user
+  could open them: TerminalPanel (reachable only via TerminalTrigger, which nothing imported),
+  SchedulerPanel, SubAgentRunnerPanel, AutoSkillsPanel, FileEditorModal. In every case the TOOL was
+  registered — the model could use the capability while the human-facing half stayed dark. All five
+  are now in the command palette under Tools, with state in App.
+- New panels MUST be added to browserOccluded and isAnyModalOpen. A WebContentsView composites above
+  the DOM, so a panel that is not in browserOccluded is painted UNDER the docked browser.
+- AutoSkillsPanel was inert even once mounted: every handler dispatched a CustomEvent
+  ('yogatik:auto-skills:*') with an onResult callback and NOTHING listened, and loadData was gated
+  on __YOGATIK_SCHEDULER__ — an unrelated bridge. It calls autoSkills.js directly now.
+- Scheduler/SubAgent panels silently did nothing on the web (no bridge, no message). Both say so.
+- PermissionModal was a dead duplicate of the wired PermissionPrompt, and read `diff.deleted` where
+  diffPreview produces `removed`, so its counter always showed 0. Deleted with its test; if the
+  "Always for Workspace" scope is wanted, port it into PermissionPrompt (permissions.js already
+  accepts remember: 'chat' | 'project' | 'global').
+- The reachability guard allows ONE orphan, AdModal, because ads are deliberately switched off.
 
 ## Gotchas (learned the hard way)
 - Working folders are PER CHAT on Electron (v3.9). Absolute paths are ALLOWED now — safety is the

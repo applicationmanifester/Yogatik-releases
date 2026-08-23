@@ -106,7 +106,9 @@ export const docListTool = {
       success: true,
       count: docs.length,
       documents: docs.map(d => ({
-        name: d.name, type: d.type, chars: d.chars, chunks: d.chunks.length,
+        // A document row saved before chunking (or by an older schema) has no
+        // chunks array; `.length` on it threw and took out the whole listing.
+        name: d.name, type: d.type, chars: d.chars, chunks: d.chunks?.length || 0,
         added: new Date(d.createdAt).toISOString(),
       })),
     }

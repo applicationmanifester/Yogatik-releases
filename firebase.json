@@ -11,9 +11,16 @@
     ],
     "rewrites": [
       {
+        "comment": "Clean URLs for the static, crawlable pages. These MUST come before the SPA catch-all below, or every one of them would be answered with the app shell — which is what a crawler reads as 'this site has one page'. Static files (robots.txt, ads.txt, sitemap.xml, site.css) are served ahead of rewrites by Firebase, so they need no entry here.",
         "source": "/platforms",
         "destination": "/platforms.html"
       },
+      { "source": "/guide", "destination": "/guide.html" },
+      { "source": "/tools", "destination": "/tools.html" },
+      { "source": "/how-it-works", "destination": "/how-it-works.html" },
+      { "source": "/faq", "destination": "/faq.html" },
+      { "source": "/privacy", "destination": "/privacy.html" },
+      { "source": "/terms", "destination": "/terms.html" },
       {
         "source": "**",
         "destination": "/index.html"

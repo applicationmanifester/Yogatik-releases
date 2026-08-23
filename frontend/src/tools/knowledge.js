@@ -117,6 +117,7 @@ export const scholarTool = {
     },
   },
   async execute({ query, limit = 5, since, preprints = true }) {
+    if (typeof query !== 'string' || !query.trim()) return { success: false, error: 'query is required' }
     const n = Math.min(Math.max(1, limit | 0), 10)
     // Strip future years like 2025/2026 and sanitize length
     const cleanQuery = cleanTextQuery(query.replace(/\b(2025|2026|2027|2028)\b/g, ''), 150) || 'research'

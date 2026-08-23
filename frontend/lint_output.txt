@@ -1,0 +1,189 @@
+
+> yogatik@3.10.4 lint
+> node ./node_modules/eslint/bin/eslint.js src
+
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\App.jsx
+     5:294  warning  'Clock' is defined but never used. Allowed unused vars must match /^React$/u                     no-unused-vars
+     5:301  warning  'Bell' is defined but never used. Allowed unused vars must match /^React$/u                      no-unused-vars
+    26:10   warning  'getErrorLog' is defined but never used. Allowed unused vars must match /^React$/u               no-unused-vars
+    26:23   warning  'clearErrorLog' is defined but never used. Allowed unused vars must match /^React$/u             no-unused-vars
+    26:38   warning  'getDiagnosticsReport' is defined but never used. Allowed unused vars must match /^React$/u      no-unused-vars
+    26:60   warning  'diagnoseError' is defined but never used. Allowed unused vars must match /^React$/u             no-unused-vars
+   555:9    warning  'currentStreamId' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+  1199:32   error    'TERMS_VERSION' is not defined                                                                   no-undef
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\api.js
+    16:24  warning  'upsertWorkflow' is defined but never used. Allowed unused vars must match /^React$/u        no-unused-vars
+    17:21  warning  'upsertSkill' is defined but never used. Allowed unused vars must match /^React$/u           no-unused-vars
+    18:21  warning  'upsertAgent' is defined but never used. Allowed unused vars must match /^React$/u           no-unused-vars
+  1012:15  warning  'fallbackOut' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\autoSkills.js
+   11:10  warning  'getToolNames' is defined but never used. Allowed unused vars must match /^React$/u              no-unused-vars
+  355:29  warning  'getConversation' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\ActiveTimerIndicator.jsx
+  2:25  warning  'Trash2' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\ActiveTimerIndicator.test.jsx
+  1:32  warning  'vi' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\AppOverviewModal.jsx
+  11:3  warning  'ArrowRight' is defined but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+  13:3  warning  'Search' is defined but never used. Allowed unused vars must match /^React$/u        no-unused-vars
+  15:3  warning  'Layers' is defined but never used. Allowed unused vars must match /^React$/u        no-unused-vars
+  17:3  warning  'Code' is defined but never used. Allowed unused vars must match /^React$/u          no-unused-vars
+  20:3  warning  'Bot' is defined but never used. Allowed unused vars must match /^React$/u           no-unused-vars
+  21:3  warning  'ExternalLink' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+  22:3  warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+  23:3  warning  'CheckCircle2' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+  26:3  warning  'HelpCircle' is defined but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+  27:3  warning  'Play' is defined but never used. Allowed unused vars must match /^React$/u          no-unused-vars
+  28:3  warning  'Terminal' is defined but never used. Allowed unused vars must match /^React$/u      no-unused-vars
+  29:3  warning  'Clock' is defined but never used. Allowed unused vars must match /^React$/u         no-unused-vars
+  30:3  warning  'Compass' is defined but never used. Allowed unused vars must match /^React$/u       no-unused-vars
+  31:3  warning  'FileText' is defined but never used. Allowed unused vars must match /^React$/u      no-unused-vars
+  32:3  warning  'Eye' is defined but never used. Allowed unused vars must match /^React$/u           no-unused-vars
+  33:3  warning  'Camera' is defined but never used. Allowed unused vars must match /^React$/u        no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\CommandPalette.jsx
+  4:26  warning  'Moon' is defined but never used. Allowed unused vars must match /^React$/u          no-unused-vars
+  4:32  warning  'Clock' is defined but never used. Allowed unused vars must match /^React$/u         no-unused-vars
+  4:39  warning  'ArrowRight' is defined but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+  4:54  warning  'Layers' is defined but never used. Allowed unused vars must match /^React$/u        no-unused-vars
+  4:62  warning  'Check' is defined but never used. Allowed unused vars must match /^React$/u         no-unused-vars
+  5:3   warning  'Bot' is defined but never used. Allowed unused vars must match /^React$/u           no-unused-vars
+  5:8   warning  'Shield' is defined but never used. Allowed unused vars must match /^React$/u        no-unused-vars
+  5:16  warning  'Key' is defined but never used. Allowed unused vars must match /^React$/u           no-unused-vars
+  5:21  warning  'FileText' is defined but never used. Allowed unused vars must match /^React$/u      no-unused-vars
+  5:31  warning  'Smartphone' is defined but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+  5:43  warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\DiagnosticsModal.jsx
+  3:55  warning  'Cpu' is defined but never used. Allowed unused vars must match /^React$/u          no-unused-vars
+  4:3   warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+  4:14  warning  'Globe' is defined but never used. Allowed unused vars must match /^React$/u        no-unused-vars
+  4:21  warning  'Smartphone' is defined but never used. Allowed unused vars must match /^React$/u   no-unused-vars
+  4:33  warning  'Key' is defined but never used. Allowed unused vars must match /^React$/u          no-unused-vars
+  4:43  warning  'Sliders' is defined but never used. Allowed unused vars must match /^React$/u      no-unused-vars
+  4:52  warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\DomainHubModal.jsx
+  4:43  warning  'ArrowRight' is defined but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+  5:35  warning  'ShieldCheck' is defined but never used. Allowed unused vars must match /^React$/u   no-unused-vars
+  5:48  warning  'CheckCircle2' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+  7:3   warning  'Bot' is defined but never used. Allowed unused vars must match /^React$/u           no-unused-vars
+  7:8   warning  'HelpCircle' is defined but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\FloatingCompanion.jsx
+    5:3  warning  'Minimize2' is defined but never used. Allowed unused vars must match /^React$/u                no-unused-vars
+   26:3  warning  'Radio' is defined but never used. Allowed unused vars must match /^React$/u                    no-unused-vars
+   27:3  warning  'Play' is defined but never used. Allowed unused vars must match /^React$/u                     no-unused-vars
+   28:3  warning  'RotateCw' is defined but never used. Allowed unused vars must match /^React$/u                 no-unused-vars
+   36:3  warning  'FileCode' is defined but never used. Allowed unused vars must match /^React$/u                 no-unused-vars
+   37:3  warning  'MessageSquare' is defined but never used. Allowed unused vars must match /^React$/u            no-unused-vars
+   38:3  warning  'Search' is defined but never used. Allowed unused vars must match /^React$/u                   no-unused-vars
+  464:5  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\MessageBubble.jsx
+  6:52  warning  'AlertTriangle' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+  7:43  warning  'Settings' is defined but never used. Allowed unused vars must match /^React$/u       no-unused-vars
+  7:53  warning  'HelpCircle' is defined but never used. Allowed unused vars must match /^React$/u     no-unused-vars
+  8:3   warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+  8:16  warning  'ChevronUp' is defined but never used. Allowed unused vars must match /^React$/u      no-unused-vars
+  8:27  warning  'ShieldAlert' is defined but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+  8:40  warning  'Cpu' is defined but never used. Allowed unused vars must match /^React$/u            no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\SchedulerPanel.jsx
+  145:10  warning  'confirmDeleteId' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\SettingsModal.jsx
+    1:38  warning  'useMemo' is defined but never used. Allowed unused vars must match /^React$/u             no-unused-vars
+    5:3   warning  'Shield' is defined but never used. Allowed unused vars must match /^React$/u              no-unused-vars
+    5:16  warning  'Globe' is defined but never used. Allowed unused vars must match /^React$/u               no-unused-vars
+    5:23  warning  'Sparkles' is defined but never used. Allowed unused vars must match /^React$/u            no-unused-vars
+    5:43  warning  'Upload' is defined but never used. Allowed unused vars must match /^React$/u              no-unused-vars
+    6:26  warning  'HardDrive' is defined but never used. Allowed unused vars must match /^React$/u           no-unused-vars
+    6:37  warning  'HelpCircle' is defined but never used. Allowed unused vars must match /^React$/u          no-unused-vars
+   10:10  warning  'FEATURES' is defined but never used. Allowed unused vars must match /^React$/u            no-unused-vars
+   10:37  warning  'FEATURE_DEFAULTS' is defined but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+   14:16  warning  'exportConversation' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+   14:52  warning  'restoreBackup' is defined but never used. Allowed unused vars must match /^React$/u       no-unused-vars
+   15:33  warning  'pullCloudData' is defined but never used. Allowed unused vars must match /^React$/u       no-unused-vars
+  131:10  warning  'keys' is assigned a value but never used. Allowed unused vars must match /^React$/u       no-unused-vars
+  131:16  warning  'setKeys' is assigned a value but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\SkillsPanel.jsx
+  43:10  warning  'importError' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\SubAgentRunnerPanel.jsx
+  94:10  warning  'confirmKillId' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\TerminalPanel.jsx
+    2:68  warning  'HelpCircle' is defined but never used. Allowed unused vars must match /^React$/u        no-unused-vars
+  106:10  warning  'running' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+  209:11  warning  Unused eslint-disable directive (no problems were reported from 'no-new-func')
+  224:11  warning  Unused eslint-disable directive (no problems were reported from 'no-new-func')
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\components\ToolResultCard.jsx
+  8:80  warning  'Clock' is defined but never used. Allowed unused vars must match /^React$/u   no-unused-vars
+  9:34  warning  'Bell' is defined but never used. Allowed unused vars must match /^React$/u    no-unused-vars
+  9:78  warning  'Laptop' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\finance.test.js
+  3:56  warning  'volatility' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\llm.js
+  314:7  warning  'isNvidiaHost' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\localLLM.js
+  106:17  warning  'm' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\portfolio.js
+  47:9  warning  'k' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\semantic.js
+  150:10  warning  'dot' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\timeQuery.test.jsx
+  5:32  warning  'vi' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\tools\autoSkills.js
+   5:10  warning  'isDesktop' is defined but never used. Allowed unused vars must match /^React$/u                      no-unused-vars
+  39:7   warning  'getAutoSkillLearning' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\tools\crewRunner.test.js
+  1:36  warning  'beforeEach' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\tools\desktopCompanion.js
+   22:11  warning  'focus' is assigned a value but never used. Allowed unused vars must match /^React$/u     no-unused-vars
+  146:46  warning  'selector' is assigned a value but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\tools\elevenLabs.test.js
+   1:48  warning  'afterEach' is defined but never used. Allowed unused vars must match /^React$/u                  no-unused-vars
+  15:3   warning  'DEFAULT_ELEVENLABS_VOICES' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\tools\imageGen.js
+  183:16  warning  'e' is defined but never used  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\tools\index.js
+  33:10  warning  'webSearchTool' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\tools\openApis.test.js
+  1:36  warning  'beforeEach' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\tools\podcastGen.js
+  10:53  warning  'DEFAULT_ELEVENLABS_VOICE' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+  11:38  warning  'VOICES' is defined but never used. Allowed unused vars must match /^React$/u                    no-unused-vars
+  11:46  warning  'DEFAULT_VOICE' is defined but never used. Allowed unused vars must match /^React$/u             no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\tools\translate.test.js
+  1:32  warning  'vi' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+C:\Users\bharg_4mtuttl\Desktop\BGK_Applications\AI ChatBot\frontend\src\tools\webAutomation.js
+  11:21  warning  'proxyJson' is defined but never used. Allowed unused vars must match /^React$/u  no-unused-vars
+
+✖ 115 problems (1 error, 114 warnings)
+  0 errors and 3 warnings potentially fixable with the `--fix` option.
+

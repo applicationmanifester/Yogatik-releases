@@ -38,7 +38,16 @@ import {
   Search,
   Check,
   ZoomIn,
-  Repeat
+  Repeat,
+  ShieldCheck,
+  AlertTriangle,
+  FileCheck,
+  CheckSquare,
+  Wand2,
+  GripHorizontal,
+  UploadCloud,
+  FileUp,
+  Settings2,
 } from 'lucide-react'
 import { YogatikLogo } from './YogatikLogo'
 import {
@@ -52,13 +61,35 @@ import {
   OBSERVE_INTERVAL_MS,
 } from '../companionAwareness'
 
-// ─── Simple In-Companion Markdown & Code Block Formatter ────────────────────
-function CompanionMessageContent({ content }) {
+// ─── Real-time Audio Visualizer Equalizer Component ─────────────────────────
+function AudioEqualizer({ active = false, color = '#10b981' }) {
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: 14, padding: '0 4px' }}>
+      {[0.4, 0.9, 0.6, 1.0, 0.5].map((h, i) => (
+        <span
+          key={i}
+          style={{
+            display: 'inline-block',
+            width: 2.5,
+            height: active ? `${Math.max(4, h * 12)}px` : '3px',
+            backgroundColor: color,
+            borderRadius: 2,
+            transition: 'height 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
+            animation: active ? `eqWave 0.8s ease-in-out ${i * 0.12}s infinite alternate` : 'none',
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ─── Enhanced In-Companion Code Block with 1-Click Fast Apply ────────────────
+function CompanionMessageContent({ content, onApplyCode }) {
   const [copiedCodeIdx, setCopiedCodeIdx] = useState(null)
+  const [appliedCodeIdx, setAppliedCodeIdx] = useState(null)
 
   if (!content) return null
 
-  // Split code blocks ```lang ... ``` vs plain text
   const parts = []
   const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g
   let lastIndex = 0
@@ -81,14 +112,22 @@ function CompanionMessageContent({ content }) {
     setTimeout(() => setCopiedCodeIdx(null), 2000)
   }
 
-  // Format bold, inline code, and lists
+  const handleApply = (idx, code) => {
+    if (onApplyCode) {
+      onApplyCode(code)
+      setAppliedCodeIdx(idx)
+      setTimeout(() => setAppliedCodeIdx(null), 2500)
+    }
+  }
+
   const formatText = (txt) => {
     return txt.split('\n').map((line, lineIdx) => {
-      // Bullet list item
       const isBullet = /^\s*[-*•]\s+(.*)/.test(line)
       const lineContent = isBullet ? line.replace(/^\s*[-*•]\s+/, '') : line
 
-      // Process **bold** and `code` inline
+      // Semantica Decision Badge detection
+      const isDecision = /\[(DECISION|APPROVED|PRECEDENT|POLICY)\]/i.test(lineContent)
+
       const tokens = []
       const inlineRegex = /(\*\*([^*]+)\*\*|`([^`]+)`)/g
       let cur = 0
@@ -96,16 +135,17 @@ function CompanionMessageContent({ content }) {
       while ((m = inlineRegex.exec(lineContent)) !== null) {
         if (m.index > cur) tokens.push(lineContent.slice(cur, m.index))
         if (m[2]) {
-          tokens.push(<strong key={m.index} style={{ color: 'var(--accent)', fontWeight: 600 }}>{m[2]}</strong>)
+          tokens.push(<strong key={m.index} style={{ color: 'var(--accent, #6366f1)', fontWeight: 600 }}>{m[2]}</strong>)
         } else if (m[3]) {
           tokens.push(
             <code key={m.index} style={{
-              background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)',
-              padding: '1px 4px',
-              borderRadius: 3,
-              fontFamily: 'monospace',
-              fontSize: '0.9em',
-              color: '#f472b6'
+              background: 'rgba(255, 255, 255, 0.08)',
+              padding: '1px 5px',
+              borderRadius: 4,
+              fontFamily: 'Consolas, Monaco, monospace',
+              fontSize: '0.88em',
+              color: '#38bdf8',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
             }}>{m[3]}</code>
           )
         }
@@ -118,9 +158,28 @@ function CompanionMessageContent({ content }) {
           marginBottom: lineIdx === txt.split('\n').length - 1 ? 0 : 3,
           paddingLeft: isBullet ? 12 : 0,
           position: 'relative',
+          lineHeight: 1.45,
+          fontSize: 12.5,
         }}>
           {isBullet && (
-            <span style={{ position: 'absolute', left: 2, color: 'var(--accent)', fontSize: '0.9em' }}>•</span>
+            <span style={{ position: 'absolute', left: 2, color: 'var(--accent, #6366f1)', fontSize: '0.9em' }}>•</span>
+          )}
+          {isDecision && (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 3,
+              background: 'rgba(99, 102, 241, 0.15)',
+              border: '1px solid rgba(99, 102, 241, 0.3)',
+              borderRadius: 4,
+              padding: '1px 5px',
+              fontSize: 10,
+              fontWeight: 600,
+              color: '#818cf8',
+              marginRight: 4,
+            }}>
+              <Sparkles size={10} /> Semantica Provenance
+            </span>
           )}
           {tokens.length ? tokens : lineContent}
         </div>
@@ -136,52 +195,77 @@ function CompanionMessageContent({ content }) {
         }
         return (
           <div key={idx} style={{
-            background: 'var(--code-bg)',
-            border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
-            borderRadius: 6,
+            background: 'rgba(15, 23, 42, 0.85)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: 8,
             overflow: 'hidden',
             margin: '4px 0',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
           }}>
             <div style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '3px 8px',
-              background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
-              borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 6%, transparent)',
-              fontSize: 9.5,
-              color: 'var(--text-secondary)',
+              padding: '4px 8px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+              fontSize: 10,
+              color: 'var(--text-secondary, #94a3b8)',
               fontWeight: 600,
               textTransform: 'uppercase',
             }}>
               <span>{p.lang}</span>
-              <button
-                onClick={() => handleCopyCode(idx, p.code)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: copiedCodeIdx === idx ? 'var(--success)' : 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  fontSize: 9.5,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 3,
-                  padding: '1px 4px',
-                }}
-              >
-                {copiedCodeIdx === idx ? <Check size={10} /> : <Copy size={10} />}
-                {copiedCodeIdx === idx ? 'Copied' : 'Copy'}
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {onApplyCode && (
+                  <button
+                    onClick={() => handleApply(idx, p.code)}
+                    style={{
+                      background: appliedCodeIdx === idx ? 'rgba(16, 185, 129, 0.2)' : 'rgba(99, 102, 241, 0.15)',
+                      border: '1px solid rgba(99, 102, 241, 0.3)',
+                      color: appliedCodeIdx === idx ? '#10b981' : '#a5b4fc',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      fontSize: 9.5,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      padding: '2px 6px',
+                      transition: 'all 0.15s',
+                    }}
+                    title="Apply code directly to active file"
+                  >
+                    {appliedCodeIdx === idx ? <Check size={10} /> : <Wand2 size={10} />}
+                    {appliedCodeIdx === idx ? 'Applied' : 'Apply'}
+                  </button>
+                )}
+                <button
+                  onClick={() => handleCopyCode(idx, p.code)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: copiedCodeIdx === idx ? '#10b981' : 'inherit',
+                    cursor: 'pointer',
+                    fontSize: 9.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 3,
+                    padding: '2px 4px',
+                  }}
+                >
+                  {copiedCodeIdx === idx ? <Check size={10} /> : <Copy size={10} />}
+                  {copiedCodeIdx === idx ? 'Copied' : 'Copy'}
+                </button>
+              </div>
             </div>
             <pre style={{
               margin: 0,
-              padding: '6px 8px',
+              padding: '8px 10px',
               fontSize: 11,
               fontFamily: 'Consolas, Monaco, "Courier New", monospace',
-              color: 'var(--text-primary)',
+              color: '#e2e8f0',
               overflowX: 'auto',
               whiteSpace: 'pre',
-              lineHeight: 1.4,
+              lineHeight: 1.45,
             }}>
               <code>{p.code}</code>
             </pre>
@@ -213,22 +297,29 @@ export function FloatingCompanion({
   const [scanning, setScanning] = useState(false)
   const [autoWatch, setAutoWatch] = useState(false)
   const [speechEnabled, setSpeechEnabled] = useState(false)
+  const [speechRate, setSpeechRate] = useState(1.05)
+  const [availableVoices, setAvailableVoices] = useState([])
+  const [selectedVoice, setSelectedVoice] = useState(null)
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false)
   const [isCompact, setIsCompact] = useState(false)
-  const [opacityLevel, setOpacityLevel] = useState(0.96) // 0.96 (Solid), 0.85 (Frosted), 0.72 (Translucent)
-  // null = follow whatever the active window suggests. Showing all twelve
-  // actions at once put more chrome above the chat than the chat itself had,
-  // and the component already knows which category fits — using that beats
-  // making the user filter by hand. An explicit tab click pins it.
-  const [categoryFilter, setCategoryFilter] = useState(null) // null (auto) | 'all' | 'code' | 'write' | 'data' | 'autopilot'
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [opacityLevel, setOpacityLevel] = useState(0.96)
   const [monitoredApp, setMonitoredApp] = useState({ appName: activeApp, title: activeTitle })
-  // Ambient awareness. Off by default: it spends tokens and interrupts, so it
-  // is something the user turns on, not something that happens to them.
   const [ambient, setAmbient] = useState(false)
   const ambientRef = useRef({ lastObservedAt: 0, lastSpokeAt: 0, spokenCount: 0, seen: null, seenAt: 0 })
-  const [copiedId, setCopiedId] = useState(null)
   const [ocrLoading, setOcrLoading] = useState(false)
   const [ocrText, setOcrText] = useState(null)
   const [zoomModal, setZoomModal] = useState(false)
+  const [toastMessage, setToastMessage] = useState(null)
+  const [isDraggingFile, setIsDraggingFile] = useState(false)
+
+  // ── Drag & Position Management ──
+  const [position, setPosition] = useState(() => ({
+    x: typeof window !== 'undefined' ? Math.max(20, window.innerWidth - 400) : 100,
+    y: typeof window !== 'undefined' ? Math.max(20, window.innerHeight - 640) : 100,
+  }))
+  const isDraggingRef = useRef(false)
+  const dragStartOffset = useRef({ x: 0, y: 0 })
 
   const recognitionRef = useRef(null)
   const messagesEndRef = useRef(null)
@@ -236,10 +327,78 @@ export function FloatingCompanion({
 
   const isDesktopEnv = typeof window !== 'undefined' && Boolean(window.__YOGATIK_COMPANION__)
 
+  // Load available speech synthesis voices
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      const updateVoices = () => {
+        const voices = window.speechSynthesis.getVoices()
+        if (voices.length) {
+          setAvailableVoices(voices)
+          const natural = voices.find(v => /natural|google|samantha|neural/i.test(v.name)) || voices[0]
+          setSelectedVoice(natural)
+        }
+      }
+      updateVoices()
+      window.speechSynthesis.onvoiceschanged = updateVoices
+    }
+  }, [])
+
+  // Show a quick transient toast message in the companion HUD
+  const triggerToast = useCallback((msg) => {
+    setToastMessage(msg)
+    setTimeout(() => setToastMessage(null), 3000)
+  }, [])
+
+  // Track unread messages when minimized
+  useEffect(() => {
+    if (isCompact && messages.length > 0) {
+      setUnreadCount(c => c + 1)
+    }
+  }, [messages.length, isCompact])
+
   // Scroll to bottom on new messages or stream
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamText])
+
+  // Window drag handlers
+  const handleMouseDown = useCallback((e) => {
+    if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return
+    isDraggingRef.current = true
+    dragStartOffset.current = {
+      x: e.clientX - position.x,
+      y: e.clientY - position.y,
+    }
+  }, [position])
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isDraggingRef.current) return
+      const newX = Math.max(10, Math.min(window.innerWidth - 390, e.clientX - dragStartOffset.current.x))
+      const newY = Math.max(10, Math.min(window.innerHeight - 630, e.clientY - dragStartOffset.current.y))
+      setPosition({ x: newX, y: newY })
+    }
+    const handleMouseUp = () => {
+      isDraggingRef.current = false
+    }
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [])
+
+  // Keyboard shortcut listener (Escape to minimize/close)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (!isCompact) setIsCompact(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isCompact])
 
   // Poll or query active window every 2.5s in desktop Electron
   useEffect(() => {
@@ -259,36 +418,14 @@ export function FloatingCompanion({
     return () => { if (timer) clearInterval(timer) }
   }, [isDesktopEnv])
 
-  // Smart App Category Identification
-  const detectedCategory = useMemo(() => {
-    const name = (monitoredApp.appName || '').toLowerCase()
-    const title = (monitoredApp.title || '').toLowerCase()
-    if (/code|cursor|pycharm|webstorm|intellij|studio|sublime|vim|terminal|powershell|cmd|git|bash/i.test(name + title)) {
-      return 'code'
-    }
-    if (/chrome|edge|firefox|safari|brave|arc|opera|browser/i.test(name + title)) {
-      return 'data'
-    }
-    if (/word|doc|notion|slack|teams|outlook|gmail|discord|obsidian|notes/i.test(name + title)) {
-      return 'write'
-    }
-    if (/excel|sheet|jupyter|tableau|powerbi|dbeaver|sql|postman/i.test(name + title)) {
-      return 'data'
-    }
-    return 'autopilot'
-  }, [monitoredApp])
-
-  // Helper to build visual image attachment payload
-  const buildAttachment = useCallback((dataUrl, width = 1280, height = 720) => {
-    if (!dataUrl) return null
-    return {
-      name: `companion_screen_${Date.now()}.jpg`,
-      dataUrl,
-      thumb: dataUrl,
-      width,
-      height,
-    }
-  }, [])
+  // Determine current companion glow state
+  const companionState = useMemo(() => {
+    if (listening) return { label: 'Listening...', color: '#10b981', glow: '0 0 24px rgba(16, 185, 129, 0.45)' }
+    if (isStreaming) return { label: 'Thinking...', color: '#06b6d4', glow: '0 0 24px rgba(6, 182, 212, 0.45)' }
+    if (scanning) return { label: 'Scanning Screen...', color: '#f59e0b', glow: '0 0 20px rgba(245, 158, 11, 0.4)' }
+    if (autoWatch) return { label: 'Watching Screen', color: '#8b5cf6', glow: '0 0 16px rgba(139, 92, 246, 0.3)' }
+    return { label: 'Ready', color: '#6366f1', glow: '0 0 14px rgba(99, 102, 241, 0.25)' }
+  }, [listening, isStreaming, scanning, autoWatch])
 
   // Capture screen frame helper
   const handleCaptureScreen = useCallback(async (silent = false) => {
@@ -337,21 +474,13 @@ export function FloatingCompanion({
       if (res?.text) {
         setOcrText(res.text)
         await navigator.clipboard.writeText(res.text)
+        triggerToast('Copied OCR text from screen to clipboard!')
       }
     } catch { /* ignore */ }
     finally {
       setOcrLoading(false)
     }
   }
-
-  // Auto-Watch background periodic frame refresh
-  useEffect(() => {
-    if (!autoWatch) return
-    const autoTimer = setInterval(() => {
-      handleCaptureScreen(true)
-    }, 10000)
-    return () => clearInterval(autoTimer)
-  }, [autoWatch, handleCaptureScreen])
 
   // Voice speech-to-text setup
   useEffect(() => {
@@ -364,9 +493,7 @@ export function FloatingCompanion({
         const text = Array.from(e.results).map(r => r[0].transcript).join('')
         setInput(text)
       }
-      rec.onend = () => {
-        setListening(false)
-      }
+      rec.onend = () => setListening(false)
       rec.onerror = () => setListening(false)
       recognitionRef.current = rec
     }
@@ -381,7 +508,8 @@ export function FloatingCompanion({
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel()
         const utterance = new SpeechSynthesisUtterance(lastMsg.content.slice(0, 400))
-        utterance.rate = 1.05
+        utterance.rate = speechRate
+        if (selectedVoice) utterance.voice = selectedVoice
         utterance.onend = () => {
           if (continuousVoice && recognitionRef.current) {
             try {
@@ -394,7 +522,7 @@ export function FloatingCompanion({
         window.speechSynthesis.speak(utterance)
       }
     }
-  }, [speechEnabled, isStreaming, messages, continuousVoice])
+  }, [speechEnabled, isStreaming, messages, continuousVoice, speechRate, selectedVoice])
 
   const toggleVoice = () => {
     if (!recognitionRef.current) return
@@ -410,804 +538,761 @@ export function FloatingCompanion({
     }
   }
 
-  const handleQuickAction = async (actionPrompt, autoIncludeScreen = true) => {
-    let prefix = ''
-    let imgPayload = null
-    if (autoIncludeScreen) {
-      const dataUrl = await handleCaptureScreen(true)
-      if (dataUrl) {
-        imgPayload = buildAttachment(dataUrl, screenMeta?.width, screenMeta?.height)
-      }
-      prefix = `[Context: Active Application is ${monitoredApp.appName} ("${monitoredApp.title}")] `
+  // Quick Action triggers
+  const handleQuickAction = async (actionType) => {
+    let prompt = ''
+    if (actionType === 'review') {
+      prompt = `Perform an Alibaba Open Code Review on the current workspace/file. Categorize any defects by SECURITY, BUG_RISK, PERFORMANCE, DESIGN, and STYLE, and suggest line-level fixes.`
+    } else if (actionType === 'audit') {
+      prompt = `Audit current active window/code for security vulnerabilities, exposed credentials, prompt injections, and unsanitized parameters.`
+    } else if (actionType === 'decision') {
+      prompt = `Record an auditable Semantica decision for the current proposed changes with category, reasoning, and policy compliance verification.`
+    } else if (actionType === 'explain') {
+      prompt = `Explain the architecture, data flow, and key functions in the current active context clearly and concisely.`
+    } else {
+      prompt = actionType
     }
-    onSendPrompt?.(`${prefix}${actionPrompt}`, imgPayload)
-  }
 
-
-  // ── Ambient awareness ────────────────────────────────────────────────────
-  // Noticing is cheap and frequent (a window title); speaking is rare and has
-  // to clear every gate in companionAwareness. The prompt licenses silence and
-  // a SILENT reply is dropped by App before it reaches the transcript, so the
-  // common case costs one small call and says nothing.
-  useEffect(() => {
-    if (!ambient) return undefined
-    const id = setInterval(async () => {
-      const now = Date.now()
-      const st = ambientRef.current
-      if (!shouldObserve({ enabled: ambient, open: true, streaming: isStreaming, now, lastObservedAt: st.lastObservedAt })) return
-      st.lastObservedAt = now
-
-      const ctx = { appName: monitoredApp.appName, title: monitoredApp.title }
-      const changed = contextChanged(st.seen, ctx)
-      if (changed) { st.seen = ctx; st.seenAt = now; return }   // let it settle first
-
-      if (!shouldSpeak({
-        changed: !!st.seen && st.seenAt > (st.lastSpokeAt || 0),
-        settledMs: now - (st.seenAt || now),
-        streaming: isStreaming,
-        userTyping: !!input.trim(),
-        now,
-        lastSpokeAt: st.lastSpokeAt,
-        spokenCount: st.spokenCount,
-      })) return
-
-      st.lastSpokeAt = now
-      st.spokenCount += 1
-      let img = null
-      try {
-        const dataUrl = await handleCaptureScreen(true)
-        if (dataUrl) img = buildAttachment(dataUrl, screenMeta?.width, screenMeta?.height)
-      } catch { /* no screen source; the prompt still names the window */ }
-      onSendPrompt?.(buildObservationPrompt(ctx), img)
-    }, OBSERVE_INTERVAL_MS)
-    return () => clearInterval(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ambient, isStreaming, monitoredApp.appName, monitoredApp.title, input])
-
-  const handleSubmit = async (e) => {
-    e?.preventDefault()
-    if (!input.trim() || isStreaming) return
-    const userPrompt = input.trim()
-    setInput('')
-    let imgPayload = null
-    if (autoWatch || screenPreview) {
-      const dataUrl = screenPreview || await handleCaptureScreen(true)
-      if (dataUrl) {
-        imgPayload = buildAttachment(dataUrl, screenMeta?.width, screenMeta?.height)
+    const dataUrl = await handleCaptureScreen(true)
+    let attachment = null
+    if (dataUrl) {
+      attachment = {
+        name: `screen_${Date.now()}.jpg`,
+        dataUrl,
+        thumb: dataUrl,
+        width: screenMeta?.width || 1280,
+        height: screenMeta?.height || 720,
       }
     }
-    onSendPrompt?.(userPrompt, imgPayload)
+    const contextPrefix = `[Context: Active Window is ${monitoredApp.appName} ("${monitoredApp.title}")] `
+    onSendPrompt?.(`${contextPrefix}${prompt}`, attachment)
   }
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault()
-      handleCaptureScreen(true).then((dataUrl) => {
-        const img = buildAttachment(dataUrl, screenMeta?.width, screenMeta?.height)
-        if (input.trim()) {
-          const userPrompt = input.trim()
-          setInput('')
-          onSendPrompt?.(userPrompt, img)
-        }
-      })
-    } else if (e.key === 'Escape') {
-      setIsCompact(c => !c)
+  // File Dropzone Handler
+  const handleFileDrop = (e) => {
+    e.preventDefault()
+    setIsDraggingFile(false)
+    const files = Array.from(e.dataTransfer.files)
+    if (!files.length) return
+
+    const file = files[0]
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        onSendPrompt?.(`Analyze this attached image: ${file.name}`, {
+          name: file.name,
+          dataUrl: reader.result,
+          thumb: reader.result,
+        })
+        triggerToast(`Ingested image: ${file.name}`)
+      }
+      reader.readAsDataURL(file)
+    } else {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const text = reader.result
+        onSendPrompt?.(`Analyze this attached file [${file.name}]:\n\`\`\`\n${text.slice(0, 8000)}\n\`\`\``)
+        triggerToast(`Ingested file: ${file.name}`)
+      }
+      reader.readAsText(file)
     }
   }
 
-  const copyMessage = (idx, text) => {
-    if (!text) return
-    navigator.clipboard.writeText(text)
-    setCopiedId(idx)
-    setTimeout(() => setCopiedId(null), 2000)
+  const handleApplyCodeToDisk = async (codeSnippet) => {
+    if (!isDesktopEnv) {
+      await navigator.clipboard.writeText(codeSnippet)
+      triggerToast('Copied code to clipboard (Desktop mode required for direct file write)')
+      return
+    }
+    try {
+      const activeFile = monitoredApp.title.includes('.') ? monitoredApp.title.trim() : null
+      if (activeFile && window.__YOGATIK_ACTION_GATE__) {
+        onSendPrompt?.(`Apply this code snippet directly to ${activeFile}:\n\`\`\`\n${codeSnippet}\n\`\`\``)
+        triggerToast(`Dispatched patch for ${activeFile}`)
+      } else {
+        await navigator.clipboard.writeText(codeSnippet)
+        triggerToast('Copied code to clipboard!')
+      }
+    } catch {
+      await navigator.clipboard.writeText(codeSnippet)
+      triggerToast('Copied code to clipboard!')
+    }
   }
 
-  const cycleOpacity = () => {
-    if (opacityLevel === 0.96) setOpacityLevel(0.84)
-    else if (opacityLevel === 0.84) setOpacityLevel(0.70)
-    else setOpacityLevel(0.96)
-  }
-
-  const recentMessages = messages.slice(-8)
-
-  const quickActionPills = [
-    // Coding
-    { cat: 'code', label: 'Debug Error', icon: <Code size={11} />, prompt: 'Inspect the code and error on my screen and generate the exact fix', color: '#f43f5e' },
-    { cat: 'code', label: 'Explain Code', icon: <Terminal size={11} />, prompt: 'Explain the function, logic, and architecture visible on my screen', color: '#38bdf8' },
-    { cat: 'code', label: 'Write Tests', icon: <CheckCircle2 size={11} />, prompt: 'Generate comprehensive unit tests for the functions visible on my screen', color: '#10b981' },
-    { cat: 'code', label: 'Refactor Code', icon: <Cpu size={11} />, prompt: 'Refactor the code on my screen to make it cleaner, typed, and optimal', color: '#a855f7' },
-    // Writing & Comms
-    { cat: 'write', label: 'Draft Reply', icon: <Send size={11} />, prompt: 'Draft a professional, concise reply to the open conversation/email on my screen', color: '#3b82f6' },
-    { cat: 'write', label: 'Polish Text', icon: <Sparkles size={11} />, prompt: 'Proofread and polish the text on my screen for clarity and executive impact', color: '#ec4899' },
-    { cat: 'write', label: 'Key Takeaways', icon: <Compass size={11} />, prompt: 'Synthesize the key takeaways and decisions from this document/conversation', color: '#f59e0b' },
-    // Data & Research
-    { cat: 'data', label: 'Extract Table', icon: <FileText size={11} />, prompt: 'Extract all data tables and figures visible on my screen into clean Markdown/JSON', color: '#10b981' },
-    { cat: 'data', label: 'Summarize Tab', icon: <Globe size={11} />, prompt: 'Summarize the article or web page currently open on my screen', color: '#eab308' },
-    { cat: 'data', label: 'Analyze Chart', icon: <Activity size={11} />, prompt: 'Analyze the metrics, graphs, and trends displayed on my screen', color: '#06b6d4' },
-    // Autopilot
-    { cat: 'autopilot', label: 'Next Action', icon: <Zap size={11} />, prompt: 'Analyze what I am doing and propose the top 3 high-impact next steps', color: '#06b6d4' },
-    { cat: 'autopilot', label: 'Make Diagram', icon: <Layers size={11} />, prompt: 'Create a Mermaid flowchart diagram representing what is on my screen', color: '#8b5cf6' },
-  ]
-
-  const effectiveCategory = categoryFilter ?? detectedCategory
-  const filteredPills = effectiveCategory === 'all'
-    ? quickActionPills
-    : quickActionPills.filter(p => p.cat === effectiveCategory)
-
-  // -------------------------------------------------------------
-  // Compact Mini Pill / Dock View
-  // -------------------------------------------------------------
+  // ── Render Compact Floating Capsule ──────────────────────────────────────
   if (isCompact) {
     return (
-      <div style={{
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 12px',
-        background: `color-mix(in srgb, var(--bg-secondary) ${Math.round(opacityLevel * 100)}%, transparent)`,
-        backdropFilter: 'blur(20px)',
-        border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
-        borderRadius: 12,
-        color: 'var(--text-primary)',
-        boxSizing: 'border-box',
-        WebkitAppRegion: 'drag',
-        userSelect: 'none',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <YogatikLogo size={20} />
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>AI COMPANION</span>
-            <span style={{ fontSize: 9.5, color: 'var(--text-secondary)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {monitoredApp.appName}
+      <div
+        style={{
+          position: 'fixed',
+          top: position.y,
+          left: position.x,
+          zIndex: 99999,
+          background: 'rgba(15, 23, 42, 0.9)',
+          backdropFilter: 'blur(20px) saturate(180%)',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
+          borderRadius: 30,
+          padding: '6px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          boxShadow: companionState.glow,
+          transition: 'box-shadow 0.3s ease',
+          cursor: 'grab',
+          userSelect: 'none',
+        }}
+        onMouseDown={handleMouseDown}
+        onClick={() => {
+          setIsCompact(false)
+          setUnreadCount(0)
+        }}
+      >
+        <div style={{ position: 'relative' }}>
+          <div style={{
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            backgroundColor: companionState.color,
+            boxShadow: `0 0 8px ${companionState.color}`,
+          }} />
+          {unreadCount > 0 && (
+            <span style={{
+              position: 'absolute',
+              top: -6,
+              right: -6,
+              background: '#8b5cf6',
+              color: '#fff',
+              fontSize: 9,
+              fontWeight: 700,
+              borderRadius: 10,
+              padding: '1px 4px',
+              boxShadow: '0 0 6px #8b5cf6',
+            }}>
+              {unreadCount}
             </span>
-          </div>
+          )}
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, WebkitAppRegion: 'no-drag' }}>
-          <button
-            onClick={() => handleQuickAction('Inspect my active screen and tell me what to do next')}
-            style={{
-              background: 'color-mix(in srgb, var(--accent) 15%, transparent)',
-              border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
-              borderRadius: 6,
-              color: 'var(--accent)',
-              fontSize: 11,
-              padding: '4px 8px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            <Sparkles size={11} /> Ask Screen
-          </button>
-          <button
-            className="icon-btn"
-            onClick={() => setIsCompact(false)}
-            title="Expand Companion View"
-            style={{ padding: 4, color: 'var(--text-secondary)' }}
-          >
-            <ChevronDown size={14} />
-          </button>
-          <button
-            className="icon-btn"
-            onClick={onExitCompanion}
-            title="Expand to Full Workstation"
-            style={{ padding: 4, color: 'var(--text-secondary)' }}
-          >
-            <Maximize2 size={13} />
-          </button>
-        </div>
+        <YogatikLogo size={18} />
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#f8fafc' }}>Companion</span>
+        {listening && <AudioEqualizer active={true} color="#10b981" />}
+        <button
+          onClick={(e) => { e.stopPropagation(); toggleVoice() }}
+          style={{
+            background: listening ? '#10b981' : 'rgba(255, 255, 255, 0.08)',
+            border: 'none',
+            color: '#fff',
+            borderRadius: '50%',
+            width: 26,
+            height: 26,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          {listening ? <Mic size={13} /> : <MicOff size={13} />}
+        </button>
+        <Maximize2 size={13} color="#94a3b8" />
       </div>
     )
   }
 
-  // -------------------------------------------------------------
-  // Full Companion View
-  // -------------------------------------------------------------
+  // ── Render Full Glassmorphic HUD Companion ───────────────────────────────
   return (
-    <div style={{
-      width: '100%',
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      background: `color-mix(in srgb, var(--bg-secondary) ${Math.round(opacityLevel * 100)}%, transparent)`,
-      backdropFilter: 'blur(28px)',
-      color: 'var(--text-primary)',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      boxSizing: 'border-box',
-      overflow: 'hidden',
-      border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
-      boxShadow: '0 16px 48px rgba(0,0,0,0.75)',
-    }}>
-      {/* 1. Companion Top Header Bar */}
-      <div style={{
+    <div
+      onDragOver={(e) => { e.preventDefault(); setIsDraggingFile(true) }}
+      onDragLeave={() => setIsDraggingFile(false)}
+      onDrop={handleFileDrop}
+      style={{
+        position: 'fixed',
+        top: position.y,
+        left: position.x,
+        width: 380,
+        height: 620,
+        zIndex: 99999,
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '7px 12px',
-        background: 'linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent) 4%, transparent))',
-        borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
-        WebkitAppRegion: 'drag',
-        userSelect: 'none',
-        flexShrink: 0,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <YogatikLogo size={18} />
-          <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.04em', color: 'var(--accent)' }}>
-            AI COMPANION
-          </span>
-          <span style={{
-            fontSize: 9,
-            padding: '1px 5px',
-            borderRadius: 10,
-            background: isDesktopEnv ? 'color-mix(in srgb, var(--success) 20%, transparent)' : 'color-mix(in srgb, var(--accent) 20%, transparent)',
-            color: isDesktopEnv ? 'var(--success)' : 'var(--accent)',
+        flexDirection: 'column',
+        background: `rgba(10, 15, 29, ${opacityLevel})`,
+        backdropFilter: 'blur(24px) saturate(180%)',
+        border: isDraggingFile ? '2px dashed #38bdf8' : '1px solid rgba(255, 255, 255, 0.12)',
+        borderRadius: 16,
+        boxShadow: `0 20px 50px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.15), ${companionState.glow}`,
+        overflow: 'hidden',
+        color: '#f8fafc',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        transition: 'box-shadow 0.3s ease, border-color 0.3s ease',
+      }}
+    >
+      {/* Drag & Drop File Overlay */}
+      {isDraggingFile && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'rgba(15, 23, 42, 0.9)',
+          zIndex: 100,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+          color: '#38bdf8',
+          pointerEvents: 'none',
+        }}>
+          <UploadCloud size={48} />
+          <div style={{ fontSize: 14, fontWeight: 700 }}>Drop file to analyze in companion</div>
+        </div>
+      )}
+
+      {/* ── Top Cyber-HUD Header (Draggable) ── */}
+      <div
+        onMouseDown={handleMouseDown}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 14px',
+          background: 'rgba(255, 255, 255, 0.03)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          cursor: 'grab',
+          userSelect: 'none',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <GripHorizontal size={14} color="#64748b" style={{ cursor: 'grab' }} />
+          <div style={{
+            position: 'relative',
+            width: 24,
+            height: 24,
+            borderRadius: 6,
             display: 'flex',
             alignItems: 'center',
-            gap: 3,
-            fontWeight: 700,
+            justifyContent: 'center',
+            background: 'rgba(99, 102, 241, 0.15)',
+            border: '1px solid rgba(99, 102, 241, 0.3)',
           }}>
-            <span style={{ width: 5, height: 5, borderRadius: '50%', background: isDesktopEnv ? 'var(--success)' : 'var(--accent)' }} />
-            {isDesktopEnv ? 'OS DESKTOP' : 'WEB PiP'}
-          </span>
+            <YogatikLogo size={16} />
+            <span style={{
+              position: 'absolute',
+              top: -2,
+              right: -2,
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              backgroundColor: companionState.color,
+              boxShadow: `0 0 6px ${companionState.color}`,
+            }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: -0.2, display: 'flex', alignItems: 'center', gap: 4 }}>
+              Yogatik AI Companion
+            </div>
+            <div style={{ fontSize: 10, color: companionState.color, fontWeight: 500 }}>
+              {companionState.label}
+            </div>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, WebkitAppRegion: 'no-drag' }}>
-          {/* New Chat Button */}
-          {onNewChat && (
+        {/* Header Action Icons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {isDocumentPipSupported() && (
             <button
-              className="icon-btn"
-              onClick={onNewChat}
-              title="New Topic / Clean Slate"
-              style={{ padding: 4, color: 'var(--text-secondary)' }}
-            >
-              <Plus size={13} />
-            </button>
-          )}
-
-          {/* Opacity Selector */}
-          <button
-            className="icon-btn"
-            onClick={cycleOpacity}
-            title={`Opacity: ${Math.round(opacityLevel * 100)}% (Click to toggle translucency)`}
-            style={{ padding: 4, color: opacityLevel < 0.9 ? 'var(--accent)' : 'var(--text-secondary)' }}
-          >
-            <Sliders size={13} />
-          </button>
-
-          {/* Voice Response Output Toggle */}
-          <button
-            className="icon-btn"
-            onClick={() => setSpeechEnabled(s => !s)}
-            title={speechEnabled ? 'Voice Output Enabled (Speaking answers)' : 'Enable Voice Response Audio'}
-            style={{ padding: 4, color: speechEnabled ? 'var(--success)' : 'var(--text-muted)' }}
-          >
-            {speechEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
-          </button>
-
-          {/* Document PiP Pop-Out (Web mode) */}
-          {isDocumentPipSupported() && onPopOutPip && (
-            <button
-              className="icon-btn"
               onClick={onPopOutPip}
-              title="Pop out Always-on-Top Floating Window (Document Picture-in-Picture)"
-              style={{ padding: 4, color: 'var(--accent)' }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                padding: 4,
+                borderRadius: 4,
+                display: 'flex',
+              }}
+              title="Pop out into native Picture-in-Picture window"
             >
-              <ExternalLink size={13} />
+              <ExternalLink size={14} />
             </button>
           )}
-
-          {/* Compact Mini Mode */}
           <button
-            className="icon-btn"
-            onClick={() => setIsCompact(true)}
-            title="Compact Mini Dock"
-            style={{ padding: 4, color: 'var(--text-secondary)' }}
+            onClick={() => setShowVoiceSettings(s => !s)}
+            style={{
+              background: showVoiceSettings ? 'rgba(99, 102, 241, 0.2)' : 'none',
+              border: 'none',
+              color: showVoiceSettings ? '#818cf8' : '#94a3b8',
+              cursor: 'pointer',
+              padding: 4,
+              borderRadius: 4,
+              display: 'flex',
+            }}
+            title="TTS Speech Settings"
           >
-            <ChevronUp size={14} />
+            <Settings2 size={14} />
           </button>
-
-          {/* Maximize to full workstation */}
           <button
-            className="icon-btn"
-            onClick={onExitCompanion}
-            title="Expand to Full Workstation"
-            style={{ padding: 4, color: 'var(--text-secondary)' }}
+            onClick={() => setSpeechEnabled(s => !s)}
+            style={{
+              background: speechEnabled ? 'rgba(99, 102, 241, 0.2)' : 'none',
+              border: 'none',
+              color: speechEnabled ? '#818cf8' : '#94a3b8',
+              cursor: 'pointer',
+              padding: 4,
+              borderRadius: 4,
+              display: 'flex',
+            }}
+            title={speechEnabled ? 'Mute Voice' : 'Enable Spoken Voice'}
           >
-            <Maximize2 size={13} />
+            {speechEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+          </button>
+          <button
+            onClick={() => {
+              setIsCompact(true)
+              setUnreadCount(0)
+            }}
+            style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
+            title="Minimize to floating pill (Esc)"
+          >
+            <Minimize2 size={14} />
+          </button>
+          <button
+            onClick={onExitCompanion}
+            style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
+            title="Close companion"
+          >
+            <X size={14} />
           </button>
         </div>
       </div>
 
-      {/* 2. Active App Monitor & Continuous Radar Strip */}
+      {/* Voice Settings Popover */}
+      {showVoiceSettings && (
+        <div style={{
+          padding: '8px 12px',
+          background: 'rgba(15, 23, 42, 0.95)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          fontSize: 11,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Speech Speed: {speechRate.toFixed(2)}x</span>
+            <input
+              type="range"
+              min="0.8"
+              max="1.4"
+              step="0.05"
+              value={speechRate}
+              onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+              style={{ width: 100, accentColor: '#6366f1' }}
+            />
+          </div>
+          {availableVoices.length > 0 && (
+            <select
+              value={selectedVoice?.name || ''}
+              onChange={(e) => {
+                const v = availableVoices.find(item => item.name === e.target.value)
+                if (v) setSelectedVoice(v)
+              }}
+              style={{
+                background: 'rgba(0, 0, 0, 0.4)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                color: '#e2e8f0',
+                borderRadius: 4,
+                padding: '2px 4px',
+                fontSize: 10,
+              }}
+            >
+              {availableVoices.map(v => (
+                <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+
+      {/* ── Active Context & File Awareness HUD ── */}
       <div style={{
-        padding: '5px 12px',
-        background: 'color-mix(in srgb, var(--text-primary) 2%, transparent)',
-        borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 6%, transparent)',
+        padding: '6px 12px',
+        background: 'rgba(255, 255, 255, 0.02)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         fontSize: 11,
-        flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
-          <Monitor size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
-          <span style={{ color: 'var(--text-secondary)', flexShrink: 0 }}>Watching:</span>
-          <strong style={{
-            color: 'var(--text-primary)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }} title={`${monitoredApp.appName} · ${monitoredApp.title}`}>
-            {monitoredApp.appName} {monitoredApp.title ? `· ${monitoredApp.title}` : ''}
-          </strong>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+          <Monitor size={12} color="#94a3b8" />
+          <span style={{ color: '#cbd5e1', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>
+            {monitoredApp.appName}: {monitoredApp.title || 'Active Document'}
+          </span>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-          {/* Auto-Watch Radar Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
-            onClick={() => setAutoWatch(a => !a)}
+            onClick={() => setAutoWatch(w => !w)}
             style={{
-              background: autoWatch ? 'color-mix(in srgb, var(--success) 15%, transparent)' : 'color-mix(in srgb, var(--text-primary) 5%, transparent)',
-              border: `1px solid ${autoWatch ? 'color-mix(in srgb, var(--success) 40%, transparent)' : 'color-mix(in srgb, var(--text-primary) 10%, transparent)'}`,
+              background: autoWatch ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+              border: `1px solid ${autoWatch ? 'rgba(139, 92, 246, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+              color: autoWatch ? '#a78bfa' : '#94a3b8',
               borderRadius: 4,
-              color: autoWatch ? 'var(--success)' : 'var(--text-secondary)',
-              fontSize: 10,
               padding: '2px 6px',
+              fontSize: 10,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: 3,
             }}
-            title={autoWatch ? 'Auto-Watch is active (attaches visual screen frame on send)' : 'Enable Continuous Auto-Watch'}
+            title="Toggle autonomous screen observation"
           >
             {autoWatch ? <Eye size={10} /> : <EyeOff size={10} />}
-            {autoWatch ? 'Live Vision' : 'Manual'}
+            {autoWatch ? 'Watching' : 'Watch'}
           </button>
-
-          {/* Ambient awareness. Opt-in on purpose: it spends tokens on a timer
-              and can interrupt, so the user turns it on rather than meeting it. */}
-          <button
-            onClick={() => setAmbient(v => !v)}
-            style={{
-              background: ambient ? 'color-mix(in srgb, var(--accent) 18%, transparent)' : 'color-mix(in srgb, var(--text-primary) 5%, transparent)',
-              border: `1px solid ${ambient ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'color-mix(in srgb, var(--text-primary) 10%, transparent)'}`,
-              borderRadius: 4,
-              color: ambient ? 'var(--accent)' : 'var(--text-secondary)',
-              fontSize: 10,
-              padding: '2px 6px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 3,
-            }}
-            title={ambient
-              ? 'Thinking ahead: watches what you switch to and speaks only when it has something useful'
-              : 'Let the companion notice context changes and speak up when useful'}
-          >
-            <Zap size={10} />
-            {ambient ? 'Thinking ahead' : 'Reactive'}
-          </button>
-
-          {/* Manual Snapshot Scan */}
           <button
             onClick={() => handleCaptureScreen(false)}
-            disabled={scanning}
             style={{
-              background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-              border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              color: '#cbd5e1',
               borderRadius: 4,
-              color: 'var(--accent)',
-              fontSize: 10,
               padding: '2px 6px',
+              fontSize: 10,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: 3,
             }}
-            title="Capture screen snapshot now"
+            title="Snap current screen frame"
           >
-            <Camera size={10} /> {scanning ? 'Scanning...' : 'Scan'}
+            <Camera size={10} /> Snap
           </button>
         </div>
       </div>
 
-      {/* 3. Screen Preview Thumbnail Card (if captured) */}
+      {/* ── Quick Action Triggers Bar ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '6px 12px',
+        background: 'rgba(255, 255, 255, 0.01)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+        overflowX: 'auto',
+      }}>
+        <button
+          onClick={() => handleQuickAction('review')}
+          style={{
+            background: 'rgba(56, 189, 248, 0.12)',
+            border: '1px solid rgba(56, 189, 248, 0.25)',
+            color: '#38bdf8',
+            borderRadius: 12,
+            padding: '3px 9px',
+            fontSize: 10.5,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Zap size={11} /> Code Review
+        </button>
+        <button
+          onClick={() => handleQuickAction('audit')}
+          style={{
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.25)',
+            color: '#f87171',
+            borderRadius: 12,
+            padding: '3px 9px',
+            fontSize: 10.5,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <ShieldCheck size={11} /> Security Audit
+        </button>
+        <button
+          onClick={() => handleQuickAction('decision')}
+          style={{
+            background: 'rgba(168, 85, 247, 0.12)',
+            border: '1px solid rgba(168, 85, 247, 0.25)',
+            color: '#c084fc',
+            borderRadius: 12,
+            padding: '3px 9px',
+            fontSize: 10.5,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Sparkles size={11} /> Record Decision
+        </button>
+        <button
+          onClick={() => handleQuickAction('explain')}
+          style={{
+            background: 'rgba(16, 185, 129, 0.12)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            color: '#34d399',
+            borderRadius: 12,
+            padding: '3px 9px',
+            fontSize: 10.5,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Compass size={11} /> Explain
+        </button>
+      </div>
+
+      {/* ── Screen Frame Radar Thumbnail Preview (if captured) ── */}
       {screenPreview && (
         <div style={{
           position: 'relative',
           padding: '6px 12px',
-          background: 'rgba(0,0,0,0.55)',
-          borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 6%, transparent)',
+          background: 'rgba(0, 0, 0, 0.3)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
-          flexShrink: 0,
+          gap: 8,
         }}>
-          <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => setZoomModal(z => !z)}>
-            <img
-              src={screenPreview}
-              alt="Screen Preview"
-              style={{
-                height: 42,
-                borderRadius: 4,
-                border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-                display: 'block',
-              }}
-            />
-            <div style={{
-              position: 'absolute',
-              bottom: 2,
-              right: 2,
-              background: 'rgba(0,0,0,0.7)',
-              borderRadius: 2,
-              padding: 1,
-              color: 'var(--accent)',
-            }}>
-              <ZoomIn size={8} />
+          <img
+            src={screenPreview}
+            alt="Screen capture"
+            style={{
+              width: 54,
+              height: 34,
+              borderRadius: 4,
+              objectFit: 'cover',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              cursor: 'pointer',
+            }}
+            onClick={() => setZoomModal(true)}
+          />
+          <div style={{ flex: 1, fontSize: 10, color: '#94a3b8' }}>
+            <div>{screenMeta?.source || 'Screen Snapshot'} ({screenMeta?.time})</div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+              <button
+                onClick={handleExtractOcr}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#38bdf8',
+                  fontSize: 10,
+                  cursor: 'pointer',
+                  padding: 0,
+                  textDecoration: 'underline',
+                }}
+              >
+                {ocrLoading ? 'OCR reading...' : 'OCR to Clipboard'}
+              </button>
+              <button
+                onClick={() => setScreenPreview(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#ef4444',
+                  fontSize: 10,
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                Dismiss
+              </button>
             </div>
-          </div>
-
-          <div style={{ flex: 1, minWidth: 0, fontSize: 10.5, color: 'var(--text-secondary)' }}>
-            <div style={{ color: 'var(--text-primary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-              Screen Frame Ready
-              <span style={{ fontSize: 8.5, padding: '0 4px', borderRadius: 3, background: 'var(--success)22', color: 'var(--success)' }}>Multimodal</span>
-            </div>
-            <div style={{ fontSize: 9.5, opacity: 0.8 }}>
-              {screenMeta?.source || 'Display'} · {screenMeta?.time || 'Just now'}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {/* Quick OCR Extract */}
-            <button
-              onClick={handleExtractOcr}
-              disabled={ocrLoading}
-              style={{
-                background: 'color-mix(in srgb, var(--text-primary) 6%, transparent)',
-                border: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
-                borderRadius: 4,
-                color: 'var(--text-primary)',
-                fontSize: 9.5,
-                padding: '3px 6px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 3,
-              }}
-              title="Extract & Copy Text from screen snapshot"
-            >
-              <Copy size={9} /> {ocrLoading ? 'Reading...' : (ocrText ? 'Copied OCR' : 'Copy OCR')}
-            </button>
-
-            <button
-              onClick={() => { setScreenPreview(null); setOcrText(null) }}
-              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 3 }}
-              title="Clear preview"
-            >
-              <X size={13} />
-            </button>
           </div>
         </div>
       )}
 
-      {/* Screen Zoom Modal */}
-      {zoomModal && screenPreview && (
-        <div
-          onClick={() => setZoomModal(false)}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'rgba(0,0,0,0.85)',
-            zIndex: 100,
+      {/* ── Toast Notification Banner ── */}
+      {toastMessage && (
+        <div style={{
+          padding: '4px 12px',
+          background: 'rgba(16, 185, 129, 0.2)',
+          borderBottom: '1px solid rgba(16, 185, 129, 0.3)',
+          color: '#34d399',
+          fontSize: 11,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}>
+          <CheckCircle2 size={12} />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* ── Chat Messages Stream Area ── */}
+      <div style={{
+        flex: 1,
+        padding: '12px 14px',
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}>
+        {messages.length === 0 && !streamText && (
+          <div style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: 12,
-          }}
-        >
-          <img
-            src={screenPreview}
-            alt="Screen Zoom"
-            style={{ maxWidth: '100%', maxHeight: '80%', borderRadius: 6, border: '1px solid color-mix(in srgb, var(--accent) 50%, transparent)' }}
-          />
-          <span style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 8 }}>Click anywhere to close</span>
-        </div>
-      )}
-
-      {/* 4. Quick Action Category Pills */}
-      <div style={{
-        padding: '5px 10px 4px',
-        display: 'flex',
-        gap: 4,
-        overflowX: 'auto',
-        borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 5%, transparent)',
-        flexShrink: 0,
-      }}>
-        {['all', 'code', 'write', 'data', 'autopilot'].map(cat => (
-          <button
-            key={cat}
-            onClick={() => setCategoryFilter(cat)}
-            style={{
-              background: effectiveCategory === cat ? 'color-mix(in srgb, var(--accent) 20%, transparent)' : 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
-              border: `1px solid ${effectiveCategory === cat ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'color-mix(in srgb, var(--text-primary) 8%, transparent)'}`,
-              color: effectiveCategory === cat ? 'var(--accent)' : 'var(--text-secondary)',
-              borderRadius: 12,
-              fontSize: 10,
-              fontWeight: 600,
-              padding: '2px 8px',
-              cursor: 'pointer',
-              textTransform: 'capitalize',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 3,
-            }}
-          >
-            {cat === detectedCategory && <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)' }} />}
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      {/* Quick Action Buttons */}
-      <div style={{
-        display: 'flex',
-        gap: 5,
-        padding: '5px 10px 7px',
-        overflowX: 'auto',
-        borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 6%, transparent)',
-        flexShrink: 0,
-      }}>
-        {filteredPills.map((pill, idx) => (
-          <button
-            key={idx}
-            onClick={() => handleQuickAction(pill.prompt, true)}
-            style={{
-              background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
-              border: `1px solid ${pill.color}33`,
-              borderRadius: 8,
-              color: pill.color,
-              fontSize: 10.5,
-              fontWeight: 500,
-              padding: '3px 8px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            {pill.icon} {pill.label}
-          </button>
-        ))}
-      </div>
-
-      {/* 5. Messages / Live Feed Stream */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '10px 12px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        fontSize: 12,
-        lineHeight: 1.5,
-      }}>
-        {recentMessages.length === 0 && !isStreaming && (
-          <div style={{
-            margin: 'auto',
+            height: '100%',
+            color: '#64748b',
             textAlign: 'center',
-            color: 'var(--text-muted)',
-            padding: 16,
+            padding: '0 20px',
+            gap: 10,
           }}>
-            <Bot size={28} style={{ opacity: 0.4, margin: '0 auto 8px' }} />
-            <div style={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12.5 }}>Companion Ready</div>
-            <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)', lineHeight: 1.4 }}>
-              Click any quick action pill above or type below.<br />
-              Press <strong>Ctrl+Enter</strong> to capture screen &amp; analyze with multimodal AI.
+            <div style={{
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              background: 'rgba(99, 102, 241, 0.1)',
+              border: '1px solid rgba(99, 102, 241, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <Bot size={24} color="#818cf8" />
             </div>
-            {activeModel && (
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                marginTop: 10,
-                padding: '2px 8px',
-                borderRadius: 12,
-                background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
-                border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
-                fontSize: 10,
-                color: 'var(--accent)'
-              }}>
-                <Sparkles size={10} /> Powered by {activeModel}
-              </div>
-            )}
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>
+              Companion Active
+            </div>
+            <div style={{ fontSize: 11, lineHeight: 1.4 }}>
+              I am monitoring <strong>{monitoredApp.appName}</strong>. Ask questions, click quick review chips, or drop files here.
+            </div>
           </div>
         )}
 
-        {recentMessages.map((m, idx) => (
+        {messages.map((m, idx) => (
           <div
             key={idx}
             style={{
               alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-              maxWidth: '94%',
-              padding: '7px 11px',
-              borderRadius: 8,
-              background: m.role === 'user' ? 'color-mix(in srgb, var(--accent) 18%, transparent)' : 'color-mix(in srgb, var(--text-primary) 5%, transparent)',
-              border: m.role === 'user' ? '1px solid color-mix(in srgb, var(--accent) 30%, transparent)' : '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
-              color: 'var(--text-primary)',
-              fontSize: 11.5,
-              position: 'relative',
-              wordBreak: 'break-word',
+              maxWidth: '88%',
+              background: m.role === 'user' ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+              border: `1px solid ${m.role === 'user' ? 'rgba(99, 102, 241, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+              borderRadius: m.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+              padding: '8px 12px',
+              fontSize: 12.5,
+              color: '#f8fafc',
             }}
           >
-            {m.image && (
-              <img
-                src={m.image}
-                alt="Captured Screen"
-                style={{
-                  maxHeight: 70,
-                  borderRadius: 4,
-                  marginBottom: 6,
-                  border: '1px solid color-mix(in srgb, var(--text-primary) 15%, transparent)',
-                  display: 'block',
-                }}
-              />
-            )}
-            <CompanionMessageContent content={m.content} />
-            {m.role === 'assistant' && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-                <button
-                  onClick={() => copyMessage(idx, m.content)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    fontSize: 9.5,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 3,
-                    padding: 0,
-                  }}
-                  title="Copy message"
-                >
-                  {copiedId === idx ? <CheckCircle2 size={10} color="var(--success)" /> : <Copy size={10} />}
-                  {copiedId === idx ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            )}
+            <CompanionMessageContent content={m.content} onApplyCode={handleApplyCodeToDisk} />
           </div>
         ))}
 
-        {isStreaming && (
+        {isStreaming && streamText && (
           <div style={{
             alignSelf: 'flex-start',
-            maxWidth: '94%',
-            padding: '7px 11px',
-            borderRadius: 8,
-            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-            border: '1px solid color-mix(in srgb, var(--accent) 28%, transparent)',
-            color: 'var(--text-primary)',
-            fontSize: 11.5,
-            wordBreak: 'break-word',
+            maxWidth: '88%',
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(6, 182, 212, 0.3)',
+            borderRadius: '12px 12px 12px 2px',
+            padding: '8px 12px',
+            fontSize: 12.5,
+            color: '#f8fafc',
           }}>
-            <CompanionMessageContent content={streamText || 'Reasoning & piloting...'} />
+            <CompanionMessageContent content={streamText} onApplyCode={handleApplyCodeToDisk} />
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 6. Companion Input Bar */}
-      <form onSubmit={handleSubmit} style={{
-        padding: '7px 10px',
-        background: 'color-mix(in srgb, var(--text-primary) 3%, transparent)',
-        borderTop: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
+      {/* ── Bottom Input & Control Bar ── */}
+      <div style={{
+        padding: '10px 12px',
+        background: 'rgba(255, 255, 255, 0.02)',
+        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: 'column',
         gap: 6,
-        flexShrink: 0,
       }}>
-        {/* Voice Dictation */}
-        <button
-          type="button"
-          onClick={toggleVoice}
-          style={{
-            background: listening ? 'var(--error)' : 'color-mix(in srgb, var(--text-primary) 6%, transparent)',
-            border: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
-            borderRadius: '50%',
-            width: 28,
-            height: 28,
-            color: '#fff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            flexShrink: 0,
-            position: 'relative',
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            const txt = input.trim()
+            if (!txt || isStreaming) return
+            setInput('')
+            onSendPrompt?.(txt)
           }}
-          title={listening ? 'Listening... click to stop' : 'Voice dictation'}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
-          {listening && (
-            <span style={{
-              position: 'absolute',
-              inset: -3,
-              borderRadius: '50%',
-              border: '2px solid var(--error)',
-              animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite',
-            }} />
-          )}
-          {listening ? <MicOff size={13} /> : <Mic size={13} />}
-        </button>
-
-        {/* Text Input */}
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={listening ? 'Listening to voice...' : 'Command AI companion (Ctrl+Enter to scan)...'}
-          style={{
+          <div style={{
             flex: 1,
-            background: 'rgba(0,0,0,0.35)',
-            border: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 11.5,
-            color: '#fff',
-            outline: 'none',
-          }}
-        />
-
-        {/* Continuous Voice Loop Toggle */}
-        <button
-          type="button"
-          onClick={() => setContinuousVoice(c => !c)}
-          style={{
-            background: continuousVoice ? 'color-mix(in srgb, var(--success) 20%, transparent)' : 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
-            border: `1px solid ${continuousVoice ? 'color-mix(in srgb, var(--success) 40%, transparent)' : 'color-mix(in srgb, var(--text-primary) 8%, transparent)'}`,
-            borderRadius: 6,
-            width: 28,
-            height: 28,
-            color: continuousVoice ? 'var(--success)' : 'var(--text-muted)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-          title={continuousVoice ? 'Hands-Free Conversational Voice Loop is ON' : 'Turn on Continuous Hands-Free Voice Loop'}
-        >
-          <Repeat size={12} />
-        </button>
-
-        {/* Submit Button */}
-        <button
-          type="submit"
-          disabled={!input.trim() || isStreaming}
-          style={{
-            background: 'linear-gradient(135deg, var(--accent), #818cf8)',
-            border: 'none',
-            borderRadius: 6,
-            width: 28,
-            height: 28,
-            color: '#fff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            opacity: (!input.trim() || isStreaming) ? 0.4 : 1,
-            flexShrink: 0,
-          }}
-          title="Send command"
-        >
-          <Send size={12} />
-        </button>
-      </form>
+            background: 'rgba(15, 23, 42, 0.6)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: 8,
+            padding: '0 8px',
+          }}>
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={listening ? 'Listening to voice...' : 'Ask, drop files, or command companion...'}
+              style={{
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                padding: '8px 4px',
+                fontSize: 12,
+                color: '#f8fafc',
+                outline: 'none',
+              }}
+            />
+            {listening && <AudioEqualizer active={true} color="#10b981" />}
+          </div>
+          <button
+            type="button"
+            onClick={toggleVoice}
+            style={{
+              background: listening ? '#10b981' : 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: 8,
+              color: '#fff',
+              width: 32,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            title={listening ? 'Stop listening' : 'Start voice input'}
+          >
+            {listening ? <Mic size={14} /> : <MicOff size={14} />}
+          </button>
+          <button
+            type="submit"
+            disabled={!input.trim() || isStreaming}
+            style={{
+              background: input.trim() && !isStreaming ? 'var(--accent, #6366f1)' : 'rgba(255, 255, 255, 0.06)',
+              border: 'none',
+              borderRadius: 8,
+              color: '#fff',
+              width: 32,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: input.trim() && !isStreaming ? 'pointer' : 'default',
+              opacity: input.trim() && !isStreaming ? 1 : 0.5,
+              transition: 'all 0.15s',
+            }}
+          >
+            <Send size={14} />
+          </button>
+        </form>
+      </div>
     </div>
   )
 }

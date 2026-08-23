@@ -39,6 +39,7 @@ export const packageTool = {
     },
   },
   async execute({ name, registry }) {
+    if (typeof name !== 'string' || !name.trim()) return { success: false, error: 'name is required (the package name)' }
     try {
       if (registry === 'npm') {
         const d = await json(`https://registry.npmjs.org/${encodeURIComponent(name)}`)
@@ -233,6 +234,9 @@ export const currencyTool = {
     },
   },
   async execute({ from, to, amount = 1, date }) {
+    if (typeof from !== 'string' || typeof to !== 'string' || !from.trim() || !to.trim()) {
+      return { success: false, error: 'from and to currency codes are required, e.g. {from: "USD", to: "INR"}' }
+    }
     try {
       const when = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : 'latest'
       const d = await json(

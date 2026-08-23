@@ -92,6 +92,9 @@ export const codeExecTool = {
     },
   },
   async execute({ code, packages, reset }) {
+    // Guard first: loading Pyodide is a multi-MB download, not something to do
+    // for a call that has nothing to run.
+    if (typeof code !== 'string' || !code.trim()) return { success: false, tool: 'code_execute', error: 'code is required' }
     let py
     try {
       py = await getPyodide()
@@ -119,6 +122,7 @@ export const codeExecTool = {
       // Snapshot the filesystem so we can surface any file the code writes.
       const filesBefore = snapshotFiles(py, ['/tmp', (() => { try { return py.FS.cwd() } catch { return '/home/pyodide' } })()])
 
+      const startedAt = Date.now()
       // Capture stdout + stderr around the run.
       py.runPython('import sys, io\n_out = io.StringIO()\n_err = io.StringIO()\n_o, _e = sys.stdout, sys.stderr\nsys.stdout, sys.stderr = _out, _err')
       let result
@@ -133,12 +137,17 @@ export const codeExecTool = {
       const stdout = py.runPython('_out.getvalue()')
       const stderr = py.runPython('_err.getvalue()')
 
-      const output = stdout || (result !== undefined && result !== null ? String(result) : '')
+      // A script that BOTH prints and returns used to lose the returned value:
+      // `stdout || String(result)` discarded it whenever anything was printed.
+      const returned = result !== undefined && result !== null ? String(result) : ''
+      const output = [stdout, returned && returned !== stdout.trim() ? returned : ''].filter(Boolean).join('\n')
       // Surface any files the code created (PDF, images, CSV…) as downloadables.
       let files = []
       try { files = await collectNewFiles(py, filesBefore) } catch { /* best-effort */ }
       return {
         success: true, tool: 'code_execute', output,
+        // The card shows a duration when given one.
+        execution_time: Date.now() - startedAt,
         ...(stderr ? { stderr } : {}),
         ...(installed.length ? { installed } : {}),
         ...(files.length ? { files, files_note: `${files.length} file(s) are offered to the user as download buttons in the UI. Tell the user they can download ${files.map(f => f.name).join(', ')} directly — never mention a server/temp file path, which does not exist on their device.` } : {}),

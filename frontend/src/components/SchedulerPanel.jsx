@@ -247,6 +247,15 @@ export function SchedulerPanel({ isOpen, onClose, onToast }) {
       </div>
 
       <div className="side-panel-content">
+        {/* Without the bridge every button here is a no-op. Say so rather than
+            letting the panel look functional and quietly do nothing. */}
+        {!window.__YOGATIK_SCHEDULER__ && (
+          <p className="tool-detail" style={{ marginBottom: 12 }}>
+            Scheduled tasks run in the Yogatik desktop app — a browser tab cannot keep a
+            timer alive once it is closed. Open this in the desktop app to create and
+            manage jobs.
+          </p>
+        )}
         {/* Create/Edit Form */}
         {(showCreate || editingId) && (
           <div className="side-panel-form-card">

@@ -14,12 +14,14 @@ import { subscribeActivity } from '../activityStream'
  * which is the bug StreamingMessage.jsx exists to avoid. Only this panel
  * re-renders here, and activityStream coalesces to one animation frame.
  */
-export function ActivityPanel({ onClose }) {
+export function ActivityPanel({ conversationId, onClose }) {
   const [act, setAct] = useState(() => ({ reasoning: '', answer: '', steps: [], running: false }))
   const thinkRef = useRef(null)
   const stickRef = useRef(true)
 
-  useEffect(() => subscribeActivity(setAct), [])
+  useEffect(() => {
+    return subscribeActivity(setAct, conversationId)
+  }, [conversationId])
 
   // Follow the reasoning as it streams, but stop fighting the user if they
   // scroll up to read something.

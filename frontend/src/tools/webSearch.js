@@ -184,21 +184,47 @@ async function githubSearch(query, count) {
   }
 }
 
-/** Semantic Scholar — free keyless academic paper search with citation counts */
+/** OpenAlex Search — 100% free, keyless academic paper search with native browser CORS and citation counts */
+async function openAlexSearch(query, count) {
+  try {
+    const cleanQ = sanitizeSearchQuery(query)
+    const url = `https://api.openalex.org/works?search=${encodeURIComponent(cleanQ)}&per_page=${count}`
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) })
+    if (!resp.ok) return []
+    const data = await resp.json()
+    return (data?.results || []).slice(0, count).map(p => ({
+      title: `${p.title || p.display_name || ''} (${p.publication_year || '?'}, ${p.cited_by_count || 0} cites)`,
+      url: p.doi || p.primary_location?.landing_page_url || `https://openalex.org/${p.id}`,
+      snippet: p.abstract_inverted_index ? Object.keys(p.abstract_inverted_index).slice(0, 35).join(' ') : (p.display_name || ''),
+      published: p.publication_year ? `${p.publication_year}` : undefined,
+      engine: 'openalex',
+    })).filter(r => r.title && r.url)
+  } catch {
+    return []
+  }
+}
+
+/** Semantic Scholar — academic paper search (desktop direct or OpenAlex fallback for browser CORS) */
 async function semanticScholarSearch(query, count) {
   try {
     const cleanQ = sanitizeSearchQuery(query)
-    const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(cleanQ)}&limit=${count}&fields=title,url,abstract,year,citationCount,influentialCitationCount`
-    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) }).catch(() => proxyFetch(url))
-    if (!resp.ok) return []
-    const data = await resp.json()
-    return (data?.data || []).slice(0, count).map(p => ({
-      title: `${p.title || ''} (${p.year || '?'}, ${p.citationCount || 0} cites)`,
-      url: p.url || `https://www.semanticscholar.org/paper/${p.paperId}`,
-      snippet: (p.abstract || '').slice(0, 250),
-      published: p.year ? `${p.year}` : undefined,
-      engine: 'semantic_scholar',
-    })).filter(r => r.title && r.url)
+    const isElectron = typeof window !== 'undefined' && !!window.__YOGATIK_ELECTRON__
+    if (isElectron) {
+      const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(cleanQ)}&limit=${count}&fields=title,url,abstract,year,citationCount,influentialCitationCount`
+      const resp = await fetch(url, { signal: AbortSignal.timeout(8000) }).catch(() => null)
+      if (resp && resp.ok) {
+        const data = await resp.json()
+        return (data?.data || []).slice(0, count).map(p => ({
+          title: `${p.title || ''} (${p.year || '?'}, ${p.citationCount || 0} cites)`,
+          url: p.url || `https://www.semanticscholar.org/paper/${p.paperId}`,
+          snippet: (p.abstract || '').slice(0, 250),
+          published: p.year ? `${p.year}` : undefined,
+          engine: 'semantic_scholar',
+        })).filter(r => r.title && r.url)
+      }
+    }
+    // In web browser: OpenAlex provides native CORS support without triggering CORS block or 429 cascades
+    return await openAlexSearch(cleanQ, count)
   } catch {
     return []
   }
@@ -367,17 +393,17 @@ export const webSearchTool = {
         tasks.push(googleNewsSearch(query, 2).catch(() => []))
         tasks.push(wikipediaSearch(query, 2).catch(() => []))
       } else {
-        // General: wide net across all engines
+        // General: wide net across all general web search engines
         tasks.push(googleNewsSearch(query, 3).catch(() => []))
         tasks.push(wikipediaSearch(query, 2).catch(() => []))
         tasks.push(marginaliaSearch(query, 3).catch(() => []))
         tasks.push(githubSearch(query, 2).catch(() => []))
-        tasks.push(semanticScholarSearch(query, 2).catch(() => []))
-        if (/paper|arxiv|study|research|algorithm|model|code|math|science|physics|ai/i.test(query)) {
+        if (/\b(paper|arxiv|study|research|algorithm|theorem|science|physics|academic|scholar)\b/i.test(query)) {
+          tasks.push(semanticScholarSearch(query, 2).catch(() => []))
           tasks.push(arxivSearch(query, 2).catch(() => []))
           tasks.push(crossrefSearch(query, 2).catch(() => []))
         }
-        if (/review|opinion|problem|issue|reddit|forum|fix|discussion/i.test(query)) {
+        if (/\b(review|opinion|problem|issue|reddit|forum|fix|discussion)\b/i.test(query)) {
           tasks.push(redditSearch(query, 2).catch(() => []))
           tasks.push(stackOverflowSearch(query, 2).catch(() => []))
         }

@@ -7,6 +7,9 @@ export const diffTool = {
     }, required: ['text1', 'text2'] },
   },
   async execute({ text1, text2 }) {
+    if (typeof text1 !== 'string' || typeof text2 !== 'string') {
+      return { success: false, error: 'text1 and text2 are both required' }
+    }
     const lines1 = text1.split('\n'), lines2 = text2.split('\n')
     const diff = []
     const max = Math.max(lines1.length, lines2.length)

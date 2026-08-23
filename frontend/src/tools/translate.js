@@ -60,6 +60,9 @@ export const translateTool = {
       success: true, tool: 'translate',
       original: text, translated,
       source: srcLang, target: tgtLang,
+      // ToolResultCard reads source_text/source_lang/target_lang; without these
+      // aliases the card rendered "Translation (undefined → undefined)".
+      source_text: text, source_lang: srcLang, target_lang: tgtLang,
       match: data.responseData?.match,
     }
   }

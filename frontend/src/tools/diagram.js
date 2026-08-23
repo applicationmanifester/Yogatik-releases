@@ -27,6 +27,7 @@ export const diagramTool = {
     }, required: ['code'] },
   },
   async execute({ code }) {
+    if (typeof code !== 'string' || !code.trim()) return { success: false, error: 'code is required (Mermaid source)' }
     const mermaid = await loadMermaid()
     const id = 'mermaid-' + Date.now()
     const { svg } = await mermaid.render(id, code)

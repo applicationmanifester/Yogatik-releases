@@ -12,6 +12,7 @@
     "test:watch": "node ./scripts/run-vitest.mjs --watch",
     "lint": "node ./node_modules/eslint/bin/eslint.js src",
     "build:electron": "node ./node_modules/vite/bin/vite.js --configLoader runner build --base=./ --outDir dist-electron",
+    "build:desktop": "node ./scripts/build-desktop-app.mjs",
     "electron:dev": "electron .",
     "electron:build": "npm run build:electron && electron-builder --win nsis --publish never",
     "electron:build:all": "npm run build:electron && electron-builder -mwl --publish never",

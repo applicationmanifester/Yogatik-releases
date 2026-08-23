@@ -66,3 +66,23 @@ export async function runInWorker(task, payload) {
 
 /** True when real off-thread execution is available (for callers that care). */
 export const isWorkerOffloadAvailable = workerSupported
+
+export async function computeSha256(text) {
+  return runInWorker('sha256', text)
+}
+
+export async function computeWordFrequency(text) {
+  return runInWorker('wordFrequency', text)
+}
+
+export async function estimateTokens(text) {
+  return runInWorker('approxTokenCount', text)
+}
+
+export async function formatJsonAsync(data, indent = 2) {
+  return runInWorker('formatJson', { data, indent })
+}
+
+export async function computeStatsAsync(numbers) {
+  return runInWorker('computeStats', numbers)
+}

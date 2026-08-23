@@ -102,7 +102,8 @@ export const mdToPdfTool = {
     }, required: ['markdown'] },
   },
   async execute({ markdown, filename = 'document.pdf' }) {
-    const outName = filename.endsWith('.pdf') ? filename : `${filename}.pdf`
+    if (typeof markdown !== 'string' || !markdown.trim()) return { success: false, error: 'markdown is required' }
+    const outName = String(filename).endsWith('.pdf') ? filename : `${filename}.pdf`
 
     const container = document.createElement('div')
     container.innerHTML = `<style>${PRINT_CSS}</style>${mdToHtml(markdown)}`

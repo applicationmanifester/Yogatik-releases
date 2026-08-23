@@ -1,0 +1,93 @@
+/*
+ * Shared styling for the static, crawlable pages (guide, tools, how-it-works,
+ * faq, privacy, terms). Extracted from platforms.html so every page looks like
+ * the same product without each one carrying its own copy of the CSS.
+ *
+ * These pages exist because the app itself is a single-page app: the AdSense and
+ * search crawlers do not run JavaScript, so every SPA route looks like an empty
+ * shell to them. Real HTML with real content is the only thing they can read.
+ */
+:root {
+  --bg: #0a0e14; --panel: #121824; --panel2: #0f1520; --line: rgba(255,255,255,.08);
+  --text: #e8edf4; --muted: #93a0b4; --brand: #ff6b35; --brand2: #ff9142;
+}
+* { box-sizing: border-box; margin: 0; padding: 0 }
+html { scroll-behavior: smooth }
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--brand2); text-decoration: none }
+a:hover { text-decoration: underline }
+.wrap { max-width: 860px; margin: 0 auto; padding: 0 24px }
+.wrap.wide { max-width: 1080px }
+
+header { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; flex-wrap: wrap; gap: 12px }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; letter-spacing: -.02em; color: var(--text) }
+.logo:hover { text-decoration: none }
+.logo img { width: 30px; height: 30px }
+nav.site { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14.5px }
+nav.site a { color: var(--muted); font-weight: 600 }
+nav.site a:hover { color: var(--brand2); text-decoration: none }
+nav.site a[aria-current="page"] { color: var(--text) }
+
+.hero { padding: 48px 0 26px }
+.hero .pill {
+  display: inline-block; font-size: 12.5px; font-weight: 600; color: var(--brand2);
+  background: rgba(255,107,53,.1); border: 1px solid rgba(255,107,53,.28);
+  border-radius: 999px; padding: 6px 14px; margin-bottom: 20px;
+}
+h1 { font-size: clamp(30px,5vw,46px); line-height: 1.1; letter-spacing: -.03em; font-weight: 800; margin-bottom: 16px }
+.lead { font-size: clamp(16px,2.2vw,19px); color: var(--muted); max-width: 680px }
+
+main section { padding: 26px 0 }
+h2 { font-size: clamp(22px,3.2vw,30px); font-weight: 800; letter-spacing: -.02em; margin: 30px 0 12px }
+h3 { font-size: 18px; font-weight: 700; margin: 22px 0 8px }
+p { margin: 0 0 14px; color: #cfd8e6 }
+ul, ol { margin: 0 0 16px 22px; color: #cfd8e6 }
+li { margin-bottom: 8px }
+strong { color: var(--text) }
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em;
+  background: rgba(255,255,255,.06); border: 1px solid var(--line);
+  border-radius: 5px; padding: 1px 6px;
+}
+pre {
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 16px; overflow-x: auto; margin: 0 0 16px;
+}
+pre code { background: none; border: 0; padding: 0 }
+
+.card {
+  background: linear-gradient(180deg, var(--panel), var(--panel2));
+  border: 1px solid var(--line); border-radius: 16px; padding: 22px; margin-bottom: 16px;
+}
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: 16px }
+.grid .card { margin-bottom: 0 }
+.card h3 { margin-top: 0 }
+
+table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14.5px; display: block; overflow-x: auto }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top }
+th { color: var(--text); font-weight: 700; white-space: nowrap }
+td { color: #cfd8e6 }
+td code { white-space: nowrap }
+
+.cta {
+  display: inline-block; background: var(--brand); color: #fff; font-weight: 700;
+  padding: 11px 22px; border-radius: 10px; margin: 6px 8px 6px 0;
+}
+.cta:hover { background: var(--brand2); text-decoration: none }
+.cta.ghost { background: transparent; border: 1px solid var(--line); color: var(--text) }
+.cta.ghost:hover { border-color: var(--brand) }
+
+.note { font-size: 14px; color: var(--muted) }
+.updated { font-size: 13.5px; color: var(--muted); margin-bottom: 24px }
+
+footer {
+  border-top: 1px solid var(--line); margin-top: 50px; padding: 26px 0 40px;
+  font-size: 14px; color: var(--muted);
+}
+footer nav { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px }
+footer a { color: var(--muted) }
+footer a:hover { color: var(--brand2) }

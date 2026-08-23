@@ -173,6 +173,9 @@ export const diagramRenderTool = {
     },
   },
   async execute({ title, type, mermaid_code }) {
+    if (typeof mermaid_code !== 'string' || !mermaid_code.trim()) {
+      return { success: false, error: 'mermaid_code is required' }
+    }
     return {
       success: true,
       tool: 'diagram_render',
@@ -200,6 +203,7 @@ export const codeFormatTool = {
     },
   },
   async execute({ code, language = 'js', indent_size = 2 }) {
+    if (typeof code !== 'string' || !code.trim()) return { success: false, error: 'code is required' }
     const spaces = ' '.repeat(Math.max(1, Math.min(8, indent_size)))
     let formatted = code
     const lang = language.toLowerCase()
@@ -321,6 +325,9 @@ export const dataStatsTool = {
     },
   },
   async execute({ data, numeric_column }) {
+    if (data == null || (typeof data === 'string' && !data.trim())) {
+      return { success: false, error: 'data is required (CSV text, JSON array, or an array of numbers)' }
+    }
     try {
       let nums = []
       if (data.trim().startsWith('[') || data.trim().startsWith('{')) {
@@ -1352,6 +1359,8 @@ export const docEnhanceTool = {
     },
   },
   async execute({ filename, format, enhancement_type, content }) {
+    if (typeof content !== 'string' || !content.trim()) return { success: false, error: 'content is required' }
+    if (typeof filename !== 'string' || !filename.trim()) return { success: false, error: 'filename is required' }
     if (format === 'pptx' || enhancement_type === 'add_slide_images') {
       const pptResult = await exportPptx(content, filename, false)
       return {

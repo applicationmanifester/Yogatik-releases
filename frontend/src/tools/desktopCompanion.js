@@ -110,7 +110,8 @@ export async function executeDesktopAction(args = {}) {
   if (!hasCompanionCapabilities()) {
     if (action === 'launch' && targetUrl) {
       if (typeof window !== 'undefined') window.open(targetUrl, '_blank')
-      return { success: true, action: 'launch', targetUrl, note: 'Opened URL in browser tab' }
+      // `target` is what the card labels; keep targetUrl for the model.
+      return { success: true, action: 'launch', targetUrl, target: targetUrl, note: 'Opened URL in browser tab' }
     }
     if (action === 'clipboard' && text) {
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -132,7 +133,9 @@ export async function executeDesktopAction(args = {}) {
       targetUrl,
       targetApp,
     })
-    return res
+    // main returns whatever the action produced; the card reads action/text/keys/
+    // target, so fill them in rather than showing "Desktop Action: dispatched".
+    return { action, text, keys, target: targetUrl || targetApp, ...res }
   } catch (err) {
     return { success: false, error: err.message }
   }

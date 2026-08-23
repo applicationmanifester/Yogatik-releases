@@ -8,6 +8,7 @@ export const summarizeTool = {
     }, required: ['text'] },
   },
   async execute({ text, sentences = 3 }) {
+    if (typeof text !== 'string' || !text.trim()) return { success: false, error: 'text is required' }
     const stops = new Set('the a an and or but in on at to for of is it this that with as by from'.split(' '))
     const sents = text.match(/[^.!?]+[.!?]+/g) || [text]
     const words = text.toLowerCase().split(/\W+/).filter(w => w.length > 2 && !stops.has(w))

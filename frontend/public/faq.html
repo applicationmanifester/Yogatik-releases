@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Yogatik FAQ — questions about the free browser-native AI assistant</title>
+<meta name="description" content="Is Yogatik free? Where do my conversations go? Do I need an API key? Can it work offline? Answers to the common questions." />
+<meta property="og:title" content="Yogatik FAQ" />
+<meta property="og:description" content="Cost, privacy, API keys, offline use and limitations — answered plainly." />
+<link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+<link rel="canonical" href="https://yogatik.web.app/faq" />
+<link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="logo" href="/"><img src="/icon-192.svg" alt="" /> Yogatik</a>
+  <nav class="site">
+    <a href="/guide">Guide</a>
+    <a href="/tools">Tools</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/platforms">Desktop</a>
+    <a href="/faq" aria-current="page">FAQ</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <span class="pill">FAQ</span>
+  <h1>Questions people actually ask</h1>
+  <p class="lead">Short answers. Where something is a real limitation, it says so.</p>
+</div>
+
+<main>
+
+<section>
+  <h2>Cost and accounts</h2>
+
+  <h3>Is Yogatik free?</h3>
+  <p>
+    The app is free and there is no subscription. What you may pay for is the model: bring a
+    free key (Groq's free tier is generous), a paid key if you prefer frontier models, or
+    run a local model through Ollama and pay nothing at all.
+  </p>
+
+  <h3>Do I need an account?</h3>
+  <p>
+    No. Signing in is optional and does exactly one thing: it syncs your encrypted API keys
+    between your devices. Conversations are never uploaded.
+  </p>
+
+  <h3>Why do I need my own API key?</h3>
+  <p>
+    Because there is no server in the middle. Your browser calls the provider directly,
+    which is what makes the app free and private — but it also means the request has to be
+    authenticated as you.
+  </p>
+</section>
+
+<section>
+  <h2>Privacy</h2>
+
+  <h3>Where do my conversations go?</h3>
+  <p>
+    Into IndexedDB in your browser, on your device. There is no application backend to send
+    them to. Your messages do go to whichever model provider you choose — that is
+    unavoidable for any AI assistant — and their handling is governed by that provider's
+    policy.
+  </p>
+
+  <h3>How is my API key stored?</h3>
+  <p>
+    In your browser's local database. If you sign in, it is encrypted before syncing, using
+    a key derived from your account. In the desktop app it is additionally sealed by the
+    operating system's own credential store. Full detail is on the
+    <a href="/privacy">privacy page</a>.
+  </p>
+
+  <h3>Can you read my chats?</h3>
+  <p>No. There is nowhere for them to arrive.</p>
+</section>
+
+<section>
+  <h2>Using it</h2>
+
+  <h3>Does it work offline?</h3>
+  <p>
+    The interface, your history and any on-device model do. Cloud models and web-search
+    tools obviously need a connection. Installed as a PWA, it opens offline like a normal
+    app.
+  </p>
+
+  <h3>Can it read my files?</h3>
+  <p>
+    In the browser, only files you drop into the chat. In the desktop app you can grant one
+    folder, and the assistant can read and edit files inside it — scoped to that folder, per
+    chat, with approval prompts before anything is written.
+  </p>
+
+  <h3>Which model should I use?</h3>
+  <p>
+    Start with auto-pick: it measures several models and chooses the fastest that responds
+    properly. Models in the 7–15&nbsp;B range tend to be the sweet spot for tool use; very
+    small models often accept a tool call and then fumble it.
+  </p>
+
+  <h3>Can I run it on my phone?</h3>
+  <p>
+    Yes — open the site and use “Add to Home Screen”. It installs as a PWA. There is no
+    separate mobile app.
+  </p>
+</section>
+
+<section>
+  <h2>Limitations</h2>
+
+  <h3>Why can't it get a YouTube transcript?</h3>
+  <p>
+    Because a browser cannot fetch it. YouTube blocks the datacenter IPs that public CORS
+    relays run on, and every documented workaround has been measured and fails. The tool
+    returns the video's metadata and tells the model to say so — if you paste or upload a
+    transcript, everything else works normally.
+  </p>
+
+  <h3>Why did a scheduled task not run?</h3>
+  <p>
+    Scheduled tasks need the desktop app. A browser tab cannot keep a timer alive once it is
+    closed, so the web build cannot honestly offer this.
+  </p>
+
+  <h3>A model stopped working. Why?</h3>
+  <p>
+    Providers retire model names without notice. Yogatik detects the provider's error, drops
+    the dead model and clears the selection — use auto-pick to land on a current one.
+  </p>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0">Still stuck?</h2>
+  <p>
+    The <a href="/guide">guide</a> covers setup in more depth, and
+    <a href="/how-it-works">how it works</a> explains the architecture behind these answers.
+  </p>
+  <a class="cta" href="/">Open the web app</a>
+</section>
+
+</main>
+
+<footer>
+  <nav>
+    <a href="/">App</a>
+    <a href="/guide">Guide</a>
+    <a href="/tools">Tools</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/platforms">Desktop</a>
+    <a href="/faq">FAQ</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+  </nav>
+  <p>Yogatik &middot; a private, browser-native AI assistant.</p>
+</footer>
+
+</div>
+</body>
+</html>

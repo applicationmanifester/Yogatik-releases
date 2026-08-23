@@ -24,10 +24,11 @@ import { describe, it, expect } from 'vitest'
 // readFileSync rejects with "The URL must be of scheme file".
 import SW_SRC from '../public/sw.js?raw'
 
-function runSw(existingCacheNames) {
+function runSw(existingCacheNames, fetchImpl) {
   const src = SW_SRC
 
   const deleted = []
+  const put = []
   const listeners = {}
   const self = {
     addEventListener: (type, fn) => { listeners[type] = fn },
@@ -39,15 +40,21 @@ function runSw(existingCacheNames) {
   const caches = {
     keys: async () => existingCacheNames.slice(),
     delete: async (k) => { deleted.push(k); return true },
-    open: async () => ({ addAll: async () => {}, put: async () => {}, match: async () => undefined }),
+    open: async () => ({
+      addAll: async () => {},
+      put: async (key) => { put.push(typeof key === 'string' ? key : key?.url) },
+      match: async () => undefined,
+    }),
     match: async () => undefined,
   }
 
   new Function('self', 'caches', 'fetch', 'Response', src)(
-    self, caches, async () => ({ ok: true, clone: () => ({}) }), { error: () => ({}) },
+    self, caches,
+    fetchImpl || (async () => ({ ok: true, clone: () => ({}) })),
+    { error: () => ({}) },
   )
 
-  return { listeners, deleted }
+  return { listeners, deleted, put }
 }
 
 async function activate(existing) {
@@ -77,6 +84,32 @@ describe('service worker cache eviction', () => {
   it('never deletes the Transformers.js cache', async () => {
     const deleted = await activate(['yogatik-v4', 'transformers-cache'])
     expect(deleted).not.toContain('transformers-cache')
+  })
+
+  it('does not cache a failed navigation as the app shell', async () => {
+    // Caching a 503 under /index.html poisons the offline fallback: every later
+    // offline navigation serves the error page instead of the app.
+    const { listeners, put } = runSw(['yogatik-v4'], async () => ({ ok: false, status: 503, clone: () => ({}) }))
+    let responded
+    await listeners.fetch({
+      request: { method: 'GET', url: 'https://yogatik.web.app/', mode: 'navigate', headers: { get: () => null } },
+      preloadResponse: Promise.resolve(undefined),
+      respondWith: (p) => { responded = p },
+    })
+    await responded
+    expect(put).toEqual([])
+  })
+
+  it('caches a good navigation as the app shell', async () => {
+    const { listeners, put } = runSw(['yogatik-v4'], async () => ({ ok: true, status: 200, clone: () => ({}) }))
+    let responded
+    await listeners.fetch({
+      request: { method: 'GET', url: 'https://yogatik.web.app/', mode: 'navigate', headers: { get: () => null } },
+      preloadResponse: Promise.resolve(undefined),
+      respondWith: (p) => { responded = p },
+    })
+    await responded
+    expect(put).toEqual(['/index.html'])
   })
 
   it('leaves every third-party cache alone while still evicting its own', async () => {

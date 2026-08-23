@@ -200,7 +200,7 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
           </div>
         )}
         {mode === 'template' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%', minWidth: 0, overflowX: 'hidden' }}>
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
                 ✅ Free — No credit card required
@@ -208,13 +208,13 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
               <div className="template-grid">
                 {freeTemplates.map(([key, t]) => (
                   <div key={key} className="template-card" onClick={() => selectTemplate(key)}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, minWidth: 0, overflow: 'hidden' }}>
                       <div className="template-name">{t.name}</div>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: t.badgeColor, background: `${t.badgeColor}22`, padding: '1px 6px', borderRadius: 4 }}>{t.badge}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: t.badgeColor, background: `${t.badgeColor}22`, padding: '1px 6px', borderRadius: 4, flexShrink: 0 }}>{t.badge}</span>
                     </div>
                     <div className="template-url" style={{ marginBottom: 2 }}>{t.note}</div>
                     <a href={t.keyUrl} target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 10, color: '#7c93eb', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}
+                      style={{ fontSize: 10, color: '#7c93eb', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, width: 'fit-content' }}
                       onClick={e => e.stopPropagation()}>
                       Get free API key <ExternalLink size={9} />
                     </a>
@@ -230,9 +230,9 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
               <div className="template-grid">
                 {paidTemplates.map(([key, t]) => (
                   <div key={key} className="template-card" onClick={() => selectTemplate(key)}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, minWidth: 0, overflow: 'hidden' }}>
                       <div className="template-name">{t.name}</div>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: t.badgeColor, background: `${t.badgeColor}22`, padding: '1px 6px', borderRadius: 4 }}>{t.badge}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: t.badgeColor, background: `${t.badgeColor}22`, padding: '1px 6px', borderRadius: 4, flexShrink: 0 }}>{t.badge}</span>
                     </div>
                     <div className="template-url">{t.note}</div>
                   </div>

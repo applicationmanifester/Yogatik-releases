@@ -50,7 +50,9 @@ function walk(dir, out, opts, depth) {
       if (rel && opts.ignores(rel)) continue
     }
     out.push({ dirent: e, full })
-    if (opts.recursive && e.isDirectory() && depth < 40 && out.length < 20000) {
+    // opts.maxDepth lets a caller bound the walk; 40 stays the hard ceiling.
+    const limitDepth = Math.min(opts.maxDepth ?? 40, 40)
+    if (opts.recursive && e.isDirectory() && depth < limitDepth && out.length < 20000) {
       walk(full, out, opts, depth + 1)
     }
     if (out.length >= 20000) return
@@ -133,6 +135,53 @@ function registerFsBridge() {
             if (out.length >= maxResults) return out
           }
         }
+      }
+    }
+    return out
+  })
+
+  // Path discovery by NAME — no file contents are read. The renderer's
+  // fs_find_files tool called this and fell back to a full recursive fs_list
+  // when it did not exist, which listed directories as files and walked
+  // node_modules. It is the highest-scored tool for "find files"/"glob"/
+  // "where is", so it needs a real implementation.
+  ipcMain.handle('fs_find_files', (_e, { ctx, pattern = '*', extension, maxDepth = 10, limit = 100, includeIgnored = false }) => {
+    const roots = rootPathsFor(ctx)
+    if (!roots.length) throw new Error('no folder granted')
+    const pat = String(pattern || '*').trim()
+    const ext = extension ? String(extension).toLowerCase().replace(/^\./, '') : ''
+    // A pattern with a slash is matched against the path relative to the root;
+    // otherwise against the basename, which is what "find package.json" means.
+    const matchesPath = pat.includes('/')
+    const re = pat && pat !== '*' ? globToRegExp(matchesPath ? pat : pat) : null
+    // `Number(x) || 10` swallows a deliberate 0 — depth 0 means "this folder
+    // only" and must survive.
+    const requested = Number(maxDepth)
+    const depth = Math.max(0, Math.min(40, Number.isFinite(requested) ? requested : 10))
+    const cap = Math.max(1, Math.min(2000, Number(limit) || 100))
+    const out = []
+
+    for (const root of roots) {
+      const all = []
+      walk(root, all, {
+        recursive: true,
+        maxDepth: depth,
+        prune: !includeIgnored,
+        root,
+        ignores: includeIgnored ? null : gitignoreMatcherFor(root),
+      }, 0)
+      for (const { dirent, full } of all) {
+        if (!dirent.isFile()) continue
+        const rel = path.relative(root, full).replace(/\\/g, '/')
+        if (ext && !dirent.name.toLowerCase().endsWith(`.${ext}`)) continue
+        if (re) {
+          const subject = matchesPath ? rel : dirent.name
+          // Fall back to a substring match so a bare word ("config") still finds
+          // things — a glob-only match would return nothing for the common case.
+          if (!re.test(subject) && !subject.toLowerCase().includes(pat.toLowerCase())) continue
+        }
+        out.push(full)
+        if (out.length >= cap) return out
       }
     }
     return out

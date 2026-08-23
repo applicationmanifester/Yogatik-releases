@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import CompanionView from './components/CompanionView'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { ToastProvider } from './hooks/useToast'
 import { markAppHealthy } from './pwa'
 import { installErrorLog } from './errorLog'
 import './styles.css'
@@ -29,7 +30,9 @@ if (isCompanion) document.documentElement.setAttribute('data-companion', '1')
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ErrorBoundary>{isCompanion ? <CompanionView /> : <App />}</ErrorBoundary>
+    <ToastProvider>
+      <ErrorBoundary>{isCompanion ? <CompanionView /> : <App />}</ErrorBoundary>
+    </ToastProvider>
   </React.StrictMode>
 )
 

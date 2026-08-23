@@ -34,7 +34,9 @@ export const jsExecTool = {
     description:
       'Execute JavaScript in a sandboxed Web Worker (no DOM, no network to the page, no app access). ' +
       'Returns anything console.log-ged and the value you `return`. ' +
-      'Use for calculations, data transforms, JSON manipulation, string/regex work, algorithms, and quick simulations — anything more reliable done in code than by hand. Async/await is supported.',
+      'Use for calculations, data transforms, JSON manipulation, string/regex work, algorithms, and quick simulations — anything more reliable done in code than by hand. Async/await is supported. ' +
+      'It is NOT Node: there is no require/import, no fs, no process and no filesystem — ' +
+      'use fs_read/fs_write for files and terminal_run to run a real Node script.',
     parameters: {
       type: 'object',
       properties: {

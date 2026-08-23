@@ -18,6 +18,7 @@ export const rssTool = {
     }, required: ['url'] },
   },
   async execute({ url, count = 5 }) {
+    if (typeof url !== 'string' || !url.trim()) return { success: false, error: 'url is required (a feed URL, or one of the preset names)' }
     const feedUrl = PRESETS[url.toLowerCase()] || url
     const resp = await proxyFetch(feedUrl)
     const text = await resp.text()
@@ -28,6 +29,8 @@ export const rssTool = {
       link: item.querySelector('link')?.textContent || item.querySelector('link')?.getAttribute('href') || '',
       description: (item.querySelector('description, summary')?.textContent || '').replace(/<[^>]+>/g, '').slice(0, 200),
     }))
-    return { success: true, tool: 'rss_feed', source: feedUrl, items }
+    // The card's header reads feed_title; without it every feed said "RSS Feed".
+    const feed_title = doc.querySelector('channel > title, feed > title')?.textContent?.trim() || ''
+    return { success: true, tool: 'rss_feed', source: feedUrl, feed_title, items }
   }
 }

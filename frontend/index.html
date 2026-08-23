@@ -26,20 +26,81 @@
   <link rel="apple-touch-icon" href="/icon-192.svg" />
   <meta name="description" content="Private AI assistant with live web research, document Q&A, image generation and code execution — 65 free browser-native tools, running entirely in your browser. No backend, bring your own free API key." />
   <meta property="og:title" content="Yogatik — Private browser-native AI assistant" />
-  <meta property="og:description" content="Private AI assistant with live web research, document Q&A, image generation and code execution — 65 free browser-native tools, running entirely in your browser." />
+  <meta property="og:description" content="Private AI assistant with live web research, document Q&A, image generation, code execution — 65 free browser-native tools, running entirely in your browser." />
   <meta property="og:image" content="/icon-192.svg" />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary" />
   <!-- Google AdSense -->
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8240433260986072" crossorigin="anonymous"></script>
+
+  <!--
+    Content Security Policy.
+
+    connect-src CANNOT be an allowlist here. The user configures their own
+    provider, the tools call several dozen keyless APIs and public CORS relays,
+    and the desktop build talks to localhost daemons — an enumerated list silently
+    kills whichever host was forgotten. The previous list omitted, among others,
+    integrate.api.nvidia.com (it named api.nvidia.com, which is not the host
+    llm.js uses), the Cloudflare proxy worker, huggingface.co, and every open-data
+    API, so tools failed with an opaque browser refusal rather than an error the
+    app could report.
+
+    script-src must include esm.run: WebLLM, Transformers.js, Kokoro, mermaid,
+    qrcode and html2pdf are all loaded from it with dynamic import.
+
+    This mirrors the policy served by firebase.json (Report-Only there, so
+    violations can be observed before they break anything). Keep the two in sync.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'wasm-unsafe-eval' https://esm.run https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://pagead2.googlesyndication.com;
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src 'self' data: https: ;
+    img-src 'self' data: blob: https:;
+    media-src 'self' blob: data: https:;
+    connect-src 'self' https: wss: blob: data:;
+    worker-src 'self' blob:;
+    frame-src 'self' https://googleads.g.doubleclick.net https://tpc.googlesyndication.com;
+    object-src 'none';
+    base-uri 'self';
+    form-action 'self';
+    frame-ancestors 'none';
+    upgrade-insecure-requests;
+  ">
 </head>
 <body data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false">
   <div id="root" data-gramm="false" data-gramm_editor="false"></div>
+  <!--
+    This is everything a crawler sees of the app: the interface is client-rendered,
+    and neither the AdSense ads crawler nor a link preview runs JavaScript. So it
+    has to describe the product honestly AND link to the static pages, which are
+    the only pages with real, readable content.
+  -->
   <noscript>
-    <div style="max-width:640px;margin:10vh auto;padding:0 24px;font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#e2e8f0;background:#0f172a">
+    <div style="max-width:680px;margin:8vh auto;padding:0 24px;font-family:system-ui,-apple-system,sans-serif;line-height:1.65;color:#e2e8f0;background:#0f172a">
       <h1>Yogatik — private browser-native AI assistant</h1>
-      <p>Yogatik is a free, private AI chat app that runs entirely in your browser: live web research, document Q&amp;A, image generation, code execution and 60+ more tools, with no backend and your own free API key.</p>
-      <p><strong>This app requires JavaScript.</strong> Please enable JavaScript in your browser settings, then reload this page.</p>
+      <p>Yogatik is a free AI chat app that runs entirely in your browser. There is no backend: your conversations, documents and settings stay in your own device's storage, and your browser talks to the AI provider you choose directly. Bring a free API key, or run a model locally with Ollama and use it completely offline.</p>
+
+      <h2>What it can do</h2>
+      <ul>
+        <li><strong>Live web research</strong> — searches several engines, reads the pages in parallel and cites its sources.</li>
+        <li><strong>Document Q&amp;A</strong> — drop in a PDF and ask about it; text is extracted and indexed locally, never uploaded.</li>
+        <li><strong>Real code execution</strong> — Python via WebAssembly, with a kernel that keeps its state between messages.</li>
+        <li><strong>Images, charts, diagrams and narrated video</strong> — generated on your device or through free, keyless services.</li>
+        <li><strong>Voice and vision</strong> — a face-to-face live mode with speech in and out, plus camera and screen sharing.</li>
+        <li><strong>177 tools in total</strong>, all running in the browser.</li>
+      </ul>
+
+      <h2>Read more</h2>
+      <ul>
+        <li><a href="/guide">Guide</a> — set up a key, pick a model, and use the features that are not obvious.</li>
+        <li><a href="/tools">Tool catalogue</a> — all 177 tools, grouped by what they are for.</li>
+        <li><a href="/how-it-works">How it works</a> — the zero-backend architecture, and what it cannot do.</li>
+        <li><a href="/platforms">Desktop app</a> — local models, file editing and a real shell.</li>
+        <li><a href="/faq">FAQ</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></li>
+      </ul>
+
+      <p><strong>The app itself requires JavaScript.</strong> Enable JavaScript and reload this page to start a conversation.</p>
     </div>
   </noscript>
   <script type="module" src="/src/main.jsx"></script>

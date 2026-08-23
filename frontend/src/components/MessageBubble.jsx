@@ -161,8 +161,17 @@ function useMarkdownComponents(msgContent, onOpenArtifact) {
       }
       return <a href={href} target="_blank" rel="noopener noreferrer" className="chat-link" {...props}>{children}</a>
     },
+    p({ node, children, ...props }) {
+      return <div className="md-p" {...props}>{children}</div>
+    },
+    pre({ children }) {
+      return <>{children}</>
+    },
     code({ node, inline, className, children, ...props }) {
-      return !inline ? (
+      const match = /language-(\w+)/.exec(className || '')
+      const isMultiLine = String(children || '').includes('\n')
+      const isBlock = !inline && (Boolean(match) || isMultiLine)
+      return isBlock ? (
         <CodeBlock className={className} onOpenArtifact={onOpenArtifact}>{children}</CodeBlock>
       ) : (
         <code className={className} {...props}>{children}</code>

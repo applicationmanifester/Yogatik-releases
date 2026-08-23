@@ -35,7 +35,12 @@ export const watchFolderTool = {
     const w = bridge()
     if (!w) return DESKTOP_ONLY
     try {
-      if (action === 'start') return { tool: 'watch_folder', ...(await w.start(path, { recursive })) }
+      if (action === 'start') {
+        // ctx is injected here, never a tool parameter — the model must not be
+        // able to name another chat's folder.
+        const { getWorkspaceCtx } = await import('./localFs')
+        return { tool: 'watch_folder', ...(await w.start(path, { recursive, ctx: getWorkspaceCtx() })) }
+      }
       if (action === 'stop') {
         if (!id) return { success: false, error: 'id is required to stop a watcher' }
         return { tool: 'watch_folder', ...(await w.stop(id)) }

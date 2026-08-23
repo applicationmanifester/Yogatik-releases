@@ -16,7 +16,7 @@ export function DemoModal({ onClose }) {
             <strong style={{ fontSize: 13, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
               <Globe size={16} style={{ color: '#ff6b35' }} /> 100% In-Browser & Privacy First
             </strong>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, margin: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
               Yogatik communicates directly with model providers from your browser. Your chats, documents, and API keys stay on your device.
             </p>
           </div>
@@ -41,13 +41,13 @@ export function DemoModal({ onClose }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: 12, borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
             <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>📄 1-Click Document Exports (.doc & .pdf)</strong>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, margin: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
               Click the Download icon on any AI message or tool card to download as native Microsoft Word <strong>.doc</strong> or <strong>.pdf</strong> files.
             </p>
           </div>
           <div style={{ background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: 12, borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
             <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>▶️ Live In-Browser Code Runner</strong>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, margin: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
               Click <strong>▶️ Run Code</strong> on any Python or JavaScript snippet to evaluate code instantly inside your browser!
             </p>
           </div>
@@ -62,13 +62,13 @@ export function DemoModal({ onClose }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: 12, borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
             <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>🎙️ Browser Voice Input</strong>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, margin: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
               Tap the <strong>Mic button</strong> in the prompt box to dictate your questions hands-free.
             </p>
           </div>
           <div style={{ background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: 12, borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
             <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>📎 Upload Documents & Images</strong>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, margin: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
               Attach PDFs, text files, or images for instant document summaries, Q&A, and visual inspection.
             </p>
           </div>

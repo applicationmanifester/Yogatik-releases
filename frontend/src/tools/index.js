@@ -30,7 +30,9 @@ import { unitConvertTool } from './unitConvert'
 import { ipLookupTool } from './ipLookup'
 import { mdToPdfTool } from './mdToPdf'
 import { webExtractTool } from './webExtract'
-import { webSearchTool } from './webSearch'
+// web_search is registered as localSearchTool, which uses the desktop search
+// sidecar when it is running and delegates to webSearchTool everywhere else —
+// so webSearchTool is reached THROUGH that module, not imported here.
 import { researchTool } from './research'
 import { docSearchTool, docListTool, localVaultTool } from './documents'
 import { localSearchTool } from './localSearch.js'
@@ -46,6 +48,8 @@ import { youtubeTool } from './youtube'
 import { jsExecTool } from './jsExec'
 import { memoryTool } from './memory'
 import { textToAudioTool } from './textToAudio'
+import { podcastGenerateTool } from './podcastGen'
+import { webAutomationTool } from './webAutomation'
 import { seeTool } from './see'
 import { videoRenderTool } from './videoRender'
 import {
@@ -57,7 +61,8 @@ import { pushAmbientSignal, popAmbientSignal } from './http'
 import { getMcpSchemas, isMcpTool, callMcpTool } from '../mcp'
 import {
   isDesktop, fsAddFolderTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
-  fsDeleteTool, fsMkdirTool, fsMoveTool, fsBatchReadTool, fsFileTreeTool,
+  fsFindFilesTool, fsDeleteTool, fsMkdirTool, fsMoveTool, fsBatchReadTool, fsFileTreeTool,
+  fsReplaceContentTool, fsMultiReplaceTool, fsFileInfoTool, fsBatchWriteTool,
   fsUndoTool, getWorkspaceCtx,
 } from './localFs'
 import { requestPermission } from '../permissions'
@@ -91,6 +96,37 @@ import { autoSkillsTool } from './autoSkills'
 import { subAgentRunnerTool } from './subAgentRunner'
 import { documentGeneratorTool } from './docGenerator'
 import { crewOrchestratorTool } from './crewRunner'
+import { deepsecTool } from './deepsec'
+import { turbovecTool } from './turbovec'
+import { fprimeTool } from './fprime'
+import { threeuiTool } from './threeui'
+import { numbatTool } from './numbat'
+import { agentReachTool } from './agentReach'
+import { unlimitedOcrTool } from './unlimitedOcr'
+import { lightpandaTool } from './lightpanda'
+import { repoFinderTool } from './repoFinder'
+import { guardrailsTool } from './guardrails'
+import { firecrawlTool } from './firecrawl'
+import { cloudflareOsTool } from './cloudflareOs'
+import {
+  semanticaRecordDecisionTool,
+  semanticaTraceCausalChainTool,
+  semanticaFindPrecedentsTool,
+  semanticaContextGraphTool,
+  semanticaAuditExportTool,
+} from './semantica'
+import {
+  codeReviewDiffTool,
+  codeReviewScanTool,
+  codeReviewPrTool,
+} from './codeReview'
+import {
+  hexstrikeReconTool,
+  hexstrikeAuditHeadersTool,
+  hexstrikeVulnScanTool,
+  hexstrikeAttackSurfaceTool,
+  hexstrikeGeneratePlaybookTool,
+} from './hexstrike'
 import {
   drugInfoTool, cryptoPriceTool, chemicalInfoTool, worldBankTool,
   nobelPrizeTool, issLocationTool, tvShowTool, triviaQuizTool, postalLookupTool,
@@ -104,6 +140,12 @@ import {
   executeDesktopAction,
   executeBrowserAutopilot,
 } from './desktopCompanion'
+import { localInferenceTool } from './localInference'
+import { dspyOptimizerTool } from './dspyOptimizer'
+import { haystackRagTool } from './haystackRag'
+import { aiderCopilotTool } from './aiderCopilot'
+import { langsmithObservabilityTool } from './langsmithObservability'
+import { langGraphFlowTool } from './langGraphFlow'
 
 export const screenInspectTool = {
   schema: {
@@ -216,7 +258,11 @@ const ALL_TOOLS = {
   js_execute: jsExecTool,
   memory: memoryTool,
   text_to_audio: textToAudioTool,
+  podcast_generate: podcastGenerateTool,
+  audio_overview: podcastGenerateTool,
   web_extract: webExtractTool,
+  web_automate: webAutomationTool,
+  web_automation: webAutomationTool,
   youtube: youtubeTool,
   see: seeTool,
   video_render: videoRenderTool,
@@ -241,7 +287,12 @@ const ALL_TOOLS = {
   fs_read: fsReadTool,
   fs_write: fsWriteTool,
   fs_edit: fsEditTool,
+  fs_replace_content: fsReplaceContentTool,
+  fs_multi_replace: fsMultiReplaceTool,
+  fs_file_info: fsFileInfoTool,
+  fs_batch_write: fsBatchWriteTool,
   fs_search: fsSearchTool,
+  fs_find_files: fsFindFilesTool,
   fs_delete: fsDeleteTool,
   fs_mkdir: fsMkdirTool,
   fs_move: fsMoveTool,
@@ -323,10 +374,207 @@ const ALL_TOOLS = {
   wikimedia_feed: wikimediaFeedTool,
   document_generator: documentGeneratorTool,
   crew_orchestrator: crewOrchestratorTool,
+  deepsec: deepsecTool,
+  turbovec: turbovecTool,
+  fprime: fprimeTool,
+  threeui: threeuiTool,
+  numbat: numbatTool,
+  agent_reach: agentReachTool,
+  unlimited_ocr: unlimitedOcrTool,
+  lightpanda: lightpandaTool,
+  repo_finder: repoFinderTool,
+  guardrails: guardrailsTool,
+  firecrawl: firecrawlTool,
+  cloudflare_os: cloudflareOsTool,
+  // Semantica: Graph-Native Context & Decision Intelligence
+  semantica_record_decision: semanticaRecordDecisionTool,
+  semantica_trace_causal_chain: semanticaTraceCausalChainTool,
+  semantica_find_precedents: semanticaFindPrecedentsTool,
+  semantica_context_graph: semanticaContextGraphTool,
+  semantica_audit_export: semanticaAuditExportTool,
+  // Alibaba Open Code Review
+  code_review_diff: codeReviewDiffTool,
+  code_review_scan: codeReviewScanTool,
+  code_review_pr: codeReviewPrTool,
+  // HexStrike AI Security Suite
+  hexstrike_recon: hexstrikeReconTool,
+  hexstrike_audit_headers: hexstrikeAuditHeadersTool,
+  hexstrike_vuln_scan: hexstrikeVulnScanTool,
+  hexstrike_attack_surface: hexstrikeAttackSurfaceTool,
+  hexstrike_generate_playbook: hexstrikeGeneratePlaybookTool,
+  // Core AI & LLM Frameworks Integration
+  local_inference: localInferenceTool,
+  dspy_optimizer: dspyOptimizerTool,
+  haystack_rag: haystackRagTool,
+  aider_copilot: aiderCopilotTool,
+  langsmith_observability: langsmithObservabilityTool,
+  langgraph_flow: langGraphFlowTool,
 }
 
 /** Common LLM hallucinated tool names mapped to their canonical Yogatik tool */
 const TOOL_ALIASES = {
+  // Local Inference aliases
+  ollama: 'local_inference',
+  lmstudio: 'local_inference',
+  vllm: 'local_inference',
+  llamacpp: 'local_inference',
+  sglang: 'local_inference',
+  local_llm: 'local_inference',
+  local_model: 'local_inference',
+  benchmark_model: 'local_inference',
+  // DSPy aliases
+  dspy: 'dspy_optimizer',
+  prompt_compiler: 'dspy_optimizer',
+  optimize_prompt: 'dspy_optimizer',
+  teleprompter: 'dspy_optimizer',
+  mipro: 'dspy_optimizer',
+  // Haystack & RAG aliases
+  haystack: 'haystack_rag',
+  hybrid_rag: 'haystack_rag',
+  hybrid_search: 'haystack_rag',
+  bm25_search: 'haystack_rag',
+  hyde: 'haystack_rag',
+  rerank: 'haystack_rag',
+  // Aider / Coding Assistant aliases
+  aider: 'aider_copilot',
+  continue_dev: 'aider_copilot',
+  pair_programmer: 'aider_copilot',
+  apply_patch: 'aider_copilot',
+  generate_commit: 'aider_copilot',
+  // Observability & LangSmith aliases
+  langsmith: 'langsmith_observability',
+  observability: 'langsmith_observability',
+  trace_run: 'langsmith_observability',
+  token_cost: 'langsmith_observability',
+  // LangGraph aliases
+  langgraph: 'langgraph_flow',
+  state_graph: 'langgraph_flow',
+  agent_graph: 'langgraph_flow',
+  multi_agent_flow: 'langgraph_flow',
+  // Semantica aliases
+  record_decision: 'semantica_record_decision',
+  trace_decision: 'semantica_trace_causal_chain',
+  trace_causal_chain: 'semantica_trace_causal_chain',
+  find_precedents: 'semantica_find_precedents',
+  similar_decisions: 'semantica_find_precedents',
+  context_graph: 'semantica_context_graph',
+  semantica: 'semantica_context_graph',
+  audit_export: 'semantica_audit_export',
+  export_audit_trail: 'semantica_audit_export',
+  // Open Code Review aliases
+  code_review: 'code_review_diff',
+  ocr_diff: 'code_review_diff',
+  ocr_scan: 'code_review_scan',
+  scan_code: 'code_review_scan',
+  audit_file: 'code_review_scan',
+  review_pr: 'code_review_pr',
+  open_code_review: 'code_review_diff',
+  // HexStrike AI aliases
+  hexstrike: 'hexstrike_vuln_scan',
+  hexstrike_ai: 'hexstrike_vuln_scan',
+  vuln_scan: 'hexstrike_vuln_scan',
+  audit_headers: 'hexstrike_audit_headers',
+  security_headers: 'hexstrike_audit_headers',
+  recon_target: 'hexstrike_recon',
+  attack_surface: 'hexstrike_attack_surface',
+  security_playbook: 'hexstrike_generate_playbook',
+  replace_file_content: 'fs_replace_content',
+  multi_replace_file_content: 'fs_multi_replace',
+  file_info: 'fs_file_info',
+  batch_write: 'fs_batch_write',
+  batch_write_files: 'fs_batch_write',
+  find_files: 'fs_find_files',
+  find_file: 'fs_find_files',
+  glob_files: 'fs_find_files',
+  fs_glob: 'fs_find_files',
+  locate_file: 'fs_find_files',
+  read_file: 'fs_read',
+  view_file: 'fs_read',
+  write_file: 'fs_write',
+  create_file: 'fs_write',
+  edit_file: 'fs_edit',
+  list_dir: 'fs_list',
+  list_files: 'fs_list',
+  list_directory: 'fs_list',
+  delete_file: 'fs_delete',
+  remove_file: 'fs_delete',
+  move_file: 'fs_move',
+  rename_file: 'fs_move',
+  mkdir: 'fs_mkdir',
+  make_dir: 'fs_mkdir',
+  make_directory: 'fs_mkdir',
+  file_tree: 'fs_file_tree',
+  directory_tree: 'fs_file_tree',
+  grep_search: 'fs_search',
+  search_files: 'fs_search',
+  search_code: 'fs_search',
+  batch_read: 'fs_batch_read',
+  // terminal_exec was a duplicate of terminal_run; it is an alias now.
+  terminal_exec: 'terminal_run',
+  terminal_cmd: 'terminal_run',
+  exec_terminal: 'terminal_run',
+  cloudflareos: 'cloudflare_os',
+  cloudflare_workspace: 'cloudflare_os',
+  gatekeeper: 'cloudflare_os',
+  cf_os: 'cloudflare_os',
+  cf_gadgets: 'cloudflare_os',
+  ai_gateway: 'cloudflare_os',
+  guardrails_ai: 'guardrails',
+  rebuff: 'guardrails',
+  pii_redact: 'guardrails',
+  canary_guard: 'guardrails',
+  firecrawl_scraper: 'firecrawl',
+  deep_crawler: 'firecrawl',
+  github_repo_finder: 'repo_finder',
+  repo_finder_tool: 'repo_finder',
+  github_finder: 'repo_finder',
+  repo_search: 'repo_finder',
+  find_repos: 'repo_finder',
+  similar_repos: 'repo_finder',
+  lightpanda_browser: 'lightpanda',
+  lightpanda_tool: 'lightpanda',
+  fast_browser: 'lightpanda',
+  headless_browser: 'lightpanda',
+  light_browser: 'lightpanda',
+  unlimited_ocr_tool: 'unlimited_ocr',
+  unlimitedocr: 'unlimited_ocr',
+  baidu_ocr: 'unlimited_ocr',
+  doc_parser: 'unlimited_ocr',
+  rswa_ocr: 'unlimited_ocr',
+  formula_ocr: 'unlimited_ocr',
+  agent_reach_tool: 'agent_reach',
+  agentreach: 'agent_reach',
+  social_reach: 'agent_reach',
+  universal_reader: 'agent_reach',
+  platform_search: 'agent_reach',
+  perplexity_numbat: 'numbat',
+  numbat_guard: 'numbat',
+  agent_security_guard: 'numbat',
+  agent_guard: 'numbat',
+  agent_sandbox: 'numbat',
+  threejs_ui: 'threeui',
+  three_ui: 'threeui',
+  '3d_ui': 'threeui',
+  '3d_hero': 'threeui',
+  three_generator: 'threeui',
+  nasa_fprime: 'fprime',
+  fprime_tool: 'fprime',
+  fprime_scaffold: 'fprime',
+  flight_software: 'fprime',
+  fprime_generator: 'fprime',
+  vector_search: 'turbovec',
+  vector_index: 'turbovec',
+  turbo_vector: 'turbovec',
+  turbovec_search: 'turbovec',
+  turbovec_index: 'turbovec',
+  semantic_index: 'turbovec',
+  deepsec_audit: 'deepsec',
+  security_audit: 'deepsec',
+  deep_security_scan: 'deepsec',
+  code_security: 'deepsec',
+  vuln_scan: 'deepsec',
+  vulnerability_scan: 'deepsec',
+  sast_scan: 'deepsec',
   schedule: 'scheduler',
   set_alarm: 'timer',
   set_timer: 'timer',
@@ -364,7 +612,8 @@ const TOOL_ALIASES = {
   get_clipboard: 'clipboard_access',
   clipboard_history: 'clipboard_access',
   paste: 'clipboard_access',
-  watch: 'watch_folder',
+  // NOTE: no `watch:` alias here — `watch` is a REGISTERED tool (devTools) with
+  // its own actions. An alias of the same name shadowed it.
   watch_files: 'watch_folder',
   file_watcher: 'watch_folder',
   monitor_folder: 'watch_folder',
@@ -566,26 +815,93 @@ const TOOL_ALIASES = {
 export { isDesktop }
 
 /** Get OpenAI function schemas, optionally excluding user-disabled tools */
+/**
+ * Most tools declare a BARE schema ({description, parameters}) which we wrap in
+ * the OpenAI function envelope. A dozen (screen_inspect, desktop_action,
+ * browser_autopilot, browser_control, semantica_*, code_review_*) declare the
+ * FULL envelope themselves. Blindly spreading those produced
+ *   { type:'function', function:{ name, type:'function', function:{…} } }
+ * — a tool with a name but NO description and NO parameters. The model could not
+ * tell what those tools did and had nothing to fill in, which is why the real
+ * browser_control lost out to browser_autopilot. Normalise both shapes.
+ */
+function toFunctionSchema(name, tool = {}) {
+  // A third shape exists: semantica_* and code_review_* declare {name, description,
+  // parameters, execute} FLAT, with no `schema` key at all — those reached the model
+  // as a name and nothing else.
+  const raw = tool.schema && typeof tool.schema === 'object' ? tool.schema : tool
+
+  // And a FOURTH: local_inference, dspy_optimizer, haystack_rag, aider_copilot,
+  // langsmith_observability and langgraph_flow put the PARAMETERS object itself
+  // under `schema` ({type:'object', properties:{…}}) and keep name/description on
+  // the tool. Treating that as a schema wrapper loses both the description and
+  // every argument — the model is handed a name it cannot use. Detect it by the
+  // thing only a parameters object has: a `properties` map with no description
+  // or nested parameters beside it.
+  const looksLikeParameters =
+    raw && raw.type === 'object' && raw.properties && !raw.description && !raw.parameters
+  const schema = looksLikeParameters
+    ? { name: tool.name, description: tool.description, parameters: raw }
+    : raw
+
+  const inner = schema.function && typeof schema.function === 'object' ? schema.function : schema
+  const { type: _ignoredType, function: _ignoredFn, ...rest } = inner
+  return {
+    type: 'function',
+    function: {
+      ...rest,
+      name: rest.name || name,
+      parameters: rest.parameters || { type: 'object', properties: {} },
+    },
+  }
+}
+
 export function getToolSchemas(disabled = []) {
   const off = new Set(disabled)
   const builtin = Object.entries(ALL_TOOLS)
     .filter(([name]) => !off.has(name))
-    .map(([name, tool]) => ({
-      type: 'function',
-      function: { name, ...tool.schema },
-    }))
+    .map(([name, tool]) => toFunctionSchema(name, tool))
   // Discovered MCP-server tools (if any servers are connected) join the list.
   return [...builtin, ...getMcpSchemas().filter(s => !off.has(s.function.name))]
 }
 
-/** Rank and prioritize tools based on the active user query context */
-export function prioritizeToolSchemas(schemas = [], userMessage = '') {
-  if (!Array.isArray(schemas) || schemas.length === 0) return []
-  if (!userMessage || typeof userMessage !== 'string') return schemas
+/**
+ * How many tool schemas may ride along on ONE request.
+ *
+ * All 178 registered schemas serialise to ~128KB (~32k tokens) — sent on every
+ * single turn. That alone overflows an 8k/16k context, costs real money on paid
+ * providers, and OpenAI hard-caps a request at 128 functions, so the full list
+ * is also simply invalid there. Ranking without truncating changed nothing about
+ * the payload; the cap is what makes the ranking matter.
+ */
+export const MAX_TOOLS_PER_REQUEST = 64
 
-  const text = userMessage.toLowerCase()
+/**
+ * Tools that must survive the cap on EVERY turn, whatever the wording.
+ *
+ * Keyword boosts only fire when the message mentions the thing. A follow-up like
+ * "now do the same for the other file" has no keywords, and without a floor the
+ * filesystem, shell, browser and delegation tools dropped off the list mid-task —
+ * the model would then say it has no file access while holding fs_read.
+ * The floor sits above "no score" and far below any keyword boost, so a relevant
+ * tool still outranks it.
+ */
+const CORE_TOOL_SCORES = {
+  fs_read: 40, fs_write: 40, fs_edit: 40, fs_list: 40, fs_search: 38, fs_find_files: 38,
+  terminal_run: 40, proc_start: 30, browser_control: 38, computer_control: 30,
+  spawn_agents: 34, memory: 34, doc_search: 34, web_search: 34, code_execute: 34,
+  clipboard_access: 28, file_dialog: 28,
+}
+
+/** Rank and prioritize tools based on the active user query context */
+export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = MAX_TOOLS_PER_REQUEST } = {}) {
+  if (!Array.isArray(schemas) || schemas.length === 0) return []
+  // No message to rank by still goes through scoring, so the core floor applies
+  // and the cap does not decide by registry order alone.
+  const text = typeof userMessage === 'string' ? userMessage.toLowerCase() : ''
 
   const scores = {
+    ...CORE_TOOL_SCORES,
     web_search: 25,
     calculator: 20,
     doc_export: 20,
@@ -729,20 +1045,110 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '') {
   if (/\b(crew|multi agent|agent pipeline|hierarchical agent|reflexion|crewai|autogen|collaborative agents)\b/i.test(text)) {
     scores['crew_orchestrator'] = 200
   }
+  if (/\b(deepsec|security|vulnerability|vuln|cwe|owasp|sast|exploit|penetration|xss|sqli|ssrf|injection|auth bypass|audit code|security review)\b/i.test(text)) {
+    scores['deepsec'] = 220
+  }
+  if (/\b(turbovec|turboquant|vector|vector search|vector database|vector db|rag|embedding|embeddings|similarity search|semantic index|nearest neighbor|knn|ann)\b/i.test(text)) {
+    scores['turbovec'] = 220
+  }
+  if (/\b(fprime|f'|nasa|jpl|flight software|cubesat|smallsat|spacecraft|telemetry|telecommand|fpp|avionics|spaceflight|embedded c\+\+)\b/i.test(text)) {
+    scores['fprime'] = 220
+  }
+  if (/\b(threeui|threejs|three\.js|3d|r3f|react three fiber|webgl|shader|glsl|3d scene|3d hero|3d card|particle wave|torus|canvas 3d)\b/i.test(text)) {
+    scores['threeui'] = 220
+  }
+  if (/\b(numbat|agent security|agent guard|prompt injection|jailbreak|exfiltration|privilege escalation|behavioral security|agent sandbox|trajectory scan|agent audit)\b/i.test(text)) {
+    scores['numbat'] = 220
+  }
+  if (/\b(agent_reach|agent-reach|agent reach|social media|twitter|reddit|bilibili|xiaohongshu|zhihu|douyin|producthunt|platform search|open web reader)\b/i.test(text)) {
+    scores['agent_reach'] = 220
+  }
+  if (/\b(unlimited_ocr|unlimited ocr|baidu ocr|latex formula|math formula|formula extraction|table extraction|document parser|r-swa|sliding window attention|multi-page ocr)\b/i.test(text)) {
+    scores['unlimited_ocr'] = 220
+  }
+  if (/\b(lightpanda|headless browser|fast browser|cdp|web scraper|spa scraper|html to markdown|zig browser|v8 browser|browser automation)\b/i.test(text)) {
+    scores['lightpanda'] = 220
+  }
+  if (/\b(repo_finder|repo finder|github repos|github finder|similar repos|trending repos|open source discovery|find repositories|explore github)\b/i.test(text)) {
+    scores['repo_finder'] = 220
+  }
+  if (/\b(guardrails|rebuff|pii|redact pii|mask pii|canary token|prompt leak|safety guard|schema validation|toxic filter)\b/i.test(text)) {
+    scores['guardrails'] = 220
+  }
+  if (/\b(firecrawl|deep crawl|crawl website|website scraper|sitemap scraper|rag dataset|scrape domain|recursive crawl)\b/i.test(text)) {
+    scores['firecrawl'] = 220
+  }
+  if (/\b(cloudflare_os|cloudflare os|gatekeeper|gadget|cloudflare workers|ai gateway|edge workspace|capability token|sandboxed app)\b/i.test(text)) {
+    scores['cloudflare_os'] = 220
+  }
+  if (/\b(replace_content|multi_replace|replace file|edit file|patch file|modify file|fs_replace|fs_edit)\b/i.test(text)) {
+    scores['fs_replace_content'] = 200
+    scores['fs_multi_replace'] = 200
+    scores['fs_edit'] = 190
+  }
+  if (/\b(find files|find file|locate file|glob|where is|search files by name|fs_find_files)\b/i.test(text)) {
+    scores['fs_find_files'] = 210
+    scores['fs_search'] = 190
+  }
+  if (/\b(terminal_exec|run terminal|terminal command|execute shell|run command|powershell|bash)\b/i.test(text)) {
+    scores['terminal_run'] = 200
+  }
+  if (/\b(semantica|context graph|decision intelligence|record decision|causal chain|provenance|audit trail|prov-o|decision impact|policy rule)\b/i.test(text)) {
+    scores['semantica_record_decision'] = 220
+    scores['semantica_trace_causal_chain'] = 220
+    scores['semantica_find_precedents'] = 210
+    scores['semantica_context_graph'] = 210
+    scores['semantica_audit_export'] = 200
+  }
+  if (/\b(code review|open code review|review diff|review pr|pr review|scan code|defect|security bug|bug risk|code hygiene|line review)\b/i.test(text)) {
+    scores['code_review_diff'] = 220
+    scores['code_review_scan'] = 220
+    scores['code_review_pr'] = 210
+  }
+  if (/\b(hexstrike|vulnerability scan|security audit|audit headers|attack surface|csp|hsts|cors audit|owasp|cvss|remediation playbook|security posture)\b/i.test(text)) {
+    scores['hexstrike_vuln_scan'] = 230
+    scores['hexstrike_audit_headers'] = 220
+    scores['hexstrike_recon'] = 210
+    scores['hexstrike_attack_surface'] = 210
+    scores['hexstrike_generate_playbook'] = 200
+  }
+  if (/\b(ollama|lm studio|lmstudio|vllm|llamacpp|sglang|local model|local inference|benchmark model|gguf|local llm)\b/i.test(text)) {
+    scores['local_inference'] = 230
+  }
+  if (/\b(dspy|prompt compiler|optimize prompt|teleprompter|mipro|few shot compile|prompt signature)\b/i.test(text)) {
+    scores['dspy_optimizer'] = 230
+  }
+  if (/\b(haystack|hybrid rag|hybrid search|bm25|hyde|reciprocal rank|rrf|cross-encoder|rerank)\b/i.test(text)) {
+    scores['haystack_rag'] = 230
+  }
+  if (/\b(aider|continue\.dev|pair programmer|search replace patch|unified diff|conventional commit|code syntax validate)\b/i.test(text)) {
+    scores['aider_copilot'] = 230
+  }
+  if (/\b(langsmith|observability|execution trace|record span|token cost|opentelemetry|waterfall latency)\b/i.test(text)) {
+    scores['langsmith_observability'] = 230
+  }
+  if (/\b(langgraph|state graph|agent graph|multi agent flow|conditional edge|human in the loop|checkpoint)\b/i.test(text)) {
+    scores['langgraph_flow'] = 230
+  }
 
-  return [...schemas].sort((a, b) => {
+  const ranked = [...schemas].sort((a, b) => {
     const nameA = a.function?.name || a.name || ''
     const nameB = b.function?.name || b.name || ''
     const scoreA = scores[nameA] || 0
     const scoreB = scores[nameB] || 0
     return scoreB - scoreA
   })
+  return limit > 0 ? ranked.slice(0, limit) : ranked
 }
 
 /** Execute a tool by name */
 export async function executeTool(name, args, { signal } = {}) {
   let cleanName = String(name || '').split('<')[0].split(' ')[0].split(':')[0].trim().toLowerCase()
-  if (TOOL_ALIASES[cleanName]) {
+  // A REGISTERED tool always wins over an alias of the same name. `watch` was
+  // both a real tool and an alias for watch_folder: the model read watchTool's
+  // description in the schema list, called `watch`, and silently reached a
+  // different tool with different actions.
+  if (!ALL_TOOLS[cleanName] && TOOL_ALIASES[cleanName]) {
     cleanName = TOOL_ALIASES[cleanName]
   }
   if (isMcpTool(cleanName)) return callMcpTool(cleanName, args)
@@ -762,7 +1168,9 @@ export async function executeTool(name, args, { signal } = {}) {
     return await tool.execute(args)
   } catch (err) {
     if (err?.name === 'AbortError' || signal?.aborted) return { success: false, error: 'Stopped' }
-    return { success: false, error: err.message }
+    // A thrown string, or an object with no `message`, left error undefined —
+    // which the error log then printed as "<tool>: Unknown error".
+    return { success: false, error: err?.message || String(err) || `${cleanName} failed` }
   } finally {
     popAmbientSignal(signal)
   }
@@ -771,6 +1179,15 @@ export async function executeTool(name, args, { signal } = {}) {
 /** List all tool names */
 export function getToolNames() {
   return Object.keys(ALL_TOOLS)
+}
+
+export {
+  localInferenceTool,
+  dspyOptimizerTool,
+  haystackRagTool,
+  aiderCopilotTool,
+  langsmithObservabilityTool,
+  langGraphFlowTool,
 }
 
 export default ALL_TOOLS

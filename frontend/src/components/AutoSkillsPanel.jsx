@@ -29,22 +29,18 @@ export function AutoSkillsPanel({ isOpen, onClose, onToast }) {
     }
   }, [isOpen])
 
+  // These handlers used to dispatch CustomEvents ('yogatik:auto-skills:*') with
+  // an onResult callback in the detail — and nothing anywhere listened for them,
+  // so every button was inert even once the panel was mounted. loadData was also
+  // gated on __YOGATIK_SCHEDULER__, an unrelated bridge. autoSkills.js exports a
+  // plain async API; call it.
   const loadData = async () => {
     setLoading(true)
     try {
-      if (window.__YOGATIK_SCHEDULER__) {
-        window.dispatchEvent(new CustomEvent('yogatik:auto-skills:load', {
-          detail: { 
-            onResult: (result) => {
-              if (result.success) {
-                setPendingSkills(result.pending || [])
-              }
-            }
-          }
-        }))
-      }
+      const { getPendingAutoSkills } = await import('../autoSkills')
+      setPendingSkills(await getPendingAutoSkills())
     } catch (e) {
-      console.error('Failed to load auto-skills:', e)
+      onToast?.(`Could not load auto-skills: ${e.message}`)
     } finally {
       setLoading(false)
     }
@@ -52,69 +48,45 @@ export function AutoSkillsPanel({ isOpen, onClose, onToast }) {
 
   const checkAutoLearning = async () => {
     try {
-      window.dispatchEvent(new CustomEvent('yogatik:auto-skills:learning-status', {
-        detail: {
-          onResult: (result) => {
-            if (result.success) setAutoLearningEnabled(result.enabled)
-          }
-        }
-      }))
-    } catch (e) {
-      console.error('Failed to check auto-learning:', e)
-    }
+      const { getAutoSkillLearning } = await import('../autoSkills')
+      setAutoLearningEnabled(await getAutoSkillLearning())
+    } catch { /* leave the default */ }
   }
 
   const triggerLearning = async () => {
     setLoading(true)
     try {
-      window.dispatchEvent(new CustomEvent('yogatik:auto-skills:trigger', {
-        detail: {
-          onResult: (result) => {
-            if (result.success) {
-              onToast?.(`Learning complete: ${result.count} new skill candidates`)
-              loadData()
-            } else {
-              onToast?.(`Failed: ${result.error}`)
-            }
-            setLoading(false)
-          }
-        }
-      }))
+      const { processConversationsForLearning } = await import('../autoSkills')
+      const found = await processConversationsForLearning()
+      onToast?.(found.length
+        ? `Learning complete: ${found.length} new skill candidate${found.length === 1 ? '' : 's'}`
+        : 'Nothing new to learn from yet — have a few more conversations first.')
+      await loadData()
     } catch (e) {
-      onToast?.(`Error: ${e.message}`)
+      onToast?.(`Learning failed: ${e.message}`)
+    } finally {
       setLoading(false)
     }
   }
 
   const loadLog = async () => {
     try {
-      window.dispatchEvent(new CustomEvent('yogatik:auto-skills:log', {
-        detail: {
-          onResult: (result) => {
-            if (result.success) setLearningLog(result.log || [])
-          }
-        }
-      }))
+      const { getLearningLog } = await import('../autoSkills')
+      setLearningLog(await getLearningLog())
       setShowLog(true)
     } catch (e) {
-      onToast?.(`Error: ${e.message}`)
+      onToast?.(`Could not load the log: ${e.message}`)
     }
   }
 
   const promoteSkill = async (skillId) => {
     try {
-      window.dispatchEvent(new CustomEvent('yogatik:auto-skills:promote', {
-        detail: { skillId, onResult: (result) => {
-          if (result.success) {
-            onToast?.(`Skill promoted: ${result.skill.name}`)
-            setPendingSkills(prev => prev.filter(s => s.id !== skillId))
-          } else {
-            onToast?.(`Failed: ${result.error}`)
-          }
-        }}
-      }))
+      const { promoteAutoSkill } = await import('../autoSkills')
+      const saved = await promoteAutoSkill(skillId)
+      onToast?.(`Skill promoted: ${saved?.name || 'skill'}`)
+      setPendingSkills(prev => prev.filter(s => s.id !== skillId))
     } catch (e) {
-      onToast?.(`Error: ${e.message}`)
+      onToast?.(`Could not promote: ${e.message}`)
     }
   }
 
@@ -122,37 +94,26 @@ export function AutoSkillsPanel({ isOpen, onClose, onToast }) {
 
   const dismissSkill = async (skillId) => {
     try {
-      window.dispatchEvent(new CustomEvent('yogatik:auto-skills:dismiss', {
-        detail: { skillId, onResult: (result) => {
-          if (result.success) {
-            onToast?.('Skill dismissed')
-            setPendingSkills(prev => prev.filter(s => s.id !== skillId))
-          } else {
-            onToast?.(`Failed: ${result.error}`)
-          }
-        }}
-      }))
+      const { dismissAutoSkill } = await import('../autoSkills')
+      await dismissAutoSkill(skillId)
+      onToast?.('Skill dismissed')
+      setPendingSkills(prev => prev.filter(s => s.id !== skillId))
     } catch (e) {
-      onToast?.(`Error: ${e.message}`)
+      onToast?.(`Could not dismiss: ${e.message}`)
     } finally {
       setConfirmDismissId(null)
     }
   }
 
   const toggleAutoLearning = async () => {
+    const next = !autoLearningEnabled
     try {
-      window.dispatchEvent(new CustomEvent('yogatik:auto-skills:toggle-learning', {
-        detail: { enabled: !autoLearningEnabled, onResult: (result) => {
-          if (result.success) {
-            setAutoLearningEnabled(result.enabled)
-            onToast?.(result.enabled ? 'Auto-skill learning enabled' : 'Auto-skill learning disabled')
-          } else {
-            onToast?.(`Failed: ${result.error}`)
-          }
-        }}
-      }))
+      const { setAutoSkillLearning } = await import('../autoSkills')
+      await setAutoSkillLearning(next)
+      setAutoLearningEnabled(next)
+      onToast?.(next ? 'Auto-skill learning enabled' : 'Auto-skill learning disabled')
     } catch (e) {
-      onToast?.(`Error: ${e.message}`)
+      onToast?.(`Could not change the setting: ${e.message}`)
     }
   }
 

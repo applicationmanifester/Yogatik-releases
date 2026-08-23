@@ -7,6 +7,7 @@ export const imageInfoTool = {
     }, required: ['url'] },
   },
   async execute({ url }) {
+    if (typeof url !== 'string' || !url.trim()) return { success: false, error: 'url is required' }
     const img = new Image(); img.crossOrigin = 'anonymous'
     await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url })
     const resp = await fetch(url)

@@ -18,7 +18,10 @@ const BAD_CSS = /(?:@import|expression\(|url\(\s*['"]?(?:javascript:|vbscript:))
 
 function scrub(root) {
   root.querySelectorAll(DANGEROUS_TAGS).forEach(n => n.remove())
-  root.querySelectorAll('*').forEach(node => {
+  // The ROOT element must be scrubbed too. querySelectorAll('*') does not match
+  // the node it is called on, so `<svg onload="…">` — where the root itself is
+  // the attacker-controlled element — kept its handler and fired on insert.
+  ;[root, ...root.querySelectorAll('*')].forEach(node => {
     for (const attr of [...node.attributes]) {
       const name = attr.name.toLowerCase()
       const value = attr.value.trim()

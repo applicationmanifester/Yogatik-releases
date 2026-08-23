@@ -63,3 +63,30 @@ export function cleanReply(raw) {
   const s = String(raw || '').trim()
   return s.length ? s : null
 }
+
+/**
+ * High-level trigger to check visibility policies and send a desktop OS notification.
+ */
+export async function sendDesktopTurnNotification({ conversationTitle, text, aborted, error, hasText }) {
+  if (typeof window === 'undefined' || !window.__YOGATIK_NOTIFY__) return false
+  const isDesktop = Boolean(window.__TAURI__ || window.__YOGATIK_NOTIFY__)
+  const hidden = typeof document !== 'undefined' && document.hidden
+  const focused = typeof document !== 'undefined' && document.hasFocus ? document.hasFocus() : true
+
+  if (!shouldNotifyTurn({ isDesktop, hidden, focused, aborted, error, hasText: hasText ?? Boolean(text?.length) })) {
+    return false
+  }
+
+  const title = notificationTitle(conversationTitle)
+  const body = notificationBody(text)
+
+  try {
+    return await window.__YOGATIK_NOTIFY__({
+      title,
+      body,
+      hasReply: true,
+    })
+  } catch {
+    return false
+  }
+}

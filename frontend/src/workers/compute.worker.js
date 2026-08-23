@@ -23,6 +23,42 @@ const TASKS = {
     }
     return freq
   },
+  // Fast approximate token count over large documents (~4 chars/token heuristic with whitespace weighting)
+  approxTokenCount(text) {
+    const str = String(text ?? '')
+    if (!str.length) return 0
+    const words = str.trim().split(/\s+/).length
+    const chars = str.length
+    return Math.ceil((chars / 4 + words) / 2)
+  },
+  // Fast off-thread JSON formatter for large data blobs
+  formatJson({ data, indent = 2 }) {
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data) } catch { return data }
+    }
+    return JSON.stringify(data, null, indent)
+  },
+  // Summary numeric statistics over large arrays
+  computeStats(numbers) {
+    if (!Array.isArray(numbers) || numbers.length === 0) {
+      return { count: 0, mean: 0, stdDev: 0, min: 0, max: 0, median: 0 }
+    }
+    const clean = numbers.map(Number).filter(n => Number.isFinite(n)).sort((a, b) => a - b)
+    const n = clean.length
+    if (n === 0) return { count: 0, mean: 0, stdDev: 0, min: 0, max: 0, median: 0 }
+    const sum = clean.reduce((acc, v) => acc + v, 0)
+    const mean = sum / n
+    const variance = clean.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / n
+    const median = n % 2 === 0 ? (clean[n / 2 - 1] + clean[n / 2]) / 2 : clean[Math.floor(n / 2)]
+    return {
+      count: n,
+      mean: Math.round(mean * 10000) / 10000,
+      stdDev: Math.round(Math.sqrt(variance) * 10000) / 10000,
+      min: clean[0],
+      max: clean[n - 1],
+      median: Math.round(median * 10000) / 10000,
+    }
+  },
 }
 
 self.onmessage = async (e) => {

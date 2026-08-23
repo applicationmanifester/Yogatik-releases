@@ -22,8 +22,14 @@ export function ArenaView({ arenaData, onOpenArtifact, onPickResponse, onRetry }
         </a>
       )
     },
+    pre({ children }) {
+      return <>{children}</>
+    },
     code({ node, inline, className, children, ...props }) {
-      return !inline ? (
+      const match = /language-(\w+)/.exec(className || '')
+      const isMultiLine = String(children || '').includes('\n')
+      const isBlock = !inline && (Boolean(match) || isMultiLine)
+      return isBlock ? (
         <CodeBlock className={className} onOpenArtifact={onOpenArtifact}>{children}</CodeBlock>
       ) : (
         <code className={className} {...props}>{children}</code>

@@ -293,7 +293,7 @@ if (!gotLock) {
     })
 
     // IPC for desktop terminal shell command execution
-    ipcMain.handle('terminal:exec', async (_, { ctx, command, cwd, timeout = 30000 }) => {
+    ipcMain.handle('terminal:exec', async (_, { ctx, command, cwd, timeout = 30000, env: extraEnv }) => {
       // A folder must be bound to THIS chat — never fall back to the app's own
       // install directory (process.cwd()), and never run in another chat's folder.
       const roots = rootPathsFor(ctx)
@@ -315,7 +315,9 @@ if (!gotLock) {
         const proc = spawn(shellCmd, shellArgs, {
           cwd: workingDir,
           windowsHide: true,
-          env: { ...process.env },
+          // Caller-supplied non-interactive flags (CI, PAGER, GIT_TERMINAL_PROMPT…)
+          // were dropped here, so commands could still block on a prompt.
+          env: { ...process.env, ...(extraEnv && typeof extraEnv === 'object' ? extraEnv : {}) },
         })
 
         let stdout = ''

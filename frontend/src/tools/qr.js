@@ -49,6 +49,7 @@ export const qrReadTool = {
     }, required: ['image_url'] },
   },
   async execute({ image_url }) {
+    if (typeof image_url !== 'string' || !image_url.trim()) return { success: false, error: 'image_url is required' }
     const jsQR = await loadJsQR()
     const img = new Image(); img.crossOrigin = 'anonymous'
     await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = image_url })

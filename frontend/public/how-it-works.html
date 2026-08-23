@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>How Yogatik works — an AI assistant with no backend</title>
+<meta name="description" content="The architecture behind Yogatik: no server, conversations in IndexedDB, tools that run in your browser, an agent loop in JavaScript, and what that design can and cannot do." />
+<meta property="og:title" content="How Yogatik works" />
+<meta property="og:description" content="A zero-backend AI assistant: what runs where, and why it is built that way." />
+<link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+<link rel="canonical" href="https://yogatik.web.app/how-it-works" />
+<link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="logo" href="/"><img src="/icon-192.svg" alt="" /> Yogatik</a>
+  <nav class="site">
+    <a href="/guide">Guide</a>
+    <a href="/tools">Tools</a>
+    <a href="/how-it-works" aria-current="page">How it works</a>
+    <a href="/platforms">Desktop</a>
+    <a href="/faq">FAQ</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <span class="pill">Architecture</span>
+  <h1>An AI assistant with no backend</h1>
+  <p class="lead">
+    Most AI apps are a thin client in front of somebody's server: your messages go to them,
+    they call the model, they keep the history. Yogatik removes that middle layer entirely.
+    The app is static files. Your browser talks to the model provider directly, runs the
+    tools itself, and stores the conversation on your device.
+  </p>
+</div>
+
+<main>
+
+<section>
+  <h2>What runs where</h2>
+  <table>
+    <tr><th>Part</th><th>Where it runs</th></tr>
+    <tr><td>The interface</td><td>Your browser — a static React bundle, no server rendering</td></tr>
+    <tr><td>Conversations, documents, settings</td><td>IndexedDB, on your device</td></tr>
+    <tr><td>The agent loop</td><td>Your browser, in JavaScript</td></tr>
+    <tr><td>Tools</td><td>Your browser — WASM, Web APIs, and free public endpoints</td></tr>
+    <tr><td>The model</td><td>Your provider, called directly from your browser — or your own machine</td></tr>
+    <tr><td>Our servers</td><td>Nothing. There is no application backend.</td></tr>
+  </table>
+  <p class="note">
+    Two small exceptions, both honest: a Cloudflare Worker relays requests to providers that
+    refuse cross-origin browser calls, and optional sign-in uses Firebase so your encrypted
+    API keys can follow you between devices. Neither sees your conversations.
+  </p>
+</section>
+
+<section>
+  <h2>The agent loop</h2>
+  <p>
+    When you send a message, the app builds a prompt, attaches a ranked list of relevant
+    tools and streams the model's reply. If the model asks for a tool, the browser runs it —
+    all the calls in one round happen in parallel — and feeds the results back. That repeats
+    until the model answers in prose, with a cap so a confused model cannot loop forever.
+  </p>
+  <p>
+    A few details matter more than they sound. Tool schemas are ranked and capped per
+    request, because sending all 177 would cost tens of thousands of tokens on every single
+    turn and exceed some providers' limits outright. Models that reject a tools array fall
+    back to a text-based protocol rather than losing their tools. And a turn can never end
+    silently: if the model produces nothing usable, the app asks once more and then
+    summarises the tool results it already has.
+  </p>
+</section>
+
+<section>
+  <h2>Tools without a server</h2>
+  <p>
+    The interesting constraint is that every capability has to exist inside a browser tab.
+    That turns out to be less limiting than it sounds:
+  </p>
+  <div class="grid">
+    <div class="card">
+      <h3>Python, really</h3>
+      <p>CPython compiled to WebAssembly via Pyodide, with numpy and pandas loaded on
+        demand. The kernel keeps its variables between messages, like a notebook.</p>
+    </div>
+    <div class="card">
+      <h3>Vision and OCR</h3>
+      <p>Tesseract for text in images and small vision models on your GPU through WebGPU,
+        so a model that cannot see still gets a description.</p>
+    </div>
+    <div class="card">
+      <h3>Video with audio</h3>
+      <p>Frames drawn to canvas, encoded with WebCodecs, narrated by a neural
+        text-to-speech model running on your device, and muxed into a real MP4.</p>
+    </div>
+    <div class="card">
+      <h3>Search over your files</h3>
+      <p>BM25 keyword ranking over locally chunked documents — no embedding download, no
+        vector database, and fast enough to feel instant.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Why this design</h2>
+  <ul>
+    <li><strong>Privacy is structural, not promised.</strong> There is no server that could
+      keep your conversations, so no policy is needed to explain what we do with them.</li>
+    <li><strong>No subscription.</strong> You pay your model provider, at their prices, or
+      nothing at all if you run a local model.</li>
+    <li><strong>It survives us.</strong> Static files and your own API key. Nothing to shut
+      off, and your data exports to a file you keep.</li>
+    <li><strong>Offline where it can be.</strong> The interface, your history and the
+      on-device models keep working without a connection.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>What it cannot do</h2>
+  <p>
+    A design with no backend has real limits, and it is more useful to state them than to
+    pretend otherwise:
+  </p>
+  <ul>
+    <li><strong>Some sites cannot be read.</strong> Browsers block cross-origin requests,
+      and public relays get rate-limited by big sites. YouTube transcripts, in particular,
+      are not reliably obtainable this way — the app says so rather than inventing one.</li>
+    <li><strong>Nothing runs while the tab is closed.</strong> Scheduled tasks need the
+      desktop app; a browser cannot keep a timer alive.</li>
+    <li><strong>No filesystem or shell in the browser.</strong> Those are desktop-only, by
+      the browser's design, not ours.</li>
+    <li><strong>Your device does the heavy work.</strong> On-device models need a decent GPU
+      and a few hundred megabytes of download, which is why nothing downloads without
+      asking.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Storage and durability</h2>
+  <p>
+    Everything lives in IndexedDB, and browsers may evict storage under pressure. The app
+    requests persistent storage on startup, shows how much space it is using, and can export
+    a full backup — conversations, documents and settings — to a file you keep. API keys are
+    deliberately excluded from that file.
+  </p>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0">See it for yourself</h2>
+  <p>Nothing to install for the web version, and no account to create.</p>
+  <a class="cta" href="/">Open the web app</a>
+  <a class="cta ghost" href="/tools">Browse the tools</a>
+</section>
+
+</main>
+
+<footer>
+  <nav>
+    <a href="/">App</a>
+    <a href="/guide">Guide</a>
+    <a href="/tools">Tools</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/platforms">Desktop</a>
+    <a href="/faq">FAQ</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+  </nav>
+  <p>Yogatik &middot; a private, browser-native AI assistant.</p>
+</footer>
+
+</div>
+</body>
+</html>

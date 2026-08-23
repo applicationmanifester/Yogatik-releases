@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Privacy — Yogatik</title>
+<meta name="description" content="What Yogatik stores, what leaves your device, how API keys are encrypted, and what third parties are involved. There is no backend holding your conversations." />
+<meta property="og:title" content="Yogatik privacy notice" />
+<meta property="og:description" content="Conversations stay in your browser. Here is exactly what does leave, and to whom." />
+<link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+<link rel="canonical" href="https://yogatik.web.app/privacy" />
+<link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="logo" href="/"><img src="/icon-192.svg" alt="" /> Yogatik</a>
+  <nav class="site">
+    <a href="/guide">Guide</a>
+    <a href="/tools">Tools</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/platforms">Desktop</a>
+    <a href="/faq">FAQ</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <span class="pill">Privacy</span>
+  <h1>Privacy notice</h1>
+  <p class="lead">
+    Yogatik is a browser-based interface to AI providers you choose, built by an independent
+    developer rather than a company. It has no account system and no server that stores your
+    conversations. This page describes what that means in practice, including the parts that
+    do leave your device.
+  </p>
+</div>
+
+<p class="updated">Last updated 7 August 2026.</p>
+
+<main>
+
+<section>
+  <h2>What stays on your device</h2>
+  <p>
+    Conversations, uploaded documents, settings, personas, skills and API keys are stored in
+    your browser's IndexedDB, on the device you are using. They are not transmitted to the
+    developer, because there is no application server to transmit them to.
+  </p>
+  <p>
+    Clearing your browser data for this site erases all of it permanently. Use
+    <strong>Export backup</strong> in Settings to keep a copy first — the export contains
+    your chats, documents and settings, and deliberately excludes API keys.
+  </p>
+</section>
+
+<section>
+  <h2>What leaves your device</h2>
+
+  <h3>Your messages go to the model provider you chose</h3>
+  <p>
+    This is unavoidable for any AI assistant: the text you send, along with relevant context
+    such as document passages or an image you attached, is transmitted to the provider whose
+    key you configured — Groq, OpenRouter, OpenAI, Anthropic, NVIDIA, Google or another. What
+    that provider does with it is governed by <em>their</em> privacy policy, not this one.
+    Read the policy of whichever you use.
+  </p>
+  <p>
+    If you run a local model through Ollama or an on-device model in your browser, nothing
+    leaves your machine at all.
+  </p>
+
+  <h3>Some providers are reached through a proxy</h3>
+  <p>
+    A few providers refuse requests made directly from a browser. For those, requests pass
+    through a small relay operated by the developer on Cloudflare. It forwards the request
+    and returns the response; it does not intentionally store request contents. Standard,
+    short-lived infrastructure logs may exist at the hosting provider. The relay only
+    forwards your API key to a fixed list of known provider hosts — never to an arbitrary
+    destination.
+  </p>
+
+  <h3>Tools contact the services they name</h3>
+  <p>
+    When the assistant uses a tool, that tool calls the service it is for: a weather lookup
+    reaches a weather API, a web search reaches search engines, an image generation reaches
+    the image service. Those requests come from your browser and carry no identity beyond
+    what any web request does. You can disable any tool individually in Settings.
+  </p>
+
+  <h3>Optional sign-in</h3>
+  <p>
+    Signing in with Google is optional and exists for one purpose: syncing your API keys
+    between your own devices. It shares your name, email address and profile picture with
+    the app's Firebase project to identify your key vault. Your conversations are never
+    uploaded.
+  </p>
+</section>
+
+<section>
+  <h2>How API keys are protected</h2>
+  <ul>
+    <li><strong>On your device</strong> keys live in IndexedDB alongside your other settings.</li>
+    <li><strong>In the desktop app</strong> they are additionally sealed by the operating
+      system's own credential store (DPAPI on Windows), so they are encrypted at rest.</li>
+    <li><strong>When synced</strong> they are encrypted in your browser with AES-GCM before
+      leaving, using a key derived from your signed-in account. The stored value is
+      ciphertext.</li>
+    <li><strong>In backups</strong> they are excluded entirely.</li>
+  </ul>
+  <p class="note">
+    To be precise rather than flattering: this is encryption at rest tied to your account,
+    not a zero-knowledge system. It protects the stored value; it is not a claim that no
+    infrastructure could ever access it.
+  </p>
+</section>
+
+<section>
+  <h2>Cookies, analytics and advertising</h2>
+  <p>
+    The app itself sets no tracking cookies and uses no analytics by default. Product
+    analytics exist in the code but are opt-in and inert unless you enable them.
+  </p>
+  <p>
+    This site may display advertising supplied by Google AdSense. Google and its partners
+    use cookies and similar technologies to serve ads, including personalised ads based on
+    your prior visits to this and other sites. You can review and change what Google collects
+    for advertising at
+    <a href="https://myadcenter.google.com/" rel="nofollow noopener" target="_blank">My Ad Center</a>
+    and read Google's practices at
+    <a href="https://policies.google.com/technologies/partner-sites" rel="nofollow noopener" target="_blank">How Google uses information from sites that use its services</a>.
+    Ads are not shown inside your conversations, and advertisers receive no access to them.
+  </p>
+</section>
+
+<section>
+  <h2>Children</h2>
+  <p>
+    The app is not directed at children. You should be at least 13, or the minimum age of
+    digital consent where you live, whichever is higher.
+  </p>
+</section>
+
+<section>
+  <h2>Your control</h2>
+  <ul>
+    <li>Delete everything by clearing your browser data for this site.</li>
+    <li>Export a full backup at any time, and re-import it elsewhere.</li>
+    <li>Remove a stored API key from Settings; removing it locally also removes the synced copy.</li>
+    <li>Disable any individual tool so it is never offered to the model.</li>
+    <li>Sign out to stop key sync; conversations were never synced.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Contact</h2>
+  <p>
+    Questions, corrections or privacy requests:
+    <a href="mailto:applicationmanifester@gmail.com">applicationmanifester@gmail.com</a>.
+  </p>
+</section>
+
+</main>
+
+<footer>
+  <nav>
+    <a href="/">App</a>
+    <a href="/guide">Guide</a>
+    <a href="/tools">Tools</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/platforms">Desktop</a>
+    <a href="/faq">FAQ</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+  </nav>
+  <p>Yogatik &middot; a private, browser-native AI assistant.</p>
+</footer>
+
+</div>
+</body>
+</html>

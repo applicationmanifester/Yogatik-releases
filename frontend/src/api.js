@@ -204,9 +204,22 @@ export async function getKeyInfo(providerId) {
 }
 
 export async function getAllKeyInfo() {
-  await loadCustomProviders()
+  const all = await db.getAllSettings()
+  registerCustomProviders(all['custom_providers'] || {})
   const out = {}
-  for (const id of Object.keys(getLLMProviders())) out[id] = await getKeyInfo(id)
+  const ids = Object.keys(getLLMProviders())
+  for (const id of ids) {
+    const key = all[`apikey_${id}`]
+    if (!key) {
+      out[id] = { saved: false, masked: '', syncedAt: null }
+    } else {
+      out[id] = {
+        saved: true,
+        masked: key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : '••••',
+        syncedAt: all[`synced_${id}`] || null,
+      }
+    }
+  }
   return out
 }
 
@@ -230,15 +243,16 @@ export async function isLoggedIn() { return !!(await db.getSetting('user')) }
  * that a second option is worth more than a perfect first choice.
  */
 export async function getFallbackChain(primary) {
-  await loadCustomProviders()
-  const chain = [primary]
-  for (const [id, p] of Object.entries(getLLMProviders())) {
-    if (id === primary) continue
-    if (p.needsProxy && !proxyAvailable()) continue
-    if (p.isLocal) continue          // loading 750MB is not a fallback
-    if (await db.getSetting(`apikey_${id}`)) chain.push(id)
-  }
-  return chain
+  const all = await db.getAllSettings()
+  registerCustomProviders(all['custom_providers'] || {})
+  const entries = Object.entries(getLLMProviders()).filter(([id, p]) => {
+    if (id === primary) return false
+    if (p.needsProxy && !proxyAvailable()) return false
+    if (p.isLocal) return false
+    return true
+  })
+  const keyChecks = entries.map(([id]) => (all[`apikey_${id}`] ? id : null))
+  return [primary, ...keyChecks.filter(Boolean)]
 }
 
 /** Errors worth trying a different model or provider for. */
@@ -715,9 +729,12 @@ export async function restoreBackup(file, mode = 'merge') {
 
 // ─── Templates (stored in IndexedDB) ───
 const DEFAULT_TEMPLATES = [
-  { id: 'default', name: 'Default', system_prompt: 'You are a helpful AI assistant.' },
-  { id: 'coder', name: 'Coder', system_prompt: 'You are an expert programmer. Write clean, efficient code with explanations.' },
-  { id: 'writer', name: 'Writer', system_prompt: 'You are a creative writer. Write engaging, well-structured content.' },
+  { id: 'default', name: 'Default', icon: '🤖', system_prompt: 'You are a helpful AI assistant.' },
+  { id: 'coder', name: 'Coder', icon: '💻', system_prompt: 'You are an expert programmer. Write clean, efficient code with explanations.' },
+  { id: 'writer', name: 'Writer', icon: '✍️', system_prompt: 'You are a creative writer. Write engaging, well-structured content.' },
+  { id: 'researcher', name: 'Researcher', icon: '🔬', system_prompt: 'You are a meticulous research assistant. Cite sources, analyze facts thoroughly, and think critically.' },
+  { id: 'analyst', name: 'Analyst', icon: '📊', system_prompt: 'You are a sharp data and business analyst. Structure reasoning with clear metrics, tradeoffs, and insights.' },
+  { id: 'concise', name: 'Concise', icon: '⚡', system_prompt: 'Answer questions directly, accurately, and concisely with minimal fluff.' },
 ]
 
 export async function getTemplates() {
@@ -812,9 +829,9 @@ async function loadCustomProviders() {
 const MODEL_TTL = 6 * 60 * 60 * 1000 // 6h
 
 /** Cached live-model lookup: serves cache instantly, refreshes in background. Merges any user-saved custom models. */
-async function cachedModels(id, key, fallback) {
-  const cache = await db.getSetting(`models_${id}`)
-  const customAdded = await db.getSetting(`user_models_${id}`, [])
+async function cachedModels(id, key, fallback, allSettings = null) {
+  const cache = allSettings ? allSettings[`models_${id}`] : await db.getSetting(`models_${id}`)
+  const customAdded = allSettings ? (allSettings[`user_models_${id}`] || []) : await db.getSetting(`user_models_${id}`, [])
   const fresh = cache && Date.now() - cache.ts < MODEL_TTL && cache.list?.length
   const refresh = async () => {
     try {
@@ -824,10 +841,16 @@ async function cachedModels(id, key, fallback) {
     } catch { return [] }
   }
   let baseList
-  if (fresh) {
-    refresh()
+  if (fresh || cache?.list?.length) {
+    // Return cached list immediately and revalidate in background if stale
+    if (!fresh) refresh()
     baseList = cache.list
+  } else if (fallback?.length) {
+    // If fallback built-in models exist, return immediately and fetch live models in background
+    refresh()
+    baseList = fallback
   } else {
+    // Only block if we have no models whatsoever
     const fetched = await refresh()
     baseList = fetched?.length ? fetched : (cache?.list?.length ? cache.list : fallback)
   }
@@ -850,42 +873,31 @@ export async function addCustomModelToProvider(providerId, modelName) {
 }
 
 export async function getModels() {
-  await loadCustomProviders()
+  const allSettings = await db.getAllSettings()
+  const custom = allSettings['custom_providers'] || {}
+  registerCustomProviders(custom)
   const providers = getLLMProviders()
-  const custom = await db.getSetting('custom_providers', {})
   const result = {}
   const desktop = isDesktop()
-  for (const [id, p] of Object.entries(providers)) {
-    // Desktop hides the WebLLM on-device provider — Ollama is the local path
-    // there, so it must NOT be caught by this. Ollama carries isLocal too (it
-    // runs on the user's machine), so the bare isLocal test removed the very
-    // provider the comment says desktop should prefer: the Ollama entry simply
-    // never appeared in the desktop picker.
-    if (desktop && p.isLocal && !p.isOllama) continue
-    // Web hides Ollama: a browser at https://…web.app can't reach the user's
-    // http://localhost:11434 (Ollama's CORS blocks it). Local models are the
-    // desktop app's job, whose main process strips CORS. Skipping it here also
-    // stops the console CORS spam from probing /v1/models on every load.
-    if (!desktop && p.isOllama) continue
-    const key = await db.getSetting(`apikey_${id}`)
+  const entries = Object.entries(providers).filter(([id, p]) => {
+    if (desktop && p.isLocal && !p.isOllama) return false
+    if (!desktop && p.isOllama) return false
+    return true
+  })
+
+  await Promise.all(entries.map(async ([id, p]) => {
+    const key = allSettings[`apikey_${id}`]
     const hasKey = !!key || !!p.noKey
     let liveModels = (p.models || []).map(normalizeModelName).filter(Boolean)
-    // Same isLocal/isOllama distinction, and it matters just as much here:
-    // Ollama's models come LIVE from the daemon's /v1/models, not from
-    // LOCAL_MODELS, which lists WebLLM weights. Without the isOllama guard,
-    // unhiding Ollama above would have populated it with Qwen/Llama entries
-    // the daemon has never heard of — visible, selectable, and unusable.
     if (p.isLocal && !p.isOllama) {
       const { LOCAL_MODELS } = await import('./localLLM')
       liveModels = Object.keys(LOCAL_MODELS)
     } else if (hasKey || p.publicModels) {
-      const cached = await cachedModels(id, key, liveModels)
+      const cached = await cachedModels(id, key, liveModels, allSettings)
       liveModels = (Array.isArray(cached) ? cached : []).map(normalizeModelName).filter(Boolean)
     }
     const def = normalizeModelName(p.default)
     const default_model = (liveModels.includes(def) ? def : liveModels[0]) || def || ''
-    // Ollama is "available" only when the local daemon actually answered with
-    // models — otherwise it shows Ready but every message fails (daemon down).
     const available = p.isOllama ? liveModels.length > 0 : hasKey
     result[id] = {
       name: p.name, type: 'openai_compatible',
@@ -895,7 +907,7 @@ export async function getModels() {
       is_ollama: !!p.isOllama,
       builtin: !custom[id], base_url: p.baseUrl, key_url: p.keyUrl,
     }
-  }
+  }))
   return result
 }
 
@@ -1308,12 +1320,14 @@ export async function getProviderStatus(id, model) {
 
 /** Connection state for every provider, scoped to its currently selected model. */
 export async function getAllProviderStatus() {
-  await loadCustomProviders()
+  const allSettings = await db.getAllSettings()
+  registerCustomProviders(allSettings['custom_providers'] || {})
   const out = {}
-  for (const [id, p] of Object.entries(getLLMProviders())) {
-    const hasKey = !!(await db.getSetting(`apikey_${id}`))
-    const selected = await db.getSetting(`model_${id}`) || p.default || p.models?.[0] || ''
-    const status = await db.getSetting(statusKey(id, selected))
+  const entries = Object.entries(getLLMProviders())
+  for (const [id, p] of entries) {
+    const hasKey = !!allSettings[`apikey_${id}`]
+    const selected = allSettings[`model_${id}`] || p.default || p.models?.[0] || ''
+    const status = allSettings[statusKey(id, selected)]
     out[id] = {
       hasKey,
       selected,
@@ -1337,9 +1351,13 @@ export async function getActiveProvider() {
   // none) and no proxy. NEVER 'local' — that default silently pointed a fresh
   // install at a 750MB download with tools and web forced off.
   await loadCustomProviders()
-  for (const [id, p] of Object.entries(getLLMProviders())) {
-    if (p.isLocal || (p.needsProxy && !proxyAvailable())) continue
-    if (p.noKey || await db.getSetting(`apikey_${id}`)) return id
+  const entries = Object.entries(getLLMProviders()).filter(
+    ([, p]) => !p.isLocal && !(p.needsProxy && !proxyAvailable())
+  )
+  // Parallel scan: all key reads at once instead of N sequential awaits.
+  const allSettings = await db.getAllSettings()
+  for (const [id, p] of entries) {
+    if (p.noKey || allSettings[`apikey_${id}`]) return id
   }
   return 'groq'
 }
@@ -1347,11 +1365,10 @@ export async function getActiveProvider() {
 /** True once any real provider has a key — i.e. the user is not empty-handed. */
 export async function hasAnyProviderKey() {
   await loadCustomProviders()
-  for (const [id, p] of Object.entries(getLLMProviders())) {
-    if (p.isLocal) continue
-    if (await db.getSetting(`apikey_${id}`)) return true
-  }
-  return false
+  const entries = Object.entries(getLLMProviders()).filter(([, p]) => !p.isLocal)
+  // Single bulk read instead of N individual getSetting calls.
+  const allSettings = await db.getAllSettings()
+  return entries.some(([id]) => !!allSettings[`apikey_${id}`])
 }
 
 /** The provider the user actually chose, or null. Never the computed default. */
@@ -1580,17 +1597,17 @@ export async function getTools() {
 
 /** Grouping drives the settings UI only — the agent sees a flat list. */
 export const TOOL_GROUPS = {
-  web_search: 'Web', deep_research: 'Web', web_extract: 'Web', link_preview: 'Web',
+  web_search: 'Web', deep_research: 'Web', web_extract: 'Web', link_preview: 'Web', lightpanda: 'Web', firecrawl: 'Web',
   rss_feed: 'Web', youtube: 'Web', whois: 'Web', ip_lookup: 'Web',
-  wikipedia: 'Knowledge', scholar: 'Knowledge', stackoverflow: 'Knowledge',
+  wikipedia: 'Knowledge', scholar: 'Knowledge', stackoverflow: 'Knowledge', agent_reach: 'Knowledge', repo_finder: 'Knowledge',
   hackernews: 'Knowledge', archive: 'Knowledge', dictionary: 'Knowledge', books: 'Knowledge',
-  package_info: 'Data', gutenberg: 'Data', geocode: 'Data', currency: 'Data', earthquake: 'Data',
-  doc_search: 'Documents', doc_list: 'Documents', pdf_extract: 'Documents',
+  package_info: 'Data', gutenberg: 'Data', geocode: 'Data', currency: 'Data', earthquake: 'Data', turbovec: 'Data',
+  doc_search: 'Documents', doc_list: 'Documents', pdf_extract: 'Documents', unlimited_ocr: 'Documents', fs_replace_content: 'Documents', fs_multi_replace: 'Documents', fs_file_info: 'Documents', fs_batch_write: 'Documents',
   ocr: 'Documents', summarize: 'Documents', md_to_pdf: 'Documents',
   keyword_extract: 'Utility', entity_extract: 'Utility', query_refine: 'Utility',
-  code_execute: 'Compute', calculator: 'Compute', data_convert: 'Compute',
+  code_execute: 'Compute', calculator: 'Compute', data_convert: 'Compute', deepsec: 'Compute', fprime: 'Compute', numbat: 'Compute', guardrails: 'Compute', cloudflare_os: 'Compute', terminal_exec: 'Compute',
   unit_convert: 'Compute', regex: 'Compute', hash: 'Compute', diff: 'Compute',
-  image_generate: 'Media', chart: 'Media', diagram: 'Media', image_info: 'Media',
+  image_generate: 'Media', chart: 'Media', diagram: 'Media', image_info: 'Media', threeui: 'Media',
   color_palette: 'Media', qr_generate: 'Media', qr_read: 'Media', audio_edit: 'Media',
   tts: 'Voice', stt: 'Voice',
   weather: 'Utility', translate: 'Utility',

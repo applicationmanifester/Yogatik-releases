@@ -9,7 +9,7 @@ import { runMultiAgentDebate } from './multiAgent'
 import { ArtifactPanel } from './components/ArtifactPanel'
 import { BrowserPanel } from './components/BrowserPanel'
 import { ActivityPanel } from './components/ActivityPanel'
-import { startActivityTurn, publishStream, publishStep, endActivityTurn } from './activityStream'
+import { startActivityTurn, publishStream, publishStep, endActivityTurn, setActivityConversation } from './activityStream'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
 import ToolStatusPanel from './components/ToolStatusPanel'
@@ -34,6 +34,15 @@ import { LiveView } from './components/LiveView'
 import { PersonalisePanel } from './components/PersonalisePanel'
 import { SkillsPanel } from './components/SkillsPanel'
 import { AgentsPanel } from './components/AgentsPanel'
+// These five were built and finished but never imported anywhere, so no user
+// could open them: the terminal, the cron job manager, the sub-agent runner, the
+// auto-skills reviewer and the file editor. Their TOOLS were registered, so the
+// model could use each capability while the human-facing half stayed dark.
+import TerminalPanel from './components/TerminalPanel'
+import { SchedulerPanel } from './components/SchedulerPanel'
+import { SubAgentRunnerPanel } from './components/SubAgentRunnerPanel'
+import { AutoSkillsPanel } from './components/AutoSkillsPanel'
+import { FileEditorModal } from './components/FileEditorModal'
 import { runWorkflow } from './workflows'
 import { DemoModal } from './components/DemoModal'
 import { AppOverviewModal } from './components/AppOverviewModal'
@@ -220,6 +229,11 @@ export default function App() {
   const [showPersonalise, setShowPersonalise] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
   const [showAgents, setShowAgents] = useState(false)
+  const [showTerminal, setShowTerminal] = useState(false)
+  const [showScheduler, setShowScheduler] = useState(false)
+  const [showSubAgents, setShowSubAgents] = useState(false)
+  const [showAutoSkills, setShowAutoSkills] = useState(false)
+  const [showFileEditor, setShowFileEditor] = useState(false)
   const [chatRoots, setChatRoots] = useState([])
   const [rootsOpen, setRootsOpen] = useState(false)
   const rootsWrapRef = useRef(null)
@@ -482,7 +496,8 @@ export default function App() {
   const browserOccluded = !!(
     settingsOpen || showPersonalise || showSkills || showToolPicker ||
     showPalette || showProviderModal || showAuthModal || showDataDashboard ||
-    showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact
+    showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact ||
+    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor
   )
 
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
@@ -508,6 +523,16 @@ export default function App() {
     listRoots().then(setChatRoots).catch(() => setChatRoots([]))
   }, [conv?.id, conv?.clientId, activeProject])
 
+  // clientId, NOT id. A turn publishes its reasoning and tool steps under
+  // targetClientId, and every other per-chat map here (loadingMap, streamingMap,
+  // traceMapRef) is keyed the same way. Keying the activity stream on `id`
+  // instead meant that the moment a chat was saved and had a database id, the
+  // panel subscribed to one bucket while the turn wrote to another — so it sat
+  // empty for every chat except a brand-new unsaved one.
+  useEffect(() => {
+    setActivityConversation(conv?.clientId || 'default')
+  }, [conv?.clientId])
+
   const activeClientId = conv?.clientId
   const isStreamingHere = !!(activeClientId && loadingMap[activeClientId])
   const streamingContent = (activeClientId && streamingMap[activeClientId]) || ''
@@ -525,7 +550,8 @@ export default function App() {
     showPalette || showAuthModal || showTerms || showProviderModal ||
     showPersonalise || showSkills || showPersonaModal || showDomainHub ||
     showDemoModal || showDiagnosticsModal || confirmModal || projectNameModal ||
-    restoreModal || showDownloadModal || errorModalMsg || arena
+    restoreModal || showDownloadModal || errorModalMsg || arena ||
+    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor
   )
   const isAnyModalOpenRef = useRef(isAnyModalOpen)
   isAnyModalOpenRef.current = isAnyModalOpen
@@ -1833,7 +1859,7 @@ export default function App() {
       return
     }
 
-    startActivityTurn()
+    startActivityTurn(targetClientId)
     const _latTurn = startTurn({ provider: useProvider, model: useModel })
     await streamMessage(
       {
@@ -1851,10 +1877,11 @@ export default function App() {
         // On-device safety screen → surface a soft support card (never blocks).
         onSafety: (_verdict, card) => { if (card) setCrisisCard(card) },
       },
-      (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); publishStream(content); setStatusMap(prev => ({ ...prev, [targetClientId]: '' })) },
+      (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); publishStream(content, targetClientId); setStatusMap(prev => ({ ...prev, [targetClientId]: '' })) },
       (s) => { sources = s },
       (_final, meta) => {
         _latTurn.done()
+        endActivityTurn(targetClientId)
         setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
         setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
         setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
@@ -1925,7 +1952,9 @@ export default function App() {
         delete toolRunMapRef.current[targetClientId]
         delete traceMapRef.current[targetClientId]
         getTodayUsage().then(setUsage).catch(() => {})
-        endActivityTurn()
+        // Name the chat: switching away mid-turn would otherwise end the turn
+        // on whichever conversation the user is now looking at.
+        endActivityTurn(targetClientId)
       },
       (err) => {
         setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
@@ -1968,7 +1997,7 @@ export default function App() {
             status: 'running',
             startedAt: Date.now(),
             detail: args ? String(JSON.stringify(args)).slice(0, 160) : undefined,
-          })
+          }, targetClientId)
         }
         toolRunMapRef.current[targetClientId] = runData
       },
@@ -1992,7 +2021,7 @@ export default function App() {
             status: step.status,
             ms: step.startedAt ? Date.now() - step.startedAt : undefined,
             detail: toolResult?.error ? String(toolResult.error).slice(0, 200) : undefined,
-          })
+          }, targetClientId)
         }
       }
     )
@@ -2347,6 +2376,13 @@ export default function App() {
       { id: 'personalise', group: 'View', label: 'Personalise — voice & interface', run: () => setShowPersonalise(true) },
       { id: 'skills', group: 'View', label: 'Skills & workflows', run: () => setShowSkills(true) },
       { id: 'agents-panel', group: 'View', label: '🤖 Specialized Agents Panel (Researcher, Modeller, Swarms...)', hint: 'Specialist AI', run: () => setShowAgents(true) },
+      // Desktop-only surfaces. They are listed on the web too and say so when
+      // opened, rather than being silently absent depending on the build.
+      { id: 'terminal', group: 'Tools', label: '⌨️ Interactive terminal', hint: isDesktop() ? 'Desktop shell' : 'Desktop app', run: () => setShowTerminal(true) },
+      { id: 'file-editor', group: 'Tools', label: '📝 Create or edit a file in the workspace', hint: isDesktop() ? 'Workspace' : 'Desktop app', run: () => setShowFileEditor(true) },
+      { id: 'scheduler', group: 'Tools', label: '⏰ Scheduled tasks (cron jobs)', hint: 'Manage & cancel', run: () => setShowScheduler(true) },
+      { id: 'sub-agents', group: 'Tools', label: '🧩 Sub-agent runner', hint: 'Isolated agents', run: () => setShowSubAgents(true) },
+      { id: 'auto-skills', group: 'Tools', label: '✨ Auto-generated skills', hint: 'Review & prune', run: () => setShowAutoSkills(true) },
       { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => setShowToolPicker(true) },
       { id: 'tools', group: 'Settings', label: `${tools ? 'Disable' : 'Enable'} all AI tools`, run: () => setToolsEnabled(!tools) },
       { id: 'web', group: 'Settings', label: `${webSearch ? 'Disable' : 'Enable'} web research`, run: () => setWebSearch(!webSearch) },
@@ -2635,7 +2671,7 @@ export default function App() {
           </div>
           <select value={conv?.persona || activeTemplate} aria-label="Persona" onChange={e => setPersona(e.target.value)}>
             {promptTemplates.map(t => (
-              <option key={t.id} value={t.id}>{t.icon} {t.name}</option>
+              <option key={t.id} value={t.id}>{t.icon ? `${t.icon} ` : ''}{t.name}</option>
             ))}
           </select>
 
@@ -3011,9 +3047,11 @@ export default function App() {
 
       <main className="chat-area">
         <header className="chat-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1, overflow: 'hidden' }}>
             {!sidebarOpen && <button className="icon-btn" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar"><Menu size={18} /></button>}
-            <h1>{conv?.title || 'New Chat'}</h1>
+            <h1 style={{ margin: 0, fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '420px' }}>
+              {conv?.title || 'New Chat'}
+            </h1>
           </div>
           <div className="header-actions">
             <button
@@ -3408,14 +3446,15 @@ export default function App() {
           <div className="composer-top-bar">
             <div className="persona-chips">
               <span className="persona-chip-label">Persona:</span>
-              {promptTemplates.slice(0, 4).map(t => (
+              {promptTemplates.slice(0, 6).map(t => (
                 <button
                   key={t.id}
                   type="button"
                   className={`persona-chip ${(conv?.persona || activeTemplate) === t.id ? 'active' : ''}`}
                   onClick={() => setPersona(t.id)}
+                  title={t.system_prompt || t.name}
                 >
-                  {t.name}
+                  {t.icon ? `${t.icon} ` : ''}{t.name}
                 </button>
               ))}
             </div>
@@ -3693,6 +3732,46 @@ export default function App() {
           onToast={showToast}
         />
       )}
+      {/* TerminalPanel manages its own visibility from `open`, so it is always
+          mounted while showing — unlike the panels below, which take isOpen. */}
+      <TerminalPanel
+        open={showTerminal}
+        onClose={() => setShowTerminal(false)}
+        onAskAI={(text) => {
+          setShowTerminal(false)
+          setInput(text)
+          textareaRef.current?.focus()
+          autoResize()
+        }}
+      />
+      {showScheduler && (
+        <SchedulerPanel
+          isOpen={showScheduler}
+          onClose={() => setShowScheduler(false)}
+          onToast={showToast}
+        />
+      )}
+      {showSubAgents && (
+        <SubAgentRunnerPanel
+          isOpen={showSubAgents}
+          onClose={() => setShowSubAgents(false)}
+          onToast={showToast}
+        />
+      )}
+      {showAutoSkills && (
+        <AutoSkillsPanel
+          isOpen={showAutoSkills}
+          onClose={() => setShowAutoSkills(false)}
+          onToast={showToast}
+        />
+      )}
+      {showFileEditor && (
+        <FileEditorModal
+          isOpen={showFileEditor}
+          onClose={() => setShowFileEditor(false)}
+          onSave={(path) => showToast(`Saved ${path}`)}
+        />
+      )}
       {showPersonalise && (
         <PersonalisePanel
           prefs={prefs}
@@ -3750,7 +3829,7 @@ export default function App() {
       )}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={handleAuth} />}
       {features.artifacts && activeArtifact && <ArtifactPanel artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />}
-      {showActivity && <ActivityPanel onClose={() => setShowActivity(false)} />}
+      {showActivity && <ActivityPanel conversationId={conv?.clientId} onClose={() => setShowActivity(false)} />}
       {browserPanel && (
         <BrowserPanel
           conversationId={browserConvId}

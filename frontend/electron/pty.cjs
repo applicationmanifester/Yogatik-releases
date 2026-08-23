@@ -11,7 +11,11 @@
 
 const { ipcMain } = require('electron')
 const path = require('path')
-const { getGrantedRoot } = require('./fsBridge.cjs')
+// fsBridge exports only { registerFsBridge, initJournal } — the old
+// `getGrantedRoot` import was undefined, so pty:spawn threw "getGrantedRoot is
+// not a function" on every call and the PTY never worked even with node-pty
+// installed. Roots live in roots.cjs.
+const { rootPathsFor } = require('./roots.cjs')
 
 let pty = null
 let ptyTried = false
@@ -28,11 +32,17 @@ function loadPty() {
 function registerPty(getWindow) {
   ipcMain.handle('pty:available', () => Boolean(loadPty()))
 
-  ipcMain.handle('pty:spawn', (_e, { cwd, cols = 80, rows = 24, shell } = {}) => {
+  ipcMain.handle('pty:spawn', (_e, { ctx, cwd, cols = 80, rows = 24, shell } = {}) => {
     const mod = loadPty()
     if (!mod) return { success: false, error: 'PTY unavailable — node-pty is not installed. Use terminal_run instead.' }
-    const root = getGrantedRoot() || process.cwd()
+    // Never fall back to process.cwd(): that is the app's own install directory.
+    const root = rootPathsFor(ctx)[0]
+    if (!root) return { success: false, error: 'No working folder for this chat. Add one first.' }
     const workingDir = cwd ? path.resolve(root, cwd) : root
+    const rootResolved = path.resolve(root)
+    if (workingDir !== rootResolved && !workingDir.startsWith(rootResolved + path.sep)) {
+      return { success: false, error: 'Working directory escapes the granted folder.' }
+    }
     const shellCmd = shell || (process.platform === 'win32' ? 'powershell.exe' : (process.env.SHELL || '/bin/bash'))
     try {
       const proc = mod.spawn(shellCmd, [], {

@@ -1,0 +1,26 @@
+# Yogatik — https://yogatik.web.app
+#
+# This file must be served as text/plain from the site root. Firebase Hosting
+# serves static files BEFORE applying rewrites, so its presence here is what
+# stops the SPA catch-all ("**" -> /index.html) from answering /robots.txt with
+# the app shell.
+
+# Google's ads crawler. It fetches pages to decide which ads to show, and it is
+# a separate agent from Googlebot — blocking it (or letting a rewrite answer it
+# with HTML) is a common reason AdSense reports that a site cannot be reviewed.
+User-agent: Mediapartners-Google
+Allow: /
+
+User-agent: AdsBot-Google
+Allow: /
+
+User-agent: AdsBot-Google-Mobile
+Allow: /
+
+User-agent: *
+Allow: /
+
+# Hashed build assets carry no content worth indexing.
+Disallow: /assets/
+
+Sitemap: https://yogatik.web.app/sitemap.xml

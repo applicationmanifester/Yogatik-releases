@@ -4,11 +4,12 @@ REM Prereqs: Node 18+ only.
 cd /d "%~dp0frontend"
 echo === Installing dependencies ===
 call npm install || goto :err
-echo === Building Electron installer ===
-call npm run electron:build || goto :err
+echo === Building Yogatik Desktop App ===
+call npm run build:desktop || goto :err
 echo.
-echo Done. Installer is in: frontend\release-electron\
-explorer "release-electron"
+echo Done! Native Desktop Executable is ready:
+echo frontend\release-electron\win-unpacked\Yogatik.exe
+explorer "release-electron\win-unpacked"
 goto :eof
 :err
 echo Build failed. See output above.

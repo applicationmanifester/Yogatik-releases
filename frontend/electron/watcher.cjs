@@ -11,15 +11,19 @@
 const { ipcMain } = require('electron')
 const fs = require('fs')
 const path = require('path')
-const { getGrantedRoot } = require('./fsBridge.cjs')
+// fsBridge does not export getGrantedRoot — this import was undefined and every
+// watcher:start threw "getGrantedRoot is not a function", so watch_folder never
+// worked. Roots come from roots.cjs.
+const { rootPathsFor } = require('./roots.cjs')
+const getGrantedRoot = (ctx) => rootPathsFor(ctx)[0] || null
 
 const watchers = new Map() // id -> { fsw, relPath, recursive }
 let nextId = 1
 
 // Resolve a caller-supplied relative path against the granted root, rejecting
 // absolute paths and any `..` escape (realpath re-check when the target exists).
-function resolveInRoot(relPath) {
-  const root = getGrantedRoot()
+function resolveInRoot(relPath, ctx) {
+  const root = getGrantedRoot(ctx)
   if (!root) throw new Error('No folder granted')
   const rel = String(relPath || '.')
   if (path.isAbsolute(rel)) throw new Error('Absolute paths are not allowed')
@@ -41,9 +45,9 @@ function resolveInRoot(relPath) {
 }
 
 function registerWatcher(getWindow) {
-  ipcMain.handle('watcher:start', (_e, { path: relPath = '.', recursive = true } = {}) => {
+  ipcMain.handle('watcher:start', (_e, { ctx, path: relPath = '.', recursive = true } = {}) => {
     let target
-    try { target = resolveInRoot(relPath) } catch (err) { return { success: false, error: err.message } }
+    try { target = resolveInRoot(relPath, ctx) } catch (err) { return { success: false, error: err.message } }
     if (!fs.existsSync(target.abs)) return { success: false, error: 'Path does not exist' }
 
     const id = `w${nextId++}`
