@@ -631,14 +631,13 @@ export function createCascadeSession({
         emit({ type: 'error', message: 'Microphone access was blocked. Allow it in your browser and try again.' })
         return
       }
-      if (verdict === 'fallback') {
-        recogFatal = true   // stop the retry storm; the cloud ear is not coming back
+      if (verdict === 'fallback' || e.error === 'network' || e.error === 'service-not-available') {
+        recogFatal = true   // stop the retry storm; switch immediately to on-device Whisper
         startLocalRecognition()
         return
       }
-      if (e.error === 'network' || e.error === 'service-not-available') networkFails++
       restartDelay = Math.min(restartDelay ? restartDelay * 2 : 500, 8000)
-      emit({ type: 'error', message: `Speech recognition failed: ${e.error}` })
+      emit({ type: 'status', message: `Reconnecting speech recognition (${e.error})…` })
     }
 
     // Recognition stops itself constantly (silence, tab focus). Restart it, or
@@ -663,10 +662,10 @@ export function createCascadeSession({
 
   async function start() {
     if (!speechRecognitionAvailable()) {
-      emit({
-        type: 'error',
-        message: 'This browser has no speech recognition. Live works here in Chrome, Edge, or Safari — or add a Gemini key for the realtime engine, which does not need it.',
-      })
+      startLocalRecognition()
+      if (camera) await enableCamera(true)
+      document.addEventListener('visibilitychange', onVisibility)
+      emit({ type: 'ready' })
       return
     }
     // Warm the voice list; on Chrome the first getVoices() is empty.
