@@ -71,6 +71,8 @@ import { ShareSheet } from './components/ShareSheet'
 import { shouldNotifyTurn, notificationBody, notificationTitle, cleanReply } from './desktopNotify'
 import { setPermissionPrompt } from './permissions'
 import PermissionPrompt from './components/PermissionPrompt'
+import { WhatsNewModal } from './components/WhatsNewModal'
+import { APP_VERSION, hasSeenCurrentVersion } from './version'
 
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
@@ -234,6 +236,7 @@ export default function App() {
   const [showSubAgents, setShowSubAgents] = useState(false)
   const [showAutoSkills, setShowAutoSkills] = useState(false)
   const [showFileEditor, setShowFileEditor] = useState(false)
+  const [showWhatsNew, setShowWhatsNew] = useState(false)
   const [chatRoots, setChatRoots] = useState([])
   const [rootsOpen, setRootsOpen] = useState(false)
   const rootsWrapRef = useRef(null)
@@ -551,7 +554,7 @@ export default function App() {
     showPersonalise || showSkills || showPersonaModal || showDomainHub ||
     showDemoModal || showDiagnosticsModal || confirmModal || projectNameModal ||
     restoreModal || showDownloadModal || errorModalMsg || arena ||
-    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor
+    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor || showWhatsNew
   )
   const isAnyModalOpenRef = useRef(isAnyModalOpen)
   isAnyModalOpenRef.current = isAnyModalOpen
@@ -802,6 +805,15 @@ export default function App() {
     const handler = (e) => { e.preventDefault(); setPwaPrompt(e); setShowPwaInstall(true) }
     window.addEventListener('beforeinstallprompt', handler)
     return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  // What's New Version Check: automatically show release updates on new version
+  useEffect(() => {
+    try {
+      if (!hasSeenCurrentVersion()) {
+        setShowWhatsNew(true)
+      }
+    } catch {}
   }, [])
 
   const [listening, setListening] = useState(false)
@@ -3006,6 +3018,15 @@ export default function App() {
             and the desktop/web link only inside the hero, so it disappeared the
             moment a conversation existed. */}
         <div className="sidebar-footer">
+          <button
+            className="sidebar-footer-link"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}
+            onClick={() => setShowWhatsNew(true)}
+            title="View latest app version and release updates"
+          >
+            <Sparkles size={13} style={{ color: 'var(--accent, #ff6b35)' }} />
+            <span>What's New <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>v{APP_VERSION}</strong></span>
+          </button>
           {isDesktop() ? (
             <a className="sidebar-footer-link" href="https://yogatik.web.app/" target="_blank" rel="noreferrer"
               title="Open the Yogatik web app in a browser on your mobile or tablet">
@@ -3876,6 +3897,16 @@ export default function App() {
       )}
       {showShareSheet && <ShareSheet onClose={() => setShowShareSheet(false)} />}
       {showDemoModal && <DemoModal onClose={() => setShowDemoModal(false)} />}
+      {showWhatsNew && (
+        <WhatsNewModal
+          onClose={() => setShowWhatsNew(false)}
+          onOpenSettings={() => {
+            setShowWhatsNew(false)
+            setSettingsModalTab?.('about')
+            setShowSettingsModal(true)
+          }}
+        />
+      )}
       {showOverviewModal && (
         <AppOverviewModal
           onClose={() => setShowOverviewModal(false)}
