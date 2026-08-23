@@ -2102,6 +2102,11 @@ export default function App() {
   }, [])
 
   const handleKeyDown = (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
+      e.preventDefault()
+      handleEnhancePrompt()
+      return
+    }
     if (e.key === 'Enter' && (!e.shiftKey || e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       sendRef.current?.()
