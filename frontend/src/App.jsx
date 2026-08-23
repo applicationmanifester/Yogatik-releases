@@ -73,6 +73,7 @@ import { setPermissionPrompt } from './permissions'
 import PermissionPrompt from './components/PermissionPrompt'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { APP_VERSION, hasSeenCurrentVersion } from './version'
+import { AdSenseBanner } from './components/AdSenseBanner'
 
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
@@ -3008,6 +3009,12 @@ export default function App() {
                     onClick={() => removeDocument(d.id).then(refreshDocs)}><X size={12} /></button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {!isDesktop() && (
+            <div style={{ padding: '0 8px', marginTop: 'auto' }}>
+              <AdSenseBanner />
             </div>
           )}
           </div>
