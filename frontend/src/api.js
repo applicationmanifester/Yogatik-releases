@@ -431,6 +431,61 @@ export async function stopGeneration(channel = 'chat') {
   aborters.delete(channel)
 }
 
+/**
+ * Enhance and expand a user prompt into a clear, well-structured prompt for ANY general AI model.
+ * Completely neutral and unbiased — never injects application or workspace internals.
+ */
+export async function enhancePromptText({ prompt, provider, model, onToken, signal } = {}) {
+  if (!prompt?.trim()) return ''
+  const p = provider || await getActiveProvider()
+  const apiKey = await db.getSetting(`apikey_${p}`)
+  let mdl = normalizeModelName(model) || normalizeModelName(await db.getSetting(`model_${p}`, ''))
+  if (!mdl) {
+    const provDef = getLLMProviders()[p]
+    mdl = normalizeModelName(provDef?.default_model) || normalizeModelName(provDef?.default) || normalizeModelName(provDef?.preferred?.[0]) || normalizeModelName(provDef?.models?.[0]) || ''
+  }
+
+  const { streamChat } = await import('./llm')
+  const { splitReasoning } = await import('./reasoning')
+
+  let accumulated = ''
+  let lastVisible = ''
+
+  await streamChat({
+    provider: p,
+    apiKey,
+    model: mdl,
+    messages: [
+      {
+        role: 'system',
+        content: 'You are an expert prompt engineer. Your sole task is to rewrite, expand, and structure the user\'s prompt to make it clear, detailed, objective, and effective for ANY general AI model. Do NOT assume, bias towards, or mention any specific software application, codebase, framework, or local project unless explicitly requested by the user. Do NOT include conversational filler, explanations, preambles, or quotes. Output ONLY the refined prompt text directly.',
+      },
+      {
+        role: 'user',
+        content: `Refine and enhance the following prompt for maximum clarity, detail, and effectiveness:\n\n${prompt.trim()}`,
+      },
+    ],
+    temperature: 0.6,
+    signal,
+    onToken: (token) => {
+      accumulated += token
+      const isStillThinking = /<think(?:\s[^>]*)?>/i.test(accumulated) && !/<\/think>/i.test(accumulated)
+      if (isStillThinking) return
+
+      const { answer } = splitReasoning(accumulated)
+      if (answer && answer !== lastVisible) {
+        lastVisible = answer
+        onToken?.(answer)
+      }
+    },
+    onError: (err) => {
+      throw err
+    },
+  })
+
+  return lastVisible || prompt
+}
+
 // ─── Terms acceptance ───
 export async function getTermsAcceptance() {
   return db.getSetting('terms_accepted')   // { version, at } | null
