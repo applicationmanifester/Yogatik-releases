@@ -695,7 +695,7 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
  */
 export async function fetchLiveModels(providerId, apiKey) {
   const prov = getProviders()[providerId]
-  if (!prov || (!apiKey && !prov.publicModels) || (!apiKey && prov.needsProxy)) return []
+  if (!prov || !apiKey) return []
 
   try {
     const headers = apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}
