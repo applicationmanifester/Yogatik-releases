@@ -66,6 +66,7 @@
  */
 
 import { runAgent } from '../agent'
+import { splitReasoning } from '../reasoning'
 import { createCamera, createScreenCapture } from './video'
 import { createSpeaker, defaultLang } from './voice'
 import {
@@ -518,6 +519,8 @@ export function createCascadeSession({
 
     let failure = null
     let produced = false
+    let accumulatedContent = ''
+    let emittedAnswerLength = 0
 
     await new Promise((resolve) => {
       runAgent({
@@ -531,19 +534,38 @@ export function createCascadeSession({
           : 'You CANNOT see images directly. When the user asks about their camera or screen, a text description of the current view is inserted automatically as "[Live view (described on-device): …]". Rely ONLY on that description. Never invent, request, or fetch image URLs (e.g. do not make up links like example.com/photo.jpg); if no description was provided, say you could not see it and offer to look again.'}`,
         signal: controller.signal,
         onToken: (t) => {
+          accumulatedContent += t
+          const isStillThinking = /<think(?:\s[^>]*)?>/i.test(accumulatedContent) && !/<\/think>/i.test(accumulatedContent)
+          if (isStillThinking) {
+            if (!thinking) { thinking = true; emit({ type: 'thinking', value: true }) }
+            return
+          }
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
-          produced = true
-          buffer += t
-          emit({ type: 'transcript', role: 'assistant', text: t })
-          flushSentences()
+
+          const { answer } = splitReasoning(accumulatedContent)
+          if (answer.length > emittedAnswerLength) {
+            const newChunk = answer.slice(emittedAnswerLength)
+            emittedAnswerLength = answer.length
+            produced = true
+            buffer += newChunk
+            emit({ type: 'transcript', role: 'assistant', text: newChunk })
+            flushSentences()
+          }
         },
         onStatus: (s) => emit({ type: 'status', text: s }),
         onToolStart: (name) => emit({ type: 'tools', names: [name] }),
         onToolResult: (name, result) => emit({ type: 'toolResult', name, result }),
         onDone: ({ content: full }) => {
+          const { answer } = splitReasoning(full || accumulatedContent)
+          if (answer.length > emittedAnswerLength) {
+            const finalChunk = answer.slice(emittedAnswerLength)
+            emittedAnswerLength = answer.length
+            buffer += finalChunk
+            emit({ type: 'transcript', role: 'assistant', text: finalChunk })
+          }
           flushSentences(true)
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
-          if (full?.trim()) { history.push({ role: 'assistant', content: full }); lastReply = full.trim() }
+          if (answer?.trim()) { history.push({ role: 'assistant', content: answer.trim() }); lastReply = answer.trim() }
           abort = null
           resolve()
         },

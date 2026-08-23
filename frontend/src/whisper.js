@@ -48,13 +48,23 @@ export async function blobToPcm(blob) {
   return rendered.getChannelData(0)
 }
 
+let queuePromise = Promise.resolve()
+
 /** Transcribe an audio Blob to text, entirely on-device. */
-export async function transcribe(blob, { lang, onProgress } = {}) {
-  const pcm = await blobToPcm(blob)
-  const engine = await getASR(onProgress)
-  const out = await engine(pcm, {
-    chunk_length_s: 30, stride_length_s: 5,
-    language: lang && !/^en/i.test(lang) ? lang.split('-')[0] : undefined,
-  })
-  return (out?.text || '').trim()
+export function transcribe(blob, { lang, onProgress } = {}) {
+  const task = async () => {
+    const pcm = await blobToPcm(blob)
+    const engine = await getASR(onProgress)
+    const out = await engine(pcm, {
+      chunk_length_s: 30,
+      stride_length_s: 5,
+      language: lang && !/^en/i.test(lang) ? lang.split('-')[0] : undefined,
+    })
+    return (out?.text || '').trim()
+  }
+
+  // Chain sequentially to guarantee ONNX/WebGPU sessions never run concurrently
+  const next = queuePromise.then(task, task)
+  queuePromise = next.catch(() => {})
+  return next
 }

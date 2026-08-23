@@ -112,9 +112,11 @@ export async function createLocalRecognizer({ lang, onFinal, onStatus, onError }
         // Whisper emits bracketed markers for non-speech; they are not words.
         if (clean && !/^[[(<].*[\])>]$/.test(clean)) onFinal?.(clean)
       } catch (e) {
-        onError?.(e instanceof Error ? e : new Error(String(e)))
+        const msg = String(e?.message || e)
+        if (!/abort|cancel|closed|already started/i.test(msg)) {
+          onError?.(e instanceof Error ? e : new Error(msg))
+        }
       }
-      if (!closed) { recorder = newRecorder(); recorder.start() }
     }
     return r
   }
@@ -132,7 +134,11 @@ export async function createLocalRecognizer({ lang, onFinal, onStatus, onError }
       const usable = segmentIsUsable({ segmentMs, peakRms: peak })
       if (recorder?.state === 'recording') {
         if (usable) {
-          recorder.stop()          // onstop transcribes and restarts
+          recorder.stop()
+          if (!closed) {
+            recorder = newRecorder()
+            recorder.start()
+          }
           return
         }
         // Not worth transcribing — reset counters and keep the same recorder.
