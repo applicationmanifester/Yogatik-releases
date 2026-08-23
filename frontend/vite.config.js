@@ -85,15 +85,20 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    chunkSizeWarningLimit: 700,
+    chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {
-        // Only the always-needed core is grouped; firebase + prism are
-        // dynamically imported and left to rollup's automatic code-splitting.
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'dexie'],
-          ui: ['lucide-react', 'react-markdown'],
-        }
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('firebase')) return 'vendor-firebase'
+            if (id.includes('lucide-react')) return 'vendor-lucide'
+            if (id.includes('react-markdown') || id.includes('remark-') || id.includes('rehype-') || id.includes('micromark') || id.includes('unist-') || id.includes('mdast-') || id.includes('vfile')) return 'vendor-markdown'
+            if (id.includes('dexie')) return 'vendor-dexie'
+            if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) return 'vendor-react'
+            if (id.includes('canvas-confetti') || id.includes('chart.js') || id.includes('mermaid')) return 'vendor-viz'
+            return 'vendor-libs'
+          }
+        },
       }
     }
   },

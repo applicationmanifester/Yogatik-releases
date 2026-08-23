@@ -457,13 +457,13 @@ export async function runAgent({
     }
   }
 
-  const isAskingTime = /time|date|clock|day is it|what hour|timezone/i.test(userMessage || '')
-  if (isLocalProvider && isAskingTime) {
+  const isAskingTime = /time|date|clock|day is it|what hour|timezone|current year/i.test(userMessage || '')
+  if (isAskingTime) {
     const now = new Date()
     const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
     const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
     const tzStr = Intl.DateTimeFormat().resolvedOptions().timeZone
-    messages[0].content += `\n\n[System Time Info]: Current Local Time is ${timeStr} on ${dateStr} (${tzStr}).`
+    messages[0].content += `\n\n[System Time Info]: Current Local Time is ${timeStr} on ${dateStr} (${tzStr}). Ground your answer in this exact timestamp.`
   }
 
   // Pre-fetch YouTube transcript/details when a URL is present so every provider
