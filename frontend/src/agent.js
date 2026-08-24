@@ -11,6 +11,8 @@ import { visibleAnswer as sharedVisibleAnswer } from './reasoning'
 // better than the blank bubble it replaced.
 import { summariseToolResults } from './toolSummary'
 import { getToolSchemas, prioritizeToolSchemas, executeTool } from './tools/index'
+import { enrichToolError } from './tools/toolReflection'
+import { compactToolResult } from './tools/toolCompactor'
 import { buildToolPrompt, parseToolCalls, formatToolResults } from './promptedTools'
 import { setVisionContext } from './tools/see'
 import { describeWithoutModel } from './vision/source'
@@ -816,7 +818,8 @@ export async function runAgent({
       ])
 
       round.forEach((tc, i) => {
-        const result = results[i]
+        const rawResult = results[i]
+        const result = enrichToolError(tc.name, tc.parsedArgs, rawResult)
         toolResults[tc.name] = result
         settleTool(statusIds[i], result)
         onToolResult?.(tc.name, result)
@@ -830,12 +833,12 @@ export async function runAgent({
         }
 
         if (toolMode !== 'prompted') {
+          const maxLen = tc.name === 'deep_research' ? 24000 : 12000
           messages.push({
             role: 'tool', tool_call_id: tc.id, name: tc.name,
             // Research payloads are large but valuable; give them more room.
-            // `image` is stripped: JSON.stringify would inline ~50KB of base64
-            // as plain text, which the model cannot read and pays for anyway.
-            content: JSON.stringify(stripImage(result)).slice(0, tc.name === 'deep_research' ? 24000 : 12000),
+            // Image/binary payloads are stripped and compacted cleanly.
+            content: compactToolResult(stripImage(result), maxLen),
           })
         }
       })
@@ -843,7 +846,7 @@ export async function runAgent({
       if (toolMode === 'prompted') {
         messages.push({
           role: 'user',
-          content: formatToolResults(round.map((tc, i) => ({ name: tc.name, result: stripImage(results[i]) }))),
+          content: formatToolResults(round.map((tc, i) => ({ name: tc.name, result: stripImage(enrichToolError(tc.name, tc.parsedArgs, results[i])) }))),
         })
       }
 
