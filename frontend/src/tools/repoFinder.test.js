@@ -45,5 +45,5 @@ describe('GitHub Repo Finder & Discovery Suite', () => {
     })
     expect(inspectRes.success).toBe(true)
     expect(inspectRes.name).toContain('nasa/fprime')
-  })
+  }, 15000)
 })

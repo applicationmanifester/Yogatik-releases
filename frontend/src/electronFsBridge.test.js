@@ -301,3 +301,34 @@ describe('fs_file_tree', () => {
     expect(out).toContain('components/')
   })
 })
+
+
+describe('fs_search survives a hostile pattern', () => {
+  it('does not hang on a catastrophic regex, and says why', async () => {
+    // THE regression. Before this, `(a+)+$` compiled on the main process and
+    // never returned — the whole desktop app frozen, timers dead, only Task
+    // Manager left. The guard refuses the shape; the worker is the backstop.
+    fs.writeFileSync(path.join(dir, 'src', 'evil.txt'), 'a'.repeat(60) + '!')
+    const started = Date.now()
+    const res = await call('fs_search', { query: '(a+)+$', regex: true })
+    expect(Date.now() - started).toBeLessThan(20_000)
+    expect(res.pattern_rejected).toBe(true)
+    expect(res.note).toMatch(/exponential|repetition/i)
+    // Refused is not the same as "no results": it falls back to a literal
+    // search so the user still gets an answer for what they typed.
+    expect(Array.isArray(res.results)).toBe(true)
+  })
+
+  it('still runs an ordinary regex search', async () => {
+    const hits = await call('fs_search', { query: 'NEEDLE|nothing', regex: true })
+    const rows = Array.isArray(hits) ? hits : hits.results
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows[0].text).toContain('NEEDLE')
+  })
+
+  it('honours a glob without letting * cross directories', async () => {
+    const rows = await call('fs_search', { query: 'export', glob: '*.jsx' })
+    const list = Array.isArray(rows) ? rows : rows.results
+    for (const r of list) expect(r.path.endsWith('.jsx')).toBe(true)
+  })
+})

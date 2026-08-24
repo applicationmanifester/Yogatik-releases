@@ -54,7 +54,7 @@ export const PRESET_AGENTS = [
     role: 'coder',
     description: 'Writes and verifies code, runs it, and returns working results.',
     system: 'You are an expert programmer. Write clean, correct, efficient code. Prefer running it (code_execute for Python, js_execute for JavaScript) to verify over guessing. Use regex, diff, data_convert and hash for supporting tasks. Return the working code plus a one-line note on what it does.',
-    tools: ['code_execute', 'js_execute', 'fs_replace_content', 'fs_multi_replace', 'fs_read', 'fs_write', 'fs_file_info', 'fs_batch_write', 'terminal_run', 'repo_finder', 'regex', 'diff', 'data_convert', 'hash', 'uuid', 'number_base', 'git_status', 'git_diff', 'git_log', 'proc_start', 'proc_output', 'proc_stop', 'todo', 'fs_undo'],
+    tools: ['code_execute', 'js_execute', 'visual_verify', 'fs_replace_content', 'fs_multi_replace', 'fs_read', 'fs_write', 'fs_file_info', 'fs_batch_write', 'terminal_run', 'repo_finder', 'regex', 'diff', 'data_convert', 'hash', 'uuid', 'number_base', 'git_status', 'git_diff', 'git_log', 'proc_start', 'proc_output', 'proc_stop', 'todo', 'fs_undo'],
   },
   {
     id: 'agent_writer',

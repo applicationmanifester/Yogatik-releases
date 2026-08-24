@@ -57,6 +57,7 @@ import {
   keywordExtractTool, entityExtractTool, queryRefineTool,
   docExportTool, docEnhanceTool,
 } from './independentTools'
+import { visualVerifyTool } from './visualVerify'
 import { pushAmbientSignal, popAmbientSignal } from './http'
 import { repairToolArguments } from './schemaRepair'
 import { validateToolSafety } from './toolGuard'
@@ -268,6 +269,7 @@ const ALL_TOOLS = {
   web_automation: webAutomationTool,
   youtube: youtubeTool,
   see: seeTool,
+  visual_verify: visualVerifyTool,
   video_render: videoRenderTool,
   video_edit: videoEditTool,
   diagram_render: diagramRenderTool,
