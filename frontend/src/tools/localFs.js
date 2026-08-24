@@ -606,11 +606,13 @@ export const fsReplaceContentTool = {
         target_content: { type: 'string', description: 'Exact string to be replaced.' },
         replacement_content: { type: 'string', description: 'New string to replace target_content with.' },
         allow_multiple: { type: 'boolean', description: 'Replace all occurrences if true (default false).' },
+        start_line: { type: 'integer', description: 'Optional 1-based start line to constrain search window.' },
+        end_line: { type: 'integer', description: 'Optional 1-based end line to constrain search window.' },
       },
       required: ['path', 'target_content', 'replacement_content'],
     },
   },
-  async execute({ path, target_content, replacement_content, allow_multiple = false } = {}) {
+  async execute({ path, target_content, replacement_content, allow_multiple = false, start_line = 0, end_line = 0 } = {}) {
     if (!path || target_content == null || replacement_content == null) {
       return fail('path, target_content, and replacement_content are required')
     }
@@ -626,6 +628,8 @@ export const fsReplaceContentTool = {
         oldString: target_content,
         newString: replacement_content,
         replaceAll: !!allow_multiple,
+        startLine: start_line || 0,
+        endLine: end_line || 0,
       })
       const replaced = typeof r === 'number' ? r : (r?.replaced ?? 0)
       return ok({
@@ -655,10 +659,12 @@ export const fsMultiReplaceTool = {
             properties: {
               target: { type: 'string', description: 'Exact text segment to replace.' },
               replacement: { type: 'string', description: 'New replacement text.' },
+              start_line: { type: 'integer', description: 'Optional 1-based start line.' },
+              end_line: { type: 'integer', description: 'Optional 1-based end line.' },
             },
             required: ['target', 'replacement'],
           },
-          description: 'Array of { target, replacement } replacement chunks.',
+          description: 'Array of { target, replacement, start_line, end_line } replacement chunks.',
         },
       },
       required: ['path', 'chunks'],
@@ -675,7 +681,12 @@ export const fsMultiReplaceTool = {
       // process and writes ONCE, or fails having touched nothing.
       const r = await invoke('fs_multi_edit', {
         path,
-        edits: chunks.map(c => ({ oldString: c.target, newString: c.replacement })),
+        edits: chunks.map(c => ({
+          oldString: c.target,
+          newString: c.replacement,
+          startLine: c.start_line || 0,
+          endLine: c.end_line || 0,
+        })),
       })
       const appliedCount = r?.edits?.length ?? 0
       return ok({

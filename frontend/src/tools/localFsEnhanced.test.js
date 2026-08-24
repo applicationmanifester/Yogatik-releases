@@ -16,11 +16,15 @@ describe('Enhanced Filesystem & Terminal Execution Suite', () => {
     expect(fsReplaceContentTool.schema.parameters.required).toContain('path')
     expect(fsReplaceContentTool.schema.parameters.required).toContain('target_content')
     expect(fsReplaceContentTool.schema.parameters.required).toContain('replacement_content')
+    expect(fsReplaceContentTool.schema.parameters.properties.start_line).toBeDefined()
+    expect(fsReplaceContentTool.schema.parameters.properties.end_line).toBeDefined()
   })
 
   it('defines fsMultiReplaceTool with atomic chunk replacement schema', () => {
     expect(fsMultiReplaceTool.schema.name).toBe('fs_multi_replace')
     expect(fsMultiReplaceTool.schema.parameters.required).toContain('chunks')
+    expect(fsMultiReplaceTool.schema.parameters.properties.chunks.items.properties.start_line).toBeDefined()
+    expect(fsMultiReplaceTool.schema.parameters.properties.chunks.items.properties.end_line).toBeDefined()
   })
 
   it('defines fsFileInfoTool and returns file structure metrics', () => {

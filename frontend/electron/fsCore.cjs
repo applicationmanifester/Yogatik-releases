@@ -138,13 +138,45 @@ function replaceAllLiteral(haystack, needle, replacement) {
  * insert the replacement between every character of the file, which is what
  * the old implementation actually did.
  */
-function applyEdit(text, oldString, newString, replaceAll = false) {
+function applyEdit(text, oldString, newString, replaceAll = false, { startLine = 0, endLine = 0 } = {}) {
   if (typeof oldString !== 'string' || oldString === '') {
     throw new Error('old_string must be a non-empty string. To create or replace a whole file use fs_write.')
   }
   if (oldString === newString) {
     throw new Error('old_string and new_string are identical — nothing to do.')
   }
+
+  if (startLine > 0 || endLine > 0) {
+    const lines = toLf(text).split('\n')
+    const startIdx = Math.max(0, (startLine || 1) - 1)
+    const endIdx = endLine > 0 ? Math.min(lines.length, endLine) : lines.length
+    const sliceLines = lines.slice(startIdx, endIdx)
+    const sliceText = sliceLines.join('\n')
+
+    const count = countOccurrences(sliceText, oldString)
+    if (count === 0) {
+      throw new Error(`old_string not found within lines ${startLine || 1} to ${endLine || lines.length}`)
+    }
+    if (count > 1 && !replaceAll) {
+      throw new Error(`old_string is not unique (${count} matches) within lines ${startLine || 1} to ${endLine || lines.length}; set replace_all or narrow the line range`)
+    }
+
+    const modifiedSlice = replaceAll
+      ? replaceAllLiteral(sliceText, oldString, newString ?? '')
+      : (() => {
+        const i = sliceText.indexOf(oldString)
+        return sliceText.slice(0, i) + (newString ?? '') + sliceText.slice(i + oldString.length)
+      })()
+
+    const result = [
+      ...lines.slice(0, startIdx),
+      ...modifiedSlice.split('\n'),
+      ...lines.slice(endIdx),
+    ].join('\n')
+
+    return { text: result, replaced: replaceAll ? count : 1 }
+  }
+
   const count = countOccurrences(text, oldString)
   if (count === 0) throw new Error('old_string not found')
   if (count > 1 && !replaceAll) {

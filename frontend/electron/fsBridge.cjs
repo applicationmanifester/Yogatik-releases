@@ -145,7 +145,7 @@ function registerFsBridge() {
     }
   })
 
-  ipcMain.handle('fs_edit', async (_e, { ctx, path: rel, oldString, newString, replaceAll, expectedHash = null }) => {
+  ipcMain.handle('fs_edit', async (_e, { ctx, path: rel, oldString, newString, replaceAll, expectedHash = null, startLine = 0, start_line = 0, endLine = 0, end_line = 0 }) => {
     const file = resolvePath(ctx, rel)
     const buf = await fs.promises.readFile(file)
     const { text, encoding, bom, binary, readOnly } = decodeBuffer(buf)
@@ -159,6 +159,7 @@ function registerFsBridge() {
     // read still matches in a CRLF file, then put the file's own endings back.
     const { text: updatedLf, replaced } = applyEdit(
       require('./fsCore.cjs').toLf(text), oldString, newString, replaceAll,
+      { startLine: startLine || start_line || 0, endLine: endLine || end_line || 0 },
     )
     const updated = applyEol(updatedLf, eol)
 
@@ -195,13 +196,14 @@ function registerFsBridge() {
     let working = toLf(text)
     const applied = []
     for (let i = 0; i < edits.length; i++) {
-      const { oldString, old_string, newString, new_string, replaceAll, replace_all } = edits[i] || {}
+      const { oldString, old_string, newString, new_string, replaceAll, replace_all, startLine, start_line, endLine, end_line } = edits[i] || {}
       try {
         const r = applyEdit(
           working,
           oldString ?? old_string,
           newString ?? new_string,
           replaceAll ?? replace_all ?? false,
+          { startLine: startLine || start_line || 0, endLine: endLine || end_line || 0 },
         )
         working = r.text
         applied.push({ index: i, replaced: r.replaced })

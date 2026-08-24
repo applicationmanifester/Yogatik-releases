@@ -362,9 +362,8 @@ export async function runAgent({
   try { chatPrefs = await getSetting('chat_prefs', {}) || {} } catch { /* defaults */ }
   const planMode = resolveFeatures(chatPrefs)?.planMode === true
   // How many tool rounds the agent may take before it must give a final answer.
-  // Raised from the old hard 5 so complex, multi-step tasks can keep refining;
-  // clamped so a runaway model can't loop forever. User-tunable in Personalise.
-  const maxRounds = Math.max(1, Math.min(20, Number(chatPrefs.max_tool_rounds) || 8))
+  // Defaults to 8; user-tunable up to 30 in Personalise / chat settings.
+  const maxRounds = Math.max(1, Math.min(30, Number(chatPrefs.max_tool_rounds) || 8))
 
   // An active Skill shapes the assistant: its system prompt is appended, and its
   // optional tool allowlist scopes what the model may call this turn.
@@ -891,10 +890,11 @@ export async function runAgent({
     if (toolCallsToProcess.length > 0) {
       throwIfAborted()
       toolCallsToProcess = []
+      tools = null // Crucial: strip tool schemas so LLM is forced to generate prose synthesis
       messages.push({
         role: 'user',
         content: 'You have reached the tool-use limit for this turn. Do NOT request any ' +
-          'more tools. Give your best, complete final answer now using everything gathered ' +
+          'more tools. Give your best, complete final answer now in clear markdown using everything gathered ' +
           'so far, and note briefly if anything remained uncertain.',
       })
       onStatus?.('Finalizing answer…')
@@ -915,6 +915,7 @@ export async function runAgent({
       // already failing to answer.
       if (!forcedFinal) {
         toolCallsToProcess = []
+        tools = null // Strip tools so the model cannot emit another tool call
         messages.push({
           role: 'user',
           content: 'You produced no visible answer. Do NOT request any more tools and do ' +
@@ -928,12 +929,24 @@ export async function runAgent({
       }
 
       if (!visibleAnswer(fullContent)) {
-        const gathered = summariseToolResults(toolResults)
-        const fallback = gathered
-          ? 'I could not compose a final answer this turn. Here are the tool results I gathered:\n\n' + gathered
-          : 'I could not produce an answer this turn. Please try Regenerate, or switch to a stronger model.'
-        fullContent = fallback
-        onToken?.(fallback)
+        // If the model produced text during the last round (e.g. outside <think> tags), recover it
+        let recovered = ''
+        if (roundContent) {
+          const stripped = roundContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
+          if (stripped && visibleAnswer(stripped)) recovered = stripped
+        }
+
+        if (recovered) {
+          fullContent = recovered
+          onToken?.(recovered)
+        } else {
+          const gathered = summariseToolResults(toolResults)
+          const fallback = gathered
+            ? 'Based on the tool results gathered:\n\n' + gathered
+            : 'I could not produce an answer this turn. Please try Regenerate, or switch to a stronger model.'
+          fullContent = fallback
+          onToken?.(fallback)
+        }
       }
     }
 

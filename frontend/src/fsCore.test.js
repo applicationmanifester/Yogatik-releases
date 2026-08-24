@@ -51,6 +51,36 @@ describe('applyEdit', () => {
     expect(core.applyEdit('a.c', 'a.c', 'ok').text).toBe('ok')
   })
 
+  it('constrains replacement to a specific startLine and endLine', () => {
+    const text = [
+      'line 1: return true',
+      'line 2: middle',
+      'line 3: return true',
+      'line 4: end',
+    ].join('\n')
+
+    // Replacing "return true" globally without replaceAll would fail because it's not unique
+    expect(() => core.applyEdit(text, 'return true', 'return false')).toThrow(/not unique/)
+
+    // With startLine and endLine = 1..2, only the first occurrence is in scope
+    const res = core.applyEdit(text, 'return true', 'return false', false, { startLine: 1, endLine: 2 })
+    expect(res.text).toBe([
+      'line 1: return false',
+      'line 2: middle',
+      'line 3: return true',
+      'line 4: end',
+    ].join('\n'))
+
+    // With startLine and endLine = 3..4, only the second occurrence is in scope
+    const res2 = core.applyEdit(text, 'return true', 'return null', false, { startLine: 3, endLine: 4 })
+    expect(res2.text).toBe([
+      'line 1: return true',
+      'line 2: middle',
+      'line 3: return null',
+      'line 4: end',
+    ].join('\n'))
+  })
+
   it('counts without allocating a fragment per match', () => {
     const big = 'x'.repeat(100_000)
     expect(core.countOccurrences(big, 'x')).toBe(100_000)

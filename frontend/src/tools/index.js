@@ -58,6 +58,8 @@ import {
   docExportTool, docEnhanceTool,
 } from './independentTools'
 import { visualVerifyTool } from './visualVerify'
+import { fsPatchTool } from './fsPatch'
+import { codeOutlineTool } from './codeOutline'
 import { pushAmbientSignal, popAmbientSignal } from './http'
 import { repairToolArguments } from './schemaRepair'
 import { validateToolSafety } from './toolGuard'
@@ -294,6 +296,8 @@ const ALL_TOOLS = {
   fs_edit: fsEditTool,
   fs_replace_content: fsReplaceContentTool,
   fs_multi_replace: fsMultiReplaceTool,
+  fs_patch: fsPatchTool,
+  code_outline: codeOutlineTool,
   fs_file_info: fsFileInfoTool,
   fs_copy: fsCopyTool,
   identify: identifyTool,
