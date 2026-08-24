@@ -3,16 +3,61 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '3.12.0'
+export const APP_VERSION = '3.13.0'
 export const BUILD_DATE = 'August 2026'
-export const APP_CODENAME = 'Titan Multi-Agent & Vision'
+export const APP_CODENAME = 'Titan Universal Agent & Protocol Engine'
 
 export const APP_RELEASES = [
+  {
+    version: '3.13.0',
+    title: 'Universal Model Protocol, Resilient Patcher & High-Speed MCP Suite',
+    date: 'August 24, 2026',
+    isLatest: true,
+    highlights: [
+      'Universal XML, Nemotron, Hermes, Claude invoke & ReAct tool call parsing',
+      'Unified Diff Resilient Patching engine (fs_patch) with fuzzy whitespace matching',
+      'AST Code Outline & symbol extractor (code_outline) for high-speed file inspection',
+      'Zero-Latency Stale-While-Revalidate discovery cache (<1ms) for Model Context Protocol',
+      'Dynamic MCP Resource Templates, Multimodal Normalizer & Interactive Tool Tester',
+    ],
+    sections: [
+      {
+        category: '✨ New Features',
+        items: [
+          {
+            title: 'Universal Multi-Syntax Tool Call Parser',
+            description: 'Extracts and runs tool calls from Nemotron XML, Hermes XML, Claude invoke tags, ReAct formats, and standard JSON seamlessly.',
+          },
+          {
+            title: 'Resilient Diff Patcher (fs_patch)',
+            description: 'Applies unified diff hunks with offset tracking and fuzzy whitespace tolerance for safe atomic file edits.',
+          },
+          {
+            title: 'Interactive MCP Tool Tester & Inspector',
+            description: 'Directly test any discovered MCP tool in the UI with custom JSON arguments and live latency metrics before handing off to the agent.',
+          },
+        ],
+      },
+      {
+        category: '⚡ Performance & Protocol',
+        items: [
+          {
+            title: 'Sub-Millisecond MCP Discovery Cache',
+            description: 'Loads all MCP schemas and resources instantly from IndexedDB cache on boot with background revalidation.',
+          },
+          {
+            title: 'High-Throughput Parallel Handshakes',
+            description: 'Dispatches tools/list, resources/list, templates/list, and prompts/list concurrently with individual timeout guards.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '3.12.0',
     title: 'Autonomous Multi-Agent DAG & Multimodal UI Verification',
     date: 'August 24, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Topological Multi-Agent DAG Wave Scheduling with automatic dependency piping',
       'Multimodal UI Visual Verification tool (visual_verify) for offscreen component evaluation',

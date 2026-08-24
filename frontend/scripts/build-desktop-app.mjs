@@ -42,10 +42,13 @@ fs.cpSync(path.join(frontendRoot, 'dist-electron'), path.join(appDestDir, 'dist-
 // Copy electron directory
 fs.cpSync(path.join(frontendRoot, 'electron'), path.join(appDestDir, 'electron'), { recursive: true })
 
+// Read root package.json version
+const pkgJson = JSON.parse(fs.readFileSync(path.join(frontendRoot, 'package.json'), 'utf8'))
+
 // Create minimal package.json for runtime
 const minimalPkg = {
   name: 'yogatik',
-  version: '3.11.0',
+  version: pkgJson.version || '3.12.0',
   main: 'electron/main.cjs',
   type: 'module',
 }
