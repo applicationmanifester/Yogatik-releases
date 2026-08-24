@@ -5358,9 +5358,28 @@ html[data-companion="1"], html[data-companion="1"] body, html[data-companion="1"
 .companion-input button {
   padding: 7px 10px; border-radius: 9px; cursor: pointer;
   background: var(--accent); border: 0; color: #fff;
-  display: inline-flex; align-items: center;
+  display: inline-flex; align-items: center; justify-content: center;
 }
 .companion-input button:disabled { opacity: .45; cursor: default; }
+.companion-input button.companion-icon-btn {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.companion-input button.companion-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.companion-input button.companion-icon-btn.listening {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.6);
+  animation: companion-pulse 1.2s infinite ease-in-out;
+}
+@keyframes companion-pulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  70% { transform: scale(1.05); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
 
 /* ── Redesigned Settings Center ─────────────────────────────────── */
 .modal.settings-modal {
