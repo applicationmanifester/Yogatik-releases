@@ -46,14 +46,15 @@ export const spawnAgentsTool = {
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return { success: false, error: 'Provide a non-empty tasks array.' }
     }
-    const [{ streamMessage }, { getAgentById }, { getToolNames }, { runAgentPool }, isolation, localFs] = await Promise.all([
+    const [{ streamMessage }, { getAgentById }, { getToolNames }, { runAgentPool }, isolation, localFs, { getSessionBlackboard }] = await Promise.all([
       import('../api'), import('../agents'), import('./index'), import('../agentPool'),
-      import('../agentIsolation'), import('./localFs'),
+      import('../agentIsolation'), import('./localFs'), import('../agentBlackboard'),
     ])
     const allNames = getToolNames()
 
     const parentId = localFs.getWorkspaceCtx()?.conversationId ?? 'chat'
     const plan = isolation.planIsolation(parentId, tasks.map(t => t.agent), { isolate: !!isolateWorkspace })
+    const blackboard = getSessionBlackboard(parentId)
 
     const runOne = async ({ agent, task }, index) => {
       const def = (await getAgentById(agent)) || null
@@ -64,11 +65,17 @@ export const spawnAgentsTool = {
         const allow = new Set(def.tools)
         for (const n of allNames) if (!allow.has(n)) disabled.add(n)
       }
+
+      // Inject shared team findings from the blackboard if available
+      const sharedContext = blackboard.formatContextPrompt()
+      const enrichedTask = sharedContext ? `${task}\n\n${sharedContext}` : task
+
+      const startTime = Date.now()
       let text = ''
       await new Promise((resolve) => {
         streamMessage(
           {
-            message: task,
+            message: enrichedTask,
             messages: [],
             provider: def?.provider || undefined,
             model: def?.model || undefined,
@@ -89,7 +96,22 @@ export const spawnAgentsTool = {
           },        // a failed sub-agent returns its error text, never rejects the batch
         )
       })
-      return { agent: def?.name || agent, role: def?.role || agent, result: text.trim() || '(no output)' }
+
+      const durationMs = Date.now() - startTime
+      const trimmedResult = text.trim() || '(no output)'
+
+      // Publish short summary note to the shared blackboard for downstream agents
+      if (trimmedResult.length > 0 && !trimmedResult.startsWith('[Sub-agent error')) {
+        const snippet = trimmedResult.slice(0, 240).replace(/\n+/g, ' ')
+        blackboard.appendNote(snippet, def?.name || agent)
+      }
+
+      return {
+        agent: def?.name || agent,
+        role: def?.role || agent,
+        result: trimmedResult,
+        durationMs,
+      }
     }
 
     // Rolling-window concurrency under the shared global agent budget.

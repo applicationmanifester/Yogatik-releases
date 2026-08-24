@@ -14,6 +14,7 @@ import { PRESET_AGENTS, getAgentById } from '../agents'
 import { getToolNames } from './index'
 import { streamMessage } from '../api'
 import { runAgentPool } from '../agentPool'
+import { getSessionBlackboard } from '../agentBlackboard'
 
 function findPresetAgent(idOrRole) {
   if (!idOrRole) return null
@@ -25,12 +26,13 @@ function findPresetAgent(idOrRole) {
     null
 }
 
-async function streamAgent(agentId, prompt, priorContext = '') {
+async function streamAgent(agentId, prompt, priorContext = '', sessionId = 'default') {
   let def = findPresetAgent(agentId)
   if (!def) {
     try { def = await getAgentById(agentId) } catch { def = null }
   }
   const allNames = getToolNames()
+  const blackboard = getSessionBlackboard(sessionId)
 
   const disabled = new Set(['spawn_agents', 'crew_orchestrator'])
   if (def?.tools?.length) {
@@ -38,11 +40,18 @@ async function streamAgent(agentId, prompt, priorContext = '') {
     for (const n of allNames) if (!allow.has(n)) disabled.add(n)
   }
 
+  const bbContext = blackboard.formatContextPrompt()
+  let combinedContext = priorContext
+  if (bbContext && !combinedContext.includes(bbContext)) {
+    combinedContext = combinedContext ? `${combinedContext}\n\n${bbContext}` : bbContext
+  }
+
   let text = ''
-  const fullPrompt = priorContext
-    ? `### Prior Context / Input Data:\n${priorContext}\n\n### Your Specific Task:\n${prompt}`
+  const fullPrompt = combinedContext
+    ? `### Prior Context / Input Data:\n${combinedContext}\n\n### Your Specific Task:\n${prompt}`
     : prompt
 
+  const startTime = Date.now()
   await new Promise((resolve) => {
     streamMessage(
       {
@@ -67,11 +76,19 @@ async function streamAgent(agentId, prompt, priorContext = '') {
     )
   })
 
+  const durationMs = Date.now() - startTime
+  const trimmed = text.trim() || '(Completed with no output)'
+
+  if (trimmed.length > 0 && !trimmed.startsWith('[Agent execution notice')) {
+    blackboard.appendNote(trimmed.slice(0, 240).replace(/\n+/g, ' '), def?.name || agentId)
+  }
+
   return {
     agentId: def?.id || agentId,
     agentName: def?.name || agentId,
     role: def?.role || agentId,
-    output: text.trim() || '(Completed with no output)',
+    output: trimmed,
+    durationMs,
   }
 }
 

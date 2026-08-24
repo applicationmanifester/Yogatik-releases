@@ -58,6 +58,11 @@ function registerWatcher(getWindow) {
       if (pending.has(key)) clearTimeout(pending.get(key))
       pending.set(key, setTimeout(() => {
         pending.delete(key)
+        // The cached file index is now stale. fsBridge invalidates on its OWN
+        // mutations, but a change made by the user's editor, a build step or a
+        // git checkout arrives only here — without this the index serves a
+        // 5-second-old view of a directory that has already moved on.
+        try { invalidate() } catch { /* cache only */ }
         const win = getWindow?.()
         if (!win || win.isDestroyed()) return
         // `filename` is relative to the watched dir; make it relative to the root.

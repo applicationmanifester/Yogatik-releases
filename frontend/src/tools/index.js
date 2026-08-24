@@ -58,6 +58,7 @@ import {
   docExportTool, docEnhanceTool,
 } from './independentTools'
 import { pushAmbientSignal, popAmbientSignal } from './http'
+import { repairToolArguments } from './schemaRepair'
 import { getMcpSchemas, isMcpTool, callMcpTool } from '../mcp'
 import {
   isDesktop, fsAddFolderTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
@@ -1175,13 +1176,14 @@ export async function executeTool(name, args, { signal } = {}) {
   // Gate anything that writes to or runs on the user's machine. Reads pass
   // straight through. A refusal is a normal tool result so the model adapts
   // instead of the turn hanging.
-  const verdict = await requestPermission(cleanName, args || {}, getWorkspaceCtx())
+  const repairedArgs = repairToolArguments(cleanName, args, tool.schema)
+  const verdict = await requestPermission(cleanName, repairedArgs || {}, getWorkspaceCtx())
   if (!verdict.allowed) return { success: false, error: verdict.reason, denied: true }
 
   // Makes Stop reach the tool's own network calls (see tools/http.js).
   pushAmbientSignal(signal)
   try {
-    return await tool.execute(args)
+    return await tool.execute(repairedArgs)
   } catch (err) {
     if (err?.name === 'AbortError' || signal?.aborted) return { success: false, error: 'Stopped' }
     // A thrown string, or an object with no `message`, left error undefined —

@@ -6,14 +6,16 @@
 const { ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { Worker } = require('worker_threads')
 const { resolvePath, rootPathsFor } = require('./roots.cjs')
-const { shouldSkipDir, looksBinary, parseGitignore, makeIgnoreMatcher } = require('./searchFilter.cjs')
+// looksBinary now lives with the scan, in searchWorker.cjs.
 const { createJournal } = require('./journalCore.cjs')
 const {
   readFileSmart, writeFileAtomic, existingMode, applyEdit,
   decodeBuffer, encodeText, detectEol, applyEol, hashContent,
 } = require('./fsCore.cjs')
 const { getIndex, scanRoot, invalidate } = require('./fsIndex.cjs')
+const { globToRegExp } = require('./safeRegex.cjs')
 
 let journal = null
 /** main.cjs supplies the store path (userData); absent = journalling disabled. */
@@ -34,38 +36,44 @@ function snapshot(ctx, op, target) {
 /** Cap a single file's size for text search — 2 MB of one line is not source. */
 const MAX_SEARCH_FILE_BYTES = 2 * 1024 * 1024
 
-function gitignoreMatcherFor(root) {
-  try {
-    const text = fs.readFileSync(path.join(root, '.gitignore'), 'utf8')
-    return makeIgnoreMatcher(parseGitignore(text))
-  } catch { return () => false }
-}
+/** A search that has not finished by now is not going to be useful. */
+const SEARCH_TIMEOUT_MS = 15_000
 
-function globToRegExp(glob) {
-  const esc = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')
-  return new RegExp('^' + esc + '$', 'i')
-}
+/**
+ * Run the content scan on a worker thread and hold it to a deadline.
+ *
+ * terminate() is the only mechanism that actually stops a runaway regex — no
+ * signal, flag or timer inside the thread will be observed while the engine is
+ * backtracking. That is the entire reason this is not just a loop here.
+ */
+function runSearchWorker(workerData) {
+  return new Promise((resolve) => {
+    let worker
+    try {
+      worker = new Worker(path.join(__dirname, 'searchWorker.cjs'), { workerData })
+    } catch (e) {
+      // No worker (a packaging problem, say) must not mean no search. A literal
+      // scan on this thread is bounded and safe; only the regex path is not.
+      resolve({ ok: false, reason: e?.message, results: [], unavailable: true })
+      return
+    }
 
-function walk(dir, out, opts, depth) {
-  let entries
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
-  for (const e of entries) {
-    const full = path.join(dir, e.name)
-    // `prune` skips heavy directories entirely (search); plain listing keeps
-    // showing them, because the user explicitly asked what is in a folder.
-    if (opts.prune && e.isDirectory() && shouldSkipDir(e.name)) continue
-    if (opts.prune && opts.ignores && opts.root) {
-      const rel = path.relative(opts.root, full)
-      if (rel && opts.ignores(rel)) continue
-    }
-    out.push({ dirent: e, full })
-    // opts.maxDepth lets a caller bound the walk; 40 stays the hard ceiling.
-    const limitDepth = Math.min(opts.maxDepth ?? 40, 40)
-    if (opts.recursive && e.isDirectory() && depth < limitDepth && out.length < 20000) {
-      walk(full, out, opts, depth + 1)
-    }
-    if (out.length >= 20000) return
-  }
+    const timer = setTimeout(() => {
+      worker.terminate()
+      resolve({ ok: false, timedOut: true, results: [] })
+    }, SEARCH_TIMEOUT_MS)
+
+    worker.once('message', (msg) => {
+      clearTimeout(timer)
+      worker.terminate()
+      resolve(msg || { ok: false, results: [] })
+    })
+    worker.once('error', (e) => {
+      clearTimeout(timer)
+      resolve({ ok: false, reason: e?.message, results: [] })
+    })
+    worker.once('exit', () => clearTimeout(timer))
+  })
 }
 
 /** Register all fs_* IPC handlers. Roots IPC must be registered first. */
@@ -243,38 +251,53 @@ function registerFsBridge() {
     const roots = rootPathsFor(ctx)
     if (!roots.length) throw new Error('no folder granted')
     const nameRe = glob.trim() ? globToRegExp(glob.trim()) : null
-    const re = regex ? new RegExp(query) : null
-    const out = []
+
     // The candidate list comes from the cached index — .git/node_modules/dist
     // and everything any nested .gitignore excludes are already gone, so search
     // never reads a dependency tree, and a second search pays nothing to walk.
     const { entries } = await getIndex(roots, { includeIgnored: false })
-    let scanned = 0
+    const files = []
     for (const e of entries) {
       if (e.isDir) continue
       if (nameRe && !nameRe.test(e.name)) continue
-
-      let stat
-      try { stat = await fs.promises.stat(e.path) } catch { continue }
-      if (stat.size > MAX_SEARCH_FILE_BYTES) continue
-
-      let buf
-      try { buf = await fs.promises.readFile(e.path) } catch { continue }
-      if (looksBinary(buf)) continue
-
-      const lines = buf.toString('utf8').split(/\r?\n/)
-      for (let i = 0; i < lines.length; i++) {
-        const hit = re ? re.test(lines[i]) : lines[i].includes(query)
-        if (hit) {
-          out.push({ path: e.path, line: i + 1, text: lines[i].slice(0, 400) })
-          if (out.length >= maxResults) return out
-        }
-      }
-      // Reading a thousand files back-to-back is still a long stretch of work;
-      // hand the loop back periodically so the window keeps responding.
-      if (++scanned % 200 === 0) await new Promise((r) => setImmediate(r))
+      try {
+        if ((await fs.promises.stat(e.path)).size > MAX_SEARCH_FILE_BYTES) continue
+      } catch { continue }
+      files.push(e.path)
     }
-    return out
+
+    // The scan runs on a WORKER, and the reason is not speed.
+    //
+    // `new RegExp(query)` compiles a pattern the MODEL wrote. Measured
+    // 2026-08-24: `(a+)+$` against 40 characters does not return, and a
+    // setTimeout scheduled beforehand never fires — the regex engine holds the
+    // thread through backtracking. On the main process that is the whole
+    // desktop app frozen with no dialog, no cancel and nothing to click, until
+    // it is killed from Task Manager. A runaway pattern cannot be interrupted
+    // from inside; it can only be TERMINATED from outside, which is what a
+    // worker makes possible.
+    const result = await runSearchWorker({
+      files, query, useRegex: !!regex, maxResults,
+    })
+
+    if (result.rejected) {
+      // The pattern was refused before it ran. Falling back to a literal search
+      // is almost always what the user meant, and returning "no results" for a
+      // pattern that was never executed would be a lie.
+      const literal = await runSearchWorker({ files, query, useRegex: false, maxResults })
+      return {
+        results: literal.results || [],
+        pattern_rejected: true,
+        note: result.reason,
+      }
+    }
+    if (result.timedOut) {
+      throw new Error(
+        `The search was stopped after ${SEARCH_TIMEOUT_MS / 1000}s. The pattern is too expensive `
+        + 'for this codebase — narrow it with a glob, or search for a literal string.',
+      )
+    }
+    return result.results || []
   })
 
   // Path discovery by NAME — no file contents are read. The renderer's
