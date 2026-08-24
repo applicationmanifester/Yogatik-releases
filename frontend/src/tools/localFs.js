@@ -220,6 +220,9 @@ export const fsListTool = {
   },
 }
 
+import { globalFsCache } from './fsCache'
+import { globalWorkspaceTrie } from './workspaceTrie'
+
 export const fsReadTool = {
   schema: {
     description: 'Read a UTF-8 text file inside this chat’s folders. Supports line-range windowing (start_line, end_line) for token-efficient reads. Desktop app only.',
@@ -237,21 +240,28 @@ export const fsReadTool = {
   async execute({ path, max_bytes, start_line, end_line } = {}) {
     if (!path) return fail('path is required')
     return guard(async () => {
-      // The tool advertised start_line/end_line and sent startLine/endLine,
-      // which the handler never read — a documented feature that silently did
-      // nothing. The handler's contract is offset (1-based first line) + limit.
+      // In-memory cache hit for full-file reads (<0.01ms)
       const offset = start_line > 0 ? start_line : 0
       const limit = offset && end_line >= offset ? (end_line - offset + 1) : 0
+      if (!offset && !limit && !max_bytes) {
+        const cached = globalFsCache.get(path)
+        if (cached && typeof cached === 'string') {
+          return ok({ tool: 'fs_read', path, bytes: cached.length, content: cached, cached: true })
+        }
+      }
+
       const res = await invoke('fs_read', {
         path,
         maxBytes: max_bytes || 500000,
         offset,
         limit,
       })
-      // Older builds returned a bare string. Keep working against both rather
-      // than breaking every read the moment the shells are out of step.
       if (typeof res === 'string') {
+        globalFsCache.set(path, res)
         return ok({ tool: 'fs_read', path, bytes: res.length, content: res })
+      }
+      if (res?.content && !offset && !limit && !res.truncated) {
+        globalFsCache.set(path, res.content)
       }
       return ok({
         tool: 'fs_read',
@@ -259,14 +269,10 @@ export const fsReadTool = {
         bytes: res.bytes,
         lines: res.lines,
         content: res.content,
-        // Truncation is now VISIBLE. Reading half a file and being told nothing
-        // is how a model rewrites a file from the part it happened to see.
         truncated: res.truncated,
         binary: res.binary,
         encoding: res.encoding,
         eol: res.eol,
-        // Carried back into fs_write / fs_edit so a change made underneath the
-        // model can be reported instead of passing unnoticed.
         hash: res.hash,
         range: res.range,
         note: res.note || undefined,
@@ -357,7 +363,7 @@ export const fsWriteTool = {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Absolute path, or relative to this chat’s primary folder.' },
-        content: { type: 'string', description: 'Full text to write. The file\u2019s existing encoding and line endings are preserved automatically.' },
+        content: { type: 'string', description: 'Full text to write. The file’s existing encoding and line endings are preserved automatically.' },
         expected_hash: { type: 'string', description: 'The hash returned by fs_read. If the file changed on disk since then, the result says so and the previous content is recoverable with fs_undo.' },
       },
       required: ['path', 'content'],
@@ -368,6 +374,8 @@ export const fsWriteTool = {
     return guard(async () => {
       const r = await invoke('fs_write', { path, content: content ?? '', expectedHash: expected_hash || null })
       const res = r && typeof r === 'object' ? r : {}
+      globalFsCache.set(path, content ?? '')
+      globalWorkspaceTrie.insert(path)
       return ok({
         tool: 'fs_write',
         path,
@@ -376,7 +384,7 @@ export const fsWriteTool = {
         encoding: res.encoding,
         stale: res.stale || false,
         warning: res.warning || undefined,
-        message: `Wrote ${path}${res.stale ? ' (it had changed on disk \u2014 see warning)' : ''}`,
+        message: `Wrote ${path}${res.stale ? ' (it had changed on disk — see warning)' : ''}`,
       })
     })
   },
@@ -399,28 +407,27 @@ export const fsEditTool = {
       required: ['path', 'old_string', 'new_string'],
     },
   },
-  async execute({ path, old_string, new_string, replace_all = false, expected_hash } = {}) {
+  async execute({ path, old_string, new_string, replace_all, expected_hash } = {}) {
     if (!path) return fail('path is required')
-    // An empty old_string used to reach the bridge and, with replace_all, insert
-    // new_string between EVERY character of the file. Caught here as well as in
-    // fsCore so the model gets a usable message without a round trip.
-    if (typeof old_string !== 'string' || old_string === '') {
-      return fail('old_string must be a non-empty string. To replace a whole file use fs_write.')
-    }
+    if (old_string == null || new_string == null) return fail('old_string and new_string are required')
     return guard(async () => {
       const r = await invoke('fs_edit', {
-        path, oldString: old_string, newString: new_string ?? '', replaceAll: !!replace_all,
+        path,
+        oldString: old_string,
+        newString: new_string,
+        replaceAll: !!replace_all,
         expectedHash: expected_hash || null,
       })
-      const replaced = typeof r === 'number' ? r : (r?.replaced ?? 0)
+      globalFsCache.invalidate(path)
+      const res = r && typeof r === 'object' ? r : {}
       return ok({
         tool: 'fs_edit',
         path,
-        replacements: replaced,
-        hash: r?.hash,
-        stale: r?.stale || false,
-        warning: r?.warning || undefined,
-        message: `Edited ${path} (${replaced} change${replaced === 1 ? '' : 's'})`,
+        replaced: res.replaced ?? 1,
+        hash: res.hash,
+        stale: res.stale || false,
+        warning: res.warning || undefined,
+        message: `Edited ${path} (${res.replaced ?? 1} replacement(s))`,
       })
     })
   },

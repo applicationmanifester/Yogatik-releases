@@ -20,12 +20,14 @@ const NON_INTERACTIVE_ENV = {
   DEBIAN_FRONTEND: 'noninteractive',
 }
 
+import { parseTerminalDiagnostics } from './terminalDiagnostics'
+
 export const terminalRunTool = {
   schema: {
     description:
       'Execute a terminal CLI command in this chat’s primary working folder. ' +
       'Use to run tests (npm test), build projects, check git status, or execute scripts. ' +
-      'Returns stdout, stderr, and exit code. ' +
+      'Returns stdout, stderr, exit code, and structured compiler/test diagnostics. ' +
       'It WAITS for the command to finish and times out (default 30s), so it is the wrong tool ' +
       'for anything long-running: use proc_start for dev servers, watch-mode tests and streaming ' +
       'builds. Needs a working folder granted for this chat — if none is bound, ask the user to ' +
@@ -71,14 +73,19 @@ export const terminalRunTool = {
       }
       // A non-zero exit is a RESULT, not a tool failure: the card should show the
       // real stdout/stderr instead of an error card with nothing in it.
+      const rawStdout = stripAnsi(res?.stdout || '')
+      const rawStderr = stripAnsi(res?.stderr || '')
+      const diagnostics = parseTerminalDiagnostics(rawStdout + '\n' + rawStderr)
+
       return {
         success: true,
         tool: 'terminal_run',
         command,
         cwd: cwd || '.',
         exitCode: res?.exitCode,
-        stdout: stripAnsi(res?.stdout || '') || '(no output)',
-        stderr: stripAnsi(res?.stderr || ''),
+        stdout: rawStdout || '(no output)',
+        stderr: rawStderr,
+        diagnostics: diagnostics.length ? diagnostics : undefined,
         durationMs: Date.now() - startedAt,
         killed: res?.killed || false,
         ...(res?.killed ? { note: `Timed out after ${waitMs}ms and was killed. Use proc_start for long-running commands.` } : {}),
