@@ -45,7 +45,7 @@ fs.cpSync(path.join(frontendRoot, 'electron'), path.join(appDestDir, 'electron')
 // Create minimal package.json for runtime
 const minimalPkg = {
   name: 'yogatik',
-  version: '3.10.4',
+  version: '3.11.0',
   main: 'electron/main.cjs',
   type: 'module',
 }
