@@ -5,6 +5,7 @@ import ChangesPanel from './ChangesPanel'
 import CodeEditorPane from './CodeEditorPane'
 import WorkspaceSearch from './WorkspaceSearch'
 import { useWorkspaceTree } from '../workspace/useWorkspaceTree'
+import { loadCodeMirror } from '../workspace/codemirror'
 import { addRoot, isDesktop } from '../tools/localFs'
 import { nodeId, normPath } from '../workspace/treeStore'
 
@@ -32,9 +33,16 @@ function toRelative(abs, rootPath) {
  * nothing to do with this file.
  */
 
-const MIN_W = 260
-const MAX_W = 900
+const MIN_W = 220
+const MAX_W = 620
+const MAX_EDITOR_W = 1400
 const STORAGE_KEY = 'yogatik.workspace.width'
+const EDITOR_KEY = 'yogatik.workspace.editorWidth'
+
+function storedWidth(key, fallback, max) {
+  const n = Number(typeof localStorage !== 'undefined' ? localStorage.getItem(key) : 0)
+  return n >= MIN_W && n <= max ? n : fallback
+}
 
 const VIEWS = [
   { id: 'explorer', label: 'Explorer', Icon: Files },
@@ -45,10 +53,8 @@ const VIEWS = [
 export function WorkspacePanel({ open, onClose, conversationId, dark = true }) {
   const [view, setView] = useState('explorer')
   const [changesTab, setChangesTab] = useState('git')
-  const [width, setWidth] = useState(() => {
-    const n = Number(typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : 0)
-    return n >= MIN_W && n <= MAX_W ? n : 420
-  })
+  const [width, setWidth] = useState(() => storedWidth(STORAGE_KEY, 300, MAX_W))
+  const [editorWidth, setEditorWidth] = useState(() => storedWidth(EDITOR_KEY, 620, MAX_EDITOR_W))
   const [tabs, setTabs] = useState([])
   const [activeTab, setActiveTab] = useState(null)
   const dragRef = useRef(null)
@@ -58,15 +64,24 @@ export function WorkspacePanel({ open, onClose, conversationId, dark = true }) {
   /* ── resize ───────────────────────────────────────────────────────────── */
   useEffect(() => {
     const onMove = (e) => {
-      if (!dragRef.current) return
-      const next = Math.min(MAX_W, Math.max(MIN_W, e.clientX - dragRef.current.left))
-      setWidth(next)
+      const drag = dragRef.current
+      if (!drag) return
+      // Each column measures from its OWN left edge, so dragging the editor's
+      // handle does not silently resize the tree as well.
+      const max = drag.kind === 'editor' ? MAX_EDITOR_W : MAX_W
+      const next = Math.min(max, Math.max(MIN_W, e.clientX - drag.left))
+      if (drag.kind === 'editor') setEditorWidth(next)
+      else setWidth(next)
     }
     const onUp = () => {
-      if (!dragRef.current) return
+      const drag = dragRef.current
+      if (!drag) return
       dragRef.current = null
       document.body.classList.remove('ws-resizing')
-      try { localStorage.setItem(STORAGE_KEY, String(width)) } catch { /* private mode */ }
+      try {
+        localStorage.setItem(STORAGE_KEY, String(width))
+        localStorage.setItem(EDITOR_KEY, String(editorWidth))
+      } catch { /* private mode */ }
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -74,7 +89,26 @@ export function WorkspacePanel({ open, onClose, conversationId, dark = true }) {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [width])
+  }, [width, editorWidth])
+
+  // Warm the editor chunk the moment the dock opens, on idle. Opening a file
+  // used to be TWO sequential waits — read the file, then fetch ~350KB of
+  // CodeMirror — and the second one is the long, visible half. By the time a
+  // file is clicked the module is almost always already resolved.
+  useEffect(() => {
+    if (!open || !isDesktop()) return undefined
+    // A plain call, not a dynamic import: codemirror.js already rides in this
+    // panel's chunk (CodeEditorPane imports it statically) and it is a few
+    // lines — the ~350KB that matters is behind loadCodeMirror's own imports.
+    const warm = () => { loadCodeMirror().catch(() => {}) }
+    const idle = typeof requestIdleCallback === 'function'
+      ? requestIdleCallback(warm, { timeout: 2500 })
+      : setTimeout(warm, 400)
+    return () => {
+      if (typeof cancelIdleCallback === 'function' && typeof idle === 'number') cancelIdleCallback(idle)
+      else clearTimeout(idle)
+    }
+  }, [open])
 
   const openFile = useCallback((row) => {
     setTabs((t) => (t.some(x => x.id === row.id)
@@ -116,7 +150,7 @@ export function WorkspacePanel({ open, onClose, conversationId, dark = true }) {
 
   const primaryRoot = tree.state.roots.find(r => r.primary) || tree.state.roots[0]
 
-  return (
+  const dock = (
     <div className="ws-dock" style={{ width }} aria-label="Workspace">
       <div className="ws-rail" role="tablist" aria-orientation="vertical">
         {VIEWS.map(({ id, label, Icon }) => (
@@ -173,15 +207,6 @@ export function WorkspacePanel({ open, onClose, conversationId, dark = true }) {
           )}
         </div>
 
-        <div className="ws-editor-area">
-          <CodeEditorPane
-            tabs={tabs}
-            activeId={activeTab}
-            onActivate={setActiveTab}
-            onClose={closeTab}
-            dark={dark}
-          />
-        </div>
       </div>
 
       <div
@@ -191,7 +216,7 @@ export function WorkspacePanel({ open, onClose, conversationId, dark = true }) {
         aria-label="Resize workspace"
         tabIndex={0}
         onMouseDown={(e) => {
-          dragRef.current = { left: e.currentTarget.parentElement.getBoundingClientRect().left }
+          dragRef.current = { kind: 'dock', left: e.currentTarget.parentElement.getBoundingClientRect().left }
           document.body.classList.add('ws-resizing')
         }}
         onKeyDown={(e) => {
@@ -201,6 +226,41 @@ export function WorkspacePanel({ open, onClose, conversationId, dark = true }) {
       />
     </div>
   )
+
+  // The editor is its OWN COLUMN to the right of the tree, not a pane stacked
+  // under it. Stacked, a 420px dock gave the file ~40% of an already narrow
+  // strip — unusable for code, and the reason the first version felt wrong.
+  // Side by side, the tree stays a tree and the file gets real width; the chat
+  // gives up the space, which is the correct thing to yield.
+  const editor = tabs.length > 0 && (
+    <div className="ws-editor-dock" style={{ width: editorWidth }}>
+      <CodeEditorPane
+        tabs={tabs}
+        activeId={activeTab}
+        onActivate={setActiveTab}
+        onClose={closeTab}
+        onCloseAll={() => { setTabs([]); setActiveTab(null) }}
+        dark={dark}
+      />
+      <div
+        className="ws-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize editor"
+        tabIndex={0}
+        onMouseDown={(e) => {
+          dragRef.current = { kind: 'editor', left: e.currentTarget.parentElement.getBoundingClientRect().left }
+          document.body.classList.add('ws-resizing')
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft') setEditorWidth(w => Math.max(MIN_W, w - 24))
+          if (e.key === 'ArrowRight') setEditorWidth(w => Math.min(MAX_EDITOR_W, w + 24))
+        }}
+      />
+    </div>
+  )
+
+  return <>{dock}{editor}</>
 }
 
 /** The web build has no bridge at all — say so rather than showing an empty tree. */

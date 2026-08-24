@@ -5992,8 +5992,21 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
 /* The side view and the editor split the dock vertically. The editor gets the
    smaller share by default because the tree is what you scan and the editor is
    what you glance at; drag the dock wider for real editing. */
-.ws-side { flex: 1 1 55%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.ws-editor-area { flex: 1 1 45%; min-height: 0; border-top: 1px solid var(--border); display: flex; }
+.ws-side { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* The editor is a SIBLING COLUMN of the dock, not a pane inside it. Stacked
+   under a 300px tree it got ~40% of an already narrow strip, which is not a
+   width anyone can read code at. */
+.ws-editor-dock {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border);
+}
 .ws-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .ws-spacer { flex: 1; }
 
@@ -6225,6 +6238,7 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
 
 /* ── Editor ───────────────────────────────────────────────────────────── */
 .ws-editor { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.ws-editor-dock > .ws-editor { width: 100%; }
 .ws-tabstrip { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .ws-tab {
   display: flex; align-items: center; gap: 5px;
@@ -6252,6 +6266,16 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
 /* A dock that eats a phone screen is not a dock. Below 900px it becomes an
    overlay over the chat, which is the only arrangement that leaves the
    conversation usable at all. */
+@media (max-width: 1100px) {
+  /* Not enough room for tree AND editor beside a conversation. The editor wins
+     the overlay, because a file you opened deliberately is what you are looking
+     at; the tree stays reachable behind it. */
+  .ws-editor-dock {
+    position: absolute; inset: 0 0 0 auto; z-index: 25;
+    width: min(94vw, 760px) !important;
+    box-shadow: -12px 0 40px rgba(0,0,0,.5);
+  }
+}
 @media (max-width: 900px) {
   .ws-dock {
     position: absolute; inset: 0 auto 0 0; z-index: 24;
@@ -6260,3 +6284,60 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
   }
   .ws-resizer { display: none; }
 }
+
+/* ── Editor chrome polish ─────────────────────────────────────────────── */
+.ws-tabstrip { position: relative; scrollbar-width: thin; }
+.ws-tabstrip::-webkit-scrollbar { height: 3px; }
+.ws-tab { position: relative; transition: background .12s ease; }
+.ws-tab:hover { background: var(--bg-tertiary); }
+/* The active tab is marked on its TOP edge. A background alone is invisible
+   against a strip of identically dark tabs. */
+.ws-tab.active::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0;
+  height: 2px; background: var(--accent);
+}
+.ws-tab .icon-btn { opacity: 0; transition: opacity .12s ease; }
+.ws-tab:hover .icon-btn, .ws-tab.active .icon-btn { opacity: .75; }
+.ws-tab-closeall { margin-left: auto; align-self: center; padding: 0 8px; opacity: .5; }
+.ws-tab-closeall:hover { opacity: 1; }
+
+.ws-crumbs {
+  display: flex; align-items: center; gap: 2px;
+  font-size: 11px; color: var(--text-muted);
+  min-width: 0; overflow: hidden; white-space: nowrap;
+}
+.ws-crumbs > span { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.ws-crumbs > span:not(.leaf) { opacity: .7; }
+.ws-crumbs > span.leaf { color: var(--text-primary); font-weight: 600; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
+
+.ws-statusbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 3px 10px; flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  font-size: 10.5px; color: var(--text-muted);
+}
+.ws-statusbar .ro { color: #d9a441; }
+
+/* Skeleton — a file is milliseconds away; a centred spinner reads as a stall. */
+.ws-skeleton { flex: 1; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; }
+.ws-skeleton > span {
+  height: 8px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-input) 50%, var(--bg-tertiary) 75%);
+  background-size: 300% 100%;
+  animation: ws-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes ws-shimmer { from { background-position: 150% 0 } to { background-position: -150% 0 } }
+@media (prefers-reduced-motion: reduce) {
+  .ws-skeleton > span { animation: none; }
+  .ws-spin { animation-duration: 2.4s; }
+}
+
+/* CodeMirror sits on the app's own surface rather than one-dark's, so the
+   editor does not look like a pasted-in rectangle of a different product. */
+.ws-cm .cm-editor { background: transparent; }
+.ws-cm .cm-editor.cm-focused { outline: none; }
+.ws-cm .cm-gutters { background: transparent; border-right: 1px solid var(--border); color: var(--text-muted); }
+.ws-cm .cm-activeLine, .ws-cm .cm-activeLineGutter { background: rgba(255, 255, 255, .035); }
+.ws-cm .cm-selectionBackground, .ws-cm ::selection { background: var(--accent-glow) !important; }
+.ws-cm .cm-cursor { border-left-color: var(--accent); }

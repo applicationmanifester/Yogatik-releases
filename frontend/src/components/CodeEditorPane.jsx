@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Save, X, RotateCcw, AlertTriangle, Loader2, FileCode } from 'lucide-react'
+import { Save, X, RotateCcw, AlertTriangle, Loader2, FileCode, ChevronRight, XCircle } from 'lucide-react'
 import { loadCodeMirror, buildExtensions } from '../workspace/codemirror'
 import { extOf } from '../workspace/treeStore'
 import { wsRead, wsWrite } from '../tools/localFs'
@@ -73,12 +73,17 @@ function Editor({ doc, ext, dark, readOnly, onChange, onSave }) {
 
   }, [cm, ext, dark, readOnly])
 
-  if (cm === undefined) return <div className="ws-empty sm"><Loader2 size={16} className="ws-spin" /><p>Loading editor…</p></div>
-  if (cm === null) return <Fallback value={doc} onChange={onChange} readOnly={readOnly} />
+  // While the chunk resolves the file is shown in the plain editor rather than
+  // behind a spinner. It is the same text, editable, and typing carries across
+  // the swap because the document lives in the parent's state — so the visible
+  // cost of the lazy import is a syntax-highlighting delay, not a blank pane.
+  // "Loading editor…" over a file the app had already read was the whole reason
+  // opening one FELT slow.
+  if (cm == null) return <Fallback value={doc} onChange={onChange} readOnly={readOnly} />
   return <div className="ws-cm" ref={hostRef} />
 }
 
-export function CodeEditorPane({ tabs, activeId, onActivate, onClose, onDirtyChange, dark = true }) {
+export function CodeEditorPane({ tabs, activeId, onActivate, onClose, onCloseAll, onDirtyChange, dark = true }) {
   const [docs, setDocs] = useState({})    // id -> { text, original, hash, loading, error, stale, saving, readOnly }
   const active = tabs.find(t => t.id === activeId) || null
   const doc = active ? docs[active.id] : null
@@ -188,10 +193,31 @@ export function CodeEditorPane({ tabs, activeId, onActivate, onClose, onDirtyCha
             </div>
           )
         })}
+        {tabs.length > 1 && (
+          <button
+            className="ws-tab-closeall icon-btn"
+            title="Close all files"
+            aria-label="Close all files"
+            onClick={() => {
+              const anyDirty = tabs.some(t => docs[t.id] && docs[t.id].text !== docs[t.id].original)
+              if (anyDirty && !window.confirm('Some files have unsaved changes. Close them all?')) return
+              setDocs({})
+              onCloseAll?.()
+            }}
+          >
+            <XCircle size={12} />
+          </button>
+        )}
       </div>
 
       <div className="ws-editor-bar">
-        <span className="ws-muted" title={active?.path}>{active?.path}</span>
+        <span className="ws-crumbs" title={active?.path}>
+          {String(active?.path || '').split('/').map((seg, i, all) => (
+            <span key={i} className={i === all.length - 1 ? 'leaf' : ''}>
+              {seg}{i < all.length - 1 ? <ChevronRight size={10} /> : null}
+            </span>
+          ))}
+        </span>
         {doc?.truncated && (
           <span className="ws-warn-chip">
             <AlertTriangle size={11} /> Only the first part of this file is shown — read-only so a save cannot truncate it.
@@ -211,7 +237,15 @@ export function CodeEditorPane({ tabs, activeId, onActivate, onClose, onDirtyCha
       </div>
 
       <div className="ws-editor-body">
-        {doc?.loading && <div className="ws-empty sm"><Loader2 size={16} className="ws-spin" /><p>Opening…</p></div>}
+        {doc?.loading && (
+          // A skeleton, not a spinner in an empty box: the file is milliseconds
+          // away and a centred "Opening…" makes that read as a stall.
+          <div className="ws-skeleton" aria-label="Opening file">
+            {Array.from({ length: 14 }).map((_, i) => (
+              <span key={i} style={{ width: `${28 + ((i * 37) % 58)}%` }} />
+            ))}
+          </div>
+        )}
         {doc && !doc.loading && !doc.error && (
           <Editor
             // Remounting per file is intentional: CodeMirror keeps its own
@@ -228,6 +262,22 @@ export function CodeEditorPane({ tabs, activeId, onActivate, onClose, onDirtyCha
         )}
         {doc?.error && !doc.loading && <div className="ws-notice error">{doc.error}</div>}
       </div>
+
+      {/* Status bar. Encoding and line endings are here because this editor
+          writes back through fs_write, which PRESERVES both — a CRLF file
+          silently becoming LF rewrites every line in the next diff, and the
+          only defence against being surprised by that is seeing it. */}
+      {doc && !doc.loading && !doc.error && (
+        <div className="ws-statusbar">
+          <span>{(doc.text.match(/\n/g)?.length ?? 0) + 1} lines</span>
+          <span>{extOf(active.name) || 'plain'}</span>
+          <span>{String(doc.encoding || 'utf8').toUpperCase()}</span>
+          <span>{String(doc.eol || 'lf').toUpperCase()}</span>
+          <div className="ws-spacer" />
+          {doc.readOnly && <span className="ro">Read-only</span>}
+          <span>{dirty ? 'Unsaved' : 'Saved'}</span>
+        </div>
+      )}
     </div>
   )
 }
