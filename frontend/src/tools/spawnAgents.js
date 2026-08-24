@@ -23,12 +23,18 @@ export const spawnAgentsTool = {
       properties: {
         tasks: {
           type: 'array',
-          description: 'The sub-tasks to delegate, run concurrently under a shared budget. Provide as many independent sub-tasks as the work needs.',
+          description: 'The sub-tasks to delegate, run concurrently or in DAG dependency waves under a shared budget. Provide as many independent sub-tasks as the work needs.',
           items: {
             type: 'object',
             properties: {
+              id: { type: 'string', description: 'Optional identifier for DAG dependency referencing (e.g. "research", "coder").' },
               agent: { type: 'string', description: 'Specialist to use: researcher | coder | writer | analyst | planner, or a custom agent id/role.' },
               task: { type: 'string', description: 'A clear, self-contained instruction for that specialist.' },
+              depends_on: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Optional list of task IDs that must finish before this task starts, receiving upstream context.',
+              },
             },
             required: ['agent', 'task'],
           },
@@ -46,9 +52,10 @@ export const spawnAgentsTool = {
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return { success: false, error: 'Provide a non-empty tasks array.' }
     }
-    const [{ streamMessage }, { getAgentById }, { getToolNames }, { runAgentPool }, isolation, localFs, { getSessionBlackboard }] = await Promise.all([
+    const [{ streamMessage }, { getAgentById }, { getToolNames }, { runAgentPool }, isolation, localFs, { getSessionBlackboard }, { resolveTaskWaves, enrichTaskWithUpstream }] = await Promise.all([
       import('../api'), import('../agents'), import('./index'), import('../agentPool'),
       import('../agentIsolation'), import('./localFs'), import('../agentBlackboard'),
+      import('./dagResolver'),
     ])
     const allNames = getToolNames()
 
@@ -114,21 +121,38 @@ export const spawnAgentsTool = {
       }
     }
 
-    // Rolling-window concurrency under the shared global agent budget.
-    // runAgentPool passes (item, index), which is exactly what runOne needs to
-    // look up its isolation slot — so pooling and isolation compose directly.
-    const pooled = await runAgentPool(tasks, runOne)
-    // A sub-agent that throws comes back as a bare { error } slot. Left as-is the
-    // card rendered an empty box (no agent, no role, no result) and the model was
-    // never told which specialist failed.
-    const results = pooled.map((r, i) => (r && r.error && !r.result)
-      ? { agent: tasks[i]?.agent || 'agent', role: tasks[i]?.agent || 'agent', result: `(failed: ${r.error})`, error: r.error }
-      : r)
+    // Resolve topological execution waves for DAG dependencies
+    const waves = resolveTaskWaves(tasks)
+    const resultsById = new Map()
+    const finalOrderedResults = new Array(tasks.length)
+
+    for (let w = 0; w < waves.length; w++) {
+      const wave = waves[w]
+      const waveTasks = wave.map(node => ({
+        ...node.item,
+        task: enrichTaskWithUpstream(node.item, node.dependsOn, resultsById),
+        _origIndex: node.index,
+        _id: node.id,
+      }))
+
+      const pooledWave = await runAgentPool(waveTasks, (t) => runOne(t, t._origIndex))
+
+      pooledWave.forEach((res, idx) => {
+        const origIdx = waveTasks[idx]._origIndex
+        const taskId = waveTasks[idx]._id
+        const safeRes = (res && res.error && !res.result)
+          ? { agent: waveTasks[idx]?.agent || 'agent', role: waveTasks[idx]?.agent || 'agent', result: `(failed: ${res.error})`, error: res.error }
+          : res
+        resultsById.set(taskId, safeRes)
+        finalOrderedResults[origIdx] = safeRes
+      })
+    }
 
     return {
       success: true,
-      delegated: results.length,
-      results,
+      delegated: finalOrderedResults.length,
+      wavesCount: waves.length,
+      results: finalOrderedResults,
       note: 'Synthesize these specialist results into one coherent answer for the user.',
     }
   },

@@ -761,14 +761,38 @@ export const fsBatchWriteTool = {
   async execute({ files = [] } = {}) {
     if (!Array.isArray(files) || !files.length) return fail('files array is required and must not be empty')
     return guard(async () => {
+      // A throw part-way through used to escape the loop, so `guard` returned a
+      // bare failure and the caller had no idea WHICH files had already been
+      // written — the worst possible answer for a half-applied batch. Every
+      // file is now reported individually, and the batch reports itself as
+      // partial rather than as a success or a total failure.
       const written = []
+      const failed = []
       for (const f of files) {
-        if (f.path) {
-          await invoke('fs_write', { path: f.path, content: f.content ?? '' })
-          written.push({ path: f.path, bytes: (f.content ?? '').length })
+        if (!f?.path) { failed.push({ path: null, error: 'entry has no path' }); continue }
+        try {
+          const r = await invoke('fs_write', { path: f.path, content: f.content ?? '' })
+          written.push({
+            path: f.path,
+            bytes: (r && typeof r === 'object' ? r.bytes : null) ?? (f.content ?? '').length,
+            hash: r?.hash,
+          })
+        } catch (e) {
+          failed.push({ path: f.path, error: e?.message || String(e) })
         }
       }
-      return ok({ tool: 'fs_batch_write', count: written.length, written })
+      return {
+        success: failed.length === 0,
+        tool: 'fs_batch_write',
+        count: written.length,
+        written,
+        failed,
+        partial: failed.length > 0 && written.length > 0,
+        error: failed.length
+          ? `${failed.length} of ${files.length} file${files.length === 1 ? '' : 's'} could not be written: `
+            + failed.map(f => `${f.path} (${f.error})`).join('; ')
+          : undefined,
+      }
     })
   },
 }

@@ -7,7 +7,7 @@ import {
   BookOpen, GraduationCap, MessageSquare, Archive, BookA, Library,
   Package, BookMarked, Banknote, Activity, Film, Sparkles, Copy, Check, Users, Clock,
   Briefcase, Share2, AlarmClock, Bell, Plug, Monitor, MousePointer, Compass, Laptop,
-  AlertTriangle
+  AlertTriangle, ChevronDown
 } from 'lucide-react'
 import { getMedia } from '../db'
 import { diagnoseError, logError } from '../errorLog'
@@ -964,6 +964,46 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
           <div><strong>Topic:</strong> {result.topic}</div>
           <div><strong>Tone:</strong> {result.tone} · <strong>Audience:</strong> {result.audience}</div>
           {result.guidelines && <div className="social-post-guideline">{result.guidelines}</div>}
+        </div>
+      </div>
+    )
+  }
+
+  if (tool === 'spawn_agents' || (tool === 'crew_orchestrator' && Array.isArray(result?.results))) {
+    const items = result?.results || []
+    return (
+      <div className="tool-result-card multi-agent-card">
+        <div className="tool-result-header">
+          <Users size={14} /> Multi-Agent Execution Graph
+          <span className="tool-result-meta">
+            {items.length} specialist{items.length !== 1 ? 's' : ''} {result.wavesCount ? `· ${result.wavesCount} wave${result.wavesCount > 1 ? 's' : ''}` : ''}
+          </span>
+        </div>
+        <div className="multi-agent-list" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+          {items.map((ag, i) => {
+            const isErr = ag.error || ag.result?.startsWith('(failed')
+            return (
+              <details key={i} style={{ border: '1px solid var(--border, rgba(255,255,255,0.1))', borderRadius: 8, padding: '8px 10px', background: 'var(--card-bg, rgba(255,255,255,0.03))' }}>
+                <summary style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none', listStyle: 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{ag.agent || ag.role || `Agent ${i + 1}`}</span>
+                    <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>{ag.role || 'specialist'}</span>
+                    {ag.durationMs ? <span style={{ fontSize: '0.7rem', color: 'var(--text-muted, #888)' }}>⏱️ {ag.durationMs}ms</span> : null}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {isErr ? <span style={{ fontSize: '0.75rem', color: '#ef4444' }}>⚠️ Failed</span> : <span style={{ fontSize: '0.75rem', color: '#10b981' }}>✅ Done</span>}
+                    <ChevronDown size={14} />
+                  </div>
+                </summary>
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border, rgba(255,255,255,0.08))', fontSize: '0.8rem', whiteSpace: 'pre-wrap', maxHeight: 240, overflowY: 'auto' }}>
+                  {ag.result}
+                  <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end' }}>
+                    <CopyButton text={ag.result} label="Copy Output" />
+                  </div>
+                </div>
+              </details>
+            )
+          })}
         </div>
       </div>
     )

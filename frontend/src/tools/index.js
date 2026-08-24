@@ -59,6 +59,7 @@ import {
 } from './independentTools'
 import { pushAmbientSignal, popAmbientSignal } from './http'
 import { repairToolArguments } from './schemaRepair'
+import { validateToolSafety } from './toolGuard'
 import { getMcpSchemas, isMcpTool, callMcpTool } from '../mcp'
 import {
   isDesktop, fsAddFolderTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
@@ -1177,6 +1178,11 @@ export async function executeTool(name, args, { signal } = {}) {
   // straight through. A refusal is a normal tool result so the model adapts
   // instead of the turn hanging.
   const repairedArgs = repairToolArguments(cleanName, args, tool.schema)
+  const safetyCheck = validateToolSafety(cleanName, repairedArgs || {})
+  if (!safetyCheck.safe) {
+    return { success: false, error: safetyCheck.reason || 'Operation blocked by tool guardrails', blocked: true, denied: true }
+  }
+
   const verdict = await requestPermission(cleanName, repairedArgs || {}, getWorkspaceCtx())
   if (!verdict.allowed) return { success: false, error: verdict.reason, denied: true }
 

@@ -15,6 +15,7 @@ const path = require('path')
 // watcher:start threw "getGrantedRoot is not a function", so watch_folder never
 // worked. Roots come from roots.cjs.
 const { rootPathsFor } = require('./roots.cjs')
+const { invalidate } = require('./fsIndex.cjs')
 const getGrantedRoot = (ctx) => rootPathsFor(ctx)[0] || null
 
 const watchers = new Map() // id -> { fsw, relPath, recursive }

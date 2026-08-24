@@ -43,6 +43,7 @@ import PermissionPrompt from './components/PermissionPrompt'
 import { APP_VERSION, hasSeenCurrentVersion } from './version'
 import { AdSenseBanner } from './components/AdSenseBanner'
 import { safeLazy } from './utils/safeLazy'
+import { prewarmToolsFromInput } from './tools/toolPrewarm'
 
 // Code-split heavy modals and auxiliary views on demand with auto-retry and cache-bust on new deploys
 const ArtifactPanel = safeLazy(() => import('./components/ArtifactPanel').then(m => ({ default: m.ArtifactPanel })))
@@ -258,6 +259,13 @@ export default function App() {
       document.removeEventListener('mousedown', onDown)
     }
   }, [rootsOpen])
+
+  // Speculative runtime & tool pre-warming as user types
+  useEffect(() => {
+    if (input && input.length >= 3) {
+      prewarmToolsFromInput(input)
+    }
+  }, [input])
   const [toast, setToast] = useState(null)
   const showToast = useCallback((msg) => {
     setToast(msg)
