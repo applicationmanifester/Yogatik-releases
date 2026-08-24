@@ -24,22 +24,15 @@ export const webExtractTool = {
       const page = extractReadable(html, { maxChars: Math.min(Math.max(1000, max_chars | 0), 20000) })
       if (!page.text || page.text.length < 100) {
         const canRender = typeof window !== 'undefined' && !!window.__YOGATIK_BROWSER__
-        if (!canRender) {
-          // In web build, provide a graceful static summary or hint without hallucinating desktop tools
-          return {
-            success: false,
-            error: 'No readable article text found — the page is rendered dynamically with client-side JavaScript or is protected by anti-bot.',
-            url,
-            title: page.title || undefined,
-            suggestion: 'For complex JavaScript-rendered web apps, use the Yogatik Desktop app which has an embedded browser engine, or use web_search to find information about this page.',
-          }
-        }
         return {
           success: false,
           error: 'No readable text found — the page is probably JavaScript-only or behind a paywall.',
-          url, title: page.title,
-          can_render: true,
-          next_step: 'This page renders with JavaScript. Use browser_control to navigate and read the rendered DOM.',
+          url,
+          title: page.title || undefined,
+          can_render: canRender,
+          next_step: canRender
+            ? 'This page renders with JavaScript, which this tool cannot run. Use browser_control: navigate to the url, then action "read" to get the rendered page.'
+            : 'This page renders with JavaScript. Reading it needs the Yogatik Desktop app, which can run the page in a real browser. Say so plainly rather than guessing at the content.',
         }
       }
       return {

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2 } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
@@ -67,6 +67,10 @@ const SchedulerPanel = safeLazy(() => import('./components/SchedulerPanel').then
 const SubAgentRunnerPanel = safeLazy(() => import('./components/SubAgentRunnerPanel').then(m => ({ default: m.SubAgentRunnerPanel })))
 const AutoSkillsPanel = safeLazy(() => import('./components/AutoSkillsPanel').then(m => ({ default: m.AutoSkillsPanel })))
 const FileEditorModal = safeLazy(() => import('./components/FileEditorModal').then(m => ({ default: m.FileEditorModal })))
+// The docked workspace (explorer / search / source control / editor). Lazy and
+// gated at the RENDER SITE below, not self-gated: rendering a React.lazy
+// component downloads its chunk immediately, and this one pulls CodeMirror.
+const WorkspaceDock = safeLazy(() => import('./components/WorkspacePanel').then(m => ({ default: m.WorkspaceDock })))
 const DemoModal = safeLazy(() => import('./components/DemoModal').then(m => ({ default: m.DemoModal })))
 const Tour = safeLazy(() => import('./components/Tour').then(m => ({ default: m.Tour })))
 const AppOverviewModal = safeLazy(() => import('./components/AppOverviewModal').then(m => ({ default: m.AppOverviewModal })))
@@ -242,6 +246,11 @@ export default function App() {
   const [showSubAgents, setShowSubAgents] = useState(false)
   const [showAutoSkills, setShowAutoSkills] = useState(false)
   const [showFileEditor, setShowFileEditor] = useState(false)
+  // The workspace is a DOCK, not a modal: it is deliberately absent from
+  // isAnyModalOpen so Escape and the global shortcuts keep working while it is
+  // open — you are meant to chat and watch files at the same time. It IS in
+  // browserOccluded, because it occupies the same pixels as the docked browser.
+  const [showWorkspace, setShowWorkspace] = useState(false)
   const [showWhatsNew, setShowWhatsNew] = useState(false)
   const [chatRoots, setChatRoots] = useState([])
   const [rootsOpen, setRootsOpen] = useState(false)
@@ -534,7 +543,7 @@ export default function App() {
     showPalette || showProviderModal || showAuthModal || showDataDashboard ||
     showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact ||
     showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor ||
-    showTour
+    showWorkspace || showTour
   )
 
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
@@ -1050,6 +1059,13 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'O' || e.key === 'o')) {
         e.preventDefault()
         newChatRef.current?.()
+      }
+      // Ctrl+B / Cmd+B -> toggle the workspace dock (explorer, search, changes).
+      // Not guarded by isAnyModalOpen: the dock is not a modal, and being able
+      // to open the file tree while a panel is up is the normal case.
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault()
+        setShowWorkspace(v => !v)
       }
       // Alt+D -> Social Media & Domain Intelligence Hub
       if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'd' || e.key === 'D')) {
@@ -2641,6 +2657,8 @@ export default function App() {
       // opened, rather than being silently absent depending on the build.
       { id: 'terminal', group: 'Tools', label: '⌨️ Interactive terminal', hint: isDesktop() ? 'Desktop shell' : 'Desktop app', run: () => setShowTerminal(true) },
       { id: 'file-editor', group: 'Tools', label: '📝 Create or edit a file in the workspace', hint: isDesktop() ? 'Workspace' : 'Desktop app', run: () => setShowFileEditor(true) },
+      { id: 'workspace', group: 'View', label: '🗂️ File explorer & changes', hint: isDesktop() ? 'Ctrl+B' : 'Desktop app', run: () => setShowWorkspace(v => !v) },
+      { id: 'workspace-scm', group: 'View', label: '🔀 Review the agent’s file changes', hint: isDesktop() ? 'Source control' : 'Desktop app', run: () => setShowWorkspace(true) },
       { id: 'scheduler', group: 'Tools', label: '⏰ Scheduled tasks (cron jobs)', hint: 'Manage & cancel', run: () => setShowScheduler(true) },
       { id: 'sub-agents', group: 'Tools', label: '🧩 Sub-agent runner', hint: 'Isolated agents', run: () => setShowSubAgents(true) },
       { id: 'auto-skills', group: 'Tools', label: '✨ Auto-generated skills', hint: 'Review & prune', run: () => setShowAutoSkills(true) },
@@ -3332,6 +3350,22 @@ export default function App() {
         </div>
       </aside>
 
+      {/* The workspace dock sits IN the flex row, between the sidebar and the
+          chat — it narrows the conversation rather than covering it, which is
+          the entire point: you watch the agent edit files while talking to it.
+          Gated here, not inside the component, so the CodeMirror chunk is not
+          fetched until it is actually opened. */}
+      {showWorkspace && (
+        <React.Suspense fallback={null}>
+          <WorkspaceDock
+            open={showWorkspace}
+            onClose={() => setShowWorkspace(false)}
+            conversationId={conv?.clientId || conv?.id || null}
+            dark={theme !== 'light'}
+          />
+        </React.Suspense>
+      )}
+
       <main className="chat-area">
         <header className="chat-header">
           {/* minWidth was 0, and an inline value outranks the stylesheet: the
@@ -3346,6 +3380,17 @@ export default function App() {
             </h1>
           </div>
           <div className="header-actions">
+            {isDesktop() && (
+              <button
+                className={`icon-btn${showWorkspace ? ' active' : ''}`}
+                onClick={() => setShowWorkspace(v => !v)}
+                title="Files, search and changes (Ctrl+B)"
+                aria-label="Toggle workspace"
+                aria-pressed={showWorkspace}
+              >
+                <PanelLeft size={17} />
+              </button>
+            )}
             <button
               className={`icon-btn${showActivity ? ' active' : ''}`}
               onClick={() => setShowActivity(v => !v)}

@@ -159,6 +159,57 @@ function createJournal({
     }
   }
 
+  /**
+   * BEFORE and AFTER text for one entry, so the change review panel can show
+   * what the agent actually did rather than just naming the file.
+   *
+   * The snapshot blob lives in userData, OUTSIDE every granted root, so the
+   * renderer cannot reach it through fs_read — and it must not be able to, or
+   * the grant model would leak. Reading it here, keyed by an opaque entry id,
+   * is the only correct route.
+   */
+  function diff(id, { maxBytes = 2000000 } = {}) {
+    const entry = readIndex().find(e => e.id === id)
+    if (!entry) return { success: false, error: 'No such journal entry.' }
+    if (entry.kind === 'dir') {
+      return { success: false, error: 'This entry is a folder; there is no text diff to show.', entry }
+    }
+    if (entry.skipped === 'too-large') {
+      return { success: false, error: entry.note || 'Too large to snapshot, so there is nothing to compare.', entry }
+    }
+
+    const readText = (p) => {
+      if (!p) return { text: '', missing: true, binary: false }
+      try {
+        const st = fs.statSync(p)
+        if (st.isDirectory()) return { text: '', missing: false, binary: true }
+        if (st.size > maxBytes) return { text: '', missing: false, binary: false, tooLarge: true }
+        const buf = fs.readFileSync(p)
+        if (buf.includes(0)) return { text: '', missing: false, binary: true }
+        return { text: buf.toString('utf8'), missing: false, binary: false }
+      } catch {
+        return { text: '', missing: true, binary: false }
+      }
+    }
+
+    // `existed:false` means the file was CREATED by the operation — there is no
+    // before, and reporting an empty one as "before" is the honest rendering:
+    // every line shows as added, which is what happened.
+    const before = entry.existed ? readText(entry.blob) : { text: '', missing: false, binary: false }
+    const after = readText(entry.target)
+
+    return {
+      success: true,
+      entry,
+      before: before.text,
+      after: after.text,
+      beforeMissing: !entry.existed,
+      afterMissing: after.missing,
+      binary: before.binary || after.binary,
+      tooLarge: !!(before.tooLarge || after.tooLarge),
+    }
+  }
+
   /** Entries for a chat (or all), newest first. */
   function list(chatId) {
     const all = readIndex()
@@ -208,7 +259,7 @@ function createJournal({
   const pruneTimer = setTimeout(() => { try { prune() } catch { /* housekeeping */ } }, 5_000)
   pruneTimer.unref?.()   // never hold the process open for it
 
-  return { record, revert, list, prune }
+  return { record, revert, list, prune, diff }
 }
 
 module.exports = { createJournal, MUTATING_OPS, isMutating }

@@ -144,6 +144,94 @@ export async function setHookTrust(trusted) {
   catch (e) { return fail(e) }
 }
 
+/* ── Explorer / Source Control API ──────────────────────────────────────────
+ * The workspace UI calls these, NOT the agent tools above. The tools shape
+ * their replies for a language model (prose errors, truncation notes, capped
+ * result counts); a file tree needs the raw rows and needs to distinguish
+ * "empty folder" from "failed to read", which a tool's `{success:false, error}`
+ * string cannot express usefully. Same bridge, different contract.
+ *
+ * Every one of these goes through `invoke`, so the chat's ctx is injected and
+ * the renderer never names a filesystem root. That rule is what makes the whole
+ * grant model meaningful — see the note on workspaceCtx.
+ */
+
+/** Direct children of one directory. Throws on failure; the panel shows it. */
+export async function wsList(path = '', { recursive = false, includeIgnored = true } = {}) {
+  return invoke('fs_list', { path, recursive, includeIgnored })
+}
+
+export async function wsRead(path, opts = {}) {
+  return invoke('fs_read', { path, ...opts })
+}
+
+export async function wsWrite(path, content, { expectedHash = null } = {}) {
+  return invoke('fs_write', { path, content, expectedHash })
+}
+
+export async function wsStat(path) { return invoke('fs_stat', { path }) }
+export async function wsMkdir(path) { return invoke('fs_mkdir', { path }) }
+export async function wsDelete(path, { recursive = false } = {}) {
+  return invoke('fs_delete', { path, recursive })
+}
+export async function wsMove(src, dest, { overwrite = false } = {}) {
+  return invoke('fs_move', { src, dest, overwrite })
+}
+
+/**
+ * Content search. Returns either an array of { path, line, text } or, when the
+ * pattern was refused as catastrophically backtracking, an object carrying
+ * `pattern_rejected` and the literal-search results — the panel MUST surface
+ * that, because silently showing literal results for a regex the user wrote
+ * looks like the regex simply did not match.
+ */
+export async function wsSearch(query, { glob = '', regex = false, maxResults = 200 } = {}) {
+  return invoke('fs_search', { query, glob, regex, maxResults })
+}
+
+/** Filename/glob discovery — no file contents read. */
+export async function wsFindFiles(pattern, { extension = '', maxDepth = 12, limit = 200, includeIgnored = false } = {}) {
+  return invoke('fs_find_files', { pattern, extension: extension || undefined, maxDepth, limit, includeIgnored })
+}
+
+/** Undo-journal diff for one entry: what the agent overwrote, and with what. */
+export async function journalDiff(id) {
+  if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
+  try { return await invoke('journal_diff', { id }) } catch (e) { return fail(e) }
+}
+
+/* ── git ─────────────────────────────────────────────────────────────────── */
+
+export async function gitStatus() {
+  if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
+  try { return await invoke('git_status') } catch (e) { return fail(e) }
+}
+
+export async function gitDiff({ staged = false, path = null } = {}) {
+  if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
+  try { return await invoke('git_diff', { staged, path }) } catch (e) { return fail(e) }
+}
+
+export async function gitLog(limit = 30) {
+  if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
+  try { return await invoke('git_log', { limit }) } catch (e) { return fail(e) }
+}
+
+/**
+ * Stage / unstage / commit. `op` is a NAME, never git flags — main builds the
+ * argument array itself, so nothing here can turn into `reset --hard`.
+ */
+export async function gitWrite(op, { paths = [], message = '' } = {}) {
+  if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
+  try { return await invoke('git_write', { op, paths, message }) } catch (e) { return fail(e) }
+}
+
+/** Untracked files have no git diff; this returns their contents to show as added. */
+export async function gitShowUntracked(path) {
+  if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
+  try { return await invoke('git_show_untracked', { path }) } catch (e) { return fail(e) }
+}
+
 export const fsUndoTool = {
   schema: {
     description:

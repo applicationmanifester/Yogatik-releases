@@ -717,6 +717,61 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   backdrop. Aliased to `.modal`. Verify UI claims with a real browser: the whole suite (1558
   tests) was green through every one of these.
 
+## Workspace dock — explorer / search / SCM / editor (2026-08-25) — src/workspace/, 5 components
+- WHAT WAS MISSING was never the backend. fs_list/fs_read/fs_write/fs_stat/fs_find_files/fs_search,
+  git_status/log/diff, journal_list/journal_revert and a debounced recursive watcher ALL existed and
+  were reachable only by the MODEL. The human had a tree of files the agent could edit and no way to
+  see it. This is the UI half.
+- `src/workspace/treeStore.js` is PURE (no imports at all) — node model, lazy expand, fs-change delta
+  merge, git/agent decorations, flat `visibleRows` for virtualization. Same split as rootsCore.cjs /
+  browserTree.cjs, and the only reason the tree logic is testable under jsdom.
+  - It translates `is_dir`→`isDir` in ONE place. Reading the camelCase name off an fs_list row is the
+    drift that made fs_find_files report directories as files; a test feeds it `{isDir:true}` and
+    asserts it comes back FALSE, so the translation cannot quietly move somewhere else.
+  - Paths are root-relative and '/'-separated in every field at every layer. fs_list returns ABSOLUTE
+    paths, so setChildren re-derives the relative one — a `name` join loses nested rows.
+  - Decorations REPLACE per root, never merge: merged, a committed file keeps its M badge forever.
+    They roll up to ancestors so a collapsed folder still shows something changed inside.
+  - applyFsChange returns `{state, refetch}` and only asks to refetch an EXPANDED directory. An
+    `npm install` is hundreds of events; useWorkspaceTree coalesces them at 220ms into one pass.
+- `src/workspace/diffModel.js` is PURE: unified-diff parser, LCS text diff (for the journal), token
+  LCS for intra-line marks, and `toSideBySide`. A blank context line in a git diff is a SPACE; the
+  one genuinely empty string is split()'s trailing tail — counting it as context appended a phantom
+  line to every hunk and pushed subsequent line numbers off by one. Caught by the test, not by eye.
+  Intra-line marks only pair EQUAL-length del/add runs and only when `similarEnough`: guessing a
+  pairing invents changes that are not there.
+- THE POINT OF THE PANEL is the Agent tab, not the git tab. `git status` cannot answer "what did the
+  agent just change" — its edit to an already-dirty file is indistinguishable from the user's, and an
+  edit to an untracked/gitignored file does not appear at all. New `journal_diff` IPC returns
+  before/after text from the snapshot blob, which lives in userData OUTSIDE every granted root and is
+  therefore unreachable by fs_read (and must stay that way).
+- GIT WRITES DO NOT WIDEN isSafeGitArgs. That allowlist stays read-only because the MODEL reaches
+  git_run; widening it puts `reset --hard` one hallucinated argv away. Instead `git_write` takes an
+  operation NAME and builds the argv in main (`gitCore.buildWriteArgs`). WRITE_OPS is stage/unstage/
+  stage_all/unstage_all + commit — there is deliberately NO destructive operation, and
+  gitWriteGuard.test.js asserts that list is exactly those four.
+- A handler not in preload.cjs FS_COMMANDS is "Unknown command": git_write, git_show_untracked and
+  journal_diff are whitelisted there.
+- CODEMIRROR LANDED IN THE EAGER PATH and the package.json diff showed nothing. vite.config's
+  `vendor-libs` catch-all is a TRAP: it is a NAMED manual chunk in the entry graph, so Vite
+  modulepreloads it, and 670KB of a fully dynamic-imported editor shipped on first paint. Measured
+  with `vite build`: vendor-libs 913KB → 243KB after returning undefined for @codemirror/@lezer.
+  Exactly the vendor-prism lesson; any new lazy dependency needs the same exclusion.
+- The dock is a DOCK: it lives in the `.app` flex row and narrows the chat rather than covering it —
+  watching the agent edit while talking to it is the entire point. It is in `browserOccluded`
+  (a WebContentsView composites above the DOM) but deliberately NOT in `isAnyModalOpen`, so Escape
+  and the global shortcuts keep working. Ctrl+B toggles; below 900px it becomes an overlay.
+- Tree rows are virtualized. A granted root is routinely a repo whose expanded tree is tens of
+  thousands of rows; mounting them all drops frames everywhere else in the app.
+- The filter searches only ALREADY-LOADED nodes and says so. A filter box that walks node_modules is
+  the classic explorer freeze; fs_find_files is the tool for a real disk search.
+- Search runs the same worker-isolated fs_search the agent uses (a user-typed `(a+)+$` would freeze
+  the main process just as a model-written one would) and LABELS a rejected pattern — showing the
+  literal fallback silently reads as "your regex matched nothing".
+- Editor: a TRUNCATED fs_read is read-only, or saving writes the first 500KB over the whole file.
+  fs_write carries expectedHash and the tab surfaces `stale` rather than pretending nothing happened.
+- Tests: workspace.test.js (25) + gitWriteGuard.test.js (7).
+
 ## Gotchas (learned the hard way)
 - Working folders are PER CHAT on Electron (v3.9). Absolute paths are ALLOWED now — safety is the
   realpath containment check against that chat's bound roots, not a ban on absolute paths. The old

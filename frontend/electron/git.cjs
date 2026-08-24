@@ -98,6 +98,58 @@ function registerGitIpc({ rootPathsFor }) {
     if (!res.ok) return { success: false, error: res.error || res.stderr }
     return { success: true, diff: res.stdout.slice(0, 200000) }
   })
+
+  // Source Control writes. The renderer names an OPERATION, never git flags —
+  // see the note on buildWriteArgs. Nothing reachable from here can discard a
+  // change: the destructive subcommands are simply not in the table.
+  ipcMain.handle('git_write', async (_e, { ctx, op, paths, message } = {}) => {
+    const roots = rootPathsFor(ctx)
+    if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
+    const built = core.buildWriteArgs(String(op || ''), { paths, message })
+    if (built.error) return { success: false, error: built.error }
+    const res = await runGit(roots[0], built.args)
+    if (!res.ok) {
+      // A no-op commit exits 1 with a perfectly ordinary message. Reporting
+      // that as a failure sends the user hunting for a problem that is just
+      // "there was nothing staged".
+      const out = `${res.stdout || ''}${res.stderr || ''}`
+      if (/nothing to commit|no changes added/i.test(out)) {
+        return { success: false, error: 'Nothing staged to commit.' }
+      }
+      return { success: false, error: res.error || res.stderr || `git exited ${res.code}` }
+    }
+    return { success: true, stdout: (res.stdout || '').slice(0, 20000) }
+  })
+
+  // Untracked files have no diff (git does not know them yet), so the panel
+  // needs the file's own contents to show it as wholly added. Reading it here
+  // keeps the panel on ONE bridge instead of interleaving fs_read calls whose
+  // path resolution rules are subtly different.
+  ipcMain.handle('git_show_untracked', async (_e, { ctx, path: rel } = {}) => {
+    const roots = rootPathsFor(ctx)
+    if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
+    const args = ['ls-files', '--others', '--exclude-standard', '--', String(rel || '')]
+    if (!core.isSafeGitArgs(args)) return { success: false, error: 'Unsafe git arguments.' }
+    const listed = await runGit(roots[0], args)
+    if (!listed.ok) return { success: false, error: listed.error || listed.stderr }
+    if (!listed.stdout.trim()) return { success: false, error: 'Not an untracked file.' }
+    try {
+      const fs = require('fs')
+      const path = require('path')
+      const abs = path.resolve(roots[0], String(rel))
+      const rootResolved = path.resolve(roots[0])
+      if (abs !== rootResolved && !abs.startsWith(rootResolved + path.sep)) {
+        return { success: false, error: 'Path escapes the repository.' }
+      }
+      const stat = await fs.promises.stat(abs)
+      if (stat.size > 1000000) return { success: false, error: 'File is too large to preview.' }
+      const buf = await fs.promises.readFile(abs)
+      if (buf.includes(0)) return { success: true, binary: true, content: '' }
+      return { success: true, binary: false, content: buf.toString('utf8') }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  })
 }
 
 module.exports = { registerGitIpc, runGit }

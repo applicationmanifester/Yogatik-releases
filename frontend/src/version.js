@@ -10,15 +10,16 @@ export const APP_CODENAME = 'Adaptive Scrapling Engine & Deep Autonomous Executi
 export const APP_RELEASES = [
   {
     version: '3.15.0',
-    title: 'Adaptive Scrapling Web Engine, Deep Task Limits & Clean Routing',
-    date: 'August 24, 2026',
+    title: 'Adaptive Scrapling Web Engine, Workspace IDE & Deep Task Limits',
+    date: 'August 25, 2026',
     isLatest: true,
     highlights: [
+      'Workspace IDE Suite: Integrated File Explorer, Git Changes panel, Side-by-Side Diff Viewer, and Code Editor pane',
       'Zero-Dependency Scrapling Engine: Self-healing adaptive element tracking using DOM fingerprints & semantic similarity',
       'Progressive Stealth Fetcher: Anti-bot bypass (Cloudflare Turnstile, Datadome, PerimeterX) with modern TLS hints',
       'Deep Tool Loop Allowance: Default round limit raised to 50–100 rounds for uninterrupted multi-step coding tasks',
+      'Git Write Guard & Journal Core: Pre-write safety verification, workspace snapshotting, and transaction rollbacks',
       'Graceful Web/Desktop Routing: Clean fallbacks preventing web builds from hallucinating desktop-only capabilities',
-      'Standalone Python Generator: Generate production-ready external Scrapling scripts on demand',
     ],
     sections: [
       {

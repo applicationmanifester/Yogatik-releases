@@ -13,10 +13,10 @@ const FS_COMMANDS = new Set([
   // to reach it. Every new fs_* handler must be added on this line.
   'fs_multi_edit', 'fs_stat', 'fs_copy',
   'roots_add', 'roots_list', 'roots_remove', 'roots_set_primary', 'roots_rebind',
-  'journal_list', 'journal_revert',
+  'journal_list', 'journal_revert', 'journal_diff',
   'proc_start', 'proc_output', 'proc_stop', 'proc_list',
   'hooks_run', 'hooks_list', 'hooks_trust', 'hooks_trusted',
-  'git_run', 'git_status', 'git_log', 'git_diff',
+  'git_run', 'git_status', 'git_log', 'git_diff', 'git_write', 'git_show_untracked',
   'watch_start', 'watch_stop', 'watch_changes',
   'mcp_stdio_start', 'mcp_stdio_call', 'mcp_stdio_stop', 'mcp_stdio_list',
 ])

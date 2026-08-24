@@ -375,6 +375,12 @@ function registerFsBridge() {
   ipcMain.handle('journal_revert', (_e, { id } = {}) =>
     journal ? journal.revert(id) : { success: false, error: 'Journalling is not enabled.' })
 
+  // Before/after text for one journalled mutation. The blob lives in userData,
+  // outside every granted root, so this is the ONLY way the renderer can see
+  // what the agent overwrote — fs_read cannot and must not reach it.
+  ipcMain.handle('journal_diff', (_e, { id } = {}) =>
+    journal ? journal.diff(id) : { success: false, error: 'Journalling is not enabled.' })
+
 
   // ── Ported from the single-root bridge, now ctx-scoped ──────────────────────
   // Both resolve every path through resolvePath(ctx, …), so they are confined to

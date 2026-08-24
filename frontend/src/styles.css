@@ -5920,3 +5920,343 @@ html[data-companion="1"], html[data-companion="1"] body, html[data-companion="1"
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Workspace dock — explorer, search, source control, editor.
+   Sits IN the .app flex row between .sidebar and .chat-area, so it narrows the
+   conversation instead of covering it. Everything here is scoped under .ws-*
+   so no rule can leak into the chat shell.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.ws-dock {
+  display: flex;
+  flex-shrink: 0;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  font-size: 12.5px;
+}
+body.ws-resizing { cursor: col-resize; user-select: none; }
+
+.ws-resizer {
+  position: absolute;
+  top: 0; right: -3px; bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 3;
+}
+.ws-resizer:hover, .ws-resizer:focus-visible { background: var(--accent-glow); outline: none; }
+
+/* Activity rail */
+.ws-rail {
+  width: 44px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0;
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border);
+}
+.ws-rail-btn {
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  position: relative;
+}
+.ws-rail-btn:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.ws-rail-btn.active { color: var(--accent); }
+.ws-rail-btn.active::before {
+  content: ''; position: absolute; left: -4px; top: 6px; bottom: 6px;
+  width: 2px; border-radius: 2px; background: var(--accent);
+}
+
+.ws-body { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.ws-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px 6px;
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-muted);
+}
+.ws-head code {
+  margin-left: auto; font-size: 10.5px; text-transform: none; letter-spacing: 0;
+  color: var(--text-secondary); max-width: 55%; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+/* The side view and the editor split the dock vertically. The editor gets the
+   smaller share by default because the tree is what you scan and the editor is
+   what you glance at; drag the dock wider for real editing. */
+.ws-side { flex: 1 1 55%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ws-editor-area { flex: 1 1 45%; min-height: 0; border-top: 1px solid var(--border); display: flex; }
+.ws-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ws-spacer { flex: 1; }
+
+/* Toolbars, chips, notices */
+.ws-toolbar {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 6px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ws-toolbar.column { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; }
+.ws-search {
+  flex: 1; display: flex; align-items: center; gap: 6px;
+  padding: 3px 7px; border-radius: 6px;
+  background: var(--bg-input); border: 1px solid var(--border);
+  color: var(--text-muted); min-width: 0;
+}
+.ws-search input {
+  flex: 1; min-width: 0; border: 0; background: transparent;
+  color: var(--text-primary); font-size: 12px; outline: none;
+}
+.ws-search .icon-btn.on { color: var(--accent); }
+.ws-seg { display: flex; align-items: center; gap: 4px; }
+.ws-seg > button {
+  padding: 3px 9px; font-size: 11px; border-radius: 6px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-secondary); cursor: pointer;
+}
+.ws-seg > button.active { color: var(--accent); border-color: var(--accent); }
+.ws-branch { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--text-primary); }
+.ws-muted { color: var(--text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-hint { padding: 5px 9px; font-size: 11px; color: var(--text-muted); background: var(--bg-tertiary); }
+.ws-hint code { font-size: 10.5px; }
+.ws-notice {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 9px; font-size: 11.5px; border-left: 2px solid var(--accent);
+  background: var(--bg-tertiary); color: var(--text-secondary);
+}
+.ws-notice.error { border-left-color: #e5534b; color: #f0a8a3; }
+.ws-notice.warn  { border-left-color: #d9a441; color: #e8c885; }
+.ws-notice.ok    { border-left-color: #3fb950; color: #8fd99b; }
+.ws-warn { color: #d9a441; }
+.ws-warn-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; color: #e8c885;
+  background: rgba(217, 164, 65, .12);
+  padding: 2px 7px; border-radius: 999px;
+}
+.ws-warn-chip.error { color: #f0a8a3; background: rgba(229, 83, 75, .12); }
+
+.ws-primary-btn, .ws-ghost-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 1px solid transparent; white-space: nowrap;
+}
+.ws-primary-btn { background: var(--accent); color: #fff; }
+.ws-primary-btn:hover:not(:disabled) { background: var(--accent-hover); }
+.ws-ghost-btn { background: transparent; border-color: var(--border); color: var(--text-secondary); }
+.ws-ghost-btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--text-muted); }
+.ws-primary-btn:disabled, .ws-ghost-btn:disabled { opacity: .45; cursor: default; }
+.ws-primary-btn.sm, .ws-ghost-btn.sm { padding: 3px 9px; font-size: 11px; }
+
+.ws-empty {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 24px 18px; text-align: center; color: var(--text-muted);
+}
+.ws-empty p { margin: 0; font-weight: 600; color: var(--text-secondary); font-size: 13px; }
+.ws-empty span { font-size: 11.5px; line-height: 1.5; max-width: 280px; }
+.ws-empty.sm { padding: 14px; gap: 5px; }
+
+@keyframes ws-spin { to { transform: rotate(360deg) } }
+.ws-spin { animation: ws-spin .9s linear infinite; }
+
+/* ── Tree ─────────────────────────────────────────────────────────────── */
+.ws-explorer { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.ws-tree { flex: 1; min-height: 0; overflow: auto; outline: none; }
+.ws-tree:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+.ws-row {
+  display: flex; align-items: center; gap: 4px;
+  padding-right: 8px; cursor: pointer; user-select: none;
+  white-space: nowrap; color: var(--text-secondary);
+}
+.ws-row:hover { background: var(--bg-tertiary); }
+.ws-row.selected { background: var(--accent-soft); color: var(--text-primary); }
+.ws-row.active { color: var(--accent); }
+.ws-chev { width: 12px; flex-shrink: 0; display: grid; place-items: center; opacity: .75; }
+.ws-icon { flex-shrink: 0; opacity: .85; }
+.ws-name { overflow: hidden; text-overflow: ellipsis; }
+.ws-size { margin-left: auto; font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+.ws-agent-mark { color: var(--accent); flex-shrink: 0; }
+
+/* Git colours follow the badge, not the row, so an unchanged file in a changed
+   folder is not tinted — that miscue reads as "everything is modified". */
+.ws-badge {
+  flex-shrink: 0; font-size: 9.5px; font-weight: 700;
+  min-width: 13px; text-align: center; border-radius: 3px; padding: 0 2px;
+}
+.ws-badge.git-M, .ws-row.git-M .ws-name { color: #d9a441; }
+.ws-badge.git-U, .ws-row.git-U .ws-name { color: #3fb950; }
+.ws-badge.git-A, .ws-row.git-A .ws-name { color: #3fb950; }
+.ws-badge.git-D, .ws-row.git-D .ws-name { color: #e5534b; }
+.ws-badge.git-R, .ws-row.git-R .ws-name { color: #58a6ff; }
+.ws-badge.dot { color: #d9a441; font-size: 14px; line-height: 1; }
+.ws-badge.err { color: #e5534b; }
+
+.ws-draft {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; border-top: 1px solid var(--border); background: var(--bg-tertiary);
+  font-size: 11px; color: var(--text-muted);
+}
+.ws-draft code { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-draft input {
+  flex: 1; min-width: 0; padding: 3px 7px; font-size: 12px;
+  border-radius: 5px; border: 1px solid var(--border);
+  background: var(--bg-input); color: var(--text-primary); outline: none;
+}
+
+.ws-menu {
+  position: fixed; z-index: 60; min-width: 196px; padding: 4px;
+  border-radius: 9px; border: 1px solid var(--border);
+  background: var(--bg-secondary); box-shadow: 0 12px 32px rgba(0,0,0,.42);
+}
+.ws-menu > button {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 9px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--text-secondary); font-size: 12px; text-align: left; cursor: pointer;
+}
+.ws-menu > button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.ws-menu > button.danger { color: #e5534b; }
+.ws-menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+
+/* ── Changes (git + journal) ──────────────────────────────────────────── */
+.ws-changes { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ws-tabs { display: flex; gap: 2px; padding: 4px 6px 0; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ws-tabs > button {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; font-size: 11.5px; cursor: pointer;
+  border: 0; border-bottom: 2px solid transparent; background: transparent;
+  color: var(--text-muted);
+}
+.ws-tabs > button.active { color: var(--text-primary); border-bottom-color: var(--accent); }
+
+.ws-commit { padding: 7px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ws-commit textarea {
+  width: 100%; resize: vertical; padding: 6px 8px; font-size: 12px;
+  border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg-input); color: var(--text-primary); outline: none;
+}
+.ws-commit-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+
+.ws-change-list { flex: 0 1 auto; overflow: auto; max-height: 45%; }
+.ws-group-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 9px; font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--text-muted); background: var(--bg-primary); position: sticky; top: 0; z-index: 1;
+}
+.ws-group-head > span { opacity: .7; }
+.ws-group-head > .icon-btn { margin-left: auto; }
+.ws-change-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; cursor: pointer; color: var(--text-secondary); white-space: nowrap;
+}
+.ws-change-row:hover { background: var(--bg-tertiary); }
+.ws-change-row.selected { background: var(--accent-soft); color: var(--text-primary); }
+.ws-change-name { overflow: hidden; text-overflow: ellipsis; }
+.ws-change-dir { flex: 1; min-width: 0; font-size: 10.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+.ws-count { font-size: 10px; color: var(--text-muted); }
+
+.ws-log { border-top: 1px solid var(--border); overflow: auto; }
+.ws-log-row { display: flex; align-items: center; gap: 8px; padding: 4px 9px; font-size: 11px; white-space: nowrap; }
+.ws-log-row code { color: var(--accent); font-size: 10.5px; }
+
+/* ── Diff ─────────────────────────────────────────────────────────────── */
+.ws-diff-wrap { flex: 1; min-height: 0; display: flex; border-top: 1px solid var(--border); }
+.ws-diff { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ws-diff-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 9px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.ws-diff-title { font-size: 11.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-diff-stat { font-size: 11px; }
+.ws-diff-stat .add { color: #3fb950; }
+.ws-diff-stat .del { color: #e5534b; }
+.ws-diff-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.ws-diff-body {
+  flex: 1; min-height: 0; overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px; line-height: 1.55;
+}
+.ws-hunk-head {
+  padding: 2px 9px; color: var(--text-muted);
+  background: var(--bg-tertiary); position: sticky; top: 0; z-index: 1;
+}
+.ws-diff-line { display: flex; align-items: flex-start; gap: 0; white-space: pre-wrap; }
+.ws-diff-line code { flex: 1; min-width: 0; padding-right: 8px; word-break: break-word; }
+.ws-diff-line .ws-ln {
+  flex-shrink: 0; width: 40px; padding-right: 7px; text-align: right;
+  color: var(--text-muted); opacity: .65; user-select: none;
+}
+.ws-diff-line .ws-sign { flex-shrink: 0; width: 12px; text-align: center; opacity: .8; }
+.ws-diff-line.add { background: rgba(63, 185, 80, .10); color: #b6ecb9; }
+.ws-diff-line.del { background: rgba(229, 83, 75, .10); color: #f0b6b2; }
+.ws-diff-line.gap { background: var(--bg-tertiary); opacity: .35; min-height: 1.55em; }
+/* The intra-line mark is the point of the whole diff model: without it a
+   one-character change paints two whole lines and the reviewer diffs by eye. */
+.ws-word { background: rgba(255, 255, 255, .18); color: inherit; border-radius: 2px; padding: 0 1px; }
+.ws-diff-line.add .ws-word { background: rgba(63, 185, 80, .34); }
+.ws-diff-line.del .ws-word { background: rgba(229, 83, 75, .34); }
+.ws-diff-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; }
+.ws-diff-split > .ws-diff-line { border-right: 1px solid var(--border); }
+
+/* ── Search ───────────────────────────────────────────────────────────── */
+.ws-search-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ws-results { flex: 1; min-height: 0; overflow: auto; }
+.ws-result-group { border-bottom: 1px solid var(--border); }
+.ws-result-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; cursor: pointer; color: var(--text-secondary);
+  background: var(--bg-primary); white-space: nowrap;
+}
+.ws-result-head:hover { color: var(--text-primary); }
+.ws-result-row {
+  display: flex; gap: 8px; padding: 2px 8px 2px 26px; cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; color: var(--text-muted);
+}
+.ws-result-row:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.ws-result-row code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-result-row .ws-ln { flex-shrink: 0; width: 34px; text-align: right; opacity: .6; }
+
+/* ── Editor ───────────────────────────────────────────────────────────── */
+.ws-editor { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.ws-tabstrip { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ws-tab {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 8px 5px 11px; cursor: pointer; white-space: nowrap;
+  border-right: 1px solid var(--border); color: var(--text-muted); font-size: 11.5px;
+}
+.ws-tab.active { color: var(--text-primary); background: var(--bg-tertiary); }
+.ws-tab-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.ws-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.ws-editor-bar {
+  display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+  border-bottom: 1px solid var(--border); flex-shrink: 0; min-height: 30px;
+}
+.ws-editor-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.ws-cm { flex: 1; min-width: 0; overflow: auto; }
+.ws-cm .cm-editor { height: 100%; font-size: 12.5px; }
+.ws-cm .cm-scroller { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.ws-plain-editor {
+  flex: 1; border: 0; outline: none; resize: none; padding: 8px 10px;
+  background: var(--bg-primary); color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px; line-height: 1.55;
+}
+
+/* A dock that eats a phone screen is not a dock. Below 900px it becomes an
+   overlay over the chat, which is the only arrangement that leaves the
+   conversation usable at all. */
+@media (max-width: 900px) {
+  .ws-dock {
+    position: absolute; inset: 0 auto 0 0; z-index: 24;
+    width: min(92vw, 460px) !important;
+    box-shadow: 0 0 40px rgba(0,0,0,.5);
+  }
+  .ws-resizer { display: none; }
+}

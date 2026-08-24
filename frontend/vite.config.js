@@ -109,6 +109,14 @@ export default defineConfig({
             // dynamic. Returning undefined leaves it in the async chunk Rollup
             // creates for CodeBlock's own import(), which is not preloaded.
             if (id.includes('react-syntax-highlighter') || id.includes('prismjs') || id.includes('refractor')) return undefined
+            // CodeMirror, for exactly the same reason and caught the same way.
+            // The `vendor-libs` catch-all below is a TRAP for any new dependency
+            // that is meant to be lazy: it is a named manual chunk in the entry
+            // graph, so Vite modulepreloads it and the editor's 350KB arrived
+            // during first paint despite src/workspace/codemirror.js importing
+            // every piece dynamically. Measured with `vite build` — the
+            // package.json diff alone shows nothing.
+            if (id.includes('@codemirror') || id.includes('@lezer')) return undefined
             if (id.includes('react-markdown') || id.includes('remark-') || id.includes('rehype-') || id.includes('micromark') || id.includes('unist-') || id.includes('mdast-') || id.includes('vfile')) return 'vendor-markdown'
             if (id.includes('dexie')) return 'vendor-dexie'
             if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) return 'vendor-react'
