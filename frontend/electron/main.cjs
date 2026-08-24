@@ -190,37 +190,54 @@ if (!gotLock) {
     registerFsBridge()
     // Dev loop: background processes + hooks, git, file watching. All scoped to
     // the calling chat's bound roots by the same resolver the fs tools use.
-    registerBgProcessIpc({ rootPathsFor, resolvePath, getTrustState })
-    registerGitIpc({ rootPathsFor })
-    registerFsWatcherIpc({ rootPathsFor })
-    registerMcpStdioClientIpc()
-    registerNotifications(getWindow)
-    registerSchedulerIPC({ getWindow })
-    registerSubAgentIPC()
-    // Desktop-only capability modules (safeStorage vault, clipboard history,
-    // file watcher, power/idle, native dialogs, process manager, PTY).
-    registerKeychain()
-    registerClipboard(getWindow)
-    registerWatcher(getWindow)
-    registerPower(getWindow, { pauseScheduler: stopScheduler, resumeScheduler: startScheduler })
-    registerDialogs(getWindow)
-    registerProcesses()
-    registerPty(getWindow)
-    registerMcpStdio()
-    registerCompanionInput()
-    registerBrowserControl(getWindow)
-    registerCompanion({ dev: isDev })
-    startScheduler()
+    // ── The window comes FIRST ───────────────────────────────────────────────
+    // Everything below this line registers IPC the RENDERER calls, and the
+    // renderer cannot call anything until it has loaded — several hundred
+    // milliseconds away. Doing all of it before createWindow() simply delayed
+    // the window by the sum of its parts for no benefit whatsoever.
+    //
+    // Only the handlers the first paint genuinely depends on stay above:
+    // roots (which fsBridge resolves every path against), the journal, and the
+    // fs bridge itself, because the workspace chip reads them on mount.
     createWindow()
-    createTray(getWindow, { onToggleCompanion: toggleCompanion })
-    initAutoUpdate(getWindow)
 
-    // Start local search sidecar
-    try {
-      await startSearchSidecar()
-    } catch (err) {
-      log(`Search sidecar unavailable: ${err.message}`)
-    }
+    // Registered on the next turn of the loop, so the window is already on
+    // screen and painting while these run. They land long before the renderer
+    // finishes loading its own bundle, which is what makes this safe.
+    setImmediate(() => {
+      registerBgProcessIpc({ rootPathsFor, resolvePath, getTrustState })
+      registerGitIpc({ rootPathsFor })
+      registerFsWatcherIpc({ rootPathsFor })
+      registerMcpStdioClientIpc()
+      registerNotifications(getWindow)
+      registerSchedulerIPC({ getWindow })
+      registerSubAgentIPC()
+      // Desktop-only capability modules (safeStorage vault, clipboard history,
+      // file watcher, power/idle, native dialogs, process manager, PTY).
+      registerKeychain()
+      registerClipboard(getWindow)
+      registerWatcher(getWindow)
+      registerPower(getWindow, { pauseScheduler: stopScheduler, resumeScheduler: startScheduler })
+      registerDialogs(getWindow)
+      registerProcesses()
+      registerPty(getWindow)
+      registerMcpStdio()
+      registerCompanionInput()
+      registerBrowserControl(getWindow)
+      registerCompanion({ dev: isDev })
+      startScheduler()
+      createTray(getWindow, { onToggleCompanion: toggleCompanion })
+      initAutoUpdate(getWindow)
+    })
+
+    // Start the local search sidecar WITHOUT awaiting it.
+    //
+    // Every ipcMain.handle below this point sat behind that await, so a slow or
+    // hanging sidecar left desktop:getSystemInfo and the window controls
+    // unregistered for as long as it took — the renderer would call them and
+    // get "no handler" for a reason that had nothing to do with them. Nothing
+    // here depends on the sidecar being up.
+    startSearchSidecar().catch((err) => log(`Search sidecar unavailable: ${err.message}`))
 
     // Desktop system info & window controls
     ipcMain.handle('desktop:isAlwaysOnTop', () => {

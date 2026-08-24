@@ -109,6 +109,50 @@ export function buildIndex(chunks) {
   }
 }
 
+/**
+ * Add ONE document to an existing index, in O(its own tokens).
+ *
+ * Chat search rebuilt the whole index whenever a message was written, so every
+ * search during an active conversation paid for the entire history again —
+ * measured at 1089ms for 20,000 messages, synchronously, on the thread that
+ * paints the UI. The index is only three parallel arrays plus a df map, so
+ * growing it is cheap and there was never a reason to throw it away.
+ */
+export function appendToIndex(index, chunk) {
+  const tokens = tokenize(chunk)
+  const counts = new Map()
+  tokens.forEach(t => counts.set(t, (counts.get(t) || 0) + 1))
+  counts.forEach((_, term) => index.df.set(term, (index.df.get(term) || 0) + 1))
+  index.tf.push(counts)
+  index.len.push(tokens.length || 1)
+  index.n = index.tf.length
+  // avgLen is a running mean; recomputing it from the whole array on every
+  // append would put the O(n) cost straight back.
+  const total = (index.avgLen * (index.n - 1)) + (tokens.length || 1)
+  index.avgLen = total / index.n
+  return index
+}
+
+/**
+ * buildIndex, but handing control back to the event loop periodically.
+ *
+ * Same result, same cost — the difference is that the UI keeps painting while
+ * it happens. A one-second synchronous freeze when the user presses Ctrl+K is
+ * indistinguishable from the app hanging.
+ */
+export async function buildIndexAsync(chunks, { chunkSize = 400, onProgress } = {}) {
+  const index = { tf: [], df: new Map(), len: [], n: 0, avgLen: 0 }
+  for (let i = 0; i < chunks.length; i++) {
+    appendToIndex(index, chunks[i])
+    if ((i + 1) % chunkSize === 0) {
+      onProgress?.(i + 1, chunks.length)
+      await new Promise(r => setTimeout(r, 0))
+    }
+  }
+  onProgress?.(chunks.length, chunks.length)
+  return index
+}
+
 /** BM25 ranking. Returns [{ i, score }] sorted desc. */
 export function search(index, query, topK = 5) {
   const terms = tokenize(query)
@@ -140,33 +184,50 @@ export function search(index, query, topK = 5) {
  */
 export async function searchLocalVault(query, topK = 5) {
   try {
-    const docs = await db.documents.toArray().catch(() => [])
-    const convs = await db.conversations.toArray().catch(() => [])
+    const [docs, convs, messages] = await Promise.all([
+      db.documents.toArray().catch(() => []),
+      db.conversations.toArray().catch(() => []),
+      // Messages live in their OWN table. The old code read `c.messages` off a
+      // conversation ROW, where that field has never existed — getConversation()
+      // joins it in separately — so the chat half of this search silently
+      // contributed nothing.
+      db.messages.toArray().catch(() => []),
+    ])
 
     const corpus = []
 
     docs.forEach(doc => {
-      if (doc.text) {
-        const chunks = chunkText(doc.text, { size: 1000, overlap: 150 })
-        chunks.forEach((chunk, i) => {
-          corpus.push({ source: `File: ${doc.name || 'Document'}`, text: chunk, chunkIndex: i })
-        })
-      }
+      // Uploads are stored as `chunks` and deliberately WITHOUT `text`
+      // (api.js: keeping both doubled IndexedDB usage). Reading doc.text meant
+      // every document contributed nothing, so between the two bugs this tool
+      // always answered "No local documents or chat history stored" — telling
+      // the user their vault was empty while it was full.
+      const chunks = Array.isArray(doc.chunks) && doc.chunks.length
+        ? doc.chunks
+        : (doc.text ? chunkText(doc.text, { size: 1000, overlap: 150 }) : [])
+      chunks.forEach((chunk, i) => {
+        const text = typeof chunk === 'string' ? chunk : (chunk?.text || '')
+        if (text.trim()) {
+          corpus.push({ source: `File: ${doc.name || 'Document'}`, text, chunkIndex: i })
+        }
+      })
     })
 
-    convs.forEach(c => {
-      if (c.messages?.length) {
-        c.messages.forEach(m => {
-          if (m.content && typeof m.content === 'string' && m.content.length > 30) {
-            corpus.push({ source: `Chat: ${c.title || 'Untitled'}`, text: m.content })
-          }
-        })
+    const titles = new Map(convs.map(c => [c.id, c.title]))
+    messages.forEach(m => {
+      const text = typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content) ? m.content.map(p => p.text || '').join(' ') : ''
+      if (text.length > 30) {
+        corpus.push({ source: `Chat: ${titles.get(m.conversationId) || 'Untitled'}`, text })
       }
     })
 
     if (!corpus.length) return { results: [], note: 'No local documents or chat history stored in IndexedDB.' }
 
-    const index = buildIndex(corpus.map(item => item.text))
+    // Chunked: a vault of any size must not freeze the thread that paints the
+    // UI, which is the same lesson chatSearch learned at 1089ms.
+    const index = await buildIndexAsync(corpus.map(item => item.text))
     const hits = search(index, query, topK)
 
     const matches = hits.map(hit => ({

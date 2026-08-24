@@ -332,3 +332,38 @@ describe('fs_search survives a hostile pattern', () => {
     for (const r of list) expect(r.path.endsWith('.jsx')).toBe(true)
   })
 })
+
+
+describe('journal housekeeping stays off the boot path', () => {
+  it('createJournal returns without pruning synchronously', async () => {
+    // MEASURED: prune() reads the index and statSync's every blob. It ran
+    // INSIDE createJournal, which main.cjs calls before createWindow(), so the
+    // window waited on it — 64ms for 8000 entries on tmpfs, far worse on NTFS.
+    const { createJournal } = require_('../electron/journalCore.cjs')
+    const store = fs.mkdtempSync(path.join(os.tmpdir(), 'yogatik-jprune-'))
+    const blobs = path.join(store, 'blobs')
+    fs.mkdirSync(blobs, { recursive: true })
+
+    const lines = []
+    for (let i = 0; i < 400; i++) {
+      const id = String(i).padStart(8, '0')
+      fs.writeFileSync(path.join(blobs, id), 'x')
+      // Old enough that a prune would delete every one of them.
+      lines.push(JSON.stringify({
+        id, chatId: 'c1', op: 'fs_write', target: `/f/${i}`,
+        ts: Date.now() - 40 * 24 * 3600 * 1000, existed: true, kind: 'file',
+        blob: path.join(blobs, id),
+      }))
+    }
+    fs.writeFileSync(path.join(store, 'index.jsonl'), lines.join('\n') + '\n')
+
+    const journal = createJournal({ storeDir: store })
+    // The blobs are still there: construction did not prune.
+    expect(fs.readdirSync(blobs).length).toBe(400)
+    // And pruning still works when it is actually asked for.
+    journal.prune()
+    expect(fs.readdirSync(blobs).length).toBe(0)
+
+    fs.rmSync(store, { recursive: true, force: true })
+  })
+})

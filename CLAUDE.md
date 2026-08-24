@@ -512,6 +512,106 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - A handler not named in preload.cjs's FS_COMMANDS is rejected as "Unknown command". Every new
   fs_* handler must be added there or it is unreachable — that is how fs_find_files shipped.
 
+## Reader/writer field drift is now caught mechanically (2026-08-24) — dbContract.test.js
+- FOUR bugs in this codebase have had one shape: a consumer reading a property the writer never
+  put on the row. `f.isDir` vs `is_dir`; `startLine/endLine` vs `offset/limit`; `doc.text` vs
+  `doc.chunks`; `c.messages` vs the messages table. None threw — `undefined` reads as "absent",
+  not "broken", so the feature degrades into an honest-looking empty answer and every test stays
+  green.
+- dbContract.test.js round-trips every persisted row type through the REAL helpers and a REAL
+  IndexedDB (fake-indexeddb), asserting each field a consumer depends on survives. The contract
+  map names the CONSUMER per field, not just the key, so nobody "cleans up" one that looks
+  unused: `at: 'recencyWeight — NOT createdAt, which is what a reader would guess'`.
+- It also pins the assumption that emptied the vault: a conversation ROW must NOT carry
+  `messages`, and getConversation() must join them. Stating it as an expectation means the next
+  reader is told rather than left to guess.
+- VERIFIED NON-VACUOUS: deleting `chunks` from addDocument's write makes it fail with
+  "document.chunks is missing after a real round trip — breaks: retrieval.searchLocalVault +
+  doc_search — the ONLY place document text lives". A green contract test that cannot fail is
+  worse than none.
+- A sweep of the remaining tables (memories, media, projects) after the vault fix found them
+  internally consistent — memory4 reads `at`/`importance`/`refCount`/`text`/`store`, all written.
+
+## local_vault_search searched NOTHING, and said so as a fact (2026-08-24) — retrieval.js
+- PROVEN with a real Dexie (fake-indexeddb): a vault holding 1 document and 2 messages returned
+  `{results: [], note: 'No local documents or chat history stored in IndexedDB.'}`. It told the
+  user their vault was empty while it was full, never threw, and nothing noticed.
+- TWO independent dead reads, either of which alone would have halved it:
+  - `doc.text` — api.js stores an upload as `chunks` and DELIBERATELY without the full text
+    ("keeping the full text too doubled IndexedDB usage"), so `if (doc.text)` was never true.
+  - `c.messages` — read off a conversation ROW. That field has never existed: messages live in
+    their own table and getConversation() joins them in. Same class as the `is_dir` vs `isDir`
+    and `startLine` vs `offset` drifts — a field name that was never on the object.
+- Consequence beyond the tool: local_vault_search is a core tool of the Knowledge Librarian
+  preset agent, whose system prompt tells it to "say clearly when the vault does not contain the
+  answer rather than guessing". That agent was structurally incapable of finding anything and
+  confidently reported so, every time.
+- Now reads doc.chunks (falling back to doc.text for legacy rows), queries db.messages directly
+  and joins conversation titles, and builds through buildIndexAsync so a large vault cannot
+  freeze the UI. vaultSearch.test.js drives the real db and asserts a non-empty corpus.
+- LESSON, third time now: a read of a field that does not exist fails SILENTLY and looks like an
+  honest empty result. Grep the writer before trusting the reader.
+
+## Ctrl+K froze the app as history grew (2026-08-24) — chatSearch.js, retrieval.js
+- chatSearch built its BM25 index over `db.messages.toArray()` — EVERY message ever stored —
+  synchronously, on the thread that paints the UI. MEASURED: 2000 msgs 87ms, 8000 msgs 392ms,
+  20,000 msgs **1089ms**. The command palette is the app's primary navigation, so the cost fell
+  on the most common interaction and grew with use.
+- Worse, a Dexie `creating` hook invalidated the index on EVERY message write, so searching
+  during an active conversation rebuilt the whole history after each reply: 1151ms, per reply.
+- retrieval.appendToIndex() grows the index in O(the new message) — the index is only
+  {tf[], df, len[], n, avgLen}, so there was never a reason to throw it away. avgLen is kept as a
+  running mean; recomputing it from the array would put the O(n) straight back. MEASURED after:
+  **0ms per reply**.
+- retrieval.buildIndexAsync() yields every 400 documents. Same total work, but the longest
+  uninterrupted block on a 20,000-message first build is **25ms instead of 1089ms** — one dropped
+  frame rather than a hang.
+- chatSearch keeps a `maxId` high-water mark and catchUp()s incrementally (`++id` is monotonic,
+  so anything above it is exactly what has not been seen). `creating` on messages no longer
+  invalidates; DELETE and UPDATE still do, because they change rows the index already holds.
+- An in-flight build is shared (`building`), so a burst of keystrokes cannot start several passes.
+
+## Desktop boot did work the window was waiting on (2026-08-24) — electron/main.cjs
+- whenReady ran ~25 register*() calls BEFORE createWindow(). Every one of them registers IPC the
+  RENDERER calls, and the renderer cannot call anything until its bundle has loaded — hundreds of
+  ms away. The window was delayed by the sum of all of it for no benefit. Now: roots + journal +
+  fsBridge (the workspace chip reads them on mount), then createWindow(), then the rest in a
+  setImmediate — on screen and painting while they run, still long before the renderer is up.
+- `await startSearchSidecar()` sat in front of every remaining ipcMain.handle, so a slow or
+  hanging sidecar left desktop:getSystemInfo and the window controls unregistered for as long as
+  it took, and the renderer got "no handler" for a reason unrelated to what it asked for. Fired
+  and forgotten now.
+- createJournal() called prune() SYNCHRONOUSLY — readIndex plus a statSync per blob — and
+  main.cjs calls it before createWindow(). MEASURED: 17ms for 2000 entries, 64ms for 8000, on a
+  Linux tmpfs; NTFS with a scanner in the path is far worse. Deferred 5s and unref'd. Nothing
+  depends on a pruned store: the caps are housekeeping, not correctness.
+- The rule this establishes: NOTHING goes before createWindow() unless the first paint reads it.
+
+## A model-written regex could hard-lock the app (2026-08-24) — electron/safeRegex.cjs
+- MEASURED in a bare Node process: `new RegExp('(a+)+$').test('a'.repeat(40)+'!')` did NOT return,
+  and a setTimeout scheduled BEFORE it never fired. The engine holds the thread through
+  backtracking, so the event loop stops entirely.
+- fs_search did `regex ? new RegExp(query) : null` with a query the MODEL wrote, on the process
+  that also composites the window. One catastrophic pattern = the whole desktop app frozen, no
+  dialog, no cancel, no timeout possible, Task Manager the only exit. This is NOT fixable with a
+  timeout: a runaway regex cannot be interrupted from inside, only TERMINATED from outside.
+- Two layers, because neither suffices alone. safeRegex.assessPattern rejects the shapes
+  (a quantifier inside a quantified group; a repeated group of overlapping alternatives) before
+  compiling; searchWorker.cjs runs whatever survives on a worker_thread that fsBridge kills at
+  15s. A rejected pattern falls back to a LITERAL search — returning "no results" for a pattern
+  that was never executed would be a lie.
+- globToRegExp moved into safeRegex and was wrong before: `*` → `.*` matched across `/`, so
+  `src/*.js` matched `src/deep/nested.js`, and `**` was not handled at all. `*` is `[^/]*`,
+  `**/` is `(?:.*/)?` (so it matches zero directories too), and `{js,ts}` braces work.
+- watcher.cjs now calls fsIndex.invalidate() on every debounced change: fsBridge invalidates on
+  its OWN mutations, but an edit from the user's editor, a build step or a git checkout arrives
+  only through the watcher, and without it the index served a 5-second-stale directory.
+- walk() and gitignoreMatcherFor() in fsBridge were dead once fsIndex took over traversal; dead
+  code that still looks authoritative is worse than none.
+- fs_batch_write threw out of its own loop on the first failure, so `guard` returned a bare error
+  and the caller could not tell WHICH files had already been written — the worst answer for a
+  half-applied batch. Per-file results now, with `partial: true`.
+
 ## The main process froze on every search (2026-08-24) — electron/fsIndex.cjs
 - `walk` was recursive readdirSync up to 20,000 entries ON THE MAIN PROCESS, which also
   composites the window: every fs_search / fs_find_files froze the whole app. Nothing was
