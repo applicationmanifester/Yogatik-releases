@@ -838,6 +838,7 @@ export default function App() {
   // Follow the stream only while the user is already at the bottom. Yanking
   // someone back mid-read is the most annoying thing a chat UI can do.
   const scrollerRef = useRef(null)
+  const messagesEnd = useRef(null)
   const [atBottom, setAtBottom] = useState(true)
 
   const onScroll = useCallback(() => {

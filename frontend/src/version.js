@@ -3,16 +3,61 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '3.13.0'
+export const APP_VERSION = '3.14.0'
 export const BUILD_DATE = 'August 2026'
-export const APP_CODENAME = 'Titan Universal Agent & Protocol Engine'
+export const APP_CODENAME = 'Apex Prompt Queue & Ambient Multimodal Engine'
 
 export const APP_RELEASES = [
+  {
+    version: '3.14.0',
+    title: 'In-Flight Prompt Queueing, Arrow History Recall & Resilient Filesystem',
+    date: 'August 24, 2026',
+    isLatest: true,
+    highlights: [
+      'Interactive In-Flight Prompt Queueing: Queue messages while model generates with automatic FIFO execution',
+      'Keyboard Arrow History Navigation (↑/↓) with unsubmitted draft preservation',
+      'Ambient AI Companion screen forwarding, STT voice input, TTS voice out, and webcam capture',
+      'Resilient Fuzzy Line Matcher in fsCore & localFs for indentation-agnostic code edits',
+      'Windows Drive Path Sanitization & workspace boundary enforcement',
+    ],
+    sections: [
+      {
+        category: '✨ New Features & Workflow',
+        items: [
+          {
+            title: 'Intelligent Message Queueing',
+            description: 'Send follow-up prompts and attachment payloads while the model is busy. Prompts are held in a FIFO queue with an interactive banner (Edit/Cancel) and execute automatically upon turn completion.',
+          },
+          {
+            title: 'Command & Prompt History Recall',
+            description: 'Pressing Up Arrow (↑) in empty composer recalls previous messages across session history, while Down Arrow (↓) traverses forward and restores work-in-progress drafts.',
+          },
+          {
+            title: 'Ambient Multimodal Suite',
+            description: 'Screen monitoring, camera feeds, live voice speech-to-text dictation, and thinking-block sanitization are deeply integrated into the AI Companion.',
+          },
+        ],
+      },
+      {
+        category: '⚡ Filesystem & Reliability',
+        items: [
+          {
+            title: 'Indentation & Whitespace Tolerance',
+            description: 'applyEdit and fs_patch now use fuzzy line trimming to safely match blocks even with tabs/spaces discrepancies from LLM outputs.',
+          },
+          {
+            title: 'Windows Path Normalizer',
+            description: 'Sanitizes Linux-style forward slash drive prefixes (/C:/...) and quoted paths before resolving within workspace roots.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '3.13.0',
     title: 'Universal Model Protocol, Resilient Patcher & High-Speed MCP Suite',
     date: 'August 24, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Universal XML, Nemotron, Hermes, Claude invoke & ReAct tool call parsing',
       'Unified Diff Resilient Patching engine (fs_patch) with fuzzy whitespace matching',
