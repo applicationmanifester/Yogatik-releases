@@ -153,6 +153,7 @@ import { haystackRagTool } from './haystackRag'
 import { aiderCopilotTool } from './aiderCopilot'
 import { langsmithObservabilityTool } from './langsmithObservability'
 import { langGraphFlowTool } from './langGraphFlow'
+import { scraplingTool } from './scrapling'
 
 export const screenInspectTool = {
   schema: {
@@ -422,10 +423,16 @@ const ALL_TOOLS = {
   aider_copilot: aiderCopilotTool,
   langsmith_observability: langsmithObservabilityTool,
   langgraph_flow: langGraphFlowTool,
+  scrapling_scrape: scraplingTool,
 }
 
 /** Common LLM hallucinated tool names mapped to their canonical Yogatik tool */
 const TOOL_ALIASES = {
+  scrapling: 'scrapling_scrape',
+  scrapling_tool: 'scrapling_scrape',
+  web_scrape_adaptive: 'scrapling_scrape',
+  stealth_scrape: 'scrapling_scrape',
+  adaptive_scraper: 'scrapling_scrape',
   // Identify — the tool that answers "what IS this" about an image. Naming it
   // the obvious ways matters: the model reaching for `ocr` on a photo gets
   // text and nothing else, which is exactly how a video-player screenshot
