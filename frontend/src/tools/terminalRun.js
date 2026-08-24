@@ -44,9 +44,14 @@ export const terminalRunTool = {
       required: ['command'],
     },
   },
-  async execute({ command, cwd, timeout, timeout_ms, env } = {}) {
+  async execute(args = {}) {
+    const command = args.command ?? args.cmd ?? args.CommandLine ?? args.script ?? args.exec
+    const cwd = args.cwd ?? args.Cwd ?? args.directory ?? args.dir
+    const timeout = args.timeout ?? args.timeout_ms ?? args.timeoutMs ?? args.WaitMsBeforeAsync
+    const env = args.env
+
     if (!command || typeof command !== 'string' || !command.trim()) {
-      return { success: false, error: 'command is required' }
+      return { success: false, error: 'command is required (e.g. { command: "npm test" })' }
     }
     if (!isDesktop()) {
       return { success: false, error: 'Terminal execution runs only in the Yogatik desktop app.' }
@@ -56,7 +61,7 @@ export const terminalRunTool = {
       return { success: false, error: 'Terminal bridge is unavailable in this environment.' }
     }
 
-    const waitMs = Number(timeout ?? timeout_ms) || 30000
+    const waitMs = Number(timeout) || 30000
     const startedAt = Date.now()
     try {
       const res = await bridge.exec(command, {

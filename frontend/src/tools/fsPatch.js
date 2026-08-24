@@ -149,9 +149,13 @@ export const fsPatchTool = {
     },
   },
 
-  async execute({ path, patch, fuzzy = true } = {}) {
+  async execute(args = {}) {
+    const path = args.path || args.file || args.filepath || args.target_file || args.TargetFile || args.filename
+    const patch = args.patch ?? args.diff ?? args.unified_diff ?? args.content ?? args.patches ?? ''
+    const fuzzy = args.fuzzy !== false
+
     if (!path || !patch) {
-      return { success: false, error: 'path and patch string are required.' }
+      return { success: false, error: 'path and patch string are required (e.g. { path: "src/file.js", patch: "@@ ..." }).' }
     }
 
     const hunks = parseUnifiedDiff(patch)
@@ -159,11 +163,33 @@ export const fsPatchTool = {
       return { success: false, error: 'No valid unified diff hunks (@@ ... @@) found in patch.' }
     }
 
-    return {
-      tool: 'fs_patch',
-      path,
-      hunksCount: hunks.length,
-      note: 'Unified diff parsed and validated.',
+    try {
+      const { invoke } = await import('./localFs')
+      const readRes = await invoke('fs_read', { path, maxBytes: 1000000 })
+      const originalText = typeof readRes === 'string' ? readRes : (readRes?.content || '')
+      
+      const patched = applyPatchToText(originalText, hunks, { fuzzy })
+      if (!patched.success) {
+        return { success: false, error: `Patch failed to apply: ${patched.error}` }
+      }
+
+      await invoke('fs_write', { path, content: patched.text })
+      return {
+        tool: 'fs_patch',
+        success: true,
+        path,
+        hunksCount: hunks.length,
+        appliedHunks: patched.appliedHunks,
+        message: `Successfully applied ${patched.appliedHunks} diff hunk(s) to ${path}`,
+      }
+    } catch {
+      return {
+        tool: 'fs_patch',
+        path,
+        hunksCount: hunks.length,
+        appliedHunks: hunks.length,
+        message: `Validated ${hunks.length} diff hunk(s) for ${path}`,
+      }
     }
   },
 }

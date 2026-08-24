@@ -369,17 +369,20 @@ export const fsWriteTool = {
       required: ['path', 'content'],
     },
   },
-  async execute({ path, content, expected_hash } = {}) {
-    if (!path) return fail('path is required')
+  async execute(args = {}) {
+    const path = args.path || args.file || args.filepath || args.target_file || args.TargetFile || args.filename
+    const content = args.content ?? args.text ?? args.code ?? args.data ?? args.body ?? args.file_content ?? args.CodeContent ?? ''
+    const expected_hash = args.expected_hash ?? args.hash ?? args.expectedHash
+    if (!path) return fail('path is required (e.g. { path: "src/file.js", content: "..." })')
     return guard(async () => {
-      const r = await invoke('fs_write', { path, content: content ?? '', expectedHash: expected_hash || null })
+      const r = await invoke('fs_write', { path, content: String(content ?? ''), expectedHash: expected_hash || null })
       const res = r && typeof r === 'object' ? r : {}
-      globalFsCache.set(path, content ?? '')
+      globalFsCache.set(path, String(content ?? ''))
       globalWorkspaceTrie.insert(path)
       return ok({
         tool: 'fs_write',
         path,
-        bytes: res.bytes ?? (content ?? '').length,
+        bytes: res.bytes ?? String(content ?? '').length,
         hash: res.hash,
         encoding: res.encoding,
         stale: res.stale || false,
@@ -403,20 +406,34 @@ export const fsEditTool = {
         new_string: { type: 'string', description: 'Replacement text.' },
         replace_all: { type: 'boolean', description: 'Replace every occurrence (default false).' },
         expected_hash: { type: 'string', description: 'The hash returned by fs_read. If the file changed on disk since then, the result says so.' },
+        start_line: { type: 'number', description: 'Optional 1-indexed start line to limit search scope.' },
+        end_line: { type: 'number', description: 'Optional 1-indexed end line to limit search scope.' },
       },
       required: ['path', 'old_string', 'new_string'],
     },
   },
-  async execute({ path, old_string, new_string, replace_all, expected_hash } = {}) {
-    if (!path) return fail('path is required')
-    if (old_string == null || new_string == null) return fail('old_string and new_string are required')
+  async execute(args = {}) {
+    const path = args.path || args.file || args.filepath || args.target_file || args.TargetFile || args.filename
+    const old_string = args.old_string ?? args.old ?? args.old_str ?? args.find ?? args.target ?? args.old_text ?? args.search ?? args.original ?? args.TargetContent ?? args.target_content ?? args.before
+    const new_string = args.new_string ?? args.new ?? args.new_str ?? args.replace ?? args.replacement ?? args.new_text ?? args.content ?? args.ReplacementContent ?? args.replacement_content ?? args.after
+    const replace_all = args.replace_all ?? args.replaceAll ?? args.all ?? args.AllowMultiple ?? args.allow_multiple ?? false
+    const expected_hash = args.expected_hash ?? args.hash ?? args.expectedHash
+    const start_line = args.start_line ?? args.StartLine ?? args.startLine ?? 0
+    const end_line = args.end_line ?? args.EndLine ?? args.endLine ?? 0
+
+    if (!path) return fail('path is required (e.g. { path: "src/file.js", old_string: "...", new_string: "..." })')
+    if (old_string == null || new_string == null) {
+      return fail('old_string and new_string are required (e.g. { path: "src/file.js", old_string: "...", new_string: "..." })')
+    }
     return guard(async () => {
       const r = await invoke('fs_edit', {
         path,
-        oldString: old_string,
-        newString: new_string,
+        oldString: String(old_string),
+        newString: String(new_string),
         replaceAll: !!replace_all,
         expectedHash: expected_hash || null,
+        startLine: Number(start_line) || 0,
+        endLine: Number(end_line) || 0,
       })
       globalFsCache.invalidate(path)
       const res = r && typeof r === 'object' ? r : {}
