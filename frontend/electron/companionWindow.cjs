@@ -9,10 +9,50 @@
 // Frameless and transparent, so the UI can draw its own rounded shell; the drag
 // region is declared in CSS (-webkit-app-region), not here.
 
-const { BrowserWindow, ipcMain, screen } = require('electron')
+const { BrowserWindow, ipcMain, screen, app } = require('electron')
 const path = require('path')
+const fs = require('fs')
 
-const SIZE = { width: 380, height: 560, minWidth: 300, minHeight: 180 }
+// minHeight is the height of the bar + the input with nothing between them: an
+// idle companion should be a strip, not a 560px pane of transparency parked
+// over whatever the user is working in.
+const SIZE = { width: 380, height: 560, minWidth: 300, minHeight: 108 }
+
+// Where the user PUT it. Only x/y/width are remembered: the height follows the
+// content (companion:resize), so persisting it would fight the auto-fit on the
+// next launch and reopen a tall transparent slab over another app.
+function boundsFile() { return path.join(app.getPath('userData'), 'companion-window.json') }
+
+function savedBounds() {
+  try {
+    const s = JSON.parse(fs.readFileSync(boundsFile(), 'utf8'))
+    if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) return null
+    // A display that no longer exists (undocked laptop) would put the window
+    // somewhere the user cannot reach it.
+    const area = screen.getDisplayMatching({ x: s.x, y: s.y, width: 1, height: 1 }).workArea
+    const onScreen = s.x < area.x + area.width && s.x + 80 > area.x
+      && s.y < area.y + area.height && s.y + 40 > area.y
+    if (!onScreen) return null
+    return { x: Math.round(s.x), y: Math.round(s.y), width: Math.round(s.width) || SIZE.width }
+  } catch {
+    return null
+  }
+}
+
+function trackBounds(w) {
+  let t = null
+  const save = () => {
+    clearTimeout(t)
+    t = setTimeout(() => {
+      try {
+        const b = w.getBounds()
+        fs.writeFileSync(boundsFile(), JSON.stringify({ x: b.x, y: b.y, width: b.width }))
+      } catch { /* a companion that cannot remember its spot is not worth a crash */ }
+    }, 400)
+  }
+  w.on('move', save)
+  w.on('resize', save)
+}
 
 let win = null
 let isDev = false
@@ -37,9 +77,11 @@ function defaultPosition() {
 
 function create() {
   if (win && !win.isDestroyed()) return win
-  const pos = defaultPosition()
+  const remembered = savedBounds()
+  const pos = remembered || defaultPosition()
   win = new BrowserWindow({
     ...SIZE,
+    width: remembered?.width || SIZE.width,
     x: pos.x,
     y: pos.y,
     show: false,
@@ -74,7 +116,28 @@ function create() {
     if (win && !win.__reallyClose) { e.preventDefault(); win.hide() }
   })
   win.on('closed', () => { win = null })
+  trackBounds(win)
   return win
+}
+
+/** True when the companion is the surface the user is actually looking at. */
+function isVisible() {
+  const w = getWindow()
+  return !!(w && w.isVisible() && !w.isMinimized())
+}
+
+/**
+ * Hand something to the companion instead of the main window — used by the
+ * "act on my selection" hotkey, whose whole point is not having to go back to
+ * the app.
+ */
+function sendToCompanion(channel, payload) {
+  const w = getWindow()
+  if (!w) return false
+  w.webContents.send(channel, payload)
+  w.show()
+  w.focus()
+  return true
 }
 
 function show() {
@@ -133,4 +196,4 @@ function registerCompanion({ dev = false, onCompanionEvent } = {}) {
   })
 }
 
-module.exports = { registerCompanion, show, hide, toggle, destroy, getWindow }
+module.exports = { registerCompanion, show, hide, toggle, destroy, getWindow, isVisible, sendToCompanion }

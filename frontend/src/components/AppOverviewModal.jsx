@@ -33,7 +33,7 @@ import {
   Camera
 } from 'lucide-react'
 
-export function AppOverviewModal({ onClose, onOpenSettings, onOpenDemo, onOpenDomainHub, onOpenMcp }) {
+export function AppOverviewModal({ onClose, onOpenSettings, onOpenDemo, onOpenTour, onOpenDomainHub, onOpenMcp }) {
   const [activeTab, setActiveTab] = useState('workflow') // 'workflow' | 'architecture' | 'tools' | 'mcp' | 'companion' | 'shortcuts'
 
   const workflowSteps = [
@@ -411,6 +411,11 @@ export function AppOverviewModal({ onClose, onOpenSettings, onOpenDemo, onOpenDo
           <div style={{ display: 'flex', gap: 8 }}>
             {onOpenDemo && (
               <button className="small-btn" onClick={() => { onClose(); onOpenDemo() }}>
+                <Sparkles size={12} /> Quick Demo
+              </button>
+            )}
+            {onOpenTour && (
+              <button className="small-btn" onClick={() => { onClose(); onOpenTour() }}>
                 <Sparkles size={12} /> Interactive Tour
               </button>
             )}

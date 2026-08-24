@@ -15,6 +15,34 @@ const MUTATING = new Set(MUTATING_OPS)
 
 function isMutating(op) { return MUTATING.has(String(op)) }
 
+/**
+ * How big is this, stopping as soon as we know it is too big?
+ *
+ * record() used to copyTree() whatever it was pointed at, synchronously, on the
+ * Electron main process. Deleting a node_modules meant copying gigabytes before
+ * the delete even started — the window frozen throughout, the 200MB journal cap
+ * blown, and the disk filled — so the safety net was worse than the operation
+ * it was protecting. Measuring first, with an early bail, costs a bounded walk.
+ */
+function measureTree(target, limit) {
+  let total = 0
+  const stack = [target]
+  while (stack.length) {
+    const cur = stack.pop()
+    let stat
+    try { stat = fs.statSync(cur) } catch { continue }
+    if (stat.isDirectory()) {
+      let names
+      try { names = fs.readdirSync(cur) } catch { continue }
+      for (const n of names) stack.push(path.join(cur, n))
+    } else {
+      total += stat.size
+      if (total > limit) return { bytes: total, overLimit: true }
+    }
+  }
+  return { bytes: total, overLimit: false }
+}
+
 function copyTree(src, dest) {
   const stat = fs.statSync(src)
   if (stat.isDirectory()) {
@@ -31,7 +59,13 @@ function copyTree(src, dest) {
  * @param maxBytes  soft cap; oldest entries are pruned past it
  * @param maxAgeMs  entries older than this are pruned on open
  */
-function createJournal({ storeDir, maxBytes = 200 * 1024 * 1024, maxAgeMs = 14 * 24 * 3600 * 1000 } = {}) {
+function createJournal({
+  storeDir,
+  maxBytes = 200 * 1024 * 1024,
+  maxAgeMs = 14 * 24 * 3600 * 1000,
+  /** A single snapshot larger than this is refused rather than copied. */
+  maxSnapshotBytes = 64 * 1024 * 1024,
+} = {}) {
   const blobsDir = path.join(storeDir, 'blobs')
   const indexFile = path.join(storeDir, 'index.jsonl')
 
@@ -73,6 +107,24 @@ function createJournal({ storeDir, maxBytes = 200 * 1024 * 1024, maxAgeMs = 14 *
       const stat = fs.statSync(target)
       entry.existed = true
       entry.kind = stat.isDirectory() ? 'dir' : 'file'
+
+      // Measure before copying. An oversized target is recorded WITHOUT a blob
+      // and marked, so the history still shows what happened and `revert` can
+      // say honestly that there is nothing to restore — rather than the app
+      // freezing for a minute and then claiming the operation is undoable.
+      const size = stat.isDirectory()
+        ? measureTree(target, maxSnapshotBytes)
+        : { bytes: stat.size, overLimit: stat.size > maxSnapshotBytes }
+      entry.bytes = size.bytes
+      if (size.overLimit) {
+        entry.blob = null
+        entry.skipped = 'too-large'
+        entry.note = entry.note
+          || `Not backed up: ${target} is larger than the ${Math.round(maxSnapshotBytes / 1048576)}MB snapshot limit. This operation cannot be undone.`
+        append(entry)
+        return entry
+      }
+
       const blob = path.join(blobsDir, id)
       copyTree(target, blob)
       entry.blob = blob
@@ -92,6 +144,9 @@ function createJournal({ storeDir, maxBytes = 200 * 1024 * 1024, maxAgeMs = 14 *
       if (!entry.existed) {
         try { fs.rmSync(entry.target, { recursive: true, force: true }) } catch { /* already gone */ }
         return { success: true, restored: entry.target, removed: true }
+      }
+      if (entry.skipped === 'too-large') {
+        return { success: false, error: entry.note || 'This operation was too large to back up, so it cannot be undone.' }
       }
       if (!entry.blob || !fs.existsSync(entry.blob)) {
         return { success: false, error: 'The saved copy is no longer available.' }

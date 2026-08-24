@@ -56,10 +56,8 @@ import {
   isDocumentPipSupported,
 } from '../pipCompanion'
 import { describeWithoutModel } from '../vision/source'
-import {
-  contextChanged, shouldObserve, shouldSpeak, buildObservationPrompt,
-  OBSERVE_INTERVAL_MS,
-} from '../companionAwareness'
+import { useCompanionBrain } from '../companion/useCompanionBrain'
+import { useCompanionVoice } from '../companion/useCompanionVoice'
 
 // ─── Real-time Audio Visualizer Equalizer Component ─────────────────────────
 function AudioEqualizer({ active = false, color = '#10b981' }) {
@@ -288,7 +286,9 @@ export function FloatingCompanion({
   isStreaming = false,
   streamText = '',
   messages = [],
+  isPip = false,
 }) {
+  const inPipWindow = isPip || (typeof window !== 'undefined' && window.documentPictureInPicture && window.documentPictureInPicture.window === window)
   const [input, setInput] = useState('')
   const [listening, setListening] = useState(false)
   const [continuousVoice, setContinuousVoice] = useState(false)
@@ -327,6 +327,53 @@ export function FloatingCompanion({
 
   const isDesktopEnv = typeof window !== 'undefined' && Boolean(window.__YOGATIK_COMPANION__)
 
+  // ── The companion's brain ────────────────────────────────────────────────
+  // Its OWN chat, a real watch loop, and voice. Before this the panel sent
+  // everything into whatever conversation happened to be open in the main
+  // window, and the Watch / Ambient switches were state nothing read.
+  // Declared first: the voice hook's callback reaches the brain, and the brain
+  // reaches the speaker. A ref breaks that cycle without re-subscribing
+  // recognition every render.
+  const brainRef = useRef(null)
+  const voice = useCompanionVoice({
+    // In the popped-out window `window` is the MAIN document, not this one, so
+    // recognition and visibility have to be told where they actually live.
+    targetWindow: inPipWindow && typeof document !== 'undefined'
+      ? (document.defaultView || undefined)
+      : undefined,
+    onUtterance: (text) => { brainRef.current?.ask(text, null, { tools: true }) },
+  })
+  const brain = useCompanionBrain({
+    provider: activeProvider,
+    model: activeModel,
+    surface: inPipWindow ? 'pip' : 'panel',
+    captureScreen: isDesktopEnv && window.__YOGATIK_COMPANION__?.captureScreen
+      ? async () => {
+        const r = await window.__YOGATIK_COMPANION__.captureScreen()
+        return r?.success ? r.dataUrl : null
+      }
+      : undefined,
+    onSpeakText: (text) => voice.speak(text),
+  })
+  brainRef.current = brain
+
+  // The transcript is the COMPANION's, not the main chat's. `messages` is kept
+  // as a fallback so an embedder that wants to mirror another thread still can.
+  const companionMessages = brain.messages.length ? brain.messages : messages
+  const companionStream = brain.streamText || streamText
+  const companionBusy = brain.busy || isStreaming
+
+  /**
+   * Everything the HUD sends goes to the companion's own chat. `onSendPrompt`
+   * is still honoured when the host passes it, so "ask the main chat" remains
+   * possible — it is just no longer the only thing that can happen.
+   */
+  const send = useCallback((text, image = null, opts = {}) => {
+    if (!text) return
+    if (opts.toMainChat && onSendPrompt) return onSendPrompt(text, image)
+    return brainRef.current.ask(text, image?.dataUrl || image || null, { tools: true, ...opts })
+  }, [onSendPrompt])
+
   // Load available speech synthesis voices
   useEffect(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -359,7 +406,7 @@ export function FloatingCompanion({
   // Scroll to bottom on new messages or stream
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streamText])
+  }, [companionMessages, companionStream])
 
   // Window drag handlers
   const handleMouseDown = useCallback((e) => {
@@ -565,7 +612,7 @@ export function FloatingCompanion({
       }
     }
     const contextPrefix = `[Context: Active Window is ${monitoredApp.appName} ("${monitoredApp.title}")] `
-    onSendPrompt?.(`${contextPrefix}${prompt}`, attachment)
+    send(`${contextPrefix}${prompt}`, attachment)
   }
 
   // File Dropzone Handler
@@ -579,7 +626,7 @@ export function FloatingCompanion({
     if (file.type.startsWith('image/')) {
       const reader = new FileReader()
       reader.onload = () => {
-        onSendPrompt?.(`Analyze this attached image: ${file.name}`, {
+        send(`Analyze this attached image: ${file.name}`, {
           name: file.name,
           dataUrl: reader.result,
           thumb: reader.result,
@@ -591,7 +638,7 @@ export function FloatingCompanion({
       const reader = new FileReader()
       reader.onload = () => {
         const text = reader.result
-        onSendPrompt?.(`Analyze this attached file [${file.name}]:\n\`\`\`\n${text.slice(0, 8000)}\n\`\`\``)
+        send(`Analyze this attached file [${file.name}]:\n\`\`\`\n${text.slice(0, 8000)}\n\`\`\``)
         triggerToast(`Ingested file: ${file.name}`)
       }
       reader.readAsText(file)
@@ -607,7 +654,7 @@ export function FloatingCompanion({
     try {
       const activeFile = monitoredApp.title.includes('.') ? monitoredApp.title.trim() : null
       if (activeFile && window.__YOGATIK_ACTION_GATE__) {
-        onSendPrompt?.(`Apply this code snippet directly to ${activeFile}:\n\`\`\`\n${codeSnippet}\n\`\`\``)
+        send(`Apply this code snippet directly to ${activeFile}:\n\`\`\`\n${codeSnippet}\n\`\`\``)
         triggerToast(`Dispatched patch for ${activeFile}`)
       } else {
         await navigator.clipboard.writeText(codeSnippet)
@@ -624,9 +671,9 @@ export function FloatingCompanion({
     return (
       <div
         style={{
-          position: 'fixed',
-          top: position.y,
-          left: position.x,
+          position: inPipWindow ? 'relative' : 'fixed',
+          top: inPipWindow ? 10 : position.y,
+          left: inPipWindow ? 10 : position.x,
           zIndex: 99999,
           background: 'rgba(15, 23, 42, 0.9)',
           backdropFilter: 'blur(20px) saturate(180%)',
@@ -638,10 +685,10 @@ export function FloatingCompanion({
           gap: 10,
           boxShadow: companionState.glow,
           transition: 'box-shadow 0.3s ease',
-          cursor: 'grab',
+          cursor: inPipWindow ? 'default' : 'grab',
           userSelect: 'none',
         }}
-        onMouseDown={handleMouseDown}
+        onMouseDown={inPipWindow ? undefined : handleMouseDown}
         onClick={() => {
           setIsCompact(false)
           setUnreadCount(0)
@@ -704,19 +751,19 @@ export function FloatingCompanion({
       onDragLeave={() => setIsDraggingFile(false)}
       onDrop={handleFileDrop}
       style={{
-        position: 'fixed',
-        top: position.y,
-        left: position.x,
-        width: 380,
-        height: 620,
+        position: inPipWindow ? 'relative' : 'fixed',
+        top: inPipWindow ? 0 : position.y,
+        left: inPipWindow ? 0 : position.x,
+        width: inPipWindow ? '100%' : 380,
+        height: inPipWindow ? '100%' : 620,
         zIndex: 99999,
         display: 'flex',
         flexDirection: 'column',
         background: `rgba(10, 15, 29, ${opacityLevel})`,
         backdropFilter: 'blur(24px) saturate(180%)',
-        border: isDraggingFile ? '2px dashed #38bdf8' : '1px solid rgba(255, 255, 255, 0.12)',
-        borderRadius: 16,
-        boxShadow: `0 20px 50px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.15), ${companionState.glow}`,
+        border: inPipWindow ? 'none' : (isDraggingFile ? '2px dashed #38bdf8' : '1px solid rgba(255, 255, 255, 0.12)'),
+        borderRadius: inPipWindow ? 0 : 16,
+        boxShadow: inPipWindow ? 'none' : `0 20px 50px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.15), ${companionState.glow}`,
         overflow: 'hidden',
         color: '#f8fafc',
         fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -745,7 +792,7 @@ export function FloatingCompanion({
 
       {/* ── Top Cyber-HUD Header (Draggable) ── */}
       <div
-        onMouseDown={handleMouseDown}
+        onMouseDown={inPipWindow ? undefined : handleMouseDown}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -753,12 +800,12 @@ export function FloatingCompanion({
           padding: '10px 14px',
           background: 'rgba(255, 255, 255, 0.03)',
           borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          cursor: 'grab',
+          cursor: inPipWindow ? 'default' : 'grab',
           userSelect: 'none',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <GripHorizontal size={14} color="#64748b" style={{ cursor: 'grab' }} />
+          {!inPipWindow && <GripHorizontal size={14} color="#64748b" style={{ cursor: 'grab' }} />}
           <div style={{
             position: 'relative',
             width: 24,
@@ -794,7 +841,7 @@ export function FloatingCompanion({
 
         {/* Header Action Icons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          {isDocumentPipSupported() && (
+          {!inPipWindow && isDocumentPipSupported() && onPopOutPip && (
             <button
               onClick={onPopOutPip}
               style={{
@@ -841,20 +888,22 @@ export function FloatingCompanion({
           >
             {speechEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
           </button>
-          <button
-            onClick={() => {
-              setIsCompact(true)
-              setUnreadCount(0)
-            }}
-            style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
-            title="Minimize to floating pill (Esc)"
-          >
-            <Minimize2 size={14} />
-          </button>
+          {!inPipWindow && (
+            <button
+              onClick={() => {
+                setIsCompact(true)
+                setUnreadCount(0)
+              }}
+              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
+              title="Minimize to floating pill (Esc)"
+            >
+              <Minimize2 size={14} />
+            </button>
+          )}
           <button
             onClick={onExitCompanion}
             style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
-            title="Close companion"
+            title={inPipWindow ? 'Return to window / Close' : 'Close companion'}
           >
             <X size={14} />
           </button>
@@ -864,39 +913,39 @@ export function FloatingCompanion({
       {/* Voice Settings Popover */}
       {showVoiceSettings && (
         <div style={{
-          padding: '8px 12px',
-          background: 'rgba(15, 23, 42, 0.95)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          padding: '10px 14px',
+          background: 'rgba(15, 23, 42, 0.98)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
           display: 'flex',
           flexDirection: 'column',
-          gap: 6,
+          gap: 8,
           fontSize: 11,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>Speech Speed: {speechRate.toFixed(2)}x</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 600, color: '#e2e8f0' }}>Voice Speed: {speechRate}x</span>
             <input
               type="range"
-              min="0.8"
-              max="1.4"
+              min="0.75"
+              max="1.5"
               step="0.05"
               value={speechRate}
               onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
-              style={{ width: 100, accentColor: '#6366f1' }}
+              style={{ width: 110, accentColor: '#6366f1' }}
             />
           </div>
           {availableVoices.length > 0 && (
             <select
               value={selectedVoice?.name || ''}
               onChange={(e) => {
-                const v = availableVoices.find(item => item.name === e.target.value)
-                if (v) setSelectedVoice(v)
+                const found = availableVoices.find(v => v.name === e.target.value)
+                setSelectedVoice(found || null)
               }}
               style={{
-                background: 'rgba(0, 0, 0, 0.4)',
+                background: 'rgba(255, 255, 255, 0.05)',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
-                color: '#e2e8f0',
-                borderRadius: 4,
-                padding: '2px 4px',
+                color: '#cbd5e1',
+                padding: '4px 8px',
+                borderRadius: 6,
                 fontSize: 10,
               }}
             >
@@ -926,11 +975,18 @@ export function FloatingCompanion({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
-            onClick={() => setAutoWatch(w => !w)}
+            onClick={async () => {
+              // The toggle now drives a real loop. It used to flip a boolean
+              // that nothing read, so "Watching" lit up and nothing looked.
+              if (brain.watching) { brain.stopWatch(); setAutoWatch(false); return }
+              const ok = await brain.startWatch()
+              setAutoWatch(ok)
+              if (!ok) triggerToast(brain.error || 'Screen sharing was declined.')
+            }}
             style={{
-              background: autoWatch ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.04)',
-              border: `1px solid ${autoWatch ? 'rgba(139, 92, 246, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
-              color: autoWatch ? '#a78bfa' : '#94a3b8',
+              background: brain.watching ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+              border: `1px solid ${brain.watching ? 'rgba(139, 92, 246, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+              color: brain.watching ? '#a78bfa' : '#94a3b8',
               borderRadius: 4,
               padding: '2px 6px',
               fontSize: 10,
@@ -939,10 +995,13 @@ export function FloatingCompanion({
               alignItems: 'center',
               gap: 3,
             }}
-            title="Toggle autonomous screen observation"
+            /* The tooltip says what it is actually doing and what it has left,
+               because an ambient watcher the user cannot audit is one they
+               turn off for good. */
+            title={brain.summary}
           >
-            {autoWatch ? <Eye size={10} /> : <EyeOff size={10} />}
-            {autoWatch ? 'Watching' : 'Watch'}
+            {brain.watching ? <Eye size={10} /> : <EyeOff size={10} />}
+            {brain.watching ? 'Watching' : 'Watch'}
           </button>
           <button
             onClick={() => handleCaptureScreen(false)}
@@ -1078,21 +1137,66 @@ export function FloatingCompanion({
             onClick={() => setZoomModal(true)}
           />
           <div style={{ flex: 1, fontSize: 10, color: '#94a3b8' }}>
-            <div>{screenMeta?.source || 'Screen Snapshot'} ({screenMeta?.time})</div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+            <div style={{ fontWeight: 600, color: '#cbd5e1' }}>{screenMeta?.source || 'Screen Snapshot'} ({screenMeta?.time})</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+              <button
+                onClick={() => send('Analyze this screen capture and explain what is shown, identifying any key details or issues.', screenPreview)}
+                style={{
+                  background: 'rgba(56, 189, 248, 0.15)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  color: '#38bdf8',
+                  fontSize: 9.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  padding: '2px 5px',
+                  borderRadius: 3,
+                }}
+              >
+                Explain
+              </button>
+              <button
+                onClick={() => send('Find and debug any error, bug, or issue visible on this screen and provide the fix.', screenPreview)}
+                style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#f87171',
+                  fontSize: 9.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  padding: '2px 5px',
+                  borderRadius: 3,
+                }}
+              >
+                Debug
+              </button>
+              <button
+                onClick={() => send('Extract all code snippets shown on this screen into clean, formatted markdown code blocks.', screenPreview)}
+                style={{
+                  background: 'rgba(168, 85, 247, 0.15)',
+                  border: '1px solid rgba(168, 85, 247, 0.3)',
+                  color: '#c084fc',
+                  fontSize: 9.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  padding: '2px 5px',
+                  borderRadius: 3,
+                }}
+              >
+                Extract Code
+              </button>
               <button
                 onClick={handleExtractOcr}
                 style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#38bdf8',
-                  fontSize: 10,
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  color: '#94a3b8',
+                  fontSize: 9.5,
                   cursor: 'pointer',
-                  padding: 0,
-                  textDecoration: 'underline',
+                  padding: '2px 5px',
+                  borderRadius: 3,
                 }}
               >
-                {ocrLoading ? 'OCR reading...' : 'OCR to Clipboard'}
+                {ocrLoading ? 'OCR...' : 'OCR'}
               </button>
               <button
                 onClick={() => setScreenPreview(null)}
@@ -1100,12 +1204,12 @@ export function FloatingCompanion({
                   background: 'none',
                   border: 'none',
                   color: '#ef4444',
-                  fontSize: 10,
+                  fontSize: 9.5,
                   cursor: 'pointer',
-                  padding: 0,
+                  padding: '2px 4px',
                 }}
               >
-                Dismiss
+                ✕
               </button>
             </div>
           </div>
@@ -1138,7 +1242,7 @@ export function FloatingCompanion({
         flexDirection: 'column',
         gap: 10,
       }}>
-        {messages.length === 0 && !streamText && (
+        {companionMessages.length === 0 && !companionStream && (
           <div style={{
             display: 'flex',
             flexDirection: 'column',
@@ -1171,7 +1275,7 @@ export function FloatingCompanion({
           </div>
         )}
 
-        {messages.map((m, idx) => (
+        {companionMessages.map((m, idx) => (
           <div
             key={idx}
             style={{
@@ -1189,7 +1293,7 @@ export function FloatingCompanion({
           </div>
         ))}
 
-        {isStreaming && streamText && (
+        {companionBusy && companionStream && (
           <div style={{
             alignSelf: 'flex-start',
             maxWidth: '88%',
@@ -1200,7 +1304,7 @@ export function FloatingCompanion({
             fontSize: 12.5,
             color: '#f8fafc',
           }}>
-            <CompanionMessageContent content={streamText} onApplyCode={handleApplyCodeToDisk} />
+            <CompanionMessageContent content={companionStream} onApplyCode={handleApplyCodeToDisk} />
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -1221,7 +1325,7 @@ export function FloatingCompanion({
             const txt = input.trim()
             if (!txt || isStreaming) return
             setInput('')
-            onSendPrompt?.(txt)
+            send(txt)
           }}
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >

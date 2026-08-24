@@ -12,6 +12,8 @@
 
 import { askLocalVLM, DEFAULT_LOCAL_VLM } from './localVLM'
 import { ocrTool } from '../tools/ocr'
+import { analyseImage, describeStructure } from './imageStats'
+import { classifyZeroShot, detectObjects, summariseDetections, describePosition } from './detect'
 
 // ─── Shared source ───────────────────────────────────────────────────────────
 
@@ -100,28 +102,77 @@ export function formatOcrText(rawText) {
  * @returns {Promise<{via:string, text:string, model?:string}>}
  */
 export async function describeWithoutModel(image, question = '') {
-  const textFirst = needsText(question)
+  // Everything that can contribute, gathered in parallel and FUSED. The old
+  // version picked exactly one source — OCR or the VLM — and returned it
+  // alone, so a dark-mode video-player screenshot became the string
+  // "10 » | 41 PLEY" and the model was told that was the image's content.
+  //
+  // Structure always runs: it needs no model, no download and no network, and
+  // "a dark 16:9 UI screenshot with a text band at the bottom" is far more
+  // useful than a garbled fragment.
+  const parts = []
+  const sources = []
 
-  const runOcr = async () => {
-    const r = await ocrTool.execute({ image_url: image })
-    const text = (r?.text || r?.result || '').trim()
-    if (!text) throw new Error('no text found')
-    return { via: 'ocr', text: formatOcrText(text) }
+  const [structure, ocr, labels, objects, vlm] = await Promise.all([
+    analyseImage(image).catch(() => null),
+    ocrTool.execute({ image_url: image }).catch(() => null),
+    // The detectors and the VLM decline unless the user has switched on
+    // on-device vision, so on a default install these resolve to null for
+    // free and the free layers still answer.
+    classifyZeroShot(image).catch(() => null),
+    detectObjects(image).catch(() => null),
+    askLocalVLM(image, question || 'Describe what you see, briefly and concretely.').catch(() => null),
+  ])
+
+  if (structure) {
+    parts.push(`STRUCTURE: ${describeStructure(structure)}`)
+    sources.push('structure')
   }
-  const runVlm = async () => ({
-    via: 'local-vlm',
-    model: DEFAULT_LOCAL_VLM,
-    text: await askLocalVLM(image, question || 'Describe what you see, briefly and concretely.'),
-  })
 
-  const [first, second] = textFirst ? [runOcr, runVlm] : [runVlm, runOcr]
-  try {
-    return await first()
-  } catch (e) {
-    try {
-      return await second()
-    } catch {
-      throw e
+  if (labels?.length) {
+    const top = labels.slice(0, 3).filter(l => l.score > 0.05)
+    if (top.length) {
+      parts.push(`LOOKS LIKE: ${top.map(l => `${l.label} (${Math.round(l.score * 100)}%)`).join('; ')}`)
+      sources.push('zero-shot')
     }
+  }
+
+  if (objects?.length) {
+    const summary = summariseDetections(objects)
+    const placed = objects.slice(0, 8).map(o => `${o.label} (${describePosition(o.box)})`).join(', ')
+    parts.push(`OBJECTS: ${summary}. Positions: ${placed}.`)
+    sources.push('detection')
+  }
+
+  if (vlm) {
+    parts.push(`DESCRIPTION (on-device vision model): ${vlm}`)
+    sources.push('local-vlm')
+  }
+
+  if (ocr?.success && ocr.reliable && ocr.text) {
+    parts.push(`TEXT IN IMAGE (OCR, ${ocr.confidence}% confidence):\n${formatOcrText(ocr.text)}`)
+    sources.push('ocr')
+  } else if (ocr?.success && ocr.low_confidence_text) {
+    // Named so it cannot be mistaken for content. This single distinction is
+    // what stops the model from reasoning about "41 PLEY" as if it meant
+    // something.
+    parts.push(
+      `TEXT IN IMAGE: none legible (best attempt was ${ocr.confidence}% confidence: ` +
+      `"${ocr.low_confidence_text.slice(0, 80).replace(/\s+/g, ' ')}" — treat this as noise, not as content).`,
+    )
+    sources.push('ocr-failed')
+  }
+
+  if (!parts.length) throw new Error('the image could not be read on this device')
+
+  return {
+    via: sources.join('+'),
+    sources,
+    structure,
+    ocr: ocr?.reliable ? ocr.text : '',
+    labels: labels?.slice(0, 5) || [],
+    objects: objects || [],
+    text: parts.join('\n\n'),
+    model: vlm ? DEFAULT_LOCAL_VLM : undefined,
   }
 }

@@ -5,7 +5,7 @@ const path = require('path')
 
 let tray = null
 
-function createTray(getWindow) {
+function createTray(getWindow, { onToggleCompanion } = {}) {
   const icon = nativeImage.createFromPath(
     // electron/icon.ico is the only icon that both EXISTS and is shipped:
     // build.files covers electron/** but never src-tauri/**, and that
@@ -30,6 +30,12 @@ function createTray(getWindow) {
 
   const menu = Menu.buildFromTemplate([
     { label: 'Open Yogatik', click: show },
+    // The floating companion is the surface that follows the user OUT of the
+    // app, so it must be reachable without the app being open — the hotkey
+    // alone is not discoverable.
+    ...(onToggleCompanion
+      ? [{ label: 'Floating Companion\tCtrl+Shift+Space', click: () => onToggleCompanion() }]
+      : []),
     { label: 'New Chat', click: () => { show(); sendMenuAction('new-chat') } },
     { label: 'Universal Search & Commands', click: () => { show(); sendMenuAction('open-palette') } },
     { label: 'Model Arena (Compare Mode)', click: () => { show(); sendMenuAction('open-arena') } },

@@ -62,13 +62,14 @@ import { getMcpSchemas, isMcpTool, callMcpTool } from '../mcp'
 import {
   isDesktop, fsAddFolderTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
   fsFindFilesTool, fsDeleteTool, fsMkdirTool, fsMoveTool, fsBatchReadTool, fsFileTreeTool,
-  fsReplaceContentTool, fsMultiReplaceTool, fsFileInfoTool, fsBatchWriteTool,
+  fsReplaceContentTool, fsMultiReplaceTool, fsFileInfoTool, fsBatchWriteTool, fsCopyTool,
   fsUndoTool, getWorkspaceCtx,
 } from './localFs'
 import { requestPermission } from '../permissions'
 import { terminalRunTool } from './terminalRun'
 import { mcpResourceTool, mcpPromptTool } from './mcpResources'
 import { computerControlTool } from './computerControl'
+import { identifyTool } from './identify'
 import { browserControlTool } from './browserControl'
 import { clipboardAccessTool } from './clipboardAccess'
 import { watchFolderTool } from './watchFolder'
@@ -290,6 +291,8 @@ const ALL_TOOLS = {
   fs_replace_content: fsReplaceContentTool,
   fs_multi_replace: fsMultiReplaceTool,
   fs_file_info: fsFileInfoTool,
+  fs_copy: fsCopyTool,
+  identify: identifyTool,
   fs_batch_write: fsBatchWriteTool,
   fs_search: fsSearchTool,
   fs_find_files: fsFindFilesTool,
@@ -413,6 +416,16 @@ const ALL_TOOLS = {
 
 /** Common LLM hallucinated tool names mapped to their canonical Yogatik tool */
 const TOOL_ALIASES = {
+  // Identify — the tool that answers "what IS this" about an image. Naming it
+  // the obvious ways matters: the model reaching for `ocr` on a photo gets
+  // text and nothing else, which is exactly how a video-player screenshot
+  // became "10 » | 41 PLEY" instead of a search for the series.
+  identify_image: 'identify',
+  what_is_this: 'identify',
+  reverse_image: 'identify',
+  image_identify: 'identify',
+  recognize_image: 'identify',
+  analyze_image: 'identify',
   // Local Inference aliases
   ollama: 'local_inference',
   lmstudio: 'local_inference',
@@ -891,6 +904,9 @@ const CORE_TOOL_SCORES = {
   terminal_run: 40, proc_start: 30, browser_control: 38, computer_control: 30,
   spawn_agents: 34, memory: 34, doc_search: 34, web_search: 34, code_execute: 34,
   clipboard_access: 28, file_dialog: 28,
+  // An image in the turn is the whole reason identify exists; without a floor
+  // the 64-tool cap can drop it exactly when it is needed.
+  identify: 30, ocr: 26,
 }
 
 /** Rank and prioritize tools based on the active user query context */

@@ -31,7 +31,7 @@ const { registerPty, killAllPty } = require('./pty.cjs')
 const { registerMcpStdio, killAllMcpStdio } = require('./mcpStdio.cjs')
 const { registerCompanionInput } = require('./companionInput.cjs')
 const { registerBrowserControl, destroyAllSessions } = require('./browserControl.cjs')
-const { registerCompanion, toggle: toggleCompanion, destroy: destroyCompanion } = require('./companionWindow.cjs')
+const { registerCompanion, toggle: toggleCompanion, destroy: destroyCompanion, isVisible: isCompanionVisible, sendToCompanion } = require('./companionWindow.cjs')
 // Complementary modules from the per-chat-folders work. Different IPC channels
 // (underscore-style) so they coexist with the colon-style ones above:
 //   bgProcesses    — start/stream LONG-RUNNING commands (vs processes.cjs, which
@@ -212,7 +212,7 @@ if (!gotLock) {
     registerCompanion({ dev: isDev })
     startScheduler()
     createWindow()
-    createTray(getWindow)
+    createTray(getWindow, { onToggleCompanion: toggleCompanion })
     initAutoUpdate(getWindow)
 
     // Start local search sidecar
@@ -589,6 +589,10 @@ if (!gotLock) {
     globalShortcut.register('CommandOrControl+Alt+C', () => {
       const relay = () => {
         const text = clipboard.readText() || ''
+        // If the companion is the window the user is looking at, the selection
+        // belongs THERE: raising the main app over their work is exactly what
+        // the floating companion exists to avoid.
+        if (isCompanionVisible() && sendToCompanion('clipboard-selection-hotkey', { text, at: Date.now() })) return
         if (!mainWindow || mainWindow.isDestroyed()) return
         if (mainWindow.isMinimized()) mainWindow.restore()
         mainWindow.show(); mainWindow.focus()

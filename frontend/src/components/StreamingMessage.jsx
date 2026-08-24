@@ -22,13 +22,21 @@ function splitReasoning(content) {
   return { reasoning: reasoning.trim(), answer }
 }
 
+/**
+ * @param {string} initialText text this chat had already streamed before this
+ *   component mounted. It is read ONCE, at mount: the parent renders us only
+ *   after the first token exists, and remounts us (keyed by chat) on a chat
+ *   switch, so without this the text pushed before mount would be lost.
+ * @param {boolean} bare render only the reasoning + content, no message wrapper
+ *   or role header — for a parent that already draws that chrome.
+ */
 export const StreamingMessage = forwardRef(function StreamingMessage(
-  { onFirstToken, onGrow }, ref,
+  { onFirstToken, onGrow, initialText = '', bare = false }, ref,
 ) {
-  const [text, setText] = useState('')
+  const [text, setText] = useState(() => initialText)
   const frame = useRef(0)
   const pending = useRef('')
-  const started = useRef(false)
+  const started = useRef(!!initialText)
 
   useImperativeHandle(ref, () => ({
     /** @param {string} full the complete text so far, not a delta */
@@ -59,11 +67,10 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
 
   if (!text) return null
   const { reasoning, answer } = splitReasoning(text)
-  return (
-    <div className="message assistant" role="article" aria-busy="true" aria-label="Assistant is responding">
-      <div className="message-role">Yogatik</div>
+  const body = (
+    <>
       {reasoning ? (
-        <details className="reasoning-bubble" open>
+        <details className="reasoning-bubble" open style={bare ? { marginTop: 4 } : undefined}>
           <summary className="reasoning-summary">Thinking…</summary>
           <div className="reasoning-body">{reasoning}</div>
         </details>
@@ -71,6 +78,13 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
       <div className="message-content">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer || (reasoning ? '' : text)}</ReactMarkdown>
       </div>
+    </>
+  )
+  if (bare) return body
+  return (
+    <div className="message assistant" role="article" aria-busy="true" aria-label="Assistant is responding">
+      <div className="message-role">Yogatik</div>
+      {body}
     </div>
   )
 })

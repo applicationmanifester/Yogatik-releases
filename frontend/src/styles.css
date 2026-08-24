@@ -71,16 +71,37 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+html, body {
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
   background: var(--bg-primary);
   color: var(--text-primary);
-  height: 100vh;
-  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-#root { height: 100vh; display: flex; }
-.app { display: flex; width: 100%; height: 100vh; }
+#root {
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
 
 /* Sidebar */
 .sidebar {
@@ -103,7 +124,7 @@ body {
 }
 
 /* Header, New Chat and search stay pinned; everything else scrolls. */
-.sidebar > .new-chat-btn, .sidebar > .conv-search, .sidebar > .settings { flex-shrink: 0; }
+.sidebar > .new-chat-btn, .sidebar > .conv-search, .sidebar > .project-bar, .sidebar > .sidebar-search-btn { flex-shrink: 0; }
 
 .sidebar-scroll {
   flex: 1 1 auto;
@@ -172,6 +193,15 @@ body {
 }
 
 
+/* The ad slot rides inside .sidebar-scroll so it can never compete with the
+   settings drawer or the footer for the sidebar's height. Fixed box: an ad
+   that decides to be taller is clipped, not allowed to reflow the shell. */
+.sidebar-ad {
+  flex-shrink: 0;
+  max-height: 140px;
+  overflow: hidden;
+}
+
 /* Settings panel */
 /* Collapsible settings drawer, pinned to the bottom with its own scroll. */
 .settings {
@@ -182,34 +212,49 @@ body {
   min-height: 0;
 }
 .settings.open {
-  max-height: 58vh;
-  /* 58vh is a CAP, not a floor. On a short window the fixed chrome (header,
-     new-chat, search, footer) plus 58vh exceeds the sidebar, and because
-     .sidebar is overflow:hidden the surplus is clipped silently — which hid the
-     Sign In button entirely. Allow it to shrink past the cap; .settings-body
-     already scrolls its own content. */
-  flex-shrink: 1;
-  min-height: 0;
+  flex: 1 1 auto;
+  max-height: 52vh;
+  /* A floor, but never one taller than the room there is: a flat 140px on a
+     500px-tall window pushed the sidebar footer past the bottom edge of an
+     overflow:hidden sidebar, and the Sign In button became unreachable. */
+  min-height: min(140px, 20vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings.closed {
+  max-height: none;
+  flex-shrink: 0;
+  flex-grow: 0;
+}
+.settings.closed .settings-body,
+.settings [hidden],
+[hidden] {
+  display: none !important;
 }
 .settings-toggle {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; padding: 10px 8px; margin: 0;
   background: none; border: 0; cursor: pointer;
   color: var(--text-secondary); font-size: 12px; font-weight: 600;
+  flex-shrink: 0;
 }
 .settings-toggle:hover { color: var(--text-primary); }
 .settings-toggle-main { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .settings-toggle-main > span:not(.conn-dot) {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.conn-dot-inline { width: 6px; height: 6px; flex-shrink: 0; }
+.conn-dot-inline { width: 7px; height: 7px; flex-shrink: 0; }
 .settings .chev { transition: transform var(--transition); flex-shrink: 0; }
 .settings .chev.open { transform: rotate(180deg); }
 .settings-body {
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  flex: 1 1 auto;
   min-height: 0;
-  padding: 2px 2px 8px;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 4px 12px;
 }
 .settings select, .settings input[type="range"] {
   width: 100%;
@@ -286,7 +331,15 @@ body {
 .toggle input:checked + .slider::before { transform: translateX(16px); background: white; }
 
 /* Chat area */
-.chat-area { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg-primary); }
+.chat-area {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
 .chat-header {
   padding: 10px 18px;
   border-bottom: 1px solid var(--border);
@@ -1016,6 +1069,22 @@ body {
   box-shadow: 0 8px 32px rgba(0,0,0,0.4);
   box-sizing: border-box;
 }
+/* `.modal-content` / `.modal-card` are the same dialog box under other names —
+   SchedulerPanel's log viewer used .modal-content and had no rule at all, so
+   it rendered as unstyled text straight onto the blurred backdrop. */
+.modal-content {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 520px;
+  max-width: min(520px, calc(100vw - 32px));
+  max-height: 85vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  box-sizing: border-box;
+}
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; min-width: 0; }
 .modal-header h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; margin: 0; color: var(--text-primary); min-width: 0; }
 .modal-tabs { display: flex; gap: 4px; margin-bottom: 16px; width: 100%; }
@@ -1557,10 +1626,39 @@ body {
   margin: 6px 0; padding: 5px 8px; border-radius: 8px; font-size: 11px;
   background: var(--bg-input, #1e1e1e); border: 1px solid var(--border, #333);
 }
-.conn-dot { width: 7px; height: 7px; border-radius: 50%; background: #777; flex-shrink: 0; }
-.conn-connected .conn-dot { background: #2ecc71; box-shadow: 0 0 6px #2ecc71; }
-.conn-failed .conn-dot { background: #ff4444; }
-.conn-untested .conn-dot { background: #f1c40f; }
+.conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2ecc71;
+  box-shadow: 0 0 6px #2ecc71;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.conn-connected .conn-dot,
+.conn-dot.conn-connected,
+.conn-ready .conn-dot,
+.conn-dot.conn-ready,
+.conn-untested .conn-dot,
+.conn-dot.conn-untested,
+.conn-no-key .conn-dot,
+.conn-dot.conn-no-key,
+.conn-stale .conn-dot,
+.conn-dot.conn-stale {
+  background: #2ecc71;
+  box-shadow: 0 0 6px #2ecc71;
+}
+.conn-failed .conn-dot,
+.conn-dot.conn-failed {
+  background: #ff4444;
+  box-shadow: 0 0 6px #ff4444;
+}
+.conn-testing .conn-dot,
+.conn-dot.conn-testing {
+  background: #4aa3ff;
+  box-shadow: 0 0 6px #4aa3ff;
+  animation: conn-pulse 1s ease-in-out infinite;
+}
 .conn-label { font-weight: 500; }
 .conn-meta { opacity: .55; margin-left: auto; font-size: 10px; }
 .conn-status .small-btn { margin-left: auto; }
@@ -2899,6 +2997,33 @@ body {
     height: 100dvh;
   }
 
+  /* The header holds ~9 icon buttons. .header-actions had no shrink or
+     overflow rule, so at 390px it WRAPPED to two rows (header 119px tall) and
+     took the whole width with it — the title block and the hamburger that
+     opens the sidebar were both squeezed to 0px, i.e. present, focusable and
+     invisible, with no way to reach the chat list. The actions get one row
+     that scrolls sideways; the title keeps a floor it cannot be pushed below. */
+  .chat-header {
+    flex-wrap: nowrap;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .chat-header > div:first-child {
+    flex: 1 1 auto;
+    min-width: 84px;
+  }
+  .header-actions {
+    flex-wrap: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .header-actions::-webkit-scrollbar { display: none; }
+  .header-actions > * { flex-shrink: 0; }
+
   .messages {
     padding: 12px 10px 140px !important;
   }
@@ -3058,8 +3183,10 @@ body {
   .upload-area .small-btn,
   .upload-area .voice-btn,
   .upload-area .stop-btn { padding: 0 8px; }
-  /* The placeholder was being clipped by a one-line min-height. */
-  .input-wrapper textarea { min-height: 46px; line-height: 1.35; }
+  /* The placeholder was being clipped by a one-line min-height. It still was:
+     at 16px (the iOS no-zoom size) the placeholder wraps to two lines and
+     needs 63px, so 46px cut the second line in half. Measured, not guessed. */
+  .input-wrapper textarea { min-height: 64px; line-height: 1.35; }
 }
 
 /* ─── Tour / Onboarding ─── */
@@ -4952,8 +5079,13 @@ body {
   .hero-btn { min-height: 44px; padding-left: 18px; padding-right: 18px; }
   .hero-cross-link { min-height: 40px; }
 
-  /* The hero button row wraps instead of squeezing into unreadable slivers. */
-  .hero-actions, .header-actions { flex-wrap: wrap; gap: 8px; }
+  /* The hero button row wraps instead of squeezing into unreadable slivers.
+     .header-actions must NOT: nine 40px targets wrapped to a second row, the
+     row claimed the full width, and the chat title and the hamburger that
+     opens the sidebar were both crushed to 0px — rendered, focusable and
+     invisible. It scrolls sideways instead (see the 768px block). */
+  .hero-actions { flex-wrap: wrap; gap: 8px; }
+  .header-actions { gap: 8px; }
 }
 
 /* Respect a user's reduced-motion setting rather than animating regardless. */
@@ -5298,6 +5430,19 @@ html[data-companion="1"], html[data-companion="1"] body, html[data-companion="1"
   transition: all 0.15s ease;
   position: relative;
 }
+
+/* The badge is the optional half. Without this it held its full width and
+   "Providers & Keys" / "Tools & Agents" / "About & Updates" each wrapped to
+   two lines while the badge sat on one. */
+.settings-nav-item > span:not(.settings-badge) {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-nav-item .settings-badge { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-nav-item > svg { flex-shrink: 0; }
 
 .settings-nav-item:hover {
   background: rgba(255, 255, 255, 0.05);

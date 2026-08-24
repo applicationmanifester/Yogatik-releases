@@ -51,11 +51,13 @@ export function Tour({ isOpen, onClose, onComplete }) {
   const [targetRect, setTargetRect] = useState(null)
   const tooltipRef = useRef(null)
 
+  // Reset to the first step each time the tour opens. onComplete is NOT called
+  // here: firing it on open marked the tour as finished before the user had
+  // seen a single step.
   useEffect(() => {
     if (!isOpen) return
     setStep(0)
-    if (onComplete) onComplete()
-  }, [isOpen, onComplete])
+  }, [isOpen])
 
   useEffect(() => {
     const current = TOUR_STEPS[step]
@@ -73,7 +75,7 @@ export function Tour({ isOpen, onClose, onComplete }) {
 
   const next = () => {
     if (step < TOUR_STEPS.length - 1) setStep(s => s + 1)
-    else onClose()
+    else { onComplete?.(); onClose() }
   }
 
   const prev = () => {

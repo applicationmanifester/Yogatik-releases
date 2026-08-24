@@ -237,23 +237,68 @@ export const fsReadTool = {
   async execute({ path, max_bytes, start_line, end_line } = {}) {
     if (!path) return fail('path is required')
     return guard(async () => {
-      const content = await invoke('fs_read', {
+      // The tool advertised start_line/end_line and sent startLine/endLine,
+      // which the handler never read — a documented feature that silently did
+      // nothing. The handler's contract is offset (1-based first line) + limit.
+      const offset = start_line > 0 ? start_line : 0
+      const limit = offset && end_line >= offset ? (end_line - offset + 1) : 0
+      const res = await invoke('fs_read', {
         path,
         maxBytes: max_bytes || 500000,
-        startLine: start_line,
-        endLine: end_line,
+        offset,
+        limit,
       })
+      // Older builds returned a bare string. Keep working against both rather
+      // than breaking every read the moment the shells are out of step.
+      if (typeof res === 'string') {
+        return ok({ tool: 'fs_read', path, bytes: res.length, content: res })
+      }
       return ok({
         tool: 'fs_read',
         path,
-        bytes: content.length,
-        start_line: start_line || 1,
-        end_line: end_line || undefined,
-        content,
+        bytes: res.bytes,
+        lines: res.lines,
+        content: res.content,
+        // Truncation is now VISIBLE. Reading half a file and being told nothing
+        // is how a model rewrites a file from the part it happened to see.
+        truncated: res.truncated,
+        binary: res.binary,
+        encoding: res.encoding,
+        eol: res.eol,
+        // Carried back into fs_write / fs_edit so a change made underneath the
+        // model can be reported instead of passing unnoticed.
+        hash: res.hash,
+        range: res.range,
+        note: res.note || undefined,
       })
     })
   },
 }
+
+
+export const fsCopyTool = {
+  schema: {
+    description: 'Copy a file or directory inside this chat’s folders. Refuses to replace an existing destination unless overwrite is true. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        src: { type: 'string', description: 'Source path.' },
+        dest: { type: 'string', description: 'Destination path.' },
+        overwrite: { type: 'boolean', description: 'Replace the destination if it exists (its current contents are journalled first).' },
+      },
+      required: ['src', 'dest'],
+    },
+  },
+  async execute({ src, dest, overwrite } = {}) {
+    if (!src) return fail('src is required')
+    if (!dest) return fail('dest is required')
+    return guard(async () => {
+      const r = await invoke('fs_copy', { src, dest, overwrite: !!overwrite })
+      return ok({ tool: 'fs_copy', ...r, message: `Copied ${src} → ${dest}${r.replaced ? ' (replaced)' : ''}` })
+    })
+  },
+}
+
 
 export const fsBatchReadTool = {
   schema: {
@@ -312,16 +357,27 @@ export const fsWriteTool = {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Absolute path, or relative to this chat’s primary folder.' },
-        content: { type: 'string', description: 'Full UTF-8 text to write.' },
+        content: { type: 'string', description: 'Full text to write. The file\u2019s existing encoding and line endings are preserved automatically.' },
+        expected_hash: { type: 'string', description: 'The hash returned by fs_read. If the file changed on disk since then, the result says so and the previous content is recoverable with fs_undo.' },
       },
       required: ['path', 'content'],
     },
   },
-  async execute({ path, content } = {}) {
+  async execute({ path, content, expected_hash } = {}) {
     if (!path) return fail('path is required')
     return guard(async () => {
-      await invoke('fs_write', { path, content: content ?? '' })
-      return ok({ tool: 'fs_write', path, bytes: (content ?? '').length, message: `Wrote ${path}` })
+      const r = await invoke('fs_write', { path, content: content ?? '', expectedHash: expected_hash || null })
+      const res = r && typeof r === 'object' ? r : {}
+      return ok({
+        tool: 'fs_write',
+        path,
+        bytes: res.bytes ?? (content ?? '').length,
+        hash: res.hash,
+        encoding: res.encoding,
+        stale: res.stale || false,
+        warning: res.warning || undefined,
+        message: `Wrote ${path}${res.stale ? ' (it had changed on disk \u2014 see warning)' : ''}`,
+      })
     })
   },
 }
@@ -338,17 +394,34 @@ export const fsEditTool = {
         old_string: { type: 'string', description: 'Exact text to find.' },
         new_string: { type: 'string', description: 'Replacement text.' },
         replace_all: { type: 'boolean', description: 'Replace every occurrence (default false).' },
+        expected_hash: { type: 'string', description: 'The hash returned by fs_read. If the file changed on disk since then, the result says so.' },
       },
       required: ['path', 'old_string', 'new_string'],
     },
   },
-  async execute({ path, old_string, new_string, replace_all = false } = {}) {
-    if (!path || old_string == null) return fail('path and old_string are required')
+  async execute({ path, old_string, new_string, replace_all = false, expected_hash } = {}) {
+    if (!path) return fail('path is required')
+    // An empty old_string used to reach the bridge and, with replace_all, insert
+    // new_string between EVERY character of the file. Caught here as well as in
+    // fsCore so the model gets a usable message without a round trip.
+    if (typeof old_string !== 'string' || old_string === '') {
+      return fail('old_string must be a non-empty string. To replace a whole file use fs_write.')
+    }
     return guard(async () => {
-      const replaced = await invoke('fs_edit', {
+      const r = await invoke('fs_edit', {
         path, oldString: old_string, newString: new_string ?? '', replaceAll: !!replace_all,
+        expectedHash: expected_hash || null,
       })
-      return ok({ tool: 'fs_edit', path, replacements: replaced, message: `Edited ${path} (${replaced} change${replaced === 1 ? '' : 's'})` })
+      const replaced = typeof r === 'number' ? r : (r?.replaced ?? 0)
+      return ok({
+        tool: 'fs_edit',
+        path,
+        replacements: replaced,
+        hash: r?.hash,
+        stale: r?.stale || false,
+        warning: r?.warning || undefined,
+        message: `Edited ${path} (${replaced} change${replaced === 1 ? '' : 's'})`,
+      })
     })
   },
 }
@@ -541,30 +614,27 @@ export const fsReplaceContentTool = {
     if (!path || target_content == null || replacement_content == null) {
       return fail('path, target_content, and replacement_content are required')
     }
+    if (target_content === '') return fail('target_content must be a non-empty string.')
     return guard(async () => {
-      const readRes = await invoke('fs_read', { path, maxBytes: 5000000 })
-      const original = typeof readRes === 'string' ? readRes : (readRes?.content || '')
-      if (!original.includes(target_content)) {
-        return fail(`target_content not found in ${path}`)
-      }
-      if (!allow_multiple) {
-        const firstIdx = original.indexOf(target_content)
-        const secondIdx = original.indexOf(target_content, firstIdx + 1)
-        if (secondIdx !== -1) {
-          return fail(`target_content appears multiple times in ${path}. Specify allow_multiple=true or provide a more specific chunk.`)
-        }
-      }
-      const updated = allow_multiple
-        ? original.replaceAll(target_content, replacement_content)
-        : original.replace(target_content, replacement_content)
-
-      await invoke('fs_write', { path, content: updated })
+      // Was: fs_read(maxBytes 5MB) -> replace in memory -> fs_write. On a file
+      // larger than the cap that wrote the TRUNCATED text back and deleted the
+      // remainder of the user's file. It goes through the fs_edit handler now,
+      // which never materialises the whole file in the renderer, preserves the
+      // encoding and line endings, and writes atomically.
+      const r = await invoke('fs_edit', {
+        path,
+        oldString: target_content,
+        newString: replacement_content,
+        replaceAll: !!allow_multiple,
+      })
+      const replaced = typeof r === 'number' ? r : (r?.replaced ?? 0)
       return ok({
         tool: 'fs_replace_content',
         path,
-        replaced: true,
-        bytes: updated.length,
-        message: `Successfully modified ${path}`,
+        replaced: replaced > 0,
+        replacements: replaced,
+        hash: r?.hash,
+        message: `Successfully modified ${path} (${replaced} replacement${replaced === 1 ? '' : 's'})`,
       })
     })
   },
@@ -599,24 +669,21 @@ export const fsMultiReplaceTool = {
       return fail('path and non-empty chunks array are required')
     }
     return guard(async () => {
-      const readRes = await invoke('fs_read', { path, maxBytes: 5000000 })
-      let content = typeof readRes === 'string' ? readRes : (readRes?.content || '')
-      
-      let appliedCount = 0
-      for (const chunk of chunks) {
-        if (!content.includes(chunk.target)) {
-          return fail(`Target chunk not found in file: "${chunk.target.slice(0, 40)}..."`)
-        }
-        content = content.replace(chunk.target, chunk.replacement)
-        appliedCount++
-      }
-
-      await invoke('fs_write', { path, content })
+      // The description promised "a single atomic transaction" while doing
+      // fs_read(5MB cap) -> replace -> fs_write, which on a larger file wrote
+      // back the truncated head. fs_multi_edit applies every chunk in the main
+      // process and writes ONCE, or fails having touched nothing.
+      const r = await invoke('fs_multi_edit', {
+        path,
+        edits: chunks.map(c => ({ oldString: c.target, newString: c.replacement })),
+      })
+      const appliedCount = r?.edits?.length ?? 0
       return ok({
         tool: 'fs_multi_replace',
         path,
         appliedChunks: appliedCount,
-        bytes: content.length,
+        replacements: r?.replaced ?? appliedCount,
+        hash: r?.hash,
         message: `Successfully applied ${appliedCount} edits to ${path}`,
       })
     })
@@ -638,19 +705,31 @@ export const fsFileInfoTool = {
   async execute({ path } = {}) {
     if (!path) return fail('path is required')
     return guard(async () => {
-      const readRes = await invoke('fs_read', { path, maxBytes: 5000000 })
-      const text = typeof readRes === 'string' ? readRes : (readRes?.content || '')
-      const lines = text.split('\n')
-      const ext = path.includes('.') ? path.split('.').pop().toLowerCase() : 'txt'
-
+      // Reading up to 5MB of a file to report its size was absurd, and it
+      // reported CHARACTERS as bytes. One stat() answers the metadata; the
+      // text-only counts come from a read that is honest about truncation.
+      const st = await invoke('fs_stat', { path })
+      const ext = path.includes('.') ? path.split('.').pop().toLowerCase() : ''
+      if (st.is_dir) {
+        return ok({ tool: 'fs_file_info', path, is_dir: true, bytes: st.size, mtimeMs: st.mtimeMs, mode: st.mode })
+      }
+      const res = await invoke('fs_read', { path, maxBytes: 2000000 })
+      const text = typeof res === 'string' ? res : (res?.content || '')
       return ok({
         tool: 'fs_file_info',
         path,
         extension: ext,
-        bytes: text.length,
-        linesCount: lines.length,
-        wordsCount: text.split(/\s+/).filter(Boolean).length,
-        isEmpty: text.length === 0,
+        bytes: st.size,
+        mtimeMs: st.mtimeMs,
+        mode: st.mode,
+        readonly: st.readonly,
+        binary: res?.binary || false,
+        encoding: res?.encoding,
+        eol: res?.eol,
+        linesCount: res?.lines ?? text.split('\n').length,
+        wordsCount: res?.truncated ? undefined : text.split(/\s+/).filter(Boolean).length,
+        truncated: res?.truncated || false,
+        isEmpty: st.size === 0,
       })
     })
   },

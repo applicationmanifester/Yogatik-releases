@@ -83,6 +83,7 @@ export default defineConfig({
     },
   },
   build: {
+    target: 'es2022',
     outDir: 'dist',
     sourcemap: false,
     chunkSizeWarningLimit: 900,
@@ -92,6 +93,22 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             if (id.includes('firebase')) return 'vendor-firebase'
             if (id.includes('lucide-react')) return 'vendor-lucide'
+            // Prism is deliberately React.lazy inside CodeBlock — most chats
+            // contain no code block and phones should not pay for it on first
+            // paint. Naming it in the SAME chunk as react-markdown silently
+            // undid that: react-markdown is in the eager graph, so the lazy
+            // import resolved to an already-downloaded chunk and the
+            // highlighter shipped on every first load anyway. Measured
+            // 2026-08-24: vendor-markdown was 862KB and arrived BEFORE first
+            // paint, on an empty chat with nothing to highlight.
+            //
+            // And it must not be given a manual chunk NAME either. Vite emits
+            // <link rel="modulepreload"> for every manual chunk the entry graph
+            // touches, so naming it `vendor-prism` still pulled 747KB during
+            // the first paint — the preload does not care that the import is
+            // dynamic. Returning undefined leaves it in the async chunk Rollup
+            // creates for CodeBlock's own import(), which is not preloaded.
+            if (id.includes('react-syntax-highlighter') || id.includes('prismjs') || id.includes('refractor')) return undefined
             if (id.includes('react-markdown') || id.includes('remark-') || id.includes('rehype-') || id.includes('micromark') || id.includes('unist-') || id.includes('mdast-') || id.includes('vfile')) return 'vendor-markdown'
             if (id.includes('dexie')) return 'vendor-dexie'
             if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) return 'vendor-react'

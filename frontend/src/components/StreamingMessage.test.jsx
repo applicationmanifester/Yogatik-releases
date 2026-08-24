@@ -104,6 +104,30 @@ describe('StreamingMessage', () => {
     expect(onGrow).toHaveBeenCalledTimes(2)
   })
 
+  it('shows text that arrived before it mounted (initialText)', () => {
+    // The parent renders this component only once the first token exists, so
+    // that token is always pushed BEFORE mount. Without initialText the first
+    // chunk of every answer was lost until the next token repainted.
+    mount({ ref: createRef(), initialText: 'already streaming' })
+    expect(host.textContent).toContain('already streaming')
+    // Text present at mount is not a "first token" event waiting to fire.
+    const ref = createRef()
+    const onFirstToken = vi.fn()
+    mount({ ref, initialText: 'x', onFirstToken })
+    act(() => ref.current.push('xy'))
+    paint()
+    expect(onFirstToken).not.toHaveBeenCalled()
+  })
+
+  it('bare mode omits the message wrapper the parent already draws', () => {
+    const ref = createRef()
+    mount({ ref, bare: true })
+    act(() => ref.current.push('hi'))
+    paint()
+    expect(host.querySelector('.message.assistant')).toBeNull()
+    expect(host.querySelector('.message-content')?.textContent).toContain('hi')
+  })
+
   it('separates <think> tags into a reasoning block while streaming', () => {
     const ref = createRef()
     mount({ ref })

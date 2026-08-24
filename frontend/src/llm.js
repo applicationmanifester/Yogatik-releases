@@ -721,3 +721,26 @@ export async function fetchLiveModels(providerId, apiKey) {
   }
 }
 
+/**
+ * Preconnect and prefetch DNS for the active LLM provider endpoint
+ * to eliminate 60-150ms handshake latency on user prompt submission.
+ */
+export function preconnectProvider(providerId) {
+  if (typeof document === 'undefined' || !providerId) return
+  const prov = PROVIDERS[providerId]
+  if (!prov?.baseUrl || !prov.baseUrl.startsWith('http')) return
+  try {
+    const origin = new URL(prov.baseUrl).origin
+    if (document.querySelector(`link[rel="preconnect"][href="${origin}"]`)) return
+    const link1 = document.createElement('link')
+    link1.rel = 'preconnect'
+    link1.href = origin
+    link1.crossOrigin = 'anonymous'
+    const link2 = document.createElement('link')
+    link2.rel = 'dns-prefetch'
+    link2.href = origin
+    document.head.appendChild(link1)
+    document.head.appendChild(link2)
+  } catch {}
+}
+

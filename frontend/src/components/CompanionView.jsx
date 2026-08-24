@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, X, Eye, EyeOff, Zap, ShieldCheck, Square, GripHorizontal } from 'lucide-react'
+import { Send, X, Eye, EyeOff, Zap, ShieldCheck, Square, GripHorizontal, Pin, PinOff } from 'lucide-react'
 import { streamMessage } from '../api'
 import { subscribeActivity } from '../activityStream'
 import { createWatchState, shouldLook, noteLook, setPaused } from '../companion/watch'
+import { hashDataUrl } from '../companion/screenHash'
 import { createActionGate, MODES } from '../companion/gate'
 
 /**
@@ -26,11 +27,22 @@ export function CompanionView() {
   const [watching, setWatching] = useState(false)
   const [watchNote, setWatchNote] = useState('')
   const [pending, setPending] = useState(null)   // an action awaiting confirmation
+  const [pinned, setPinned] = useState(true)
   const abortRef = useRef(null)
   const watchRef = useRef(createWatchState())
   const bodyRef = useRef(null)
+  const shellRef = useRef(null)
+  const contentRef = useRef(null)
+  const barRef = useRef(null)
+  const inputBarRef = useRef(null)
+  const inputRef = useRef(null)
 
   const bridge = () => (typeof window !== 'undefined' && window.__YOGATIK_COMPANION_WIN__) || null
+  // On the web this whole surface is a preview: there is no window to hide, pin
+  // or resize, and nothing can see the screen. Say so instead of offering dead
+  // buttons.
+  const isFloatingWindow = !!bridge()
+  const canSeeScreen = typeof window !== 'undefined' && !!window.__YOGATIK_COMPANION__?.captureScreen
 
   // The gate asks by putting a card on screen and WAITING for the click. The
   // promise it returns is what the Allow/Skip buttons resolve, so an action is
@@ -94,6 +106,12 @@ export function CompanionView() {
 
   // Screen watching. Paced by companion/watch so it cannot become a token
   // furnace: a look needs elapsed interval AND a changed screen AND budget.
+  //
+  // The screen fingerprint is the part that was missing. This used to call
+  // shouldLook({ hash: null }) — the "no fingerprint available" branch — so the
+  // change gate never ran and an untouched desktop still spent a vision call
+  // every 20s until the hourly budget was gone. A local capture + 64-bit aHash
+  // costs nothing next to the call it avoids.
   useEffect(() => {
     if (!watching) { setPaused(watchRef.current, true); return }
     setPaused(watchRef.current, false)
@@ -102,15 +120,85 @@ export function CompanionView() {
       if (!alive || busy) return
       const cam = window.__YOGATIK_COMPANION__
       if (!cam?.captureScreen) { setWatchNote('Screen capture is desktop-only.'); return }
-      const decision = shouldLook(watchRef.current, { now: Date.now(), hash: null })
+
+      // Cheap pre-check first: if it is too soon or the budget is spent there is
+      // no reason to capture at all.
+      const early = shouldLook(watchRef.current, { now: Date.now(), hash: watchRef.current.lastHash })
+      if (!early.look && early.reason !== 'Screen has not changed.') {
+        setWatchNote(early.reason)
+        return
+      }
+
+      let hash = null
+      try {
+        const shot = await cam.captureScreen()
+        if (!alive) return
+        if (!shot?.success) { setWatchNote(shot?.error || 'Could not capture the screen.'); return }
+        hash = await hashDataUrl(shot.dataUrl)
+      } catch (e) {
+        setWatchNote(`Could not capture the screen: ${e?.message || e}`)
+        return
+      }
+      if (!alive || busy) return
+
+      const decision = shouldLook(watchRef.current, { now: Date.now(), hash })
       setWatchNote(decision.reason)
       if (!decision.look) return
-      noteLook(watchRef.current, { now: Date.now() })
+      // Record the hash, or every tick is a "first look" forever.
+      noteLook(watchRef.current, { now: Date.now(), hash })
       send('Look at my screen. If there is something you can genuinely help with right now, say so in one short sentence and offer one concrete action. If not, reply exactly: NOTHING.')
     }
     const id = setInterval(tick, 5000)
     return () => { alive = false; clearInterval(id) }
   }, [watching, busy, send])
+
+  // The window follows the content. A frameless transparent window that keeps
+  // its full height around a one-line answer leaves a dead transparent slab
+  // sitting over the user's other apps, swallowing their clicks. Main clamps
+  // this and grows upward from the bottom edge, so a bottom-docked companion
+  // stays put; height is deliberately NOT part of the remembered bounds.
+  useEffect(() => {
+    const content = contentRef.current
+    const b = bridge()
+    if (!content || !b?.resize || typeof ResizeObserver !== 'function') return
+    let last = 0
+    let frame = 0
+    const fit = () => {
+      frame = 0
+      const chrome = (barRef.current?.offsetHeight || 0) + (inputBarRef.current?.offsetHeight || 0)
+      // Cap the growth here as well as in main: a long answer should scroll
+      // inside the companion, not turn it into a full-screen pane.
+      const height = Math.ceil(Math.min(chrome + content.scrollHeight + 2, 620))
+      if (!height || Math.abs(height - last) < 8) return
+      last = height
+      b.resize({ height })
+    }
+    const ro = new ResizeObserver(() => {
+      if (frame) return
+      frame = requestAnimationFrame(fit)
+    })
+    ro.observe(content)
+    fit()
+    return () => { ro.disconnect(); if (frame) cancelAnimationFrame(frame) }
+  }, [])
+
+  useEffect(() => { bridge()?.setAlwaysOnTop?.(pinned) }, [pinned])
+
+  // Ctrl+Alt+C copies whatever the user has selected in ANOTHER application.
+  // When this window is the one on screen, main relays it here rather than to
+  // the main window — the point of the companion is not having to go back to
+  // the app.
+  useEffect(() => {
+    const off = bridge()?.onSelection?.(({ text } = {}) => {
+      const t = String(text || '').trim()
+      if (!t) return
+      setInput(t)
+      // Do NOT auto-send: a stray selection turning into a paid turn (and, in
+      // autopilot, into actions) is not something the user asked for.
+      try { inputRef.current?.focus() } catch { /* not mounted yet */ }
+    })
+    return off
+  }, [])
 
   // Hide a "NOTHING" answer — an idle watcher should be silent, not chatty.
   const visibleReply = reply.trim() === 'NOTHING' ? '' : reply
@@ -121,8 +209,8 @@ export function CompanionView() {
   }, [visibleReply, steps])
 
   return (
-    <div className="companion">
-      <div className="companion-bar">
+    <div className="companion" ref={shellRef}>
+      <div className="companion-bar" ref={barRef}>
         <GripHorizontal size={13} className="companion-grip" />
         <span className="companion-title">Yogatik</span>
         <button
@@ -138,17 +226,36 @@ export function CompanionView() {
         <button
           className={`companion-icon ${watching ? 'on' : ''}`}
           onClick={() => setWatching((w) => !w)}
-          title={watching ? 'Stop watching the screen' : 'Watch my screen and offer help'}
+          disabled={!canSeeScreen}
+          title={!canSeeScreen
+            ? 'Watching your screen needs the desktop app'
+            : watching ? 'Stop watching the screen' : 'Watch my screen and offer help'}
           aria-label="Toggle screen watching"
         >
           {watching ? <Eye size={14} /> : <EyeOff size={14} />}
         </button>
-        <button className="companion-icon" onClick={() => bridge()?.hide()} title="Hide (Ctrl+Shift+Space)" aria-label="Hide companion">
-          <X size={14} />
-        </button>
+        {isFloatingWindow && (
+          <button
+            className={`companion-icon ${pinned ? 'on' : ''}`}
+            onClick={() => setPinned((p) => !p)}
+            title={pinned ? 'Pinned above other windows — click to unpin' : 'Stay above other windows'}
+            aria-label="Toggle always on top"
+          >
+            {pinned ? <Pin size={14} /> : <PinOff size={14} />}
+          </button>
+        )}
+        {isFloatingWindow && (
+          <button className="companion-icon" onClick={() => bridge()?.hide()} title="Hide (Ctrl+Shift+Space)" aria-label="Hide companion">
+            <X size={14} />
+          </button>
+        )}
       </div>
 
       <div className="companion-body" ref={bodyRef}>
+        {/* One wrapper so the window can measure the NATURAL height of the
+            content: .companion-body is flex-sized to the window, so observing
+            it would only ever report the height it already has. */}
+        <div ref={contentRef}>
         {watching && <div className="companion-note">👁 {watchNote || 'Watching…'}</div>}
 
         {steps.length > 0 && (
@@ -179,10 +286,12 @@ export function CompanionView() {
           ? <div className="companion-reply">{visibleReply}</div>
           : !busy && <div className="companion-idle">Ask me anything, or let me watch your screen.</div>}
         {busy && !visibleReply && <div className="companion-idle">Working…</div>}
+        </div>
       </div>
 
-      <div className="companion-input">
+      <div className="companion-input" ref={inputBarRef}>
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}

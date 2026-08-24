@@ -32,6 +32,7 @@ Module._load = function patched(request, parent, isMain) {
 }
 
 let dir
+let journalDir
 let handlers
 
 /** The registry is the only authority for what a chat may touch — seed it the
@@ -71,7 +72,12 @@ beforeAll(async () => {
   // state — the handlers would then report "no folder granted".
   const roots = require_('../electron/roots.cjs')
   roots.load()
-  const { registerFsBridge } = require_('../electron/fsBridge.cjs')
+  const { registerFsBridge, initJournal } = require_('../electron/fsBridge.cjs')
+  // Without a journal the bridge still works, but "the previous content is
+  // recoverable" — the sentence that makes warn-but-proceed defensible on a
+  // stale write — would be untested.
+  journalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yogatik-journal-'))
+  initJournal(journalDir)
   registerFsBridge()
   handlers = globalThis.__IPC_HANDLERS__
 })
@@ -79,6 +85,7 @@ beforeAll(async () => {
 afterAll(() => {
   Module._load = originalLoad
   try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* best effort */ }
+  try { fs.rmSync(journalDir, { recursive: true, force: true }) } catch { /* best effort */ }
 })
 
 describe('fs_find_files', () => {
@@ -139,7 +146,9 @@ describe('containment', () => {
 describe('fs_read / fs_write round trip', () => {
   it('writes and reads back inside the granted folder', async () => {
     await call('fs_write', { path: 'notes/hello.txt', content: 'hi there' })
-    expect(await call('fs_read', { path: 'notes/hello.txt' })).toBe('hi there')
+    const res = await call('fs_read', { path: 'notes/hello.txt' })
+    expect(res.content).toBe('hi there')
+    expect(res.truncated).toBe(false)
   })
 })
 
@@ -158,5 +167,137 @@ describe('fs_search', () => {
     expect(hits.length).toBeGreaterThan(0)
     expect(hits[0].line).toEqual(expect.any(Number))
     expect(hits[0].text).toContain('NEEDLE')
+  })
+})
+
+
+/**
+ * The five data-loss paths, each MEASURED against the real handlers before it
+ * was fixed. The comment on each test is what the old code actually did.
+ */
+describe('data loss', () => {
+  it('refuses an empty old_string instead of shredding the file', async () => {
+    // MEASURED: fs_edit({oldString:'', replaceAll:true}) turned "hello" into
+    // "hXeXlXlXo" — new_string inserted between every character, no error.
+    const f = path.join(dir, 'shred.txt')
+    fs.writeFileSync(f, 'hello')
+    await expect(call('fs_edit', { path: 'shred.txt', oldString: '', newString: 'X', replaceAll: true }))
+      .rejects.toThrow(/non-empty/i)
+    expect(fs.readFileSync(f, 'utf8')).toBe('hello')
+  })
+
+  it('says so when a read was truncated', async () => {
+    // MEASURED: a 1000-byte file read with maxBytes 100 came back as a bare
+    // 100-character string with nothing to distinguish it from a whole file,
+    // and the model then rewrote the file from that fragment.
+    const f = path.join(dir, 'big.txt')
+    fs.writeFileSync(f, Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n'))
+    const res = await call('fs_read', { path: 'big.txt', maxBytes: 100 })
+    expect(res.truncated).toBe(true)
+    expect(res.bytes).toBeGreaterThan(res.content.length)
+    expect(res.note).toMatch(/truncated/i)
+  })
+
+  it('reads a line range without pretending it is the whole file', async () => {
+    const res = await call('fs_read', { path: 'big.txt', offset: 5, limit: 3 })
+    expect(res.content.split('\n')).toHaveLength(3)
+    expect(res.content.startsWith('line 4')).toBe(true)
+    expect(res.range).toEqual({ firstLine: 5, lastLine: 7 })
+  })
+
+  it('keeps CRLF line endings through a write', async () => {
+    // MEASURED: "a\r\nb\r\n" came back as "a\nb\n" — a one-line change
+    // rewrote every line of the file and the git diff was the whole file.
+    const f = path.join(dir, 'crlf.txt')
+    fs.writeFileSync(f, 'a\r\nb\r\n')
+    await call('fs_write', { path: 'crlf.txt', content: 'a\nc\n' })
+    expect(fs.readFileSync(f, 'utf8')).toBe('a\r\nc\r\n')
+  })
+
+  it('keeps CRLF through an edit, and matches an LF anchor against it', async () => {
+    const f = path.join(dir, 'crlf2.txt')
+    fs.writeFileSync(f, 'one\r\ntwo\r\nthree\r\n')
+    await call('fs_edit', { path: 'crlf2.txt', oldString: 'two\nthree', newString: 'TWO\nTHREE' })
+    expect(fs.readFileSync(f, 'utf8')).toBe('one\r\nTWO\r\nTHREE\r\n')
+  })
+
+  it('refuses to move onto an existing file unless told to', async () => {
+    // MEASURED: fs_move destroyed a destination holding "IMPORTANT" without a
+    // word, and journalled the SOURCE — the side that survived.
+    fs.writeFileSync(path.join(dir, 's.txt'), 'source')
+    fs.writeFileSync(path.join(dir, 'd.txt'), 'IMPORTANT')
+    await expect(call('fs_move', { src: 's.txt', dest: 'd.txt' })).rejects.toThrow(/already exists/i)
+    expect(fs.readFileSync(path.join(dir, 'd.txt'), 'utf8')).toBe('IMPORTANT')
+
+    await call('fs_move', { src: 's.txt', dest: 'd.txt', overwrite: true })
+    expect(fs.readFileSync(path.join(dir, 'd.txt'), 'utf8')).toBe('source')
+  })
+
+  it('refuses to copy onto an existing file unless told to', async () => {
+    fs.writeFileSync(path.join(dir, 'c1.txt'), 'one')
+    fs.writeFileSync(path.join(dir, 'c2.txt'), 'two')
+    await expect(call('fs_copy', { src: 'c1.txt', dest: 'c2.txt' })).rejects.toThrow(/already exists/i)
+    expect(fs.readFileSync(path.join(dir, 'c2.txt'), 'utf8')).toBe('two')
+  })
+
+  it('reports a write landing on a file that changed underneath it', async () => {
+    const f = path.join(dir, 'race.txt')
+    fs.writeFileSync(f, 'original')
+    const read = await call('fs_read', { path: 'race.txt' })
+    fs.writeFileSync(f, 'the user edited this in their IDE')
+    const res = await call('fs_write', { path: 'race.txt', content: 'model version', expectedHash: read.hash })
+    expect(res.stale).toBe(true)
+    expect(res.warning).toMatch(/changed on disk/i)
+    // Warn-but-proceed is only safe because the clobbered text is recoverable.
+    const entries = await call('journal_list', {})
+    expect(entries.some(e => e.target === f)).toBe(true)
+  })
+
+  it('does not flag a write when nothing changed underneath', async () => {
+    const f = path.join(dir, 'norace.txt')
+    fs.writeFileSync(f, 'stable')
+    const read = await call('fs_read', { path: 'norace.txt' })
+    const res = await call('fs_write', { path: 'norace.txt', content: 'next', expectedHash: read.hash })
+    expect(res.stale).toBe(false)
+    expect(res.warning).toBeNull()
+  })
+})
+
+describe('fs_multi_edit', () => {
+  it('applies every edit and writes once', async () => {
+    const f = path.join(dir, 'multi.txt')
+    fs.writeFileSync(f, 'alpha beta gamma')
+    const res = await call('fs_multi_edit', {
+      path: 'multi.txt',
+      edits: [
+        { oldString: 'alpha', newString: 'A' },
+        { oldString: 'gamma', newString: 'G' },
+      ],
+    })
+    expect(res.replaced).toBe(2)
+    expect(fs.readFileSync(f, 'utf8')).toBe('A beta G')
+  })
+
+  it('leaves the file untouched when any edit fails', async () => {
+    // Running fs_edit three times would have written the file twice before
+    // failing, leaving it half-edited and every watcher having seen it.
+    const f = path.join(dir, 'atomic.txt')
+    fs.writeFileSync(f, 'alpha beta gamma')
+    await expect(call('fs_multi_edit', {
+      path: 'atomic.txt',
+      edits: [
+        { oldString: 'alpha', newString: 'A' },
+        { oldString: 'NOT PRESENT', newString: 'X' },
+      ],
+    })).rejects.toThrow(/Edit 2 of 2/)
+    expect(fs.readFileSync(f, 'utf8')).toBe('alpha beta gamma')
+  })
+})
+
+describe('fs_file_tree', () => {
+  it('draws a real tree with continuation bars', async () => {
+    const out = await call('fs_file_tree', { path: 'src', maxDepth: 3 })
+    expect(out).toMatch(/[├└]── /)
+    expect(out).toContain('components/')
   })
 })

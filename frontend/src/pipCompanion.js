@@ -25,21 +25,38 @@ let hiddenVideoElement = null
  */
 function copyStylesToPip(pipDoc) {
   // 1. Copy linked stylesheets
-  document.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
-    const newLink = pipDoc.createElement('link')
-    newLink.rel = 'stylesheet'
-    newLink.href = link.href
-    pipDoc.head.appendChild(newLink)
+  document.querySelectorAll('link[rel="stylesheet"], link[rel="preconnect"]').forEach((link) => {
+    try {
+      const newLink = pipDoc.createElement('link')
+      newLink.rel = link.rel
+      newLink.href = link.href
+      if (link.crossOrigin) newLink.crossOrigin = link.crossOrigin
+      pipDoc.head.appendChild(newLink)
+    } catch {}
   })
 
   // 2. Copy inline styles
   document.querySelectorAll('style').forEach((style) => {
-    const newStyle = pipDoc.createElement('style')
-    newStyle.textContent = style.textContent
-    pipDoc.head.appendChild(newStyle)
+    try {
+      const newStyle = pipDoc.createElement('style')
+      newStyle.textContent = style.textContent
+      pipDoc.head.appendChild(newStyle)
+    } catch {}
   })
 
-  // 3. Inject base dark background & reset styles for the companion window
+  // 3. Clone stylesheets from CSSStyleSheet list if any dynamically added
+  try {
+    Array.from(document.styleSheets).forEach((sheet) => {
+      if (sheet.href && !pipDoc.querySelector(`link[href="${sheet.href}"]`)) {
+        const l = pipDoc.createElement('link')
+        l.rel = 'stylesheet'
+        l.href = sheet.href
+        pipDoc.head.appendChild(l)
+      }
+    })
+  } catch {}
+
+  // 4. Inject base dark background & reset styles for the companion window
   const baseStyle = pipDoc.createElement('style')
   baseStyle.textContent = `
     html, body {
@@ -47,12 +64,19 @@ function copyStylesToPip(pipDoc) {
       padding: 0;
       width: 100%;
       height: 100%;
-      background: #0a0e14;
+      min-height: 100%;
+      background: #0a0f1d;
       color: #f8fafc;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       overflow: hidden;
     }
     * { box-sizing: border-box; }
+    #pip-root {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
   `
   pipDoc.head.appendChild(baseStyle)
 }
@@ -72,16 +96,34 @@ export async function openDocumentPip({ width = 380, height = 620, onClosed } = 
     return activePipWindow
   }
 
+  const remembered = readPipSize()
+
   try {
     const pipWindow = await window.documentPictureInPicture.requestWindow({
-      width,
-      height,
+      width: remembered?.width || width,
+      height: remembered?.height || height,
     })
 
     activePipWindow = pipWindow
     copyStylesToPip(pipWindow.document)
 
+    // The base stylesheet sizes #pip-root, so the mount point has to exist.
+    // Portalling straight into <body> left the companion in a box with no
+    // height of its own, on top of the real bug: the panel positions itself
+    // with `position: fixed` at coordinates derived from the MAIN window
+    // (innerWidth - 400), which in a 380px window is far off-screen. That is
+    // what made the popped-out companion a black rectangle.
+    const mount = pipWindow.document.createElement('div')
+    mount.id = 'pip-root'
+    pipWindow.document.body.appendChild(mount)
+
+    // Remember the size the user chose. A companion that reopens at 380x620
+    // every time is one they resize every time.
+    const remember = () => writePipSize(pipWindow.innerWidth, pipWindow.innerHeight)
+    pipWindow.addEventListener('resize', remember)
+
     pipWindow.addEventListener('pagehide', () => {
+      remember()
       activePipWindow = null
       onClosed?.()
     })
@@ -91,6 +133,33 @@ export async function openDocumentPip({ width = 380, height = 620, onClosed } = 
     activePipWindow = null
     throw err
   }
+}
+
+const SIZE_KEY = 'yogatik.pip.size'
+
+function readPipSize() {
+  try {
+    const raw = localStorage.getItem(SIZE_KEY)
+    if (!raw) return null
+    const { width, height } = JSON.parse(raw)
+    // A size from a monitor that is no longer attached must not survive.
+    if (!(width > 200 && height > 160)) return null
+    if (width > screen.availWidth || height > screen.availHeight) return null
+    return { width, height }
+  } catch { return null }
+}
+
+function writePipSize(width, height) {
+  try {
+    if (!(width > 200 && height > 160)) return
+    localStorage.setItem(SIZE_KEY, JSON.stringify({ width, height }))
+  } catch { /* private mode */ }
+}
+
+/** Where React should portal the companion. Null when no window is open. */
+export function getPipMount() {
+  const win = getActivePipWindow()
+  return win ? win.document.getElementById('pip-root') || win.document.body : null
 }
 
 /**

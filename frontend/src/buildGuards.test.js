@@ -44,11 +44,20 @@ describe('reachability', () => {
       .join('\n')
     const componentCorpus = components.map(f => ({ f, src: fs.readFileSync(f, 'utf8') }))
 
+    // A bare substring is NOT evidence of an import. It let two finished
+    // components through: StreamingMessage was "reached" by a code COMMENT
+    // naming it, and Tour by the prose "Interactive Tour" in a button label.
+    // Only an import of the module counts.
+    const importsModule = (src, name) => {
+      const spec = String.raw`['"][^'"]*\/${name}(?:\.jsx)?['"]`
+      return new RegExp(String.raw`(?:from\s+${spec})|(?:import\s*\(\s*${spec}\s*\))|(?:require\(\s*${spec}\s*\))`).test(src)
+    }
+
     const orphans = components.filter((file) => {
       const name = path.basename(file, '.jsx')
-      if (corpus.includes(name)) return false
+      if (importsModule(corpus, name)) return false
       // A component may be reached only through another component.
-      return !componentCorpus.some(({ f, src }) => f !== file && src.includes(name))
+      return !componentCorpus.some(({ f, src }) => f !== file && importsModule(src, name))
     }).map(f => path.relative(SRC, f))
 
     // AdModal is deliberately not rendered: the AdSense interstitial is switched
@@ -56,6 +65,17 @@ describe('reachability', () => {
     // this list is a feature the user cannot reach.
     const allowed = new Set([path.join('components', 'AdModal.jsx')])
     expect(orphans.filter(f => !allowed.has(f))).toEqual([])
+  })
+
+  it('App does not hold in-flight streaming text in React state', () => {
+    // This regressed once: App kept `streamingMap` and setState'd it on every
+    // token, so each frame re-rendered the sidebar, the composer and all 40
+    // MessageBubbles (each re-running ReactMarkdown) for text that only ever
+    // appears in one div. The text belongs in a ref pushed into
+    // <StreamingMessage/>; App state may hold only the has-text boolean.
+    const app = fs.readFileSync(path.join(SRC, 'App.jsx'), 'utf8')
+    expect(app).toMatch(/from\s+['"]\.\/components\/StreamingMessage['"]/)
+    expect(app).not.toMatch(/setStreamingMap/)
   })
 })
 

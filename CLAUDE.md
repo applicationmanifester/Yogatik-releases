@@ -313,6 +313,17 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   PARAMETERS. 12 tools, silently. That is why browser_autopilot kept winning over the real
   browser_control. toFunctionSchema() normalises all three; the test rejects a nested envelope,
   a missing description, a non-object parameters, and a `required` naming a missing property.
+- A FOURTH shape appeared with local_inference/dspy_optimizer/haystack_rag/aider_copilot/
+  langsmith_observability/langgraph_flow: {name, description, schema:<the PARAMETERS object>}.
+  toFunctionSchema treated that `schema` as a wrapper, so the model got no description AND no
+  arguments at all. Detected by "type:'object' + properties, but no description/parameters".
+  schemaContract.test.js caught all six the moment they were added — that is what it is for.
+- The activity stream's per-conversation Map is LRU-capped (MAX_TRACKED_CONVERSATIONS=24); the
+  active chat and any RUNNING turn are never evicted, or the panel blanks mid-answer.
+- ACTIVITY PANEL KEY: publishers use the conversation's clientId (as do loadingMap/streamingMap/
+  traceMapRef). App used to subscribe with `conv.id || conv.clientId`, so the moment a chat was
+  saved and had a database id the panel read one bucket while the turn wrote another — empty panel
+  for every chat except a brand-new one. One key: clientId.
 - TOOL BUDGET: all 178 schemas serialise to ~128KB ≈ 32k tokens, sent on EVERY turn — that alone
   overflows an 8k/16k context and exceeds OpenAI's 128-function request cap. prioritizeToolSchemas
   ranked but never truncated, so ranking changed nothing. It now caps at MAX_TOOLS_PER_REQUEST=64
@@ -435,6 +446,176 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   "Always for Workspace" scope is wanted, port it into PermissionPrompt (permissions.js already
   accepts remember: 'chat' | 'project' | 'global').
 - The reachability guard allows ONE orphan, AdModal, because ads are deliberately switched off.
+
+## The vision pipeline threw the picture away (2026-08-24) — vision/imageStats, preprocess, detect
+- SYMPTOM: a dark-mode video-player screenshot reached a text-only model as the string
+  "10 » | 41 PLEY", and it correctly said it could identify nothing. That looked like a model
+  failure and was a pipeline failure.
+- THREE causes, all in a 26-line ocr.js:
+  - NO PREPROCESSING. Tesseract is trained on dark ink / light page / ~300dpi. It was handed
+    white glyphs on black at UI scale — the inverse of everything it knows.
+  - NO CONFIDENCE FILTER. The garbage came back success:true and agent.js inserted it as THE
+    CONTENT OF THE IMAGE.
+  - A NEW WORKER PER CALL, re-downloading ~15MB of traineddata every time.
+- describeWithoutModel picked exactly ONE source (OCR or the VLM) and returned it alone. It now
+  FUSES structure + zero-shot labels + object detection + VLM + OCR, in parallel, and labels an
+  untrusted OCR reading as noise rather than as content.
+- vision/imageStats.js is free (no model, no download, no network): colour count, edge density,
+  luma profile, horizontal-projection text bands, dominant palette → photo | ui | document |
+  diagram + darkMode. Colour count is the single strongest discriminator — a photo has thousands,
+  an interface has dozens. A dark image drawn from <900 colours is classified `ui` DIRECTLY: the
+  edge-density branch called a mostly-flat video player a "diagram", which sends the model
+  looking for the wrong thing.
+- vision/preprocess.js builds candidate renderings and OCR tries them best-first: grayscale +
+  contrast stretch, INVERTED when darkMode (this is the actual fix for the screenshot, not a
+  fallback), and Sauvola local thresholding. Global thresholding turns a screenshot with a light
+  panel beside a dark one into half solid black; local thresholding is the only correct choice
+  on a UI. Small images are upscaled to ~1000px so glyphs reach a trained height.
+- vision/detect.js: CLIP zero-shot (~90MB) and DETR detection (~40MB) via Transformers.js, gated
+  behind the SAME `localVision` consent as the VLM — a download is a decision, not a fallback.
+  DEFAULT_LABELS deliberately covers software surfaces, not just photo subjects.
+- tools/identify.js is the tool that can actually answer "what series is this": reading the image
+  harder never could, because the series name is on the internet and the frame holds an episode
+  number and a timestamp. describe → extractIdentifiers → buildQueries → web_search → evidence.
+- isLikelyMisreadChrome() matches UI chrome by EDIT DISTANCE 1, not equality: OCR produced "PLEY"
+  for a play button, which passes every other filter (4 letters, caps, not a stopword, not
+  numeric) and searches as confident nonsense. Filter the word OCR THOUGHT it saw, not the word
+  the button says. identify.test.js pins the real fragment as yielding zero queries.
+
+## The desktop FS bridge lost data five ways (2026-08-24) — electron/fsCore.cjs
+- All five MEASURED by driving the REAL handlers against a REAL temp dir, not by reading code:
+  - `fs_edit({oldString:'', replaceAll:true})` turned "hello" into "hXeXlXlXo" — new_string
+    inserted between every character, no error. `applyEdit` refuses an empty old_string now.
+  - `fs_read` sliced at maxBytes and returned a BARE STRING: a 4MB file arrived as its first
+    500KB, indistinguishable from a whole one, and the model then rewrote the file from it. It
+    returns {content,truncated,bytes,lines,hash,encoding,eol,note} and cuts on a LINE boundary
+    (a byte slice also split codepoints). offset/limit do ranged reads — the tool advertised
+    start_line/end_line and sent startLine/endLine, which the handler never read.
+  - `fs_write` wrote 'utf8' always: a CRLF file came back LF, so a one-line change rewrote every
+    line. Encoding + BOM + EOL are detected on read and restored on write.
+  - `fs_move` renamed onto an existing file and destroyed it silently, and journalled the SOURCE
+    — the side that survived. Refuses without overwrite:true; journals the DESTINATION; falls
+    back to copy+delete on EXDEV (any C:→D: move).
+  - `writeFile` is O_TRUNC: a crash mid-write leaves a truncated file with no copy. All writes
+    go through writeFileAtomic (sibling temp + fsync + rename, mode preserved).
+- Lost updates are WARN-BUT-PROCEED by the user's choice: fs_read returns a hash, fs_write/
+  fs_edit take expectedHash and report `stale` + a warning. That is only defensible because the
+  journal snapshots the CURRENT bytes first, so the other program's edit is recoverable via
+  fs_undo. electronFsBridge.test.js asserts the journal entry exists.
+- THREE tools did one job and two could destroy a file: fs_replace_content and fs_multi_replace
+  both did fs_read(5MB cap) → replace → fs_write, so on a larger file they wrote the TRUNCATED
+  head back and deleted the remainder. Both delegate to the bridge handlers now; fs_multi_edit
+  applies N edits in memory and writes ONCE or touches nothing. fs_file_info read up to 5MB to
+  report a size (and called characters "bytes") — one fs_stat now.
+- desktop.test.js had ENCODED the broken contract (mock answered startLine/endLine), so the
+  feature was dead and the test green. Same class as the TerminalPanel PTY mock.
+- A handler not named in preload.cjs's FS_COMMANDS is rejected as "Unknown command". Every new
+  fs_* handler must be added there or it is unreachable — that is how fs_find_files shipped.
+
+## The main process froze on every search (2026-08-24) — electron/fsIndex.cjs
+- `walk` was recursive readdirSync up to 20,000 entries ON THE MAIN PROCESS, which also
+  composites the window: every fs_search / fs_find_files froze the whole app. Nothing was
+  cached either, so three questions about one repo paid for three full traversals plus three
+  reads of .gitignore.
+- fsIndex is async, ITERATIVE (a deep tree used to be bounded only by the JS stack), yields to
+  the event loop every 500 entries, honours NESTED .gitignore files (only the root one was read
+  before), and caches per root with a 5s TTL. Every mutation calls invalidate() from snapshot()
+  — miss that and a file the app just wrote is invisible to its own next fs_find_files.
+- journalCore.record() copyTree'd whatever it was given, synchronously: deleting a node_modules
+  copied gigabytes before the delete started, froze the window, blew the 200MB cap and filled
+  the disk. measureTree() bails early past maxSnapshotBytes (64MB) and the entry is marked
+  `skipped:'too-large'` so revert() says so instead of pretending.
+- fs_batch_read Promise.all'd every path at once (EMFILE on Windows); rolling window of 16.
+- fs_file_tree collected 2000 entries and filtered by depth AFTERWARDS, so one deep directory
+  ate the budget and shallow siblings vanished from a "complete" tree. Depth bounds the WALK,
+  and it draws real ├──/└──/│ connectors rather than └── on every line.
+
+## Web companion was a HUD wired to nothing (2026-08-24) — companion/
+- The popped-out Document-PiP window rendered as a BLACK BOX. The panel roots itself with
+  `position:fixed` at `top/left` derived from the MAIN window (`innerWidth - 400`), i.e. ~1520px
+  across, inside a 380px PiP document — entirely off-screen. `isPip` now fills the window
+  (static/100%/no radius/no drag) and App portals into `#pip-root` (which the injected base
+  stylesheet gives a height) via getPipMount(), not a bare <body>.
+- `autoWatch` and `ambient` were useState with NO loop behind them, and companionAwareness's
+  shouldObserve/shouldSpeak/contextChanged/buildObservationPrompt were imported and never called
+  once. The switches lit up and nothing looked at anything. Every message it sent went to
+  `onSendPrompt` → whatever chat happened to be open in the main window.
+- NEW, all injectable and DOM-free where it matters:
+  - `companion/adaptive.js` — cadence breathes: floor 6s, ×1.6 per idle round, ceiling 120s, snaps
+    back to the floor on a change or while the user is engaged.
+  - `companion/liveWatch.js` — the loop. capture+hash every round (local, free); watch.js gates the
+    MODEL call on time/change/budget. Never overlaps a slow turn (`inFlight`), treats a null hash as
+    UNKNOWN not "unchanged", advances lastHash on skipped rounds so slow drift still trips the gate,
+    and enforces maxPerHour even against a forced look (shouldLook honours `force` BEFORE the budget
+    check — the loop must not). `poll()` = a normal round, `look()` = the user pressed the button.
+  - `companion/companionChat.js` — one durable pinned conversation (`companion_conversation_id`),
+    recreated if the user deletes the row; `SILENCE`/`isSilence` so an ambient look can decline to
+    speak. The sentinel is stripped from the window, or the model learns that silence is the style.
+  - `companion/runtime.js` — one turn runner, channel 'companion', own history (12 turns), own
+    system prompt. Ambient turns run with tools OFF: a background glance must not start shell
+    commands or web searches.
+  - `companion/useCompanionBrain.js` / `useCompanionVoice.js` — the React seam. Vision follows the
+    same 3-tier policy as the camera (model image_url → on-device OCR/VLM → honest note). Voice
+    reuses live/cascade's echo guard, wake word, noise gate, command grammar and adaptive
+    endpointing; the old companion mic had no echo guard and answered its own replies.
+- Heavy deps (Tesseract, VLM, 90MB narrator) are imported lazily and only when a capability is
+  switched on. liveWatch.test.js = 17.
+
+## First visit downloaded the whole app TWICE (2026-08-24)
+- MEASURED in headless Chromium: 40 requests / 4604KB before first render. sw.js calls
+  clients.claim() on activate, so the first worker claims a page that loaded uncontrolled →
+  controllerchange → `navigator.serviceWorker.controller` is non-null → the reload guard let it
+  through → full reload, index.html and all 20 chunks again. The page was already running exactly
+  the code that worker had just cached.
+- The test must be "was this page controlled WHEN IT LOADED" (`hadControllerAtLoad`, captured before
+  registration), not "is there a controller now" — by the time the event fires there always is.
+- vendor-markdown was 862KB and eager on an empty chat. manualChunks lumped react-syntax-highlighter/
+  prismjs/refractor in with react-markdown, so CodeBlock's deliberate React.lazy resolved to an
+  already-downloaded chunk: the lazy import was decorative. Splitting it out is NOT enough — Vite
+  emits `<link rel="modulepreload">` for every manual chunk the entry graph touches, so a named
+  `vendor-prism` still arrived during first paint. manualChunks returns undefined for it now, leaving
+  it in the async chunk Rollup makes for the import() itself.
+- Nine React.lazy panels (TerminalPanel, Tour, McpModal, DomainHubModal, DownloadModal…) were
+  rendered UNCONDITIONALLY and self-gated with an internal `if (!isOpen) return null` — which runs
+  only after the chunk has downloaded. Gate lazy components at the render site.
+- Result: 40 req/4604KB → 12 req/1813KB, FCP 576ms. Re-measure with frontend/perf-style profiling
+  before believing any bundle claim; `npm run build` output alone does not show what is FETCHED.
+
+## The ad script owned the app's height (2026-08-24) — shellGuard.js
+- MEASURED in headless Chromium at 1440x900: `.sidebar` rendered **2129px tall**, so the
+  settings drawer, the sidebar footer and Sign In were all below an overflow:hidden edge with
+  no scrollbar anywhere that could reach them. `#root`, `.app`, `.sidebar` and `.settings` all
+  carried `style="height:auto !important; min-height:0 !important"`.
+- Nothing in our source writes that. adsbygoogle.js walks up from its `<ins>` un-constraining
+  every ancestor so a responsive unit can claim the page width. An INLINE !important beats
+  every author rule, so no CSS fix exists — the declaration has to be taken back off.
+- `<AdSenseBanner/>` was mounted INSIDE `.settings-body`, i.e. the walk went straight through
+  the whole shell. It lives in `.sidebar-scroll` now (`.sidebar-ad`, max-height 140px), where a
+  growing ad cannot reflow anything, and defaults to `data-full-width-responsive="false"` with
+  an explicit height so the walk is not triggered at all.
+- src/shellGuard.js (installed in main.jsx) is the structural fix: a MutationObserver on
+  `style` that strips height/min-height/max-height from `#root, .app, .sidebar, .settings` only.
+  Any third-party script gets the same treatment. shellGuard.test.js (6) replays the real
+  ancestor walk; AdSenseBanner.test asserts the banner is not back inside the drawer.
+- The slot folds away entirely when `data-ad-status !== 'filled'` after 4s — a labelled blank
+  rectangle eating 140px of a 272px sidebar is worse than no slot.
+- CSP frame-src was missing `*.adtrafficquality.google`, so the ad's own verification frames
+  were refused on every load. A CSP refusal is opaque; the console error was the only signal.
+
+## Mobile header collapsed the title AND the hamburger (2026-08-24)
+- `.hero-actions, .header-actions { flex-wrap: wrap }` at ≤480px (added for the hero row) let
+  nine 40px icon buttons wrap to a second row, take the full width, and squeeze the title block
+  to **0x40** — the chat title and the ONLY control that opens the sidebar were rendered,
+  focusable and invisible. Header was 119px tall. `.header-actions` scrolls sideways now.
+- The title block's `minWidth: 0` was INLINE in App.jsx and therefore unbeatable from the
+  stylesheet; it is `minWidth: 88` (the h1 still ellipsizes inside it).
+- The composer textarea was 46px with scrollHeight 63: at the 16px iOS-no-zoom size the
+  placeholder wraps to two lines and the second was cut in half. 64px at ≤480px.
+- `.settings.open { min-height: 140px }` is `min(140px, 20vh)` — a flat floor pushed the footer
+  out of an overflow:hidden sidebar on a short window.
+- `.modal-content` (SchedulerPanel's log viewer) had NO rule; it painted unstyled onto the
+  backdrop. Aliased to `.modal`. Verify UI claims with a real browser: the whole suite (1558
+  tests) was green through every one of these.
 
 ## Gotchas (learned the hard way)
 - Working folders are PER CHAT on Electron (v3.9). Absolute paths are ALLOWED now — safety is the
@@ -622,6 +803,35 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   showAgents. Proactive: features.proactiveAgent (default off) → quick-action row above composer
   (Summarize/Next steps/Find issues/Go deeper → send(prompt)).
 - Tests: agents.test.js (10). Total 303.
+
+## Companion OUT of the app (2026-08-24) — the floating window is the product
+- electron/companionWindow.cjs loads the SAME renderer with ?companion=1 (main.jsx routes to
+  CompanionView before App's hooks). Same origin = same IndexedDB, keys, agent and 65 tools.
+  Ctrl+Shift+Space toggles it; it is frameless/transparent/alwaysOnTop 'floating' and visible
+  on full-screen spaces.
+- THE WATCHER WAS NOT GATED. CompanionView called shouldLook({ hash: null }) — watch.js's
+  "no fingerprint available" branch — and noteLook() with no hash, so lastHash stayed null
+  forever. Every one of the change-gating pieces (aHash, diffThreshold, hammingDistance) was
+  dead code and an untouched desktop spent its whole 40/hour vision budget. companion/
+  screenHash.js now hashes the captured frame (8x8 average hash → 64-char '0'/'1' string, the
+  shape hammingDistance compares) and the tick captures locally FIRST, then only asks the model
+  when the screen actually moved. A null hash still means "look" — unknown must not read as
+  unchanged. screenHash.test.js (6, node env — the maths is pure).
+- Window height is NOT persisted, by design: it follows the content (ResizeObserver on a
+  wrapper INSIDE .companion-body — the body itself is flex-sized to the window, so observing
+  it reports the height it already has). Only x/y/width are remembered (userData/
+  companion-window.json), and a position on a display that no longer exists is discarded.
+  minHeight 108 = bar + input: an idle companion is a strip, not a transparent slab parked
+  over the user's other app swallowing their clicks.
+- The header button used to shrink the MAIN window into an in-app panel, i.e. keep the user
+  inside Yogatik — the opposite of the point. On desktop it toggles the real window
+  (__YOGATIK_COMPANION_WIN__.toggle); the in-app panel is the web fallback. Tray gained a
+  "Floating Companion" entry (the hotkey alone is not discoverable).
+- Ctrl+Alt+C (act on my selection) relays to the COMPANION when it is visible, and only falls
+  back to raising the main window otherwise. It fills the composer and focuses it — it does
+  NOT auto-send: a stray selection must not become a paid turn, or an autopilot action.
+- On the web CompanionView has no bridge: the pin/hide buttons are not rendered and the watch
+  toggle is disabled with a desktop-only reason, instead of looking live and doing nothing.
 
 ## AI companion — real computer use (v3.15)
 - electron/companionInput.cjs: precise cross-app input via PowerShell + user32 — SetCursorPos +
@@ -835,6 +1045,31 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
 - Scroll-follow is imperative (`followStream` + `atBottomRef`); keying it on the
   streaming text would restore the re-render the split exists to remove.
 - ToolResultCard is memo'd too — results are immutable once produced.
+- THIS REGRESSED and was restored 2026-08-24: App had grown a `streamingMap` state
+  written once per token (`pushStreamContent`), rendering ReactMarkdown inline in App —
+  i.e. exactly the pre-split behaviour — and StreamingMessage.jsx had become an orphan.
+  Now: `streamTextRef` (ref, per clientId) + `streamViewRef` + `hasStreamMap` (boolean
+  state, flips once per turn). `setStreamText(clientId, txt)` is the ONE choke point.
+  StreamingMessage takes `initialText` (read once at mount — the first token is always
+  pushed BEFORE the component exists, keyed by clientId so a chat switch rehydrates) and
+  `bare` (App draws the model badge / tool chips / trace chrome around it).
+  Companion mode replaces the whole shell, so it keeps a plain `companionStreamText`
+  state — there is no shell there to protect.
+- buildGuards has a guard for it: App.jsx must import StreamingMessage and must contain
+  no `setStreamingMap`.
+
+## Reachability guard was substring-based (2026-08-24)
+- buildGuards' orphan check asked `corpus.includes(name)`, which passes on ANY mention.
+  Two finished components slipped through for weeks: StreamingMessage was "reached" by a
+  code COMMENT in ActivityPanel.jsx, and Tour.jsx by the prose "Interactive Tour" in an
+  AppOverviewModal button label. It matches a real import specifier now
+  (`from '…/Name'`, `import('…/Name')`, `require('…/Name')`).
+- Tour.jsx (guided walkthrough that highlights real DOM targets) was unreachable: the
+  "Interactive Tour" button called onOpenDemo → DemoModal. Wired: App `showTour` state,
+  command palette "Guided tour of the interface", a separate onOpenTour button in
+  AppOverviewModal (the demo button is now "Quick Demo"), and showTour added to
+  browserOccluded + isAnyModalOpen. Its onComplete fired on OPEN (marking the tour done
+  before step 1); it fires on finish now.
 
 ## Mobile
 - Prism/react-syntax-highlighter (616KB / 225KB gz) is React.lazy inside CodeBlock, with a

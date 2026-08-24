@@ -69,6 +69,12 @@ export function registerServiceWorker(onUpdateReady) {
 
   // ── Production only ────────────────────────────────────────────────────────
 
+  // Whether this page was ALREADY controlled when it loaded, captured before
+  // anything can change it. This is the difference between "a new version took
+  // over, refresh so the hashed chunks match" and "the very first worker just
+  // claimed a page that is already running the newest code".
+  const hadControllerAtLoad = !!navigator.serviceWorker.controller
+
   navigator.serviceWorker.register('/sw.js').then(reg => {
     const offer = (worker) => {
       if (!worker) return
@@ -95,10 +101,22 @@ export function registerServiceWorker(onUpdateReady) {
     })
   }).catch(() => { /* http, private mode, or unsupported: no worker, app still works */ })
 
-  // Reload when a new SW takes control so hashed chunk names are refreshed.
+  // Reload when a NEW SW takes control so hashed chunk names are refreshed.
+  //
+  // MEASURED 2026-08-24 in headless Chromium: sw.js calls clients.claim() on
+  // activate, so on a first visit the freshly installed worker claims a page
+  // that was loaded without one. controllerchange fired, the controller was
+  // non-null, and the guard below let it through — so every first-time visitor
+  // downloaded the ENTIRE app twice: 2.3MB, then a full reload and 2.3MB again,
+  // index.html and all 20 chunks. The page was already running the exact code
+  // that worker caches; there was nothing to refresh.
+  //
+  // The check has to be "was this page controlled when it loaded", not "is
+  // there a controller now" — by the time the event fires there always is one.
   let reloading = false
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (import.meta.env.DEV || !navigator.serviceWorker.controller) return
+    if (!hadControllerAtLoad) return
     if (reloading) return
     reloading = true
     location.reload()

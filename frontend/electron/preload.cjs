@@ -8,6 +8,10 @@ const FS_COMMANDS = new Set([
   'fs_grant', 'fs_granted_root', 'fs_clear_grant',
   'fs_list', 'fs_read', 'fs_write', 'fs_edit', 'fs_search', 'fs_find_files',
   'fs_delete', 'fs_mkdir', 'fs_move', 'fs_batch_read', 'fs_file_tree',
+  // A handler that is not named here is rejected as "Unknown command" — which
+  // is exactly how fs_find_files shipped with a tool, five aliases and no way
+  // to reach it. Every new fs_* handler must be added on this line.
+  'fs_multi_edit', 'fs_stat', 'fs_copy',
   'roots_add', 'roots_list', 'roots_remove', 'roots_set_primary', 'roots_rebind',
   'journal_list', 'journal_revert',
   'proc_start', 'proc_output', 'proc_stop', 'proc_list',
@@ -186,6 +190,13 @@ contextBridge.exposeInMainWorld('__YOGATIK_COMPANION_WIN__', {
   close: () => ipcRenderer.invoke('companion:close'),
   resize: (p) => ipcRenderer.invoke('companion:resize', p || {}),
   setAlwaysOnTop: (on) => ipcRenderer.invoke('companion:set-always-on-top', { on }),
+  // Ctrl+Alt+C relays the foreground selection HERE when the companion is the
+  // window on screen, so acting on a selection never means going back to the app.
+  onSelection: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('clipboard-selection-hotkey', handler)
+    return () => ipcRenderer.removeListener('clipboard-selection-hotkey', handler)
+  },
 })
 
 // Process manager (list + guarded kill).

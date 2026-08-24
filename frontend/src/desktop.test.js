@@ -54,8 +54,23 @@ describe('local filesystem tools (desktop bridge)', () => {
           core: {
             invoke: async (cmd, args) => {
               if (cmd === 'fs_read') {
-                if (args.startLine && args.endLine) return `line-${args.startLine}-to-${args.endLine}`
-                return `contents-of-${args.path}`
+                // The REAL handler's contract: offset (1-based first line) plus
+                // limit. This mock used to answer startLine/endLine — parameters
+                // the handler never read — so the test passed while the feature
+                // did nothing. Same class as the TerminalPanel PTY mock.
+                if (args.offset && args.limit) {
+                  return {
+                    content: `line-${args.offset}-to-${args.offset + args.limit - 1}`,
+                    bytes: 13, lines: 100, truncated: true, binary: false,
+                    encoding: 'utf8', eol: 'lf', hash: 'abc123',
+                    range: { firstLine: args.offset, lastLine: args.offset + args.limit - 1 },
+                  }
+                }
+                return {
+                  content: `contents-of-${args.path}`,
+                  bytes: 20, lines: 1, truncated: false, binary: false,
+                  encoding: 'utf8', eol: 'lf', hash: 'abc123',
+                }
               }
               if (cmd === 'fs_grant') return '/home/user/work'
               if (cmd === 'roots_add') return { id: 'r1', path: '/home/user/work', label: 'work' }
@@ -66,7 +81,7 @@ describe('local filesystem tools (desktop bridge)', () => {
               if (cmd === 'fs_file_tree') return 'src/\n  └── index.js\npackage.json'
               if (cmd === 'fs_search') return [{ path: 'src/index.js', line: 10, text: 'const foo = 42' }]
               if (cmd === 'fs_write') return null
-              if (cmd === 'fs_edit') return 1
+              if (cmd === 'fs_edit') return { replaced: 1, hash: 'def456', stale: false, warning: null }
               if (cmd === 'fs_mkdir') return null
               if (cmd === 'fs_move') return null
               if (cmd === 'fs_delete') return null
@@ -88,8 +103,11 @@ describe('local filesystem tools (desktop bridge)', () => {
       const r = await fsReadTool.execute({ path: 'large.txt', start_line: 10, end_line: 20 })
       expect(r.success).toBe(true)
       expect(r.content).toBe('line-10-to-20')
-      expect(r.start_line).toBe(10)
-      expect(r.end_line).toBe(20)
+      expect(r.range).toEqual({ firstLine: 10, lastLine: 20 })
+      // Truncation has to reach the model, or it rewrites files from the part
+      // it happened to see.
+      expect(r.truncated).toBe(true)
+      expect(r.hash).toBe('abc123')
     })
 
     it('executes fs_batch_read across multiple workspace files', async () => {

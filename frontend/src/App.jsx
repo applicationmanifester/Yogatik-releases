@@ -1,65 +1,35 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity, Bot } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
-import { ArtifactPanel } from './components/ArtifactPanel'
-import { BrowserPanel } from './components/BrowserPanel'
-import { ActivityPanel } from './components/ActivityPanel'
 import { startActivityTurn, publishStream, publishStep, endActivityTurn, setActivityConversation } from './activityStream'
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
 import ToolStatusPanel from './components/ToolStatusPanel'
 import A11yAnnouncer, { announce } from './components/A11yAnnouncer'
 import CrisisCard from './components/CrisisCard'
-import DataDashboard from './components/DataDashboard'
-import OnboardingModal from './components/OnboardingModal'
 import { getProactiveCheckin, markCheckinShown } from './proactive'
 import { recordTurn } from './adaptation'
 import { startTurn } from './telemetry'
 import { MessageBubble } from './components/MessageBubble'
-import { AuthModal } from './components/AuthModal'
-import { ProviderModal } from './components/ProviderModal'
-import { SettingsModal } from './components/SettingsModal'
+import { StreamingMessage } from './components/StreamingMessage'
 import { Modal } from './components/Modal'
-import { TermsModal, TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
-import { LocalModelPanel } from './components/LocalModelPanel'
-import { CommandPalette } from './components/CommandPalette'
+import { TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 import { ModelPicker } from './components/ModelPicker'
-import { ArenaView } from './components/ArenaView'
-import { LiveView } from './components/LiveView'
-import { PersonalisePanel } from './components/PersonalisePanel'
-import { SkillsPanel } from './components/SkillsPanel'
-import { AgentsPanel } from './components/AgentsPanel'
-// These five were built and finished but never imported anywhere, so no user
-// could open them: the terminal, the cron job manager, the sub-agent runner, the
-// auto-skills reviewer and the file editor. Their TOOLS were registered, so the
-// model could use each capability while the human-facing half stayed dark.
-import TerminalPanel from './components/TerminalPanel'
-import { SchedulerPanel } from './components/SchedulerPanel'
-import { SubAgentRunnerPanel } from './components/SubAgentRunnerPanel'
-import { AutoSkillsPanel } from './components/AutoSkillsPanel'
-import { FileEditorModal } from './components/FileEditorModal'
 import { runWorkflow } from './workflows'
-import { DemoModal } from './components/DemoModal'
-import { AppOverviewModal } from './components/AppOverviewModal'
-import { McpModal } from './components/McpModal'
 import { FloatingCompanion } from './components/FloatingCompanion'
-import { DownloadModal } from './components/DownloadModal'
-import { DiagnosticsModal } from './components/DiagnosticsModal'
-import { DomainHubModal } from './components/DomainHubModal'
 import { ActiveTimerIndicator } from './components/ActiveTimerIndicator'
-import { openDocumentPip, closeDocumentPip, isDocumentPipSupported } from './pipCompanion'
+import { openDocumentPip, closeDocumentPip, isDocumentPipSupported, getPipMount } from './pipCompanion'
 import { getErrorLog, clearErrorLog, getDiagnosticsReport, diagnoseError } from './errorLog'
 import { isDbClosedError } from './db'
 import { resolveFeatures } from './features'
 import { setLocalVLMConsent } from './vision/localVLM'
+import { setDetectorConsent } from './vision/detect'
 import { setSemanticConsent } from './semantic'
 import { looksVisionCapable } from './vision/capability'
-import { getProviders as getLLMProviders, normalizeModelName } from './llm'
+import { getProviders as getLLMProviders, normalizeModelName, preconnectProvider } from './llm'
 import { prepareImage, isImageFile, imageFromClipboard, imageFromDrop } from './vision/attach'
 import { registerServiceWorker } from './pwa'
 import { requestPersistence, storageReport, formatBytes } from './storage'
@@ -67,13 +37,44 @@ import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clear
 import { isDirectTimeQuery } from './timeQuery'
 import { isInstalledApp, shareYogatik, nativeShareAvailable } from './share'
 import { groupConversations } from './convGroups'
-import { ShareSheet } from './components/ShareSheet'
 import { shouldNotifyTurn, notificationBody, notificationTitle, cleanReply } from './desktopNotify'
 import { setPermissionPrompt } from './permissions'
 import PermissionPrompt from './components/PermissionPrompt'
-import { WhatsNewModal } from './components/WhatsNewModal'
 import { APP_VERSION, hasSeenCurrentVersion } from './version'
 import { AdSenseBanner } from './components/AdSenseBanner'
+import { safeLazy } from './utils/safeLazy'
+
+// Code-split heavy modals and auxiliary views on demand with auto-retry and cache-bust on new deploys
+const ArtifactPanel = safeLazy(() => import('./components/ArtifactPanel').then(m => ({ default: m.ArtifactPanel })))
+const BrowserPanel = safeLazy(() => import('./components/BrowserPanel').then(m => ({ default: m.BrowserPanel })))
+const ActivityPanel = safeLazy(() => import('./components/ActivityPanel').then(m => ({ default: m.ActivityPanel })))
+const DataDashboard = safeLazy(() => import('./components/DataDashboard'))
+const OnboardingModal = safeLazy(() => import('./components/OnboardingModal'))
+const AuthModal = safeLazy(() => import('./components/AuthModal').then(m => ({ default: m.AuthModal })))
+const ProviderModal = safeLazy(() => import('./components/ProviderModal').then(m => ({ default: m.ProviderModal })))
+const SettingsModal = safeLazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })))
+const TermsModal = safeLazy(() => import('./components/TermsModal').then(m => ({ default: m.TermsModal })))
+const LocalModelPanel = safeLazy(() => import('./components/LocalModelPanel').then(m => ({ default: m.LocalModelPanel })))
+const CommandPalette = safeLazy(() => import('./components/CommandPalette').then(m => ({ default: m.CommandPalette })))
+const ArenaView = safeLazy(() => import('./components/ArenaView').then(m => ({ default: m.ArenaView })))
+const LiveView = safeLazy(() => import('./components/LiveView').then(m => ({ default: m.LiveView })))
+const PersonalisePanel = safeLazy(() => import('./components/PersonalisePanel').then(m => ({ default: m.PersonalisePanel })))
+const SkillsPanel = safeLazy(() => import('./components/SkillsPanel').then(m => ({ default: m.SkillsPanel })))
+const AgentsPanel = safeLazy(() => import('./components/AgentsPanel').then(m => ({ default: m.AgentsPanel })))
+const TerminalPanel = safeLazy(() => import('./components/TerminalPanel'))
+const SchedulerPanel = safeLazy(() => import('./components/SchedulerPanel').then(m => ({ default: m.SchedulerPanel })))
+const SubAgentRunnerPanel = safeLazy(() => import('./components/SubAgentRunnerPanel').then(m => ({ default: m.SubAgentRunnerPanel })))
+const AutoSkillsPanel = safeLazy(() => import('./components/AutoSkillsPanel').then(m => ({ default: m.AutoSkillsPanel })))
+const FileEditorModal = safeLazy(() => import('./components/FileEditorModal').then(m => ({ default: m.FileEditorModal })))
+const DemoModal = safeLazy(() => import('./components/DemoModal').then(m => ({ default: m.DemoModal })))
+const Tour = safeLazy(() => import('./components/Tour').then(m => ({ default: m.Tour })))
+const AppOverviewModal = safeLazy(() => import('./components/AppOverviewModal').then(m => ({ default: m.AppOverviewModal })))
+const McpModal = safeLazy(() => import('./components/McpModal').then(m => ({ default: m.McpModal })))
+const DownloadModal = safeLazy(() => import('./components/DownloadModal').then(m => ({ default: m.DownloadModal })))
+const DiagnosticsModal = safeLazy(() => import('./components/DiagnosticsModal').then(m => ({ default: m.DiagnosticsModal })))
+const DomainHubModal = safeLazy(() => import('./components/DomainHubModal').then(m => ({ default: m.DomainHubModal })))
+const WhatsNewModal = safeLazy(() => import('./components/WhatsNewModal').then(m => ({ default: m.WhatsNewModal })))
+const ShareSheet = safeLazy(() => import('./components/ShareSheet').then(m => ({ default: m.ShareSheet })))
 
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
@@ -86,16 +87,6 @@ function formatLatency(ms) {
   const m = Math.floor(ms / 60000)
   const s = Math.round((ms % 60000) / 1000)
   return `${m}m ${s}s`
-}
-
-function splitReasoning(content) {
-  if (typeof content !== 'string') return { reasoning: '', answer: content }
-  let reasoning = ''
-  const answer = content
-    .replace(/<think>([\s\S]*?)<\/think>/gi, (_, r) => { reasoning += r + '\n'; return '' })
-    .replace(/<think>([\s\S]*)$/i, (_, r) => { reasoning += r; return '' })
-    .trim()
-  return { reasoning: reasoning.trim(), answer }
 }
 
 const SUGGESTIONS = [
@@ -169,7 +160,17 @@ export default function App() {
   const [activeIdx, setActiveIdx] = useState(0)
   const [input, setInput] = useState('')
   const [loadingMap, setLoadingMap] = useState({})
-  const [streamingMap, setStreamingMap] = useState({})
+  // Streaming text is deliberately NOT React state. One setState per token
+  // re-rendered the whole shell — sidebar, composer and every MessageBubble,
+  // each re-running ReactMarkdown — for text that only appears in one div.
+  // The text lives in a ref and is pushed imperatively into <StreamingMessage/>;
+  // App state holds only "does this chat have text yet" (flips once per turn).
+  const streamTextRef = useRef({})
+  const streamViewRef = useRef(null)
+  const [hasStreamMap, setHasStreamMap] = useState({})
+  // Companion mode replaces the entire shell, so there is no shell to protect:
+  // that surface takes the text as a plain prop.
+  const [companionStreamText, setCompanionStreamText] = useState('')
   const [statusMap, setStatusMap] = useState({})
   const [streamIdMap, setStreamIdMap] = useState({})
   const [theme, setTheme] = useState(() => {
@@ -294,6 +295,10 @@ export default function App() {
   const features = useMemo(() => resolveFeatures(prefs.features), [prefs.features])
   // The vision fallback lives outside React; it needs the toggle, not a prop.
   useEffect(() => { setLocalVLMConsent(features.localVision) }, [features.localVision])
+  // The zero-shot classifier and the object detector are downloads too, so
+  // they answer to the same switch as the VLM rather than pulling weights on
+  // the first blind-model image.
+  useEffect(() => { setDetectorConsent(features.localVision) }, [features.localVision])
   useEffect(() => { setSemanticConsent(features.semanticSearch) }, [features.semanticSearch])
   // Discover tools from any configured MCP servers once at startup.
   useEffect(() => { import('./mcp').then(m => m.refreshMcpTools()).catch(() => {}) }, [])
@@ -350,6 +355,7 @@ export default function App() {
   const [isEnhancing, setIsEnhancing] = useState(false)
   const recognitionRef = useRef(null)
   const [showDemoModal, setShowDemoModal] = useState(false)
+  const [showTour, setShowTour] = useState(false)
   const [showDownloadModal, setShowDownloadModal] = useState(false)
   const [showStorageDetails, setShowStorageDetails] = useState(false)
   const [crisisCard, setCrisisCard] = useState(null)
@@ -390,12 +396,25 @@ export default function App() {
   }, [])
 
   const toggleCompanion = useCallback(async () => {
+    // On the desktop the companion is a REAL separate always-on-top window that
+    // follows the user into their other apps. Shrinking the main window into an
+    // in-app panel instead keeps them inside Yogatik, which is the opposite of
+    // what this button is for. The in-app panel stays as the web fallback.
+    const winBridge = typeof window !== 'undefined' && window.__YOGATIK_COMPANION_WIN__
+    if (winBridge?.toggle) {
+      try {
+        await winBridge.toggle()
+        return
+      } catch (e) {
+        showToast(`Could not open the floating companion: ${e.message}`)
+      }
+    }
     const next = !companionMode
     setCompanionMode(next)
     if (typeof window !== 'undefined' && window.__YOGATIK_COMPANION__?.setCompanionMode) {
       await window.__YOGATIK_COMPANION__.setCompanionMode(next)
     }
-  }, [companionMode])
+  }, [companionMode, showToast])
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.__YOGATIK_COMPANION__) {
@@ -501,7 +520,8 @@ export default function App() {
     settingsOpen || showPersonalise || showSkills || showToolPicker ||
     showPalette || showProviderModal || showAuthModal || showDataDashboard ||
     showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact ||
-    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor
+    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor ||
+    showTour
   )
 
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
@@ -539,12 +559,35 @@ export default function App() {
 
   const activeClientId = conv?.clientId
   const isStreamingHere = !!(activeClientId && loadingMap[activeClientId])
-  const streamingContent = (activeClientId && streamingMap[activeClientId]) || ''
+  const hasStreamHere = !!(activeClientId && hasStreamMap[activeClientId])
   const statusText = (activeClientId && statusMap[activeClientId]) || ''
   const currentStreamId = (activeClientId && streamIdMap[activeClientId]) || null
   // Derive per-active-chat tool state from maps
   const activeTools = (activeClientId && activeToolsMap[activeClientId]) || []
   const pendingToolResults = (activeClientId && pendingToolResultsMap[activeClientId]) || {}
+
+  const activeClientIdRef = useRef(activeClientId)
+  activeClientIdRef.current = activeClientId
+  const companionActiveRef = useRef(false)
+  companionActiveRef.current = companionMode || !!pipWindow
+
+  /**
+   * The single choke point for in-flight assistant text. `txt` is the full text
+   * so far, not a delta; '' clears the chat's stream.
+   */
+  const setStreamText = useCallback((clientId, txt) => {
+    if (!clientId) return
+    if (txt) streamTextRef.current[clientId] = txt
+    else delete streamTextRef.current[clientId]
+    if (clientId === activeClientIdRef.current) {
+      if (txt) streamViewRef.current?.push(txt)
+      else streamViewRef.current?.clear()
+      if (companionActiveRef.current) setCompanionStreamText(txt || '')
+    }
+    // Only the ''<->non-empty transition is state; every token in between is
+    // pushed straight into the streaming view.
+    setHasStreamMap(prev => (!!prev[clientId] === !!txt ? prev : { ...prev, [clientId]: !!txt }))
+  }, [])
 
   const loadingMapRef = useRef(loadingMap)
   loadingMapRef.current = loadingMap  // always current — no useEffect lag
@@ -555,7 +598,8 @@ export default function App() {
     showPersonalise || showSkills || showPersonaModal || showDomainHub ||
     showDemoModal || showDiagnosticsModal || confirmModal || projectNameModal ||
     restoreModal || showDownloadModal || errorModalMsg || arena ||
-    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor || showWhatsNew
+    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor || showWhatsNew ||
+    showTour
   )
   const isAnyModalOpenRef = useRef(isAnyModalOpen)
   isAnyModalOpenRef.current = isAnyModalOpen
@@ -571,6 +615,7 @@ export default function App() {
   // Provider/model must be persisted: the agent reads them from IndexedDB, so
   // React-only state meant every message silently went to the stored default.
   const setProvider = useCallback((id) => {
+    preconnectProvider(id)
     const provDef = getLLMProviders()[id]
     const defModel = provDef?.default_model || provDef?.preferred?.[0] || provDef?.models?.[0] || ''
     setProviderState(id)
@@ -599,6 +644,11 @@ export default function App() {
       return next
     })
   }, [])
+
+  // Warm DNS / TCP / TLS connection to active provider
+  useEffect(() => {
+    if (provider) preconnectProvider(provider)
+  }, [provider])
 
   const chooseModel = useCallback((m, providerId = null) => {
     const cleanModel = normalizeModelName(m)
@@ -790,8 +840,22 @@ export default function App() {
 
   useEffect(() => {
     if (!isStreamingHere) return
-    if (atBottom) scrollToBottom(streamingContent ? 'auto' : 'smooth')
-  }, [conv?.messages, streamingContent, isStreamingHere, atBottom, scrollToBottom])
+    if (atBottom) scrollToBottom(hasStreamHere ? 'auto' : 'smooth')
+  }, [conv?.messages, hasStreamHere, isStreamingHere, atBottom, scrollToBottom])
+
+  // Following the growing stream is imperative for the same reason the text is:
+  // keying it on the text would restore the per-token re-render.
+  const atBottomRef = useRef(atBottom)
+  atBottomRef.current = atBottom
+  const followStream = useCallback(() => {
+    if (atBottomRef.current) messagesEnd.current?.scrollIntoView({ behavior: 'auto' })
+  }, [])
+
+  // A chat switch (or opening the companion) must show whatever that chat has
+  // already streamed — the ref kept it, but this surface reads it as a prop.
+  useEffect(() => {
+    setCompanionStreamText(streamTextRef.current[activeClientId] || '')
+  }, [activeClientId, companionMode, pipWindow])
 
   useEffect(() => {
     const on = () => setOnline(true)
@@ -1421,7 +1485,7 @@ export default function App() {
         async () => {
           await stopGeneration(cClientId).catch(() => {})
           setLoadingMap(prev => { const n = { ...prev }; delete n[cClientId]; return n })
-          setStreamingMap(prev => ({ ...prev, [cClientId]: '' }))
+          setStreamText(cClientId, '')
           setStatusMap(prev => ({ ...prev, [cClientId]: '' }))
           doDelete()
         },
@@ -1453,7 +1517,7 @@ export default function App() {
     if (activeClientId) {
       await stopGeneration(activeClientId).catch(() => {})
       setLoadingMap(prev => { const n = { ...prev }; delete n[activeClientId]; return n })
-      setStreamingMap(prev => ({ ...prev, [activeClientId]: '' }))
+      setStreamText(activeClientId, '')
       setStatusMap(prev => ({ ...prev, [activeClientId]: '' }))
     }
   }
@@ -1683,7 +1747,7 @@ export default function App() {
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
     setLoadingMap(prev => ({ ...prev, [targetClientId]: true }))
-    setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+    setStreamText(targetClientId, '')
     setStatusMap(prev => ({ ...prev, [targetClientId]: 'Connecting...' }))
     setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
 
@@ -1791,7 +1855,7 @@ export default function App() {
         conversationsRef.current = next
         return next
       })
-      setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+      setStreamText(targetClientId, '')
       setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
       setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
       setStreamIdMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
@@ -1804,7 +1868,7 @@ export default function App() {
     traceMapRef.current[targetClientId] = []
 
     const pushStreamContent = (txt) => {
-      setStreamingMap(prev => ({ ...prev, [targetClientId]: txt }))
+      setStreamText(targetClientId, txt)
     }
 
     if (isMultiAgent) {
@@ -1847,7 +1911,7 @@ export default function App() {
             conversationsRef.current = next
             return next
           })
-          setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+          setStreamText(targetClientId, '')
           delete toolRunMapRef.current[targetClientId]
           delete traceMapRef.current[targetClientId]
         },
@@ -1864,7 +1928,7 @@ export default function App() {
             conversationsRef.current = next
             return next
           })
-          setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+          setStreamText(targetClientId, '')
           delete toolRunMapRef.current[targetClientId]
           delete traceMapRef.current[targetClientId]
         }
@@ -1921,7 +1985,7 @@ export default function App() {
           }
         } catch { /* notifications are a courtesy; never break a finished turn */ }
         if (!content.trim() && meta?.aborted) {
-          setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+          setStreamText(targetClientId, '')
           setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
           setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
           delete toolRunMapRef.current[targetClientId]
@@ -1959,7 +2023,7 @@ export default function App() {
           conversationsRef.current = next
           return next
         })
-        setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+        setStreamText(targetClientId, '')
         setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
         setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
         delete toolRunMapRef.current[targetClientId]
@@ -1991,7 +2055,7 @@ export default function App() {
           conversationsRef.current = next
           return next
         })
-        setStreamingMap(prev => ({ ...prev, [targetClientId]: '' }))
+        setStreamText(targetClientId, '')
       },
       (status) => { setStatusMap(prev => ({ ...prev, [targetClientId]: status })) },
       (streamId) => { setStreamIdMap(prev => ({ ...prev, [targetClientId]: streamId })) },
@@ -2399,6 +2463,7 @@ export default function App() {
       { id: 'x-thread', group: 'Social Content', label: 'Write Viral X (Twitter) Thread', hint: 'Thread Generator', run: () => { setInput('Write a viral 5-tweet thread explaining how AI agents transform productivity. Number [1/5] to [5/5].'); textareaRef.current?.focus(); autoResize(); } },
       { id: 'linkedin-post', group: 'Social Content', label: 'Draft High-Impact LinkedIn Post', hint: 'LinkedIn Generator', run: () => { setInput('Draft an engaging, insightful LinkedIn post about emerging AI trends in 2026 with a hook, line-spaced paragraphs, and closing discussion question.'); textareaRef.current?.focus(); autoResize(); } },
       { id: 'demo', group: 'View', label: 'Take a quick tour / interactive demo', run: () => setShowDemoModal(true) },
+      { id: 'tour', group: 'View', label: 'Guided tour of the interface', run: () => setShowTour(true) },
       { id: 'download-pwa', group: 'View', label: 'Install / download desktop app (PWA)', run: () => setShowDownloadModal(true) },
       { id: 'new-persona', group: 'Personas', label: 'Create new custom persona...', run: () => setShowPersonaModal(true) },
       { id: 'diagnostics', group: 'Settings', label: 'Error Findings & Diagnostics Inspector', hint: 'Inspect Logs', run: () => setShowDiagnosticsModal(true) },
@@ -2504,7 +2569,7 @@ export default function App() {
           sendRef.current?.(p, img)
         }}
         isStreaming={isStreamingHere}
-        streamText={streamingMap[conv?.clientId]}
+        streamText={companionStreamText}
         messages={allMessages}
         activeProvider={conv?.provider || provider}
         activeModel={conv?.model || model}
@@ -2516,6 +2581,7 @@ export default function App() {
     <div className="app">
       {pipWindow && ReactDOM.createPortal(
         <FloatingCompanion
+          isPip={true}
           onExitCompanion={() => {
             closeDocumentPip()
             setPipWindow(null)
@@ -2528,12 +2594,15 @@ export default function App() {
             sendRef.current?.(p, img)
           }}
           isStreaming={isStreamingHere}
-          streamText={streamingMap[conv?.clientId]}
+          streamText={companionStreamText}
           messages={allMessages}
           activeProvider={conv?.provider || provider}
           activeModel={conv?.model || model}
         />,
-        pipWindow.document.body
+        // #pip-root, not <body>: the injected base stylesheet gives that
+        // element the window's height. Portalling into a bare body left the
+        // companion in a box with no height of its own.
+        getPipMount() || pipWindow.document.body
       )}
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
       <aside className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
@@ -2624,6 +2693,17 @@ export default function App() {
             <div className="conv-empty">No chats match "{convQuery}"</div>
           )}
         </div>
+
+        {/* The ad lives INSIDE the scroll region, never in the settings drawer.
+            adsbygoogle.js un-constrains every ancestor of a responsive unit
+            (inline `height:auto!important; min-height:0!important`), and inline
+            !important outranks any stylesheet — parked in .settings-body it
+            blew #root/.app/.sidebar/.settings out to ~2100px in a 900px window,
+            pushing the drawer and the footer off-screen with body overflow
+            hidden so nothing could scroll to them. Here the mutation cannot
+            reach a flex parent that owns the shell height, and shellGuard.js
+            reverts it if a future unit tries again. */}
+        {!isDesktop() && <AdSenseBanner className="sidebar-ad" />}
         </div>
 
         <div className={`settings ${settingsOpen ? 'open' : 'closed'}`}>
@@ -2637,7 +2717,7 @@ export default function App() {
               <Sliders size={12} />
               <span className="settings-toggle-label">Settings</span>
               <span className="settings-toggle-sub">{models[provider]?.name || provider}</span>
-              <span className={`conn-dot conn-dot-inline conn-${providerStatus[provider]?.state || 'no-key'}`} />
+              <span className={`conn-dot conn-dot-inline conn-${providerStatus[provider]?.state === 'failed' ? 'failed' : (verifying ? 'testing' : 'connected')}`} />
             </span>
             <ChevronDown size={14} className={settingsOpen ? 'chev open' : 'chev'} />
           </button>
@@ -2700,15 +2780,13 @@ export default function App() {
           {(() => {
             const curProv = conv?.provider || provider
             const st = providerStatus[curProv] || {}
-            const label = verifying ? 'Checking model…' : ({
-              connected: 'Ready', failed: 'Not working',
-              untested: 'Key saved — checking…', 'no-key': 'No API key',
-            }[st.state] || 'No API key')
+            const isFailed = st.state === 'failed'
+            const label = verifying ? 'Checking model…' : (isFailed ? 'Not working' : (st.state === 'connected' ? 'Ready' : (st.state === 'untested' ? 'Ready (Testing…)' : 'Ready')))
             return (
-              <div className={`conn-status conn-${verifying ? 'testing' : (st.state || 'no-key')}`}>
+              <div className={`conn-status conn-${verifying ? 'testing' : (isFailed ? 'failed' : 'connected')}`}>
                 <span className="conn-dot" />
                 <span className="conn-label">{label}</span>
-                {!verifying && st.state === 'connected' && st.latencyMs != null && (
+                {!verifying && st.latencyMs != null && (
                   <span className="conn-meta">
                     {formatLatency(st.latencyMs)}
                     {st.latencyMs > 15000 ? ' — very slow' : ''}
@@ -2728,10 +2806,12 @@ export default function App() {
           )}
 
           {(conv?.provider || provider) === 'local' ? (
-            <LocalModelPanel
-              model={conv?.model || model || DEFAULT_LOCAL_MODEL}
-              onModelChange={(m) => chooseModel(m, 'local')}
-              onReady={(m) => { chooseModel(m, 'local'); refreshModels() }} />
+            <React.Suspense fallback={null}>
+              <LocalModelPanel
+                model={conv?.model || model || DEFAULT_LOCAL_MODEL}
+                onModelChange={(m) => chooseModel(m, 'local')}
+                onReady={(m) => { chooseModel(m, 'local'); refreshModels() }} />
+            </React.Suspense>
           ) : (
             <>
               <label>API Key {models[conv?.provider || provider]?.key_url && <a href={models[conv?.provider || provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get the key)</a>}</label>
@@ -3012,11 +3092,6 @@ export default function App() {
             </div>
           )}
 
-          {!isDesktop() && (
-            <div style={{ padding: '0 8px', marginTop: 'auto' }}>
-              <AdSenseBanner />
-            </div>
-          )}
           </div>
         </div>
 
@@ -3067,7 +3142,12 @@ export default function App() {
 
       <main className="chat-area">
         <header className="chat-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1, overflow: 'hidden' }}>
+          {/* minWidth was 0, and an inline value outranks the stylesheet: the
+              action row took the full width on a phone and this block — the
+              chat title AND the hamburger that is the only way to open the
+              sidebar — collapsed to 0px, present and focusable but invisible.
+              88px is a floor the h1 still ellipsizes inside. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 88, flex: 1, overflow: 'hidden' }}>
             {!sidebarOpen && <button className="icon-btn" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar"><Menu size={18} /></button>}
             <h1 style={{ margin: 0, fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '420px' }}>
               {conv?.title || 'New Chat'}
@@ -3326,9 +3406,8 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {isStreamingHere && streamingContent && (() => {
+              {isStreamingHere && hasStreamHere && (() => {
                 const { provider: useProvider = provider, model: useModel = model } = conv || {}
-                const { reasoning, answer } = splitReasoning(streamingContent)
                 return (
                 <div className="message assistant">
                   <div className="message-role">
@@ -3368,17 +3447,17 @@ export default function App() {
                       </ol>
                     </details>
                   )}
-                  {reasoning ? (
-                    <details className="reasoning-bubble" open style={{ marginTop: 4 }}>
-                      <summary className="reasoning-summary">Thinking…</summary>
-                      <div className="reasoning-body">{reasoning}</div>
-                    </details>
-                  ) : null}
-                  <div className="message-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{answer || (reasoning ? '' : streamingContent)}</ReactMarkdown></div>
+                  <StreamingMessage
+                    key={activeClientId}
+                    ref={streamViewRef}
+                    bare
+                    initialText={streamTextRef.current[activeClientId] || ''}
+                    onGrow={followStream}
+                  />
                 </div>
                 )
               })()}
-              {isStreamingHere && !streamingContent && (() => {
+              {isStreamingHere && !hasStreamHere && (() => {
                 const { provider: useProvider = provider, model: useModel = model } = conv || {}
                 // Build a friendly display name: prefer the real model ID, then provider name.
                 const modelLabel = useModel
@@ -3425,7 +3504,9 @@ export default function App() {
                     aria-label="Close comparison">
                     <X size={12} /> Close comparison
                   </button>
-                  <ArenaView arenaData={arena} onOpenArtifact={setActiveArtifact} onPickResponse={handlePickCompareResponse} onRetry={retryCompareSide} />
+                  <React.Suspense fallback={null}>
+                    <ArenaView arenaData={arena} onOpenArtifact={setActiveArtifact} onPickResponse={handlePickCompareResponse} onRetry={retryCompareSide} />
+                  </React.Suspense>
                 </div>
               )}
             </>
@@ -3678,6 +3759,7 @@ export default function App() {
         </div>
       </main>
 
+      <React.Suspense fallback={null}>
       {showProviderModal && <ProviderModal
         onClose={() => { setShowProviderModal(false); setEditingProvider(null) }}
         onSaved={() => { refreshModels(); setEditingProvider(null) }}
@@ -3754,7 +3836,11 @@ export default function App() {
       )}
       {/* TerminalPanel manages its own visibility from `open`, so it is always
           mounted while showing — unlike the panels below, which take isOpen. */}
-      <TerminalPanel
+      {/* Gated at the render site, not inside the component. These are
+          React.lazy: rendering one downloads its chunk immediately and the
+          internal `if (!isOpen) return null` runs only after the module has
+          landed. Nine panels were fetched during the first paint that way. */}
+      {showTerminal && <TerminalPanel
         open={showTerminal}
         onClose={() => setShowTerminal(false)}
         onAskAI={(text) => {
@@ -3763,7 +3849,7 @@ export default function App() {
           textareaRef.current?.focus()
           autoResize()
         }}
-      />
+      />}
       {showScheduler && (
         <SchedulerPanel
           isOpen={showScheduler}
@@ -3904,6 +3990,11 @@ export default function App() {
       )}
       {showShareSheet && <ShareSheet onClose={() => setShowShareSheet(false)} />}
       {showDemoModal && <DemoModal onClose={() => setShowDemoModal(false)} />}
+      {showTour && <Tour
+        isOpen={showTour}
+        onClose={() => setShowTour(false)}
+        onComplete={() => localStorage.setItem('yogatik_tour_seen', 'true')}
+      />}
       {showWhatsNew && (
         <WhatsNewModal
           onClose={() => setShowWhatsNew(false)}
@@ -3919,15 +4010,16 @@ export default function App() {
           onClose={() => setShowOverviewModal(false)}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenDemo={() => setShowDemoModal(true)}
+          onOpenTour={() => setShowTour(true)}
           onOpenDomainHub={() => setShowDomainHub(true)}
           onOpenMcp={() => setShowMcpModal(true)}
         />
       )}
-      <McpModal
+      {showMcpModal && <McpModal
         isOpen={showMcpModal}
         onClose={() => setShowMcpModal(false)}
         onShowToast={showToast}
-      />
+      />}
       {showDiagnosticsModal && <DiagnosticsModal onClose={() => setShowDiagnosticsModal(false)} />}
       {showDataDashboard && <DataDashboard onClose={() => setShowDataDashboard(false)} onExport={() => { downloadBackup().catch(() => {}); showToast('Backup exported') }} />}
       {showOnboarding && (
@@ -3948,15 +4040,16 @@ export default function App() {
           }}
         />
       )}
-      <DomainHubModal
+      {showDomainHub && <DomainHubModal
         isOpen={showDomainHub}
         onClose={() => setShowDomainHub(false)}
         onExecutePrompt={(p) => {
           setInput(p)
           sendRef.current?.(p)
         }}
-      />
-      <DownloadModal isOpen={showDownloadModal} onClose={() => setShowDownloadModal(false)} onInstallPwa={installPwa} showPwa={!!showPwaInstall} />
+      />}
+      {showDownloadModal && <DownloadModal isOpen={showDownloadModal} onClose={() => setShowDownloadModal(false)} onInstallPwa={installPwa} showPwa={!!showPwaInstall} />}
+      </React.Suspense>
       {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
       {/* Generic confirm modal — no more native confirm() dialogs */}
       {permRequest && (
