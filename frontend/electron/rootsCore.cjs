@@ -95,7 +95,13 @@ function resolveWithin(rootPaths, target) {
   if (!roots.length) throw new Error('no folder granted')
 
   const primary = path.resolve(roots[0])
-  const raw = target == null || target === '' ? '.' : String(target)
+  let raw = target == null || target === '' ? '.' : String(target).trim()
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+    raw = raw.slice(1, -1).trim()
+  }
+  if (isWin && /^\/([a-zA-Z]):[\\/]/.test(raw)) {
+    raw = raw.slice(1)
+  }
   const abs = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(primary, raw)
 
   const rootPath = containingRoot(roots, abs)

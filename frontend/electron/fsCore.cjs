@@ -138,6 +138,32 @@ function replaceAllLiteral(haystack, needle, replacement) {
  * insert the replacement between every character of the file, which is what
  * the old implementation actually did.
  */
+function findFuzzyLineMatches(fileLines, oldString) {
+  const oldLines = toLf(oldString).split('\n').map(l => l.trim()).filter(Boolean)
+  if (!oldLines.length) return []
+  const matches = []
+  for (let i = 0; i <= fileLines.length - oldLines.length; i++) {
+    let matched = true
+    for (let j = 0; j < oldLines.length; j++) {
+      if (fileLines[i + j].trim() !== oldLines[j]) {
+        matched = false
+        break
+      }
+    }
+    if (matched) {
+      matches.push(i)
+    }
+  }
+  return matches
+}
+
+/**
+ * The pure edit. Returns the new text and how many replacements happened, or
+ * throws with a message the MODEL can act on — "not found" and "not unique"
+ * are both recoverable if you say which one it is.
+ *
+ * Supports exact match first, followed by fuzzy line-by-line whitespace matching.
+ */
 function applyEdit(text, oldString, newString, replaceAll = false, { startLine = 0, endLine = 0 } = {}) {
   if (typeof oldString !== 'string' || oldString === '') {
     throw new Error('old_string must be a non-empty string. To create or replace a whole file use fs_write.')
@@ -146,19 +172,42 @@ function applyEdit(text, oldString, newString, replaceAll = false, { startLine =
     throw new Error('old_string and new_string are identical — nothing to do.')
   }
 
+  const allLines = toLf(text).split('\n')
+
   if (startLine > 0 || endLine > 0) {
-    const lines = toLf(text).split('\n')
     const startIdx = Math.max(0, (startLine || 1) - 1)
-    const endIdx = endLine > 0 ? Math.min(lines.length, endLine) : lines.length
-    const sliceLines = lines.slice(startIdx, endIdx)
+    const endIdx = endLine > 0 ? Math.min(allLines.length, endLine) : allLines.length
+    const sliceLines = allLines.slice(startIdx, endIdx)
     const sliceText = sliceLines.join('\n')
 
-    const count = countOccurrences(sliceText, oldString)
+    let count = countOccurrences(sliceText, oldString)
     if (count === 0) {
-      throw new Error(`old_string not found within lines ${startLine || 1} to ${endLine || lines.length}`)
+      // Fuzzy line match fallback inside slice
+      const fuzzyMatches = findFuzzyLineMatches(sliceLines, oldString)
+      if (fuzzyMatches.length === 1) {
+        const matchLineIdx = fuzzyMatches[0]
+        const oldLinesCount = toLf(oldString).split('\n').map(l => l.trim()).filter(Boolean).length
+        const replacementLines = toLf(newString ?? '').split('\n')
+        const newSlice = [
+          ...sliceLines.slice(0, matchLineIdx),
+          ...replacementLines,
+          ...sliceLines.slice(matchLineIdx + oldLinesCount),
+        ]
+        const result = [
+          ...allLines.slice(0, startIdx),
+          ...newSlice,
+          ...allLines.slice(endIdx),
+        ].join('\n')
+        return { text: result, replaced: 1 }
+      }
+      if (fuzzyMatches.length > 1 && !replaceAll) {
+        throw new Error(`old_string is not unique (${fuzzyMatches.length} fuzzy matches) within lines ${startLine || 1} to ${endLine || allLines.length}; add more surrounding context`)
+      }
+      throw new Error(`old_string not found within lines ${startLine || 1} to ${endLine || allLines.length}`)
     }
+
     if (count > 1 && !replaceAll) {
-      throw new Error(`old_string is not unique (${count} matches) within lines ${startLine || 1} to ${endLine || lines.length}; set replace_all or narrow the line range`)
+      throw new Error(`old_string is not unique (${count} matches) within lines ${startLine || 1} to ${endLine || allLines.length}; set replace_all or narrow the line range`)
     }
 
     const modifiedSlice = replaceAll
@@ -169,16 +218,35 @@ function applyEdit(text, oldString, newString, replaceAll = false, { startLine =
       })()
 
     const result = [
-      ...lines.slice(0, startIdx),
+      ...allLines.slice(0, startIdx),
       ...modifiedSlice.split('\n'),
-      ...lines.slice(endIdx),
+      ...allLines.slice(endIdx),
     ].join('\n')
 
     return { text: result, replaced: replaceAll ? count : 1 }
   }
 
   const count = countOccurrences(text, oldString)
-  if (count === 0) throw new Error('old_string not found')
+  if (count === 0) {
+    // Fuzzy line-by-line fallback across entire file
+    const fuzzyMatches = findFuzzyLineMatches(allLines, oldString)
+    if (fuzzyMatches.length === 1) {
+      const matchLineIdx = fuzzyMatches[0]
+      const oldLinesCount = toLf(oldString).split('\n').map(l => l.trim()).filter(Boolean).length
+      const replacementLines = toLf(newString ?? '').split('\n')
+      const result = [
+        ...allLines.slice(0, matchLineIdx),
+        ...replacementLines,
+        ...allLines.slice(matchLineIdx + oldLinesCount),
+      ].join('\n')
+      return { text: result, replaced: 1 }
+    }
+    if (fuzzyMatches.length > 1 && !replaceAll) {
+      throw new Error(`old_string is not unique (${fuzzyMatches.length} fuzzy whitespace matches); set replace_all or add more surrounding context`)
+    }
+    throw new Error('old_string not found in file')
+  }
+
   if (count > 1 && !replaceAll) {
     throw new Error(`old_string is not unique (${count} matches); set replace_all or add more surrounding context`)
   }
