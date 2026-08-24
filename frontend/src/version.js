@@ -3,16 +3,73 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '3.11.0'
+export const APP_VERSION = '3.12.0'
 export const BUILD_DATE = 'August 2026'
-export const APP_CODENAME = 'Titan Hyperdrive'
+export const APP_CODENAME = 'Titan Multi-Agent & Vision'
 
 export const APP_RELEASES = [
+  {
+    version: '3.12.0',
+    title: 'Autonomous Multi-Agent DAG & Multimodal UI Verification',
+    date: 'August 24, 2026',
+    isLatest: true,
+    highlights: [
+      'Topological Multi-Agent DAG Wave Scheduling with automatic dependency piping',
+      'Multimodal UI Visual Verification tool (visual_verify) for offscreen component evaluation',
+      'Speculative runtime pre-warming on user typing intent via requestIdleCallback',
+      'Cross-Agent Shared Blackboard memory for zero-redundancy collaborative research',
+      'Dynamic Self-Healing Tool Reflection & Error Auto-Repair hints',
+    ],
+    sections: [
+      {
+        category: '✨ New Features',
+        items: [
+          {
+            title: 'Topological Multi-Agent DAG Waves',
+            description: 'Sub-agents can now declare depends_on relationships. Independent tasks execute concurrently in Wave 0, while downstream tasks automatically receive upstream findings in subsequent waves.',
+          },
+          {
+            title: 'Visual UI Verifier Tool',
+            description: 'Generates snapshot images from HTML/CSS/SVG code so vision-capable LLMs (Claude 3.5 Sonnet, GPT-4o, Gemini 1.5 Pro) can inspect and iterate on their own visual designs.',
+          },
+          {
+            title: 'Cross-Agent Shared Blackboard',
+            description: 'Sub-agents collaboratively publish and read findings on a shared session blackboard, eliminating duplicate web searches and token waste.',
+          },
+        ],
+      },
+      {
+        category: '⚡ Performance & Optimization',
+        items: [
+          {
+            title: 'Speculative Tool Pre-Warming',
+            description: 'Analyzes user input intent while typing to pre-warm WASM runtimes (Pyodide, Tesseract OCR, TurboVec) during idle frames.',
+          },
+          {
+            title: 'Semantic Context Compaction',
+            description: 'Automatically compacts massive tool outputs and binary payloads before appending to conversation memory.',
+          },
+        ],
+      },
+      {
+        category: '🛡️ Safety & Reliability',
+        items: [
+          {
+            title: 'Static Tool Parameter Guardrails',
+            description: 'Strictly prevents destructive shell commands, fork bombs, and root directory deletions.',
+          },
+          {
+            title: 'Self-Healing Schema Repair',
+            description: 'Automatically repairs argument aliases, type mismatches, and JSON stringified inputs from language models.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '3.11.0',
     title: 'Precision Prompting & High-Performance Hyperdrive',
     date: 'August 23, 2026',
-    isLatest: true,
     highlights: [
       'Unbiased, universal prompt enhancement engine independent of workspace or app bias',
       'One-key prompt enhancement keyboard shortcut (Ctrl+Shift+E / Cmd+Shift+E)',
