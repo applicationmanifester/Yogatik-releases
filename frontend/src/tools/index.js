@@ -73,6 +73,7 @@ import {
 import { requestPermission } from '../permissions'
 import { terminalRunTool } from './terminalRun'
 import { mcpResourceTool, mcpPromptTool } from './mcpResources'
+import { mcpSearchTool } from './mcpSearchTool'
 import { computerControlTool } from './computerControl'
 import { identifyTool } from './identify'
 import { browserControlTool } from './browserControl'
@@ -314,9 +315,10 @@ const ALL_TOOLS = {
   todo: todoTool,
   finance_analytics: financeTool,
   market_data: marketDataTool,
-  // MCP: use resources & prompt templates published by connected servers.
+  // MCP: use resources & prompt templates published by connected servers + dynamic tool search.
   mcp_resource: mcpResourceTool,
   mcp_prompt: mcpPromptTool,
+  mcp_search_tools: mcpSearchTool,
   // Desktop-native OS capabilities (Electron shell). Web build returns an
   // honest "desktop only" note; each gates on its own bridge.
   clipboard_access: clipboardAccessTool,
@@ -1153,6 +1155,27 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   }
   if (/\b(langgraph|state graph|agent graph|multi agent flow|conditional edge|human in the loop|checkpoint)\b/i.test(text)) {
     scores['langgraph_flow'] = 230
+  }
+  if (/\b(mcp|model context protocol|connectors?|mcp tool|mcp resource|mcp server|mcp prompt)\b/i.test(text)) {
+    scores['mcp_search_tools'] = 220
+    scores['mcp_resource'] = 210
+    scores['mcp_prompt'] = 200
+  }
+
+  // Dynamic boost for any discovered MCP tool matching user intent words
+  for (const s of schemas) {
+    const fnName = s.function?.name || s.name || ''
+    if (fnName.startsWith('mcp__')) {
+      const parts = fnName.split('__')
+      const srvName = parts[1] || ''
+      const toolSubName = parts.slice(2).join(' ')
+      if (srvName && text.includes(srvName.toLowerCase())) {
+        scores[fnName] = Math.max(scores[fnName] || 0, 210)
+      }
+      if (toolSubName && text.includes(toolSubName.toLowerCase())) {
+        scores[fnName] = Math.max(scores[fnName] || 0, 230)
+      }
+    }
   }
 
   const ranked = [...schemas].sort((a, b) => {

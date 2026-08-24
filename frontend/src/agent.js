@@ -679,20 +679,35 @@ export async function runAgent({
     })
   })
 
-  /** In prompted mode, pull any tool calls out of the reply text. */
+  /** Pull any tool calls out of the reply text (supports XML, JSON, Nemotron, ReAct). */
   let promptedRepairTried = false
   // Returns true when a tool block was attempted but unparseable AND we have not
   // yet retried — the caller then reprompts for valid JSON once.
   const harvestPromptedCalls = () => {
-    if (toolMode !== 'prompted') return false
+    // If native tool calls were already collected by provider, nothing more needed
+    if (toolCallsToProcess.length > 0) return false
+
     const { calls, text, malformed } = parseToolCalls(roundContent)
-    if (calls.length) { toolCallsToProcess = calls; return false }
-    if (text && (!malformed || promptedRepairTried)) {
-      // Genuine prose (or repair fallback): release it to the UI.
-      fullContent += text
-      onToken?.(text)
+    if (calls.length) {
+      toolCallsToProcess = calls
+      // If we were in native mode, remove the raw tool call tags from fullContent so the user
+      // doesn't see raw unparsed XML/JSON in the chat bubble, and demote to prompted for results.
+      if (toolMode === 'native') {
+        fullContent = text || ''
+        demoteToPrompted()
+      }
+      return false
     }
-    if (malformed && !promptedRepairTried) return true
+
+    if (toolMode === 'prompted') {
+      if (text && (!malformed || promptedRepairTried)) {
+        // Genuine prose (or repair fallback): release it to the UI.
+        fullContent += text
+        onToken?.(text)
+      }
+      if (malformed && !promptedRepairTried) return true
+    }
+
     return false
   }
 

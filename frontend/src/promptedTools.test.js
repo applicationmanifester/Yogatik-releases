@@ -12,6 +12,10 @@ describe('prompted tool-call parsing (repair harness)', () => {
     ['bare no fence', 'sure: {"tool_calls":[{"name":"calculator","arguments":{"expression":"2+2"}}]}', 'calculator'],
     ['args as string', '```json\n{"tool_calls":[{"name":"translate","arguments":"{\\"text\\":\\"hi\\"}"}]}\n```', 'translate'],
     ['smart quotes', '```json\n{“tool_calls”:[{“name”:“ocr”,“arguments”:{}}]}\n```', 'ocr'],
+    ['nemotron xml format', '<tool_call> <function=terminal_run> <parameter=command> cmd /c "cd /d C:\\Users\\bharg_4mtuttl\\Desktop\\Google apps\\Dramster && npm run build" </parameter> <parameter=timeout> 300000 </parameter> </function> </tool_call>', 'terminal_run'],
+    ['claude invoke xml', '<invoke name="fs_read"><parameter name="path">src/app.js</parameter></invoke>', 'fs_read'],
+    ['xml wrapped json', '<tool_call>\n{"name": "web_search", "arguments": {"query": "test"}}\n</tool_call>', 'web_search'],
+    ['react action format', 'Action: terminal_run\nAction Input: {"command": "npm test"}', 'terminal_run'],
   ]
   for (const [label, reply, expected] of cases) {
     it(`parses: ${label}`, () => {
@@ -19,6 +23,16 @@ describe('prompted tool-call parsing (repair harness)', () => {
       expect(calls[0]?.name).toBe(expected)
     })
   }
+
+  it('correctly extracts arguments from nemotron XML format', () => {
+    const reply = '<tool_call> <function=terminal_run> <parameter=command> cmd /c "cd /d C:\\Users\\bharg_4mtuttl\\Desktop\\Google apps\\Dramster && npm run build" </parameter> <parameter=timeout> 300000 </parameter> </function> </tool_call>'
+    const { calls, text } = parseToolCalls(reply)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].name).toBe('terminal_run')
+    expect(calls[0].parsedArgs.command).toContain('npm run build')
+    expect(calls[0].parsedArgs.timeout).toBe(300000)
+    expect(text).toBe('')
+  })
 
   it('flags a malformed block for reprompt', () => {
     const { calls, malformed } = parseToolCalls('```json\n{"tool_calls":[{"name" "web_search"]}\n```')
