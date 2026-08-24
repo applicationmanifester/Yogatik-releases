@@ -55,6 +55,9 @@ export function CompanionView() {
   const inputBarRef = useRef(null)
   const inputRef = useRef(null)
   const canSeeRef = useRef(null)
+  const promptHistoryRef = useRef([])
+  const historyIndexRef = useRef(-1)
+  const draftInputRef = useRef('')
 
   const bridge = () => (typeof window !== 'undefined' && window.__YOGATIK_COMPANION_WIN__) || null
   const isFloatingWindow = !!bridge()
@@ -127,6 +130,11 @@ export function CompanionView() {
   const handleSend = useCallback(async (textOverride = null, imageOverride = null, opts = {}) => {
     const msg = String(textOverride ?? input).trim()
     if (!msg || busy) return
+    if (!opts?.ambient) {
+      promptHistoryRef.current = [...promptHistoryRef.current.filter(p => p !== msg), msg]
+    }
+    historyIndexRef.current = -1
+    draftInputRef.current = ''
     setInput('')
     setBusy(true)
     setRawReply('')
@@ -478,7 +486,66 @@ export function CompanionView() {
           ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowUp') {
+              const isAtStart = e.target.selectionStart === 0 && e.target.selectionEnd === 0
+              const isEmpty = !input
+              if (isEmpty || isAtStart) {
+                const historyList = promptHistoryRef.current
+                if (historyList.length > 0) {
+                  if (historyIndexRef.current === -1) {
+                    draftInputRef.current = input
+                    historyIndexRef.current = historyList.length - 1
+                  } else if (historyIndexRef.current > 0) {
+                    historyIndexRef.current -= 1
+                  }
+                  const targetPrompt = historyList[historyIndexRef.current]
+                  if (targetPrompt !== undefined) {
+                    e.preventDefault()
+                    setInput(targetPrompt)
+                    setTimeout(() => {
+                      try {
+                        inputRef.current?.setSelectionRange(targetPrompt.length, targetPrompt.length)
+                      } catch {}
+                    }, 0)
+                    return
+                  }
+                }
+              }
+            }
+            if (e.key === 'ArrowDown') {
+              if (historyIndexRef.current !== -1) {
+                const historyList = promptHistoryRef.current
+                if (historyIndexRef.current < historyList.length - 1) {
+                  historyIndexRef.current += 1
+                  const targetPrompt = historyList[historyIndexRef.current]
+                  e.preventDefault()
+                  setInput(targetPrompt)
+                  setTimeout(() => {
+                    try {
+                      inputRef.current?.setSelectionRange(targetPrompt.length, targetPrompt.length)
+                    } catch {}
+                  }, 0)
+                  return
+                } else {
+                  historyIndexRef.current = -1
+                  const restored = draftInputRef.current || ''
+                  e.preventDefault()
+                  setInput(restored)
+                  setTimeout(() => {
+                    try {
+                      inputRef.current?.setSelectionRange(restored.length, restored.length)
+                    } catch {}
+                  }, 0)
+                  return
+                }
+              }
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              handleSend()
+            }
+          }}
           placeholder={mode === 'auto' ? 'Give me a goal or question…' : 'Ask me something…'}
           aria-label="Message"
         />

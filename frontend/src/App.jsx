@@ -358,8 +358,10 @@ export default function App() {
   const [online, setOnline] = useState(() => navigator.onLine)
   const toolRunMapRef = useRef({}) // per-chat tool results: { [clientId]: { results: {}, used: [] } }
   const traceMapRef = useRef({})   // per-chat activity steps: { [clientId]: [...] }
-  const messagesEnd = useRef(null)
   const textareaRef = useRef(null)
+  const promptHistoryRef = useRef([])
+  const historyIndexRef = useRef(-1)
+  const draftInputRef = useRef('')
   const [isEnhancing, setIsEnhancing] = useState(false)
   const recognitionRef = useRef(null)
   const [showDemoModal, setShowDemoModal] = useState(false)
@@ -1343,6 +1345,8 @@ export default function App() {
 
     setActiveIdx(0)
     activeIdxRef.current = 0
+    historyIndexRef.current = -1
+    draftInputRef.current = ''
     setProviderState(newConv.provider)
     setModel(newConv.model)
     setTemperatureState(newConv.temperature)
@@ -1414,6 +1418,8 @@ export default function App() {
   const switchChat = async (idx) => {
     setActiveIdx(idx)
     activeIdxRef.current = idx
+    historyIndexRef.current = -1
+    draftInputRef.current = ''
     setVisibleCount(WINDOW_STEP)
     setShowSkills(false)
     setShowPersonalise(false)
@@ -1751,6 +1757,11 @@ export default function App() {
     }
 
     const msgText = text.trim()
+    if (msgText) {
+      promptHistoryRef.current = [...promptHistoryRef.current.filter(p => p !== msgText), msgText]
+    }
+    historyIndexRef.current = -1
+    draftInputRef.current = ''
     setInput('')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
@@ -2186,12 +2197,90 @@ export default function App() {
     })
   }, [])
 
+
+
   const handleKeyDown = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
       e.preventDefault()
       handleEnhancePrompt()
       return
     }
+
+    // Up Arrow (ArrowUp) -> Recall previous sent chat prompt(s)
+    if (e.key === 'ArrowUp') {
+      const isAtStart = e.target.selectionStart === 0 && e.target.selectionEnd === 0
+      const isEmpty = !input
+      if (isEmpty || isAtStart) {
+        // Collect user prompts from current conversation + session history
+        const curIdx = activeIdxRef.current
+        const convMsgs = (conversationsRef.current[curIdx]?.messages || [])
+          .filter(m => m.role === 'user' && typeof m.content === 'string' && m.content.trim())
+          .map(m => m.content.trim())
+
+        const combinedHistory = Array.from(new Set([...promptHistoryRef.current, ...convMsgs]))
+        if (combinedHistory.length > 0) {
+          if (historyIndexRef.current === -1) {
+            draftInputRef.current = input
+            historyIndexRef.current = combinedHistory.length - 1
+          } else if (historyIndexRef.current > 0) {
+            historyIndexRef.current -= 1
+          }
+
+          const targetPrompt = combinedHistory[historyIndexRef.current]
+          if (targetPrompt !== undefined) {
+            e.preventDefault()
+            setInput(targetPrompt)
+            setTimeout(() => {
+              if (textareaRef.current) {
+                textareaRef.current.setSelectionRange(targetPrompt.length, targetPrompt.length)
+                autoResize()
+              }
+            }, 0)
+            return
+          }
+        }
+      }
+    }
+
+    // Down Arrow (ArrowDown) -> Go forward in prompt history or restore unsubmitted draft
+    if (e.key === 'ArrowDown') {
+      if (historyIndexRef.current !== -1) {
+        const curIdx = activeIdxRef.current
+        const convMsgs = (conversationsRef.current[curIdx]?.messages || [])
+          .filter(m => m.role === 'user' && typeof m.content === 'string' && m.content.trim())
+          .map(m => m.content.trim())
+
+        const combinedHistory = Array.from(new Set([...promptHistoryRef.current, ...convMsgs]))
+
+        if (historyIndexRef.current < combinedHistory.length - 1) {
+          historyIndexRef.current += 1
+          const targetPrompt = combinedHistory[historyIndexRef.current]
+          e.preventDefault()
+          setInput(targetPrompt)
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.setSelectionRange(targetPrompt.length, targetPrompt.length)
+              autoResize()
+            }
+          }, 0)
+          return
+        } else {
+          // Reached latest draft
+          historyIndexRef.current = -1
+          const restored = draftInputRef.current || ''
+          e.preventDefault()
+          setInput(restored)
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.setSelectionRange(restored.length, restored.length)
+              autoResize()
+            }
+          }, 0)
+          return
+        }
+      }
+    }
+
     if (e.key === 'Enter' && (!e.shiftKey || e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       sendRef.current?.()
