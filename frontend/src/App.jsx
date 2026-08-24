@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity, Bot } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2 } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
@@ -174,6 +174,9 @@ export default function App() {
   const [companionStreamText, setCompanionStreamText] = useState('')
   const [statusMap, setStatusMap] = useState({})
   const [streamIdMap, setStreamIdMap] = useState({})
+  const [queuedMessagesMap, setQueuedMessagesMap] = useState({})
+  const queuedMessagesRef = useRef({})
+  queuedMessagesRef.current = queuedMessagesMap
   const [theme, setTheme] = useState(() => {
     // Migrate old key 'bgkai_theme' → 'yogatik_theme' on first load
     const old = localStorage.getItem('bgkai_theme')
@@ -1698,19 +1701,106 @@ export default function App() {
     }))
   }
 
-  const send = async (text = input, overrideImage = null) => {
+  const triggerNextQueued = useCallback((clientId) => {
+    if (!clientId) return
+    const queue = queuedMessagesRef.current[clientId] || []
+    if (!queue.length) return
+    const [nextItem, ...remaining] = queue
+    const updatedMap = {
+      ...queuedMessagesRef.current,
+      [clientId]: remaining,
+    }
+    queuedMessagesRef.current = updatedMap
+    setQueuedMessagesMap(updatedMap)
+
+    setTimeout(() => {
+      const idx = conversationsRef.current.findIndex(c => c.clientId === clientId)
+      if (idx >= 0) {
+        if (nextItem.attachedFile) setAttachedFile(nextItem.attachedFile)
+        if (nextItem.attachedFilePath) setAttachedFilePath(nextItem.attachedFilePath)
+        sendRef.current?.(nextItem.text, nextItem.attachedImage, idx)
+      }
+    }, 150)
+  }, [])
+
+  const handleRemoveQueued = useCallback((idx = 0) => {
+    const targetClientId = conv?.clientId
+    if (!targetClientId) return
+    setQueuedMessagesMap(prev => {
+      const q = [...(prev[targetClientId] || [])]
+      q.splice(idx, 1)
+      const next = { ...prev, [targetClientId]: q }
+      queuedMessagesRef.current = next
+      return next
+    })
+  }, [conv?.clientId])
+
+  const handleRestoreQueued = useCallback((idx = 0) => {
+    const targetClientId = conv?.clientId
+    if (!targetClientId) return
+    const q = [...(queuedMessagesRef.current[targetClientId] || [])]
+    const item = q[idx]
+    if (!item) return
+    q.splice(idx, 1)
+    setQueuedMessagesMap(prev => {
+      const next = { ...prev, [targetClientId]: q }
+      queuedMessagesRef.current = next
+      return next
+    })
+    setInput(item.text || '')
+    if (item.attachedFile) setAttachedFile(item.attachedFile)
+    if (item.attachedFilePath) setAttachedFilePath(item.attachedFilePath)
+    if (item.attachedImage) setAttachedImage(item.attachedImage)
+    setTimeout(() => {
+      textareaRef.current?.focus()
+      autoResize()
+    }, 0)
+  }, [conv?.clientId, autoResize])
+
+  const send = async (text = input, overrideImage = null, explicitIdx = null) => {
     if (compareMode) {
       runCompare(text)
       return
     }
     // Always read from refs so we get the freshest state, even if this closure
     // was captured before a newChat() state update was committed.
-    const targetIdx = activeIdxRef.current
+    const targetIdx = explicitIdx != null ? explicitIdx : activeIdxRef.current
     const targetConv = conversationsRef.current[targetIdx]
     if (!targetConv) return
     const targetClientId = targetConv.clientId
 
-    if ((!text.trim() && !attachedFile && !attachedImage && !overrideImage) || loadingMapRef.current[targetClientId]) return
+    if (!text.trim() && !attachedFile && !attachedImage && !overrideImage) return
+
+    // If this conversation is currently generating, push the message into its FIFO queue
+    if (loadingMapRef.current[targetClientId]) {
+      const queueItem = {
+        text: text.trim(),
+        attachedFile,
+        attachedFilePath,
+        attachedImage: overrideImage || attachedImage,
+        timestamp: Date.now(),
+      }
+      setQueuedMessagesMap(prev => {
+        const next = {
+          ...prev,
+          [targetClientId]: [...(prev[targetClientId] || []), queueItem],
+        }
+        queuedMessagesRef.current = next
+        return next
+      })
+      if (text.trim()) {
+        promptHistoryRef.current = [...promptHistoryRef.current.filter(p => p !== text.trim()), text.trim()]
+      }
+      historyIndexRef.current = -1
+      draftInputRef.current = ''
+      setInput('')
+      setAttachedFile(null)
+      setAttachedFilePath(null)
+      setAttachedImage(null)
+      if (textareaRef.current) textareaRef.current.style.height = 'auto'
+      showToast('Prompt queued — will send automatically when the model finishes.')
+      return
+    }
     const useProvider = targetConv.provider || provider || 'local'
     let useModel = normalizeModelName(targetConv.model) || normalizeModelName(model)
     if (!useModel) {
@@ -1933,6 +2023,7 @@ export default function App() {
           setStreamText(targetClientId, '')
           delete toolRunMapRef.current[targetClientId]
           delete traceMapRef.current[targetClientId]
+          triggerNextQueued(targetClientId)
         },
         onError: (err) => {
           setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
@@ -1950,6 +2041,7 @@ export default function App() {
           setStreamText(targetClientId, '')
           delete toolRunMapRef.current[targetClientId]
           delete traceMapRef.current[targetClientId]
+          triggerNextQueued(targetClientId)
         }
       })
       return
@@ -2051,6 +2143,7 @@ export default function App() {
         // Name the chat: switching away mid-turn would otherwise end the turn
         // on whichever conversation the user is now looking at.
         endActivityTurn(targetClientId)
+        triggerNextQueued(targetClientId)
       },
       (err) => {
         setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
@@ -2075,6 +2168,7 @@ export default function App() {
           return next
         })
         setStreamText(targetClientId, '')
+        triggerNextQueued(targetClientId)
       },
       (status) => { setStatusMap(prev => ({ ...prev, [targetClientId]: status })) },
       (streamId) => { setStreamIdMap(prev => ({ ...prev, [targetClientId]: streamId })) },
@@ -3799,6 +3893,79 @@ export default function App() {
               </div>
             )
           })()}
+          {/* Queued Prompts Banner */}
+          {(() => {
+            const currentQueue = queuedMessagesMap[activeClientId] || []
+            if (!currentQueue.length) return null
+            return (
+              <div className="queued-messages-container" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                marginBottom: '8px',
+                width: '100%',
+              }}>
+                {currentQueue.map((item, qIdx) => (
+                  <div
+                    key={item.timestamp || qIdx}
+                    className="queued-message-pill"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'rgba(255, 107, 53, 0.12)',
+                      border: '1px solid rgba(255, 107, 53, 0.3)',
+                      borderRadius: '8px',
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      color: 'var(--text-primary, #fff)',
+                      animation: 'fadeIn 0.2s ease',
+                      gap: '8px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                      <Clock size={13} style={{ color: 'var(--accent-color, #ff6b35)', flexShrink: 0 }} />
+                      <span style={{ fontWeight: 600, color: 'var(--accent-color, #ff6b35)', flexShrink: 0 }}>
+                        {qIdx === 0 ? 'Next in Queue' : `Queued #${qIdx + 1}`}:
+                      </span>
+                      <span style={{
+                        opacity: 0.9,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        fontStyle: 'italic'
+                      }}>
+                        "{item.text || (item.attachedFile ? `📎 ${item.attachedFile.name}` : 'Image prompt')}"
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Edit queued prompt"
+                        aria-label="Edit queued prompt"
+                        onClick={() => handleRestoreQueued(qIdx)}
+                        style={{ padding: '3px 6px', fontSize: '11px', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px' }}
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Cancel queued prompt"
+                        aria-label="Cancel queued prompt"
+                        onClick={() => handleRemoveQueued(qIdx)}
+                        style={{ padding: '3px 6px', fontSize: '11px', height: 'auto', color: '#f87171', display: 'flex', alignItems: 'center' }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+
           <div className="input-wrapper">
             <textarea ref={textareaRef} aria-label="Message" value={input} onChange={e => { setInput(e.target.value); autoResize() }}
               onKeyDown={handleKeyDown} onPaste={handlePaste}
@@ -3806,7 +3973,7 @@ export default function App() {
               placeholder={attachedImage
                 ? 'Ask about this image… (or just send)'
                 : attachedFile ? `Describe what to do with ${attachedFile.name}...`
-                : 'Ask anything… paste or drop an image too'} rows={1} />
+                : (isStreamingHere ? 'Ask another question… will queue and run automatically' : 'Ask anything… paste or drop an image too')} rows={1} />
             <button
               type="button"
               className={`voice-mic-btn ${listening ? 'listening' : ''}`}
@@ -3824,21 +3991,48 @@ export default function App() {
               {listening ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
             {isStreamingHere ? (
-              <button
-                type="button"
-                className="stop-btn"
-                aria-label="Stop generating"
-                onClick={handleStop}
-                title="Stop generating"
-              >
-                <Square size={13} fill="currentColor" /> Stop
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {(input.trim() || attachedFile || attachedImage) && (
+                  <button
+                    type="button"
+                    className="send-btn queue-btn"
+                    aria-label="Queue message"
+                    onClick={() => sendRef.current?.()}
+                    title="Queue message to send automatically after current reply"
+                    style={{
+                      background: 'var(--accent-color, #ff6b35)',
+                      color: '#fff',
+                      borderRadius: '8px',
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 8px rgba(255, 107, 53, 0.3)',
+                    }}
+                  >
+                    <ListPlus size={15} /> Queue
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="stop-btn"
+                  aria-label="Stop generating"
+                  onClick={handleStop}
+                  title="Stop generating"
+                >
+                  <Square size={13} fill="currentColor" /> Stop
+                </button>
+              </div>
             ) : (
               <button
                 className="send-btn"
                 aria-label="Send message"
                 onClick={() => sendRef.current?.()}
-                disabled={isStreamingHere || (!input.trim() && !attachedFile && !attachedImage)}
+                disabled={!input.trim() && !attachedFile && !attachedImage}
               >
                 <Send size={18} />
               </button>
