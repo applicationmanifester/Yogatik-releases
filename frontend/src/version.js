@@ -3,16 +3,57 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '3.14.0'
+export const APP_VERSION = '3.15.0'
 export const BUILD_DATE = 'August 2026'
-export const APP_CODENAME = 'Apex Prompt Queue & Ambient Multimodal Engine'
+export const APP_CODENAME = 'Adaptive Scrapling Engine & Deep Autonomous Execution'
 
 export const APP_RELEASES = [
+  {
+    version: '3.15.0',
+    title: 'Adaptive Scrapling Web Engine, Deep Task Limits & Clean Routing',
+    date: 'August 24, 2026',
+    isLatest: true,
+    highlights: [
+      'Zero-Dependency Scrapling Engine: Self-healing adaptive element tracking using DOM fingerprints & semantic similarity',
+      'Progressive Stealth Fetcher: Anti-bot bypass (Cloudflare Turnstile, Datadome, PerimeterX) with modern TLS hints',
+      'Deep Tool Loop Allowance: Default round limit raised to 50–100 rounds for uninterrupted multi-step coding tasks',
+      'Graceful Web/Desktop Routing: Clean fallbacks preventing web builds from hallucinating desktop-only capabilities',
+      'Standalone Python Generator: Generate production-ready external Scrapling scripts on demand',
+    ],
+    sections: [
+      {
+        category: '🕷️ Web Scraping & Intelligence',
+        items: [
+          {
+            title: 'Scrapling Adaptive Locator',
+            description: 'Relocates mutated, obfuscated, or redesigned DOM elements using fuzzy string similarity and structural ancestry matching.',
+          },
+          {
+            title: 'Progressive Stealth Fetch',
+            description: 'Emulates modern Chrome client headers and automatically detects anti-bot challenges before escalating.',
+          },
+        ],
+      },
+      {
+        category: '⚡ Agent Runtime & Task Completion',
+        items: [
+          {
+            title: 'Expanded Tool Rounds',
+            description: 'Raised max tool round ceiling from 20 to 100 in agent.js and Personalise panel for comprehensive multi-step refactoring and execution.',
+          },
+          {
+            title: 'Unparsed XML Tag Stripping',
+            description: 'Sanitizes model outputs to ensure raw tool tags never leak into user-facing chat responses.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '3.14.0',
     title: 'In-Flight Prompt Queueing, Arrow History Recall & Resilient Filesystem',
     date: 'August 24, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Interactive In-Flight Prompt Queueing: Queue messages while model generates with automatic FIFO execution',
       'Keyboard Arrow History Navigation (↑/↓) with unsubmitted draft preservation',
