@@ -24,7 +24,7 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
   const voice = prefs.live_voice_local || DEFAULT_VOICE
   const neural = prefs.live_voice_engine !== 'system'
   const speed = prefs.voice_speed ?? 1
-  const rounds = Math.max(3, Math.min(20, Number(prefs.max_tool_rounds) || 8))
+  const rounds = Math.max(5, Math.min(100, Number(prefs.max_tool_rounds) || 50))
   const browserSurface = prefs.browser_display_mode === 'panel' ? 'panel' : 'window'
   const [previewing, setPreviewing] = useState(false)
 
@@ -125,7 +125,7 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
             Max rounds <span className="personalise-value">{rounds}</span>
           </label>
           <input
-            id="p-rounds" type="range" min="3" max="20" step="1" value={rounds}
+            id="p-rounds" type="range" min="5" max="100" step="5" value={rounds}
             onChange={e => onChange('max_tool_rounds', Number(e.target.value))}
           />
         </div>

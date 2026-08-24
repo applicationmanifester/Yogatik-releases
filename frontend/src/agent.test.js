@@ -144,7 +144,7 @@ describe('tool round-trip', () => {
       opts.onDone()
     })
     const onDone = vi.fn()
-    await runAgent({ ...base, onDone })
+    await runAgent({ ...base, maxRounds: 8, onDone })
     // initial + default 8 rounds + 1 forced final-answer pass = 10, never unbounded
     expect(streamChat.mock.calls.length).toBeLessThanOrEqual(10)
     expect(onDone).toHaveBeenCalled()

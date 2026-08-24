@@ -331,7 +331,7 @@ function collectSources(result) {
 export async function runAgent({
   provider, apiKey, model, history = [], userMessage, userImage = null,
   toolsEnabled = true, webEnabled = true, disabledTools = [], persona = null, temperature = 0.7, signal,
-  modelCanSee = false, localVisionEnabled = true,
+  modelCanSee = false, localVisionEnabled = true, maxRounds: explicitMaxRounds = null,
   onToken, onStatus, onToolStart, onToolResult, onDone, onError, onSources,
   initialToolMode = null, onToolModeChange = null, agentOverride = null, onSafety = null,
 }) {
@@ -362,8 +362,10 @@ export async function runAgent({
   try { chatPrefs = await getSetting('chat_prefs', {}) || {} } catch { /* defaults */ }
   const planMode = resolveFeatures(chatPrefs)?.planMode === true
   // How many tool rounds the agent may take before it must give a final answer.
-  // Defaults to 8; user-tunable up to 30 in Personalise / chat settings.
-  const maxRounds = Math.max(1, Math.min(30, Number(chatPrefs.max_tool_rounds) || 8))
+  // Defaults to 25; user-tunable up to 100 in Personalise / chat settings.
+  const maxRounds = explicitMaxRounds != null
+    ? explicitMaxRounds
+    : Math.max(1, Math.min(100, Number(chatPrefs.max_tool_rounds) || 25))
 
   // An active Skill shapes the assistant: its system prompt is appended, and its
   // optional tool allowlist scopes what the model may call this turn.
@@ -966,11 +968,17 @@ export async function runAgent({
     }
 
     throwIfAborted()
-    onDone?.({ content: fullContent, toolResults, sources, toolMode, trace: traceRef ? [...traceRef] : undefined })
+    const cleanedContent = fullContent
+      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+      .replace(/<function=\w+>[\s\S]*?<\/function>/gi, '')
+    onDone?.({ content: cleanedContent, toolResults, sources, toolMode, trace: traceRef ? [...traceRef] : undefined })
   } catch (err) {
+    const cleanedContent = fullContent
+      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+      .replace(/<function=\w+>[\s\S]*?<\/function>/gi, '')
     if (err.name === 'AbortError') {
       // User pressed Stop: keep whatever was generated instead of dropping it.
-      onDone?.({ content: fullContent, toolResults, sources, aborted: true, trace: traceRef ? [...traceRef] : undefined })
+      onDone?.({ content: cleanedContent, toolResults, sources, aborted: true, trace: traceRef ? [...traceRef] : undefined })
     } else {
       onError?.(err)
     }
