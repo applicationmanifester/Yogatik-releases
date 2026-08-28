@@ -117,7 +117,28 @@ export default defineConfig({
             // every piece dynamically. Measured with `vite build` — the
             // package.json diff alone shows nothing.
             if (id.includes('@codemirror') || id.includes('@lezer')) return undefined
-            if (id.includes('react-markdown') || id.includes('remark-') || id.includes('rehype-') || id.includes('micromark') || id.includes('unist-') || id.includes('mdast-') || id.includes('vfile')) return 'vendor-markdown'
+            if (
+              id.includes('react-markdown') ||
+              id.includes('remark-') ||
+              id.includes('rehype-') ||
+              id.includes('micromark') ||
+              id.includes('unist-') ||
+              id.includes('mdast-') ||
+              id.includes('vfile') ||
+              id.includes('unified') ||
+              id.includes('devlop') ||
+              id.includes('property-information') ||
+              id.includes('html-void-elements') ||
+              id.includes('space-separated-tokens') ||
+              id.includes('comma-separated-tokens') ||
+              id.includes('decode-named-character-reference') ||
+              id.includes('character-entities') ||
+              id.includes('zwitch') ||
+              id.includes('longest-streak') ||
+              id.includes('markdown-table') ||
+              id.includes('ccount') ||
+              id.includes('bail')
+            ) return 'vendor-markdown'
             if (id.includes('dexie')) return 'vendor-dexie'
             if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) return 'vendor-react'
             if (id.includes('canvas-confetti') || id.includes('chart.js') || id.includes('mermaid')) return 'vendor-viz'
