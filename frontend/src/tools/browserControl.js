@@ -39,7 +39,7 @@ export const VALID_ACTIONS = [
   'scroll', 'screenshot', 'pdf', 'cookies', 'storage', 'new_tab', 'list_tabs', 'select_tab', 'close_tab',
   'back', 'forward', 'reload', 'set_mode', 'close',
   'wait_for', 'fill_form', 'evaluate', 'extract_text',
-  'diagnose', 'console', 'run_script',
+  'diagnose', 'console', 'run_script', 'assert', 'audit_a11y',
 ]
 
 /**
@@ -54,16 +54,18 @@ export const ACTION_ALIASES = {
   go_forward: 'forward', goforward: 'forward', navigate_forward: 'forward',
   goto: 'navigate', open: 'navigate', open_url: 'navigate', visit: 'navigate',
   get_text: 'extract_text', text: 'extract_text',
-  snapshot: 'screenshot', capture: 'screenshot',
+  snapshot: 'screenshot', capture: 'screenshot', crop_screenshot: 'screenshot',
   export_pdf: 'pdf', save_pdf: 'pdf',
   move_to: 'hover', mouse_over: 'hover',
   get_cookies: 'cookies', cookie: 'cookies',
   local_storage: 'storage', session_storage: 'storage',
   pipeline: 'run_script', batch: 'run_script',
   check: 'diagnose', verify: 'diagnose', test: 'diagnose', health: 'diagnose',
-  console_logs: 'console', logs: 'console', errors: 'console',
+  console_logs: 'console', logs: 'console', errors: 'console', get_logs: 'console',
   tabs: 'list_tabs', newtab: 'new_tab',
   press: 'key', input: 'type',
+  assert_text: 'assert', assert_element: 'assert', assertion: 'assert', expect: 'assert',
+  a11y: 'audit_a11y', accessibility: 'audit_a11y', wcag: 'audit_a11y', audit: 'audit_a11y',
 }
 
 async function ctx(display) {
@@ -90,6 +92,8 @@ export const browserControlTool = {
         'navigates, waits for the app to actually render, and returns the rendered state, the page\'s own ' +
         'console errors and any failed requests. Do NOT stitch that together from navigate + wait_for + evaluate; ' +
         'that costs many turns and usually runs out of them. Use "console" for the page\'s console log on its own. ' +
+        'Use "assert" (with type="text"|"element"|"count"|"url") for automated test assertions. ' +
+        'Use "audit_a11y" for full automated WCAG 2.2 accessibility audits. ' +
         'ALWAYS call action "read" before clicking: it returns the page as a tree where every clickable element has a [ref_N] handle. ' +
         'Then click or type using that ref — do not guess x/y coordinates unless the target is a canvas or custom widget with no ref. ' +
         'Refs go stale when the page changes; if you get a stale-ref error, call "read" again. ' +
@@ -104,7 +108,7 @@ export const browserControlTool = {
               'scroll', 'screenshot', 'pdf', 'cookies', 'storage', 'new_tab', 'list_tabs', 'select_tab', 'close_tab',
               'back', 'forward', 'reload', 'set_mode', 'close',
               'wait_for', 'fill_form', 'evaluate', 'extract_text',
-              'diagnose', 'console', 'run_script',
+              'diagnose', 'console', 'run_script', 'assert', 'audit_a11y',
             ],
             description: 'What to do.',
           },
@@ -124,11 +128,24 @@ export const browserControlTool = {
           },
           selector: {
             type: 'string',
-            description: 'CSS selector for wait_for action — waits until this element appears in the DOM.',
+            description: 'CSS selector for wait_for, assert, or screenshot element cropping.',
+          },
+          type: {
+            type: 'string',
+            enum: ['text', 'element', 'count', 'attribute', 'url', 'title'],
+            description: 'Assertion type for action "assert".',
+          },
+          expected: {
+            type: 'string',
+            description: 'Expected value for action "assert".',
+          },
+          target: {
+            type: 'string',
+            description: 'Target CSS selector for action "assert".',
           },
           timeout: {
             type: 'number',
-            description: 'Timeout in milliseconds for wait_for (default 10000).',
+            description: 'Timeout in milliseconds for wait_for or assert (default 10000).',
           },
           fields: {
             type: 'object',
@@ -149,7 +166,7 @@ export const browserControlTool = {
     },
   },
 
-  async execute({ action: rawAction, url, ref, x, y, text, submit, keys, amount, tabId, display, selector, timeout, fields, expression, steps } = {}) {
+  async execute({ action: rawAction, url, ref, x, y, text, submit, keys, amount, tabId, display, selector, type, expected, target, timeout, fields, expression, steps } = {}) {
     const b = bridge()
     if (!b) return DESKTOP_ONLY
     const base = await ctx(display)
@@ -193,7 +210,7 @@ export const browserControlTool = {
         case 'scroll':
           return { tool: 'browser_control', action, ...(await b.scroll({ ...base, tabId, ref, amount })) }
         case 'screenshot':
-          return { tool: 'browser_control', action, ...(await b.screenshot({ ...base, tabId })) }
+          return { tool: 'browser_control', action, ...(await b.screenshot({ ...base, tabId, ref, selector })) }
         case 'pdf':
           if (!b.pdf) return { success: false, error: 'pdf export is not supported by this browser bridge version' }
           return { tool: 'browser_control', action, ...(await b.pdf({ ...base, tabId })) }
@@ -216,19 +233,18 @@ export const browserControlTool = {
         case 'back':
         case 'forward':
           return { tool: 'browser_control', action, ...(await b.history({ ...base, tabId, direction: action })) }
-        // There was no reload at all. Every browser has one, so the model kept
-        // inventing `refresh` and getting "Unsupported action" — which reads to
-        // it as the whole tool being broken, and it gave up on browser_control
-        // entirely rather than trying the action that does exist.
         case 'reload':
           return { tool: 'browser_control', action, ...(await b.reload({ ...base, tabId })) }
-        // ONE call for "does this page work". Navigates if given a url, waits
-        // for the app to actually render, and returns the rendered state, the
-        // page's console errors and any failed requests together.
         case 'diagnose':
           return { tool: 'browser_control', action, ...(await b.diagnose({ ...base, tabId, url, timeout })) }
         case 'console':
           return { tool: 'browser_control', action, ...(await b.consoleLogs({ ...base, tabId })) }
+        case 'assert':
+          if (!b.assert) return { success: false, error: 'assert is not supported by this browser bridge version' }
+          return { tool: 'browser_control', action, ...(await b.assert({ ...base, tabId, type, target, expected, timeout })) }
+        case 'audit_a11y':
+          if (!b.auditA11y) return { success: false, error: 'audit_a11y is not supported by this browser bridge version' }
+          return { tool: 'browser_control', action, ...(await b.auditA11y({ ...base, tabId })) }
         case 'run_script': {
           const scriptSteps = Array.isArray(steps) ? steps : []
           if (!scriptSteps.length) return { success: false, error: 'steps array is required for run_script' }

@@ -434,25 +434,55 @@ async function scroll(s, { tabId, ref, amount = -400 } = {}) {
 // capturePage fails with UnknownVizError when the view has not been composited
 // yet — a cold capture right after the surface is created loses the race. Make
 // sure the surface is on screen, then retry once before giving up.
-async function screenshot(s, tabId) {
+async function screenshot(s, param = {}) {
+  const tabId = typeof param === 'string' ? param : param?.tabId
+  const ref = typeof param === 'object' ? param?.ref : null
+  const selector = typeof param === 'object' ? param?.selector : null
+
   const t = tabFor(s, tabId)
   if (!t) return { success: false, error: 'No such tab' }
   const attempt = () => t.view.webContents.capturePage()
   try {
-    const img = await attempt()
-    if (!img.isEmpty()) return { success: true, image: img.toDataURL() }
-    throw new Error('empty capture')
-  } catch {
-    try {
+    let img = await attempt()
+    if (img.isEmpty()) {
       const h = host(s)
       if (h && !h.isDestroyed() && !h.isVisible()) h.show()
       showActive(s)
       await new Promise(r => setTimeout(r, 350))
-      const img = await attempt()
-      return { success: true, image: img.toDataURL() }
-    } catch (e2) {
-      return { success: false, error: `Could not capture the page (${e2.message}). The browser may still be painting.` }
+      img = await attempt()
     }
+    if (img.isEmpty()) throw new Error('empty capture')
+
+    // Optional crop to ref or selector bounding box
+    if (ref || selector) {
+      const rect = await t.view.webContents.executeJavaScript(`(() => {
+        let el = null
+        if (${JSON.stringify(ref || '')} && window.__yogatikRefs__) {
+          el = window.__yogatikRefs__[${JSON.stringify(ref || '')}]
+        }
+        if (!el && ${JSON.stringify(selector || '')}) {
+          el = document.querySelector(${JSON.stringify(selector || '')})
+        }
+        if (!el) return null
+        const r = el.getBoundingClientRect()
+        return { x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.round(r.width), height: Math.round(r.height) }
+      })()`, false).catch(() => null)
+
+      if (rect && rect.width > 0 && rect.height > 0) {
+        const size = img.getSize()
+        const cropX = Math.min(rect.x, size.width - 1)
+        const cropY = Math.min(rect.y, size.height - 1)
+        const cropW = Math.min(rect.width, size.width - cropX)
+        const cropH = Math.min(rect.height, size.height - cropY)
+        if (cropW > 0 && cropH > 0) {
+          img = img.crop({ x: cropX, y: cropY, width: cropW, height: cropH })
+        }
+      }
+    }
+
+    return { success: true, image: img.toDataURL() }
+  } catch (e2) {
+    return { success: false, error: `Could not capture the page (${e2.message}). The browser may still be painting.` }
   }
 }
 
@@ -548,10 +578,210 @@ function registerBrowserControl(getMainWindow) {
   ipcMain.handle('browser:type', (_e, p = {}) => typeText(S(p), p))
   ipcMain.handle('browser:key', (_e, p = {}) => pressKey(S(p), p))
   ipcMain.handle('browser:scroll', (_e, p = {}) => scroll(S(p), p))
-  ipcMain.handle('browser:screenshot', (_e, p = {}) => screenshot(S(p), p.tabId))
+  ipcMain.handle('browser:screenshot', (_e, p = {}) => screenshot(S(p), p))
   ipcMain.handle('browser:pdf', (_e, p = {}) => printToPDF(S(p), p))
   ipcMain.handle('browser:cookies', (_e, p = {}) => handleCookies(S(p), p))
   ipcMain.handle('browser:storage', (_e, p = {}) => handleStorage(S(p), p))
+
+  ipcMain.handle('browser:assert', async (_e, p = {}) => {
+    const s = S(p)
+    const t = tabFor(s, p.tabId)
+    if (!t) return { success: false, error: 'No such tab' }
+    const type = String(p.type || 'text').toLowerCase()
+    const target = String(p.target || p.selector || '')
+    const expected = p.expected != null ? p.expected : p.value
+    const timeout = Math.min(Math.max(500, Number(p.timeout) || 4000), 20000)
+    const started = Date.now()
+
+    while (Date.now() - started < timeout) {
+      try {
+        const check = await t.view.webContents.executeJavaScript(`(() => {
+          try {
+            if (${JSON.stringify(type)} === 'text') {
+              const bodyText = document.body ? document.body.innerText || '' : ''
+              const exp = ${JSON.stringify(String(expected || ''))}
+              if (${JSON.stringify(target)}) {
+                const el = document.querySelector(${JSON.stringify(target)})
+                if (!el) return { passed: false, actual: null, error: 'Target element not found: ' + ${JSON.stringify(target)} }
+                const txt = el.innerText || el.textContent || ''
+                return { passed: txt.includes(exp), actual: txt.slice(0, 300) }
+              }
+              return { passed: bodyText.includes(exp), actual: bodyText.slice(0, 300) }
+            }
+            if (${JSON.stringify(type)} === 'element' || ${JSON.stringify(type)} === 'visible') {
+              const el = document.querySelector(${JSON.stringify(target)})
+              if (!el) return { passed: false, actual: 'not_found' }
+              const rect = el.getBoundingClientRect()
+              const style = window.getComputedStyle(el)
+              const isVisible = rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0'
+              return { passed: isVisible, actual: isVisible ? 'visible' : 'hidden', tagName: el.tagName }
+            }
+            if (${JSON.stringify(type)} === 'count') {
+              const els = document.querySelectorAll(${JSON.stringify(target)})
+              const expCount = Number(${JSON.stringify(expected)})
+              return { passed: els.length === expCount, actual: els.length, expected: expCount }
+            }
+            if (${JSON.stringify(type)} === 'attribute') {
+              const el = document.querySelector(${JSON.stringify(target)})
+              if (!el) return { passed: false, actual: null, error: 'Element not found' }
+              const attrName = ${JSON.stringify(String(p.attribute || ''))}
+              const val = el.getAttribute(attrName)
+              const expVal = ${JSON.stringify(String(expected ?? ''))}
+              return { passed: expVal ? val === expVal : val !== null, actual: val }
+            }
+            if (${JSON.stringify(type)} === 'url') {
+              const cur = window.location.href
+              const exp = ${JSON.stringify(String(expected || ''))}
+              return { passed: cur.includes(exp), actual: cur }
+            }
+            if (${JSON.stringify(type)} === 'title') {
+              const cur = document.title
+              const exp = ${JSON.stringify(String(expected || ''))}
+              return { passed: cur.includes(exp), actual: cur }
+            }
+            return { passed: false, error: 'Unknown assertion type: ' + ${JSON.stringify(type)} }
+          } catch (e) {
+            return { passed: false, error: e.message }
+          }
+        })()`, false)
+
+        if (check && check.passed) {
+          return { success: true, passed: true, type, target, expected, actual: check.actual, waitedMs: Date.now() - started }
+        }
+      } catch { /* page navigating */ }
+      await new Promise(r => setTimeout(r, 200))
+    }
+
+    return {
+      success: true,
+      passed: false,
+      type,
+      target,
+      expected,
+      message: `Assertion failed: expected ${type} "${target || expected}" within ${timeout}ms`,
+      waitedMs: Date.now() - started,
+    }
+  })
+
+  ipcMain.handle('browser:audit-a11y', async (_e, p = {}) => {
+    const s = S(p)
+    const t = tabFor(s, p.tabId)
+    if (!t) return { success: false, error: 'No such tab' }
+    try {
+      const result = await t.view.webContents.executeJavaScript(`(() => {
+        const issues = []
+        let idCount = {}
+        
+        // 1. Missing image alt
+        document.querySelectorAll('img:not([alt])').forEach(img => {
+          issues.push({
+            rule: 'image-alt',
+            severity: 'critical',
+            message: 'Image missing alt attribute',
+            selector: img.src ? 'img[src*="' + img.src.split('/').pop().slice(0, 30) + '"]' : 'img',
+            snippet: img.outerHTML.slice(0, 150),
+          })
+        })
+
+        // 2. Unlabeled form controls
+        document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), select, textarea').forEach(el => {
+          const id = el.id
+          const hasLabel = (id && document.querySelector('label[for="' + id + '"]')) ||
+                          el.closest('label') ||
+                          el.getAttribute('aria-label') ||
+                          el.getAttribute('aria-labelledby') ||
+                          el.getAttribute('title') ||
+                          el.getAttribute('placeholder')
+          if (!hasLabel) {
+            issues.push({
+              rule: 'form-label',
+              severity: 'serious',
+              message: 'Form control lacks accessible label or aria-label',
+              selector: el.tagName.toLowerCase() + (el.id ? '#' + el.id : (el.name ? '[name="' + el.name + '"]' : '')),
+              snippet: el.outerHTML.slice(0, 150),
+            })
+          }
+        })
+
+        // 3. Buttons / Links without accessible name
+        document.querySelectorAll('button, a[href]').forEach(el => {
+          const text = (el.innerText || el.textContent || '').trim()
+          const aria = el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.getAttribute('title')
+          const img = el.querySelector('img[alt]')
+          if (!text && !aria && !img) {
+            issues.push({
+              rule: 'button-name',
+              severity: 'serious',
+              message: (el.tagName === 'BUTTON' ? 'Button' : 'Link') + ' has no text, aria-label, or title',
+              selector: el.tagName.toLowerCase() + (el.id ? '#' + el.id : (el.className ? '.' + el.className.split(' ')[0] : '')),
+              snippet: el.outerHTML.slice(0, 150),
+            })
+          }
+        })
+
+        // 4. Duplicate IDs
+        document.querySelectorAll('[id]').forEach(el => {
+          const id = el.id.trim()
+          if (id) {
+            idCount[id] = (idCount[id] || 0) + 1
+            if (idCount[id] === 2) {
+              issues.push({
+                rule: 'duplicate-id',
+                severity: 'moderate',
+                message: 'Duplicate ID attribute on page: "#' + id + '"',
+                selector: '#' + id,
+              })
+            }
+          }
+        })
+
+        // 5. Document language
+        if (!document.documentElement.lang) {
+          issues.push({
+            rule: 'html-has-lang',
+            severity: 'moderate',
+            message: '<html> element does not have a [lang] attribute',
+            selector: 'html',
+          })
+        }
+
+        // 6. Heading hierarchy check
+        const h1s = document.querySelectorAll('h1')
+        if (h1s.length === 0) {
+          issues.push({
+            rule: 'page-has-h1',
+            severity: 'moderate',
+            message: 'Page has no <h1> primary heading',
+            selector: 'body',
+          })
+        } else if (h1s.length > 1) {
+          issues.push({
+            rule: 'single-h1',
+            severity: 'minor',
+            message: 'Page has multiple (' + h1s.length + ') <h1> headings',
+            selector: 'h1',
+          })
+        }
+
+        const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 }
+        issues.forEach(i => { counts[i.severity] = (counts[i.severity] || 0) + 1 })
+        const score = Math.max(0, 100 - (counts.critical * 25 + counts.serious * 15 + counts.moderate * 8 + counts.minor * 3))
+
+        return {
+          url: window.location.href,
+          title: document.title,
+          score,
+          totalIssues: issues.length,
+          severityCounts: counts,
+          issues: issues.slice(0, 50),
+        }
+      })()`, false)
+
+      return { success: true, ...result }
+    } catch (err) {
+      return { success: false, error: err?.message || String(err) }
+    }
+  })
 
   ipcMain.handle('browser:new-tab', async (_e, p = {}) => {
     const s = S(p)

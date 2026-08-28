@@ -235,6 +235,8 @@ contextBridge.exposeInMainWorld('__YOGATIK_BROWSER__', {
   // model was inventing `window.__errors` because neither existed.
   consoleLogs: (p) => ipcRenderer.invoke('browser:console', p || {}),
   diagnose: (p) => ipcRenderer.invoke('browser:diagnose', p || {}),
+  assert: (p) => ipcRenderer.invoke('browser:assert', p || {}),
+  auditA11y: (p) => ipcRenderer.invoke('browser:audit-a11y', p || {}),
   setMode: (p) => ipcRenderer.invoke('browser:set-mode', p || {}),
   setBounds: (p) => ipcRenderer.invoke('browser:set-bounds', p || {}),
   setDetached: (p) => ipcRenderer.invoke('browser:set-detached', p || {}),

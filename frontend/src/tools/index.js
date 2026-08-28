@@ -78,6 +78,7 @@ import { mcpSearchTool } from './mcpSearchTool'
 import { computerControlTool } from './computerControl'
 import { identifyTool } from './identify'
 import { browserControlTool } from './browserControl'
+import { qaReportTool } from './qaReportGen'
 import { clipboardAccessTool } from './clipboardAccess'
 import { watchFolderTool } from './watchFolder'
 import { systemStateTool } from './systemState'
@@ -366,6 +367,7 @@ const ALL_TOOLS = {
   computer_control: computerControlTool,
   browser_autopilot: browserAutopilotTool,
   browser_control: browserControlTool,
+  qa_report_generate: qaReportTool,
   // Open Public API Tools (Keyless, Free, Browser-Native)
   drug_info: drugInfoTool,
   crypto_price: cryptoPriceTool,
@@ -435,7 +437,7 @@ const ALL_TOOLS = {
 }
 
 /** Common LLM hallucinated tool names mapped to their canonical Yogatik tool */
-const TOOL_ALIASES = {
+export const TOOL_ALIASES = {
   scrapling: 'scrapling_scrape',
   scrapling_tool: 'scrapling_scrape',
   web_scrape_adaptive: 'scrapling_scrape',
@@ -678,6 +680,15 @@ const TOOL_ALIASES = {
   save_dialog: 'file_dialog',
   browser_agent: 'browser_autopilot',
   strawberry_browser: 'browser_autopilot',
+  qa_report: 'qa_report_generate',
+  qa_report_generator: 'qa_report_generate',
+  test_report: 'qa_report_generate',
+  generate_test_report: 'qa_report_generate',
+  browser_test: 'browser_control',
+  browser_assert: 'browser_control',
+  browser_wait: 'browser_control',
+  browser_audit: 'browser_control',
+  wcag_audit: 'browser_control',
   search: 'web_search',
   google: 'web_search',
   bing: 'web_search',
@@ -1316,6 +1327,7 @@ export function getToolNames() {
 }
 
 export {
+  ALL_TOOLS,
   localInferenceTool,
   dspyOptimizerTool,
   haystackRagTool,
