@@ -74,6 +74,13 @@ export default defineConfig({
   resolve: {
     dedupe: ['react', 'react-dom'],
   },
+  define: {
+    __APP_VERSION__: JSON.stringify(process.env.npm_package_version || '3.21.0'),
+  },
+  esbuild: {
+    legalComments: 'none',
+  },
+  clearScreen: false,
   server: {
     port: 5173,
     host: true,
@@ -86,6 +93,7 @@ export default defineConfig({
     target: 'es2022',
     outDir: 'dist',
     sourcemap: false,
+    assetsInlineLimit: 4096,
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {
@@ -98,24 +106,9 @@ export default defineConfig({
             // paint. Naming it in the SAME chunk as react-markdown silently
             // undid that: react-markdown is in the eager graph, so the lazy
             // import resolved to an already-downloaded chunk and the
-            // highlighter shipped on every first load anyway. Measured
-            // 2026-08-24: vendor-markdown was 862KB and arrived BEFORE first
-            // paint, on an empty chat with nothing to highlight.
-            //
-            // And it must not be given a manual chunk NAME either. Vite emits
-            // <link rel="modulepreload"> for every manual chunk the entry graph
-            // touches, so naming it `vendor-prism` still pulled 747KB during
-            // the first paint — the preload does not care that the import is
-            // dynamic. Returning undefined leaves it in the async chunk Rollup
-            // creates for CodeBlock's own import(), which is not preloaded.
+            // highlighter shipped on every first load anyway.
             if (id.includes('react-syntax-highlighter') || id.includes('prismjs') || id.includes('refractor')) return undefined
             // CodeMirror, for exactly the same reason and caught the same way.
-            // The `vendor-libs` catch-all below is a TRAP for any new dependency
-            // that is meant to be lazy: it is a named manual chunk in the entry
-            // graph, so Vite modulepreloads it and the editor's 350KB arrived
-            // during first paint despite src/workspace/codemirror.js importing
-            // every piece dynamically. Measured with `vite build` — the
-            // package.json diff alone shows nothing.
             if (id.includes('@codemirror') || id.includes('@lezer')) return undefined
             if (
               id.includes('react-markdown') ||
@@ -140,12 +133,13 @@ export default defineConfig({
               id.includes('bail')
             ) return 'vendor-markdown'
             if (id.includes('dexie')) return 'vendor-dexie'
+            if (id.includes('zustand') || id.includes('zod')) return 'vendor-state'
             if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) return 'vendor-react'
             if (id.includes('canvas-confetti') || id.includes('chart.js') || id.includes('mermaid')) return 'vendor-viz'
             return 'vendor-libs'
           }
         },
-      }
-    }
+      },
+    },
   },
 })
