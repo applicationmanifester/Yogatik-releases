@@ -16,7 +16,12 @@ function AdModal({ onClose }) {
 
   useEffect(() => {
     if (!adsConfigured) return
-    try { (window.adsbygoogle = window.adsbygoogle || []).push({}) } catch {}
+    try {
+      const unhandledIns = document.querySelectorAll('ins.adsbygoogle:not([data-adsbygoogle-status="done"])')
+      if (unhandledIns.length > 0) {
+        ;(window.adsbygoogle = window.adsbygoogle || []).push({})
+      }
+    } catch {}
   }, [])
 
   useEffect(() => {

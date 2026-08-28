@@ -76,3 +76,62 @@ except Exception as e:
     print("ERROR:", str(e))
 `.trim();
 }
+
+export interface LatexDiagnostic {
+  line?: number
+  errorType: 'undefined_control_sequence' | 'missing_bracket' | 'missing_package' | 'syntax_error' | 'fatal_error'
+  message: string
+  contextSnippet?: string
+  suggestedFix?: string
+}
+
+/**
+ * Parses raw pdflatex / latexmk compiler output logs and returns actionable diagnostics
+ */
+export function parseLatexErrors(logOutput: string): LatexDiagnostic[] {
+  const diagnostics: LatexDiagnostic[] = []
+  const lines = logOutput.split('\n')
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+
+    // 1. Undefined control sequence: ! Undefined control sequence. \foo
+    if (line.includes('Undefined control sequence')) {
+      const nextLine = lines[i + 1] || ''
+      const lineNumMatch = lines.slice(Math.max(0, i - 3), i + 4).join('\n').match(/l\.(\d+)/)
+      const lineNum = lineNumMatch ? parseInt(lineNumMatch[1], 10) : undefined
+
+      diagnostics.push({
+        line: lineNum,
+        errorType: 'undefined_control_sequence',
+        message: 'Undefined LaTeX command or macro used.',
+        contextSnippet: nextLine.trim(),
+        suggestedFix: 'Check for typos in LaTeX command or verify the required \\usepackage{...} is loaded in preamble.',
+      })
+    }
+
+    // 2. Missing package: LaTeX Error: File `foo.sty' not found.
+    const pkgMatch = line.match(/LaTeX Error: File `([^']+)\.sty' not found/i)
+    if (pkgMatch) {
+      diagnostics.push({
+        errorType: 'missing_package',
+        message: `Package '${pkgMatch[1]}' is missing from LaTeX distribution.`,
+        suggestedFix: `Install the '${pkgMatch[1]}' package or replace with standard macros.`,
+      })
+    }
+
+    // 3. Unescaped special characters / Runaway argument
+    if (line.includes('Runaway argument') || line.includes('Emergency stop')) {
+      const lineNumMatch = lines.slice(Math.max(0, i - 3), i + 4).join('\n').match(/l\.(\d+)/)
+      diagnostics.push({
+        line: lineNumMatch ? parseInt(lineNumMatch[1], 10) : undefined,
+        errorType: 'missing_bracket',
+        message: 'Unmatched braces, runaway argument, or unescaped special character (%, _, &).',
+        suggestedFix: 'Ensure every { has a matching } and escape %, _, &, and # with a backslash.',
+      })
+    }
+  }
+
+  return diagnostics
+}
+

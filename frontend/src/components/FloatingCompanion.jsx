@@ -347,12 +347,9 @@ export function FloatingCompanion({
     provider: activeProvider,
     model: activeModel,
     surface: inPipWindow ? 'pip' : 'panel',
-    captureScreen: isDesktopEnv && window.__YOGATIK_COMPANION__?.captureScreen
-      ? async () => {
-        const r = await window.__YOGATIK_COMPANION__.captureScreen()
-        return r?.success ? r.dataUrl : null
-      }
-      : undefined,
+    // Capture is no longer plumbed through here. companion/capture.js decides
+    // between the desktop bridge and getDisplayMedia, so both surfaces get the
+    // same answer to "can you see my screen" — they used to disagree.
     onSpeakText: (text) => voice.speak(text),
   })
   brainRef.current = brain

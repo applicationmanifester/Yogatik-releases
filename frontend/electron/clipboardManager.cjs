@@ -7,6 +7,7 @@
 // selection and relays it to the renderer as a ready-to-send prompt.
 
 const { ipcMain, clipboard } = require('electron')
+const { safeSend } = require('./safeWindow.cjs')
 
 const MAX_HISTORY = 50
 let history = [] // [{ text, at }] newest-first, text-only (images excluded)
@@ -46,10 +47,7 @@ function startPolling(getWindow) {
       const text = clipboard.readText() || ''
       if (text && text !== lastSeen) {
         pushHistory(text)
-        const win = getWindow?.()
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('clipboard-changed', { text, at: Date.now() })
-        }
+        safeSend(getWindow?.(), 'clipboard-changed', { text, at: Date.now() })
       }
     } catch { /* ignore transient clipboard locks */ }
   }, 800)

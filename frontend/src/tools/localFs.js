@@ -29,21 +29,34 @@ export function isDesktop() {
 // chat's folders. App.jsx installs a getter that reads from a ref, because
 // reading React state directly here would capture a stale closure.
 let ctxProvider = () => ({ conversationId: null, projectId: null })
+let ambientCtx = null
 
 export function setWorkspaceContext(fn) {
   ctxProvider = typeof fn === 'function' ? fn : () => ({ conversationId: null, projectId: null })
 }
 
-function workspaceCtx() {
+export async function withWorkspaceContext(ctx, fn) {
+  const prev = ambientCtx
+  ambientCtx = ctx || null
+  try {
+    return await fn()
+  } finally {
+    ambientCtx = prev
+  }
+}
+
+function workspaceCtx(override) {
+  if (override?.conversationId || override?.projectId) return override
+  if (ambientCtx?.conversationId || ambientCtx?.projectId) return ambientCtx
   try { return ctxProvider() || {} } catch { return {} }
 }
 
-export function getWorkspaceCtx() { return workspaceCtx() }
+export function getWorkspaceCtx(override) { return workspaceCtx(override) }
 
-async function invoke(cmd, args) {
+async function invoke(cmd, args, ctxOverride) {
   const core = window.__TAURI__?.core
   if (!core?.invoke) throw new Error('Tauri bridge unavailable')
-  return core.invoke(cmd, { ...(args || {}), ctx: workspaceCtx() })
+  return core.invoke(cmd, { ...(args || {}), ctx: workspaceCtx(ctxOverride) })
 }
 
 const DESKTOP_ONLY = {
@@ -62,6 +75,11 @@ async function guard(fn) {
     const msg = e?.message || String(e)
     if (/no folder granted|not granted/i.test(msg)) {
       return { success: false, error: 'No working folder for this chat. Call fs_add_folder so the user can pick one.' }
+    }
+    if (/ENOENT|no such file or directory/i.test(msg)) {
+      const match = msg.match(/stat '([^']+)'|open '([^']+)'|'([^']+)'/i)
+      const target = match ? (match[1] || match[2] || match[3]) : ''
+      return { success: false, error: target ? `File not found: ${target} (no such file or directory)` : 'File not found (no such file or directory)' }
     }
     return fail(msg)
   }
@@ -105,6 +123,11 @@ export async function setPrimaryRoot(rootId) {
 export async function rebindChatRoots(oldId, newId) {
   if (!isDesktop() || oldId == null || newId == null) return
   try { await invoke('roots_rebind', { oldId, newId }) } catch { /* ignore */ }
+}
+/** Unbind a deleted chat so its roots don't leak or linger */
+export async function unbindChatRoots(chatId) {
+  if (!isDesktop() || chatId == null) return
+  try { await invoke('roots_unbind', { chatId: String(chatId) }) } catch { /* ignore */ }
 }
 
 // Legacy single-root helpers, kept one release for the Tauri shell.
@@ -207,9 +230,21 @@ export async function gitStatus() {
   try { return await invoke('git_status') } catch (e) { return fail(e) }
 }
 
-export async function gitDiff({ staged = false, path = null } = {}) {
+export async function gitDiff({ staged = false, path = null, rev = null } = {}) {
   if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
-  try { return await invoke('git_diff', { staged, path }) } catch (e) { return fail(e) }
+  try { return await invoke('git_diff', { staged, path, rev }) } catch (e) { return fail(e) }
+}
+
+/** History of ONE file, followed through renames. */
+export async function gitFileHistory(path, limit = 30) {
+  if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
+  try { return await invoke('git_file_history', { path, limit }) } catch (e) { return fail(e) }
+}
+
+/** One file as it was at one commit. */
+export async function gitShowFile(rev, path) {
+  if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
+  try { return await invoke('git_show_file', { rev, path }) } catch (e) { return fail(e) }
 }
 
 export async function gitLog(limit = 30) {
@@ -221,10 +256,19 @@ export async function gitLog(limit = 30) {
  * Stage / unstage / commit. `op` is a NAME, never git flags — main builds the
  * argument array itself, so nothing here can turn into `reset --hard`.
  */
-export async function gitWrite(op, { paths = [], message = '' } = {}) {
+export async function gitWrite(op, { paths = [], message = '', name = '', amend = false, confirm = false } = {}) {
   if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
-  try { return await invoke('git_write', { op, paths, message }) } catch (e) { return fail(e) }
+  try {
+    return await invoke('git_write', { op, paths, message, name, amend, confirm })
+  } catch (e) { return fail(e) }
 }
+
+/** Operations that require confirm:true. Kept here so the panel can ask BEFORE
+ *  firing a call it knows will be refused, rather than round-tripping to learn
+ *  what it already knows. */
+export const GIT_CONFIRM_OPS = new Set([
+  'discard', 'discard_all', 'clean', 'reset_hard', 'stash_drop', 'unstage_hard', 'checkout',
+])
 
 /** Untracked files have no git diff; this returns their contents to show as added. */
 export async function gitShowUntracked(path) {
@@ -300,9 +344,9 @@ export const fsListTool = {
       required: [],
     },
   },
-  async execute({ path = '', recursive = false, include_ignored = false } = {}) {
+  async execute({ path = '', recursive = false, include_ignored = false } = {}, opts = {}) {
     return guard(async () => {
-      const entries = await invoke('fs_list', { path, recursive: !!recursive, includeIgnored: !!include_ignored })
+      const entries = await invoke('fs_list', { path, recursive: !!recursive, includeIgnored: !!include_ignored }, opts?.ctx)
       return ok({ tool: 'fs_list', path: path || '.', count: entries.length, entries })
     })
   },
@@ -310,6 +354,7 @@ export const fsListTool = {
 
 import { globalFsCache } from './fsCache'
 import { globalWorkspaceTrie } from './workspaceTrie'
+import { recordSnapshot } from '../workspaceTimeMachine'
 
 export const fsReadTool = {
   schema: {
@@ -325,7 +370,7 @@ export const fsReadTool = {
       required: ['path'],
     },
   },
-  async execute({ path, max_bytes, start_line, end_line } = {}) {
+  async execute({ path, max_bytes, start_line, end_line } = {}, opts = {}) {
     if (!path) return fail('path is required')
     return guard(async () => {
       // In-memory cache hit for full-file reads (<0.01ms)
@@ -343,7 +388,7 @@ export const fsReadTool = {
         maxBytes: max_bytes || 500000,
         offset,
         limit,
-      })
+      }, opts?.ctx)
       if (typeof res === 'string') {
         globalFsCache.set(path, res)
         return ok({ tool: 'fs_read', path, bytes: res.length, content: res })
@@ -383,11 +428,11 @@ export const fsCopyTool = {
       required: ['src', 'dest'],
     },
   },
-  async execute({ src, dest, overwrite } = {}) {
+  async execute({ src, dest, overwrite } = {}, opts = {}) {
     if (!src) return fail('src is required')
     if (!dest) return fail('dest is required')
     return guard(async () => {
-      const r = await invoke('fs_copy', { src, dest, overwrite: !!overwrite })
+      const r = await invoke('fs_copy', { src, dest, overwrite: !!overwrite }, opts?.ctx)
       return ok({ tool: 'fs_copy', ...r, message: `Copied ${src} → ${dest}${r.replaced ? ' (replaced)' : ''}` })
     })
   },
@@ -410,10 +455,10 @@ export const fsBatchReadTool = {
       required: ['paths'],
     },
   },
-  async execute({ paths = [], max_bytes_per_file = 250000 } = {}) {
+  async execute({ paths = [], max_bytes_per_file = 250000 } = {}, opts = {}) {
     if (!Array.isArray(paths) || !paths.length) return fail('paths array is required and must not be empty')
     return guard(async () => {
-      const files = await invoke('fs_batch_read', { paths, maxBytesPerFile: max_bytes_per_file })
+      const files = await invoke('fs_batch_read', { paths, maxBytesPerFile: max_bytes_per_file }, opts?.ctx)
       return ok({ tool: 'fs_batch_read', count: files.length, files })
     })
   },
@@ -432,13 +477,13 @@ export const fsFileTreeTool = {
       required: [],
     },
   },
-  async execute({ path = '', max_depth = 3, include_ignored = false } = {}) {
+  async execute({ path = '', max_depth = 3, include_ignored = false } = {}, opts = {}) {
     return guard(async () => {
       const tree = await invoke('fs_file_tree', {
         path,
         maxDepth: max_depth || 3,
         includeIgnored: !!include_ignored,
-      })
+      }, opts?.ctx)
       return ok({ tool: 'fs_file_tree', path: path || '.', tree })
     })
   },
@@ -457,13 +502,26 @@ export const fsWriteTool = {
       required: ['path', 'content'],
     },
   },
-  async execute(args = {}) {
+  async execute(args = {}, opts = {}) {
     const path = args.path || args.file || args.filepath || args.target_file || args.TargetFile || args.filename
     const content = args.content ?? args.text ?? args.code ?? args.data ?? args.body ?? args.file_content ?? args.CodeContent ?? ''
     const expected_hash = args.expected_hash ?? args.hash ?? args.expectedHash
     if (!path) return fail('path is required (e.g. { path: "src/file.js", content: "..." })')
     return guard(async () => {
-      const r = await invoke('fs_write', { path, content: String(content ?? ''), expectedHash: expected_hash || null })
+      // Record Workspace Time Machine snapshot for 1-click rollback
+      try {
+        const prev = globalFsCache.get(path) || (await invoke('fs_read', { path, maxBytes: 250000 }).catch(() => null))
+        const prevText = typeof prev === 'string' ? prev : prev?.content || ''
+        await recordSnapshot({
+          filePath: path,
+          previousContent: prevText,
+          newContent: String(content ?? ''),
+          toolName: 'fs_write',
+          description: `AI overwritten: ${path}`,
+        })
+      } catch {}
+
+      const r = await invoke('fs_write', { path, content: String(content ?? ''), expectedHash: expected_hash || null }, opts?.ctx)
       const res = r && typeof r === 'object' ? r : {}
       globalFsCache.set(path, String(content ?? ''))
       globalWorkspaceTrie.insert(path)
@@ -500,7 +558,7 @@ export const fsEditTool = {
       required: ['path', 'old_string', 'new_string'],
     },
   },
-  async execute(args = {}) {
+  async execute(args = {}, opts = {}) {
     const path = args.path || args.file || args.filepath || args.target_file || args.TargetFile || args.filename
     const old_string = args.old_string ?? args.old ?? args.old_str ?? args.find ?? args.target ?? args.old_text ?? args.search ?? args.original ?? args.TargetContent ?? args.target_content ?? args.before
     const new_string = args.new_string ?? args.new ?? args.new_str ?? args.replace ?? args.replacement ?? args.new_text ?? args.content ?? args.ReplacementContent ?? args.replacement_content ?? args.after
@@ -522,7 +580,7 @@ export const fsEditTool = {
         expectedHash: expected_hash || null,
         startLine: Number(start_line) || 0,
         endLine: Number(end_line) || 0,
-      })
+      }, opts?.ctx)
       globalFsCache.invalidate(path)
       const res = r && typeof r === 'object' ? r : {}
       return ok({
@@ -554,7 +612,7 @@ export const fsFindFilesTool = {
       required: ['pattern'],
     },
   },
-  async execute({ pattern = '', extension = '', max_depth = 10, limit = 100, include_ignored = false } = {}) {
+  async execute({ pattern = '', extension = '', max_depth = 10, limit = 100, include_ignored = false } = {}, opts = {}) {
     if (!pattern && !extension) return fail('Either pattern or extension is required')
     return guard(async () => {
       let files = []
@@ -565,9 +623,9 @@ export const fsFindFilesTool = {
           maxDepth: max_depth,
           limit,
           includeIgnored: !!include_ignored,
-        })
+        }, opts?.ctx)
       } catch {
-        const list = await invoke('fs_list', { recursive: true, maxDepth: max_depth }).catch(() => [])
+        const list = await invoke('fs_list', { recursive: true, maxDepth: max_depth }, opts?.ctx).catch(() => [])
         // fs_list returns `is_dir` (snake), not `isDir` — the old filter kept
         // every directory and reported folders as matching "files".
         files = (Array.isArray(list) ? list : [])
@@ -627,7 +685,7 @@ export const fsSearchTool = {
       required: ['query'],
     },
   },
-  async execute({ query, glob = '', regex = false, max_results = 100, case_sensitive = false, context_lines = 0 } = {}) {
+  async execute({ query, glob = '', regex = false, max_results = 100, case_sensitive = false, context_lines = 0 } = {}, opts = {}) {
     if (!query) return fail('query is required')
     return guard(async () => {
       const matches = await invoke('fs_search', {
@@ -637,7 +695,7 @@ export const fsSearchTool = {
         maxResults: max_results || 100,
         caseSensitive: !!case_sensitive,
         contextLines: context_lines || 0,
-      })
+      }, opts?.ctx)
       return ok({ tool: 'fs_search', query, count: matches?.length || 0, matches: matches || [] })
     })
   },
@@ -657,10 +715,10 @@ export const fsDeleteTool = {
       required: ['path'],
     },
   },
-  async execute({ path, recursive = false } = {}) {
+  async execute({ path, recursive = false } = {}, opts = {}) {
     if (!path) return fail('path is required')
     return guard(async () => {
-      await invoke('fs_delete', { path, recursive: !!recursive })
+      await invoke('fs_delete', { path, recursive: !!recursive }, opts?.ctx)
       return ok({ tool: 'fs_delete', path, message: `Deleted ${path}` })
     })
   },
@@ -677,10 +735,10 @@ export const fsMkdirTool = {
       required: ['path'],
     },
   },
-  async execute({ path } = {}) {
+  async execute({ path } = {}, opts = {}) {
     if (!path) return fail('path is required')
     return guard(async () => {
-      await invoke('fs_mkdir', { path })
+      await invoke('fs_mkdir', { path }, opts?.ctx)
       return ok({ tool: 'fs_mkdir', path, message: `Created directory ${path}` })
     })
   },
@@ -698,10 +756,10 @@ export const fsMoveTool = {
       required: ['src', 'dest'],
     },
   },
-  async execute({ src, dest } = {}) {
+  async execute({ src, dest } = {}, opts = {}) {
     if (!src || !dest) return fail('src and dest are required')
     return guard(async () => {
-      await invoke('fs_move', { src, dest })
+      await invoke('fs_move', { src, dest }, opts?.ctx)
       return ok({ tool: 'fs_move', src, dest, message: `Moved ${src} → ${dest}` })
     })
   },
@@ -724,7 +782,7 @@ export const fsReplaceContentTool = {
       required: ['path', 'target_content', 'replacement_content'],
     },
   },
-  async execute({ path, target_content, replacement_content, allow_multiple = false, start_line = 0, end_line = 0 } = {}) {
+  async execute({ path, target_content, replacement_content, allow_multiple = false, start_line = 0, end_line = 0 } = {}, opts = {}) {
     if (!path || target_content == null || replacement_content == null) {
       return fail('path, target_content, and replacement_content are required')
     }
@@ -742,7 +800,7 @@ export const fsReplaceContentTool = {
         replaceAll: !!allow_multiple,
         startLine: start_line || 0,
         endLine: end_line || 0,
-      })
+      }, opts?.ctx)
       const replaced = typeof r === 'number' ? r : (r?.replaced ?? 0)
       return ok({
         tool: 'fs_replace_content',
@@ -782,7 +840,7 @@ export const fsMultiReplaceTool = {
       required: ['path', 'chunks'],
     },
   },
-  async execute({ path, chunks = [] } = {}) {
+  async execute({ path, chunks = [] } = {}, opts = {}) {
     if (!path || !Array.isArray(chunks) || !chunks.length) {
       return fail('path and non-empty chunks array are required')
     }
@@ -799,7 +857,7 @@ export const fsMultiReplaceTool = {
           startLine: c.start_line || 0,
           endLine: c.end_line || 0,
         })),
-      })
+      }, opts?.ctx)
       const appliedCount = r?.edits?.length ?? 0
       return ok({
         tool: 'fs_multi_replace',
@@ -825,18 +883,18 @@ export const fsFileInfoTool = {
       required: ['path'],
     },
   },
-  async execute({ path } = {}) {
+  async execute({ path } = {}, opts = {}) {
     if (!path) return fail('path is required')
     return guard(async () => {
       // Reading up to 5MB of a file to report its size was absurd, and it
       // reported CHARACTERS as bytes. One stat() answers the metadata; the
       // text-only counts come from a read that is honest about truncation.
-      const st = await invoke('fs_stat', { path })
+      const st = await invoke('fs_stat', { path }, opts?.ctx)
       const ext = path.includes('.') ? path.split('.').pop().toLowerCase() : ''
       if (st.is_dir) {
         return ok({ tool: 'fs_file_info', path, is_dir: true, bytes: st.size, mtimeMs: st.mtimeMs, mode: st.mode })
       }
-      const res = await invoke('fs_read', { path, maxBytes: 2000000 })
+      const res = await invoke('fs_read', { path, maxBytes: 2000000 }, opts?.ctx)
       const text = typeof res === 'string' ? res : (res?.content || '')
       return ok({
         tool: 'fs_file_info',
@@ -881,7 +939,7 @@ export const fsBatchWriteTool = {
       required: ['files'],
     },
   },
-  async execute({ files = [] } = {}) {
+  async execute({ files = [] } = {}, opts = {}) {
     if (!Array.isArray(files) || !files.length) return fail('files array is required and must not be empty')
     return guard(async () => {
       // A throw part-way through used to escape the loop, so `guard` returned a
@@ -894,7 +952,7 @@ export const fsBatchWriteTool = {
       for (const f of files) {
         if (!f?.path) { failed.push({ path: null, error: 'entry has no path' }); continue }
         try {
-          const r = await invoke('fs_write', { path: f.path, content: f.content ?? '' })
+          const r = await invoke('fs_write', { path: f.path, content: f.content ?? '' }, opts?.ctx)
           written.push({
             path: f.path,
             bytes: (r && typeof r === 'object' ? r.bytes : null) ?? (f.content ?? '').length,
@@ -916,6 +974,68 @@ export const fsBatchWriteTool = {
             + failed.map(f => `${f.path} (${f.error})`).join('; ')
           : undefined,
       }
+    })
+  },
+}
+
+export const fsGitTool = {
+  schema: {
+    description:
+      'Perform Git version control operations on this chat’s primary workspace folder. ' +
+      'Supports status, diff, log, stage, unstage, and commit. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['status', 'diff', 'log', 'stage', 'unstage', 'commit', 'file_history'],
+          description: 'The Git operation to perform.',
+        },
+        path: { type: 'string', description: 'File path to target for diff or file history.' },
+        paths: { type: 'array', items: { type: 'string' }, description: 'Array of file paths to stage or unstage.' },
+        message: { type: 'string', description: 'Commit message for action="commit".' },
+        staged: { type: 'boolean', description: 'Show staged diffs instead of working tree diffs.' },
+        limit: { type: 'number', description: 'Max log entries to return (default 20).' },
+      },
+      required: ['action'],
+    },
+  },
+  async execute({ action = 'status', path = null, paths = [], message = '', staged = false, limit = 20 } = {}, opts = {}) {
+    return guard(async () => {
+      const act = String(action || 'status').toLowerCase().trim()
+      if (act === 'status') {
+        const res = await invoke('git_status', {}, opts?.ctx)
+        return ok({ tool: 'fs_git', action: 'status', ...res })
+      }
+      if (act === 'diff') {
+        const res = await invoke('git_diff', { staged, path }, opts?.ctx)
+        return ok({ tool: 'fs_git', action: 'diff', staged, path, ...res })
+      }
+      if (act === 'log') {
+        const res = await invoke('git_log', { limit }, opts?.ctx)
+        return ok({ tool: 'fs_git', action: 'log', limit, ...res })
+      }
+      if (act === 'file_history') {
+        if (!path) return fail('path is required for file_history')
+        const res = await invoke('git_file_history', { path, limit }, opts?.ctx)
+        return ok({ tool: 'fs_git', action: 'file_history', path, ...res })
+      }
+      if (act === 'stage') {
+        const targetPaths = Array.isArray(paths) && paths.length > 0 ? paths : (path ? [path] : ['.'])
+        const res = await invoke('git_write', { op: 'stage', paths: targetPaths }, opts?.ctx)
+        return ok({ tool: 'fs_git', action: 'stage', paths: targetPaths, ...res })
+      }
+      if (act === 'unstage') {
+        const targetPaths = Array.isArray(paths) && paths.length > 0 ? paths : (path ? [path] : ['.'])
+        const res = await invoke('git_write', { op: 'unstage', paths: targetPaths }, opts?.ctx)
+        return ok({ tool: 'fs_git', action: 'unstage', paths: targetPaths, ...res })
+      }
+      if (act === 'commit') {
+        if (!message) return fail('message is required for commit')
+        const res = await invoke('git_write', { op: 'commit', message }, opts?.ctx)
+        return ok({ tool: 'fs_git', action: 'commit', message, ...res })
+      }
+      return fail(`Unknown git action: ${action}. Valid actions: status, diff, log, stage, unstage, commit, file_history`)
     })
   },
 }

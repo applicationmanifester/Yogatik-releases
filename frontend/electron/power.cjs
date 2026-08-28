@@ -7,6 +7,7 @@
 // Events: 'power-event' { event, at }
 
 const { ipcMain, powerMonitor } = require('electron')
+const { safeSend, alive } = require('./safeWindow.cjs')
 
 let onSuspend = null
 let onResume = null
@@ -22,8 +23,7 @@ function getState() {
 // hooks: { pauseScheduler, resumeScheduler } — main wires the scheduler in.
 function registerPower(getWindow, hooks = {}) {
   const relay = (event) => {
-    const win = getWindow?.()
-    if (win && !win.isDestroyed()) win.webContents.send('power-event', { event, at: Date.now() })
+    safeSend(getWindow?.(), 'power-event', { event, at: Date.now() })
   }
 
   onSuspend = () => { try { hooks.pauseScheduler?.() } catch { /* ignore */ } relay('suspend') }

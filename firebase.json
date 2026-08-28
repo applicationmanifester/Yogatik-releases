@@ -11,16 +11,34 @@
     ],
     "rewrites": [
       {
-        "comment": "Clean URLs for the static, crawlable pages. These MUST come before the SPA catch-all below, or every one of them would be answered with the app shell — which is what a crawler reads as 'this site has one page'. Static files (robots.txt, ads.txt, sitemap.xml, site.css) are served ahead of rewrites by Firebase, so they need no entry here.",
+        "comment": "Clean URLs for the static, crawlable pages. These MUST come before the SPA catch-all below, or every one of them would be answered with the app shell \u2014 which is what a crawler reads as 'this site has one page'. Static files (robots.txt, ads.txt, sitemap.xml, site.css) are served ahead of rewrites by Firebase, so they need no entry here.",
         "source": "/platforms",
         "destination": "/platforms.html"
       },
-      { "source": "/guide", "destination": "/guide.html" },
-      { "source": "/tools", "destination": "/tools.html" },
-      { "source": "/how-it-works", "destination": "/how-it-works.html" },
-      { "source": "/faq", "destination": "/faq.html" },
-      { "source": "/privacy", "destination": "/privacy.html" },
-      { "source": "/terms", "destination": "/terms.html" },
+      {
+        "source": "/guide",
+        "destination": "/guide.html"
+      },
+      {
+        "source": "/tools",
+        "destination": "/tools.html"
+      },
+      {
+        "source": "/how-it-works",
+        "destination": "/how-it-works.html"
+      },
+      {
+        "source": "/faq",
+        "destination": "/faq.html"
+      },
+      {
+        "source": "/privacy",
+        "destination": "/privacy.html"
+      },
+      {
+        "source": "/terms",
+        "destination": "/terms.html"
+      },
       {
         "source": "**",
         "destination": "/index.html"
@@ -30,40 +48,74 @@
       {
         "source": "/assets/**",
         "headers": [
-          { "key": "Cache-Control", "value": "public,max-age=31536000,immutable" }
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=31536000,immutable"
+          }
         ]
       },
       {
         "source": "/sw.js",
-        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
       },
       {
         "source": "/ads.txt",
         "headers": [
-          { "key": "Content-Type", "value": "text/plain; charset=utf-8" },
-          { "key": "Cache-Control", "value": "public, max-age=3600" }
+          {
+            "key": "Content-Type",
+            "value": "text/plain; charset=utf-8"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=3600"
+          }
         ]
       },
       {
         "source": "/robots.txt",
         "headers": [
-          { "key": "Content-Type", "value": "text/plain; charset=utf-8" },
-          { "key": "Cache-Control", "value": "public, max-age=3600" }
+          {
+            "key": "Content-Type",
+            "value": "text/plain; charset=utf-8"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=3600"
+          }
         ]
       },
       {
         "source": "**",
         "headers": [
-          { "key": "X-Content-Type-Options", "value": "nosniff" },
-          { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-          { "key": "X-Frame-Options", "value": "DENY" },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          },
+          {
+            "key": "X-Frame-Options",
+            "value": "DENY"
+          },
           {
             "comment": "Report-Only first: observe violations without breaking esm.run / WASM / provider calls, then promote to Content-Security-Policy once clean.",
             "key": "Content-Security-Policy-Report-Only",
-            "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://esm.run https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.adtrafficquality.google https://*.google.com https://*.doubleclick.net https://ep2.adtrafficquality.google; script-src-elem 'self' 'wasm-unsafe-eval' https://esm.run https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.adtrafficquality.google https://*.google.com https://*.doubleclick.net https://ep2.adtrafficquality.google; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; media-src 'self' blob: data: https:; font-src 'self' data: https:; connect-src 'self' https: wss: blob: data:; frame-src 'self' https://googleads.g.doubleclick.net https://tpc.googlesyndication.com https://*.googlesyndication.com https://*.google.com https://*.doubleclick.net; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+            "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://esm.run https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.adtrafficquality.google https://*.google.com https://*.doubleclick.net https://ep2.adtrafficquality.google; script-src-elem 'self' 'wasm-unsafe-eval' https://esm.run https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.adtrafficquality.google https://*.google.com https://*.doubleclick.net https://ep2.adtrafficquality.google; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; media-src 'self' blob: data: https:; font-src 'self' data: https:; connect-src 'self' https: wss: blob: data:; frame-src 'self' https://googleads.g.doubleclick.net https://tpc.googlesyndication.com https://*.googlesyndication.com https://*.google.com https://*.doubleclick.net https://*.adtrafficquality.google https://ep2.adtrafficquality.google; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
           }
         ]
       }
     ]
+  },
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs20",
+    "predeploy": []
   }
 }

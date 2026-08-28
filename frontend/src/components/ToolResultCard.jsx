@@ -7,11 +7,13 @@ import {
   BookOpen, GraduationCap, MessageSquare, Archive, BookA, Library,
   Package, BookMarked, Banknote, Activity, Film, Sparkles, Copy, Check, Users, Clock,
   Briefcase, Share2, AlarmClock, Bell, Plug, Monitor, MousePointer, Compass, Laptop,
-  AlertTriangle, ChevronDown
+  AlertTriangle, ChevronDown, RotateCcw
 } from 'lucide-react'
 import { getMedia } from '../db'
 import { diagnoseError, logError } from '../errorLog'
 import { sanitizeSvg } from '../sanitize'
+import { listSnapshots, rollbackSnapshot } from '../workspaceTimeMachine'
+import { fsWriteTool } from '../tools/localFs'
 
 // Standardised, friendly failure card: a plain-language line from diagnoseError
 // plus a collapsible "View details" holding the raw error for debugging.
@@ -260,22 +262,53 @@ function RenderedImage({ result, isSticker = false }) {
       ) : (
         <p className="tool-detail">{gone ? 'This image was cleared to make room for newer ones.' : 'Loading image…'}</p>
       )}
-      {result.prompt && <p className="tool-prompt">Prompt: "{result.prompt}"</p>}
+      {result.prompt && (
+        <div style={{ margin: '8px 0 4px', position: 'relative' }}>
+          <p className="tool-prompt" style={{ margin: 0, paddingRight: 60, fontSize: 11.5, color: 'var(--text-secondary)' }}>
+            <span style={{ color: 'var(--accent-color, #ff6b35)', fontWeight: 600 }}>Prompt:</span> "{result.prompt}"
+          </p>
+          <CopyButton text={result.prompt} title="Copy full image prompt" style={{ position: 'absolute', top: 0, right: 0 }} />
+        </div>
+      )}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '6px 0 8px', fontSize: 10.5 }}>
+        {result.model && (
+          <span style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4, color: '#89b4fa', fontWeight: 600 }}>
+            Model: {result.model}
+          </span>
+        )}
+        {result.resolution && (
+          <span style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4, color: '#a6adc8' }}>
+            {result.resolution}
+          </span>
+        )}
+        {result.aspect_ratio && (
+          <span style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4, color: '#a6adc8' }}>
+            {result.aspect_ratio}
+          </span>
+        )}
+        {result.style && result.style !== 'photorealistic' && (
+          <span style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4, color: '#f9e2af' }}>
+            Style: {result.style}
+          </span>
+        )}
+      </div>
       {src && (
-        <a
-          href={src}
-          download={filename}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: 'var(--accent-color, #ff6b35)', color: '#fff',
-            textDecoration: 'none', padding: '4px 10px', borderRadius: 6,
-            fontSize: 12, fontWeight: 600, marginTop: 6,
-          }}
-        >
-          <FileDown size={14} /> Download {isSticker ? 'Sticker Graphic' : 'Image'}
-        </a>
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          <a
+            href={src}
+            download={filename}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: 'var(--accent-color, #ff6b35)', color: '#fff',
+              textDecoration: 'none', padding: '5px 12px', borderRadius: 6,
+              fontSize: 12, fontWeight: 600,
+            }}
+          >
+            <FileDown size={14} /> Download {isSticker ? 'Sticker Graphic' : 'Image (PNG)'}
+          </a>
+        </div>
       )}
     </div>
   )
@@ -301,6 +334,91 @@ function RenderedFiles({ files }) {
           <FileDown size={12} /> {f.name}{f.bytes ? ` (${(f.bytes / 1024).toFixed(0)} KB)` : ''}
         </button>
       ))}
+    </div>
+  )
+}
+
+function WorkspaceFileModCard({ result, tool }) {
+  const [rolledBack, setRolledBack] = React.useState(false)
+  const [loading, setLoading] = React.useState(false)
+  const [statusMsg, setStatusMsg] = React.useState('')
+
+  const handleRollback = async () => {
+    setLoading(true)
+    try {
+      const snapshots = await listSnapshots(result.path)
+      if (!snapshots.length) {
+        setStatusMsg('No prior snapshot recorded for this file.')
+        setLoading(false)
+        return
+      }
+      const latest = snapshots[0]
+      const res = await rollbackSnapshot(latest.id, (args) => fsWriteTool.execute(args))
+      if (res.success) {
+        setRolledBack(true)
+        setStatusMsg('↺ Restored previous file version!')
+      } else {
+        setStatusMsg(res.error || 'Rollback failed')
+      }
+    } catch (e) {
+      setStatusMsg(e?.message || 'Rollback failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="tool-result-card" style={{ borderLeft: '4px solid #10b981', padding: 12 }}>
+      <div className="tool-result-header" style={{ color: '#10b981', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+          <Files size={14} /> {tool === 'fs_edit' ? 'File Modified' : 'File Saved'}
+        </span>
+        <CopyButton text={result.path || ''} title="Copy Path" label="Copy Path" iconSize={11} />
+      </div>
+      <div className="tool-detail" style={{ margin: '6px 0', fontSize: 12.5 }}>
+        Target: <code style={{ background: 'var(--code-bg, rgba(0,0,0,0.2))', padding: '2px 6px', borderRadius: 4 }}>{result.path}</code>
+      </div>
+      {result.message && <div className="tool-detail" style={{ opacity: 0.8, fontSize: 12 }}>{result.message}</div>}
+      {statusMsg && (
+        <div style={{ marginTop: 6, fontSize: 12, color: rolledBack ? '#10b981' : '#f87171', fontWeight: 600 }}>
+          {statusMsg}
+        </div>
+      )}
+      {!rolledBack && (
+        <button
+          className="small-btn"
+          onClick={handleRollback}
+          disabled={loading}
+          style={{
+            marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5,
+            background: '#1e293b', color: '#38bdf8', border: '1px solid #334155',
+            padding: '4px 10px', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', fontWeight: 600,
+          }}
+          title="Restore this file to the state before the AI edited it"
+        >
+          <RotateCcw size={12} /> {loading ? 'Restoring…' : '↺ Undo / Rollback Change'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function BackgroundTaskCard({ result }) {
+  return (
+    <div className="tool-result-card" style={{ borderLeft: '4px solid #a855f7', padding: 12 }}>
+      <div className="tool-result-header" style={{ color: '#a855f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+          <Activity size={14} /> Background Worker Active
+        </span>
+        <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#d8b4fe', padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600 }}>
+          {result.status?.toUpperCase() || 'RUNNING'}
+        </span>
+      </div>
+      <div style={{ margin: '8px 0', fontSize: 13, fontWeight: 600 }}>{result.title}</div>
+      <div className="tool-detail" style={{ fontSize: 12, opacity: 0.85 }}>{result.message}</div>
+      <div style={{ marginTop: 8, fontSize: 11, opacity: 0.6, fontFamily: 'monospace' }}>
+        Task ID: {result.taskId}
+      </div>
     </div>
   )
 }
@@ -434,21 +552,25 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
 
   if (tool === 'weather' && result.current) {
     const c = result.current
+    // Read the units off the RESULT. These were literal "°C" and "km/h" in the
+    // markup, which was true only for as long as the request was always metric.
+    const tUnit = result.temperature_unit || '°C'
+    const wUnit = result.wind_unit || 'km/h'
     return (
       <div className="tool-result-card weather-card">
         <div className="tool-result-header"><CloudSun size={14} /> {result.location}</div>
         <div className="weather-current">
-          <span className="weather-temp">{c.temperature}°C</span>
+          <span className="weather-temp">{c.temperature}{tUnit}</span>
           <span className="weather-condition">{c.condition}</span>
         </div>
         <div className="weather-details">
-          Feels like {c.feels_like}°C · Humidity {c.humidity}% · Wind {c.wind_speed} km/h
+          Feels like {c.feels_like}{tUnit} · Humidity {c.humidity}% · Wind {c.wind_speed} {wUnit}
         </div>
         {result.forecast && (
           <div className="weather-forecast">
             {result.forecast.slice(0, 5).map((f, i) => (
               <div key={i} className="forecast-day">
-                <span className="forecast-date">{new Date(f.date).toLocaleDateString('en', { weekday: 'short' })}</span>
+                <span className="forecast-date">{new Date(f.date).toLocaleDateString(undefined, { weekday: 'short' })}</span>
                 <span>{f.low}°–{f.high}°</span>
                 <span className="forecast-cond">{f.condition}</span>
               </div>
@@ -723,9 +845,76 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
         </div>
       )
     }
+    const handleDownloadSvg = () => {
+      const blob = new Blob([result.svg || svg], { type: 'image/svg+xml;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `diagram_${Date.now().toString(36)}.svg`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    }
+
+    const handleDownloadPng = () => {
+      try {
+        const svgElement = document.querySelector('.diagram-svg svg')
+        if (!svgElement) return handleDownloadSvg()
+        const svgString = new XMLSerializer().serializeToString(svgElement)
+        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+        const URLObj = window.URL || window.webkitURL || window
+        const blobURL = URLObj.createObjectURL(svgBlob)
+        const image = new window.Image()
+        image.onload = () => {
+          const canvas = document.createElement('canvas')
+          const scale = 2
+          const bbox = svgElement.getBoundingClientRect()
+          canvas.width = (bbox.width || 800) * scale
+          canvas.height = (bbox.height || 600) * scale
+          const ctx = canvas.getContext('2d')
+          ctx.fillStyle = '#1e1e2e'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+          const pngUrl = canvas.toDataURL('image/png')
+          const a = document.createElement('a')
+          a.href = pngUrl
+          a.download = `diagram_${Date.now().toString(36)}.png`
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          URLObj.revokeObjectURL(blobURL)
+        }
+        image.src = blobURL
+      } catch (err) {
+        handleDownloadSvg()
+      }
+    }
+
     return (
       <div className="tool-result-card">
-        <div className="tool-result-header"><GitCompare size={14} /> Diagram</div>
+        <div className="tool-result-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><GitCompare size={14} /> Diagram</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              className="copy-btn"
+              onClick={handleDownloadPng}
+              title="Download high-resolution PNG image"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', fontSize: 11 }}
+            >
+              <FileDown size={11} /> Download PNG
+            </button>
+            <button
+              className="copy-btn"
+              onClick={handleDownloadSvg}
+              title="Download vector SVG diagram"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', fontSize: 11 }}
+            >
+              <FileDown size={11} /> Download SVG
+            </button>
+            <CopyButton text={result.code || ''} title="Copy Mermaid code" label="Mermaid" iconSize={11} />
+          </div>
+        </div>
         {/* Mermaid renders to SVG in-browser; no backend image endpoint exists */}
         <div className="diagram-svg" dangerouslySetInnerHTML={{ __html: svg }} />
       </div>
@@ -799,6 +988,67 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
     )
   }
 
+  if ((tool === 'manim_anim' || result?.tool === 'manim_anim') && result.html) {
+    const handleDownloadHtml = () => {
+      const blob = new Blob([result.html], { type: 'text/html;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${(result.title || 'manim_animation').replace(/[^a-z0-9_-]/gi, '_')}.html`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    }
+
+    return (
+      <div className="tool-result-card" style={{ borderLeft: '4px solid #38bdf8', padding: 12 }}>
+        <div className="tool-result-header" style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+          <Sparkles size={14} /> Manim Mathematical Animation • 60 FPS
+        </div>
+        <div className="tool-detail" style={{ margin: '6px 0 10px', fontSize: 13 }}>
+          <strong>{result.title}</strong>
+          <span style={{ marginLeft: 8, fontSize: 11, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>
+            {result.animationType || result.template}
+          </span>
+        </div>
+        <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #1f293d', height: 320, background: '#0b0f19', marginBottom: 10 }}>
+          <iframe
+            srcDoc={result.html}
+            title={result.title || 'Manim Animation'}
+            style={{ width: '100%', height: '100%', border: 'none' }}
+            sandbox="allow-scripts allow-same-origin"
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className="small-btn primary-btn"
+            onClick={handleDownloadHtml}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: '#0284c7', color: '#fff',
+              border: 'none', padding: '6px 12px', borderRadius: 6,
+              fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            <FileDown size={14} /> Download Interactive HTML
+          </button>
+          <CopyButton
+            text={result.html}
+            title="Copy Animation Code"
+            label="Copy Code"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: '#1e293b', color: '#f8fafc',
+              border: '1px solid #334155', padding: '6px 12px', borderRadius: 6,
+              fontWeight: 600, cursor: 'pointer',
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
+
   if ((tool === 'doc_export' || tool === 'doc_enhance') && result.exported_text) {
     const handleDownload = () => {
       if (result.pptx_data_url) {
@@ -849,6 +1099,14 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
         </button>
       </div>
     )
+  }
+
+  if ((tool === 'fs_write' || tool === 'fs_edit' || tool === 'fs_patch' || tool === 'fs_replace_content') && result.path) {
+    return <WorkspaceFileModCard result={result} tool={tool} />
+  }
+
+  if ((tool === 'background_task_spawn' || tool === 'background_task') && result.taskId) {
+    return <BackgroundTaskCard result={result} />
   }
 
   if (tool === 'timer' || tool === 'alarm') {

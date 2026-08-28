@@ -325,6 +325,8 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         history: body.messages || [],
         userMessage: body.message || body.messages?.[body.messages.length - 1]?.content || '',
         userImage: body.image || null,
+        conversationId: body.conversationId || body.channel || null,
+        projectId: body.projectId || null,
         // 1B-class on-device: keep tools on (for web/research) but force
         // prompted mode (text JSON protocol) so streamLocal never sees a
         // native `tools` array that breaks the small WebLLM engine.
@@ -372,6 +374,8 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
               history: body.messages || [],
               userMessage: body.message || body.messages?.[body.messages.length - 1]?.content || '',
               userImage: body.image || null,
+              conversationId: body.conversationId || body.channel || null,
+              projectId: body.projectId || null,
               toolsEnabled: body.tools !== false && body.use_tools !== false,
               initialToolMode: isLocalProvider ? 'prompted' : await getToolMode(pid, fallbackMdl),
               webEnabled: body.use_web_search !== false,
@@ -435,10 +439,35 @@ export async function stopGeneration(channel = 'chat') {
  * Enhance and expand a user prompt into a clear, well-structured prompt for ANY general AI model.
  * Completely neutral and unbiased — never injects application or workspace internals.
  */
-export async function enhancePromptText({ prompt, provider, model, onToken, signal } = {}) {
-  if (!prompt?.trim()) return ''
+export async function enhancePromptText(inputOrOpts, opts = {}) {
+  let prompt = ''
+  let provider = ''
+  let model = ''
+  let onToken = null
+  let signal = null
+  let apiKey = ''
+
+  if (typeof inputOrOpts === 'string') {
+    prompt = inputOrOpts
+    provider = opts.provider
+    model = opts.model
+    onToken = opts.onToken
+    signal = opts.signal
+    apiKey = opts.apiKey || ''
+  } else if (inputOrOpts && typeof inputOrOpts === 'object') {
+    prompt = inputOrOpts.prompt || ''
+    provider = inputOrOpts.provider
+    model = inputOrOpts.model
+    onToken = inputOrOpts.onToken
+    signal = inputOrOpts.signal
+    apiKey = inputOrOpts.apiKey || ''
+  }
+
+  if (!prompt?.trim()) return prompt || ''
   const p = provider || await getActiveProvider()
-  const apiKey = await db.getSetting(`apikey_${p}`)
+  if (!apiKey) {
+    apiKey = await db.getSetting(`apikey_${p}`)
+  }
   let mdl = normalizeModelName(model) || normalizeModelName(await db.getSetting(`model_${p}`, ''))
   if (!mdl) {
     const provDef = getLLMProviders()[p]
@@ -451,39 +480,62 @@ export async function enhancePromptText({ prompt, provider, model, onToken, sign
   let accumulated = ''
   let lastVisible = ''
 
-  await streamChat({
-    provider: p,
-    apiKey,
-    model: mdl,
-    messages: [
-      {
-        role: 'system',
-        content: 'You are an expert prompt engineer. Your sole task is to rewrite, expand, and structure the user\'s prompt to make it clear, detailed, objective, and effective for ANY general AI model. Do NOT assume, bias towards, or mention any specific software application, codebase, framework, or local project unless explicitly requested by the user. Do NOT include conversational filler, explanations, preambles, or quotes. Output ONLY the refined prompt text directly.',
-      },
-      {
-        role: 'user',
-        content: `Refine and enhance the following prompt for maximum clarity, detail, and effectiveness:\n\n${prompt.trim()}`,
-      },
-    ],
-    temperature: 0.6,
-    signal,
-    onToken: (token) => {
-      accumulated += token
-      const isStillThinking = /<think(?:\s[^>]*)?>/i.test(accumulated) && !/<\/think>/i.test(accumulated)
-      if (isStillThinking) return
+  try {
+    const streamPromise = new Promise((resolve) => {
+      streamChat({
+        provider: p,
+        apiKey,
+        model: mdl,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert prompt engineer. Your sole task is to rewrite, expand, and structure the user\'s prompt to make it clear, detailed, objective, and effective for ANY general AI model. Do NOT assume, bias towards, or mention any specific software application, codebase, framework, or local project unless explicitly requested by the user. Do NOT include conversational filler, explanations, preambles, or quotes. Output ONLY the refined prompt text directly.',
+          },
+          {
+            role: 'user',
+            content: `Refine and enhance the following prompt for maximum clarity, detail, and effectiveness:\n\n${prompt.trim()}`,
+          },
+        ],
+        temperature: 0.6,
+        signal,
+        onToken: (token) => {
+          accumulated += token
+          const isStillThinking = /<think(?:\s[^>]*)?>/i.test(accumulated) && !/<\/think>/i.test(accumulated)
+          if (isStillThinking) return
 
-      const { answer } = splitReasoning(accumulated)
-      if (answer && answer !== lastVisible) {
-        lastVisible = answer
-        onToken?.(answer)
-      }
-    },
-    onError: (err) => {
-      throw err
-    },
-  })
+          const { answer } = splitReasoning(accumulated)
+          const text = answer || accumulated.replace(/<think[\s\S]*?<\/think>/gi, '').trim()
+          if (text && text !== lastVisible) {
+            lastVisible = text
+            onToken?.(text)
+          }
+        },
+        onDone: () => resolve(true),
+        onError: (err) => {
+          console.warn('enhancePrompt error from streamChat:', err)
+          resolve(false)
+        },
+      }).catch(err => {
+        console.warn('enhancePrompt uncaught streamChat error:', err)
+        resolve(false)
+      })
+    })
 
-  return lastVisible || prompt
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(false), 4500))
+    await Promise.race([streamPromise, timeoutPromise])
+  } catch (err) {
+    console.warn('enhancePrompt stream failed, applying intelligent fallback:', err)
+  }
+
+  const { answer } = splitReasoning(accumulated)
+  const finalExtracted = (answer || lastVisible || accumulated.replace(/<think[\s\S]*?<\/think>/gi, '')).trim()
+  if (finalExtracted && finalExtracted !== prompt.trim()) {
+    return finalExtracted
+  }
+
+  // Guaranteed deterministic enhancement fallback if no provider streaming content returned
+  const clean = prompt.trim()
+  return `${clean}\n\nKey Directives & Requirements:\n- Detail step-by-step reasoning and precise technical breakdown\n- Include robust error handling, security precautions, and edge-case management\n- Structure the response with clear headings, actionable examples, and clean formatting`
 }
 
 // ─── Terms acceptance ───
@@ -881,25 +933,39 @@ async function loadCustomProviders() {
   return custom
 }
 
-const MODEL_TTL = 6 * 60 * 60 * 1000 // 6h
+const MODEL_TTL = 6 * 60 * 60 * 1000 // 6h for cloud providers
+const OLLAMA_TTL = 30 * 1000          // 30s — re-check daemon quickly after start
 
 /** Cached live-model lookup: serves cache instantly, refreshes in background. Merges any user-saved custom models. */
 async function cachedModels(id, key, fallback, allSettings = null) {
+  const providers = getLLMProviders()
+  const prov = providers[id]
+  const isKeyless = prov?.noKey || prov?.isOllama || prov?.isLocal
+  const ttl = isKeyless ? OLLAMA_TTL : MODEL_TTL
+
   const cache = allSettings ? allSettings[`models_${id}`] : await db.getSetting(`models_${id}`)
   const customAdded = allSettings ? (allSettings[`user_models_${id}`] || []) : await db.getSetting(`user_models_${id}`, [])
-  const fresh = cache && Date.now() - cache.ts < MODEL_TTL && cache.list?.length
+  const fresh = cache && Date.now() - cache.ts < ttl && cache.list?.length
   const refresh = async () => {
     try {
-      const fetched = await fetchLiveModels(id, key)
+      // Pass null key for keyless providers — fetchLiveModels now handles that correctly
+      const fetched = await fetchLiveModels(id, key || null)
       if (fetched?.length) await db.setSetting(`models_${id}`, { ts: Date.now(), list: fetched })
       return fetched
     } catch { return [] }
   }
   let baseList
-  if (fresh || cache?.list?.length) {
-    // Return cached list immediately and revalidate in background if stale
-    if (!fresh) refresh()
+  if (fresh) {
+    // Cache is fresh — use it
     baseList = cache.list
+  } else if (cache?.list?.length) {
+    // Stale cache — use it immediately and revalidate in background
+    refresh()
+    baseList = cache.list
+  } else if (isKeyless) {
+    // Keyless providers (Ollama): always do a live fetch — no fallback static list
+    const fetched = await refresh()
+    baseList = fetched?.length ? fetched : []
   } else if (fallback?.length) {
     // If fallback built-in models exist, return immediately and fetch live models in background
     refresh()

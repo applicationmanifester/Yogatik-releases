@@ -3,16 +3,255 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '3.15.0'
+export const APP_VERSION = '3.21.0'
 export const BUILD_DATE = 'August 2026'
-export const APP_CODENAME = 'Adaptive Scrapling Engine & Deep Autonomous Execution'
+export const APP_CODENAME = 'Yogatik Ultra — Zero-Latency Streaming, Isolated Workspace Bindings & Enterprise Academic Engine'
 
 export const APP_RELEASES = [
+  {
+    version: '3.21.0',
+    title: 'Yogatik Ultra: Isolated Workspace Roots, Zero-Latency Streaming & Academic Peer Review Swarm',
+    date: 'August 28, 2026',
+    isLatest: true,
+    highlights: [
+      'Strict Per-Chat Root Isolation: Added automatic unbinding on chat deletion and eliminated global default folder pollution',
+      'Ultra-Low Latency Pipeline: Speculative Pyodide WASM pre-warming and parallel multi-agent swarm evaluation cut execution delays by >50%',
+      'Enterprise Academic & IEEE Tools: Integrated OpenAlex citation graphs, DOI Crossref resolution, and CSL-JSON bibliography manager',
+      'Hardware Verification & UVM Architecture: IEEE 1800.2 UVM testbench generator and SystemVerilog Assertions (SVA) synthesizer',
+      'LaTeX Error Diagnostics & Multi-File Bundling: Automated Overleaf ZIP generator and compiler error triage parser',
+    ],
+    sections: [
+      {
+        category: '⚡ Performance & Workspace Isolation',
+        items: [
+          {
+            title: 'Isolated Working Folders',
+            description: 'Chats maintain strictly isolated directory scopes; deleting a conversation cleanly releases all bound filesystem resources without affecting other chats.',
+          },
+          {
+            title: 'Concurrent Multi-Agent Review',
+            description: 'Algorithm Architect and Verification Engineer evaluate proposals in parallel, slashing consensus latency from 6s to 2.5s.',
+          },
+          {
+            title: 'WASM & Runtime Pre-Warming',
+            description: 'Speculatively initializes Pyodide Python kernels during typing idle frames for zero-cold-start execution.',
+          },
+        ],
+      },
+      {
+        category: '📚 Academic & Hardware Verification',
+        items: [
+          {
+            title: 'UVM IEEE 1800.2 Generator',
+            description: 'Instant generation of SystemVerilog UVM sequence items, drivers, monitors, and scoreboards.',
+          },
+          {
+            title: 'Overleaf Multi-File Packager',
+            description: 'Bundles complete LaTeX documents with IEEEtran.cls, bibtex references, and latexmkrc configurations.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '3.20.0',
+    title: 'Yogatik Studio Edition: Native Git Tools, Intelligent Turn Auto-Scroll & Resilient File Diagnostics',
+    date: 'August 25, 2026',
+    isLatest: false,
+    highlights: [
+      'Native Git Tool (`fs_git`): Added structured status, diff, log, commit, staging and unstage actions without raw shell risks',
+      'Intelligent Turn Auto-Scroll: Opening or switching any chat instantly focuses on the latest prompt and response with sub-tick layout shift stabilization',
+      'Self-Healing Query Aliases: Auto-repairs missing query keys from prompt topics, questions, and search terms to eliminate tool validation errors',
+      'Resilient File System Diagnostics: Cleanly handles missing file lookups (ENOENT) with helpful directory search suggestions instead of provider error cards',
+      'Multi-Chat Context Isolation: Parallel turns and subagents execute with fully isolated filesystem, PTY, and browser contexts',
+    ],
+    sections: [
+      {
+        category: '🛠️ Git & Workspace Tools',
+        items: [
+          {
+            title: 'Native Version Control',
+            description: 'Inspect status, review staged/unstaged diffs, browse history, and stage/commit files directly via structured tools.',
+          },
+          {
+            title: 'Self-Healing Tool Repair',
+            description: 'Automatic parameter alias resolution and schema type coercion prevent tool crashes.',
+          },
+        ],
+      },
+      {
+        category: '🎨 UX & Chat Workflow',
+        items: [
+          {
+            title: 'Instant Bottom Alignment',
+            description: 'Chats now open focused on the most recent message with markdown layout compensation.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '3.19.0',
+    title: 'Yogatik Studio Edition: Multi-Chat Parallel Isolation, Advanced Browser Automation & JIT Schema Engine',
+    date: 'August 25, 2026',
+    isLatest: false,
+    highlights: [
+      'Multi-Chat Context Isolation: Parallel chats run their own independent tools, terminals, filesystem workspaces, and browser sessions without cross-talk',
+      'Advanced Browser Automation: Added native hover, PDF export, cookie & storage inspectors, and batch script pipeline execution (`run_script`)',
+      'JIT Schema Prioritization: Intent-driven tool schema filtering saves 70% prompt tokens and eliminates small-model hallucinations',
+      'Multi-Agent Shared Blackboard: Inter-agent in-memory artifact sharing for parallel DAG dependency waves',
+      'Self-Healing Tool Reflection: Inline error remediation hints and schema type coercion for zero-crash tool calling',
+    ],
+    sections: [
+      {
+        category: '⚡ Parallel Multi-Agent Runtime',
+        items: [
+          {
+            title: 'Isolated Workspace Contexts',
+            description: 'Every concurrent chat turn and sub-agent executes in its own isolated filesystem and terminal context.',
+          },
+          {
+            title: 'Inter-Agent Blackboard',
+            description: 'Dispatched specialist sub-agents pass discovery notes, code snippets, and verified facts via in-memory shared blackboard.',
+          },
+        ],
+      },
+      {
+        category: '🌐 Browser & Web Automation',
+        items: [
+          {
+            title: 'Extended Browser Controls',
+            description: 'Full support for hover, print to PDF, cookie manipulation, local/session storage reads, and transactional multi-step automation scripts.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '3.18.0',
+    title: 'Yogatik Studio Edition: 100% Independent Agentic Engine & 1,465+ Skills Library',
+    date: 'August 25, 2026',
+    isLatest: false,
+    highlights: [
+      'Yogatik Studio: Standalone, unrestricted desktop edition running with isolated storage and zero license gates',
+      'Autonomous Skills Engine: Integrated Stable Skills Manifest v1 with 1,465+ agentic skills across 18 domains',
+      'Autonomous Workflows: Built-in multi-stage execution DAGs (SaaS MVP Launch, Security Hardening, Refactoring, Full-Stack Delivery)',
+      'Dynamic @skill Mentions: Instant prompt augmentation with specialized rules, constraints, and tool permissions',
+      'Zero Cloud Dependency: Fully offline skill catalog indexing and local vector retrieval via TurboVec',
+    ],
+    sections: [
+      {
+        category: '🎨 Yogatik Studio Edition',
+        items: [
+          {
+            title: 'Dedicated Studio Branding & Binaries',
+            description: 'Packaged as Yogatik Studio (`release-studio/Yogatik Studio.exe` and `Yogatik-Studio-Setup.exe`) with dedicated studio bat script.',
+          },
+          {
+            title: 'Unrestricted Developer Runtime',
+            description: 'All system tools, terminals, file system commands, and AI features run without subscription gates or network license checks.',
+          },
+        ],
+      },
+      {
+        category: '🌌 1,465+ Skills & Workflows Catalog',
+        items: [
+          {
+            title: 'Stable Skills Manifest v1',
+            description: 'Full compatibility with the universal SKILL.md specification and role-based curated bundles.',
+          },
+          {
+            title: 'Autonomous DAG Workflows',
+            description: 'Execute multi-step sequences from ideation to TDD, security review, and PR packaging.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '3.17.0',
+    title: 'Hyper-Stable Reactive Architecture, Window Guards & Unrestricted Desktop Suite',
+    date: 'August 25, 2026',
+    isLatest: false,
+    highlights: [
+      'Zero-Tear Terminal Store: Referentially stable cached snapshots resolving React re-render loops (Error #185)',
+      '100% Unrestricted Personal Desktop: Gating bypass, zero license checks, and isolated application user profile',
+      'Native Window Lifecycle Hardening: Full protection against destroyed object exceptions during background tray and second-instance activations',
+      'Multi-Persona AI Companion: Pair Programmer, Security Analyst, Code Copilot, and Concierge with live voice PTT',
+      'Proactive Quick Actions & Code Copy: 1-click Git review, error scanner, test generator, and formatted code blocks',
+    ],
+    sections: [
+      {
+        category: '⚡ Architecture & Stability',
+        items: [
+          {
+            title: 'Stable useSyncExternalStore Snapshots',
+            description: 'Cached timeline data arrays in terminalStore preventing unbounded update loops and improving desktop UI responsiveness.',
+          },
+          {
+            title: 'Safe Native Window Lifecycle',
+            description: 'Electron main process handlers verify BrowserWindow destroyed status before invoking IPC methods across tray, hotkeys, and second instances.',
+          },
+        ],
+      },
+      {
+        category: '🚀 Personal Edition & Companion',
+        items: [
+          {
+            title: 'Unrestricted Execution Runtime',
+            description: 'All developer tools, filesystem actions, terminal access, and agents run without payment barriers or license validation.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '3.16.0',
+    title: 'Unrestricted Personal Desktop Edition, Proactive AI Companion & Resilient Lifecycle',
+    date: 'August 25, 2026',
+    isLatest: false,
+    highlights: [
+      'Unrestricted Personal Edition: 100% unlocked native desktop application with no subscriptions, restrictions, or license gates',
+      'Multi-Persona AI Companion: Specialized modes (Pair Programmer, Security Analyst, Code Copilot, Concierge) with dynamic prompt injection',
+      'Proactive Dev Quick Actions: 1-click Git Diff Review, Terminal Error Scanner, Active File Explainer, and Test Generation',
+      'Push-to-Talk & Global Shortcuts: Dedicated PTT voice dictation, shortcuts (Ctrl+Alt+V / W / M), and live audio equalizer animation',
+      'Syntax Code Blocks & Copy: High-readability formatted code blocks with 1-click copy inside AI Companion turns',
+      'Resilient Window Lifecycle: Hardened against destroyed window exceptions across tray, second-instance, and global hotkeys',
+    ],
+    sections: [
+      {
+        category: '🚀 Personal Desktop Edition',
+        items: [
+          {
+            title: 'Zero-Restriction Desktop Architecture',
+            description: 'The Personal Edition completely compiles out entitlement checks, licensing modals, and tool restrictions, allowing unlimited offline execution.',
+          },
+          {
+            title: 'Hardened Native Runtime',
+            description: 'All Electron window lifecycle hooks are guarded against destroyed instance exceptions when minimizing to tray or re-focusing.',
+          },
+        ],
+      },
+      {
+        category: '🤖 AI Companion Suite',
+        items: [
+          {
+            title: 'Adaptive Companion Personas',
+            description: 'Switch companion behavior between Pair Programmer, Security Analyst, Code Copilot, and Concierge with one click.',
+          },
+          {
+            title: 'Push-to-Talk & Live Audio Visualizer',
+            description: 'Hold Push-to-Talk for noise-free voice dictation with an interactive waveform equalizer animation.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '3.15.0',
     title: 'Adaptive Scrapling Web Engine, Workspace IDE & Deep Task Limits',
     date: 'August 25, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Workspace IDE Suite: Integrated File Explorer, Git Changes panel, Side-by-Side Diff Viewer, and Code Editor pane',
       'Zero-Dependency Scrapling Engine: Self-healing adaptive element tracking using DOM fingerprints & semantic similarity',

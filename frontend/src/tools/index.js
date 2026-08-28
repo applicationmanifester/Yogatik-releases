@@ -68,11 +68,12 @@ import {
   isDesktop, fsAddFolderTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
   fsFindFilesTool, fsDeleteTool, fsMkdirTool, fsMoveTool, fsBatchReadTool, fsFileTreeTool,
   fsReplaceContentTool, fsMultiReplaceTool, fsFileInfoTool, fsBatchWriteTool, fsCopyTool,
-  fsUndoTool, getWorkspaceCtx,
+  fsUndoTool, fsGitTool, getWorkspaceCtx, withWorkspaceContext,
 } from './localFs'
 import { requestPermission } from '../permissions'
 import { terminalRunTool } from './terminalRun'
 import { mcpResourceTool, mcpPromptTool } from './mcpResources'
+import { backgroundTaskSpawnTool } from '../backgroundWorkers'
 import { mcpSearchTool } from './mcpSearchTool'
 import { computerControlTool } from './computerControl'
 import { identifyTool } from './identify'
@@ -107,6 +108,7 @@ import { deepsecTool } from './deepsec'
 import { turbovecTool } from './turbovec'
 import { fprimeTool } from './fprime'
 import { threeuiTool } from './threeui'
+import { manimAnimTool } from './manimEngine'
 import { numbatTool } from './numbat'
 import { agentReachTool } from './agentReach'
 import { unlimitedOcrTool } from './unlimitedOcr'
@@ -154,6 +156,7 @@ import { aiderCopilotTool } from './aiderCopilot'
 import { langsmithObservabilityTool } from './langsmithObservability'
 import { langGraphFlowTool } from './langGraphFlow'
 import { scraplingTool } from './scrapling'
+import { researchBriefingTool } from './researchBriefing'
 
 export const screenInspectTool = {
   schema: {
@@ -289,6 +292,8 @@ const ALL_TOOLS = {
   social_search: socialSearchTool,
   job_search: jobSearchTool,
   social_post_generator: socialPostTool,
+  background_task_spawn: backgroundTaskSpawnTool,
+  background_task: backgroundTaskSpawnTool,
   // Desktop-only local filesystem tools (Tauri shell). Present in every build;
   // in the browser they return an honest "desktop only" note.
   fs_add_folder: fsAddFolderTool,
@@ -312,6 +317,7 @@ const ALL_TOOLS = {
   fs_batch_read: fsBatchReadTool,
   fs_file_tree: fsFileTreeTool,
   fs_undo: fsUndoTool,
+  fs_git: fsGitTool,
   terminal_run: terminalRunTool,
   todo: todoTool,
   finance_analytics: financeTool,
@@ -392,6 +398,7 @@ const ALL_TOOLS = {
   turbovec: turbovecTool,
   fprime: fprimeTool,
   threeui: threeuiTool,
+  manim_anim: manimAnimTool,
   numbat: numbatTool,
   agent_reach: agentReachTool,
   unlimited_ocr: unlimitedOcrTool,
@@ -424,6 +431,7 @@ const ALL_TOOLS = {
   langsmith_observability: langsmithObservabilityTool,
   langgraph_flow: langGraphFlowTool,
   scrapling_scrape: scraplingTool,
+  research_briefing: researchBriefingTool,
 }
 
 /** Common LLM hallucinated tool names mapped to their canonical Yogatik tool */
@@ -539,6 +547,14 @@ const TOOL_ALIASES = {
   search_files: 'fs_search',
   search_code: 'fs_search',
   batch_read: 'fs_batch_read',
+  git: 'fs_git',
+  git_status: 'fs_git',
+  git_diff: 'fs_git',
+  git_log: 'fs_git',
+  git_commit: 'fs_git',
+  git_stage: 'fs_git',
+  git_unstage: 'fs_git',
+  git_history: 'fs_git',
   // terminal_exec was a duplicate of terminal_run; it is an alias now.
   terminal_exec: 'terminal_run',
   terminal_cmd: 'terminal_run',
@@ -669,6 +685,23 @@ const TOOL_ALIASES = {
   websearch: 'web_search',
   internet_search: 'web_search',
   online_search: 'web_search',
+  // web_extract aliases — models often call web_read, read_url, fetch_url
+  web_read: 'web_extract',
+  read_url: 'web_extract',
+  read_url_content: 'web_extract',
+  fetch_url: 'web_extract',
+  read_web_page: 'web_extract',
+  scrape_url: 'web_extract',
+  web_fetch: 'web_extract',
+  web_scrape: 'web_extract',
+  extract_web: 'web_extract',
+  extract_url: 'web_extract',
+  browse_url: 'web_extract',
+  url_read: 'web_extract',
+  url_extract: 'web_extract',
+  web_page: 'web_extract',
+  fetch_web_page: 'web_extract',
+  read_page: 'web_extract',
   generate_image: 'image_generate',
   create_image: 'image_generate',
   text_to_image: 'image_generate',
@@ -707,6 +740,21 @@ const TOOL_ALIASES = {
   scan_qr: 'qr_read',
   extract_pdf: 'pdf_extract',
   read_pdf: 'pdf_extract',
+  // md_to_pdf aliases — the model sometimes calls these names when creating PDFs
+  create_pdf: 'md_to_pdf',
+  generate_pdf: 'md_to_pdf',
+  export_pdf: 'md_to_pdf',
+  make_pdf: 'md_to_pdf',
+  pdf_create: 'md_to_pdf',
+  pdf_generate: 'md_to_pdf',
+  pdf_export: 'md_to_pdf',
+  markdown_to_pdf: 'md_to_pdf',
+  convert_to_pdf: 'md_to_pdf',
+  // Manim Mathematical Animation Aliases
+  manim: 'manim_anim',
+  math_anim: 'manim_anim',
+  manim_create: 'manim_anim',
+  animate_math: 'manim_anim',
   research: 'deep_research',
   deep_search: 'deep_research',
   // Social & Platform Search
@@ -954,11 +1002,23 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
     scores['link_preview'] = 120
     scores['web_search'] = 100
   }
-  if (/\b(ppt|pptx|powerpoint|slides?|presentation|document|doc|docx|csv|pdf|export|download)\b/i.test(text)) {
+  if (/\b(ppt|pptx|powerpoint|slides?|presentation|document|doc|docx|csv|export|download)\b/i.test(text)) {
     scores['doc_export'] = 200
     scores['doc_enhance'] = 180
     scores['pdf_extract'] = 120
     scores['data_convert'] = 100
+  }
+  // "create/generate/make/export a PDF" → always use md_to_pdf, not doc_export
+  if (/\b(pdf|portable document)\b/i.test(text)) {
+    if (/\b(creat|generat|make|build|export|convert|produc|write|output|download|save)\b/i.test(text)) {
+      scores['md_to_pdf'] = 260
+      scores['doc_export'] = 80
+    } else {
+      // Just mentioned PDF (could be reading or creating)
+      scores['md_to_pdf'] = 180
+      scores['pdf_extract'] = 140
+      scores['doc_export'] = 60
+    }
   }
   if (/\b(job|career|hire|naukri|indeed|internship|resume|salary|opening)\b/i.test(text)) {
     scores['job_search'] = 200
@@ -976,12 +1036,24 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
     scores['diff'] = 140
     scores['terminal_run'] = 120
   }
-  if (/\b(image|picture|photo|draw|illustration|sticker|logo|banner|qr|chart|diagram|render)\b/i.test(text)) {
+  if (/\b(diagram|flowchart|lifecycle|mindmap|sequence diagram|architecture|er diagram|class diagram|process flow|schema)\b/i.test(text)) {
+    scores['diagram'] = 250
+    scores['diagram_render'] = 220
+  }
+  if (/\b(chart|graph|plot|bar chart|pie chart|line chart|scatter plot)\b/i.test(text)) {
+    scores['chart'] = 220
+  }
+  if (/\b(manim|math animation|calculus animation|fourier animation|matrix animation|vector field animation|3b1b|3blue1brown|kinetic math)\b/i.test(text)) {
+    scores['manim_anim'] = 260
+  }
+  if (/\b(image|picture|photo|draw|illustration|photorealistic|wallpaper|portrait|painting)\b/i.test(text) && !/\b(diagram|flowchart|lifecycle|architecture|schema)\b/i.test(text)) {
     scores['image_generate'] = 200
-    scores['sticker_generate'] = 180
-    scores['diagram_render'] = 160
-    scores['chart'] = 150
-    scores['qr_generate'] = 140
+  }
+  if (/\b(sticker|icon|emoji|badge)\b/i.test(text)) {
+    scores['sticker_generate'] = 200
+  }
+  if (/\b(qr|qr code|barcode)\b/i.test(text)) {
+    scores['qr_generate'] = 200
   }
   if (/\b(delegate|sub-agent|subagent|multi-agent|plan|steps|roadmap|complex task|workflow)\b/i.test(text)) {
     scores['spawn_agents'] = 200
@@ -1196,44 +1268,46 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
 }
 
 /** Execute a tool by name */
-export async function executeTool(name, args, { signal } = {}) {
-  let cleanName = String(name || '').split('<')[0].split(' ')[0].split(':')[0].trim().toLowerCase()
-  // A REGISTERED tool always wins over an alias of the same name. `watch` was
-  // both a real tool and an alias for watch_folder: the model read watchTool's
-  // description in the schema list, called `watch`, and silently reached a
-  // different tool with different actions.
-  if (!ALL_TOOLS[cleanName] && TOOL_ALIASES[cleanName]) {
-    cleanName = TOOL_ALIASES[cleanName]
-  }
-  if (isMcpTool(cleanName)) return callMcpTool(cleanName, args)
-  const tool = ALL_TOOLS[cleanName]
-  if (!tool) return { success: false, error: `Unknown tool: ${name}` }
-  if (signal?.aborted) return { success: false, error: 'Stopped' }
+export async function executeTool(name, args, { signal, ctx } = {}) {
+  return withWorkspaceContext(ctx, async () => {
+    let cleanName = String(name || '').split('<')[0].split(' ')[0].split(':')[0].trim().toLowerCase()
+    // A REGISTERED tool always wins over an alias of the same name. `watch` was
+    // both a real tool and an alias for watch_folder: the model read watchTool's
+    // description in the schema list, called `watch`, and silently reached a
+    // different tool with different actions.
+    if (!ALL_TOOLS[cleanName] && TOOL_ALIASES[cleanName]) {
+      cleanName = TOOL_ALIASES[cleanName]
+    }
+    if (isMcpTool(cleanName)) return callMcpTool(cleanName, args)
+    const tool = ALL_TOOLS[cleanName]
+    if (!tool) return { success: false, error: `Unknown tool: ${name}` }
+    if (signal?.aborted) return { success: false, error: 'Stopped' }
 
-  // Gate anything that writes to or runs on the user's machine. Reads pass
-  // straight through. A refusal is a normal tool result so the model adapts
-  // instead of the turn hanging.
-  const repairedArgs = repairToolArguments(cleanName, args, tool.schema)
-  const safetyCheck = validateToolSafety(cleanName, repairedArgs || {})
-  if (!safetyCheck.safe) {
-    return { success: false, error: safetyCheck.reason || 'Operation blocked by tool guardrails', blocked: true, denied: true }
-  }
+    // Gate anything that writes to or runs on the user's machine. Reads pass
+    // straight through. A refusal is a normal tool result so the model adapts
+    // instead of the turn hanging.
+    const repairedArgs = repairToolArguments(cleanName, args, tool.schema)
+    const safetyCheck = validateToolSafety(cleanName, repairedArgs || {})
+    if (!safetyCheck.safe) {
+      return { success: false, error: safetyCheck.reason || 'Operation blocked by tool guardrails', blocked: true, denied: true }
+    }
 
-  const verdict = await requestPermission(cleanName, repairedArgs || {}, getWorkspaceCtx())
-  if (!verdict.allowed) return { success: false, error: verdict.reason, denied: true }
+    const verdict = await requestPermission(cleanName, repairedArgs || {}, getWorkspaceCtx(ctx))
+    if (!verdict.allowed) return { success: false, error: verdict.reason, denied: true }
 
-  // Makes Stop reach the tool's own network calls (see tools/http.js).
-  pushAmbientSignal(signal)
-  try {
-    return await tool.execute(repairedArgs)
-  } catch (err) {
-    if (err?.name === 'AbortError' || signal?.aborted) return { success: false, error: 'Stopped' }
-    // A thrown string, or an object with no `message`, left error undefined —
-    // which the error log then printed as "<tool>: Unknown error".
-    return { success: false, error: err?.message || String(err) || `${cleanName} failed` }
-  } finally {
-    popAmbientSignal(signal)
-  }
+    // Makes Stop reach the tool's own network calls (see tools/http.js).
+    pushAmbientSignal(signal)
+    try {
+      return await tool.execute(repairedArgs, { signal, ctx })
+    } catch (err) {
+      if (err?.name === 'AbortError' || signal?.aborted) return { success: false, error: 'Stopped' }
+      // A thrown string, or an object with no `message`, left error undefined —
+      // which the error log then printed as "<tool>: Unknown error".
+      return { success: false, error: err?.message || String(err) || `${cleanName} failed` }
+    } finally {
+      popAmbientSignal(signal)
+    }
+  })
 }
 
 /** List all tool names */

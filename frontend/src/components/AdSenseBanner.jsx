@@ -60,12 +60,15 @@ export function AdSenseBanner({
     loadAdSenseWhenIdle()
     try {
       if (typeof window !== 'undefined') {
-        ;(window.adsbygoogle = window.adsbygoogle || []).push({})
-        pushedRef.current = true
-        setAdLoaded(true)
+        const unhandledIns = document.querySelectorAll('ins.adsbygoogle:not([data-adsbygoogle-status="done"])')
+        if (unhandledIns.length > 0) {
+          ;(window.adsbygoogle = window.adsbygoogle || []).push({})
+          pushedRef.current = true
+          setAdLoaded(true)
+        }
       }
     } catch {
-      // Gracefully ignore ad blocker or network errors
+      // Gracefully ignore ad blocker or duplicate tag errors
     }
     // AdSense stamps data-ad-status="filled" | "unfilled" once it has decided.
     const t = setTimeout(() => {

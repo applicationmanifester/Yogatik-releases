@@ -1,309 +1,184 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   Send, X, Eye, EyeOff, Zap, ShieldCheck, Square, GripHorizontal, Pin, PinOff,
-  Mic, MicOff, Volume2, VolumeX, Camera, ChevronDown, ChevronUp, Sparkles, Terminal
+  Mic, MicOff, Volume2, VolumeX, Camera, ChevronDown, ChevronUp, Sparkles, Terminal,
+  ScanEye, Trash2, Copy, Check, Radio, Bug, FileCode, CheckCircle2,
 } from 'lucide-react'
-import { streamMessage, getVisionStatus } from '../api'
-import { subscribeActivity } from '../activityStream'
-import { createWatchState, shouldLook, noteLook, setPaused } from '../companion/watch'
-import { hashDataUrl } from '../companion/screenHash'
-import { createActionGate, MODES } from '../companion/gate'
-import { describeWithoutModel } from '../vision/source'
+import { useCompanionBrain } from '../companion/useCompanionBrain'
 import { useCompanionVoice } from '../companion/useCompanionVoice'
-
-/** Parse and sanitize companion reply, separating <think> reasoning and filtering out silent sentinels */
-function sanitizeReply(raw) {
-  const str = String(raw || '').trim()
-  if (!str) return { isSilent: true, text: '', thoughts: '' }
-  
-  const thoughtsMatch = str.match(/<think>([\s\S]*?)<\/think>/i)
-  const thoughts = thoughtsMatch ? thoughtsMatch[1].trim() : ''
-  const cleanText = str.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
-  
-  const isSilent = !cleanText || /^[\s"'`*_.]*(nothing|nothing-to-add|nothing to add|no-action|none)[\s"'`*_.!]*$/i.test(cleanText)
-  return { isSilent, text: isSilent ? '' : cleanText, thoughts }
-}
+import { createActionGate, MODES } from '../companion/gate'
+import { describeEntry, summarize } from '../companion/trail'
+import { isSilence, PERSONAS } from '../companion/companionChat'
 
 /**
- * High-IQ Autonomous Companion View
- * Capable of multimodal screen watching, webcam vision, voice in/out,
- * and autonomous tool execution (terminal, filesystem, patch, search) in Autopilot.
+ * The floating companion window (?companion=1) — and now the SAME companion
+ * that runs in the in-app panel.
  */
+
+/** Split a reply into its <think> block and the part meant to be read. */
+export function splitThinking(raw) {
+  const str = String(raw || '')
+  const m = str.match(/<think>([\s\S]*?)<\/think>/i)
+  return {
+    thoughts: m ? m[1].trim() : '',
+    text: str.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '').trim(),
+  }
+}
+
+/** Audio Wave Indicator */
+function MiniEqualizer({ active = false }) {
+  return (
+    <div className="companion-audio-wave" title="Audio Activity">
+      {[0.4, 0.9, 0.6, 1.0, 0.5].map((h, i) => (
+        <span
+          key={i}
+          style={{
+            height: active ? `${Math.max(4, h * 12)}px` : '3px',
+            animation: active ? `companion-eq 0.7s ease-in-out ${i * 0.12}s infinite alternate` : 'none',
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+/** Render formatted message with 1-click copy code snippets */
+function CompanionTurnContent({ text }) {
+  const [copiedIdx, setCopiedIdx] = useState(null)
+  if (!text) return null
+
+  const parts = []
+  const codeRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g
+  let lastIndex = 0
+  let match
+  let blockIdx = 0
+
+  while ((match = codeRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', text: text.slice(lastIndex, match.index) })
+    }
+    const idx = blockIdx++
+    parts.push({ type: 'code', lang: match[1] || 'code', code: match[2], idx })
+    lastIndex = match.index + match[0].length
+  }
+  if (lastIndex < text.length) {
+    parts.push({ type: 'text', text: text.slice(lastIndex) })
+  }
+
+  const copyCode = (code, idx) => {
+    try {
+      navigator.clipboard.writeText(code)
+      setCopiedIdx(idx)
+      setTimeout(() => setCopiedIdx(null), 1800)
+    } catch {}
+  }
+
+  return (
+    <div className="companion-turn-inner">
+      {parts.map((p, i) => {
+        if (p.type === 'text') {
+          return <span key={i} className="companion-text-segment">{p.text}</span>
+        }
+        return (
+          <div key={i} className="companion-code-box">
+            <div className="companion-code-header">
+              <span className="companion-code-lang">{p.lang}</span>
+              <button
+                type="button"
+                className="companion-copy-btn"
+                onClick={() => copyCode(p.code, p.idx)}
+                title="Copy code"
+              >
+                {copiedIdx === p.idx ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
+                <span>{copiedIdx === p.idx ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+            <pre className="companion-code-pre"><code>{p.code}</code></pre>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Turns kept on screen. This is a glanceable strip, not a chat window. */
+const VISIBLE_TURNS = 6
+
 export function CompanionView() {
   const [input, setInput] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [rawReply, setRawReply] = useState('')
+  const [mode, setMode] = useState('ask')
   const [showThoughts, setShowThoughts] = useState(false)
-  const [steps, setSteps] = useState([])
-  const [mode, setMode] = useState('auto') // Default to high-IQ Autopilot
-  const [watching, setWatching] = useState(false)
-  const [cameraActive, setCameraActive] = useState(false)
-  const [watchNote, setWatchNote] = useState('')
-  const [pending, setPending] = useState(null)
+  const [showTrail, setShowTrail] = useState(false)
+  const [showPersonaMenu, setShowPersonaMenu] = useState(false)
   const [pinned, setPinned] = useState(true)
-  const [speechEnabled, setSpeechEnabled] = useState(false)
-  const [lastCapturedImage, setLastCapturedImage] = useState(null)
-  
-  const abortRef = useRef(null)
-  const watchRef = useRef(createWatchState())
-  const videoRef = useRef(null)
-  const streamRef = useRef(null)
-  const bodyRef = useRef(null)
+  const [pending, setPending] = useState(null)
+  const [note, setNote] = useState('')
+
   const shellRef = useRef(null)
-  const contentRef = useRef(null)
   const barRef = useRef(null)
+  const bodyRef = useRef(null)
+  const contentRef = useRef(null)
   const inputBarRef = useRef(null)
   const inputRef = useRef(null)
-  const canSeeRef = useRef(null)
   const promptHistoryRef = useRef([])
   const historyIndexRef = useRef(-1)
   const draftInputRef = useRef('')
 
   const bridge = () => (typeof window !== 'undefined' && window.__YOGATIK_COMPANION_WIN__) || null
   const isFloatingWindow = !!bridge()
-  const canSeeScreen = typeof window !== 'undefined' && !!window.__YOGATIK_COMPANION__?.captureScreen
 
-  // Voice integration (Echo guarded)
-  const {
-    listening,
-    speaking,
-    startListening,
-    stopListening,
-    speak,
-  } = useCompanionVoice({
-    enabled: true,
-    onUtterance: (transcript) => {
-      if (transcript && transcript.trim()) {
-        setInput(transcript.trim())
-        handleSend(transcript.trim())
-      }
+  /* ── the shared brain ─────────────────────────────────────────────────── */
+  const brainRef = useRef(null)
+  const voice = useCompanionVoice({
+    onUtterance: (text) => {
+      const t = String(text || '').trim()
+      if (t) brainRef.current?.ask(t, null, { tools: true })
     },
   })
+  const brain = useCompanionBrain({
+    surface: 'window',
+    mode,
+    onSpeakText: (text) => { if (voice.speechEnabled) voice.speak(text) },
+  })
+  brainRef.current = brain
 
-  // Action gate confirmation hook
+  /* ── action gate ──────────────────────────────────────────────────────── */
   const askUser = useCallback(({ reason, risk, step }) => new Promise((resolve) => {
     setPending({ reason, risk, step, resolve })
   }), [])
 
   const gateRef = useRef(null)
-  if (!gateRef.current) {
-    gateRef.current = createActionGate({ mode: MODES.AUTO, confirm: askUser })
-  }
+  if (!gateRef.current) gateRef.current = createActionGate({ mode: MODES.ASK, confirm: askUser })
+  useEffect(() => { gateRef.current.setMode(mode === 'auto' ? MODES.AUTO : MODES.ASK) }, [mode])
 
-  useEffect(() => {
-    gateRef.current.setMode(mode === 'auto' ? MODES.AUTO : MODES.ASK)
-  }, [mode])
-
-  // Mirror tool steps from main activity stream
-  useEffect(() => subscribeActivity((snap) => {
-    setSteps(snap.steps.slice(-6))
-    if (snap.answer) setRawReply(snap.answer)
-  }), [])
-
-  // Probe vision or fallback to OCR
-  const prepareVisualContext = useCallback(async (dataUrl, query = '') => {
-    if (!dataUrl) return { image: null, promptAddon: '' }
-
-    if (canSeeRef.current === null) {
-      try {
-        const status = await getVisionStatus()
-        canSeeRef.current = !!(status?.cached ?? status?.guessed)
-      } catch {
-        canSeeRef.current = false
-      }
-    }
-
-    if (canSeeRef.current) {
-      return { image: dataUrl, promptAddon: '' }
-    }
-
-    // Text-only model fallback: perform on-device OCR so the model can still understand the screen
-    try {
-      const described = await describeWithoutModel(dataUrl, query || 'Read text and code on screen')
-      const note = described?.text ? `\n[Screen Content OCR:\n${described.text}\n]` : ''
-      return { image: null, promptAddon: note }
-    } catch {
-      return { image: null, promptAddon: '\n[Screen frame captured.]' }
-    }
-  }, [])
-
-  const handleSend = useCallback(async (textOverride = null, imageOverride = null, opts = {}) => {
-    const msg = String(textOverride ?? input).trim()
-    if (!msg || busy) return
-    if (!opts?.ambient) {
-      promptHistoryRef.current = [...promptHistoryRef.current.filter(p => p !== msg), msg]
-    }
-    historyIndexRef.current = -1
-    draftInputRef.current = ''
-    setInput('')
-    setBusy(true)
-    setRawReply('')
-
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
-
-    let targetImage = imageOverride || lastCapturedImage
-    let promptPayload = msg
-
-    if (targetImage) {
-      const { image, promptAddon } = await prepareVisualContext(targetImage, msg)
-      targetImage = image
-      if (promptAddon) promptPayload = `${msg}\n${promptAddon}`
-    }
-
-    let acc = ''
-    try {
-      await streamMessage(
-        {
-          message: promptPayload,
-          image: targetImage,
-          signal: ctrl.signal,
-          autonomous: mode === 'auto',
-          tools: mode === 'auto',
-          use_tools: mode === 'auto',
-          ...opts,
-        },
-        (token) => {
-          acc += token
-          setRawReply(acc)
-        },
-        undefined,
-        () => {
-          setBusy(false)
-          const { isSilent, text } = sanitizeReply(acc)
-          if (!isSilent && text && speechEnabled) {
-            speak(text)
-          }
-        },
-        (e) => {
-          setRawReply(`Could not finish: ${e?.message || e}`)
-          setBusy(false)
-        },
-      )
-    } catch (e) {
-      setRawReply(`Could not finish: ${e?.message || e}`)
-      setBusy(false)
-    }
-  }, [input, busy, lastCapturedImage, mode, prepareVisualContext, speechEnabled, speak])
-
-  const stop = useCallback(() => {
-    try { abortRef.current?.abort() } catch {}
-    setPending((p) => { try { p?.resolve(false) } catch {} return null })
-    setBusy(false)
-  }, [])
-
-  // Expose action gate to window for agent tooling
   useEffect(() => {
     window.__YOGATIK_ACTION_GATE__ = gateRef.current
     return () => { delete window.__YOGATIK_ACTION_GATE__ }
   }, [])
 
-  // Webcam stream management
-  const toggleCamera = useCallback(async () => {
-    if (cameraActive) {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop())
-        streamRef.current = null
-      }
-      setCameraActive(false)
-      setWatchNote('')
-      return
-    }
+  useEffect(() => () => { try { pending?.resolve(false) } catch {} }, [pending])
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } })
-      streamRef.current = stream
-      if (videoRef.current) videoRef.current.srcObject = stream
-      setCameraActive(true)
-      setWatchNote('Camera active. Watching environment…')
-    } catch (e) {
-      setWatchNote(`Camera access failed: ${e?.message || e}`)
-      setCameraActive(false)
-    }
-  }, [cameraActive])
-
-  // Screen watching loop
+  /* ── window chrome & sizing ───────────────────────────────────────────── */
   useEffect(() => {
-    if (!watching) { setPaused(watchRef.current, true); return }
-    setPaused(watchRef.current, false)
-    let alive = true
-
-    const tick = async () => {
-      if (!alive || busy) return
-      const cam = window.__YOGATIK_COMPANION__
-      if (!cam?.captureScreen) {
-        setWatchNote('Screen capture is desktop-only.')
-        return
-      }
-
-      const early = shouldLook(watchRef.current, { now: Date.now(), hash: watchRef.current.lastHash })
-      if (!early.look && early.reason !== 'Screen has not changed.') {
-        setWatchNote(early.reason)
-        return
-      }
-
-      let hash = null
-      let shot = null
-      try {
-        shot = await cam.captureScreen()
-        if (!alive) return
-        if (!shot?.success || !shot?.dataUrl) {
-          setWatchNote(shot?.error || 'Could not capture the screen.')
-          return
-        }
-        setLastCapturedImage(shot.dataUrl)
-        hash = await hashDataUrl(shot.dataUrl)
-      } catch (e) {
-        setWatchNote(`Screen capture error: ${e?.message || e}`)
-        return
-      }
-      if (!alive || busy) return
-
-      const decision = shouldLook(watchRef.current, { now: Date.now(), hash })
-      setWatchNote(decision.reason)
-      if (!decision.look) return
-
-      noteLook(watchRef.current, { now: Date.now(), hash })
-
-      // Dispatch observation with image attached
-      handleSend(
-        'Look at my screen. If there is an active problem, bug, error, or next step you can help with right now, explain in one concise sentence and take action. If everything looks good and nothing needs action, reply exactly: NOTHING-TO-ADD.',
-        shot.dataUrl,
-        { ambient: true }
-      )
-    }
-
-    const id = setInterval(tick, 5000)
-    return () => { alive = false; clearInterval(id) }
-  }, [watching, busy, handleSend])
-
-  // Auto-resize floating window based on content
-  useEffect(() => {
-    const content = contentRef.current
-    const b = bridge()
-    if (!content || !b?.resize || typeof ResizeObserver !== 'function') return
-    let last = 0
-    let frame = 0
+    if (!isFloatingWindow || typeof ResizeObserver === 'undefined') return undefined
+    let frame = null
     const fit = () => {
-      frame = 0
-      const chrome = (barRef.current?.offsetHeight || 0) + (inputBarRef.current?.offsetHeight || 0)
-      const height = Math.ceil(Math.min(chrome + content.scrollHeight + 4, 640))
-      if (!height || Math.abs(height - last) < 8) return
-      last = height
-      b.resize({ height })
+      if (frame) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const h = (barRef.current?.offsetHeight || 0)
+          + (contentRef.current?.offsetHeight || 0)
+          + (inputBarRef.current?.offsetHeight || 0)
+        bridge()?.setHeight?.(Math.round(h + 16))
+      })
     }
-    const ro = new ResizeObserver(() => {
-      if (frame) return
-      frame = requestAnimationFrame(fit)
-    })
-    ro.observe(content)
+    const ro = new ResizeObserver(fit)
+    if (contentRef.current) ro.observe(contentRef.current)
     fit()
     return () => { ro.disconnect(); if (frame) cancelAnimationFrame(frame) }
-  }, [])
+  }, [isFloatingWindow])
 
   useEffect(() => { bridge()?.setAlwaysOnTop?.(pinned) }, [pinned])
 
-  // Global Ctrl+Alt+C selection capture
   useEffect(() => {
     const off = bridge()?.onSelection?.(({ text } = {}) => {
       const t = String(text || '').trim()
@@ -314,70 +189,210 @@ export function CompanionView() {
     return off
   }, [])
 
-  const { isSilent, text: visibleReply, thoughts } = sanitizeReply(rawReply)
+  /* ── keyboard shortcuts (PTT & hotkeys) ───────────────────────────────── */
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      // Ctrl+Alt+W: Toggle Watch
+      if (e.ctrlKey && e.altKey && e.code === 'KeyW') {
+        e.preventDefault()
+        toggleWatch()
+        return
+      }
+      // Ctrl+Alt+M: Toggle Voice
+      if (e.ctrlKey && e.altKey && e.code === 'KeyM') {
+        e.preventDefault()
+        voice.toggleListening()
+        return
+      }
+      // Ctrl+Alt+V: Push-To-Talk
+      if (e.ctrlKey && e.altKey && e.code === 'KeyV' && !voice.pttActive) {
+        e.preventDefault()
+        voice.startPtt()
+      }
+    }
+
+    const onKeyUp = (e) => {
+      if (e.code === 'KeyV' && voice.pttActive) {
+        e.preventDefault()
+        voice.stopPtt()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [voice, brain])
 
   useEffect(() => {
     const el = bodyRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [visibleReply, steps, thoughts])
+  }, [brain.messages, brain.streamText, brain.steps, showTrail])
+
+  /* ── sending & actions ────────────────────────────────────────────────── */
+  const send = useCallback(async (textOverride = null) => {
+    const msg = String(textOverride ?? input).trim()
+    if (!msg || brain.busy) return
+    promptHistoryRef.current = [...promptHistoryRef.current.filter(p => p !== msg), msg]
+    historyIndexRef.current = -1
+    draftInputRef.current = ''
+    setInput('')
+    await brain.ask(msg, null, { tools: true })
+  }, [input, brain])
+
+  const toggleWatch = useCallback(async () => {
+    if (brain.watching) { brain.stopWatch(); return }
+    const ok = await brain.startWatch()
+    if (!ok) setNote(brain.error || 'Could not start watching.')
+  }, [brain])
+
+  const toggleCamera = useCallback(async () => {
+    if (brain.cameraOn) { brain.stopCamera(); return }
+    const ok = await brain.startCamera()
+    if (!ok) setNote(brain.error || 'Could not start the camera.')
+  }, [brain])
+
+  const onInputKey = useCallback((e) => {
+    const historyList = promptHistoryRef.current
+    if (e.key === 'ArrowUp' && (!input || (e.target.selectionStart === 0 && e.target.selectionEnd === 0))) {
+      if (!historyList.length) return
+      if (historyIndexRef.current === -1) {
+        draftInputRef.current = input
+        historyIndexRef.current = historyList.length - 1
+      } else if (historyIndexRef.current > 0) {
+        historyIndexRef.current -= 1
+      }
+      const target = historyList[historyIndexRef.current]
+      if (target === undefined) return
+      e.preventDefault()
+      setInput(target)
+      return
+    }
+    if (e.key === 'ArrowDown' && historyIndexRef.current !== -1) {
+      e.preventDefault()
+      if (historyIndexRef.current < historyList.length - 1) {
+        historyIndexRef.current += 1
+        setInput(historyList[historyIndexRef.current])
+      } else {
+        historyIndexRef.current = -1
+        setInput(draftInputRef.current || '')
+      }
+      return
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      send()
+    }
+  }, [input, send])
+
+  /* ── derived view ─────────────────────────────────────────────────────── */
+  const turns = useMemo(
+    () => brain.messages.filter(m => !(m.role === 'assistant' && isSilence(m.content))).slice(-VISIBLE_TURNS),
+    [brain.messages],
+  )
+  const live = useMemo(() => splitThinking(brain.streamText), [brain.streamText])
+  const trailSummary = useMemo(() => summarize(brain.trail), [brain.trail])
+  const canWatch = !!brain.capabilities.screen
+  const currentPersona = PERSONAS[brain.persona] || PERSONAS.pair
+  const isAudioActive = voice.listening || voice.pttActive || voice.speaking
 
   return (
     <div className="companion" ref={shellRef}>
-      {/* Companion Window Titlebar & HUD Controls */}
       <div className="companion-bar" ref={barRef}>
         <GripHorizontal size={13} className="companion-grip" />
         <span className="companion-title">Yogatik</span>
 
-        {/* Autopilot / Ask First Mode Chip */}
+        {/* Persona Switcher */}
+        <div className="companion-persona-wrap">
+          <button
+            className="companion-chip"
+            onClick={() => setShowPersonaMenu(s => !s)}
+            title={`Active Persona: ${currentPersona.name} (${currentPersona.tagline})`}
+          >
+            {brain.persona === 'security' && <ShieldCheck size={12} color="#38bdf8" />}
+            {brain.persona === 'copilot' && <Zap size={12} color="#f59e0b" />}
+            {brain.persona === 'concierge' && <Sparkles size={12} color="#a855f7" />}
+            {brain.persona === 'pair' && <Terminal size={12} color="#10b981" />}
+            <span>{currentPersona.name.split(' ')[0]}</span>
+            <ChevronDown size={10} />
+          </button>
+
+          {showPersonaMenu && (
+            <div className="companion-persona-popover">
+              <div className="companion-popover-title">Select Companion Persona</div>
+              {Object.values(PERSONAS).map(p => (
+                <button
+                  key={p.id}
+                  className={`companion-persona-item ${brain.persona === p.id ? 'active' : ''}`}
+                  onClick={() => { brain.setPersona(p.id); setShowPersonaMenu(false) }}
+                >
+                  <div className="companion-persona-header">
+                    <strong>{p.name}</strong>
+                    {brain.persona === p.id && <CheckCircle2 size={12} color="var(--accent)" />}
+                  </div>
+                  <div className="companion-persona-tagline">{p.tagline}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Autopilot / Ask First Toggle */}
         <button
           className={`companion-chip ${mode === 'auto' ? 'on' : ''}`}
           onClick={() => setMode(mode === 'auto' ? 'ask' : 'auto')}
           title={mode === 'auto'
-            ? 'Autopilot: Executes tools and terminal commands autonomously'
-            : 'Ask first: Confirms before executing tools'}
+            ? 'Autopilot: acts on its own, and still stops to confirm anything irreversible'
+            : 'Ask first: confirms every action before it runs'}
         >
           {mode === 'auto' ? <Zap size={12} /> : <ShieldCheck size={12} />}
           {mode === 'auto' ? 'Autopilot' : 'Ask first'}
         </button>
 
-        {/* Screen Watch Toggle */}
         <button
-          className={`companion-icon ${watching ? 'on' : ''}`}
-          onClick={() => setWatching((w) => !w)}
-          disabled={!canSeeScreen}
-          title={!canSeeScreen
-            ? 'Watching your screen requires the desktop app'
-            : watching ? 'Stop watching screen' : 'Watch screen continuously'}
+          className={`companion-icon ${brain.watching ? 'on' : ''}`}
+          onClick={toggleWatch}
+          disabled={!canWatch}
+          title={!canWatch
+            ? 'No screen capture is available in this browser'
+            : brain.watching
+              ? 'Stop watching (Ctrl+Alt+W)'
+              : brain.capabilities.screen === 'native'
+                ? 'Watch this screen (Ctrl+Alt+W)'
+                : 'Share a window or tab for the companion to watch'}
           aria-label="Toggle screen watching"
+          aria-pressed={brain.watching}
         >
-          {watching ? <Eye size={14} /> : <EyeOff size={14} />}
+          {brain.watching ? <Eye size={14} /> : <EyeOff size={14} />}
         </button>
 
-        {/* Webcam / Camera Toggle */}
         <button
-          className={`companion-icon ${cameraActive ? 'on' : ''}`}
+          className={`companion-icon ${brain.cameraOn ? 'on' : ''}`}
           onClick={toggleCamera}
-          title={cameraActive ? 'Turn off camera' : 'Turn on camera / visual analysis'}
+          disabled={!brain.capabilities.camera}
+          title={brain.cameraOn ? 'Turn off the camera' : 'Turn on the camera'}
           aria-label="Toggle camera"
+          aria-pressed={brain.cameraOn}
         >
           <Camera size={14} />
         </button>
 
-        {/* Text-to-Speech Output Narration */}
         <button
-          className={`companion-icon ${speechEnabled ? 'on' : ''}`}
-          onClick={() => setSpeechEnabled((s) => !s)}
-          title={speechEnabled ? 'Mute speech output' : 'Enable spoken voice output'}
+          className={`companion-icon ${voice.speechEnabled ? 'on' : ''}`}
+          onClick={() => voice.setSpeechEnabled(!voice.speechEnabled)}
+          title={voice.speechEnabled ? 'Mute spoken replies' : 'Speak replies aloud'}
           aria-label="Toggle voice output"
+          aria-pressed={voice.speechEnabled}
         >
-          {speechEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+          {voice.speechEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
         </button>
 
-        {/* Pin Always On Top */}
         {isFloatingWindow && (
           <button
             className={`companion-icon ${pinned ? 'on' : ''}`}
-            onClick={() => setPinned((p) => !p)}
+            onClick={() => setPinned(p => !p)}
             title={pinned ? 'Pinned above all windows' : 'Stay on top'}
             aria-label="Toggle pin"
           >
@@ -385,186 +400,189 @@ export function CompanionView() {
           </button>
         )}
 
-        {/* Close / Hide Window */}
         {isFloatingWindow && (
-          <button className="companion-icon" onClick={() => bridge()?.hide()} title="Hide companion (Ctrl+Shift+Space)" aria-label="Hide companion">
+          <button className="companion-icon" onClick={() => bridge()?.hide()} title="Hide (Ctrl+Shift+Space)" aria-label="Hide companion">
             <X size={14} />
           </button>
         )}
       </div>
 
-      {/* Hidden video element for webcam frame stream */}
-      <video ref={videoRef} autoPlay playsInline muted style={{ display: 'none' }} />
-
-      {/* Companion Body / Conversation & Action Stream */}
       <div className="companion-body" ref={bodyRef}>
         <div ref={contentRef}>
-          {watching && <div className="companion-note">👁️ {watchNote || 'Watching screen…'}</div>}
-          {cameraActive && <div className="companion-note">📷 Camera active and monitoring…</div>}
+          {(brain.watching || brain.cameraOn) && (
+            <button
+              className="companion-note as-button"
+              onClick={() => setShowTrail(v => !v)}
+              title="What the companion has noticed"
+            >
+              <ScanEye size={11} />
+              <span>{brain.summary}</span>
+              <em>{trailSummary.headline}</em>
+              {showTrail ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+            </button>
+          )}
 
-          {/* Active Execution Steps HUD */}
-          {steps.length > 0 && (
+          {/* Quick Action Chips Bar */}
+          <div className="companion-quick-actions">
+            <button
+              type="button"
+              className="companion-action-chip"
+              onClick={() => brain.quickActions.reviewGitDiff()}
+              disabled={brain.busy}
+              title="Review unstaged & staged workspace changes"
+            >
+              <FileCode size={11} />
+              <span>Review Git</span>
+            </button>
+            <button
+              type="button"
+              className="companion-action-chip"
+              onClick={() => brain.quickActions.scanTerminalErrors()}
+              disabled={brain.busy}
+              title="Diagnose recent terminal & app errors"
+            >
+              <Bug size={11} />
+              <span>Scan Errors</span>
+            </button>
+            <button
+              type="button"
+              className="companion-action-chip"
+              onClick={() => brain.quickActions.suggestTests()}
+              disabled={brain.busy}
+              title="Suggest targeted unit tests"
+            >
+              <CheckCircle2 size={11} />
+              <span>Suggest Tests</span>
+            </button>
+          </div>
+
+          {/* Observation receipts */}
+          {showTrail && (
+            <div className="companion-trail">
+              {brain.trail.length === 0 && <div className="companion-trail-row muted">Nothing noticed yet.</div>}
+              {brain.trail.slice().reverse().map(e => (
+                <div key={e.id} className={`companion-trail-row ${e.kind}`}>
+                  <span className="t">{new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span>{describeEntry(e)}</span>
+                </div>
+              ))}
+              {brain.trail.length > 0 && (
+                <button className="companion-trail-clear" onClick={brain.clearTrail}>
+                  <Trash2 size={10} /> Clear
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Active Tool Steps */}
+          {brain.steps.length > 0 && (
             <div className="companion-steps">
-              {steps.map((s) => (
+              {brain.steps.slice(-6).map(s => (
                 <div key={s.id} className={`companion-step ${s.status || ''}`}>
                   <Terminal size={11} style={{ marginRight: 4 }} />
                   <span>{s.name}</span>
-                  {s.ms != null && <span className="companion-ms">{(s.ms / 1000).toFixed(1)}s</span>}
                 </div>
               ))}
             </div>
           )}
 
-          {/* Action Approval Confirmation Card */}
           {pending && (
             <div className="companion-confirm">
               <div className="companion-confirm-why">
-                <strong>{pending.risk === 'confirm' ? 'Permission Required' : 'Action Confirmation'}</strong>
+                <strong>{pending.risk === 'confirm' ? 'Confirm this action' : 'Allow this action?'}</strong>
                 <div>{pending.reason}</div>
               </div>
               <div className="companion-confirm-actions">
-                <button onClick={() => { pending.resolve(true); setPending(null) }}>Allow Action</button>
+                <button onClick={() => { pending.resolve(true); setPending(null) }}>Allow</button>
                 <button className="ghost" onClick={() => { pending.resolve(false); setPending(null) }}>Skip</button>
               </div>
             </div>
           )}
 
-          {/* Reasoning / Thinking Expander */}
-          {thoughts && (
-            <div className="companion-thoughts-block" style={{ marginBottom: 6 }}>
-              <button
-                className="companion-thoughts-toggle"
-                onClick={() => setShowThoughts((st) => !st)}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: 'none',
-                  color: 'rgba(255, 255, 255, 0.6)',
-                  fontSize: 11,
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4
-                }}
-              >
+          {/* Chat Turns */}
+          {turns.map((m, i) => {
+            const { text } = m.role === 'assistant' ? splitThinking(m.content) : { text: m.content }
+            if (!text) return null
+            return (
+              <div key={`${i}:${m.role}`} className={`companion-turn ${m.role}`}>
+                <CompanionTurnContent text={text} />
+              </div>
+            )
+          })}
+
+          {live.thoughts && (
+            <div className="companion-thoughts-block">
+              <button className="companion-thoughts-toggle" onClick={() => setShowThoughts(s => !s)}>
                 <Sparkles size={10} />
-                <span>Thinking Process</span>
+                <span>Thinking</span>
                 {showThoughts ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
               </button>
-              {showThoughts && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: 'rgba(255, 255, 255, 0.5)',
-                    padding: '4px 6px',
-                    fontStyle: 'italic',
-                    whiteSpace: 'pre-wrap',
-                    borderLeft: '2px solid rgba(255, 255, 255, 0.1)',
-                    marginTop: 4
-                  }}
-                >
-                  {thoughts}
-                </div>
-              )}
+              {showThoughts && <div className="companion-thoughts">{live.thoughts}</div>}
             </div>
           )}
 
-          {/* Main Content Reply */}
-          {!isSilent && visibleReply ? (
-            <div className="companion-reply">{visibleReply}</div>
-          ) : (
-            !busy && <div className="companion-idle">Ask me anything, or let me watch your screen & camera.</div>
+          {live.text && (
+            <div className="companion-reply">
+              <CompanionTurnContent text={live.text} />
+            </div>
           )}
-          {busy && !visibleReply && <div className="companion-idle">Thinking & acting…</div>}
+
+          {brain.busy && !live.text && <div className="companion-idle">Thinking…</div>}
+          {!brain.busy && !turns.length && !live.text && (
+            <div className="companion-idle">
+              Ask me anything{canWatch ? ', or let me watch your screen' : ''}.
+            </div>
+          )}
+          {(note || brain.error) && <div className="companion-error">{note || brain.error}</div>}
         </div>
       </div>
 
-      {/* Input Bar with Voice Mic & Send */}
       <div className="companion-input" ref={inputBarRef}>
+        {/* Equalizer Visualizer */}
+        {isAudioActive && <MiniEqualizer active={true} />}
+
         <input
           ref={inputRef}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowUp') {
-              const isAtStart = e.target.selectionStart === 0 && e.target.selectionEnd === 0
-              const isEmpty = !input
-              if (isEmpty || isAtStart) {
-                const historyList = promptHistoryRef.current
-                if (historyList.length > 0) {
-                  if (historyIndexRef.current === -1) {
-                    draftInputRef.current = input
-                    historyIndexRef.current = historyList.length - 1
-                  } else if (historyIndexRef.current > 0) {
-                    historyIndexRef.current -= 1
-                  }
-                  const targetPrompt = historyList[historyIndexRef.current]
-                  if (targetPrompt !== undefined) {
-                    e.preventDefault()
-                    setInput(targetPrompt)
-                    setTimeout(() => {
-                      try {
-                        inputRef.current?.setSelectionRange(targetPrompt.length, targetPrompt.length)
-                      } catch {}
-                    }, 0)
-                    return
-                  }
-                }
-              }
-            }
-            if (e.key === 'ArrowDown') {
-              if (historyIndexRef.current !== -1) {
-                const historyList = promptHistoryRef.current
-                if (historyIndexRef.current < historyList.length - 1) {
-                  historyIndexRef.current += 1
-                  const targetPrompt = historyList[historyIndexRef.current]
-                  e.preventDefault()
-                  setInput(targetPrompt)
-                  setTimeout(() => {
-                    try {
-                      inputRef.current?.setSelectionRange(targetPrompt.length, targetPrompt.length)
-                    } catch {}
-                  }, 0)
-                  return
-                } else {
-                  historyIndexRef.current = -1
-                  const restored = draftInputRef.current || ''
-                  e.preventDefault()
-                  setInput(restored)
-                  setTimeout(() => {
-                    try {
-                      inputRef.current?.setSelectionRange(restored.length, restored.length)
-                    } catch {}
-                  }, 0)
-                  return
-                }
-              }
-            }
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              handleSend()
-            }
-          }}
-          placeholder={mode === 'auto' ? 'Give me a goal or question…' : 'Ask me something…'}
+          onChange={(e) => { setInput(e.target.value); brain.setTyping(!!e.target.value) }}
+          onBlur={() => brain.setTyping(false)}
+          onKeyDown={onInputKey}
+          placeholder={mode === 'auto' ? 'Give me a goal…' : 'Ask me something…'}
           aria-label="Message"
         />
 
-        {/* Microphone Voice In */}
+        {/* Push-to-Talk Button (Hold or Click) */}
         <button
           type="button"
-          className={`companion-icon-btn ${listening ? 'listening' : ''}`}
-          onClick={listening ? stopListening : startListening}
-          title={listening ? 'Stop listening' : 'Speak to companion'}
-          aria-label="Voice input"
+          className={`companion-icon-btn ${voice.pttActive ? 'listening' : ''}`}
+          onMouseDown={voice.startPtt}
+          onMouseUp={voice.stopPtt}
+          onTouchStart={voice.startPtt}
+          onTouchEnd={voice.stopPtt}
+          disabled={!voice.available}
+          title={!voice.available ? 'Speech recognition unavailable' : 'Hold to Speak (Ctrl+Alt+V)'}
+          aria-label="Push to Talk"
         >
-          {listening ? <MicOff size={14} color="#f87171" /> : <Mic size={14} />}
+          <Radio size={13} color={voice.pttActive ? '#10b981' : undefined} />
         </button>
 
-        {busy ? (
-          <button onClick={stop} title="Stop" aria-label="Stop"><Square size={14} /></button>
+        {/* Continuous Voice Toggle */}
+        <button
+          type="button"
+          className={`companion-icon-btn ${voice.listening && !voice.pttActive ? 'listening' : ''}`}
+          onClick={voice.toggleListening}
+          disabled={!voice.available}
+          title={!voice.available ? 'Speech recognition is unavailable here' : voice.listening ? 'Stop listening (Ctrl+Alt+M)' : 'Continuous Voice (Ctrl+Alt+M)'}
+          aria-label="Voice input"
+          aria-pressed={voice.listening}
+        >
+          {voice.listening ? <MicOff size={14} color="#f87171" /> : <Mic size={14} />}
+        </button>
+
+        {brain.busy ? (
+          <button onClick={brain.stop} title="Stop" aria-label="Stop"><Square size={14} /></button>
         ) : (
-          <button onClick={() => handleSend()} disabled={!input.trim()} title="Send" aria-label="Send">
+          <button onClick={() => send()} disabled={!input.trim()} title="Send" aria-label="Send">
             <Send size={14} />
           </button>
         )}
@@ -575,3 +593,4 @@ export function CompanionView() {
 
 export default CompanionView
 export { createActionGate }
+

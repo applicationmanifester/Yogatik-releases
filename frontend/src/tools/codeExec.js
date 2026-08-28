@@ -71,6 +71,10 @@ async function getPyodide() {
   return pyodideReady
 }
 
+export function prewarmPyodide() {
+  getPyodide().catch(() => {})
+}
+
 export const codeExecTool = {
   schema: {
     description:

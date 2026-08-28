@@ -1,9 +1,10 @@
 // apps/desktop-electron/src/main/main.ts
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
-import { join } from 'path';
-import { isDev } from './utils/env.js';
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
+import { join } from 'path'
+import { isDev } from './utils/env.js'
 
-let mainWindow: BrowserWindow | null = null;
+let mainWindow: BrowserWindow | null = null
+const ipcHandlers = new Map<string, () => void>()
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -19,52 +20,76 @@ function createWindow() {
     },
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     show: false,
-  });
+  })
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    // Production: block cert errors
+    mainWindow.webContents.on('certificate-error', (event, _url, _error, _certificate, callback) => {
+      event.preventDefault()
+      callback(false)
+    })
   }
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-  });
+  mainWindow.once('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('closed', () => { mainWindow = null })
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url)
+    return { action: 'deny' }
+  })
+}
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+function registerIpcHandlers() {
+  const handlers: Record<string, (...args: any[]) => Promise<any>> = {
+    'app:getVersion': () => Promise.resolve(app.getVersion()),
+    'app:getPlatform': () => Promise.resolve(process.platform),
+    'dialog:openFile': async () => {
+      if (!mainWindow) return []
+      const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'All Files', extensions: ['*'] }],
+      })
+      return result.filePaths
+    },
+  }
 
-  // Handle external links
-  mainWindow.webContents.setWindowOpenHandler(({ url }: { url: string }) => {
-    shell.openExternal(url);
-    return { action: 'deny' };
-  });
+  for (const [channel, handler] of Object.entries(handlers)) {
+    ipcMain.handle(channel, handler)
+    ipcHandlers.set(channel, () => ipcMain.removeHandler(channel))
+  }
+
+  // Window control handlers (called from preload via ipcRenderer.send)
+  ipcMain.on('window:minimize', () => mainWindow?.minimize())
+  ipcMain.on('window:maximize', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
+  })
+  ipcMain.on('window:close', () => mainWindow?.close())
+}
+
+function unregisterIpcHandlers() {
+  for (const cleanup of ipcHandlers.values()) cleanup()
+  ipcHandlers.clear()
+  ipcMain.removeAllListeners('window:minimize')
+  ipcMain.removeAllListeners('window:maximize')
+  ipcMain.removeAllListeners('window:close')
 }
 
 app.whenReady().then(() => {
-  createWindow();
+  registerIpcHandlers()
+  createWindow()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+  if (process.platform !== 'darwin') app.quit()
+})
 
-// IPC handlers
-ipcMain.handle('app:getVersion', () => app.getVersion());
-ipcMain.handle('app:getPlatform', () => process.platform);
-
-// Example: Native file dialog
-ipcMain.handle('dialog:openFile', async () => {
-  const { dialog } = await import('electron');
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'All Files', extensions: ['*'] }],
-  });
-  return result.filePaths;
-});
+app.on('before-quit', unregisterIpcHandlers)

@@ -70,6 +70,7 @@ describe('ActiveTimerIndicator Component', () => {
 
     await act(async () => {
       cancelBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise(r => setTimeout(r, 10))
     })
 
     // After cancel, popover disappears and no timers remain

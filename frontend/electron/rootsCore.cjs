@@ -48,7 +48,7 @@ function resolveRootIds(state, ctx) {
 
 function resolveRootPaths(state, ctx) {
   const st = state || emptyState()
-  return resolveRootIds(st, ctx).map(id => st.roots[id].path)
+  return resolveRootIds(st, ctx).map(id => st.roots[id]?.path).filter(Boolean)
 }
 
 function samePath(a, b) {
@@ -156,6 +156,10 @@ function addRoot(state, ctx, absPath) {
   const key = chatKey(ctx) || 'default'
   const list = st.bindings[key] || []
   st.bindings[key] = list.includes(id) ? list : [...list, id]
+  // Only initialize default if default is completely empty
+  if (!Array.isArray(st.bindings['default']) || st.bindings['default'].length === 0) {
+    st.bindings['default'] = [id]
+  }
   return { state: st, root: { id, ...st.roots[id] } }
 }
 
@@ -163,6 +167,9 @@ function removeRoot(state, ctx, rootId) {
   const st = materialise(state, ctx)
   const key = chatKey(ctx) || 'default'
   st.bindings[key] = (st.bindings[key] || []).filter(id => id !== rootId)
+  if (Array.isArray(st.bindings['default'])) {
+    st.bindings['default'] = st.bindings['default'].filter(id => id !== rootId)
+  }
   const stillUsed = Object.values(st.bindings).some(list => (list || []).includes(rootId))
   if (!stillUsed) delete st.roots[rootId]
   return st
@@ -174,6 +181,25 @@ function setPrimary(state, ctx, rootId) {
   const list = st.bindings[key] || []
   if (!list.includes(rootId)) return st
   st.bindings[key] = [rootId, ...list.filter(id => id !== rootId)]
+  if (Array.isArray(st.bindings['default']) && st.bindings['default'].includes(rootId)) {
+    st.bindings['default'] = [rootId, ...st.bindings['default'].filter(id => id !== rootId)]
+  }
+  return st
+}
+
+/** Unbind a deleted chat and clean up unused roots */
+function unbindChat(state, chatId) {
+  const st = clone(state)
+  if (!chatId) return st
+  const key = `chat:${chatId}`
+  delete st.bindings[key]
+  const allReferenced = new Set()
+  for (const list of Object.values(st.bindings)) {
+    for (const id of list || []) allReferenced.add(id)
+  }
+  for (const id of Object.keys(st.roots)) {
+    if (!allReferenced.has(id)) delete st.roots[id]
+  }
   return st
 }
 
@@ -254,6 +280,6 @@ function pruneMissing(state) {
 module.exports = {
   rootIdFor, emptyState, bindingKeys, resolveRootIds, resolveRootPaths,
   containingRoot, resolveWithin,
-  materialise, addRoot, removeRoot, setPrimary, rebindChat, migrateLegacyGrant, pruneMissing,
+  materialise, addRoot, removeRoot, setPrimary, rebindChat, unbindChat, migrateLegacyGrant, pruneMissing,
   ensureDefaultRoot,
 }

@@ -12,6 +12,7 @@
 const { BrowserWindow, ipcMain, screen, app } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { safeSend, safeWin } = require('./safeWindow.cjs')
 
 // minHeight is the height of the bar + the input with nothing between them: an
 // idle companion should be a strip, not a 560px pane of transparency parked
@@ -133,10 +134,10 @@ function isVisible() {
  */
 function sendToCompanion(channel, payload) {
   const w = getWindow()
-  if (!w) return false
-  w.webContents.send(channel, payload)
-  w.show()
-  w.focus()
+  // safeSend also answers "did it land", which is what the caller branches on:
+  // if the companion could not take the selection, the main window should.
+  if (!safeSend(w, channel, payload)) return false
+  safeWin(w, x => { x.show(); x.focus() })
   return true
 }
 

@@ -1,0 +1,45 @@
+{
+  "appId": "app.yogatik.personal",
+  "productName": "Yogatik Personal",
+  "directories": { "output": "release-personal" },
+  "files": [
+    "dist-electron/**/*",
+    "electron/**/*",
+    "bin/**/*",
+    "!electron/browserHarness/**"
+  ],
+  "extraResources": [
+    { "from": "bin/search-sidecar", "to": "search-sidecar", "filter": ["**/*"] }
+  ],
+  "publish": null,
+  "win": {
+    "target": ["nsis"],
+    "icon": "electron/icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "runAfterFinish": true,
+    "artifactName": "Yogatik-Personal-Setup.exe"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Utility",
+    "icon": "electron/icon.png",
+    "maintainer": "applicationmanifester",
+    "artifactName": "Yogatik-Personal.${ext}"
+  },
+  "mac": {
+    "target": [
+      { "target": "dmg", "arch": ["universal"] },
+      { "target": "zip", "arch": ["universal"] }
+    ],
+    "category": "public.app-category.productivity",
+    "icon": "electron/icon.png",
+    "darkModeSupport": true,
+    "hardenedRuntime": false,
+    "gatekeeperAssess": false,
+    "artifactName": "Yogatik-Personal.${ext}"
+  }
+}

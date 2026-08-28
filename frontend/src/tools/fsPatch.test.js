@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { parseUnifiedDiff, applyPatchToText, fsPatchTool } from './fsPatch'
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('fsPatch Engine', () => {
   it('parses unified diff hunks correctly', () => {
@@ -66,5 +68,30 @@ describe('fsPatch Engine', () => {
     const res = await fsPatchTool.execute({ path: 'test.js', patch: '@@ -1,1 +1,1 @@\n-a\n+b' })
     expect(res.tool).toBe('fs_patch')
     expect(res.hunksCount).toBe(1)
+    expect(res.success).toBe(false)
+  })
+
+  it('reads and writes through the scoped filesystem bridge instead of fabricating success', async () => {
+    const invoke = vi.fn(async (command, args) => {
+      if (command === 'fs_read') {
+        return { content: 'const value = 1\n', bytes: 16, binary: false, hash: 'before' }
+      }
+      if (command === 'fs_write') {
+        expect(args.content).toBe('const value = 2\n')
+        expect(args.expectedHash).toBe('before')
+        return { bytes: 16, hash: 'after', stale: false, encoding: 'utf8' }
+      }
+      throw new Error(`Unexpected command: ${command}`)
+    })
+    vi.stubGlobal('window', { __TAURI__: { core: { invoke } } })
+
+    const res = await fsPatchTool.execute({
+      path: 'fixture.js',
+      patch: '@@ -1,1 +1,1 @@\n-const value = 1\n+const value = 2',
+    })
+
+    expect(res).toMatchObject({ success: true, path: 'fixture.js', hash: 'after', appliedHunks: 1 })
+    expect(invoke).toHaveBeenCalledWith('fs_read', expect.objectContaining({ path: 'fixture.js' }))
+    expect(invoke).toHaveBeenCalledWith('fs_write', expect.objectContaining({ path: 'fixture.js' }))
   })
 })

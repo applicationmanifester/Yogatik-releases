@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Modal } from './Modal'
 import { YogatikLogo } from './YogatikLogo'
+import { APP_VERSION } from '../version'
 import {
   Sparkles,
   Cpu,
@@ -30,7 +31,8 @@ import {
   Compass,
   FileText,
   Eye,
-  Camera
+  Camera,
+  GitBranch
 } from 'lucide-react'
 
 export function AppOverviewModal({ onClose, onOpenSettings, onOpenDemo, onOpenTour, onOpenDomainHub, onOpenMcp }) {
@@ -42,69 +44,69 @@ export function AppOverviewModal({ onClose, onOpenSettings, onOpenDemo, onOpenTo
       title: 'Choose Your Intelligence Engine',
       icon: <Cpu size={20} color="#38bdf8" />,
       tag: 'Zero-Key Local or Multi-Cloud',
-      desc: 'Run 100% private, on-device AI directly in your browser using WebGPU — no API key or setup required. Or connect your keys for Claude 3.7 Sonnet, GPT-4o, xAI Grok, DeepSeek Reasoner, Gemini 2.5, Mistral Large, Perplexity, or OpenRouter.',
+      desc: 'Run 100% private, on-device AI directly on your computer or connect keys for Claude 3.7 Sonnet, GPT-4o, xAI Grok, DeepSeek R1/V3, Gemini 2.5, Mistral Large, Perplexity, or OpenRouter.',
     },
     {
       num: '02',
-      title: 'Multimodal Input & Rich Context (RAG)',
+      title: 'Multimodal Context & Autonomous Skills',
       icon: <Mic size={20} color="#a78bfa" />,
-      tag: 'Text · Voice · Documents · Vision',
-      desc: 'Type naturally, dictate hands-free via browser speech-to-text, drag-and-drop PDFs/documents for in-memory vector embeddings (RAG), or capture live screens/cameras for visual AI analysis.',
+      tag: '1,465+ Skills · Audio · Vision · RAG',
+      desc: 'Dictate hands-free via live voice, drag-and-drop workspace directories, auto-detect skills via @skill mentions, or capture active screens and camera feeds for visual inspection.',
     },
     {
       num: '03',
-      title: 'Autonomous Agent Loop & Tool Calling',
+      title: 'Autonomous Tool Execution & Git Workflows',
       icon: <Wrench size={20} color="#fbbf24" />,
-      tag: '50+ Built-in Tools',
-      desc: 'The intelligent agent loop automatically determines when external capabilities are needed — performing live web search, executing in-browser Python/JS code, querying weather/finance, rendering diagrams, or spawning sub-agents.',
+      tag: '90+ Built-in Tools & Git',
+      desc: 'The agent loop seamlessly executes local file edits, runs PTY shell commands, inspects and stages Git repositories (fs_git), executes browser automation, and dispatches subagent DAGs.',
     },
     {
       num: '04',
       title: 'Model Context Protocol (MCP) Ecosystem',
       icon: <Plug size={20} color="#34d399" />,
-      tag: 'Live External Data',
-      desc: 'Connect to remote MCP servers (GitHub, Stripe, PostgreSQL, Brave Search, Memory Graph, local desktop bridge) via standard JSON-RPC 2.0 to query production databases and execute external tasks.',
+      tag: 'Live External Data & STDIO',
+      desc: 'Connect to remote or local MCP servers (GitHub, Stripe, PostgreSQL, Brave Search, Memory Graph) via JSON-RPC 2.0 and native STDIO subprocesses.',
     },
     {
       num: '05',
-      title: 'Interactive Outputs & 1-Click Exports',
+      title: '4-Store Memory & Safe Journal Reversion',
       icon: <FileDown size={20} color="#f472b6" />,
-      tag: 'Word · PDF · Code Runners',
-      desc: 'Stream responses with live code runners, interactive charts, and 1-click downloads to Microsoft Word (.doc) and native PDF formats.',
+      tag: 'Episodic · Semantic · Procedural · Emotional',
+      desc: 'Long-term adaptive memory across 4 stores with single-click JSON backup/restore and pre-mutation file snapshot journaling (fs_undo).',
     },
   ]
 
   const toolCategories = [
     {
-      name: 'Web & Search Intelligence',
+      name: 'Git & Scoped Filesystem Tools',
       color: '#38bdf8',
-      tools: ['web_search', 'local_search', 'wikipedia', 'scholar', 'hackernews', 'stackoverflow', 'rss_feed', 'whois', 'link_preview', 'youtube'],
+      tools: ['fs_git (status/diff/log/commit)', 'fs_read', 'fs_write', 'fs_edit', 'fs_search', 'fs_find_files', 'fs_file_tree', 'fs_undo', 'fs_batch_write'],
     },
     {
-      name: 'Code & Sandboxing',
+      name: 'Interactive Shell & Process Management',
       color: '#a78bfa',
-      tools: ['code_execute (Python)', 'js_execute', 'terminal_run', 'code_format', 'regex', 'diff', 'hash'],
+      tools: ['terminal_run (PTY shell)', 'process_manager', 'watch_folder', 'code_execute (Python)', 'js_execute', 'code_format', 'diff'],
     },
     {
-      name: 'Vision & Multimodal',
-      color: '#fbbf24',
-      tools: ['screen_inspect', 'ocr', 'image_generate (Flux)', 'sticker_generate', 'qr_generate', 'qr_read', 'image_info', 'chart', 'diagram (Mermaid)'],
-    },
-    {
-      name: 'OS & Companion Automation',
+      name: 'Browser & Web Automation',
       color: '#34d399',
-      tools: ['desktop_action', 'browser_autopilot', 'scheduler', 'timer', 'alarm', 'spawn_agents', 'sub_agent_runner', 'fs_read/write'],
+      tools: ['browser_control (DOM refs, hover, pdf, cookies, storage, run_script)', 'web_search', 'lightpanda', 'firecrawl', 'link_preview'],
     },
     {
-      name: 'Document & Knowledge RAG',
-      color: '#f472b6',
-      tools: ['doc_search', 'pdf_extract', 'summarize', 'md_to_pdf', 'doc_export', 'text_analytics', 'data_stats', 'thesaurus', 'dictionary'],
+      name: 'Multi-Agent DAGs & Autonomous Skills',
+      color: '#f59e0b',
+      tools: ['spawn_agents (Blackboard)', 'dag_resolver', 'auto_skills (1,465+ skills)', 'sub_agent_runner', 'crew_orchestrator'],
+    },
+    {
+      name: 'Vision, Multimodal & Document RAG',
+      color: '#ec4899',
+      tools: ['screen_inspect', 'ocr', 'image_generate', 'turbovec (Vector RAG)', 'haystack_rag', 'pdf_extract', 'doc_export', 'chart', 'diagram'],
     },
   ]
 
   return (
     <Modal
-      title="About Yogatik AI Workstation"
+      title="About Yogatik Studio"
       icon={<YogatikLogo size={22} />}
       onClose={onClose}
       labelledBy="overview-title"
@@ -136,17 +138,17 @@ export function AppOverviewModal({ onClose, onOpenSettings, onOpenDemo, onOpenTo
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                Yogatik AI Workstation
+                Yogatik Studio
               </h2>
               <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', fontWeight: 700 }}>
-                v3.8.0
+                v{APP_VERSION}
               </span>
               <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(34, 197, 94, 0.2)', color: '#22c55e', fontWeight: 700 }}>
-                Local-First &amp; Private
+                Unrestricted Developer Edition
               </span>
             </div>
             <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-              All-in-one autonomous AI workstation combining on-device privacy (WebGPU), 50+ built-in agent tools, multi-cloud LLM routing, cross-app screen monitoring, and native Model Context Protocol (MCP) server connectors.
+              All-in-one unrestricted AI studio combining on-device privacy (WebGPU), 90+ agent tools, 1,465+ skills library, interactive PTY terminal, live DOM browser automation, and native MCP connectors.
             </p>
           </div>
         </div>
@@ -160,7 +162,7 @@ export function AppOverviewModal({ onClose, onOpenSettings, onOpenDemo, onOpenTo
             <ShieldCheck size={14} style={{ marginRight: 6 }} /> Architecture &amp; Privacy
           </button>
           <button className={activeTab === 'tools' ? 'active' : ''} onClick={() => setActiveTab('tools')}>
-            <Wrench size={14} style={{ marginRight: 6 }} /> 50+ Agent Tools
+            <Wrench size={14} style={{ marginRight: 6 }} /> 90+ Tools &amp; Skills
           </button>
           <button className={activeTab === 'mcp' ? 'active' : ''} onClick={() => setActiveTab('mcp')}>
             <Plug size={14} style={{ marginRight: 6 }} /> MCP Connectors

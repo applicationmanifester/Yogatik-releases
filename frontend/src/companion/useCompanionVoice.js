@@ -31,6 +31,7 @@ export function useCompanionVoice({
   const [rate, setRate] = useState(1.05)
   const [heard, setHeard] = useState('')
   const [voiceError, setVoiceError] = useState(null)
+  const [pttActive, setPttActive] = useState(false)
 
   const recogRef = useRef(null)
   const speakerRef = useRef(null)
@@ -38,6 +39,7 @@ export function useCompanionVoice({
   const lastReplyRef = useRef('')
   const endpointRef = useRef(null)
   const wantListeningRef = useRef(false)
+  const pttBufferRef = useRef('')
 
   const available = speechRecognitionAvailable()
 
@@ -94,8 +96,9 @@ export function useCompanionVoice({
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results[i]
         const text = res[0]?.transcript || ''
-        if (!res.isFinal) { interim = text; setHeard(text); continue }
+        if (!res.isFinal) { interim = text; pttBufferRef.current = text; setHeard(text); continue }
 
+        pttBufferRef.current = text
         const confidence = res[0]?.confidence ?? 0
         if (shouldRejectNoise(text, confidence)) { interim = ''; continue }
         // The mic hears the speaker. Without this the companion answers its
@@ -158,6 +161,23 @@ export function useCompanionVoice({
     return true
   }, [available, targetWindow, wakeWord, onUtterance, shutUp, speak])
 
+  const startPtt = useCallback(() => {
+    pttBufferRef.current = ''
+    setPttActive(true)
+    startListening()
+  }, [startListening])
+
+  const stopPtt = useCallback(() => {
+    setPttActive(false)
+    const text = (pttBufferRef.current || heard || '').trim()
+    pttBufferRef.current = ''
+    stopListening()
+    if (text) {
+      setHeard('')
+      onUtterance?.(text)
+    }
+  }, [heard, stopListening, onUtterance])
+
   // Backgrounding a tab kills recognition silently; re-arm when it returns.
   useEffect(() => {
     const doc = (targetWindow || window).document
@@ -181,6 +201,7 @@ export function useCompanionVoice({
     available, listening, speaking, heard, voiceError,
     speechEnabled, setSpeechEnabled,
     rate, setRate,
+    pttActive, startPtt, stopPtt,
     startListening, stopListening,
     toggleListening: () => (listening ? stopListening() : startListening()),
     speak, shutUp,

@@ -162,3 +162,92 @@ endmodule
     assertionsCode,
   };
 }
+
+/**
+ * Generates an IEEE 1800.2 UVM (Universal Verification Methodology) Testbench Architecture
+ */
+export function generateUVMTestbench(moduleName: string, ports: VerilogPort[]): string {
+  const inputs = ports.filter((p) => p.direction === 'input')
+  const outputs = ports.filter((p) => p.direction === 'output')
+
+  return `// ============================================================================
+// UVM Testbench Environment for ${moduleName} (IEEE 1800.2 Standard)
+// ============================================================================
+\`include "uvm_macros.svh"
+import uvm_pkg::*;
+
+// 1. Transaction Item
+class ${moduleName}_seq_item extends uvm_sequence_item;
+${inputs.map((p) => `  rand bit ${p.width ? p.width + ' ' : ''}${p.name};`).join('\n')}
+${outputs.map((p) => `  bit ${p.width ? p.width + ' ' : ''}${p.name};`).join('\n')}
+
+  \`uvm_object_utils_begin(${moduleName}_seq_item)
+${ports.map((p) => `    \`uvm_field_int(${p.name}, UVM_ALL_ON)`).join('\n')}
+  \`uvm_object_utils_end
+
+  function new(string name = "${moduleName}_seq_item");
+    super.new(name);
+  endfunction
+endclass
+
+// 2. Driver Component
+class ${moduleName}_driver extends uvm_driver #(${moduleName}_seq_item);
+  \`uvm_component_utils(${moduleName}_driver)
+  virtual ${moduleName}_if vif;
+
+  function new(string name = "${moduleName}_driver", uvm_component parent = null);
+    super.new(name, parent);
+  endfunction
+
+  virtual task run_phase(uvm_phase phase);
+    forever begin
+      seq_item_port.get_next_item(req);
+      drive_item(req);
+      seq_item_port.item_done();
+    end
+  endtask
+
+  virtual task drive_item(${moduleName}_seq_item item);
+    @(posedge vif.clk);
+${inputs.map((p) => `    vif.${p.name} <= item.${p.name};`).join('\n')}
+  endtask
+endclass
+
+// 3. Monitor Component
+class ${moduleName}_monitor extends uvm_monitor;
+  \`uvm_component_utils(${moduleName}_monitor)
+  virtual ${moduleName}_if vif;
+  uvm_analysis_port #(${moduleName}_seq_item) mon_ap;
+
+  function new(string name = "${moduleName}_monitor", uvm_component parent = null);
+    super.new(name, parent);
+    mon_ap = new("mon_ap", this);
+  endfunction
+
+  virtual task run_phase(uvm_phase phase);
+    ${moduleName}_seq_item item = ${moduleName}_seq_item::type_id::create("item");
+    forever begin
+      @(posedge vif.clk);
+${ports.map((p) => `      item.${p.name} = vif.${p.name};`).join('\n')}
+      mon_ap.write(item);
+    end
+  endtask
+endclass
+
+// 4. Scoreboard (Golden Model Checker)
+class ${moduleName}_scoreboard extends uvm_scoreboard;
+  \`uvm_component_utils(${moduleName}_scoreboard)
+  uvm_analysis_imp #(${moduleName}_seq_item, ${moduleName}_scoreboard) sb_export;
+
+  function new(string name = "${moduleName}_scoreboard", uvm_component parent = null);
+    super.new(name, parent);
+    sb_export = new("sb_export", this);
+  endfunction
+
+  virtual function void write(${moduleName}_seq_item item);
+    \`uvm_info("SCBD", $sformatf("Observed transaction: %s", item.convert2string()), UVM_HIGH)
+  endfunction
+endclass
+`
+}
+

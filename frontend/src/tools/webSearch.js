@@ -5,6 +5,7 @@
 
 import { proxyFetch, proxyText, proxyJson } from './http'
 import { getSetting } from '../db'
+import { newsParams, localeSnapshot } from '../locale'
 
 const MAX_RESULTS = 12
 
@@ -97,7 +98,13 @@ async function wikipediaSearch(query, count) {
 async function googleNewsSearch(query, count) {
   try {
     const cleanQ = sanitizeSearchQuery(query)
-    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cleanQ)}&hl=en-US&gl=US&ceid=US:en`
+    // These were pinned to hl=en-US&gl=US&ceid=US:en, so "what is in the news"
+    // returned American coverage in Mumbai, Berlin and Lagos alike — the most
+    // visibly wrong regional behaviour in the app, and invisible to anyone
+    // testing from the US.
+    const L = localeSnapshot()
+    const { hl, gl, ceid } = newsParams(L.locale, L.region)
+    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cleanQ)}&hl=${encodeURIComponent(hl)}&gl=${encodeURIComponent(gl)}&ceid=${encodeURIComponent(ceid)}`
     // rss2json converts RSS → JSON without CORS issues (Google News blocks datacenter IPs directly)
     const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`
     const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(6000) }).then(r => r.json()).catch(() => null)
@@ -309,8 +316,14 @@ function mergeResults(lists, count) {
 async function duckDuckGoSearch(query, count) {
   try {
     const cleanQ = sanitizeSearchQuery(query)
-    const html = await proxyText(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(cleanQ)}`)
-      .catch(() => proxyText(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(cleanQ)}`))
+    // DuckDuckGo's regional bias comes from `kl` (e.g. uk-en, de-de, in-en).
+    // Without it every query is answered as though the user were in the US,
+    // which for anything local — shops, services, laws, sport — is simply the
+    // wrong set of results.
+    const L = localeSnapshot()
+    const kl = L.region ? `&kl=${encodeURIComponent(`${L.region.toLowerCase()}-${String(L.locale).split('-')[0].toLowerCase()}`)}` : ''
+    const html = await proxyText(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(cleanQ)}${kl}`)
+      .catch(() => proxyText(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(cleanQ)}${kl}`))
     const doc = new DOMParser().parseFromString(html, 'text/html')
     const rows = [...doc.querySelectorAll('a.result__url, a.result-link, a.result__a')]
     const snippets = [...doc.querySelectorAll('.result__snippet, td.result-snippet')]

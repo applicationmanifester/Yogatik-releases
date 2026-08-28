@@ -218,35 +218,65 @@ export async function searchSemanticScholar(query: string, maxResults = 5): Prom
   }
 }
 
+import { academicCache } from '../services/academicCache'
+
 /**
- * Unified multi-source academic paper search (supports DOI or keyword queries)
+ * Unified multi-source academic paper search (supports DOI or keyword queries) with caching & ranking
  */
 export async function unifiedAcademicSearch(query: string, limit = 10): Promise<AcademicPaper[]> {
   const trimmed = query.trim();
   
+  // 1. Check cache
+  const cached = await academicCache.get(trimmed, limit)
+  if (cached && cached.length > 0) return cached
+
   // If query is a DOI (e.g. "10.1109/TPAMI.2023.1234567" or "https://doi.org/10.1109/...")
   if (/^(https?:\/\/doi\.org\/)?10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+$/i.test(trimmed)) {
     const doiResult = await lookupDOI(trimmed);
-    if (doiResult) return [doiResult];
+    if (doiResult) {
+      await academicCache.set(trimmed, [doiResult], 3600000, limit)
+      return [doiResult];
+    }
   }
 
+  const fetchLimit = Math.ceil(limit * 1.5)
   const [arxivResults, openAlexResults, semanticResults] = await Promise.all([
-    searchArxiv(query, Math.ceil(limit / 2)),
-    searchOpenAlex(query, Math.ceil(limit / 2)),
-    searchSemanticScholar(query, Math.ceil(limit / 2)),
+    searchArxiv(query, fetchLimit),
+    searchOpenAlex(query, fetchLimit),
+    searchSemanticScholar(query, fetchLimit),
   ]);
 
   const all = [...arxivResults, ...openAlexResults, ...semanticResults];
   const uniqueMap = new Map<string, AcademicPaper>();
 
   for (const paper of all) {
-    const normalizedTitle = paper.title.toLowerCase().trim();
-    if (!uniqueMap.has(normalizedTitle)) {
-      uniqueMap.set(normalizedTitle, paper);
+    const key = paper.doi ? paper.doi.toLowerCase() : paper.title.toLowerCase().trim();
+    if (!uniqueMap.has(key)) {
+      uniqueMap.set(key, paper);
     }
   }
 
-  return Array.from(uniqueMap.values()).slice(0, limit);
+  // Rank by: (title match score * 3) + (recency score * 2) + log10(citations + 1)
+  const queryWords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2)
+  const ranked = Array.from(uniqueMap.values()).sort((a, b) => {
+    const aTitleMatch = queryWords.filter((w) => a.title.toLowerCase().includes(w)).length
+    const bTitleMatch = queryWords.filter((w) => b.title.toLowerCase().includes(w)).length
+
+    const aYearScore = (a.year || 2020) - 2020
+    const bYearScore = (b.year || 2020) - 2020
+
+    const aCiteScore = Math.log10((a.citationCount || 0) + 1)
+    const bCiteScore = Math.log10((b.citationCount || 0) + 1)
+
+    const aScore = aTitleMatch * 3 + aYearScore * 0.5 + aCiteScore * 2
+    const bScore = bTitleMatch * 3 + bYearScore * 0.5 + bCiteScore * 2
+
+    return bScore - aScore
+  })
+
+  const results = ranked.slice(0, limit);
+  await academicCache.set(trimmed, results, 3600000, limit)
+  return results;
 }
 
 /**

@@ -1,0 +1,27 @@
+{
+  "appId": "app.yogatik.studio",
+  "productName": "Yogatik Studio",
+  "directories": { "output": "release-studio" },
+  "files": [
+    "dist-electron/**/*",
+    "electron/**/*",
+    "bin/**/*",
+    "!electron/browserHarness/**"
+  ],
+  "extraResources": [
+    { "from": "bin/search-sidecar", "to": "search-sidecar", "filter": ["**/*"] }
+  ],
+  "publish": null,
+  "win": {
+    "target": "nsis",
+    "icon": "electron/icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "runAfterFinish": true,
+    "artifactName": "Yogatik-Studio-Setup.exe",
+    "shortcutName": "Yogatik Studio"
+  }
+}

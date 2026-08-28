@@ -35,6 +35,12 @@ export function enrichToolError(toolName, args = {}, result = {}) {
     if (errStr.includes('not recognized') || errStr.includes('not found')) {
       hint = 'The executable or command was not found in PATH. Hint: Check installed CLI tools or provide an absolute path.'
     }
+  } else if (name === 'browser_control') {
+    if (errStr.includes('stale ref') || errStr.includes('stale')) {
+      hint = 'The element ref is stale because the DOM or page changed. Hint: Call browser_control with action "read" to obtain fresh element refs.'
+    } else if (errStr.includes('timed out') || errStr.includes('timeout')) {
+      hint = 'Element wait timed out. Hint: Call action "diagnose" to verify page load state and console errors, or "read" to see current elements.'
+    }
   }
 
   if (hint && !result.reflection_hint) {

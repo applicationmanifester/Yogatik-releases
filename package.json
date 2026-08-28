@@ -1,26 +1,48 @@
 {
-  "name": "my-monorepo",
-  "version": "1.0.0",
+  "name": "yogatik-studio",
+  "version": "3.21.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "description": "Yogatik Studio — Standalone Unrestricted AI Agentic Assistant & Desktop Environment",
   "scripts": {
-    "dev:desktop": "npm run dev --workspace=apps/desktop-electron",
-    "dev:web": "npm run dev --workspace=apps/web-app",
-    "build:desktop": "npm run build --workspace=apps/desktop-electron",
-    "build:web": "npm run build --workspace=apps/web-app",
-    "build:all": "npm run build:desktop && npm run build:web",
-    "lint": "npm run lint --workspaces",
-    "test": "npm run lint && tsc --noEmit"
+    "dev": "pnpm --filter @my-app/web-app dev",
+    "dev:electron": "pnpm --filter @my-app/desktop-electron dev",
+    "dev:all": "pnpm run dev & pnpm run dev:electron",
+    "build": "pnpm run build:shared && pnpm run build:web && pnpm run build:electron",
+    "build:shared": "pnpm --filter @my-app/shared-ui build",
+    "build:web": "pnpm --filter @my-app/web-app build",
+    "build:electron": "pnpm --filter @my-app/desktop-electron build",
+    "build:electron:dist": "pnpm --filter @my-app/desktop-electron build && pnpm --filter @my-app/desktop-electron electron-builder",
+    "lint": "pnpm run lint:shared && pnpm run lint:web && pnpm run lint:electron",
+    "lint:shared": "pnpm --filter @my-app/shared-ui lint",
+    "lint:web": "pnpm --filter @my-app/web-app lint",
+    "lint:electron": "pnpm --filter @my-app/desktop-electron lint",
+    "typecheck": "pnpm run typecheck:shared && pnpm run typecheck:web && pnpm run typecheck:electron",
+    "typecheck:shared": "pnpm --filter @my-app/shared-ui typecheck",
+    "typecheck:web": "pnpm --filter @my-app/web-app typecheck",
+    "typecheck:electron": "pnpm --filter @my-app/desktop-electron typecheck",
+    "test": "pnpm run test:shared && pnpm run test:web && pnpm run test:electron",
+    "test:shared": "pnpm --filter @my-app/shared-ui test",
+    "test:web": "pnpm --filter @my-app/web-app test",
+    "test:electron": "pnpm --filter @my-app/desktop-electron test",
+    "test:watch": "pnpm run test:watch:shared & pnpm run test:watch:web & pnpm run test:watch:electron",
+    "test:watch:shared": "pnpm --filter @my-app/shared-ui test:watch",
+    "test:watch:web": "pnpm --filter @my-app/web-app test:watch",
+    "test:watch:electron": "pnpm --filter @my-app/desktop-electron test:watch",
+    "prepare": "pnpm run build:shared",
+    "clean": "pnpm --filter @my-app/shared-ui clean && pnpm --filter @my-app/web-app clean && pnpm --filter @my-app/desktop-electron clean"
   },
   "devDependencies": {
-    "typescript": "^5.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "electron-rebuild": "^3.2.9",
     "eslint": "^8.56.0",
-    "prettier": "^3.2.0"
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.5",
+    "prettier": "^3.2.0",
+    "typescript": "^5.3.0"
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "packageManager": "pnpm@9.0.0"
 }

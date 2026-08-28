@@ -214,9 +214,9 @@ const MessageBubble = React.memo(function MessageBubble({
   const markdownComponents = useMarkdownComponents(msg.content, onOpenArtifact)
 
   const formattedModelName = useMemo(() => {
-    const rawModel = msg.model || ''
-    const rawProv = msg.provider || ''
-    const mName = rawModel ? rawModel.split('/').pop() : ''
+    const rawModel = typeof msg.model === 'string' ? msg.model : (msg.model?.id || msg.model?.name || '')
+    const rawProv = typeof msg.provider === 'string' ? msg.provider : (msg.provider?.id || msg.provider?.name || '')
+    const mName = rawModel ? String(rawModel).split('/').pop() : ''
     const pName = rawProv === 'nvidia' ? 'NVIDIA (Free)'
       : rawProv === 'ollama' ? 'Ollama (local)'
       : rawProv === 'openrouter' ? 'OpenRouter'
@@ -490,6 +490,13 @@ const MessageBubble = React.memo(function MessageBubble({
               <a href={s.url} target="_blank" rel="noopener">{s.title || s.url}</a>
             </div>
           ))}
+        </div>
+      )}
+      {msg.role === 'assistant' && (msg.tokens || msg.tokSec || msg.ttfbMs) && (
+        <div className="message-metrics-footer" style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '11px', color: 'var(--text-muted, #71717a)', marginTop: 6, paddingTop: 4, borderTop: '1px solid var(--border-color, rgba(255,255,255,0.05))' }}>
+          {msg.tokSec ? <span>⚡ {Number(msg.tokSec).toFixed(1)} tok/s</span> : null}
+          {msg.ttfbMs ? <span>⏱️ TTFB {Math.round(msg.ttfbMs)}ms</span> : null}
+          {msg.tokens ? <span>📊 {msg.tokens} tokens</span> : null}
         </div>
       )}
     </div>

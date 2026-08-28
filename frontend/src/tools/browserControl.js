@@ -29,6 +29,43 @@ const DESKTOP_ONLY = {
 //
 // Surface: an explicit `display` from the model wins; otherwise the user's
 // stored default; otherwise a window.
+/**
+ * The actions this tool really implements. Exported so a test can assert the
+ * schema enum and the switch below cannot drift apart — the same field-drift
+ * class that has bitten this codebase repeatedly.
+ */
+export const VALID_ACTIONS = [
+  'navigate', 'read', 'click', 'double_click', 'right_click', 'hover', 'type', 'key',
+  'scroll', 'screenshot', 'pdf', 'cookies', 'storage', 'new_tab', 'list_tabs', 'select_tab', 'close_tab',
+  'back', 'forward', 'reload', 'set_mode', 'close',
+  'wait_for', 'fill_form', 'evaluate', 'extract_text',
+  'diagnose', 'console', 'run_script',
+]
+
+/**
+ * Names a model reasonably reaches for that are not the canonical ones.
+ * An alias must NEVER shadow a real action — CLAUDE.md records `watch` being
+ * both a registered tool and an alias, so the model read one description and
+ * reached a different implementation.
+ */
+export const ACTION_ALIASES = {
+  refresh: 'reload', reload_page: 'reload',
+  go_back: 'back', goback: 'back', navigate_back: 'back',
+  go_forward: 'forward', goforward: 'forward', navigate_forward: 'forward',
+  goto: 'navigate', open: 'navigate', open_url: 'navigate', visit: 'navigate',
+  get_text: 'extract_text', text: 'extract_text',
+  snapshot: 'screenshot', capture: 'screenshot',
+  export_pdf: 'pdf', save_pdf: 'pdf',
+  move_to: 'hover', mouse_over: 'hover',
+  get_cookies: 'cookies', cookie: 'cookies',
+  local_storage: 'storage', session_storage: 'storage',
+  pipeline: 'run_script', batch: 'run_script',
+  check: 'diagnose', verify: 'diagnose', test: 'diagnose', health: 'diagnose',
+  console_logs: 'console', logs: 'console', errors: 'console',
+  tabs: 'list_tabs', newtab: 'new_tab',
+  press: 'key', input: 'type',
+}
+
 async function ctx(display) {
   const { conversationId } = getWorkspaceCtx() || {}
   let mode = display
@@ -49,7 +86,11 @@ export const browserControlTool = {
       description:
         'Open and USE a real web browser the user can watch: navigate, read the page structure, click, type, scroll and manage tabs. ' +
         'Unlike web_extract/web_search (which only fetch static HTML), this runs the page\'s JavaScript, so it works on logged-in pages and apps. ' +
-        'ALWAYS call action "read" first: it returns the page as a tree where every clickable element has a [ref_N] handle. ' +
+        'TO CHECK WHETHER A PAGE OR DEV SERVER WORKS, use action "diagnose" with the url — ONE call that ' +
+        'navigates, waits for the app to actually render, and returns the rendered state, the page\'s own ' +
+        'console errors and any failed requests. Do NOT stitch that together from navigate + wait_for + evaluate; ' +
+        'that costs many turns and usually runs out of them. Use "console" for the page\'s console log on its own. ' +
+        'ALWAYS call action "read" before clicking: it returns the page as a tree where every clickable element has a [ref_N] handle. ' +
         'Then click or type using that ref — do not guess x/y coordinates unless the target is a canvas or custom widget with no ref. ' +
         'Refs go stale when the page changes; if you get a stale-ref error, call "read" again. ' +
         'Ask the user before any action that submits, sends, deletes, buys, or posts anything. Desktop app only.',
@@ -59,14 +100,15 @@ export const browserControlTool = {
           action: {
             type: 'string',
             enum: [
-              'navigate', 'read', 'click', 'double_click', 'right_click', 'type', 'key',
-              'scroll', 'screenshot', 'new_tab', 'list_tabs', 'select_tab', 'close_tab',
-              'back', 'forward', 'set_mode', 'close',
+              'navigate', 'read', 'click', 'double_click', 'right_click', 'hover', 'type', 'key',
+              'scroll', 'screenshot', 'pdf', 'cookies', 'storage', 'new_tab', 'list_tabs', 'select_tab', 'close_tab',
+              'back', 'forward', 'reload', 'set_mode', 'close',
               'wait_for', 'fill_form', 'evaluate', 'extract_text',
+              'diagnose', 'console', 'run_script',
             ],
             description: 'What to do.',
           },
-          url: { type: 'string', description: 'URL for navigate / new_tab.' },
+          url: { type: 'string', description: 'URL for navigate / new_tab, or for diagnose (it navigates there first).' },
           ref: { type: 'string', description: 'Element handle from a previous read, e.g. "ref_3_12". Preferred over x/y.' },
           x: { type: 'number', description: 'Fallback X coordinate, only when no ref exists (canvas/custom widgets).' },
           y: { type: 'number', description: 'Fallback Y coordinate, only when no ref exists.' },
@@ -96,16 +138,27 @@ export const browserControlTool = {
             type: 'string',
             description: 'JavaScript expression to evaluate in the page context for the evaluate action.',
           },
+          steps: {
+            type: 'array',
+            items: { type: 'object' },
+            description: 'For run_script: array of action objects to execute in sequence.',
+          },
         },
         required: ['action'],
       },
     },
   },
 
-  async execute({ action, url, ref, x, y, text, submit, keys, amount, tabId, display, selector, timeout, fields, expression } = {}) {
+  async execute({ action: rawAction, url, ref, x, y, text, submit, keys, amount, tabId, display, selector, timeout, fields, expression, steps } = {}) {
     const b = bridge()
     if (!b) return DESKTOP_ONLY
     const base = await ctx(display)
+    // MEASURED: the model called `refresh` and `go_back`, got "Unsupported
+    // action", and concluded the tool was broken. Both are the obvious names
+    // for actions that exist — refusing them teaches nothing and costs a turn.
+    // These are ALIASES, and none of them shadows a real action, which is the
+    // rule that the `watch` collision established.
+    const action = ACTION_ALIASES[rawAction] || rawAction
     try {
       switch (action) {
         case 'navigate':
@@ -124,6 +177,13 @@ export const browserControlTool = {
               double: action === 'double_click',
             })),
           }
+        case 'hover':
+          return {
+            tool: 'browser_control', action,
+            ...(await (b.hover
+              ? b.hover({ ...base, tabId, ref, x, y })
+              : b.click({ ...base, tabId, ref, x, y }))),
+          }
         case 'type':
           if (typeof text !== 'string') return { success: false, error: 'text is required to type' }
           return { tool: 'browser_control', action, ...(await b.type({ ...base, tabId, ref, text, submit })) }
@@ -134,6 +194,15 @@ export const browserControlTool = {
           return { tool: 'browser_control', action, ...(await b.scroll({ ...base, tabId, ref, amount })) }
         case 'screenshot':
           return { tool: 'browser_control', action, ...(await b.screenshot({ ...base, tabId })) }
+        case 'pdf':
+          if (!b.pdf) return { success: false, error: 'pdf export is not supported by this browser bridge version' }
+          return { tool: 'browser_control', action, ...(await b.pdf({ ...base, tabId })) }
+        case 'cookies':
+          if (!b.cookies) return { success: false, error: 'cookies management is not supported by this browser bridge version' }
+          return { tool: 'browser_control', action, ...(await b.cookies({ ...base, tabId, ...fields })) }
+        case 'storage':
+          if (!b.storage) return { success: false, error: 'storage inspection is not supported by this browser bridge version' }
+          return { tool: 'browser_control', action, ...(await b.storage({ ...base, tabId, type: text || 'local' })) }
         case 'new_tab':
           return { tool: 'browser_control', action, ...(await b.newTab({ ...base, url })) }
         case 'list_tabs':
@@ -147,6 +216,40 @@ export const browserControlTool = {
         case 'back':
         case 'forward':
           return { tool: 'browser_control', action, ...(await b.history({ ...base, tabId, direction: action })) }
+        // There was no reload at all. Every browser has one, so the model kept
+        // inventing `refresh` and getting "Unsupported action" — which reads to
+        // it as the whole tool being broken, and it gave up on browser_control
+        // entirely rather than trying the action that does exist.
+        case 'reload':
+          return { tool: 'browser_control', action, ...(await b.reload({ ...base, tabId })) }
+        // ONE call for "does this page work". Navigates if given a url, waits
+        // for the app to actually render, and returns the rendered state, the
+        // page's console errors and any failed requests together.
+        case 'diagnose':
+          return { tool: 'browser_control', action, ...(await b.diagnose({ ...base, tabId, url, timeout })) }
+        case 'console':
+          return { tool: 'browser_control', action, ...(await b.consoleLogs({ ...base, tabId })) }
+        case 'run_script': {
+          const scriptSteps = Array.isArray(steps) ? steps : []
+          if (!scriptSteps.length) return { success: false, error: 'steps array is required for run_script' }
+          const stepResults = []
+          for (let i = 0; i < scriptSteps.length; i++) {
+            const step = scriptSteps[i]
+            const stepRes = await browserControlTool.execute({ ...step, display: display || base.display })
+            stepResults.push({ step: i + 1, action: step.action, ...stepRes })
+            if (stepRes.success === false) {
+              return {
+                tool: 'browser_control',
+                action: 'run_script',
+                success: false,
+                error: `Step ${i + 1} (${step.action}) failed: ${stepRes.error}`,
+                completedSteps: i,
+                results: stepResults,
+              }
+            }
+          }
+          return { tool: 'browser_control', action: 'run_script', success: true, totalSteps: scriptSteps.length, results: stepResults }
+        }
         case 'set_mode':
           if (!display) return { success: false, error: 'display is required: "window" or "panel"' }
           return { tool: 'browser_control', action, ...(await b.setMode(base)) }
@@ -159,16 +262,24 @@ export const browserControlTool = {
             if (b.waitFor) {
               return { tool: 'browser_control', action, ...(await b.waitFor({ ...base, tabId, selector, ref, timeout: waitTimeout })) }
             }
-            // Fallback: poll via read until element appears
+            // Fallback for a bridge without waitFor. This matches the selector
+            // against the ACCESSIBILITY TREE, which is not the DOM — a CSS
+            // selector essentially never appears in it, so this used to poll
+            // for ten seconds and report a timeout for an element that was
+            // right there. `ref` is the only thing it can honestly find.
             const start = Date.now()
             while (Date.now() - start < waitTimeout) {
               const page = await b.read({ ...base, tabId })
               const tree = page?.tree || page?.text || ''
-              if (selector && tree.includes(selector)) return { tool: 'browser_control', action, success: true, found: selector }
               if (ref && tree.includes(ref)) return { tool: 'browser_control', action, success: true, found: ref }
               await new Promise(r => setTimeout(r, 500))
             }
-            return { success: false, error: `Timeout: element not found after ${waitTimeout}ms` }
+            return {
+              success: false,
+              error: ref
+                ? `Timed out after ${waitTimeout}ms waiting for ${ref}.`
+                : 'This browser build cannot wait on a CSS selector. Use action "read" and wait on a ref instead.',
+            }
           } catch (e) {
             return { success: false, error: e?.message || String(e) }
           }
@@ -198,7 +309,12 @@ export const browserControlTool = {
           try {
             let html = ''
             if (b.getPageHtml) {
-              html = await b.getPageHtml({ ...base, tabId })
+              // Returns an OBJECT, not a bare string. Treating the object as
+              // the HTML would make `html.length < 100` false and hand
+              // "[object Object]" to the extractor.
+              const res = await b.getPageHtml({ ...base, tabId })
+              if (res?.success === false) return { success: false, error: res.error }
+              html = res?.html || ''
             } else if (b.evaluate) {
               const result = await b.evaluate({ ...base, tabId, expression: 'document.documentElement.outerHTML' })
               html = result?.result || result?.value || ''
@@ -222,7 +338,14 @@ export const browserControlTool = {
           }
         }
         default:
-          return { success: false, error: `Unsupported action: ${action}` }
+          // NAME THE ALTERNATIVES. "Unsupported action: go_back" gives the
+          // model nothing to correct with, so it retries variations or
+          // abandons the tool. The list is what lets it recover in one step.
+          return {
+            success: false,
+            error: `Unsupported action: ${rawAction}. Valid actions are: ${VALID_ACTIONS.join(', ')}.`,
+            valid_actions: VALID_ACTIONS,
+          }
       }
     } catch (e) {
       return { success: false, error: e?.message || String(e) }

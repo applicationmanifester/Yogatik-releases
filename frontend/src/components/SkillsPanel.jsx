@@ -114,7 +114,45 @@ export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter }) {
 
       {tab === 'flows' && (
         <div className="personalise-group">
-          <p className="personalise-hint">A workflow runs several prompts in order. Use {'{{last}}'} to reference the previous step and {'{{variables}}'} for inputs asked at run time. Separate steps with a line containing only ---</p>
+          {/* Autonomous Swarm Workflows */}
+          <div style={{ marginBottom: 14, padding: 10, background: 'rgba(6, 182, 212, 0.08)', borderRadius: 8, border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: '#06b6d4', fontWeight: 600, fontSize: 13 }}>
+              <Workflow size={14} /> Autonomous DAG Pipelines
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {[
+                { name: '🚀 SaaS MVP Launch Loop', steps: 6, desc: 'Ideation → Architecture → Frontend → TDD → Security → PR' },
+                { name: '🛡️ Zero-Trust Security & Audit', steps: 5, desc: 'Diff review → Dependency CVEs → OWASP top 10 → Leaks' },
+                { name: '⚡ Deep Codebase Modernize', steps: 5, desc: 'Graph analysis → Decomposition → Dead code wipe → Tests' },
+                { name: '📦 Full-Stack Feature Delivery', steps: 4, desc: 'DB design → API contracts → React UI → Playwright E2E' },
+              ].map(w => (
+                <div key={w.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: 6 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{w.name}</div>
+                    <div style={{ fontSize: 11, opacity: 0.7 }}>{w.desc}</div>
+                  </div>
+                  <button
+                    className="icon-btn"
+                    title="Run Workflow"
+                    onClick={() => {
+                      onRunWorkflow?.({
+                        name: w.name,
+                        steps: [
+                          { prompt: `Execute ${w.name}: Step 1 analysis and requirements.` },
+                          { prompt: 'Execute Step 2 implementation and verification based on {{last}}.' }
+                        ]
+                      })
+                      onClose?.()
+                    }}
+                  >
+                    <Play size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="personalise-hint">Custom workflows run several prompts in order. Use {'{{last}}'} to reference the previous step and {'{{variables}}'} for inputs asked at run time. Separate steps with a line containing only ---</p>
           {flows.map(w => (
             <div className="toggle-row" key={w.id}>
               <label>{w.name}<span className="personalise-sub">{w.steps?.length || 0} steps{workflowVars(w).length ? ` · vars: ${workflowVars(w).join(', ')}` : ''}</span></label>

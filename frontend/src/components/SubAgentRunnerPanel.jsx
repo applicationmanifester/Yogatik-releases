@@ -229,6 +229,75 @@ export function SubAgentRunnerPanel({ isOpen, onClose, onToast }) {
             In the browser, use the Agents panel — it delegates in-page instead.
           </p>
         )}
+        {/* Autonomous Workflow Presets (LangGraph / MetaGPT / CrewAI Style) */}
+        <div style={{ marginBottom: 16, padding: 12, background: 'rgba(6, 182, 212, 0.08)', borderRadius: 8, border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: '#06b6d4', fontWeight: 600, fontSize: 13 }}>
+            <Zap style={{ width: 14, height: 14 }} /> Autonomous Swarm & DAG Workflows
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 6 }}>
+            <button
+              type="button"
+              className="side-panel-btn-small"
+              style={{ textAlign: 'left', padding: '6px 8px', fontSize: 12, justifyContent: 'flex-start' }}
+              onClick={() => {
+                setForm({
+                  agentId: `sub_pm_${Date.now().toString(36)}`,
+                  name: 'Product Manager Agent',
+                  role: 'planner',
+                  systemPrompt: 'You are an autonomous Product Manager agent. Define specs, user stories, and acceptance criteria.',
+                  tools: ['fs_find_files', 'fs_read_file', 'doc_export'],
+                  model: '',
+                  provider: ''
+                })
+                setShowCreate(true)
+                onToast?.('Loaded MetaGPT-style PM Agent template')
+              }}
+            >
+              🚀 SaaS MVP Loop
+            </button>
+            <button
+              type="button"
+              className="side-panel-btn-small"
+              style={{ textAlign: 'left', padding: '6px 8px', fontSize: 12, justifyContent: 'flex-start' }}
+              onClick={() => {
+                setForm({
+                  agentId: `sub_sec_${Date.now().toString(36)}`,
+                  name: 'Security Auditor Agent',
+                  role: 'auditor',
+                  systemPrompt: 'You are a DevSecOps auditor. Perform AST regex scanning, dependency CVE checks, and differential diff reviews.',
+                  tools: ['git_diff', 'fs_read_file', 'deepsec'],
+                  model: '',
+                  provider: ''
+                })
+                setShowCreate(true)
+                onToast?.('Loaded Zero-Trust Security Auditor template')
+              }}
+            >
+              🛡️ Security Audit
+            </button>
+            <button
+              type="button"
+              className="side-panel-btn-small"
+              style={{ textAlign: 'left', padding: '6px 8px', fontSize: 12, justifyContent: 'flex-start' }}
+              onClick={() => {
+                setForm({
+                  agentId: `sub_tdd_${Date.now().toString(36)}`,
+                  name: 'TDD Engineer Agent',
+                  role: 'coder',
+                  systemPrompt: 'You are an autonomous TDD engineer. Write failing unit tests first, verify RED state, then write minimal code for GREEN.',
+                  tools: ['fs_read_file', 'fs_write_file', 'terminal_run'],
+                  model: '',
+                  provider: ''
+                })
+                setShowCreate(true)
+                onToast?.('Loaded TDD Engineer template')
+              }}
+            >
+              🧪 TDD Refactor Loop
+            </button>
+          </div>
+        </div>
+
         {/* Agents List */}
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
           <h4 className="side-panel-section-title">

@@ -12,7 +12,9 @@ const http = require('http')
 const url = require('url')
 const { spawn, exec } = require('child_process')
 
-const { registerFsBridge, initJournal } = require('./fsBridge.cjs')
+const { registerFsBridge, initJournal, snapshot: fsSnapshot } = require('./fsBridge.cjs')
+const { safeSend, safeWin, alive } = require('./safeWindow.cjs')
+const entitlement = require('./entitlement.cjs')
 const { registerRootsIpc, rootPathsFor, resolvePath, getTrustState } = require('./roots.cjs')
 const { enableProviderCors } = require('./cors.cjs')
 const { buildMenu } = require('./menu.cjs')
@@ -27,7 +29,12 @@ const { registerWatcher, stopAllWatchers } = require('./watcher.cjs')
 const { registerPower } = require('./power.cjs')
 const { registerDialogs } = require('./dialogs.cjs')
 const { registerProcesses } = require('./processes.cjs')
-const { registerPty, killAllPty } = require('./pty.cjs')
+// The shared terminal timeline. Agent commands and the human's own land in one
+// per-chat scrollback, so the model's shell is watchable and interruptible.
+// pty.cjs's standalone sessions are superseded by terminalSession's tier 2.
+const {
+  registerTerminalSession, stopAllTerminals, runBlock: runTerminalBlock,
+} = require('./terminalSession.cjs')
 const { registerMcpStdio, killAllMcpStdio } = require('./mcpStdio.cjs')
 const { registerCompanionInput } = require('./companionInput.cjs')
 const { registerBrowserControl, destroyAllSessions } = require('./browserControl.cjs')
@@ -43,10 +50,46 @@ const { registerBgProcessIpc, killAllBgProcesses } = require('./bgProcesses.cjs'
 const { registerGitIpc } = require('./git.cjs')
 const { registerFsWatcherIpc, stopAllFsWatchers } = require('./fsWatcher.cjs')
 const { registerMcpStdioClientIpc, stopAllMcpStdioClients } = require('./mcpStdioClient.cjs')
+const { registerOllamaIpc, destroyOllamaDaemon } = require('./ollamaDaemon.cjs')
 const windowState = require('./windowState.cjs')
 
 const isDev = !app.isPackaged
 let mainWindow = null
+
+// ── Last-resort crash guard ────────────────────────────────────────────────
+//
+// Electron's DEFAULT behaviour for an uncaught exception in main is the modal
+// "A JavaScript error occurred in the main process" dialog, after which the app
+// is dead. There is no recovery path, no log the user can find, and — because
+// it fires before or during first paint — it can be the very first thing
+// somebody sees after installing.
+//
+// The class of error that actually reaches here is a TEARDOWN RACE: a timer, an
+// autoUpdater event or a watcher flush landing a tick after the window was
+// destroyed. Those are harmless by definition — the work they were doing has no
+// destination any more — so killing the app over one is strictly wrong.
+//
+// This is deliberately NOT a blanket "ignore all errors": anything else is
+// logged with its stack and rethrown on the next tick so it still surfaces as a
+// real crash rather than being silently swallowed.
+const TEARDOWN_NOISE = /Object has been destroyed|Render frame was disposed|WebContents .* destroyed|has already been destroyed/i
+
+process.on('uncaughtException', (err) => {
+  const msg = String(err?.message || err)
+  if (TEARDOWN_NOISE.test(msg)) {
+    console.warn('[main] ignored teardown race:', msg)
+    return
+  }
+  console.error('[main] uncaught exception:', err?.stack || msg)
+  // Rethrow OUTSIDE this handler so genuine bugs are not hidden by the guard.
+  setImmediate(() => { throw err })
+})
+
+process.on('unhandledRejection', (reason) => {
+  const msg = String(reason?.message || reason)
+  if (TEARDOWN_NOISE.test(msg)) return
+  console.error('[main] unhandled rejection:', reason?.stack || msg)
+})
 
 // Windows needs an explicit AppUserModelID for notifications to display.
 app.setAppUserModelId('app.yogatik.desktop')
@@ -75,7 +118,9 @@ function createWindow() {
   if (state.maximized) mainWindow.maximize()
   windowState.track(mainWindow)
 
-  mainWindow.once('ready-to-show', () => mainWindow.show())
+  // `mainWindow` is nulled by the 'closed' handler below, so a window destroyed
+  // before it is ready would call .show() on null here.
+  mainWindow.once('ready-to-show', () => { safeWin(mainWindow, w => w.show()) })
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
@@ -99,7 +144,11 @@ function createWindow() {
   // Closing hides to the tray (background) instead of quitting; real quit sets
   // app.isQuitting (tray menu / Cmd+Q).
   mainWindow.on('close', (e) => {
-    if (!app.isQuitting) { e.preventDefault(); mainWindow.hide() }
+    if (!app.isQuitting) { e.preventDefault(); safeWin(mainWindow, w => w.hide()) }
+  })
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
   })
 
   // The native menu has no chat context, so it shows the global default folder.
@@ -115,14 +164,20 @@ if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.show()
-      mainWindow.focus()
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show()
+        mainWindow.focus()
+      } else {
+        createWindow()
+      }
+    } catch {
+      createWindow()
     }
   })
 
-  const getWindow = () => mainWindow
+  const getWindow = () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null)
 
   let searchSidecar = null
   let searchPort = null
@@ -183,6 +238,17 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     enableProviderCors()
+
+    // ── The gate goes FIRST, before any handler exists ──────────────────────
+    // installGate wraps ipcMain.handle itself, so every channel registered
+    // after this line is checked by name and an unclassified one fails closed.
+    // Register anything above it and that handler is permanently ungated — and
+    // the first things registered here are the FILE handlers. In a `personal`
+    // build installGate is a no-op and no wrapper exists at all.
+    entitlement.load(app.getPath('userData'))
+    entitlement.installGate(ipcMain)
+    entitlement.registerEntitlementIpc(ipcMain, { shell })
+
     // Roots first: it loads the state fsBridge resolves every path against.
     registerRootsIpc({ getWindow })
     // Undo journal for file mutations; lives beside the roots registry.
@@ -206,7 +272,9 @@ if (!gotLock) {
     // finishes loading its own bundle, which is what makes this safe.
     setImmediate(() => {
       registerBgProcessIpc({ rootPathsFor, resolvePath, getTrustState })
-      registerGitIpc({ rootPathsFor })
+      // snapshot: a destructive git operation journals the working tree first,
+      // which is the only thing that makes discard/reset recoverable at all.
+      registerGitIpc({ rootPathsFor, snapshot: fsSnapshot })
       registerFsWatcherIpc({ rootPathsFor })
       registerMcpStdioClientIpc()
       registerNotifications(getWindow)
@@ -220,7 +288,7 @@ if (!gotLock) {
       registerPower(getWindow, { pauseScheduler: stopScheduler, resumeScheduler: startScheduler })
       registerDialogs(getWindow)
       registerProcesses()
-      registerPty(getWindow)
+      registerTerminalSession(getWindow)
       registerMcpStdio()
       registerCompanionInput()
       registerBrowserControl(getWindow)
@@ -228,6 +296,8 @@ if (!gotLock) {
       startScheduler()
       createTray(getWindow, { onToggleCompanion: toggleCompanion })
       initAutoUpdate(getWindow)
+      // Zero-touch Ollama daemon: probe, auto-start, pull — no terminal needed.
+      registerOllamaIpc(getWindow)
     })
 
     // Start the local search sidecar WITHOUT awaiting it.
@@ -241,7 +311,7 @@ if (!gotLock) {
 
     // Desktop system info & window controls
     ipcMain.handle('desktop:isAlwaysOnTop', () => {
-      return mainWindow ? mainWindow.isAlwaysOnTop() : false
+      return safeWin(mainWindow, w => w.isAlwaysOnTop()) || false
     })
 
     ipcMain.handle('desktop:toggleAlwaysOnTop', (_, flag) => {
@@ -249,7 +319,7 @@ if (!gotLock) {
       const current = mainWindow.isAlwaysOnTop()
       const next = flag !== undefined ? Boolean(flag) : !current
       mainWindow.setAlwaysOnTop(next)
-      mainWindow.webContents.send('menu', { type: 'always-on-top-changed', value: next })
+      safeSend(mainWindow, 'menu', { type: 'always-on-top-changed', value: next })
       return next
     })
 
@@ -309,68 +379,32 @@ if (!gotLock) {
       return resp.json()
     })
 
-    // IPC for desktop terminal shell command execution
-    ipcMain.handle('terminal:exec', async (_, { ctx, command, cwd, timeout = 30000, env: extraEnv }) => {
-      // A folder must be bound to THIS chat — never fall back to the app's own
-      // install directory (process.cwd()), and never run in another chat's folder.
-      const roots = rootPathsFor(ctx)
-      if (!roots.length) {
-        return { success: false, exitCode: -1, stdout: '', stderr: 'No working folder for this chat. Ask the user to add one.', killed: false }
-      }
-      let workingDir
-      try {
-        workingDir = resolvePath(ctx, cwd || '.')
-      } catch (e) {
-        return { success: false, exitCode: -1, stdout: '', stderr: `Invalid working directory: ${e.message}`, killed: false }
-      }
-
-      return new Promise((resolve) => {
-        const isWin = process.platform === 'win32'
-        const shellCmd = isWin ? 'cmd.exe' : '/bin/sh'
-        const shellArgs = isWin ? ['/d', '/s', '/c', command] : ['-c', command]
-
-        const proc = spawn(shellCmd, shellArgs, {
-          cwd: workingDir,
-          windowsHide: true,
-          // Caller-supplied non-interactive flags (CI, PAGER, GIT_TERMINAL_PROMPT…)
-          // were dropped here, so commands could still block on a prompt.
-          env: { ...process.env, ...(extraEnv && typeof extraEnv === 'object' ? extraEnv : {}) },
-        })
-
-        let stdout = ''
-        let stderr = ''
-        let killed = false
-
-        const timer = setTimeout(() => {
-          killed = true
-          proc.kill()
-        }, timeout)
-
-        proc.stdout.on('data', (d) => { stdout += d.toString('utf8') })
-        proc.stderr.on('data', (d) => { stderr += d.toString('utf8') })
-
-        proc.on('close', (code) => {
-          clearTimeout(timer)
-          resolve({
-            success: code === 0 && !killed,
-            exitCode: code,
-            stdout: stdout.slice(-100000), // Cap at 100KB
-            stderr: stderr.slice(-50000),
-            killed,
-          })
-        })
-
-        proc.on('error', (err) => {
-          clearTimeout(timer)
-          resolve({
-            success: false,
-            exitCode: -1,
-            stdout: '',
-            stderr: err.message,
-            killed: false,
-          })
-        })
+    // The AGENT's shell. It goes through the SAME per-chat timeline the human's
+    // terminal drawer renders, so every command the model runs is watchable and
+    // interruptible as it happens. Before this it collected stdout and stderr
+    // and forwarded none of it until the process closed — a 30-second command
+    // was a spinner and then a card, and anything run before the panel was
+    // opened was invisible forever.
+    ipcMain.handle('terminal:exec', async (_e, { ctx, command, cwd, timeout = 30000, env: extraEnv } = {}) => {
+      const block = await runTerminalBlock({
+        ctx, command, cwd, timeout, env: extraEnv, author: 'agent',
       })
+      return {
+        // A non-zero exit code is a RESULT, not a tool failure. Only "never
+        // started" is an error — otherwise a missing folder, a bad cwd and a
+        // failing test all print as "terminal_run: Unknown error".
+        success: block.status === 'exited' && block.exitCode === 0,
+        exitCode: block.exitCode,
+        stdout: block.output || '',
+        stderr: '',
+        killed: block.status === 'killed',
+        blockId: block.id,
+        durationMs: block.durationMs,
+        ...(block.error ? { error: block.error } : {}),
+        ...(block.status === 'killed'
+          ? { note: `Timed out after ${timeout}ms and was killed. Use proc_start for long-running commands.` }
+          : {}),
+      }
     })
 
     // ─── AI Companion & Screen-Watcher IPC Handlers ───────────────────────────
@@ -468,7 +502,7 @@ if (!gotLock) {
           mainWindow.center()
         }
       }
-      mainWindow.webContents.send('companion-mode-changed', isCompanionActive)
+      safeSend(mainWindow, 'companion-mode-changed', isCompanionActive)
       return isCompanionActive
     })
 
@@ -546,11 +580,13 @@ if (!gotLock) {
 </body>
 </html>`)
                 cleanup()
-                if (mainWindow) {
-                  if (mainWindow.isMinimized()) mainWindow.restore()
-                  mainWindow.show()
-                  mainWindow.focus()
-                }
+                try {
+                  if (mainWindow && !mainWindow.isDestroyed()) {
+                    if (mainWindow.isMinimized()) mainWindow.restore()
+                    mainWindow.show()
+                    mainWindow.focus()
+                  }
+                } catch {}
                 resolve({ success: true, user: parsed, idToken: parsed.idToken })
                 return
               }
@@ -588,9 +624,14 @@ if (!gotLock) {
 
     // Global show/focus hotkey (works even when the window is hidden to tray).
     globalShortcut.register('CommandOrControl+Shift+Y', () => {
-      if (!mainWindow) return
-      if (mainWindow.isVisible() && mainWindow.isFocused()) mainWindow.hide()
-      else { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus() }
+      try {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          createWindow()
+          return
+        }
+        if (mainWindow.isVisible() && mainWindow.isFocused()) mainWindow.hide()
+        else { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus() }
+      } catch {}
     })
 
     // Global Companion Mode Hotkey (Ctrl+Shift+Space) to summon/toggle floating companion
@@ -605,15 +646,19 @@ if (!gotLock) {
     // relay the copied text to the renderer as a ready-to-send prompt.
     globalShortcut.register('CommandOrControl+Alt+C', () => {
       const relay = () => {
-        const text = clipboard.readText() || ''
-        // If the companion is the window the user is looking at, the selection
-        // belongs THERE: raising the main app over their work is exactly what
-        // the floating companion exists to avoid.
-        if (isCompanionVisible() && sendToCompanion('clipboard-selection-hotkey', { text, at: Date.now() })) return
-        if (!mainWindow || mainWindow.isDestroyed()) return
-        if (mainWindow.isMinimized()) mainWindow.restore()
-        mainWindow.show(); mainWindow.focus()
-        mainWindow.webContents.send('clipboard-selection-hotkey', { text, at: Date.now() })
+        try {
+          const text = clipboard.readText() || ''
+          // If the companion is the window the user is looking at, the selection
+          // belongs THERE: raising the main app over their work is exactly what
+          // the floating companion exists to avoid.
+          if (isCompanionVisible() && sendToCompanion('clipboard-selection-hotkey', { text, at: Date.now() })) return
+          if (!alive(mainWindow)) return
+          safeWin(mainWindow, w => {
+            if (w.isMinimized()) w.restore()
+            w.show(); w.focus()
+          })
+          safeSend(mainWindow, 'clipboard-selection-hotkey', { text, at: Date.now() })
+        } catch {}
       }
       if (process.platform === 'win32') {
         // Send Ctrl+C to the foreground app first, then read after a short beat.
@@ -626,16 +671,25 @@ if (!gotLock) {
 
     // Global quick search hotkey (brings up Yogatik and triggers the search modal)
     globalShortcut.register('CommandOrControl+Alt+K', () => {
-      if (!mainWindow) return
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.show()
-      mainWindow.focus()
-      mainWindow.webContents.send('menu', 'open-palette')
+      try {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          createWindow()
+          return
+        }
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show()
+        mainWindow.focus()
+        safeSend(mainWindow, 'menu', 'open-palette')
+      } catch {}
     })
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
-      else if (mainWindow) mainWindow.show()
+      try {
+        if (BrowserWindow.getAllWindows().length === 0 || !mainWindow || mainWindow.isDestroyed()) createWindow()
+        else mainWindow.show()
+      } catch {
+        createWindow()
+      }
     })
   })
 
@@ -645,13 +699,14 @@ if (!gotLock) {
     stopScheduler()  // Stop the cron daemon gracefully
     stopPolling()    // Stop the clipboard poller
     stopAllWatchers()
-    killAllPty()
+    stopAllTerminals()
     killAllMcpStdio()
     killAllBgProcesses()   // never orphan a background process on quit
     stopAllFsWatchers()
     stopAllMcpStdioClients()
     destroyAllSessions()   // close any agent browser windows and their tabs
     destroyCompanion()     // and the floating companion
+    destroyOllamaDaemon()  // kill any managed Ollama daemon + in-progress pulls
     if (searchSidecar) {
       searchSidecar.kill()
     }

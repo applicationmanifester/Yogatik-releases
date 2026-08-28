@@ -4,10 +4,10 @@
  * critical schema hierarchy, headers, and head/tail items.
  */
 
-const HEAVY_KEYS = new Set(['image', 'screenshot', 'dataUrl', 'blob', 'rawBuffer', 'audioBuffer', 'base64'])
+const HEAVY_KEY_PATTERN = /data_?url|dataurl|base64|blob|rawbuffer|audiobuffer|screenshot|image|photo|pdf_data|pptx_data/i
 
 /**
- * Recursively strip oversized binary/image data from tool output objects.
+ * Recursively strip oversized binary/image/data-URL data from tool output objects.
  */
 export function stripHeavyFields(obj, depth = 0) {
   if (depth > 6 || !obj || typeof obj !== 'object') return obj
@@ -15,11 +15,13 @@ export function stripHeavyFields(obj, depth = 0) {
 
   const clean = {}
   for (const [k, v] of Object.entries(obj)) {
-    if (HEAVY_KEYS.has(k) && typeof v === 'string' && v.length > 200) {
-      clean[k] = `[${k} binary omitted (${Math.round(v.length / 1024)} KB)]`
-    } else {
-      clean[k] = stripHeavyFields(v, depth + 1)
+    if (typeof v === 'string') {
+      if ((HEAVY_KEY_PATTERN.test(k) || v.startsWith('data:')) && v.length > 150) {
+        clean[k] = `[${k} binary omitted (${Math.round(v.length / 1024)} KB - rendered in UI)]`
+        continue
+      }
     }
+    clean[k] = stripHeavyFields(v, depth + 1)
   }
   return clean
 }

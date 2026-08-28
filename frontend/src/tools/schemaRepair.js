@@ -5,11 +5,11 @@
  */
 
 const COMMON_ALIASES = {
-  query: ['q', 'searchTerm', 'search_term', 'search', 'query_string', 'keyword', 'keywords', 'term'],
+  query: ['q', 'searchTerm', 'search_term', 'search', 'query_string', 'keyword', 'keywords', 'term', 'question', 'topic', 'subject', 'input', 'find', 'ask'],
   code: ['script', 'source', 'snippet', 'code_snippet', 'program', 'source_code'],
   url: ['link', 'href', 'target_url', 'uri', 'address', 'page_url', 'endpoint'],
   text: ['content', 'message', 'data_string', 'input_text', 'prompt_text'],
-  path: ['file_path', 'filepath', 'filename', 'target_path', 'file_name'],
+  path: ['file_path', 'filepath', 'filename', 'target_path', 'file_name', 'file', 'target'],
   limit: ['max', 'max_results', 'count', 'size', 'top_k', 'num_results'],
   tasks: ['subtasks', 'sub_tasks', 'task_list', 'delegations'],
   target: ['to', 'dest', 'destination', 'target_lang', 'target_language'],
@@ -113,6 +113,32 @@ export function repairToolArguments(toolName, rawArgs, schema = null) {
           args[key] = [val]
         }
       }
+    }
+  }
+
+  // 3. Tool-Specific Required Argument Auto-Healing
+  const tName = String(toolName || '').toLowerCase()
+  if (tName === 'fs_search' || tName === 'web_search' || tName === 'doc_search' || tName === 'knowledge_search') {
+    if (!args.query && !args.q && !args.searchTerm) {
+      args.query = args.pattern || args.text || args.input || args.keyword || '*'
+    }
+  }
+
+  if (tName === 'fs_read' || tName === 'fs_list' || tName === 'fs_file_tree' || tName === 'fs_file_info') {
+    if (!args.path && !args.filePath && !args.filename) {
+      args.path = args.target || args.dir || './'
+    }
+  }
+
+  if (tName === 'terminal_run' || tName === 'terminal_exec' || tName === 'proc_start') {
+    if (!args.command && !args.cmd) {
+      args.command = args.script || args.code || 'echo [no command provided]'
+    }
+  }
+
+  if (tName === 'web_extract' || tName === 'web_read' || tName === 'read_url' || tName === 'fetch_url') {
+    if (!args.url) {
+      args.url = args.link || args.uri || args.href || args.target || args.webpage || args.address || ''
     }
   }
 

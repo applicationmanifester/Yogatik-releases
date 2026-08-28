@@ -367,3 +367,79 @@ export async function executeResearchWorkflow(
 
   return { searchResults, gapAnalysis, proposal, recommendedPaper };
 }
+
+export interface CitationGraphNode {
+  doi?: string
+  title: string
+  year?: number
+  citationCount?: number
+  relationship: 'seed' | 'cites' | 'cited_by'
+}
+
+/**
+ * Traverses OpenAlex citation graph for a seed paper, fetching papers it cites (backward)
+ * and papers that cite it (forward).
+ */
+export async function traverseCitationGraph(seedDoi: string, maxDepth: number = 10): Promise<{ seed: string; nodes: CitationGraphNode[] }> {
+  const cleanDoi = seedDoi.trim().replace(/^https?:\/\/doi\.org\//i, '')
+  const nodes: CitationGraphNode[] = []
+
+  try {
+    const url = `https://api.openalex.org/works/https://doi.org/${encodeURIComponent(cleanDoi)}`
+    const resp = await fetch(url, { headers: { 'User-Agent': 'Yogatik-Graph/2.0' } })
+    if (!resp.ok) return { seed: cleanDoi, nodes }
+
+    const data = await resp.json()
+    nodes.push({
+      doi: cleanDoi,
+      title: data.title || 'Seed Paper',
+      year: data.publication_year,
+      citationCount: data.cited_by_count,
+      relationship: 'seed',
+    })
+
+    // 1. Fetch forward citations (cited_by)
+    if (data.cited_by_api_url) {
+      try {
+        const citedByResp = await fetch(`${data.cited_by_api_url}&per-page=5`, { headers: { 'User-Agent': 'Yogatik-Graph/2.0' } })
+        if (citedByResp.ok) {
+          const citedByData = await citedByResp.json()
+          for (const item of (citedByData.results || [])) {
+            nodes.push({
+              doi: item.doi?.replace('https://doi.org/', ''),
+              title: item.title || 'Citing Work',
+              year: item.publication_year,
+              citationCount: item.cited_by_count,
+              relationship: 'cited_by',
+            })
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Fetch backward references (cites)
+    if (Array.isArray(data.referenced_works) && data.referenced_works.length > 0) {
+      const topRefs = data.referenced_works.slice(0, 5)
+      for (const refUrl of topRefs) {
+        try {
+          const refResp = await fetch(refUrl, { headers: { 'User-Agent': 'Yogatik-Graph/2.0' } })
+          if (refResp.ok) {
+            const refData = await refResp.json()
+            nodes.push({
+              doi: refData.doi?.replace('https://doi.org/', ''),
+              title: refData.title || 'Referenced Work',
+              year: refData.publication_year,
+              citationCount: refData.cited_by_count,
+              relationship: 'cites',
+            })
+          }
+        } catch {}
+      }
+    }
+  } catch (err) {
+    console.warn('[CitationGraph] Failed traversal:', err)
+  }
+
+  return { seed: cleanDoi, nodes: nodes.slice(0, maxDepth) }
+}
+

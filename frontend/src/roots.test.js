@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import {
   rootIdFor, emptyState, resolveRootIds, resolveWithin,
-  materialise, addRoot, removeRoot, setPrimary, rebindChat, migrateLegacyGrant,
+  materialise, addRoot, removeRoot, setPrimary, rebindChat, unbindChat, migrateLegacyGrant,
   ensureDefaultRoot, resolveRootPaths,
 } from '../electron/rootsCore.cjs'
 import os from 'node:os'
@@ -175,6 +175,13 @@ describe('state transforms', () => {
     const st = rebindChat(state, 'c_new_1', 42)
     expect(st.bindings['chat:c_new_1']).toBeUndefined()
     expect(st.bindings['chat:42']).toHaveLength(1)
+  })
+
+  it('unbindChat removes the chat binding and cleans up orphan roots', () => {
+    const { state, root } = addRoot(emptyState(), { conversationId: 'temp_chat' }, '/temp_dir')
+    expect(state.bindings['chat:temp_chat']).toContain(root.id)
+    const unbound = unbindChat(state, 'temp_chat')
+    expect(unbound.bindings['chat:temp_chat']).toBeUndefined()
   })
 
   it('rebindChat is a no-op when the draft had no binding', () => {

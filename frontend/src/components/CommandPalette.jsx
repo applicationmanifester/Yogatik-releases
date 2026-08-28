@@ -34,11 +34,12 @@ function formatRelativeTime(ts) {
 }
 
 function HighlightMatch({ text, query }) {
-  if (!query || !query.trim() || !text) return <span>{text}</span>
+  const str = String(text ?? '')
+  if (!query || !query.trim() || !str) return <span>{str}</span>
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean)
-  if (!terms.length) return <span>{text}</span>
+  if (!terms.length) return <span>{str}</span>
   const regex = new RegExp(`(${terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi')
-  const parts = text.split(regex)
+  const parts = str.split(regex)
   return (
     <span>
       {parts.map((part, i) =>
@@ -50,16 +51,19 @@ function HighlightMatch({ text, query }) {
 
 const FILTER_TABS = [
   { id: 'all', label: 'All', prefix: '' },
+  { id: 'skills', label: 'Skills', icon: Sparkles, prefix: '@' },
+  { id: 'workflows', label: 'Workflows', icon: Zap, prefix: '~' },
   { id: 'chats', label: 'Chats', icon: MessageSquare, prefix: '#' },
-  { id: 'models', label: 'Models', icon: Cpu, prefix: '@' },
-  { id: 'commands', label: 'Commands', icon: Zap, prefix: '>' },
-  { id: 'settings', label: 'Settings', icon: Sliders, prefix: '$' },
+  { id: 'models', label: 'Models', icon: Cpu, prefix: '$' },
+  { id: 'commands', label: 'Commands', icon: Layers, prefix: '>' },
   { id: 'tools', label: 'Tools', icon: Wrench, prefix: '!' },
-  { id: 'personas', label: 'Personas', icon: Sparkles, prefix: '/' },
+  { id: 'personas', label: 'Personas', icon: Bot, prefix: '/' },
 ]
 
 const GROUP_CONFIG = {
   'In chats': { icon: MessageSquare, color: 'var(--accent, #ff6b35)' },
+  'Skills': { icon: Sparkles, color: '#06b6d4' },
+  'Workflows': { icon: Zap, color: '#f59e0b' },
   'Chat': { icon: MessageSquare, color: '#3b82f6' },
   'Model': { icon: Cpu, color: '#10b981' },
   'Models': { icon: Cpu, color: '#10b981' },
@@ -137,6 +141,8 @@ export function CommandPalette({ commands = [], onClose, onOpenChat }) {
       if (filterTab === 'settings' && grp !== 'settings' && grp !== 'view') return false
       if (filterTab === 'tools' && grp !== 'tools' && grp !== 'settings') return false
       if (filterTab === 'personas' && grp !== 'personas' && grp !== 'persona') return false
+      if (filterTab === 'skills' && grp !== 'skills') return false
+      if (filterTab === 'workflows' && grp !== 'workflows') return false
 
       if (!q) return true
       return (

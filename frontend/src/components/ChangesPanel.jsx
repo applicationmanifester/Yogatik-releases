@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   GitBranch, RefreshCw, Plus, Minus, Check, Loader2, Sparkles, Undo2, AlertTriangle,
-  FileDiff, History,
+  FileDiff, History, Download, ArrowUp, ArrowDown, Archive, ArchiveRestore,
 } from 'lucide-react'
 import { parseUnifiedDiff, diffTexts } from '../workspace/diffModel'
 import {
-  gitStatus, gitDiff, gitLog, gitWrite, gitShowUntracked,
+  gitStatus, gitDiff, gitLog, gitWrite, gitShowUntracked, GIT_CONFIRM_OPS,
   listJournal, revertJournalEntry, journalDiff,
 } from '../tools/localFs'
 import DiffView from './DiffView'
@@ -58,6 +58,9 @@ function GitView() {
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState([])
   const [err, setErr] = useState(null)
+  const [confirm, setConfirm] = useState(null)   // { op, opts, label }
+  const [newBranch, setNewBranch] = useState('')
+  const [amend, setAmend] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -92,9 +95,9 @@ function GitView() {
     setDiff({ hunks: f.hunks, added: f.added, removed: f.removed, binary: f.binary })
   }, [])
 
-  const act = useCallback(async (op, paths, msg) => {
+  const run = useCallback(async (op, opts = {}) => {
     setBusy(true)
-    const res = await gitWrite(op, { paths, message: msg })
+    const res = await gitWrite(op, opts)
     setBusy(false)
     if (!res?.success) { setErr(res?.error || 'git command failed.'); return false }
     setErr(null)
@@ -102,6 +105,22 @@ function GitView() {
     await load()
     return true
   }, [load])
+
+  /**
+   * Anything that can lose work is asked about HERE, in the panel, before the
+   * call is made. main refuses it without confirm:true regardless — but a
+   * round-trip that comes back "needs confirmation" would look like a broken
+   * button, and the user would learn to click twice reflexively, which defeats
+   * the gate entirely.
+   */
+  const act = useCallback(async (op, paths, msg, extra = {}) => {
+    const opts = { paths: paths || [], message: msg || '', ...extra }
+    if (GIT_CONFIRM_OPS.has(op) || (op === 'commit' && extra.amend)) {
+      setConfirm({ op, opts, label: extra.label || op })
+      return false
+    }
+    return run(op, opts)
+  }, [run])
 
   if (loading) return <div className="ws-empty sm"><Loader2 size={18} className="ws-spin" /><p>Reading repository…</p></div>
 
@@ -133,6 +152,20 @@ function GitView() {
       </span>
       <span className="ws-change-name">{f.path.split('/').pop()}</span>
       <span className="ws-change-dir">{f.path.split('/').slice(0, -1).join('/')}</span>
+      {group === 'changed' && !f.untracked && (
+        <button
+          className="icon-btn danger"
+          title="Discard changes to this file"
+          aria-label={`Discard changes to ${f.path}`}
+          disabled={busy}
+          onClick={(e) => {
+            e.stopPropagation()
+            act('discard', [f.path], '', { label: `discard your changes to ${f.path.split('/').pop()}` })
+          }}
+        >
+          <Undo2 size={12} />
+        </button>
+      )}
       <button
         className="icon-btn"
         title={group === 'staged' ? 'Unstage' : 'Stage'}
@@ -148,12 +181,87 @@ function GitView() {
   return (
     <div className="ws-changes">
       <div className="ws-toolbar">
-        <span className="ws-branch"><GitBranch size={12} /> {status.branch || 'detached'}</span>
+        {/* A detached HEAD is not a branch, and calling it one is how people
+            commit work that no ref points at. */}
+        <select
+          className="ws-branch-select"
+          aria-label="Branch"
+          value={status.detached ? '' : (status.branch || '')}
+          disabled={busy}
+          onChange={e => e.target.value && act('checkout', [], '', {
+            name: e.target.value, label: `switch to ${e.target.value}`,
+          })}
+        >
+          {status.detached && <option value="">detached HEAD</option>}
+          {(status.branches || []).map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+
+        {/* Ahead/behind is the answer to "do I need to push", which the panel
+            could not express at all while it parsed porcelain v1. */}
+        {status.upstream && (status.ahead > 0 || status.behind > 0) && (
+          <span className="ws-muted" title={`vs ${status.upstream}`}>
+            {status.behind > 0 && <>↓{status.behind}</>}{status.ahead > 0 && <>↑{status.ahead}</>}
+          </span>
+        )}
+        {status.stashes > 0 && <span className="ws-muted" title="Stashes">⚑{status.stashes}</span>}
         <span className="ws-muted">{status.summary.total} changed</span>
+
+        <span className="ws-spacer" />
+        <button className="icon-btn" title="Fetch from remote" aria-label="Fetch" disabled={busy}
+          onClick={() => act('fetch')}><Download size={13} /></button>
+        <button className="icon-btn" title="Pull (fast-forward only)" aria-label="Pull" disabled={busy}
+          onClick={() => act('pull')}><ArrowDown size={13} /></button>
+        <button className="icon-btn" title={status.upstream ? 'Push' : 'Push and set upstream'}
+          aria-label="Push" disabled={busy}
+          onClick={() => act(status.upstream ? 'push' : 'push_upstream')}><ArrowUp size={13} /></button>
+        <button className="icon-btn" title="Stash all changes" aria-label="Stash" disabled={busy || !status.summary.total}
+          onClick={() => act('stash_push')}><Archive size={13} /></button>
+        <button className="icon-btn" title="Pop the latest stash" aria-label="Pop stash" disabled={busy || !status.stashes}
+          onClick={() => act('stash_pop')}><ArchiveRestore size={13} /></button>
         <button className="icon-btn" title="Refresh" aria-label="Refresh git status" onClick={load}><RefreshCw size={13} /></button>
       </div>
 
+      {/* Offering "commit" in the middle of an unresolved rebase is offering
+          the wrong thing; git's own refusal arrives only after the message is
+          typed. */}
+      {status.operation && (
+        <div className="ws-notice warn">
+          <AlertTriangle size={13} /> A {status.operation} is in progress.
+          {status.summary.conflicted > 0 && ` ${status.summary.conflicted} file(s) still conflict.`}
+        </div>
+      )}
+
       {err && <div className="ws-notice error">{err}</div>}
+
+      {confirm && (
+        <div className="ws-notice confirm">
+          <AlertTriangle size={13} />
+          <span>This will {confirm.label}. It cannot be undone from git.</span>
+          <button className="ws-ghost-btn sm" onClick={() => setConfirm(null)}>Cancel</button>
+          <button
+            className="ws-danger-btn sm"
+            onClick={() => { const c = confirm; setConfirm(null); run(c.op, { ...c.opts, confirm: true }) }}
+          >Yes, {confirm.op.replace(/_/g, ' ')}</button>
+        </div>
+      )}
+
+      <div className="ws-branch-new">
+        <input
+          value={newBranch}
+          placeholder="New branch name…"
+          aria-label="New branch name"
+          onChange={e => setNewBranch(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && newBranch.trim()) {
+              act('create_branch', [], '', { name: newBranch.trim() }).then(() => setNewBranch(''))
+            }
+          }}
+        />
+        <button className="ws-ghost-btn sm" disabled={busy || !newBranch.trim()}
+          onClick={() => act('create_branch', [], '', { name: newBranch.trim() }).then(() => setNewBranch(''))}>
+          Create
+        </button>
+      </div>
 
       <div className="ws-commit">
         <textarea
@@ -166,10 +274,14 @@ function GitView() {
           }}
         />
         <div className="ws-commit-actions">
+          <label className="ws-check" title="Replace the last commit instead of adding one">
+            <input type="checkbox" checked={amend} onChange={e => setAmend(e.target.checked)} /> Amend
+          </label>
           <button className="ws-ghost-btn" disabled={busy || !changed.length} onClick={() => act('stage_all')}>Stage all</button>
-          <button className="ws-primary-btn sm" disabled={busy || !message.trim() || !staged.length}
-            onClick={() => act('commit', [], message)}>
-            <Check size={12} /> Commit {staged.length ? `(${staged.length})` : ''}
+          <button className="ws-primary-btn sm"
+            disabled={busy || !message.trim() || (!staged.length && !amend)}
+            onClick={() => act('commit', [], message, amend ? { amend: true, label: 'rewrite the last commit' } : {})}>
+            <Check size={12} /> {amend ? 'Amend' : 'Commit'} {staged.length ? `(${staged.length})` : ''}
           </button>
         </div>
       </div>

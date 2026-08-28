@@ -1,94 +1,21 @@
-// Interactive streaming terminal (PTY) — impossible in the browser and a step up
-// from the one-shot terminal:exec: real shell sessions with stdin, streaming
-// output and resize (live REPLs, `npm run dev` you can talk to, interactive git).
+// RETIRED — safe to delete this file.
 //
-// node-pty is a NATIVE module and is loaded lazily in a try/catch. If it isn't
-// installed (default), every handler returns a clear "unavailable" result and
-// the app falls back to the existing one-shot terminal:exec — nothing breaks.
-// To enable: `npm i node-pty` then `npx electron-rebuild -f -w node-pty`.
+// The PTY moved into terminalSession.cjs as "tier 2", so the interactive shell
+// and the agent's commands share ONE per-chat timeline instead of living in two
+// unrelated systems. main.cjs no longer registers this module, and the
+// __YOGATIK_PTY__ bridge is gone from preload.cjs — a bridge whose handlers do
+// not exist answers every call with "No handler registered", which is the
+// shipped-dead failure this codebase has hit repeatedly (fs_find_files, the
+// getGrantedRoot import that lived in this very file).
 //
-// Renderer bridge: window.__YOGATIK_PTY__.{available,spawn,write,resize,kill,onData,onExit}
+// The behaviour that mattered is preserved and improved in terminalSession:
+//   • the session is keyed by CHAT and survives the drawer closing, where this
+//     one was killed on unmount and lost the cwd, the environment and anything
+//     still running;
+//   • node-pty stays optional, and the UI now says which tier is live instead
+//     of offering an interactive prompt that silently swallows keystrokes.
 
-const { ipcMain } = require('electron')
-const path = require('path')
-// fsBridge exports only { registerFsBridge, initJournal } — the old
-// `getGrantedRoot` import was undefined, so pty:spawn threw "getGrantedRoot is
-// not a function" on every call and the PTY never worked even with node-pty
-// installed. Roots live in roots.cjs.
-const { rootPathsFor } = require('./roots.cjs')
-
-let pty = null
-let ptyTried = false
-const sessions = new Map() // id -> { proc }
-let nextId = 1
-
-function loadPty() {
-  if (ptyTried) return pty
-  ptyTried = true
-  try { pty = require('node-pty') } catch { pty = null }
-  return pty
+module.exports = {
+  registerPty() { /* retired — see electron/terminalSession.cjs */ },
+  killAllPty() { /* retired */ },
 }
-
-function registerPty(getWindow) {
-  ipcMain.handle('pty:available', () => Boolean(loadPty()))
-
-  ipcMain.handle('pty:spawn', (_e, { ctx, cwd, cols = 80, rows = 24, shell } = {}) => {
-    const mod = loadPty()
-    if (!mod) return { success: false, error: 'PTY unavailable — node-pty is not installed. Use terminal_run instead.' }
-    // Never fall back to process.cwd(): that is the app's own install directory.
-    const root = rootPathsFor(ctx)[0]
-    if (!root) return { success: false, error: 'No working folder for this chat. Add one first.' }
-    const workingDir = cwd ? path.resolve(root, cwd) : root
-    const rootResolved = path.resolve(root)
-    if (workingDir !== rootResolved && !workingDir.startsWith(rootResolved + path.sep)) {
-      return { success: false, error: 'Working directory escapes the granted folder.' }
-    }
-    const shellCmd = shell || (process.platform === 'win32' ? 'powershell.exe' : (process.env.SHELL || '/bin/bash'))
-    try {
-      const proc = mod.spawn(shellCmd, [], {
-        name: 'xterm-color', cols, rows, cwd: workingDir, env: process.env,
-      })
-      const id = `pty${nextId++}`
-      proc.onData((data) => {
-        const win = getWindow?.()
-        if (win && !win.isDestroyed()) win.webContents.send('pty:data', { id, data })
-      })
-      proc.onExit(({ exitCode }) => {
-        sessions.delete(id)
-        const win = getWindow?.()
-        if (win && !win.isDestroyed()) win.webContents.send('pty:exit', { id, exitCode })
-      })
-      sessions.set(id, { proc })
-      return { success: true, id, shell: shellCmd, cwd: workingDir }
-    } catch (err) {
-      return { success: false, error: err.message }
-    }
-  })
-
-  ipcMain.handle('pty:write', (_e, { id, data } = {}) => {
-    const s = sessions.get(id)
-    if (!s) return { success: false, error: 'No such session' }
-    try { s.proc.write(data); return { success: true } } catch (err) { return { success: false, error: err.message } }
-  })
-
-  ipcMain.handle('pty:resize', (_e, { id, cols, rows } = {}) => {
-    const s = sessions.get(id)
-    if (!s) return { success: false, error: 'No such session' }
-    try { s.proc.resize(cols, rows); return { success: true } } catch (err) { return { success: false, error: err.message } }
-  })
-
-  ipcMain.handle('pty:kill', (_e, id) => {
-    const s = sessions.get(id)
-    if (!s) return { success: false, error: 'No such session' }
-    try { s.proc.kill() } catch { /* ignore */ }
-    sessions.delete(id)
-    return { success: true, id }
-  })
-}
-
-function killAllPty() {
-  for (const s of sessions.values()) { try { s.proc.kill() } catch { /* ignore */ } }
-  sessions.clear()
-}
-
-module.exports = { registerPty, killAllPty }

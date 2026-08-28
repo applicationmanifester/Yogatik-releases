@@ -62,7 +62,7 @@ export const PRESET_AGENTS = [
     role: 'writer',
     description: 'Drafts and polishes clear, well-structured prose.',
     system: 'You are a sharp writer and editor. Produce clear, engaging, well-structured prose in the requested tone and length. Cut filler, prefer plain words, and proofread with grammar_check before finalising. Return the finished text first, then a one-line note on choices made.',
-    tools: ['grammar_check', 'thesaurus', 'summarize', 'doc_export'],
+    tools: ['grammar_check', 'thesaurus', 'summarize', 'doc_export', 'md_to_pdf'],
   },
   {
     id: 'agent_analyst',
@@ -70,7 +70,7 @@ export const PRESET_AGENTS = [
     role: 'analyst',
     description: 'Analyses, summarises and charts data; states assumptions.',
     system: 'You are an analytical specialist. Compute stats directly from given data (means, medians, trends) before drawing conclusions. Format output clearly with tables or structured summaries, and state all assumptions explicitly.',
-    tools: ['calculator', 'data_stats', 'data_convert', 'chart', 'doc_export'],
+    tools: ['calculator', 'data_stats', 'data_convert', 'chart', 'doc_export', 'md_to_pdf'],
   },
   {
     id: 'agent_planner',
@@ -110,7 +110,7 @@ export const PRESET_AGENTS = [
     role: 'auditor',
     description: 'Extracts text from PDFs/images, performs OCR, searches local vault documents, and summarizes files.',
     system: 'You are a document auditing specialist. Perform OCR on images with ocr, extract text from PDF files using pdf_extract, search and list internal vault documents (doc_search, doc_list), and synthesize structured summaries.',
-    tools: ['ocr', 'pdf_extract', 'doc_search', 'doc_list', 'local_vault_search', 'summarize', 'doc_export', 'keyword_extract', 'git_diff', 'git_log', 'finance_analytics'],
+    tools: ['ocr', 'pdf_extract', 'doc_search', 'doc_list', 'local_vault_search', 'summarize', 'doc_export', 'md_to_pdf', 'keyword_extract', 'git_diff', 'git_log', 'finance_analytics'],
   },
   {
     id: 'agent_career',
@@ -118,7 +118,7 @@ export const PRESET_AGENTS = [
     role: 'career_coach',
     description: 'Finds tech jobs across Naukri/Indeed/LinkedIn, optimizes resumes, and conducts interview prep.',
     system: 'You are a career development and hiring coach. Use job_search to query Naukri, Indeed, LinkedIn Jobs, and Glassdoor for real openings, salary benchmarks, and requirements. Provide targeted resume bullet points, cover letters, and STAR-method interview answers.',
-    tools: ['job_search', 'doc_export', 'grammar_check', 'thesaurus', 'summarize'],
+    tools: ['job_search', 'doc_export', 'md_to_pdf', 'grammar_check', 'thesaurus', 'summarize'],
   },
   {
     id: 'agent_growth',
@@ -134,7 +134,7 @@ export const PRESET_AGENTS = [
     role: 'legal_analyst',
     description: 'Reviews contracts, NDAs, licenses, and terms of service for risk factors and obligations.',
     system: 'You are a contract and compliance analyst. Extract text from uploaded agreements using pdf_extract and ocr. Identify governing law, liabilities, indemnities, auto-renewals, non-competes, and termination terms. Present findings as structured risk tables.',
-    tools: ['pdf_extract', 'ocr', 'diff', 'doc_export', 'summarize', 'keyword_extract'],
+    tools: ['pdf_extract', 'ocr', 'diff', 'doc_export', 'md_to_pdf', 'summarize', 'keyword_extract'],
   },
   {
     id: 'agent_academic',
@@ -142,7 +142,7 @@ export const PRESET_AGENTS = [
     role: 'academic_researcher',
     description: 'Searches arXiv, PubMed, OpenAlex, extracts methodologies, and builds literature reviews.',
     system: 'You are an academic literature synthesis specialist. Use scholar, wikipedia, and deep_research to explore research papers, peer-reviewed journals, and arXiv preprints. Extract hypotheses, datasets, metrics, and cite references accurately in Markdown or BibTeX.',
-    tools: ['scholar', 'unlimited_ocr', 'wikipedia', 'deep_research', 'summarize', 'doc_export'],
+    tools: ['scholar', 'unlimited_ocr', 'wikipedia', 'deep_research', 'summarize', 'doc_export', 'md_to_pdf'],
   },
   {
     id: 'agent_health',

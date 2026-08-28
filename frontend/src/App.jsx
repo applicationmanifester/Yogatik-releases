@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
-import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, setWorkspaceContext } from './tools/localFs'
+import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { runMultiAgentDebate } from './multiAgent'
 import { startActivityTurn, publishStream, publishStep, endActivityTurn, setActivityConversation } from './activityStream'
 import { YogatikLogo } from './components/YogatikLogo'
@@ -39,6 +39,13 @@ import { isInstalledApp, shareYogatik, nativeShareAvailable } from './share'
 import { groupConversations } from './convGroups'
 import { shouldNotifyTurn, notificationBody, notificationTitle, cleanReply } from './desktopNotify'
 import { setPermissionPrompt } from './permissions'
+import { setLocaleOverrides, overridesFromPrefs, applyDocumentLocale } from './locale'
+import {
+  entitlement, loadEntitlement, refreshEntitlement, signOutEntitlement,
+  onEntitlementChange, isPersonalEdition,
+} from './entitlement'
+import * as terminalStore from './terminal/terminalStore'
+import { startTerminalStream } from './terminal/useTerminal'
 import PermissionPrompt from './components/PermissionPrompt'
 import { APP_VERSION, hasSeenCurrentVersion } from './version'
 import { AdSenseBanner } from './components/AdSenseBanner'
@@ -62,7 +69,10 @@ const LiveView = safeLazy(() => import('./components/LiveView').then(m => ({ def
 const PersonalisePanel = safeLazy(() => import('./components/PersonalisePanel').then(m => ({ default: m.PersonalisePanel })))
 const SkillsPanel = safeLazy(() => import('./components/SkillsPanel').then(m => ({ default: m.SkillsPanel })))
 const AgentsPanel = safeLazy(() => import('./components/AgentsPanel').then(m => ({ default: m.AgentsPanel })))
-const TerminalPanel = safeLazy(() => import('./components/TerminalPanel'))
+// The shared terminal timeline: agent commands AND yours, in one bottom
+// drawer. Supersedes the old floating TerminalPanel, whose session was private
+// to the panel and was killed when it closed.
+const TerminalDrawer = safeLazy(() => import('./components/TerminalDrawer'))
 const SchedulerPanel = safeLazy(() => import('./components/SchedulerPanel').then(m => ({ default: m.SchedulerPanel })))
 const SubAgentRunnerPanel = safeLazy(() => import('./components/SubAgentRunnerPanel').then(m => ({ default: m.SubAgentRunnerPanel })))
 const AutoSkillsPanel = safeLazy(() => import('./components/AutoSkillsPanel').then(m => ({ default: m.AutoSkillsPanel })))
@@ -71,6 +81,9 @@ const FileEditorModal = safeLazy(() => import('./components/FileEditorModal').th
 // gated at the RENDER SITE below, not self-gated: rendering a React.lazy
 // component downloads its chunk immediately, and this one pulls CodeMirror.
 const WorkspaceDock = safeLazy(() => import('./components/WorkspacePanel').then(m => ({ default: m.WorkspaceDock })))
+// Lazy and gated at the render site: most sessions never open it, and the
+// pricing tables are dead weight in the first paint if they are not.
+const UpgradeModal = safeLazy(() => import('./components/UpgradeModal'))
 const DemoModal = safeLazy(() => import('./components/DemoModal').then(m => ({ default: m.DemoModal })))
 const Tour = safeLazy(() => import('./components/Tour').then(m => ({ default: m.Tour })))
 const AppOverviewModal = safeLazy(() => import('./components/AppOverviewModal').then(m => ({ default: m.AppOverviewModal })))
@@ -80,6 +93,10 @@ const DiagnosticsModal = safeLazy(() => import('./components/DiagnosticsModal').
 const DomainHubModal = safeLazy(() => import('./components/DomainHubModal').then(m => ({ default: m.DomainHubModal })))
 const WhatsNewModal = safeLazy(() => import('./components/WhatsNewModal').then(m => ({ default: m.WhatsNewModal })))
 const ShareSheet = safeLazy(() => import('./components/ShareSheet').then(m => ({ default: m.ShareSheet })))
+const ShortcutsModal = safeLazy(() => import('./components/ShortcutsModal').then(m => ({ default: m.ShortcutsModal })))
+const SlashCommandsMenu = safeLazy(() => import('./components/SlashCommandsMenu').then(m => ({ default: m.SlashCommandsMenu })))
+const StarterCards = safeLazy(() => import('./components/StarterCards').then(m => ({ default: m.StarterCards })))
+
 
 // Messages rendered at once; older turns load on demand.
 const WINDOW_STEP = 40
@@ -93,6 +110,18 @@ function formatLatency(ms) {
   const s = Math.round((ms % 60000) / 1000)
   return `${m}m ${s}s`
 }
+
+function getStatusIcon(text = '') {
+  const t = text.toLowerCase()
+  if (t.includes('search') || t.includes('web') || t.includes('fetching')) return <Globe size={13} style={{ color: '#38bdf8' }} />
+  if (t.includes('code') || t.includes('file') || t.includes('read') || t.includes('write')) return <FileCode size={13} style={{ color: '#a855f7' }} />
+  if (t.includes('think') || t.includes('reason') || t.includes('analyz')) return <Brain size={13} style={{ color: '#ec4899' }} />
+  if (t.includes('running') || t.includes('execut') || t.includes('tool')) return <Wrench size={13} style={{ color: '#f59e0b' }} />
+  if (t.includes('verif') || t.includes('test') || t.includes('audit')) return <ShieldCheck size={13} style={{ color: '#10b981' }} />
+  if (t.includes('enhanc')) return <Wand2 size={13} style={{ color: '#ff6b35' }} />
+  return <Sparkles size={13} style={{ color: 'var(--accent-color, #ff6b35)' }} />
+}
+
 
 const SUGGESTIONS = [
   {
@@ -242,6 +271,10 @@ export default function App() {
   const [showSkills, setShowSkills] = useState(false)
   const [showAgents, setShowAgents] = useState(false)
   const [showTerminal, setShowTerminal] = useState(false)
+  // A BOOLEAN, deliberately: the terminal store notifies on every output chunk,
+  // and subscribing App to that would re-render the whole shell per chunk —
+  // exactly the regression StreamingMessage exists to prevent.
+  const [agentTerminalBusy, setAgentTerminalBusy] = useState(false)
   const [showScheduler, setShowScheduler] = useState(false)
   const [showSubAgents, setShowSubAgents] = useState(false)
   const [showAutoSkills, setShowAutoSkills] = useState(false)
@@ -251,10 +284,45 @@ export default function App() {
   // open — you are meant to chat and watch files at the same time. It IS in
   // browserOccluded, because it occupies the same pixels as the docked browser.
   const [showWorkspace, setShowWorkspace] = useState(false)
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false)
+  const [showSlashMenu, setShowSlashMenu] = useState(false)
+  const [slashMenuIndex, setSlashMenuIndex] = useState(0)
+  // Entitlement. The GATE is in the main process; this is only what the UI says.
+  const [showUpgrade, setShowUpgrade] = useState(false)
+  const [ent, setEnt] = useState(() => entitlement())
   const [showWhatsNew, setShowWhatsNew] = useState(false)
   const [chatRoots, setChatRoots] = useState([])
   const [rootsOpen, setRootsOpen] = useState(false)
   const rootsWrapRef = useRef(null)
+
+  // Global Keyboard Shortcuts (Ctrl+/, Ctrl+N, Ctrl+B, Ctrl+`, Ctrl+Shift+D)
+  useEffect(() => {
+    const handleGlobalKey = (e) => {
+      // Don't intercept when user is typing in form inputs/modals unless it's Ctrl+/ or Escape
+      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        e.preventDefault()
+        setShowShortcutsModal(prev => !prev)
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n' && !e.shiftKey) {
+        e.preventDefault()
+        createConversation()
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        setSidebarOpen(prev => !prev)
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+        e.preventDefault()
+        setShowTerminal(prev => !prev)
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault()
+        setShowDiagnosticsModal(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKey)
+    return () => window.removeEventListener('keydown', handleGlobalKey)
+  }, [])
 
   // The folders popover is a role="dialog": Escape and a click outside must
   // dismiss it, not just a second click on the chip that opened it.
@@ -307,10 +375,12 @@ export default function App() {
     if (added) setChatRoots(await listRoots())
   }, [])
   const handleRemoveFolder = useCallback(async (rootId) => {
-    setChatRoots(await removeRoot(rootId))
+    const updated = await removeRoot(rootId)
+    setChatRoots(updated || [])
   }, [])
   const handleMakePrimary = useCallback(async (rootId) => {
-    setChatRoots(await setPrimaryRoot(rootId))
+    const updated = await setPrimaryRoot(rootId)
+    setChatRoots(updated || [])
   }, [])
   const features = useMemo(() => resolveFeatures(prefs.features), [prefs.features])
   // The vision fallback lives outside React; it needs the toggle, not a prop.
@@ -620,8 +690,8 @@ export default function App() {
     showPersonalise || showSkills || showPersonaModal || showDomainHub ||
     showDemoModal || showDiagnosticsModal || confirmModal || projectNameModal ||
     restoreModal || showDownloadModal || errorModalMsg || arena ||
-    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor || showWhatsNew ||
-    showTour
+    showScheduler || showSubAgents || showAutoSkills || showFileEditor || showWhatsNew ||
+    showTour || showUpgrade
   )
   const isAnyModalOpenRef = useRef(isAnyModalOpen)
   isAnyModalOpenRef.current = isAnyModalOpen
@@ -827,7 +897,17 @@ export default function App() {
   }, [])
   /** One updater for every small preference the Personalise panel owns. */
   const updatePref = useCallback((key, value) => {
-    setPrefsState(p => ({ ...p, [key]: value }))
+    setPrefsState(p => {
+      const next = { ...p, [key]: value }
+      // The locale layer is read SYNCHRONOUSLY while a system prompt is built,
+      // so its overrides are pushed here rather than read from the database on
+      // demand — otherwise a changed region would not reach the next turn.
+      if (key.endsWith('_override')) {
+        setLocaleOverrides(overridesFromPrefs(next))
+        applyDocumentLocale()
+      }
+      return next
+    })
     setPref(key, value).catch(() => {})
   }, [])
 
@@ -860,6 +940,25 @@ export default function App() {
     messagesEnd.current?.scrollIntoView({ behavior })
     setAtBottom(true)
   }, [])
+
+  // When a chat is opened, loaded, or switched, always show the latest prompt and response at the bottom
+  const activeChatKey = conv?.id || conv?.clientId || String(activeIdx)
+  useEffect(() => {
+    if (!conv?.messages || conv.messages.length === 0) return
+    if (scrollerRef.current) {
+      scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight
+    }
+    scrollToBottom('auto')
+
+    // Second pass after Markdown / Math / Code highlights calculate heights
+    const timer = setTimeout(() => {
+      if (scrollerRef.current) {
+        scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight
+      }
+      scrollToBottom('auto')
+    }, 60)
+    return () => clearTimeout(timer)
+  }, [activeChatKey, conv?.messages?.length, scrollToBottom])
 
   useEffect(() => {
     if (!isStreamingHere) return
@@ -1013,6 +1112,10 @@ export default function App() {
     getActiveProject().then(pid => { setActiveProjectState(pid); loadConversations(pid) })
     refreshProjects()
     getMe().then(u => { if (u) setUser(u) }).catch(() => {})
+    // Entitlement: read the cached licence main already loaded from disk. No
+    // network on this path — a launch must never block on the licence server,
+    // or an outage at Firebase becomes an outage of the whole app.
+    loadEntitlement().then(setEnt).catch(() => {})
     getActiveProvider().then(async (p) => {
       setProviderState(p)
       setModel(await getActiveModel(p) || '')
@@ -1025,6 +1128,8 @@ export default function App() {
       if (pref.persona) setActiveTemplate(pref.persona)
       if (pref.auto_route != null) setAutoRouteState(pref.auto_route)
       if (pref.fallback != null) setFallbackState(pref.fallback)
+      setLocaleOverrides(overridesFromPrefs(pref))
+      applyDocumentLocale()
       setPrefsState(pref)
     }).catch(() => {})
     refreshToolPrefs()
@@ -1066,6 +1171,14 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'b' || e.key === 'B')) {
         e.preventDefault()
         setShowWorkspace(v => !v)
+      }
+      // Ctrl+` -> toggle the terminal drawer. The universal IDE binding, and
+      // like the dock it is deliberately NOT guarded by isAnyModalOpen: seeing
+      // what the agent is running is exactly what you want while something else
+      // is open.
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === '`' || e.code === 'Backquote')) {
+        e.preventDefault()
+        setShowTerminal(v => !v)
       }
       // Alt+D -> Social Media & Domain Intelligence Hub
       if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'd' || e.key === 'D')) {
@@ -1251,7 +1364,55 @@ export default function App() {
     }
   }, [activeProject, provider, model, temperature, webSearch, tools])
 
-  const handleAuth = (userData) => { setUser(userData); loadConversations() }
+  const handleAuth = (userData) => {
+    setUser(userData)
+    loadConversations()
+    // Sign-in is what starts the trial and fetches the licence. The ID token is
+    // handed to main here and held only in memory — it is short-lived, and
+    // persisting it would be storing a credential for no benefit.
+    refreshEntitlement({ idToken: userData?.idToken || null, uid: userData?.uid || userData?.id || null })
+      .then(setEnt).catch(() => {})
+  }
+
+  // One subscription so every surface (header chip, workspace dock, system
+  // prompt) reads the same state. Without it the dock could show unlocked while
+  // the prompt still told the model everything was locked.
+  useEffect(() => onEntitlementChange(setEnt), [])
+
+  // The terminal's live dot. Subscribing here — not inside the drawer — is what
+  // makes an agent command visible while the drawer is CLOSED, which was the
+  // whole complaint: terminal_run ran for minutes with nothing on screen.
+  useEffect(() => {
+    if (!isDesktop()) return undefined
+    let alive = true
+    const id = conv?.clientId || conv?.id || null
+    const tick = () => {
+      if (!alive) return
+      const busy = terminalStore.agentIsBusy(String(id ?? ''))
+      // setState with the same boolean is a no-op in React, so this is cheap
+      // even though the store notifies on every chunk.
+      setAgentTerminalBusy(busy)
+    }
+    // Start the IPC stream here, not in the drawer's hook: a command that runs
+    // while the drawer is CLOSED is precisely the case this indicator is for.
+    startTerminalStream()
+    tick()
+    const off = terminalStore.subscribe(tick)
+    return () => { alive = false; off() }
+  }, [conv?.clientId, conv?.id])
+
+  // Re-check on focus: the purchase completes in ANOTHER window, and coming
+  // back to a still-locked app after paying is the worst moment in the funnel.
+  useEffect(() => {
+    if (!isDesktop()) return undefined
+    const onFocus = () => {
+      if (!user) return
+      refreshEntitlement({ idToken: user?.idToken || null, uid: user?.uid || user?.id || null })
+        .then(setEnt).catch(() => {})
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [user])
 
   /**
    * Sign-in is gated on accepting the current terms. Acceptance is recorded
@@ -1489,6 +1650,10 @@ export default function App() {
     const cId = c?.id
     const doDelete = async () => {
       if (cId) { try { await deleteConversation(cId) } catch {} }
+      if (isDesktop()) {
+        if (cClientId) unbindChatRoots(cClientId).catch(() => {})
+        if (cId) unbindChatRoots(cId).catch(() => {})
+      }
       setVisibleCount(WINDOW_STEP)
       setConversations(prev => {
         const next = prev.filter((item, i) => (cClientId ? item.clientId !== cClientId : i !== idx))
@@ -1660,22 +1825,23 @@ export default function App() {
         '- Present comparative data in structured Markdown tables (| Header 1 | Header 2 |) ready for 1-click CSV export.'
     }
 
-    const folderCtx = chatRoots.length
-      ? `\n\nWORKING FOLDERS FOR THIS CHAT:\n` +
-        chatRoots.map(r => `- ${r.path}${r.primary ? '  (primary)' : ''}`).join('\n') +
-        `\nYou have full file-system access to these folders via the fs_* tools. ` +
-        `Use them proactively when the user asks to create, read, edit, rename, move, delete files or directories:\n` +
-        `- fs_list   → list contents\n` +
+    const folderCtx = isDesktop()
+      ? `\n\nWORKING FOLDERS & REPOSITORY ACCESS:\n` +
+        (chatRoots.length ? chatRoots.map(r => `- ${r.path}${r.primary ? '  (primary)' : ''}`).join('\n') : '- Current workspace directory\n') +
+        `\nYou have full native file-system access to these folders via the fs_* tools and terminal_run. ` +
+        `Use them proactively when the user asks to inspect, create, read, edit, rename, move, delete files or directories:\n` +
+        `- fs_list   → list contents and directory tree\n` +
         `- fs_read   → read a file\n` +
         `- fs_write  → create or overwrite a file\n` +
         `- fs_edit   → patch a file by exact string replacement\n` +
-        `- fs_search → grep across every folder above\n` +
-        `- fs_delete → delete a file or empty directory\n` +
+        `- fs_search → grep across folders\n` +
+        `- fs_find_files → find files by name / extension\n` +
+        `- fs_delete → delete a file or directory\n` +
         `- fs_mkdir  → create a directory tree\n` +
         `- fs_move   → move or rename a file/directory\n` +
-        `- fs_add_folder → ask the user to grant another folder\n` +
-        `Paths may be absolute, or relative to the primary folder. ` +
-        `Anything outside these folders is refused.`
+        `- fs_add_folder → pick or grant another folder\n` +
+        `- terminal_run → execute native CLI commands, builds, and tests.\n` +
+        `Never claim you lack file access or ask the user to paste code when you can inspect it directly.`
       : ''
 
     return (
@@ -1687,8 +1853,9 @@ export default function App() {
       '- For any question about current events, news, prices, weather, stock data, or anything after 2023: call `web_search` FIRST.\n' +
       '- For any translation request ("translate X to Y", "how do you say X in Y"): call the `translate` tool IMMEDIATELY.\n' +
       '- For any code execution, math computation, or data processing: call `js_execute` or `code_execute` instead of guessing.\n' +
-      '- For any image generation or visual request: call `image_generate` or `sticker_generate`.\n' +
-      '- For document/file creation (Word, PDF, CSV, PowerPoint): call `doc_export` or `doc_enhance`.\n' +
+      '- For any image generation, photorealistic art, or visual scenes: call `image_generate` or `sticker_generate`.\n' +
+      '- For PDF document creation / PDF export: call `md_to_pdf` (it automatically renders an instant 1-click download button in the chat UI; do NOT output raw base64 or write local files manually).\n' +
+      '- For Word (.doc), PowerPoint (.pptx), or CSV file creation: call `doc_export` or `doc_enhance`.\n' +
       '- For research/deep analysis: call `deep_research` or `web_search` to gather facts before responding.\n' +
       '- Accuracy over speed: if you are uncertain about a fact, use a tool to verify it. Do NOT guess or hallucinate.\n' +
       '- When tools are enabled, prefer multi-step tool chains to build complete, accurate answers.\n' +
@@ -1697,7 +1864,7 @@ export default function App() {
       '- When creating PowerPoint presentations (.pptx), structure slides cleanly using horizontal rules (`---`) between slides, `# Slide Title` or `## Slide Title`, formatted bullets with `* **Key Term**: Detailed explanation`, KPI stat callouts (e.g. `+45% Growth`, `$2.5M Revenue`, `99.9% Uptime`), and comparison tables (`| Feature | Value |`).\n' +
       '- When creating or editing PowerPoint presentations, Word documents, CSV spreadsheets, or reports, call `doc_export` or `doc_enhance` to generate high-quality files with slide graphics, calculated totals, and executive styling.\n' +
       '- When asked to generate visual aids, graphics, icons, or stickers, call the `sticker_generate` or `image_generate` tools.\n' +
-      '- When explaining processes or workflows, include Mermaid flowcharts using `diagram` or ```mermaid code blocks.\n' +
+      '- When explaining processes or workflows, include Mermaid flowcharts using `diagram` or ```mermaid code blocks so diagrams are razor-sharp vector graphics with readable text.\n' +
       '- Keep document exports (Word .doc, PowerPoint .pptx, CSV) structured into clean sections and slides.'
     )
   }, [promptTemplates, activeTemplate, chatRoots])
@@ -2078,18 +2245,20 @@ export default function App() {
         provider: useProvider,
         model: useModel || undefined,
         channel: targetClientId,
+        conversationId: convId || targetClientId,
+        projectId: activeProject?.id || null,
         image: sentImage?.dataUrl || null,
         // On-device safety screen → surface a soft support card (never blocks).
         onSafety: (_verdict, card) => { if (card) setCrisisCard(card) },
       },
-      (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); publishStream(content, targetClientId); setStatusMap(prev => ({ ...prev, [targetClientId]: '' })) },
+      (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); publishStream(content, targetClientId); setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' })) },
       (s) => { sources = s },
       (_final, meta) => {
         _latTurn.done()
         endActivityTurn(targetClientId)
-        setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
-        setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
-        setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+        setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' }))
+        setStreamIdMap(prev => (prev[targetClientId] == null ? prev : { ...prev, [targetClientId]: null }))
+        setLoadingMap(prev => (!prev[targetClientId] ? prev : (() => { const n = { ...prev }; delete n[targetClientId]; return n })()))
 
         // Tell the user their answer arrived if they looked away. The desktop
         // shell has supported rich notifications since v3.13 and nothing ever
@@ -2187,10 +2356,10 @@ export default function App() {
         setStreamText(targetClientId, '')
         triggerNextQueued(targetClientId)
       },
-      (status) => { setStatusMap(prev => ({ ...prev, [targetClientId]: status })) },
-      (streamId) => { setStreamIdMap(prev => ({ ...prev, [targetClientId]: streamId })) },
+      (status) => { setStatusMap(prev => (prev[targetClientId] === status ? prev : { ...prev, [targetClientId]: status })) },
+      (streamId) => { setStreamIdMap(prev => (prev[targetClientId] === streamId ? prev : { ...prev, [targetClientId]: streamId })) },
       (detectedTools, args) => {
-        setActiveToolsMap(prev => ({ ...prev, [targetClientId]: detectedTools }))
+        setActiveToolsMap(prev => (prev[targetClientId] === detectedTools ? prev : { ...prev, [targetClientId]: detectedTools }))
         const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
         for (const t of detectedTools) {
           if (!runData.used.includes(t)) runData.used.push(t)
@@ -2276,17 +2445,27 @@ export default function App() {
   const handleEnhancePrompt = async () => {
     if (!input.trim() || isEnhancing) return
     setIsEnhancing(true)
+    showToast('✨ Enhancing prompt…')
     try {
-      await enhancePromptText({
-        prompt: input.trim(),
-        provider,
-        model: model || undefined,
-        onToken: (enhanced) => {
-          if (enhanced) setInput(enhanced)
-        },
+      const activeKey = keyInfo[conv?.provider || provider]?.key || ''
+      const enhanced = await enhancePromptText(input, {
+        provider: conv?.provider || provider,
+        model: conv?.model || model,
+        apiKey: activeKey,
       })
-    } catch (e) {
-      console.warn('Prompt enhancement failed:', e)
+      if (enhanced && enhanced.trim() && enhanced.trim() !== input.trim()) {
+        setInput(enhanced.trim())
+        setTimeout(() => {
+          autoResize()
+          textareaRef.current?.focus()
+        }, 50)
+        showToast('✨ Prompt enhanced!')
+      } else {
+        showToast('✨ Prompt is already well-structured')
+      }
+    } catch (err) {
+      console.warn('Enhance prompt failed:', err)
+      showToast('Could not enhance prompt')
     } finally {
       setIsEnhancing(false)
     }
@@ -2310,11 +2489,89 @@ export default function App() {
 
 
 
+  const handleSlashCommandSelect = (cmd) => {
+    setShowSlashMenu(false)
+    if (!cmd) return
+    switch (cmd.command) {
+      case '/enhance':
+        handleEnhancePrompt()
+        break
+      case '/clear':
+        createConversation()
+        setInput('')
+        break
+      case '/new':
+        createConversation()
+        setInput('')
+        break
+      case '/terminal':
+        setShowTerminal(true)
+        setInput('')
+        break
+      case '/export':
+        handleExport()
+        setInput('')
+        break
+      case '/settings':
+        setSidebarOpen(true)
+        setSettingsOpen(true)
+        setInput('')
+        break
+      case '/help':
+        setShowShortcutsModal(true)
+        setInput('')
+        break
+      default:
+        setInput('')
+        break
+    }
+  }
+
   const handleKeyDown = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
       e.preventDefault()
       handleEnhancePrompt()
       return
+    }
+
+    if (showSlashMenu) {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSlashMenuIndex(prev => Math.max(0, prev - 1))
+        return
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSlashMenuIndex(prev => prev + 1)
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowSlashMenu(false)
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        const menuCommands = [
+          { command: '/enhance', label: 'Enhance Prompt' },
+          { command: '/clear', label: 'Clear Chat' },
+          { command: '/new', label: 'New Chat' },
+          { command: '/terminal', label: 'Open Terminal' },
+          { command: '/export', label: 'Export Conversation' },
+          { command: '/settings', label: 'Open Settings' },
+          { command: '/help', label: 'Keyboard Shortcuts & Help' },
+        ]
+        const cleanFilter = input.startsWith('/') ? input.slice(1).toLowerCase() : input.toLowerCase()
+        const matching = menuCommands.filter(c =>
+          c.command.slice(1).toLowerCase().includes(cleanFilter) ||
+          c.label.toLowerCase().includes(cleanFilter)
+        )
+        const selected = matching[Math.min(slashMenuIndex, matching.length - 1)] || matching[0]
+        if (selected) {
+          handleSlashCommandSelect(selected)
+          return
+        }
+      }
     }
 
     // Up Arrow (ArrowUp) -> Recall previous sent chat prompt(s)
@@ -2655,7 +2912,7 @@ export default function App() {
       { id: 'agents-panel', group: 'View', label: '🤖 Specialized Agents Panel (Researcher, Modeller, Swarms...)', hint: 'Specialist AI', run: () => setShowAgents(true) },
       // Desktop-only surfaces. They are listed on the web too and say so when
       // opened, rather than being silently absent depending on the build.
-      { id: 'terminal', group: 'Tools', label: '⌨️ Interactive terminal', hint: isDesktop() ? 'Desktop shell' : 'Desktop app', run: () => setShowTerminal(true) },
+      { id: 'terminal', group: 'Tools', label: '⌨️ Terminal — watch the assistant, run your own', hint: 'Ctrl+`', run: () => setShowTerminal(true) },
       { id: 'file-editor', group: 'Tools', label: '📝 Create or edit a file in the workspace', hint: isDesktop() ? 'Workspace' : 'Desktop app', run: () => setShowFileEditor(true) },
       { id: 'workspace', group: 'View', label: '🗂️ File explorer & changes', hint: isDesktop() ? 'Ctrl+B' : 'Desktop app', run: () => setShowWorkspace(v => !v) },
       { id: 'workspace-scm', group: 'View', label: '🔀 Review the agent’s file changes', hint: isDesktop() ? 'Source control' : 'Desktop app', run: () => setShowWorkspace(true) },
@@ -2788,6 +3045,11 @@ export default function App() {
   }
 
   return (
+    // A COLUMN wrapper so the terminal can be a full-width bottom drawer.
+    // `.app` is a flex ROW (sidebar | chat | workspace dock); putting the
+    // drawer inside it would make it a fourth column, and putting it inside
+    // the chat column would leave it fighting the dock for width.
+    <div className="app-shell">
     <div className="app">
       {pipWindow && ReactDOM.createPortal(
         <FloatingCompanion
@@ -3151,7 +3413,7 @@ export default function App() {
             <Sliders size={12} /> Personalise — voice &amp; interface
           </button>
           <button className="small-btn wide" onClick={() => setShowSkills(true)}>
-            <Sparkles size={12} /> Skills &amp; workflows
+            <Compass size={12} /> Skills &amp; workflows
           </button>
           <div className="toggle-row">
             <label><Globe size={12} /> Web Research</label>
@@ -3325,7 +3587,7 @@ export default function App() {
               <Smartphone size={13} /> <span>Use web app on mobile/tab</span>
             </a>
           ) : (
-            <a className="sidebar-footer-link" href="/platforms"
+            <a className="sidebar-footer-link" href="/platforms" target="_blank" rel="noreferrer"
               title="Download the Yogatik desktop app for Windows, macOS or Linux">
               <Monitor size={13} /> <span>Get the desktop app</span>
             </a>
@@ -3338,7 +3600,7 @@ export default function App() {
                 <User size={14} />
               )}
               <span>{user.displayName || user.email}</span>
-              <button className="icon-btn" onClick={() => { logout(); setUser(null); loadConversations() }} title="Sign out">
+              <button className="icon-btn" onClick={() => { logout(); setUser(null); signOutEntitlement().then(setEnt); loadConversations() }} title="Sign out">
                 <LogOut size={14} />
               </button>
             </div>
@@ -3359,6 +3621,7 @@ export default function App() {
         <React.Suspense fallback={null}>
           <WorkspaceDock
             open={showWorkspace}
+            onUpgrade={() => setShowUpgrade(true)}
             onClose={() => setShowWorkspace(false)}
             conversationId={conv?.clientId || conv?.id || null}
             dark={theme !== 'light'}
@@ -3380,6 +3643,37 @@ export default function App() {
             </h1>
           </div>
           <div className="header-actions">
+            {/* Both builds can be installed side by side and confusing them is
+                a real failure mode, so the personal one always says so. */}
+            {isPersonalEdition() && <span className="edition-badge" title="Personal build — no licence check">Personal</span>}
+            {/* Trial countdown / locked state. Silent while PRO: a paying user
+                does not need a permanent reminder that they are paying. */}
+            {isDesktop() && !isPersonalEdition() && (ent.state === 'trial' || ent.state === 'locked') && (
+              <button
+                className={`trial-chip${ent.state === 'locked' ? ' locked' : ent.daysLeft <= 5 ? ' urgent' : ''}`}
+                onClick={() => setShowUpgrade(true)}
+                title="Yogatik Pro"
+              >
+                {ent.state === 'locked'
+                  ? 'Upgrade'
+                  : `${ent.daysLeft}d trial`}
+              </button>
+            )}
+            {isDesktop() && (
+              <button
+                className={`icon-btn${showTerminal ? ' active' : ''}`}
+                style={{ position: 'relative' }}
+                onClick={() => setShowTerminal(v => !v)}
+                title="Terminal — watch what the assistant runs, or run your own (Ctrl+`)"
+                aria-label="Toggle terminal"
+                aria-pressed={showTerminal}
+              >
+                <TerminalSquare size={17} />
+                {/* The reason to surface this at all: an agent command running
+                    behind a closed drawer was previously invisible. */}
+                {agentTerminalBusy && <span className="term-live-dot" aria-label="A command is running" />}
+              </button>
+            )}
             {isDesktop() && (
               <button
                 className={`icon-btn${showWorkspace ? ' active' : ''}`}
@@ -3443,37 +3737,32 @@ export default function App() {
               </>
             )}
             <ActiveTimerIndicator onShowToast={showToast} />
-            <button
-              className={`icon-btn ${companionMode ? 'active' : ''}`}
-              onClick={toggleCompanion}
-              title="Floating AI Companion & Screen Monitor (Ctrl+Shift+Space)"
-              aria-label="Toggle AI Companion Mode"
-              style={companionMode ? { color: '#38bdf8', background: 'rgba(56, 189, 248, 0.15)' } : {}}
-            >
-              <Monitor size={18} />
-            </button>
-            <button
-              className="icon-btn"
-              onClick={() => setShowAgents(true)}
-              title="Specialized Agents & Swarms (Researcher, Modeller, Director...)"
-              aria-label="Specialized Agents"
-            >
-              <Bot size={18} />
-            </button>
-            <button
-              className="icon-btn"
-              onClick={() => setShowMcpModal(true)}
-              title="MCP Connectors (Model Context Protocol)"
-              aria-label="MCP Connectors"
-            >
-              <Plug size={18} />
-            </button>
-            <button className="icon-btn domain-hub-header-btn" onClick={() => setShowDomainHub(true)} title="Social Media & Domain Hub (Alt+D)" aria-label="Social Media & Domain Hub"><Globe size={18} /></button>
-            <button className="icon-btn" onClick={() => setShowPalette(true)} title="Universal Search (Ctrl+K)" aria-label="Universal Search"><Search size={18} /></button>
-            <button className="icon-btn" onClick={handleExport} title="Export chat" aria-label="Export chat"><Download size={18} /></button>
-            <button className="icon-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
-              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
+            <div className="header-btn-group" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: '2px 4px', borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.06))' }}>
+              <button
+                className="icon-btn"
+                onClick={() => setShowAgents(true)}
+                title="Specialized Agents & Swarms (Researcher, Modeller, Director...)"
+                aria-label="Specialized Agents"
+              >
+                <Bot size={17} />
+              </button>
+              <button
+                className="icon-btn"
+                onClick={() => setShowMcpModal(true)}
+                title="MCP Connectors (Model Context Protocol)"
+                aria-label="MCP Connectors"
+              >
+                <Plug size={17} />
+              </button>
+              <button className="icon-btn domain-hub-header-btn" onClick={() => setShowDomainHub(true)} title="Social Media & Domain Hub (Alt+D)" aria-label="Social Media & Domain Hub"><Globe size={17} /></button>
+            </div>
+            <div className="header-btn-group" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              <button className="icon-btn" onClick={() => setShowPalette(true)} title="Universal Search & Commands (Ctrl+K)" aria-label="Universal Search"><Search size={17} /></button>
+              <button className="icon-btn" onClick={handleExport} title="Export chat transcript" aria-label="Export chat"><Download size={17} /></button>
+              <button className="icon-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
+                {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+              </button>
+            </div>
           </div>
         </header>
 
@@ -3492,7 +3781,7 @@ export default function App() {
                   className="hero-btn primary"
                   onClick={() => setShowDemoModal(true)}
                 >
-                  <Sparkles size={16} /> Take a Quick Demo
+                  <PlayCircle size={16} /> Take a Quick Demo
                 </button>
                 <button
                   className="hero-btn accent"
@@ -3596,19 +3885,24 @@ export default function App() {
                   <span className="setup-note">NVIDIA gives free credits and a wide model catalogue (it routes through the app&apos;s proxy). Groq, Gemini, OpenRouter and OpenAI also work.</span>
                 </div>
               ) : (
-                <div className="suggestions" hidden={!features.suggestions}>
-                  {SUGGESTIONS.map((s, i) => {
-                    const text = typeof s === 'string' ? s : (s.prompt || s.label)
-                    const label = typeof s === 'string' ? s : s.label
-                    const category = typeof s === 'object' ? s.category : null
-                    return (
-                      <div key={i} className="suggestion" onClick={() => sendRef.current?.(text)} title={text}>
-                        {category && <span className="suggestion-category">{category}</span>}
-                        <span className="suggestion-text">{label}</span>
-                      </div>
-                    )
-                  })}
-                </div>
+                <>
+                  <React.Suspense fallback={null}>
+                    <StarterCards onSelectPrompt={(prompt) => sendRef.current?.(prompt)} />
+                  </React.Suspense>
+                  <div className="suggestions" hidden={!features.suggestions}>
+                    {SUGGESTIONS.map((s, i) => {
+                      const text = typeof s === 'string' ? s : (s.prompt || s.label)
+                      const label = typeof s === 'string' ? s : s.label
+                      const category = typeof s === 'object' ? s.category : null
+                      return (
+                        <div key={i} className="suggestion" onClick={() => sendRef.current?.(text)} title={text}>
+                          {category && <span className="suggestion-category">{category}</span>}
+                          <span className="suggestion-text">{label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
               )}
             </div>
           ) : (
@@ -3664,7 +3958,7 @@ export default function App() {
                     </div>
                   )}
                   {((traceMapRef.current[activeClientId] || []).length > 0) && (
-                    <details className="activity-trace" open style={{ marginTop: 4 }}>
+                    <details className="activity-trace" style={{ marginTop: 4 }}>
                       <summary>Steps, thoughts & actions taken ({(traceMapRef.current[activeClientId] || []).length} step{(traceMapRef.current[activeClientId] || []).length === 1 ? '' : 's'})</summary>
                       <ol>
                         {(traceMapRef.current[activeClientId] || []).map((s, i) => {
@@ -3698,7 +3992,7 @@ export default function App() {
                 const { provider: useProvider = provider, model: useModel = model } = conv || {}
                 // Build a friendly display name: prefer the real model ID, then provider name.
                 const modelLabel = useModel
-                  ? `${models[useProvider]?.name || useProvider} · ${useModel.split('/').pop()}`
+                  ? `${models[useProvider]?.name || useProvider} · ${String(useModel).split('/').pop()}`
                   : models[useProvider]?.name || useProvider
                 return (
                   <div className="message assistant">
@@ -3708,7 +4002,25 @@ export default function App() {
                         {modelLabel}
                       </span>
                     </div>
-                    {statusText && <div className="status-text">{statusText}</div>}
+                    {statusText && (
+                      <div className="status-text" style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '5px 12px',
+                        background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.12), rgba(168, 85, 247, 0.12))',
+                        border: '1px solid rgba(255, 107, 53, 0.25)',
+                        borderRadius: '20px',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        color: 'var(--text-primary, #fff)',
+                        marginBottom: '6px',
+                        animation: 'fadeIn 0.25s ease'
+                      }}>
+                        {getStatusIcon(statusText)}
+                        <span>{statusText}</span>
+                      </div>
+                    )}
                     {activeTools.length > 0 && (
                       <div className="active-tools">
                         {activeTools.map(t => {
@@ -3731,7 +4043,7 @@ export default function App() {
                         })}
                       </div>
                     )}
-                    <div className="typing"><span /><span /><span /></div>
+                    <div className="typing" style={{ marginTop: '4px' }}><span /><span /><span /></div>
                   </div>
                 )
               })()}
@@ -3932,7 +4244,7 @@ export default function App() {
                       alignItems: 'center', gap: '4px', whiteSpace: 'nowrap',
                     }}
                   >
-                    <Sparkles size={11} /> Switch to {visionCandidate.split('/').pop()}
+                    <Sparkles size={11} /> Switch to {typeof visionCandidate === 'string' ? visionCandidate.split('/').pop() : (visionCandidate?.name || visionCandidate?.id || 'vision model')}
                   </button>
                 )}
                 <button className="icon-btn" onClick={() => setAttachedImage(null)} title="Remove image" aria-label="Remove image"><X size={12} /></button>
@@ -4012,14 +4324,54 @@ export default function App() {
             )
           })()}
 
-          <div className="input-wrapper">
-            <textarea ref={textareaRef} aria-label="Message" value={input} onChange={e => { setInput(e.target.value); autoResize() }}
+          <div className="input-wrapper" style={{ position: 'relative' }}>
+            {showSlashMenu && (
+              <React.Suspense fallback={null}>
+                <SlashCommandsMenu
+                  filter={input}
+                  selectedIndex={slashMenuIndex}
+                  onSelect={handleSlashCommandSelect}
+                  onClose={() => setShowSlashMenu(false)}
+                />
+              </React.Suspense>
+            )}
+            <textarea ref={textareaRef} aria-label="Message" value={input}
+              onChange={e => {
+                const val = e.target.value
+                setInput(val)
+                autoResize()
+                if (val.startsWith('/')) {
+                  setShowSlashMenu(true)
+                } else if (showSlashMenu) {
+                  setShowSlashMenu(false)
+                }
+              }}
               onKeyDown={handleKeyDown} onPaste={handlePaste}
               data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false"
               placeholder={attachedImage
                 ? 'Ask about this image… (or just send)'
                 : attachedFile ? `Describe what to do with ${attachedFile.name}...`
-                : (isStreamingHere ? 'Ask another question… will queue and run automatically' : 'Ask anything… paste or drop an image too')} rows={1} />
+                : (isStreamingHere ? 'Ask another question… will queue and run automatically' : 'Ask anything… (type / for commands) paste or drop an image too')} rows={1} />
+            {input.trim().length >= 3 && !isStreamingHere && (
+              <button
+                type="button"
+                className={`enhance-prompt-btn ${isEnhancing ? 'enhancing' : ''}`}
+                onClick={handleEnhancePrompt}
+                title="✨ Enhance prompt with clear structure & constraints"
+                aria-label="Enhance prompt"
+                disabled={isEnhancing}
+                style={{
+                  background: 'transparent',
+                  color: isEnhancing ? 'var(--accent-color, #ff6b35)' : 'var(--text-secondary, #a6adc8)',
+                  border: 'none', borderRadius: '50%', padding: '6px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginRight: 4, transition: 'all 0.2s ease',
+                  opacity: isEnhancing ? 0.6 : 1,
+                }}
+              >
+                <Sparkles size={16} />
+              </button>
+            )}
             <button
               type="button"
               className={`voice-mic-btn ${listening ? 'listening' : ''}`}
@@ -4177,16 +4529,6 @@ export default function App() {
           React.lazy: rendering one downloads its chunk immediately and the
           internal `if (!isOpen) return null` runs only after the module has
           landed. Nine panels were fetched during the first paint that way. */}
-      {showTerminal && <TerminalPanel
-        open={showTerminal}
-        onClose={() => setShowTerminal(false)}
-        onAskAI={(text) => {
-          setShowTerminal(false)
-          setInput(text)
-          textareaRef.current?.focus()
-          autoResize()
-        }}
-      />}
       {showScheduler && (
         <SchedulerPanel
           isOpen={showScheduler}
@@ -4327,6 +4669,18 @@ export default function App() {
       )}
       {showShareSheet && <ShareSheet onClose={() => setShowShareSheet(false)} />}
       {showDemoModal && <DemoModal onClose={() => setShowDemoModal(false)} />}
+      {showUpgrade && (
+        <React.Suspense fallback={null}>
+          <UpgradeModal
+            open={showUpgrade}
+            onClose={() => setShowUpgrade(false)}
+            idToken={user?.idToken || null}
+            uid={user?.uid || user?.id || null}
+            onUnlocked={setEnt}
+          />
+        </React.Suspense>
+      )}
+
       {showTour && <Tour
         isOpen={showTour}
         onClose={() => setShowTour(false)}
@@ -4358,6 +4712,7 @@ export default function App() {
         onShowToast={showToast}
       />}
       {showDiagnosticsModal && <DiagnosticsModal onClose={() => setShowDiagnosticsModal(false)} />}
+      {showShortcutsModal && <ShortcutsModal onClose={() => setShowShortcutsModal(false)} />}
       {showDataDashboard && <DataDashboard onClose={() => setShowDataDashboard(false)} onExport={() => { downloadBackup().catch(() => {}); showToast('Backup exported') }} />}
       {showOnboarding && (
         <OnboardingModal
@@ -4455,6 +4810,20 @@ export default function App() {
             {typeof errorModalMsg === 'object' && errorModalMsg?.msg ? errorModalMsg.msg : String(errorModalMsg)}
           </div>
         </Modal>
+      )}
+    </div>
+
+      {/* Gated at the render site, not self-gated: rendering a React.lazy
+          component downloads its chunk immediately. */}
+      {showTerminal && (
+        <React.Suspense fallback={null}>
+          <TerminalDrawer
+            open={showTerminal}
+            onClose={() => setShowTerminal(false)}
+            conversationId={conv?.clientId || conv?.id || null}
+            onUpgrade={() => setShowUpgrade(true)}
+          />
+        </React.Suspense>
       )}
     </div>
   )

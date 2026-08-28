@@ -12,6 +12,7 @@ import { diffTool } from './diff'
 import { unitConvertTool } from './unitConvert'
 import { hashTool } from './hash'
 import { docListTool } from './documents'
+import { weatherTool } from './weather'
 
 // Every value the card puts in JSX text position must be a primitive.
 const primitive = (v) => v === undefined || v === null || ['string', 'number', 'boolean'].includes(typeof v)
@@ -155,5 +156,63 @@ describe('terminal_run card contract', () => {
     expect(r.success).toBe(true)
     expect(r.killed).toBe(true)
     expect(r.note).toMatch(/proc_start/)
+  })
+})
+
+
+describe('weather card contract', () => {
+  /**
+   * The card printed "°C" and "km/h" as literal text in the markup. That was
+   * true only while the request was always metric — the moment units follow the
+   * user's region, hardcoded labels turn a correct 72°F reading into "72°C".
+   * The units have to travel with the numbers.
+   */
+  const ORIGINAL_FETCH = globalThis.fetch
+
+  afterEach(() => { globalThis.fetch = ORIGINAL_FETCH })
+
+  it('returns the unit labels the card renders', async () => {
+    globalThis.fetch = vi.fn(async (url) => ({
+      json: async () => (String(url).includes('geocoding')
+        ? { results: [{ latitude: 1, longitude: 2, name: 'Testville', country: 'Testland' }] }
+        : {
+          current: {
+            temperature_2m: 72, apparent_temperature: 70, relative_humidity_2m: 40,
+            wind_speed_10m: 8, weather_code: 0,
+          },
+          daily: {
+            time: ['2026-08-25'], weather_code: [0],
+            temperature_2m_max: [75], temperature_2m_min: [60],
+          },
+        }),
+    }))
+
+    const r = await weatherTool.execute({ location: 'Testville', units: 'imperial' })
+    expect(r.success).toBe(true)
+    // The card reads exactly these two, with metric fallbacks.
+    expect(r.temperature_unit).toBe('°F')
+    expect(r.wind_unit).toBe('mph')
+    expect(primitive(r.temperature_unit)).toBe(true)
+    expect(primitive(r.wind_unit)).toBe(true)
+
+    // And the request actually asked the API for those units, rather than
+    // relabelling metric numbers — which would be worse than the old bug.
+    const called = globalThis.fetch.mock.calls.map(c => String(c[0])).join(' ')
+    expect(called).toContain('temperature_unit=fahrenheit')
+    expect(called).toContain('wind_speed_unit=mph')
+  })
+
+  it('asks for metric when the caller says metric', async () => {
+    globalThis.fetch = vi.fn(async (url) => ({
+      json: async () => (String(url).includes('geocoding')
+        ? { results: [{ latitude: 1, longitude: 2, name: 'X', country: 'Y' }] }
+        : {
+          current: { temperature_2m: 20, apparent_temperature: 19, relative_humidity_2m: 50, wind_speed_10m: 5, weather_code: 0 },
+          daily: { time: ['2026-08-25'], weather_code: [0], temperature_2m_max: [22], temperature_2m_min: [15] },
+        }),
+    }))
+    const r = await weatherTool.execute({ location: 'X', units: 'metric' })
+    expect(r.temperature_unit).toBe('°C')
+    expect(r.wind_unit).toBe('km/h')
   })
 })

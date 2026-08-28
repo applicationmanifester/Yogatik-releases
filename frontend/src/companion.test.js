@@ -7,10 +7,23 @@ import { disableAnalytics } from './analytics'
 
 describe('safety layer', () => {
   it('flags self-harm as crisis with a resource', () => {
+    // The resource is REGION-dependent now. This test used to assert 988 for
+    // every user on earth, which is how the US-only helplines survived so long:
+    // the test encoded the bug.
+    const v = assessSafety('sometimes I want to kill myself', { region: 'US' })
+    expect(v.crisis?.type).toBe('self_harm')
+    expect(v.systemDirective).toMatch(/988/)
+    expect(crisisResourceCard(v).body).toMatch(/988/)
+  })
+  it('gives a non-US user their own line, never the American one', () => {
+    expect(assessSafety('sometimes I want to kill myself', { region: 'IN' }).crisis.resource).toMatch(/14416/)
+    expect(assessSafety('sometimes I want to kill myself', { region: 'GB' }).crisis.resource).toMatch(/116 123/)
+    expect(assessSafety('sometimes I want to kill myself', { region: 'IN' }).crisis.resource).not.toMatch(/988/)
+  })
+  it('falls back to the international directory when the region is unknown', () => {
     const v = assessSafety('sometimes I want to kill myself')
     expect(v.crisis?.type).toBe('self_harm')
-    expect(v.systemDirective).toMatch(/988|findahelpline/)
-    expect(crisisResourceCard(v).body).toMatch(/988/)
+    expect(crisisResourceCard(v).body).toMatch(/findahelpline/)
   })
   it('flags disordered eating', () => {
     expect(assessSafety('I keep making myself throw up').crisis?.type).toBe('eating_disorder')
@@ -133,10 +146,14 @@ describe('safety screen — technical vocabulary is not a crisis', () => {
   ]
   for (const text of isCrisis) {
     it(`still flags: "${text}"`, () => {
-      const v = assessSafety(text)
+      // Region-scoped: the US line is named for a US user, and everyone else
+      // is pointed at the verified international directory rather than at a
+      // number that does not connect where they are.
+      const v = assessSafety(text, { region: 'US' })
       expect(v.crisis).toBeTruthy()
       expect(v.crisis.type).toBe('eating_disorder')
       expect(v.crisis.resource).toMatch(/1-866-662-1235/)
+      expect(assessSafety(text, { region: 'DE' }).crisis.resource).toMatch(/findahelpline/)
     })
   }
 })

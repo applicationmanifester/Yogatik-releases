@@ -1,12 +1,12 @@
 import React from 'react'
-import { Database, Trash2, Download, X } from 'lucide-react'
+import { Database, Trash2, Download, Upload, X } from 'lucide-react'
 import { allMemories, forget, STORES } from '../memory4'
+import { exportFullWorkspaceArchive, importFullWorkspaceArchive } from '../workspaceArchive'
 
 /**
  * Data-usage dashboard — user-owned data transparency & control. Shows the
  * four structured memory stores with counts, lets the user delete individual
- * memories or a whole store, and export everything. Reinforces the privacy-first
- * positioning: nothing here is hidden, and it's all deletable on-device.
+ * memories or a whole store, and export/import full workspace archives.
  *
  * @param {() => void} onClose
  * @param {() => void} onExport  wire to downloadBackup()
@@ -20,6 +20,8 @@ const STORE_LABELS = {
 
 export default function DataDashboard({ onClose, onExport }) {
   const [byStore, setByStore] = React.useState(null)
+  const [statusMsg, setStatusMsg] = React.useState('')
+  const fileInputRef = React.useRef(null)
 
   const load = React.useCallback(async () => {
     try {
@@ -41,6 +43,31 @@ export default function DataDashboard({ onClose, onExport }) {
     load()
   }
 
+  const handleFullExport = async () => {
+    try {
+      setStatusMsg('Exporting complete workspace archive…')
+      const res = await exportFullWorkspaceArchive()
+      setStatusMsg(`Exported ${res.count} chats and memories to .yogatik archive!`)
+      setTimeout(() => setStatusMsg(''), 4000)
+    } catch (e) {
+      setStatusMsg(`Export failed: ${e.message}`)
+    }
+  }
+
+  const handleFileImport = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      setStatusMsg('Restoring workspace from archive…')
+      const res = await importFullWorkspaceArchive(file)
+      setStatusMsg(`Restored ${res.conversationsCount} chats and ${res.memoriesCount} memories!`)
+      load()
+      setTimeout(() => setStatusMsg(''), 4000)
+    } catch (err) {
+      setStatusMsg(`Import failed: ${err.message}`)
+    }
+  }
+
   return (
     <div className="palette-overlay" onClick={onClose}>
       <div className="palette data-dashboard" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true"
@@ -48,12 +75,17 @@ export default function DataDashboard({ onClose, onExport }) {
         <div className="palette-input-bar" style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
             <Database size={18} style={{ color: 'var(--accent)' }} />
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Your data — memory Yogatik keeps about you</h3>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Your data — memory &amp; full workspace backup</h3>
           </div>
           <button className="palette-clear-btn" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
 
         <div className="palette-list" style={{ padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {statusMsg && (
+            <div style={{ padding: '8px 12px', borderRadius: 6, background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent, #6366f1)', fontSize: 12, border: '1px solid rgba(99, 102, 241, 0.3)' }}>
+              {statusMsg}
+            </div>
+          )}
           {byStore == null ? (
             <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading…</p>
           ) : STORES.every(s => !(byStore[s] || []).length) ? (
@@ -84,13 +116,21 @@ export default function DataDashboard({ onClose, onExport }) {
           })}
         </div>
 
-        <div className="palette-footer" style={{ padding: '10px 18px', display: 'flex', gap: 8 }}>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', flex: 1 }}>All memory lives on your device. Emotional context never syncs.</span>
-          {onExport && (
-            <button className="small-btn" onClick={onExport} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Download size={12} /> Export all
-            </button>
-          )}
+        <div className="palette-footer" style={{ padding: '10px 18px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', flex: 1, minWidth: 160 }}>All memory lives on your device.</span>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileImport}
+            accept=".yogatik,.json"
+            style={{ display: 'none' }}
+          />
+          <button className="small-btn" onClick={() => fileInputRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Upload size={12} /> Restore .yogatik
+          </button>
+          <button className="small-btn btn-primary" onClick={handleFullExport} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Download size={12} /> Full Backup (.yogatik)
+          </button>
           <button className="small-btn" onClick={onClose}>Close</button>
         </div>
       </div>

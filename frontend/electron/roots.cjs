@@ -146,6 +146,12 @@ function registerRootsIpc(opts = {}) {
     return true
   })
 
+  ipcMain.handle('roots_unbind', (_e, { chatId } = {}) => {
+    state = core.unbindChat(state, chatId)
+    save()
+    return true
+  })
+
   // ── Compatibility aliases (one release) so the Tauri shell and any existing
   // caller keep working while src-tauri stays on the single-root model. ──
   ipcMain.handle('fs_grant', async (_e, { ctx } = {}) => {

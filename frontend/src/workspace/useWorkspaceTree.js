@@ -138,9 +138,10 @@ export function useWorkspaceTree({ enabled = true, conversationId = null } = {})
   const flushPending = useCallback(() => {
     const jobs = [...pendingDirs.current.values()]
     pendingDirs.current.clear()
+    // Decorations are scheduled by the change handler, which knows whether the
+    // repository moved; scheduling them here too ran git status twice per burst.
     for (const job of jobs) loadDir(job.rootId, job.path)
-    if (jobs.length) scheduleDecorations()
-  }, [loadDir, scheduleDecorations])
+  }, [loadDir])
 
   useEffect(() => {
     if (!enabled || !isDesktop()) return undefined
@@ -159,11 +160,36 @@ export function useWorkspaceTree({ enabled = true, conversationId = null } = {})
       const primary = roots.find(r => r.primary) || roots[0]
       if (!primary) return
       const rootId = String(primary.id ?? primary.path)
-      const { state: next, refetch } = applyFsChange(stateRef.current, rootId, payload)
-      if (next !== stateRef.current) setState(next)
-      for (const job of refetch) pendingDirs.current.set(nodeId(job.rootId, job.path), job)
-      clearTimeout(coalesceTimer.current)
-      coalesceTimer.current = setTimeout(flushPending, COALESCE_MS)
+
+      // The watcher now sends ONE message per window carrying every change in
+      // it; `payload` alone is the first of them, kept for older consumers.
+      const batch = Array.isArray(payload?.changes) && payload.changes.length
+        ? payload.changes
+        : [payload]
+
+      // A `.git` write means the REPOSITORY moved, not that a file in the tree
+      // did. Refetching a directory for it is pure waste; refreshing the
+      // decorations is the whole point of forwarding it.
+      let touchedTree = false
+      let touchedGit = false
+      let state = stateRef.current
+      for (const change of batch) {
+        if (change?.type === 'git') { touchedGit = true; continue }
+        touchedTree = true
+        const { state: next, refetch } = applyFsChange(state, rootId, change)
+        state = next
+        for (const job of refetch) pendingDirs.current.set(nodeId(job.rootId, job.path), job)
+      }
+      if (state !== stateRef.current) setState(state)
+
+      if (touchedTree) {
+        clearTimeout(coalesceTimer.current)
+        coalesceTimer.current = setTimeout(flushPending, COALESCE_MS)
+      }
+      // git status on a large repo is 100–500ms and used to run after EVERY
+      // burst. It runs when the repository actually moved, or when tree
+      // content changed — but debounced, and never twice for one window.
+      if (touchedGit || touchedTree) scheduleDecorations()
     })
 
     return () => {
@@ -171,7 +197,7 @@ export function useWorkspaceTree({ enabled = true, conversationId = null } = {})
       if (watchId) { try { bridge.stop(watchId) } catch { /* window closing */ } }
       if (typeof off === 'function') off()
     }
-  }, [enabled, flushPending])
+  }, [enabled, flushPending, scheduleDecorations])
 
   /* ── selection / reveal / filter ──────────────────────────────────────── */
 

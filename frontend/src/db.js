@@ -47,6 +47,17 @@ db.version(5).stores({
   media: '++id, createdAt',
   memories: '++id, store, at',
 })
+// v6: local agent execution traces & step replay
+db.version(6).stores({
+  conversations: '++id, title, updatedAt, projectId',
+  messages: '++id, conversationId, role, createdAt, [conversationId+createdAt]',
+  settings: 'key',
+  documents: '++id, name, createdAt, projectId',
+  projects: '++id, name, createdAt',
+  media: '++id, createdAt',
+  memories: '++id, store, at',
+  traces: '++id, conversationId, tool, createdAt, [conversationId+createdAt]',
+})
 
 // A backgrounded/hidden tab (mobile especially) can have IndexedDB closed out
 // from under us; the next Dexie call throws DatabaseClosedError / InvalidStateError
@@ -90,6 +101,25 @@ export async function getMedia(id) {
 
 export async function deleteMedia(id) {
   return db.media.delete(Number(id))
+}
+
+// ─── Agent Traces & Replay Log ───
+export async function logAgentTrace(trace = {}) {
+  try {
+    return await withReopen(() => db.traces.add({
+      ...trace,
+      createdAt: trace.createdAt || Date.now(),
+    }))
+  } catch { return null }
+}
+
+export async function getAgentTraces(conversationId, limit = 50) {
+  try {
+    if (!conversationId) return []
+    return await withReopen(() =>
+      db.traces.where('conversationId').equals(conversationId).reverse().limit(limit).toArray()
+    )
+  } catch { return [] }
 }
 
 // ─── Settings (API keys, provider, theme, etc.) ───
@@ -241,18 +271,19 @@ export async function assignConversation(conversationId, projectId) {
 // ─── Whole-database backup ───
 // No backend means no sync: a cleared browser profile is total data loss.
 export async function exportAll() {
-  const [conversations, messages, documents, settings, projects] = await Promise.all([
+  const [conversations, messages, documents, settings, projects, memories] = await Promise.all([
     db.conversations.toArray(),
     db.messages.toArray(),
     db.documents.toArray(),
     db.settings.toArray(),
     db.projects.toArray(),
+    db.memories ? db.memories.toArray().catch(() => []) : Promise.resolve([]),
   ])
   return {
     format: 'yogatik-backup',
     version: 1,
     exportedAt: new Date().toISOString(),
-    conversations, messages, documents, projects,
+    conversations, messages, documents, projects, memories,
     // API keys are deliberately excluded — a backup file is not an encrypted
     // store, and users share these without thinking.
     settings: settings.filter(r => !/^apikey_|^synced_|^user$/.test(r.key)),
@@ -264,9 +295,15 @@ export async function importAll(data, mode = 'merge') {
   if (data?.format !== 'yogatik-backup') throw new Error('Not a Yogatik backup file.')
   if (data.version > 1) throw new Error('This backup was made by a newer version of Yogatik.')
 
-  return db.transaction('rw', db.conversations, db.messages, db.documents, db.settings, db.projects, async () => {
+  return db.transaction('rw', db.conversations, db.messages, db.documents, db.settings, db.projects, db.memories, async () => {
     if (mode === 'replace') {
-      await Promise.all([db.conversations.clear(), db.messages.clear(), db.documents.clear(), db.projects.clear()])
+      await Promise.all([
+        db.conversations.clear(),
+        db.messages.clear(),
+        db.documents.clear(),
+        db.projects.clear(),
+        db.memories ? db.memories.clear().catch(() => {}) : Promise.resolve(),
+      ])
     }
 
     const projectMap = new Map()
@@ -296,11 +333,18 @@ export async function importAll(data, mode = 'merge') {
       if (/^apikey_|^synced_|^user$/.test(row.key)) continue   // never restore secrets
       await db.settings.put(row)
     }
+    for (const mem of data.memories || []) {
+      if (db.memories) {
+        const { id, ...rest } = mem
+        await db.memories.add(rest).catch(() => {})
+      }
+    }
 
     return {
       conversations: (data.conversations || []).length,
       messages: (data.messages || []).length,
       documents: (data.documents || []).length,
+      memories: (data.memories || []).length,
     }
   })
 }

@@ -58,7 +58,11 @@ describe('index.html CSP', () => {
 
   it('keeps the directives that actually harden the page', () => {
     expect(directive('object-src')).toContain("'none'")
-    expect(directive('frame-ancestors')).toContain("'none'")
     expect(directive('base-uri')).toContain("'self'")
+    // frame-ancestors cannot be delivered via <meta>, so it is enforced via firebase.json HTTP header
+    const firebaseJson = JSON.parse(fs.readFileSync(path.join(ROOT, '..', 'firebase.json'), 'utf8'))
+    const allHeaders = firebaseJson.hosting?.headers?.flatMap((h) => h.headers || []) || []
+    const headerCsp = allHeaders.find((h) => h.key.includes('Content-Security-Policy'))?.value
+    expect(headerCsp).toContain("frame-ancestors 'none'")
   })
 })

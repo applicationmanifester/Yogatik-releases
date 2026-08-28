@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseToolCalls } from './promptedTools'
+import { parseToolCalls, stripToolCallSyntax } from './promptedTools'
 import { classifyQuery } from './api'
 
 // Regression harness: the weak-model outputs prompted tool-calling must survive.
@@ -59,4 +59,40 @@ describe('query classification fixtures', () => {
   for (const [q, expected] of cases) {
     it(`${q} → ${expected}`, () => expect(classifyQuery(q)).toBe(expected))
   }
+})
+
+describe('stripToolCallSyntax', () => {
+  // OBSERVED: after the round cap, a nemotron turn's forced-final pass emitted
+  // a raw tool call and the user saw it verbatim in the answer:
+  //   <tool_call> <function=browser_control> <parameter=action> evaluate ...
+  it('removes the exact markup that reached a user', () => {
+    const leaked = 'The dev server is running on http://localhost:5176. Let me test the UI.\n\n' +
+      '<tool_call> <function=browser_control> <parameter=action> evaluate </parameter> ' +
+      '<parameter=expression> window.__errors || [] </parameter> ' +
+      '<parameter=tabId> tab-1 </parameter> </function> </tool_call>'
+    const out = stripToolCallSyntax(leaked)
+    expect(out).not.toMatch(/tool_call|<function|<parameter/)
+    expect(out).toContain('localhost:5176')
+  })
+
+  it('removes an UNCLOSED call — a truncated stream leaves a dangling tag', () => {
+    // The old inline regexes required a closing tag, so a stream cut mid-call
+    // rendered the whole tail as markup.
+    expect(stripToolCallSyntax('Checking now.\n<tool_call> <function=browser_control> <parameter=action> read'))
+      .toBe('Checking now.')
+    expect(stripToolCallSyntax('Done.\n<function=fs_read><parameter=path>a.js'))
+      .toBe('Done.')
+  })
+
+  it('removes provider-specific call markers', () => {
+    expect(stripToolCallSyntax('Here you go.\n<|python_tag|>{"name":"x"}')).toBe('Here you go.')
+    expect(stripToolCallSyntax('Sure.\n[TOOL_CALLS][{"name":"x"}]')).toBe('Sure.')
+  })
+
+  it('leaves ordinary prose and code alone', () => {
+    const prose = 'Use `<function>` in a type signature, and `a < b` compares numbers.'
+    expect(stripToolCallSyntax(prose)).toBe(prose)
+    expect(stripToolCallSyntax('')).toBe('')
+    expect(stripToolCallSyntax(null)).toBe('')
+  })
 })

@@ -3,13 +3,29 @@
 
 const { ipcMain } = require('electron')
 const { spawn } = require('child_process')
+const fs = require('fs')
 const core = require('./gitCore.cjs')
 
 function runGit(cwd, args, { timeout = 20000 } = {}) {
   return new Promise((resolve) => {
     let child
     try {
-      child = spawn('git', args, { cwd, windowsHide: true })
+      child = spawn('git', args, {
+        cwd,
+        windowsHide: true,
+        env: {
+          ...process.env,
+          // Without these a fetch/pull/push against a repo needing credentials
+          // blocks on a prompt that has no terminal to appear in, and the only
+          // symptom is a button that spins until the kill timer. Failing with
+          // "could not read Username" is a far better answer than hanging.
+          GIT_TERMINAL_PROMPT: '0',
+          GIT_ASKPASS: process.env.GIT_ASKPASS || '',
+          GIT_OPTIONAL_LOCKS: '0',
+          GIT_PAGER: 'cat',
+          LC_ALL: 'C.UTF-8',
+        },
+      })
     } catch (e) {
       return resolve({ ok: false, error: e.message })
     }
@@ -34,7 +50,7 @@ function runGit(cwd, args, { timeout = 20000 } = {}) {
   })
 }
 
-function registerGitIpc({ rootPathsFor }) {
+function registerGitIpc({ rootPathsFor, snapshot = null }) {
   ipcMain.handle('git_run', async (_e, { ctx, args } = {}) => {
     const roots = rootPathsFor(ctx)
     if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
@@ -51,28 +67,45 @@ function registerGitIpc({ rootPathsFor }) {
     const roots = rootPathsFor(ctx)
     if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
 
-    const inRepo = await runGit(roots[0], ['rev-parse', '--is-inside-work-tree'])
-    if (!inRepo.ok) {
+    const gitDir = await runGit(roots[0], ['rev-parse', '--absolute-git-dir'])
+    if (!gitDir.ok) {
       return {
         success: false,
-        error: inRepo.error || 'This folder is not a git repository.',
+        error: gitDir.error || 'This folder is not a git repository.',
       }
     }
 
-    const [st, br] = await Promise.all([
-      runGit(roots[0], ['status', '--porcelain']),
+    const [st, br, stash] = await Promise.all([
+      // --no-optional-locks matters: without it, a status refresh takes the
+      // index lock to write back stat information, and the panel polling every
+      // second then fights the user's own editor and CLI for it.
+      runGit(roots[0], ['--no-optional-locks', 'status', '--porcelain=v2', '-z', '--branch']),
       runGit(roots[0], ['branch']),
+      runGit(roots[0], ['stash', 'list']),
     ])
     if (!st.ok) return { success: false, error: st.error || st.stderr }
 
-    const files = core.parseStatus(st.stdout)
+    const { files, branch } = core.parseStatusV2(st.stdout)
     const branches = core.parseBranches(br.ok ? br.stdout : '')
+
+    // Which marker files exist tells us whether a merge/rebase is half-done.
+    let present = []
+    try { present = await fs.promises.readdir(gitDir.stdout.trim()) } catch { /* not fatal */ }
+
     return {
       success: true,
       root: roots[0],
-      branch: branches.find(b => b.current)?.name || null,
+      branch: branch.head || branches.find(b => b.current)?.name || null,
+      detached: branch.detached,
+      upstream: branch.upstream || null,
+      ahead: branch.ahead,
+      behind: branch.behind,
+      branches: branches.map(b => b.name).slice(0, 200),
+      stashes: (stash.ok ? stash.stdout : '').split('\n').filter(Boolean).length,
+      operation: core.operationInProgress(present),
       summary: core.summarizeStatus(files),
       files: files.slice(0, 300),
+      truncated: files.length > 300,
     }
   })
 
@@ -87,11 +120,52 @@ function registerGitIpc({ rootPathsFor }) {
     return { success: true, commits: core.parseLog(res.stdout) }
   })
 
-  ipcMain.handle('git_diff', async (_e, { ctx, staged = false, path: file } = {}) => {
+  // History for ONE file, following it through renames. `git log -- <path>`
+  // stops dead at a rename, which reads as "this file has no history" — the
+  // most confusing possible answer for a file that has years of it.
+  ipcMain.handle('git_file_history', async (_e, { ctx, path: file, limit = 30 } = {}) => {
+    const roots = rootPathsFor(ctx)
+    if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
+    if (!file) return { success: false, error: 'A file path is required.' }
+    const fmt = ['%H', '%an', '%ad', '%s'].join(core.FIELD) + core.REC
+    const res = await runGit(roots[0], [
+      'log', `-${Math.min(Math.max(1, limit), 200)}`, '--follow', '--date=short',
+      `--format=${fmt}`, '--', String(file),
+    ])
+    if (!res.ok) return { success: false, error: res.error || res.stderr }
+    return { success: true, path: String(file), commits: core.parseLog(res.stdout) }
+  })
+
+  // The contents of one file AT one commit — what a history entry has to open
+  // into for the entry to be worth showing.
+  ipcMain.handle('git_show_file', async (_e, { ctx, rev, path: file } = {}) => {
+    const roots = rootPathsFor(ctx)
+    if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
+    const ref = String(rev || '')
+    // A revision is data from the panel, but `show` takes `rev:path` as ONE
+    // argument, so a rev containing a colon or a leading dash would change what
+    // is read. Only a plain object name or ref is accepted.
+    if (!/^[A-Za-z0-9._/-]{1,255}$/.test(ref) || ref.startsWith('-')) {
+      return { success: false, error: 'Not a valid revision.' }
+    }
+    const res = await runGit(roots[0], ['show', `${ref}:${String(file || '')}`])
+    if (!res.ok) return { success: false, error: res.error || res.stderr }
+    return { success: true, rev: ref, path: String(file || ''), content: res.stdout.slice(0, 1000000) }
+  })
+
+  ipcMain.handle('git_diff', async (_e, { ctx, staged = false, path: file, rev = null } = {}) => {
     const roots = rootPathsFor(ctx)
     if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
     const args = ['diff']
     if (staged) args.push('--staged')
+    if (rev) {
+      if (!/^[A-Za-z0-9._/-]{1,255}$/.test(String(rev)) || String(rev).startsWith('-')) {
+        return { success: false, error: 'Not a valid revision.' }
+      }
+      // `<rev>^!` is the commit against its parent, and works on a root commit
+      // where `<rev>^..<rev>` does not.
+      args.push(`${rev}^!`)
+    }
     if (file) args.push('--', String(file))
     if (!core.isSafeGitArgs(args)) return { success: false, error: 'Unsafe git arguments.' }
     const res = await runGit(roots[0], args)
@@ -102,12 +176,26 @@ function registerGitIpc({ rootPathsFor }) {
   // Source Control writes. The renderer names an OPERATION, never git flags —
   // see the note on buildWriteArgs. Nothing reachable from here can discard a
   // change: the destructive subcommands are simply not in the table.
-  ipcMain.handle('git_write', async (_e, { ctx, op, paths, message } = {}) => {
+  ipcMain.handle('git_write', async (_e, { ctx, op, paths, message, name, amend, confirm } = {}) => {
     const roots = rootPathsFor(ctx)
     if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
-    const built = core.buildWriteArgs(String(op || ''), { paths, message })
-    if (built.error) return { success: false, error: built.error }
-    const res = await runGit(roots[0], built.args)
+    const built = core.buildWriteArgs(String(op || ''), { paths, message, name, amend, confirm })
+    // needsConfirm is not a failure — it is the panel's cue to ask. Reporting
+    // it as an error would make a deliberate gate look like a broken button.
+    if (built.error) return { success: false, error: built.error, needsConfirm: !!built.needsConfirm }
+
+    // A destructive operation is snapshotted first, so `fs_undo` can still
+    // recover the working tree that git is about to overwrite. This is the only
+    // reason discard/reset are offered at all: git itself keeps no copy.
+    if (built.destructive && typeof snapshot === 'function') {
+      const targets = (Array.isArray(paths) ? paths : []).filter(p => typeof p === 'string' && p)
+      try {
+        if (targets.length) for (const p of targets) snapshot(ctx, `git_${op}`, require('path').resolve(roots[0], p))
+        else snapshot(ctx, `git_${op}`, roots[0])
+      } catch { /* journalling must never block an operation the user approved */ }
+    }
+
+    const res = await runGit(roots[0], built.args, { timeout: /^(fetch|pull|push)/.test(op) ? 120000 : 20000 })
     if (!res.ok) {
       // A no-op commit exits 1 with a perfectly ordinary message. Reporting
       // that as a failure sends the user hunting for a problem that is just

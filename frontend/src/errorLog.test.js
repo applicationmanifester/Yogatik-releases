@@ -117,3 +117,60 @@ describe('tool-argument errors are not provider failures', () => {
     expect(d.type).not.toBe('tool_input')
   })
 })
+
+describe('bucket ordering (the bugs are always ordering bugs)', () => {
+  // MEASURED in the field: browser_control answered `refresh` with "Unsupported
+  // action" and the card read "PROVIDER / EXECUTION ERROR — Model Execution
+  // Failed — an unexpected response was received from the model provider".
+  // That points the user at their API key, network and credit balance for a
+  // problem that is none of those, and the model at nothing at all.
+  it('blames the tool call, not the provider, for an unsupported action', () => {
+    for (const msg of [
+      'Unsupported action: go_back. Valid actions are: navigate, read, click.',
+      'Unknown action: refresh',
+      'Unsupported git operation: rebase',
+    ]) {
+      const d = diagnoseError(msg)
+      expect(d.type, msg).toBe('tool_input')
+      expect(d.category, msg).not.toMatch(/provider/i)
+      expect(d.suggestion, msg).not.toMatch(/model provider/i)
+    }
+  })
+
+  it('reports a locked capability as the paywall, not as a missing argument', () => {
+    // "Yogatik Pro IS REQUIRED for file access" matches the tool_input bucket's
+    // /\b[a-z_]+ is required\b/ — so if the entitlement check is moved below it,
+    // the paywall is reported as the model forgetting a parameter, with a Try
+    // Again button that can only ever fail again.
+    const d = diagnoseError('Yogatik Pro is required for file access. The trial has ended.')
+    expect(d.type).toBe('entitlement')
+    expect(d.actionType).toBe('upgrade')
+  })
+
+  it('reports a locked capability as the paywall, not as "wrong build"', () => {
+    // The workspace bucket matches /desktop app/, which would tell someone
+    // running the desktop app that they need the desktop app.
+    const d = diagnoseError('Yogatik Pro is required for shell and process access in the desktop app.')
+    expect(d.type).toBe('entitlement')
+    expect(d.title).not.toMatch(/not available in this build/i)
+  })
+
+  it('still lets a real provider failure through', () => {
+    expect(diagnoseError('502 Bad Gateway from upstream').type).toBe('general')
+    expect(diagnoseError('401 Unauthorized').type).not.toBe('tool_input')
+  })
+})
+
+describe('a browser timeout is not a provider failure', () => {
+  it('classifies a wait timeout as a page problem', () => {
+    const d = diagnoseError('Timed out after 10000ms waiting for "#root > *" on http://localhost:5176. Nothing has rendered on that page at all.')
+    expect(d.type).toBe('tool_input')
+    expect(d.category).not.toMatch(/provider/i)
+    expect(d.suggestion).not.toMatch(/model provider/i)
+    expect(d.title).toBe('The Page Did Not Match')
+  })
+
+  it('still blames the provider for a real provider failure', () => {
+    expect(diagnoseError('503 Service Unavailable').type).toBe('general')
+  })
+})

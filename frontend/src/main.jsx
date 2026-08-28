@@ -7,7 +7,9 @@ import { ToastProvider } from './hooks/useToast'
 import { markAppHealthy } from './pwa'
 import { installErrorLog } from './errorLog'
 import { installShellGuard } from './shellGuard'
+import { autoStartOllama } from './ollama'
 import './styles.css'
+import { applyDocumentLocale } from './locale'
 
 // Capture runtime errors/rejections to an on-device ring buffer for diagnostics.
 installErrorLog()
@@ -15,6 +17,9 @@ installErrorLog()
 // Third-party scripts (adsbygoogle) rewrite ancestor heights with inline
 // !important, which no stylesheet can outrank. See shellGuard.js.
 installShellGuard()
+
+// Auto-start Ollama daemon in the background (desktop-only; web no-op).
+autoStartOllama().catch(() => {})
 
 // Filter out third-party browser extension message channel warnings
 window.addEventListener('unhandledrejection', (event) => {
@@ -48,6 +53,12 @@ window.addEventListener('vite:preloadError', (event) => {
 // the same bundle as the main app on purpose — that is what lets it share
 // IndexedDB, the API keys, the agent and every tool. Routing here rather than
 // inside App because App cannot early-return before its hooks.
+// lang/dir go on <html> BEFORE the first paint. Applied here rather than in an
+// App effect because a right-to-left user would otherwise see one frame of a
+// left-to-right layout, and the spellchecker and screen reader would start on
+// the wrong language.
+try { applyDocumentLocale() } catch { /* never block boot on this */ }
+
 const isCompanion = new URLSearchParams(window.location.search).get('companion') === '1'
 if (isCompanion) document.documentElement.setAttribute('data-companion', '1')
 

@@ -17,6 +17,8 @@
  * Eating Disorders, not NEDA which is disconnected).
  */
 
+import { crisisResource } from './crisisResources'
+
 const CRISIS_PATTERNS = [
   { type: 'self_harm', re: /\b(kill myself|end my life|suicid(e|al)|want to die|not want(ing)? to (be here|live)|take my (own )?life|hurt myself|harm myself|self[- ]harm|cut(ting)? myself)\b/i },
   // "purge" and "purging" used to match bare. They are everyday technical
@@ -49,15 +51,11 @@ const BOUNDARY_PATTERNS = [
   { domain: 'financial', re: /\b(should i (buy|sell|invest)|which stock|is .* a good investment|put my savings|trade options|crypto to buy)\b/i },
 ]
 
-/** Region-appropriate resource lines. Kept generic + international-first. */
-const CRISIS_RESOURCES = {
-  self_harm:
-    'If you are thinking about harming yourself, please reach out now: call or text 988 (US Suicide & Crisis Lifeline), or find international lines at findahelpline.com. You deserve support from a real person.',
-  eating_disorder:
-    'For eating concerns, the National Alliance for Eating Disorders runs a free clinician-staffed helpline (1-866-662-1235). You are not alone in this.',
-  violence:
-    'If someone is in immediate danger, contact local emergency services (911 in the US). If you are having thoughts of hurting someone, talking to a crisis line (988 in the US) can help right now.',
-}
+// Resources come from crisisResources.js, chosen by REGION. They used to be
+// three hardcoded American lines — 988, a US eating-disorder helpline, "911 in
+// the US" — handed to every user on earth. Someone in genuine distress in
+// Mumbai or Munich was given a number that does not connect, at the worst
+// possible moment.
 
 const BOUNDARY_DIRECTIVES = {
   medical:
@@ -73,11 +71,11 @@ const BOUNDARY_DIRECTIVES = {
  * { crisis: {type, resource} | null, boundary: {domain, directive} | null,
  *   systemDirective: string, hasConcern: boolean }
  */
-export function assessSafety(text) {
+export function assessSafety(text, { region = null } = {}) {
   const s = String(text || '')
   let crisis = null
   for (const p of CRISIS_PATTERNS) {
-    if (p.re.test(s)) { crisis = { type: p.type, resource: CRISIS_RESOURCES[p.type] }; break }
+    if (p.re.test(s)) { crisis = { type: p.type, region, resource: crisisResource(p.type, region) }; break }
   }
   let boundary = null
   for (const p of BOUNDARY_PATTERNS) {

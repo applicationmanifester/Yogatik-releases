@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
-import { Sliders, Volume2, Play, Square, LayoutGrid, RotateCcw } from 'lucide-react'
+import { Sliders, Volume2, Play, Square, LayoutGrid, RotateCcw, Globe } from 'lucide-react'
 import { Modal } from './Modal'
+import { localeSnapshot } from '../locale'
 import { FEATURES, resolveFeatures, FEATURE_DEFAULTS } from '../features'
 import { McpServers } from './McpServers'
 import { PluginsManager } from './PluginsManager'
@@ -19,7 +20,23 @@ const SAMPLE = 'Hello — this is how I will sound when I read your answers alou
  * you actually want on screen. Switching a feature off unmounts it rather than
  * hiding it, so the UI genuinely gets simpler.
  */
+/**
+ * A short list, not every ISO country. The point is to correct a wrong
+ * detection or ask for somewhere else — anything beyond this is served by
+ * "detect automatically", which is right for almost everyone.
+ */
+const REGION_CHOICES = [
+  ['US', 'United States'], ['CA', 'Canada'], ['GB', 'United Kingdom'], ['IE', 'Ireland'],
+  ['AU', 'Australia'], ['NZ', 'New Zealand'], ['IN', 'India'], ['SG', 'Singapore'],
+  ['DE', 'Germany'], ['FR', 'France'], ['ES', 'Spain'], ['IT', 'Italy'], ['NL', 'Netherlands'],
+  ['SE', 'Sweden'], ['PL', 'Poland'], ['PT', 'Portugal'],
+  ['JP', 'Japan'], ['KR', 'South Korea'], ['CN', 'China'], ['HK', 'Hong Kong'],
+  ['AE', 'United Arab Emirates'], ['ZA', 'South Africa'], ['NG', 'Nigeria'], ['KE', 'Kenya'],
+  ['BR', 'Brazil'], ['MX', 'Mexico'], ['AR', 'Argentina'],
+]
+
 export function PersonalisePanel({ prefs, onChange, onClose }) {
+  const L = localeSnapshot()
   const features = resolveFeatures(prefs.features)
   const voice = prefs.live_voice_local || DEFAULT_VOICE
   const neural = prefs.live_voice_engine !== 'system'
@@ -148,6 +165,58 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
           >
             <option value="window">A separate window</option>
             <option value="panel">A panel in the app</option>
+          </select>
+        </div>
+      </section>
+
+      <section className="personalise-group">
+        <h4><Globe size={13} /> Region &amp; units</h4>
+        <p className="personalise-hint">
+          Detected from this device: <strong>{L.regionLabel || 'unknown region'}</strong> ·
+          {' '}{L.language} · {L.measurement} · {L.hourCycle === 'h12' ? '12-hour' : '24-hour'}
+          {L.timeZone ? ` · ${L.timeZone}` : ''}.
+          This is what the assistant is told, and it decides which units, currency,
+          laws and helplines it assumes. Override it if the detection is wrong or
+          you want answers for somewhere else.
+        </p>
+        <div className="toggle-row">
+          <label htmlFor="p-region">Answer for</label>
+          <select
+            id="p-region"
+            className="style-select"
+            value={prefs.region_override || 'auto'}
+            onChange={e => onChange('region_override', e.target.value)}
+          >
+            <option value="auto">Detect automatically{L.regionLabel ? ` (${L.regionLabel})` : ''}</option>
+            {REGION_CHOICES.map(([code, label]) => (
+              <option key={code} value={code}>{label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="toggle-row">
+          <label htmlFor="p-units">Units</label>
+          <select
+            id="p-units"
+            className="style-select"
+            value={prefs.units_override || 'auto'}
+            onChange={e => onChange('units_override', e.target.value)}
+          >
+            <option value="auto">Follow the region ({L.measurement})</option>
+            <option value="metric">Metric (°C, km)</option>
+            <option value="imperial">Imperial (°F, miles)</option>
+          </select>
+        </div>
+        <div className="toggle-row">
+          <label htmlFor="p-clock">Clock</label>
+          <select
+            id="p-clock"
+            className="style-select"
+            value={prefs.hour_cycle_override || 'auto'}
+            onChange={e => onChange('hour_cycle_override', e.target.value)}
+          >
+            <option value="auto">Follow the locale ({L.hourCycle === 'h12' ? '12-hour' : '24-hour'})</option>
+            <option value="12">12-hour</option>
+            <option value="24">24-hour</option>
           </select>
         </div>
       </section>

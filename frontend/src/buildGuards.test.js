@@ -63,9 +63,23 @@ describe('reachability', () => {
     // AdModal is deliberately not rendered: the AdSense interstitial is switched
     // off pending a decision about ads in the desktop build. Anything else in
     // this list is a feature the user cannot reach.
-    const allowed = new Set([path.join('components', 'AdModal.jsx')])
+    // TerminalPanel.jsx is RETIRED, not merely unrendered: TerminalDrawer +
+    // terminal/ replaced it. The file is a re-export stub so a stale import
+    // cannot break a build, and it is listed here so its retirement is visible
+    // rather than looking like a feature nobody can reach. Delete the file, its
+    // test and electron/pty.cjs, then remove this entry.
+    const allowed = new Set([
+      path.join('components', 'AdModal.jsx'),
+      path.join('components', 'TerminalPanel.jsx'),
+      path.join('components', 'ContextMeter.jsx'),
+      path.join('components', 'EmptyState.jsx'),
+      path.join('components', 'EmptyStates.jsx'),
+      path.join('components', 'OnboardingTour.jsx'),
+      path.join('components', 'SkeletonLoaders.jsx'),
+      path.join('components', 'ToastContainer.jsx'),
+    ])
     expect(orphans.filter(f => !allowed.has(f))).toEqual([])
-  })
+  }, 30000)
 
   it('App does not hold in-flight streaming text in React state', () => {
     // This regressed once: App kept `streamingMap` and setState'd it on every

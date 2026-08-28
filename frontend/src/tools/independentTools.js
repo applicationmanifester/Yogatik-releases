@@ -2,7 +2,7 @@
  * 100% Independent, keyless browser-native tools.
  * Zero external SaaS/API dependencies — all computation runs locally in JS.
  */
-import { mdToHtml } from './mdToPdf'
+import { mdToHtml, mdToPdfTool } from './mdToPdf'
 
 const TEXT_STOPWORDS = new Set((
   'a an and are as at be but by for from has have i in is it its of on or ' +
@@ -1237,7 +1237,8 @@ export const docExportTool = {
   schema: {
     description:
       'Convert Markdown or structured text into Microsoft Word (.doc), PowerPoint presentation (.pptx), CSV spreadsheet (.csv), HTML, or formatted JSON for 1-click downloading. ' +
-      'Use when the user asks to "export as Word", "create PowerPoint / PPT", "download CSV spreadsheet", "export HTML", or "save document".',
+      'Use when the user asks to "export as Word", "create PowerPoint / PPT", "download CSV spreadsheet", "export HTML", or "save document". ' +
+      'For PDF output use the md_to_pdf tool instead.',
     parameters: {
       type: 'object',
       properties: {
@@ -1285,7 +1286,12 @@ export const docExportTool = {
     let outContent = content
     let mimeType = 'application/msword'
 
-    if (['ppt', 'pptx', 'powerpoint', 'presentation', 'slides'].includes(requestedExt)) {
+    if (['pdf'].includes(requestedExt)) {
+      // Delegate to the dedicated md_to_pdf tool so the model gets a real downloadable PDF,
+      // not a base64-encoded .doc file with manual conversion instructions.
+      const pdfName = name.replace(/\.pdf$/i, '') + '.pdf'
+      return mdToPdfTool.execute({ markdown: content, filename: pdfName })
+    } else if (['ppt', 'pptx', 'powerpoint', 'presentation', 'slides'].includes(requestedExt)) {
       const pptResult = await exportPptx(content, filename, false)
       if (pptResult.success) {
         return {

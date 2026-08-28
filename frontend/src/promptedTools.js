@@ -263,3 +263,34 @@ export function formatToolResults(results = []) {
     .join('\n\n')
   return `TOOL_RESULTS — here is what the tools returned. Answer the original question using this, in plain prose. Do not emit another tool block unless you genuinely need more information.\n\n${body}`
 }
+
+/**
+ * Remove tool-call markup from text destined for the USER.
+ *
+ * agent.js had two inline regexes covering only `<tool_call>…</tool_call>` and
+ * `<function=x>…</function>`. A stream that is truncated mid-call leaves the
+ * tag UNCLOSED, so neither matched and the raw markup was rendered verbatim.
+ * The unclosed variants are anchored to end-of-string on purpose: a dangling
+ * open tag can only be the tail of the reply.
+ */
+export function stripToolCallSyntax(text) {
+  const input = String(text ?? '')
+  const out = input
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+    .replace(/<function_call>[\s\S]*?<\/function_call>/gi, '')
+    .replace(/<function(?:=|\s+name=)["']?[\w-]+["']?>[\s\S]*?<\/function>/gi, '')
+    .replace(/<invoke\s+name=["']?[^"'>\s]+["']?>[\s\S]*?<\/invoke>/gi, '')
+    // Truncated tails.
+    .replace(/<tool_call>[\s\S]*$/i, '')
+    .replace(/<function_call>[\s\S]*$/i, '')
+    .replace(/<function(?:=|\s+name=)["']?[\w-]+["']?>[\s\S]*$/i, '')
+    .replace(/<invoke\s+name=["']?[^"'>\s]+["']?>[\s\S]*$/i, '')
+    // Provider-specific call markers that are never prose.
+    .replace(/<\|python_tag\|>[\s\S]*$/i, '')
+    .replace(/\[TOOL_CALLS\][\s\S]*$/i, '')
+  // Trim ONLY when something was actually removed. The abort path preserves
+  // the partial answer verbatim so the user sees exactly what had streamed
+  // when they pressed Stop; silently trimming it here would change text this
+  // function was not asked to touch.
+  return out === input ? input : out.trim()
+}

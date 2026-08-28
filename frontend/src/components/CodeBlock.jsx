@@ -50,10 +50,32 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const isMermaid = rawLang === 'mermaid' || (!rawLang && (code.startsWith('graph ') || code.startsWith('flowchart ') || code.startsWith('sequenceDiagram') || code.startsWith('classDiagram') || code.startsWith('erDiagram')))
   const isPreviewable = Boolean(rawLang && ['html', 'svg', 'xml', 'javascript', 'jsx', 'css'].includes(rawLang))
-  const isExecutable = Boolean(rawLang && ['javascript', 'js', 'json', 'html', 'python', 'py'].includes(rawLang) && (code.includes('\n') || code.length > 20))
+  const isExecutable = Boolean(rawLang && ['javascript', 'js', 'json', 'html', 'python', 'py', 'sh', 'bash', 'zsh', 'shell', 'powershell', 'cmd'].includes(rawLang) && (code.includes('\n') || code.length > 5))
   const isCsv = rawLang === 'csv' || (code.includes(',') && code.includes('\n') && code.split('\n')[0].includes(','))
   const isPpt = rawLang === 'pptx' || rawLang === 'ppt' || code.includes('.pptx') || code.includes('# Slide 1') || code.includes('Slide 1:')
+
+  const handleDownloadMermaid = async () => {
+    try {
+      const { diagramTool } = await import('../tools/diagram')
+      const res = await diagramTool.execute({ code })
+      if (res.success && res.svg) {
+        const blob = new Blob([res.svg], { type: 'image/svg+xml;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `diagram_${Date.now().toString(36)}.svg`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        return
+      }
+    } catch {}
+    // Fallback: save code
+    handleDownloadFile()
+  }
 
   const handleDownloadPpt = async () => {
     try {
@@ -86,7 +108,7 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
   }
 
   const handleDownloadFile = () => {
-    const extMap = { javascript: 'js', python: 'py', json: 'json', html: 'html', css: 'css', markdown: 'md', sql: 'sql', sh: 'sh', bash: 'sh' }
+    const extMap = { javascript: 'js', python: 'py', json: 'json', html: 'html', css: 'css', markdown: 'md', sql: 'sql', sh: 'sh', bash: 'sh', powershell: 'ps1', cmd: 'bat' }
     const ext = extMap[lang] || lang || 'txt'
     const blob = new Blob([code], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -110,7 +132,18 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
     setExecResult(null)
     try {
       const lowerLang = lang.toLowerCase()
-      if (['javascript', 'js', 'json'].includes(lowerLang)) {
+      if (['bash', 'sh', 'zsh', 'shell', 'powershell', 'cmd'].includes(lowerLang)) {
+        if (window?.electron?.exec) {
+          try {
+            const res = await window.electron.exec(code)
+            setExecResult({ output: res?.stdout || res?.output || (res?.exitCode === 0 ? 'Command executed successfully.' : `Exit code: ${res?.exitCode}`) })
+          } catch (e) {
+            setExecResult({ error: `Terminal Execution Error: ${e.message}` })
+          }
+        } else {
+          setExecResult({ output: `[Browser Sandbox Emulation]\n$ ${code.trim().split('\n').join('\n$ ')}\n\n(Install desktop app or enable terminal bridge for direct OS execution)` })
+        }
+      } else if (['javascript', 'js', 'json'].includes(lowerLang)) {
         let logs = []
         const customConsole = {
           log: (...args) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ')),
@@ -210,7 +243,17 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
               <FileDown size={11} /> Download CSV
             </button>
           )}
-          {!isPpt && !isCsv && code.length > 5 && (
+          {isMermaid && (
+            <button
+              className="code-block-btn"
+              onClick={handleDownloadMermaid}
+              title="Download Mermaid Diagram as SVG"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'linear-gradient(135deg, #0284c7, #38bdf8)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <FileDown size={11} /> Download SVG
+            </button>
+          )}
+          {!isPpt && !isCsv && !isMermaid && code.length > 5 && (
             <button
               className="code-block-btn"
               onClick={handleDownloadFile}

@@ -1,0 +1,103 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "version": "1.0.0",
+  "tools": [
+    {
+      "name": "ieee_research",
+      "version": "2.1.0",
+      "description": "Comprehensive academic research with Crossref/OpenAlex/Semantic Scholar citation graph traversal and vector indexing.",
+      "category": "academic",
+      "policy": {
+        "maxRetries": 3,
+        "timeoutMs": 45000,
+        "fallbackTool": "academic_search",
+        "rateLimitPerMin": 20,
+        "deprecated": false
+      }
+    },
+    {
+      "name": "research_swarm",
+      "version": "2.0.0",
+      "description": "Hierarchical multi-agent research swarm decomposing complex topics into parallel specialized sub-agent investigations.",
+      "category": "academic",
+      "policy": {
+        "maxRetries": 2,
+        "timeoutMs": 60000,
+        "rateLimitPerMin": 10,
+        "deprecated": false
+      }
+    },
+    {
+      "name": "citation_manager",
+      "version": "1.2.0",
+      "description": "DOI resolution, automated BibTeX formatting, and CSL-JSON export for Zotero/Mendeley.",
+      "category": "academic",
+      "policy": {
+        "maxRetries": 3,
+        "timeoutMs": 15000,
+        "rateLimitPerMin": 60,
+        "deprecated": false
+      }
+    },
+    {
+      "name": "latex_solver",
+      "version": "2.0.0",
+      "description": "Incremental LaTeX compilation, equation rendering, and watch-mode error resolution.",
+      "category": "document",
+      "policy": {
+        "maxRetries": 2,
+        "timeoutMs": 30000,
+        "rateLimitPerMin": 30,
+        "deprecated": false
+      }
+    },
+    {
+      "name": "overleaf_packager",
+      "version": "1.5.0",
+      "description": "Bundle LaTeX projects into Overleaf-ready ZIP packages with full asset manifest.",
+      "category": "document",
+      "policy": {
+        "maxRetries": 2,
+        "timeoutMs": 20000,
+        "rateLimitPerMin": 30,
+        "deprecated": false
+      }
+    },
+    {
+      "name": "pdf_resolver",
+      "version": "2.0.0",
+      "description": "Structured extraction of tables to CSV, figures with captions, and references with linked DOIs.",
+      "category": "document",
+      "policy": {
+        "maxRetries": 2,
+        "timeoutMs": 40000,
+        "rateLimitPerMin": 25,
+        "deprecated": false
+      }
+    },
+    {
+      "name": "verilog_tools",
+      "version": "1.3.0",
+      "description": "Verilog HDL synthesis, formal verification hooks (SymbiYosys), and simulation waveform export (VCD/JSON).",
+      "category": "hardware",
+      "policy": {
+        "maxRetries": 2,
+        "timeoutMs": 35000,
+        "rateLimitPerMin": 20,
+        "deprecated": false
+      }
+    },
+    {
+      "name": "web_automation",
+      "version": "2.2.0",
+      "description": "Resilient headless browser automation with auto-healing locators and network capture.",
+      "category": "web",
+      "policy": {
+        "maxRetries": 3,
+        "timeoutMs": 60000,
+        "rateLimitPerMin": 15,
+        "deprecated": false
+      }
+    }
+  ]
+}

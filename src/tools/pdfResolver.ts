@@ -85,3 +85,83 @@ export async function findFullTextPdf(doiOrTitle: string): Promise<string | null
 
   return null;
 }
+
+export interface ExtractedFigure {
+  figureNumber: string
+  caption: string
+}
+
+export interface ExtractedTable {
+  tableNumber: string
+  title?: string
+  csv: string
+}
+
+/**
+ * Extracts all DOIs and arXiv identifiers from paper text and references sections
+ */
+export function extractDoisFromReferences(text: string): string[] {
+  const doiRegex = /\b10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/gi
+  const matches = text.match(doiRegex) || []
+  return Array.from(new Set(matches.map((d) => d.replace(/[.,;)]+$/, ''))))
+}
+
+/**
+ * Extracts figure numbers and captions from academic PDF text
+ */
+export function extractFigureCaptions(text: string): ExtractedFigure[] {
+  const figures: ExtractedFigure[] = []
+  const figRegex = /(?:Fig(?:\.|ure)\s*(\d+[a-zA-Z]?))[:.]\s*([^\n\r]+(?:\n[^\n\r]+)?)/gi
+
+  let match: RegExpExecArray | null
+  while ((match = figRegex.exec(text)) !== null) {
+    if (match[1] && match[2]) {
+      figures.push({
+        figureNumber: `Fig. ${match[1]}`,
+        caption: match[2].trim().replace(/\s+/g, ' '),
+      })
+    }
+  }
+
+  return figures
+}
+
+/**
+ * Extracts tabular text blocks and parses them into CSV format
+ */
+export function extractTablesToCsv(text: string): ExtractedTable[] {
+  const tables: ExtractedTable[] = []
+  const tableBlockRegex = /(?:Table\s*([IVXLCDM\d]+))[:.]\s*([^\n\r]+)\n([\s\S]*?)(?=(?:\n\s*Table|\n\s*Fig|\n\s*\\section|\n\s*References|$))/gi
+
+  let match: RegExpExecArray | null
+  while ((match = tableBlockRegex.exec(text)) !== null) {
+    const tableNumber = `Table ${match[1]}`
+    const title = match[2]?.trim()
+    const content = match[3] || ''
+
+    const lines = content
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !/^[+=-]{3,}$/.test(l))
+
+    const csvRows = lines.map((line) => {
+      // Split by tab, pipe, or multiple spaces
+      const cells = line.includes('|')
+        ? line.split('|').map((c) => c.trim()).filter(Boolean)
+        : line.split(/\s{2,}|\t/).map((c) => c.trim()).filter(Boolean)
+
+      return cells.map((c) => (c.includes(',') ? `"${c.replace(/"/g, '""')}"` : c)).join(',')
+    }).filter((r) => r.length > 0)
+
+    if (csvRows.length > 0) {
+      tables.push({
+        tableNumber,
+        title,
+        csv: csvRows.join('\n'),
+      })
+    }
+  }
+
+  return tables
+}
+

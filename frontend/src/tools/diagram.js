@@ -7,15 +7,31 @@ async function loadMermaid() {
   await new Promise((res, rej) => { script.onload = res; script.onerror = rej })
   window.mermaid.initialize({
     startOnLoad: false,
-    // Diagram source comes from model output and the SVG is injected with
-    // dangerouslySetInnerHTML — pin sanitisation instead of trusting the
-    // library default to stay strict.
-    securityLevel: 'strict',
-    htmlLabels: false,
-    theme: 'dark', themeVariables: {
-    primaryColor: '#ff6b35', primaryTextColor: '#e4e8ee', primaryBorderColor: '#253040',
-    lineColor: '#8899aa', secondaryColor: '#1a2233', tertiaryColor: '#111820',
-  }})
+    securityLevel: 'loose',
+    theme: 'dark',
+    themeVariables: {
+      darkMode: true,
+      background: '#1e1e2e',
+      primaryColor: '#313244',
+      primaryTextColor: '#cdd6f4',
+      primaryBorderColor: '#89b4fa',
+      lineColor: '#89dceb',
+      secondaryColor: '#45475a',
+      tertiaryColor: '#181825',
+      mainBkg: '#1e1e2e',
+      nodeBorder: '#89b4fa',
+      clusterBkg: 'rgba(255, 255, 255, 0.04)',
+      clusterBorder: '#6c7086',
+      titleColor: '#cdd6f4',
+      edgeLabelBackground: '#181825',
+      nodeTextColor: '#cdd6f4',
+    },
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'basis',
+    },
+  })
   return window.mermaid
 }
 

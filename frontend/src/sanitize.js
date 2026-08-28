@@ -11,7 +11,7 @@
  * vectors; if a rich-HTML sink is ever added, revisit with a strict allowlist.
  */
 
-const DANGEROUS_TAGS = 'script,iframe,object,embed,link,meta,base,form,foreignObject,animate,set,style'
+const DANGEROUS_TAGS = 'script,iframe,object,embed,link,meta,base,form,foreignObject,animate,set'
 const URL_ATTRS = new Set(['href', 'xlink:href', 'src', 'action', 'formaction', 'data', 'poster', 'background'])
 const BAD_URL = /^(?:javascript:|data:(?!image\/(?:png|jpe?g|gif|webp|svg\+xml);)|vbscript:)/i
 const BAD_CSS = /(?:@import|expression\(|url\(\s*['"]?(?:javascript:|vbscript:))/i
@@ -38,6 +38,7 @@ export function sanitizeHtml(html) {
   if (typeof html !== 'string' || !html.trim()) return ''
   const doc = new DOMParser().parseFromString(html, 'text/html')
   if (!doc?.body) return ''
+  doc.body.querySelectorAll('style').forEach(n => n.remove())
   scrub(doc.body)
   return doc.body.innerHTML
 }

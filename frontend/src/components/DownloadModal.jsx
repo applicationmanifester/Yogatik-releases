@@ -69,6 +69,8 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
                 only makes sense pointing at a file. */}
             <a
               href="/platforms"
+              target="_blank"
+              rel="noreferrer"
               className="btn-primary"
               style={{
                 display: 'inline-flex',

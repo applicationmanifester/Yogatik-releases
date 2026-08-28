@@ -67,17 +67,54 @@ function computeDiff(oldText, newText) {
   }
 }
 
+/** Parse links from HTML */
+function parseHtmlLinks(html, baseUrl) {
+  if (typeof DOMParser === 'undefined') return []
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const anchors = doc.querySelectorAll('a[href]')
+    const links = []
+    const seen = new Set()
+
+    anchors.forEach(a => {
+      const rawHref = a.getAttribute('href')?.trim()
+      if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('javascript:')) return
+      let resolved = rawHref
+      try {
+        if (baseUrl) resolved = new URL(rawHref, baseUrl).href
+      } catch { /* keep raw */ }
+
+      if (!seen.has(resolved)) {
+        seen.add(resolved)
+        let isExternal = false
+        try {
+          if (baseUrl) isExternal = !resolved.startsWith(new URL(baseUrl).origin)
+        } catch { /* ignore */ }
+        links.push({
+          text: a.textContent.trim().replace(/\s+/g, ' ') || '',
+          href: resolved,
+          isExternal,
+        })
+      }
+    })
+
+    return links.slice(0, 100)
+  } catch {
+    return []
+  }
+}
+
 export const webAutomationTool = {
   schema: {
     description:
       'Execute multi-step web automations: batch extraction from multiple URLs in parallel, ' +
-      'HTML table scraping into structured data, change tracking / diff monitoring, or RSS monitoring.',
+      'HTML table scraping into structured data, link extraction, change tracking / diff monitoring, or RSS monitoring.',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['batch_extract', 'scrape_tables', 'diff_monitor', 'rss_feed'],
+          enum: ['batch_extract', 'scrape_tables', 'extract_links', 'diff_monitor', 'rss_feed'],
           description: 'Automation action to run',
         },
         urls: {
@@ -87,7 +124,7 @@ export const webAutomationTool = {
         },
         url: {
           type: 'string',
-          description: 'Target URL for scrape_tables, diff_monitor, or rss_feed',
+          description: 'Target URL for scrape_tables, extract_links, diff_monitor, or rss_feed',
         },
         monitorKey: {
           type: 'string',
@@ -153,7 +190,28 @@ export const webAutomationTool = {
       }
     }
 
-    // 3. Diff and change monitoring
+    // 3. Extract Links
+    if (action === 'extract_links') {
+      if (!/^https?:\/\//i.test(url)) return { success: false, error: 'Provide a valid http(s) URL.' }
+      try {
+        const html = await proxyText(url)
+        const links = parseHtmlLinks(html, url)
+        return {
+          success: true,
+          tool: 'web_automate',
+          action: 'extract_links',
+          url,
+          total: links.length,
+          internal: links.filter(l => !l.isExternal).length,
+          external: links.filter(l => l.isExternal).length,
+          links,
+        }
+      } catch (e) {
+        return { success: false, error: `Could not extract links: ${e.message}`, url }
+      }
+    }
+
+    // 4. Diff and change monitoring
     if (action === 'diff_monitor') {
       if (!/^https?:\/\//i.test(url)) return { success: false, error: 'Provide a valid http(s) URL.' }
       const key = `web_monitor_${monitorKey || url.replace(/[^a-z0-9]/gi, '_')}`

@@ -14,7 +14,7 @@ const {
   readFileSmart, writeFileAtomic, existingMode, applyEdit,
   decodeBuffer, encodeText, detectEol, applyEol, hashContent,
 } = require('./fsCore.cjs')
-const { getIndex, scanRoot, invalidate } = require('./fsIndex.cjs')
+const { getIndex, scanRoot, listDir, invalidate } = require('./fsIndex.cjs')
 const { globToRegExp } = require('./safeRegex.cjs')
 
 let journal = null
@@ -30,7 +30,9 @@ function snapshot(ctx, op, target) {
   // Every mutation goes through here, so this is the one place that has to
   // remember the cached file index is now stale. Missing it would mean a file
   // the app just created is invisible to its own next fs_find_files.
-  try { invalidate() } catch { /* cache only */ }
+  // Scoped to the path we just touched: a write to one file must not throw
+  // away the listing of every other open folder.
+  try { invalidate(target || null) } catch { /* cache only */ }
 }
 
 /** Cap a single file's size for text search — 2 MB of one line is not source. */
@@ -83,11 +85,11 @@ function registerFsBridge() {
     // A plain listing shows everything by default — the user asked what is in
     // a folder, and hiding node_modules from that answer is a lie. Search and
     // find prune; list does not, unless asked.
-    const { entries } = await scanRoot(dir, {
-      maxDepth: recursive ? 40 : 0,
-      includeIgnored,
-      withStats: true,
-    })
+    // A non-recursive listing is the explorer's hot path and goes through the
+    // per-directory cache; a recursive one is a one-off and does not.
+    const entries = recursive
+      ? (await scanRoot(dir, { maxDepth: 40, includeIgnored, withStats: true })).entries
+      : await listDir(dir, { includeIgnored, withStats: true })
     return entries.slice(0, 5000).map((e) => ({
       name: e.name, path: e.path, is_dir: e.isDir, size: e.size ?? 0, mtimeMs: e.mtimeMs ?? 0,
     }))
@@ -488,4 +490,4 @@ function registerFsBridge() {
   })
 }
 
-module.exports = { registerFsBridge, initJournal, invalidateFsIndex: invalidate }
+module.exports = { registerFsBridge, initJournal, snapshot, invalidateFsIndex: invalidate }

@@ -772,6 +772,383 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   fs_write carries expectedHash and the tab surfaces `stale` rather than pretending nothing happened.
 - Tests: workspace.test.js (25) + gitWriteGuard.test.js (7).
 
+## "Object has been destroyed" killed the app on launch (2026-08-25) — safeWindow.cjs
+- SYMPTOM: the modal "A JavaScript error occurred in the main process — TypeError: Object has been
+  destroyed at EventEmitter.<anonymous> (main.cjs:119:22) at EventEmitter.emit", right after
+  installing. `EventEmitter.emit` in the stack is the tell: an autoUpdater EVENT landed after the
+  window was gone, and updater.cjs reached `win.webContents` behind nothing but `if (win)`.
+- THE WINDOW AND ITS WEBCONTENTS ARE SEPARATE NATIVE OBJECTS with independent lifetimes, and the
+  webContents is torn down FIRST. So the idiom used all over this app —
+  `if (win && !win.isDestroyed()) win.webContents.send(...)` — is NOT sufficient: there is a real
+  interval where the guard passes and the very next property read throws. Electron throws on ANY
+  property access to a destroyed object, `.webContents` included, so the check must be inside the
+  try, not before it.
+- safeWindow.cjs is the one choke point: `alive(win)`, `safeSend(win, ch, payload)` (returns whether
+  it was DELIVERED, which the scheduler and the companion hotkey branch on), `safeWin(win, fn)`.
+  Every `.webContents.send` in electron/ goes through it; safeWindow.test.js greps for one that does
+  not and fails. That grep is the point — this is a habit, not a logic error anyone reasons into.
+- The Proxy-based `destroyedWindow()` in the test throws on EVERY property, which is what Electron
+  actually does; a plain `{isDestroyed:()=>true}` mock would never have caught the webContents case.
+- process.on('uncaughtException') is a LAST RESORT, not a blanket catch: teardown-race messages are
+  logged and swallowed, everything else is rethrown in a setImmediate so real bugs still crash. The
+  default behaviour is a modal + a dead app, and on first launch that dialog is the first thing a
+  new user sees.
+- windowState.track debounced its save 400ms and then wrote on 'close' — the timer outlived the
+  window, so the guard skipped it and the LAST size the user chose was never saved. Close writes
+  synchronously now.
+- Also fixed unguarded sends in scheduler.cjs (waited 5 minutes for a reply from a window that could
+  not answer), companionWindow.cjs, menu/notify/power/tray/clipboard, and main's own hotkeys.
+
+## Shared terminal (2026-08-25) — terminalCore/terminalSession, terminal/, TerminalDrawer
+- THE COMPLAINT WAS "I cannot see what the AI is doing in the terminal", and it was structural.
+  `terminal:exec` collected stdout/stderr and forwarded NONE of it until close, so a 30s command was
+  a spinner then a card; `proc_start` had a proper ring buffer but its output reached the human only
+  if the MODEL chose to call proc_output. Nothing streamed. Meanwhile TerminalPanel spawned its OWN
+  private PTY, killed it on close (losing cwd, env and anything running), and knew nothing about the
+  agent — two terminals, neither of which showed the other.
+- ONE TIMELINE PER CHAT, SEPARATE PROCESSES. Every command — agent or human — is a BLOCK with
+  command, streaming output, exit code, duration and AUTHOR. A shared interactive SHELL was the
+  other option and is the fragile one: knowing when a command finished means parsing the prompt (or
+  OSC 133 shell integration), and an agent `cd` silently moves the human's cwd. Blocks are the shape
+  the agent's work already has. The human can Stop an agent block or re-run it as their own, which
+  is the part of "shared" people actually want.
+- terminalCore.cjs is PURE (reuses procCore's ring buffer) so the model is testable; terminalSession
+  owns processes, streaming and IPC. `terminal:exec` now delegates to `runBlock`, so agent commands
+  are visible BY CONSTRUCTION rather than by remembering to publish them.
+- Output is COALESCED at ~60ms per block before crossing IPC. A build emits thousands of small
+  writes; one message each floods the renderer exactly as the un-batched fs watcher did.
+- THE STREAM IS SUBSCRIBED BY App, NOT BY THE DRAWER (`startTerminalStream`). With the subscription
+  in the drawer's hook, a command that ran while the drawer was CLOSED — the whole case this exists
+  for — would light no indicator and leave an empty timeline when opened.
+- App holds a BOOLEAN (`agentTerminalBusy`), never the blocks. The store notifies per output chunk;
+  subscribing App to that re-renders the whole shell per chunk, the exact regression StreamingMessage
+  exists to prevent. The drawer uses useSyncExternalStore.
+- TWO TIERS, and the UI says WHICH: tier 1 is a clean spawn (no native dep, real exit codes, covers
+  git/npm/builds/tests); tier 2 is node-pty for REPLs/vim/prompts, only if installed. Tier 1 is the
+  PRIMARY path, not a fallback. A PTY session is keyed by CHAT and survives the drawer closing.
+- Scroll follows the tail only when already AT the tail; forcing it makes reading anything above a
+  running build impossible. Blocks are never evicted while RUNNING — output would keep arriving for
+  a row the UI forgot, and the Stop button would vanish with it (asserted in both core and store).
+- RETIRED: TerminalPanel.jsx, its test, electron/pty.cjs. The `__YOGATIK_PTY__` bridge is gone from
+  preload — a bridge whose handlers no longer exist answers "No handler registered", the shipped-dead
+  failure this repo keeps hitting. The files are re-export stubs (this sandbox cannot delete) and
+  TerminalPanel.jsx is named in buildGuards' orphan allowlist so the retirement is VISIBLE. Delete
+  all three and remove that entry.
+- Every terminal:* channel is in preload AND the entitlement matrix — the human's terminal is gated
+  exactly as hard as the agent's, because it is the same shell on the same machine in the same
+  folder. Reading the timeline is gated too: it holds the output of commands that already ran.
+
+## terminal_run hung forever against its own 30s timeout (2026-08-25) — main.cjs
+- OBSERVED: "terminal_run working… 726s" with a documented 30-second kill. The timeout HAD fired;
+  there was nobody left to report it.
+- `proc.kill()` signals the SHELL only. Windows: killing cmd.exe does not touch its children at all.
+  POSIX: SIGTERM to `sh` does not reach a grandchild. The surviving child keeps the INHERITED stdout
+  and stderr pipes open, and node's `close` fires only when the streams close — so for anything that
+  spawns a real process (npm, a dev server, a test runner) the promise never settled and took the
+  whole turn with it.
+- PROVEN in a bare Node process with `sleep 60 & echo started; wait`: killing the shell never
+  yielded `close` (rescued only by the new backstop at 2.5s); killing the process GROUP closed at
+  1003ms. Reproduce before touching this again — reading the code does not show it.
+- Fix is three parts, all needed: `detached:true` on POSIX so a process group exists;
+  `taskkill /pid <pid> /T /F` on Windows, the only thing that reaches grandchildren; and a BACKSTOP
+  timer that resolves with whatever was captured at timeout+5s. A tool returning a partial result is
+  recoverable, one that never returns is not. `proc.on('error')` goes through the same finish() or
+  the backstop fires against a settled promise.
+
+## "Verify the UI on localhost" cost 27 steps and still failed (2026-08-25)
+- The trace showed the model doing this by hand: start the dev server, navigate, guess `#root > *`,
+  wait_for, time out with NO IDEA WHAT PAGE it was on, then `evaluate window.__errors || []` — a
+  global it INVENTED, because reading the page's real console was not a capability the tool offered.
+  Every one of those is a round trip and the round cap killed the turn first.
+- The missing capability was console access. `browser:console` now rings each tab's own
+  console-message output and failed requests, cleared on main-frame navigation (carrying the
+  previous page's errors into a report about this one is worse than none). Electron CHANGED the
+  console-message signature — newer versions pass one event object, older ones pass
+  (event, level, message, line, source) — and handling one shape only means the capture silently
+  records nothing on the other; both are handled and a test pins it.
+- `browser:diagnose` is the shape of the question that was actually being asked: ONE call that
+  navigates if given a url, polls until the app RENDERS (not merely until the document loads — an
+  SPA serves an empty `<div id="root">` instantly), and returns `rendered`, the mount selector,
+  visible text, headings, console errors and failed requests together. It states the verdict rather
+  than leaving the model to infer it from four fields. Aliased as check/verify/test/health.
+- A wait timeout now NAMES THE PAGE. "Timed out after 10000ms waiting for #root > *" is
+  unactionable — it does not say which url, and the commonest cause is that the tab was never
+  navigated there. It reports url, title, readyState, visible text length and the last console
+  errors, and says which of "nothing rendered" or "selector is wrong" applies.
+- diagnoseError: a wait timeout is a fact about the PAGE. Reported as "Model Execution Failed — an
+  unexpected response was received from the model provider" it sent the user to check their API key
+  for a selector that did not match.
+
+## The forced-final pass rendered raw tool-call XML to the user (2026-08-25)
+- After the round cap, the "answer now, no more tools" pass produced
+  `<tool_call> <function=browser_control> <parameter=action> evaluate …` and the user saw it
+  verbatim. promptedTools' XML parser handles that exact format — but `harvestPromptedCalls()` was
+  called only `if (toolMode === 'prompted')`, and this model was in NATIVE mode.
+- Both forced-final sites now harvest in EVERY mode, with a new `stripOnly` flag: there is no round
+  left to run a tool in, so a call found there must be REMOVED from the answer, not executed. It
+  keeps the prose and, if there is none, says the tool budget ran out — silently deleting the call
+  would leave an answer that reads as if the model stopped mid-thought.
+- `stripToolCallSyntax()` replaces two inline regexes that only matched CLOSED tags, so a stream
+  truncated mid-call left a dangling `<tool_call>` and rendered the whole tail as markup. It also
+  covers `<function_call>`, `<invoke>`, `<|python_tag|>` and `[TOOL_CALLS]`.
+- It trims ONLY when something was removed. Trimming unconditionally changed the abort path's
+  preserved partial answer from "partial " to "partial" and broke a test that was right to complain:
+  Stop shows exactly what had streamed.
+
+## browser_control advertised THREE actions it could not perform (2026-08-25)
+- OBSERVED: the browser window was open and navigated, then the tool errored. "Can you verify the
+  UI on localhost" reaches for `evaluate` or `extract_text`, and BOTH were dead:
+  - `evaluate` → `b.evaluate` did not exist in preload → "evaluate is not supported by this browser
+    bridge version".
+  - `extract_text` → needed `b.getPageHtml` OR `b.evaluate`, neither existed → same.
+  - `wait_for` → `b.waitFor` did not exist, so it fell back to substring-matching a CSS SELECTOR
+    against the ACCESSIBILITY TREE, which is not the DOM. It polled for 10s and reported a timeout
+    for an element that was right there.
+- Same class as the missing `reload`, and it shipped twice: the SCHEMA promises a capability, the
+  implementation does not have it, and the model concludes the whole tool is broken rather than
+  trying something else. Nothing mechanical connected the enum to the bridge.
+- Now real handlers in main via `webContents.executeJavaScript`: `browser:evaluate` (wraps the
+  expression so both a bare expression and a statement body work — `executeJavaScript('const x=1;x')`
+  throws; result is JSON round-tripped because a DOM node is not structured-cloneable),
+  `browser:get-html`, and `browser:wait-for` which polls `document.querySelector` IN THE PAGE.
+  The selector is embedded with JSON.stringify, not interpolation — one containing a quote would
+  otherwise close the literal and change the script.
+- `getPageHtml` returns `{success, html}`, NOT a bare string. The tool treated the return as the
+  HTML, so `html.length < 100` was false and "[object Object]" reached the extractor.
+- THE GUARD: browserActions.test.js now greps every `b.<method>(` call in the tool against the
+  methods preload actually exposes, and fails on any that is missing. MUTATION-VERIFIED — deleting
+  `evaluate` from preload fails the suite. That grep is the only thing tying the schema, the switch
+  and the bridge together.
+- SECURITY: `evaluate` runs model-written JS in a real browsing context holding the user's logged-in
+  sessions. It is not sandboxed and cannot be — that is the tool. Desktop only, behind the BROWSER
+  entitlement, `userGesture:false` so a script cannot trigger what a page allows only on a real
+  click. Do not widen it.
+
+## browser_control refused the obvious names (2026-08-25) — browserActions.test.js (5)
+- OBSERVED: the model called `refresh` and `go_back`, got a bare "Unsupported action", and concluded
+  "The app seems to have some issues with its UI" — abandoning the tool rather than trying `back`,
+  which exists.
+- There was NO reload action at all. Every browser has one, so the model kept inventing it. Added
+  `browser:reload` (reloadIgnoringCache — the reason to reload an agent-driven page is that it is
+  stale) which BUMPS THE REF EPOCH: refs are page-scoped and a reload invalidates all of them, so
+  without the bump a stale ref resolves to whatever now sits at that index — a click on the wrong
+  element, which looks exactly like success.
+- ACTION_ALIASES accepts refresh/go_back/go_forward/goto/press/… An alias must never SHADOW a real
+  action (the `watch` collision), and a test asserts it.
+- A refusal now LISTS the valid actions. "Unsupported action: go_back" gives the model nothing to
+  correct with; the list lets it recover in one step.
+- The action enum lives in ONE exported array checked against the schema, the switch and preload —
+  three places that were free to drift silently.
+
+## diagnoseError bucket ORDER is load-bearing (2026-08-25)
+- "Unsupported action" was reported as "PROVIDER / EXECUTION ERROR — Model Execution Failed — an
+  unexpected response was received from the model provider", pointing the user at their API key,
+  network and credit balance for a bug that is none of those. Folded into the existing `tool_input`
+  bucket rather than adding a near-duplicate beside it.
+- THE ENTITLEMENT CHECK MUST SIT ABOVE `tool_input`. "Yogatik Pro **is required** for file access"
+  matches `/\b[a-z_]+ is required\b/`, so placed below it the paywall is reported as the model
+  forgetting an argument, with a Try Again button that can only fail again. It must also stay above
+  `workspace`, whose /desktop app/ regex tells a desktop user to install the desktop app. Three
+  ordering tests, mutation-verified.
+
+## Freemium gate (2026-08-25) — entitlementCore/entitlement, entitlement.test.js (20)
+- 30-day trial from signup, then desktop degrades to web parity. ₹99/₹999 via Razorpay (India,
+  UPI Autopay e-mandate), $2/$12 via Paddle (rest of world, merchant of record). Design + the fee
+  arithmetic that killed $1/month is in MONETIZATION.md.
+- IT IS A SPEED BUMP, NOT ENFORCEMENT, and the code says so. app.asar is a zip; anyone determined
+  bypasses it in an hour. That is the right trade at ₹99 and it decides where effort goes: ONE
+  auditable choke point + a signature, and NO obfuscation/anti-tamper/phone-home.
+- THE GATE IS ONE INTERCEPTION. `entitlement.installGate(ipcMain)` wraps `ipcMain.handle` ITSELF,
+  before any register*() runs, so every channel is checked by name and an unclassified one FAILS
+  CLOSED. An `if` per handler is the pattern that produced every "shipped dead / shipped ungated"
+  note in this file. It MUST stay above registerRootsIpc in main.cjs — anything registered before
+  installGate is permanently ungated, and the fs handlers are first.
+- GATING fs_* ALONE WOULD BE DECORATIVE: `terminal:exec` + `cat` IS file access, proc_start is file
+  access with extra steps, mcp-stdio:start spawns arbitrary processes, pty:spawn is a shell. The
+  unit is a CAPABILITY (files/shell/browser/control/automation) and all ~120 preload channels are
+  classified. entitlement.test.js parses preload.cjs and fails on any unclassified name.
+  MUTATION-VERIFIED: adding a channel to preload, or freeing terminal:exec, each fail the suite.
+- THE KEYCHAIN IS FREE_ALWAYS AND MUST STAY THAT WAY. db.js seals apikey_* through safeStorage with
+  a `kc.v1:` prefix; gate keychain:decrypt and a lapsed customer cannot read their OWN API keys and
+  it looks like the app deleted them. A test names it explicitly.
+- `dialog:open-file`/`read-picked` are FREE: one user-picked file is `<input type=file>`, which the
+  WEB build has. Gating it would make the free desktop app worse than the website — the opposite of
+  the rule it implements. `dialog:save-file`/`pick-folder` (a folder is a grant) stay PRO.
+- THE PROMPT HAS A THIRD STATE. A locked build still HOLDS every desktop tool — the gate refuses at
+  IPC, it does not remove the tool. With the licensed wording the model promises to edit the file
+  then emits a refusal; with the web wording it tells someone running the desktop app to go install
+  the desktop app. platformBlock() now emits desktop / desktop-locked / desktop-anonymous / web, and
+  anonymous says "sign in to start the trial" rather than "your trial has ended" — which is false
+  and the worst possible first impression. 3 tests in agent.test.js.
+- diagnoseError checks `entitlement` BEFORE `workspace`: "Yogatik Pro is required" matches the
+  workspace bucket's /desktop app/ regex and was reported as "Not Available in This Build".
+- Token: Ed25519 over `base64url(payload).base64url(sig)`, NOT JWT (no `alg` field, so no `alg:none`,
+  no dependency). `exp = min(periodEnd, iat+14d)` — a long-lived token means buy once and cancel;
+  a network-required one kills the offline promise the product is sold on. Clock rollback is
+  guarded by a monotonic high-water mark that survives sign-out (or "sign out, change date, sign in"
+  resets the whole mechanism).
+- ENTITLEMENT IS GRANTED BY THE WEBHOOK, NEVER THE REDIRECT — a redirect is a browser navigation
+  and can be forged. Checkout opens in the REAL browser (shell.openExternal), never a webview.
+  functions/index.js verifies signatures with timingSafeEqual over `req.rawBody` (JSON.stringify of
+  the parsed body re-orders keys and the HMAC never matches — a bug that looks like the provider
+  sending nothing). Razorpay `current_end` is SECONDS; storing it as ms puts the period end in 1970.
+  `subscription.halted` matters as much as `cancelled`: a failing e-mandate halts, it does not cancel.
+- firestore.rules: `accounts/{uid}` is read-only to the owner and `allow write: if false`. The
+  Functions use the Admin SDK and bypass rules. A client-writable `plan` is not a paywall.
+- PERSONAL EDITION: `YOGATIK_EDITION=personal` makes installGate a no-op — `npm run
+  electron:build:personal` → release-personal/, own appId so it installs BESIDE the store build
+  (separate userData, separate history). It is a BUILD VARIANT, not a forked repo: a fork of a
+  2,500-module app is a fork of every future fix and diverges in a week. Three tests assert CI never
+  builds or publishes it, `publish:null`, and that `personal` is opt-in rather than a default.
+
+## The explorer was slow for three measurable reasons (2026-08-25) — fsIndex, watcher
+- MEASURED, not inferred. `fs_list` → `scanRoot(withStats:true)` did ONE AWAITED `stat` PER ENTRY:
+  800 entries took **78ms serial vs 14ms** at 64-wide on a Linux tmpfs, and stat on NTFS with a
+  scanner in the path is an order of magnitude dearer — so a real folder cost seconds. Stats are
+  collected in a bounded-parallel pass (`fillStats`, STAT_CONCURRENCY=64) AFTER the walk. Not
+  `Promise.all` over everything: Windows hands out finite handles and 20,000 at once is EMFILE.
+- NOTHING CACHED THE ONE THING THE UI ASKS FOR. `getIndex` cached whole-root scans; `fs_list` called
+  `scanRoot` directly, so every expand/collapse/re-expand and every watcher refetch paid a full
+  re-walk and re-stat. `fsIndex.listDir` caches ONE directory (DIR_TTL 3s), watcher-invalidated.
+- `invalidate()` was ALL-OR-NOTHING and called with no argument from both `snapshot()` and the
+  watcher. One write under `.git` therefore discarded the listing of the folder the user was
+  looking at. It is path-scoped now: a dir listing dies only if the change was inside it (or is the
+  dir itself, whose mtime moved). workspacePerf.test.js pins this and is MUTATION-VERIFIED — adding
+  a blanket `dirCache.clear()` makes it fail.
+- THE WATCHER WAS THE MULTIPLIER. `fs.watch(recursive)` is ReadDirectoryChangesW over the whole
+  tree; one `npm install` is thousands of events, and each cost a `setTimeout` (one timer PER PATH),
+  an IPC message, a full invalidate and a re-listing. Now: `electron/watchFilter.cjs` (pure, so
+  vitest reaches it — watcher.cjs requires electron) drops node_modules/dist/.venv/editor
+  temporaries at the SOURCE, ONE timer and ONE Map per watcher, ONE batched `fs-changed` per 250ms
+  window carrying `changes[]`, capped at MAX_BATCH=200 with `truncated`.
+- `.git` is noise for the TREE and the only signal for SOURCE CONTROL. GIT_SIGNAL forwards only
+  HEAD/index/refs/packed-refs/MERGE_HEAD as type `'git'`; the object writes are dropped. The tree
+  hook refetches directories for `'tree'` changes and only refreshes decorations for `'git'` ones —
+  `git status` is 100–500ms on a big repo and used to run after EVERY burst, twice (flushPending
+  scheduled it as well as the change handler).
+- The flush timer outlives `fsw.close()` unless `watcher:stop` cancels it; every stop path calls
+  `w.cancel()` now.
+
+## git status parsed porcelain v1, which is WRONG for real filenames (2026-08-25)
+- MEASURED against a real repo: with the default `core.quotePath`, v1 prints `src/café.js` as the
+  literal eleven characters `"src/caf\303\251.js"`. Nothing un-quoted it, so the panel listed a
+  path that does not exist on disk and the tree row NEVER matched — the file simply had no
+  decoration. Same silent class as `is_dir` vs `isDir` and `doc.text` vs `doc.chunks`.
+- v1 also split a rename on the STRING `" -> "` (a filename may contain it) and records on newlines
+  (a filename may contain those too). `--porcelain=v2 -z` fixes all three at once: NUL-separated
+  fields, raw paths, and the rename original in its OWN record — `parseStatusV2` consumes it with
+  `rec[++i]`, so it is not re-parsed as a second file.
+- v2 also carries what v1 cannot express: `branch.upstream`, `branch.ab +N -M` (ahead/behind),
+  detached HEAD, and `u` records for conflicts. The panel shows all of it. `operationInProgress`
+  reads the `.git` marker files, because offering "commit" mid-rebase is offering the wrong thing.
+- `--no-optional-locks` matters: without it a status refresh takes the index lock to write back
+  stat info, and a polling panel fights the user's own editor and CLI for it.
+- Field offsets are `1`→8, `2`→9, `u`→10 and were off by one on the first attempt; the test caught
+  it, and the parser was then re-verified against REAL `git status` output for unicode, spaces,
+  renames and a live merge conflict. Synthetic fixtures alone would not have.
+
+## git writes are TIERED, not allowlisted wider (2026-08-25) — gitCore, gitWriteGuard.test (15)
+- `isSafeGitArgs` stays READ-ONLY because the MODEL reaches `git_run`. `WRITE_OPS` gained
+  stash/fetch/pull/push/push_upstream — all additive, none can lose work (a stash is a commit,
+  fetch only writes remote-tracking refs, pull is `--ff-only` so it never invents a merge commit).
+  A test asserts no entry in that table contains `--hard`, `--force`, `clean` or `checkout`.
+- `DESTRUCTIVE_OPS` is a SEPARATE table (discard/discard_all/clean/reset_hard/stash_drop/
+  unstage_hard) requiring `confirm:true`, and `git.cjs` journals a snapshot of the working tree
+  FIRST — that snapshot is the only reason offering them is defensible, since git itself keeps no
+  copy of an uncommitted change. `checkout <branch>` and `commit --amend` are gated the same way.
+- `needsConfirm` is returned as a FLAG, not just an error. A deliberate gate reported as a plain
+  failure looks like a broken button, and the user learns to click twice — which defeats it. The
+  panel asks BEFORE calling (`GIT_CONFIRM_OPS`), so the round-trip is never spent to learn that.
+- A branch NAME is validated as a ref (`VALID_REF`, git check-ref-format's rules) rather than
+  passed through: a branch called `--force` would otherwise arrive as a flag.
+- Network ops run with `GIT_TERMINAL_PROMPT=0`/`GIT_ASKPASS=''` and a 120s timeout. Without them a
+  push against a repo needing credentials blocks on a prompt with no terminal to appear in, and the
+  only symptom is a button that spins until the kill timer.
+- New handlers `git_file_history` (`--follow`, so a rename does not read as "no history"),
+  `git_show_file` and `git_diff({rev})` (`<rev>^!`, which works on a root commit). Every one of
+  them is in preload's FS_COMMANDS — a handler missing from that list is "Unknown command", which
+  is how `fs_find_files` shipped dead.
+
+## The app shipped TWO companions (2026-08-25) — converged on one brain
+- CompanionView.jsx IS the floating window (?companion=1), the companion's flagship surface, and it
+  never used useCompanionBrain. It called streamMessage directly and ran its own watch loop. So every
+  fix the companion/ modules exist to deliver landed in FloatingCompanion (panel/PiP) and NOT in the
+  window users actually pop out: no conversation of its own (hence no memory between launches), no
+  adaptive cadence, no hourly look budget, no speak gate — and `captureScreen` read straight off
+  window.__YOGATIK_COMPANION__, so on the web it said "Screen capture is desktop-only" while the panel
+  was watching a shared tab through getDisplayMedia. Same product, two answers to "can you see my
+  screen". Same class as youtube.js keeping its own relay list.
+- companion/capture.js is now the ONE capture layer: pickScreenMode returns 'native' | 'display-media'
+  | null (a VALUE, not a boolean — the UI has to say *what* it is watching, and a shared tab is not
+  "your screen"). A bridge object without a captureScreen method is not a screen source; testing for
+  the bridge's existence and then calling a method that may be absent is how this broke.
+- A browser screen share is stopped from a bar OUTSIDE the page. The track just ends, with no error
+  anywhere — the toggle stays lit and nothing is ever seen again. capture.js turns 'ended' into a
+  callback that stops the watcher and un-toggles; that silent dead switch is the exact failure liveWatch
+  exists to prevent.
+- companion/trail.js is the receipts. A correctly-behaving companion is silent, and from outside
+  "working and quiet" is indistinguishable from "broken and quiet" — users resolve that by turning
+  watching off, the only outcome that makes the feature worthless. Every round records look/skip/quiet/
+  spoke/error. Consecutive identical SKIP reasons collapse to a count, or an idle desktop pushes every
+  interesting entry out of a 40-entry buffer.
+- liveWatch has NO 'skipped' status: a declined round returns to WATCHING carrying the reason. Reading
+  a STATUS.SKIPPED that does not exist would have recorded nothing, silently.
+- runtime.js was SAVING every turn and never reading them back. `history` started empty on each load, so
+  the companion had amnesia sitting on top of a database full of its own conversation. hydrateCompanion()
+  joins via api.getConversation (a conversation ROW carries no `messages` — same drift that emptied the
+  vault search) and is shared/idempotent because both surfaces mount at once.
+- memory4 is injected LAST in companionSystemPrompt and skipped for ambient looks: rules first or a long
+  recall block pushes the instructions that keep it quiet and honest out of a small model's attention,
+  and recall scored against "the screen changed" retrieves nothing useful anyway.
+- ACTING: agent.js reads window.__YOGATIK_ACTION_GATE__, which ONLY CompanionView installs. permissions.js
+  is installed by App.jsx alone, and the companion window renders CompanionView *instead of* App — so in
+  that window permissions.js has no prompter and fails closed. The gate is the act-on-screen path there;
+  keep installing it, and resolve(false) any outstanding confirm on unmount or the agent loop hangs.
+- Tests: companion/companionUpgrade.test.js (17).
+
+## The app was hardcoded to the United States (2026-08-25) — locale.js, crisisResources.js
+- THE PATTERN: locale-aware wherever the browser handed the answer over for free (Intl timeZone for
+  the clock, navigator.language for speech recognition), US-hardcoded everywhere a value had to be
+  TYPED. Nobody owned the question, so every hand-written default was American.
+- CRISIS RESOURCES WERE THE SERIOUS ONE. safety.js named 988, a US eating-disorder helpline and "911
+  in the US" to every user on earth. Someone in distress in Mumbai or Munich was handed a number that
+  does not connect, at the worst possible moment. crisisResources.js picks by region and follows three
+  rules, in order: (1) NEVER invent a number — an unknown region gets findahelpline.com and "your
+  local emergency services", never a guess; (2) findahelpline.com is in EVERY answer, because it is
+  verified for 175+ countries including the ones the table does not name; (3) entries carry
+  VERIFIED_AT and were checked against their operators (988, Samaritans 116 123, Tele-MANAS 14416,
+  Lifeline 13 11 14) — helplines change, and NEDA's disconnected US line outlived itself in software
+  that had memorised it. assessSafety(text, {region}) now; agent.js passes localeSnapshot().region.
+- companion.test.js HAD ENCODED THE BUG: it asserted /988/ for a region-less call, so the US-only
+  helplines were pinned in place by a green test. Same class as the TerminalPanel PTY mock and the
+  desktop.test startLine/endLine mock. It asserts per-region behaviour now, including that a non-US
+  region NEVER yields 988.
+- locale.js is PURE and owns: resolveLocale (navigator.languages first — the ordered preference list),
+  regionOf (skips the SCRIPT subtag: zh-Hant-TW is TW, not Hant), regionFromTimeZone (a bare `de` or
+  `en` has no region at all, and defaulting those to US is exactly how the wrong helpline reached
+  Berlin — unknown returns null and every consumer handles null), measurementSystem, weatherUnits,
+  hourCycle, textDirection, newsParams. `_overrides` is a module variable because localeSnapshot() is
+  called SYNCHRONOUSLY while a system prompt is assembled — an async db read there would block the
+  turn or silently return the default. App.jsx pushes prefs in on load and on change.
+- WEATHER UNITS ARE NOT ONE METRIC/IMPERIAL SWITCH. The UK is Celsius AND mph. weatherUnits is
+  therefore separate from measurementSystem, and a test pins the GB row.
+- The weather CARD printed "°C" and "km/h" as literal markup. True only while every request was
+  metric; the moment units follow the region that turns 72°F into "72°C". Units travel with the
+  numbers (temperature_unit/wind_unit) and cardContract.test.js asserts the request actually asked
+  the API for them — relabelling metric numbers would be worse than the original bug.
+- Google News was pinned to hl=en-US&gl=US&ceid=US:en and DuckDuckGo sent no `kl`, so "what's in the
+  news" and every local query returned American results in Mumbai, Berlin and Lagos. Invisible to
+  anyone testing from the US, which is why it survived.
+- agent.js buildSystemPrompt now carries localeBlock(): region, language, units, hour cycle. The
+  timezone alone never fixed this — knowing it is 14:00 in Asia/Kolkata does not stop a model quoting
+  prices in USD or citing US law.
+- RTL: applyDocumentLocale() sets lang+dir on <html> in main.jsx BEFORE React mounts, or an Arabic
+  user sees one LTR frame and the screen reader starts on the wrong language. `dir` mirrors flexbox
+  for free but NOT physical properties — translateX, border-right, fixed `left` — so those are
+  corrected in a [dir="rtl"] block. Code, paths and diffs are forced back to LTR inside an RTL page;
+  a file path rendered right-to-left is unreadable.
+- Tests: locale.test.js (25).
+
 ## Gotchas (learned the hard way)
 - Working folders are PER CHAT on Electron (v3.9). Absolute paths are ALLOWED now — safety is the
   realpath containment check against that chat's bound roots, not a ban on absolute paths. The old

@@ -8,10 +8,9 @@ import { isDesktop } from './localFs'
 export const subAgentRunnerTool = {
   schema: {
     description:
-      'Manage isolated sub-agents that run in separate processes with their own terminals and Python RPC servers. ' +
-      'Each sub-agent has persistent Python state (imports, variables, installed packages) across executions. ' +
-      'Use for long-running tasks, parallel processing, or when you need true isolation. ' +
-      'Actions: spawn, execute, status, list, kill, python_execute, python_install, python_reset, python_namespace.',
+      'Manage isolated, persistent Python worker processes. Each worker has private workspace files and persistent Python state (imports and variables) across executions. ' +
+      'Use python_execute for computation and code experiments. For natural-language AI delegation use spawn_agents or crew_orchestrator instead: those run the active model with the correct tool policy. ' +
+      'Actions: spawn, execute (only with options.pythonCode), status, list, kill, python_execute, python_install, python_reset, python_namespace.',
     parameters: {
       type: 'object',
       properties: {
@@ -40,10 +39,12 @@ export const subAgentRunnerTool = {
         task: { type: 'string', description: 'Task to execute (required for execute)' },
         options: {
           type: 'object',
-          description: 'Execution options',
+          description: 'Execution options. `execute` requires pythonCode; natural-language tasks are delegated with spawn_agents or crew_orchestrator.',
           properties: {
             timeout: { type: 'number' },
             pythonPackages: { type: 'array', items: { type: 'string' } },
+            pythonCode: { type: 'string', description: 'Python code to run in this worker’s persistent private workspace.' },
+            files: { type: 'object', additionalProperties: { type: 'string' }, description: 'Relative workspace files to create before running pythonCode.' },
           },
         },
         // For python_execute

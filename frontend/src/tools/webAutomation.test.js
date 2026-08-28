@@ -96,4 +96,15 @@ describe('Web Automation Pipeline Tool', () => {
     expect(res.count).toBe(1)
     expect(res.items[0].title).toBe('News 1')
   })
+
+  it('extracts links and differentiates internal vs external links', async () => {
+    const res = await webAutomationTool.execute({
+      action: 'extract_links',
+      url: 'https://example.com/table',
+    })
+
+    expect(res.success).toBe(true)
+    expect(res.total).toBeDefined()
+    expect(Array.isArray(res.links)).toBe(true)
+  })
 })

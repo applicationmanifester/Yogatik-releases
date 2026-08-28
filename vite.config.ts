@@ -7,6 +7,8 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      'zustand/middleware': path.resolve(__dirname, './frontend/node_modules/zustand/esm/middleware.mjs'),
+      'zustand': path.resolve(__dirname, './frontend/node_modules/zustand/esm/index.mjs'),
     },
   },
   build: {

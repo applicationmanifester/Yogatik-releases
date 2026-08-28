@@ -7,6 +7,7 @@
 
 const { ipcMain, Notification } = require('electron')
 const path = require('path')
+const { safeSend, alive } = require('./safeWindow.cjs')
 
 let notifSeq = 1
 
@@ -30,7 +31,7 @@ function registerNotifications(getWindow) {
     const send = (payload) => {
       const win = getWindow()
       if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus() }
-      if (win && !win.isDestroyed()) win.webContents.send('notification-action', { id, ...payload })
+      safeSend(win, 'notification-action', { id, ...payload })
     }
 
     n.on('click', () => send({ action: 'click' }))

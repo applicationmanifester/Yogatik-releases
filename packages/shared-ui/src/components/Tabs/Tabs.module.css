@@ -1,0 +1,137 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.root.horizontal {
+  flex-direction: column;
+}
+
+.root.vertical {
+  flex-direction: row;
+}
+
+.list {
+  display: flex;
+  gap: 4px;
+}
+
+.horizontal .list {
+  flex-direction: row;
+  border-bottom: 1px solid var(--color-border-primary, #e0e0e0);
+  padding-bottom: 4px;
+}
+
+.vertical .list {
+  flex-direction: column;
+  border-right: 1px solid var(--color-border-primary, #e0e0e0);
+  padding-right: 4px;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--color-text-secondary, #666666);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.trigger:hover:not(.disabled) {
+  color: var(--color-text-primary, #1a1a1a);
+  background-color: var(--color-bg-secondary, #f5f5f5);
+}
+
+.trigger:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary, #0066cc);
+}
+
+.trigger.disabled {
+  color: var(--color-text-disabled, #999999);
+  cursor: not-allowed;
+}
+
+/* Line variant */
+.line .trigger {
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 8px 8px 0 0;
+}
+
+.line .trigger.active {
+  color: var(--color-primary, #0066cc);
+  border-bottom-color: var(--color-primary, #0066cc);
+}
+
+.line .trigger.active:hover {
+  background-color: transparent;
+}
+
+/* Enclosed variant */
+.enclosed .trigger {
+  border: 1px solid var(--color-border-primary, #e0e0e0);
+  background-color: var(--color-bg-primary, #ffffff);
+}
+
+.enclosed .trigger.active {
+  color: var(--color-primary, #0066cc);
+  border-color: var(--color-primary, #0066cc);
+  background-color: var(--color-primary-bg, rgba(0, 102, 204, 0.05));
+}
+
+.enclosed.horizontal .list {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.enclosed.vertical .list {
+  border-right: none;
+  padding-right: 0;
+}
+
+/* Soft variant */
+.soft .trigger {
+  background-color: transparent;
+}
+
+.soft .trigger.active {
+  color: var(--color-primary, #0066cc);
+  background-color: var(--color-primary-bg, rgba(0, 102, 204, 0.1));
+}
+
+.soft .trigger.active:hover {
+  background-color: var(--color-primary-bg, rgba(0, 102, 204, 0.15));
+}
+
+.panel {
+  padding: 16px 0;
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.vertical .panel {
+  padding: 0 0 0 16px;
+  border-left: 1px solid var(--color-border-primary, #e0e0e0);
+  flex: 1;
+}

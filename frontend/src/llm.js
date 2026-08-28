@@ -315,7 +315,8 @@ const isNvidiaHost = (url) => typeof url === 'string' && url.includes('://integr
 
 // Nothing should hang forever: a stalled proxy or provider previously left the
 // UI on "Connecting…" with no way out but the Stop button.
-const REQUEST_TIMEOUT = 120_000
+// Increased to 300s for complex multi-tool tasks; can be overridden per call.
+const REQUEST_TIMEOUT = 300_000
 
 function withTimeout(options, ms = REQUEST_TIMEOUT) {
   const timeout = AbortSignal.timeout(ms)
@@ -357,7 +358,7 @@ async function smartFetch(url, rawOptions, prov, timeoutMs) {
 // routinely blow past the 100s edge timeout on the first request of the day.
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504, 520, 522, 524])
 
-async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeoutMs = 180000 } = {}) {
+async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeoutMs = REQUEST_TIMEOUT } = {}) {
   let attempt = 0
   for (;;) {
     const controller = new AbortController()
@@ -441,8 +442,15 @@ export async function streamChat({
   const body = {
     model: cleanModel,
     messages,
-    temperature,
+    temperature: Math.max(0.2, temperature),
+    top_p: 0.95,
     stream: true,
+  }
+
+  // Add mild anti-repetition penalty for standard OpenAI/NVIDIA endpoints to prevent N-gram degeneration loops
+  if (!prov.isAnthropic && !prov.baseUrl.includes('anthropic')) {
+    body.presence_penalty = 0.05
+    body.frequency_penalty = 0.05
   }
 
   if (prov.isAnthropic) {
@@ -549,8 +557,20 @@ export async function streamChat({
     // Per-stream: wraps the provider's separate reasoning channel in <think>.
     const reasoningTagger = createReasoningTagger()
 
+    const STREAM_CHUNK_TIMEOUT_MS = 30000 // 30s max wait between chunks
     while (true) {
-      const { done, value } = await reader.read()
+      // Chunk-stall watchdog: aborts if provider connection freezes mid-stream
+      let chunkTimer
+      const chunkPromise = new Promise((_, reject) => {
+        chunkTimer = setTimeout(() => {
+          const err = new Error('Stream stalled — no tokens received from provider for 30s. Try regenerating or choosing a faster model.')
+          err.name = 'TimeoutError'
+          reject(err)
+        }, STREAM_CHUNK_TIMEOUT_MS)
+      })
+
+      const readPromise = reader.read().finally(() => clearTimeout(chunkTimer))
+      const { done, value } = await Promise.race([readPromise, chunkPromise])
       if (done) break
 
       buffer += decoder.decode(value, { stream: true })
@@ -639,7 +659,7 @@ export async function streamChat({
 }
 
 /** Non-streaming completion (for tool result processing) */
-export async function chatComplete({ provider, apiKey, model, messages, tools, temperature = 0.7, maxTokens, timeoutMs, retries }) {
+export async function chatComplete({ provider, apiKey, model, messages, tools, temperature = 0.7, maxTokens, timeoutMs = REQUEST_TIMEOUT, retries }) {
   const prov = getProviders()[provider]
   const cleanModel = normalizeModelName(model) || normalizeModelName(prov?.default) || normalizeModelName(prov?.preferred?.[0]) || (typeof prov?.models?.[0] === 'string' ? prov.models[0] : '')
   const headers = { 'Content-Type': 'application/json' }
@@ -695,17 +715,32 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
  */
 export async function fetchLiveModels(providerId, apiKey) {
   const prov = getProviders()[providerId]
-  if (!prov || !apiKey) return []
+  // Keyless providers (Ollama, on-device) don't need an API key.
+  // For keyed providers, bail early if no key is supplied.
+  const isKeyless = prov?.noKey || prov?.isOllama || prov?.isLocal
+  if (!prov) return []
+  if (!isKeyless && !apiKey) return []
 
   try {
-    const headers = apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}
+    const headers = {}
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
     if (providerId === 'openrouter') {
       headers['HTTP-Referer'] = 'https://yogatik.app'
       headers['X-Title'] = 'Yogatik'
     }
-    
+
+    // Use a short timeout for local daemons — fail fast if Ollama isn't running
+    const timeoutMs = isKeyless ? 4000 : 15000
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+
     const targetUrl = `${prov.baseUrl}/models`
-    const resp = await smartFetch(targetUrl, { method: 'GET', headers }, prov)
+    let resp
+    try {
+      resp = await smartFetch(targetUrl, { method: 'GET', headers, signal: controller.signal }, prov)
+    } finally {
+      clearTimeout(timer)
+    }
     if (!resp.ok) return []
 
     const contentType = resp.headers.get('content-type') || ''

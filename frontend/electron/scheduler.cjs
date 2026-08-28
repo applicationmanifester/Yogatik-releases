@@ -4,6 +4,7 @@
 const { ipcMain, dialog, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { safeSend } = require('./safeWindow.cjs')
 // fsBridge has never exported getWindow, so this was `undefined` and executeJob
 // threw "getWindow is not a function" the moment any scheduled job fired.
 // main.cjs now injects the real getter through registerSchedulerIPC.
@@ -229,12 +230,19 @@ async function executeJob(job) {
     }, 5 * 60 * 1000)
     
     // Send job to renderer
-    win.webContents.send('scheduler:execute-job', {
+    // If the window is gone the renderer can never answer, and waiting five
+    // minutes for a reply that cannot come is worse than failing immediately.
+    if (!safeSend(win, 'scheduler:execute-job', {
       jobId: job.id,
       channel,
       type: job.type,
       payload: job.payload
-    })
+    })) {
+      clearTimeout(timeout)
+      ipcMain.removeListener(channel, handleResult)
+      resolve({ success: false, error: 'The app window is not available to run this job.' })
+      return
+    }
     
     // Clean up timeout on resolve
     const originalResolve = resolve

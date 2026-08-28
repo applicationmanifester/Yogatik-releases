@@ -15,6 +15,22 @@ const fs = require('fs')
 
 // Active sub-agent processes
 const subAgents = new Map()
+const MAX_SUB_AGENTS = 8
+const AGENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
+
+function assertAgentId(agentId) {
+  const id = String(agentId || '')
+  if (!AGENT_ID_RE.test(id)) {
+    throw new Error('agentId must be 1–64 characters using letters, numbers, underscores, or hyphens.')
+  }
+  return id
+}
+
+function agentWorkspace(agentId) {
+  const dir = path.join(app.getPath('userData'), 'subagents', agentId, 'workspace')
+  fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
 
 // Python RPC server template
 const PYTHON_RPC_SERVER = `
@@ -26,12 +42,26 @@ import os
 
 # Set up a persistent namespace for stateful execution
 namespace = {}
+workspace = os.path.abspath(os.environ.get('YOGATIK_SUBAGENT_WORKSPACE', os.getcwd()))
+
+def safe_workspace_path(filename):
+    # Files supplied through the UI are relative to this worker's private
+    # workspace. A filename must never escape into the user's profile just
+    # because it contains ../ or happens to be absolute.
+    if not isinstance(filename, str) or not filename:
+        raise ValueError('File name must be a non-empty relative path')
+    target = os.path.abspath(os.path.join(workspace, filename))
+    if os.path.commonpath([workspace, target]) != workspace:
+        raise ValueError(f'File path escapes the sub-agent workspace: {filename}')
+    return target
 
 def execute(code, files=None):
     """Execute Python code in persistent namespace"""
     if files:
         for fname, content in files.items():
-            with open(fname, 'w') as f:
+            target = safe_workspace_path(fname)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, 'w', encoding='utf-8') as f:
                 f.write(content)
     
     # Capture stdout/stderr
@@ -65,12 +95,23 @@ def execute(code, files=None):
     return result
 
 def install_packages(packages):
-    """Install packages via micropip"""
+    """Install packages into the active CPython environment."""
     try:
-        import micropip
-        import asyncio
-        asyncio.run(micropip.install(packages))
-        return {'success': True, 'installed': packages}
+        import subprocess
+        if not isinstance(packages, list) or not packages:
+            return {'success': False, 'error': 'Provide at least one package name'}
+        clean = []
+        for package in packages:
+            if not isinstance(package, str) or not package.strip() or package.startswith('-'):
+                return {'success': False, 'error': f'Invalid package name: {package!r}'}
+            clean.append(package.strip())
+        completed = subprocess.run(
+            [sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', '--no-input', *clean],
+            cwd=workspace, text=True, capture_output=True, timeout=120,
+        )
+        if completed.returncode != 0:
+            return {'success': False, 'error': completed.stderr[-4000:] or completed.stdout[-4000:] or 'pip install failed'}
+        return {'success': True, 'installed': clean, 'output': completed.stdout[-4000:]}
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
@@ -82,7 +123,7 @@ def reset_namespace():
 
 def get_namespace():
     """Get current namespace keys and types"""
-    return {'success': True, 'keys': {k: str(type(v)) for k, v in namespace.items()}}
+    return {'success': True, 'workspace': workspace, 'keys': {k: str(type(v)) for k, v in namespace.items() if not k.startswith('__')}}
 
 # Main loop - read JSON commands from stdin, write JSON responses to stdout
 print(json.dumps({'ready': True}), flush=True)
@@ -116,7 +157,8 @@ for line in sys.stdin:
 `
 
 function createPythonRpcServer(agentId) {
-  const serverPath = path.join(app.getPath('userData'), `subagent_${agentId}_python_rpc.py`)
+  const serverPath = path.join(app.getPath('userData'), 'subagents', agentId, 'python_rpc.py')
+  fs.mkdirSync(path.dirname(serverPath), { recursive: true })
   fs.writeFileSync(serverPath, PYTHON_RPC_SERVER)
   return serverPath
 }
@@ -126,13 +168,20 @@ function createPythonRpcServer(agentId) {
  */
 function spawnSubAgent(agentId, config) {
   return new Promise((resolve, reject) => {
+    const id = assertAgentId(agentId)
+    if (subAgents.has(id)) return reject(new Error(`A sub-agent named "${id}" already exists.`))
+    if (subAgents.size >= MAX_SUB_AGENTS) return reject(new Error(`At most ${MAX_SUB_AGENTS} sub-agents may run at once.`))
     // Create Python RPC server
-    const pythonServerPath = createPythonRpcServer(agentId)
+    const pythonServerPath = createPythonRpcServer(id)
+    const workspace = agentWorkspace(id)
     
     // Spawn Python process for code execution
-    const pythonProc = spawn('python3', ['-u', pythonServerPath], {
+    const pythonExecutable = process.env.YOGATIK_PYTHON || (process.platform === 'win32' ? 'python.exe' : 'python3')
+    const pythonProc = spawn(pythonExecutable, ['-u', pythonServerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PYTHONUNBUFFERED: '1' }
+      cwd: workspace,
+      windowsHide: true,
+      env: { ...process.env, PYTHONUNBUFFERED: '1', YOGATIK_SUBAGENT_WORKSPACE: workspace }
     })
     
     let pythonReady = false
@@ -167,10 +216,12 @@ function spawnSubAgent(agentId, config) {
     
     pythonProc.on('error', (err) => {
       console.error('[SubAgent] Python process error:', err)
+      if (!pythonReady) reject(new Error(`Unable to start Python (${pythonExecutable}): ${err.message}`))
     })
     
     pythonProc.on('exit', (code) => {
       console.log('[SubAgent] Python process exited:', code)
+      if (!pythonReady) reject(new Error(`Python worker exited before it was ready (exit code ${code}).`))
       // Reject all pending requests
       for (const [, pending] of pendingPythonRequests) {
         pending.reject(new Error('Python process exited'))
@@ -179,46 +230,26 @@ function spawnSubAgent(agentId, config) {
     })
     
     // Python RPC client
+    const requestPython = (action, payload = {}, timeout = 60000) => new Promise((resolve, reject) => {
+        if (!pythonReady) return reject(new Error('Python RPC not ready'))
+        const id = ++pythonRequestId
+        pendingPythonRequests.set(id, { resolve, reject })
+        pythonProc.stdin.write(JSON.stringify({ id, action, ...payload }) + '\n')
+        setTimeout(() => {
+          if (pendingPythonRequests.has(id)) {
+            pendingPythonRequests.delete(id)
+            reject(new Error(`Python ${action} timeout`))
+          }
+        }, timeout)
+      })
+
     const pythonRpc = {
-      execute: (code, files) => new Promise((resolve, reject) => {
-        if (!pythonReady) return reject(new Error('Python RPC not ready'))
-        const id = ++pythonRequestId
-        pendingPythonRequests.set(id, { resolve, reject })
-        pythonProc.stdin.write(JSON.stringify({ id, action: 'execute', code, files }) + '\n')
-        // Timeout after 60 seconds
-        setTimeout(() => {
-          if (pendingPythonRequests.has(id)) {
-            pendingPythonRequests.delete(id)
-            reject(new Error('Python execution timeout'))
-          }
-        }, 60000)
-      }),
-      install: (packages) => new Promise((resolve, reject) => {
-        if (!pythonReady) return reject(new Error('Python RPC not ready'))
-        const id = ++pythonRequestId
-        pendingPythonRequests.set(id, { resolve, reject })
-        pythonProc.stdin.write(JSON.stringify({ id, action: 'install', packages }) + '\n')
-        setTimeout(() => {
-          if (pendingPythonRequests.has(id)) {
-            pendingPythonRequests.delete(id)
-            reject(new Error('Package install timeout'))
-          }
-        }, 120000)
-      }),
-      reset: () => new Promise((resolve, reject) => {
-        if (!pythonReady) return reject(new Error('Python RPC not ready'))
-        const id = ++pythonRequestId
-        pendingPythonRequests.set(id, { resolve, reject })
-        pythonProc.stdin.write(JSON.stringify({ id, action: 'reset' }) + '\n')
-      }),
-      namespace: () => new Promise((resolve, reject) => {
-        if (!pythonReady) return reject(new Error('Python RPC not ready'))
-        const id = ++pythonRequestId
-        pendingPythonRequests.set(id, { resolve, reject })
-        pythonProc.stdin.write(JSON.stringify({ id, action: 'namespace' }) + '\n')
-      }),
+      execute: (code, files) => requestPython('execute', { code, files }),
+      install: (packages) => requestPython('install', { packages }, 130000),
+      reset: () => requestPython('reset'),
+      namespace: () => requestPython('namespace'),
       kill: () => {
-        pythonProc.kill()
+        try { pythonProc.kill() } catch { /* already stopped */ }
       }
     }
     
@@ -234,10 +265,12 @@ function spawnSubAgent(agentId, config) {
         
         // Create sub-agent object
         const subAgent = {
-          id: agentId,
+          id,
           config,
           pythonProc,
           pythonRpc,
+          pythonServerPath,
+          workspace,
           createdAt: Date.now(),
           status: 'ready',
           messageCount: 0
@@ -261,11 +294,18 @@ async function executeInSubAgent(agentId, task, options = {}) {
   subAgent.messageCount++
   
   try {
-    // For now, we use the existing streamMessage from the renderer
-    // In the future, this could run a completely isolated agent loop
-    const result = await runAgentInSubProcess(subAgent, task, options)
+    // This runner owns a real isolated Python workspace, not an LLM provider.
+    // The old implementation spawned a timer-based child that *pretended* a
+    // natural-language task had completed. Real AI delegation is provided by
+    // the renderer's spawn_agents / crew_orchestrator tools, which have the
+    // active provider, model, tool policy, and streaming context.
+    const pythonCode = options?.pythonCode ?? options?.python_code
+    if (typeof pythonCode !== 'string' || !pythonCode.trim()) {
+      throw new Error('This is an isolated Python worker, not an AI model runner. Use spawn_agents or crew_orchestrator for natural-language sub-agent tasks; use pythonCode here for durable isolated computation.')
+    }
+    const result = await subAgent.pythonRpc.execute(pythonCode, options?.files || {})
     subAgent.status = 'ready'
-    return result
+    return { success: !!result?.success, mode: 'python', task: String(task || ''), ...result }
   } catch (e) {
     subAgent.status = 'error'
     subAgent.lastError = e.message
@@ -404,6 +444,7 @@ function getSubAgentStatus(agentId) {
     messageCount: subAgent.messageCount,
     createdAt: subAgent.createdAt,
     lastError: subAgent.lastError,
+    workspace: subAgent.workspace,
     config: subAgent.config
   }
 }
@@ -427,6 +468,7 @@ function killSubAgent(agentId) {
   if (!subAgent) return false
   
   subAgent.pythonRpc.kill()
+  try { fs.rmSync(subAgent.pythonServerPath, { force: true }) } catch { /* best effort */ }
   subAgents.delete(agentId)
   return true
 }

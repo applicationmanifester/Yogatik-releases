@@ -1,10 +1,11 @@
 /**
- * ToolStatusPanel - Main component displaying status of all 65 tools
- * Features: real-time updates, category filtering, retry functionality, search
+ * ToolStatusPanel - Main component displaying status of all tools
+ * Features: real-time updates, combined selectors, category filtering, retry functionality, search, compact mode
  */
 
-import { useMemo, useState, useCallback } from 'react';
-import { useToolStatusStore, selectAllToolsWithStatus, selectCategoryCounts } from '@/stores/toolStatusStore';
+import React, { useMemo, useState, useCallback } from 'react';
+import { useToolStatusStore, type ToolWithStatus } from '@/stores/toolStatusStore';
+import { toolRegistry } from '@/tools/registry';
 import type { ToolCategory, ToolStatus } from '@/types/tool';
 import { ToolStatusBadge } from './ToolStatusBadge';
 import { ToolStatusCard } from './ToolStatusCard';
@@ -27,34 +28,69 @@ export function ToolStatusPanel({
   onRetry,
   className = '',
 }: ToolStatusPanelProps) {
-  const tools = useToolStatusStore(selectAllToolsWithStatus);
-  const categoryCounts = useToolStatusStore(selectCategoryCounts);
+  // Subscribe to toolStates and registeredExecutors in a single unified hook
+  const { toolStates, registeredExecutors } = useToolStatusStore((state) => ({
+    toolStates: state.toolStates,
+    registeredExecutors: state.registeredExecutors,
+  }));
+
   const [selectedCategory, setSelectedCategory] = useState<ToolCategory | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedError, setExpandedError] = useState<string | null>(null);
+  const [showAllFailedModal, setShowAllFailedModal] = useState(false);
 
-  // Get the error for the expanded tool
-  const expandedErrorData = useMemo(() => {
-    if (!expandedError) return null;
-    return tools.find(t => t.id === expandedError)?.error ?? null;
-  }, [tools, expandedError]);
+  // Derive all tools with their live status in a memoized pass
+  const tools: ToolWithStatus[] = useMemo(() => {
+    const allDefs = toolRegistry.getAll();
+    return allDefs.map((def) => {
+      const state = toolStates.get(def.id);
+      return {
+        ...def,
+        status: state?.status ?? 'unavailable',
+        error: state?.error,
+        progress: state?.progress,
+        isRegistered: registeredExecutors.has(def.id),
+      };
+    });
+  }, [toolStates, registeredExecutors]);
 
-  // Filter tools based on category and search
+  // Derive category counts in a memoized pass
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, { total: number; ready: number; loading: number; failed: number; unavailable: number }> = {};
+    toolRegistry.getCategories().forEach((cat) => {
+      counts[cat] = { total: 0, ready: 0, loading: 0, failed: 0, unavailable: 0 };
+    });
+
+    tools.forEach((tool) => {
+      const catCounts = counts[tool.category];
+      if (catCounts) {
+        catCounts.total++;
+        if (tool.status in catCounts) {
+          catCounts[tool.status]++;
+        }
+      }
+    });
+
+    return counts;
+  }, [tools]);
+
+  // Filter tools based on category and search query
   const filteredTools = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
     return tools.filter((tool) => {
       const matchesCategory = selectedCategory === 'all' || tool.category === selectedCategory;
       const matchesSearch =
-        searchQuery === '' ||
-        tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        tool.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        tool.id.toLowerCase().includes(searchQuery.toLowerCase());
+        query === '' ||
+        tool.name.toLowerCase().includes(query) ||
+        tool.description.toLowerCase().includes(query) ||
+        tool.id.toLowerCase().includes(query);
       return matchesCategory && matchesSearch;
     });
   }, [tools, selectedCategory, searchQuery]);
 
   // Group tools by category
   const toolsByCategory = useMemo(() => {
-    const grouped: Record<ToolCategory, typeof filteredTools> = {
+    const grouped: Record<ToolCategory, ToolWithStatus[]> = {
       web: [],
       code: [],
       media: [],
@@ -64,14 +100,16 @@ export function ToolStatusPanel({
       utility: [],
     };
     filteredTools.forEach((tool) => {
-      grouped[tool.category].push(tool);
+      if (grouped[tool.category]) {
+        grouped[tool.category].push(tool);
+      }
     });
     return grouped;
   }, [filteredTools]);
 
   const handleRetry = useCallback(
-    (toolId: string, e: React.MouseEvent) => {
-      e.stopPropagation();
+    (toolId: string, e?: React.MouseEvent) => {
+      e?.stopPropagation();
       onRetry?.(toolId);
       useToolStatusStore.getState().retryTool(toolId);
     },
@@ -82,22 +120,22 @@ export function ToolStatusPanel({
     setExpandedError((prev) => (prev === toolId ? null : toolId));
   }, []);
 
-  const getStatusCounts = useCallback(
-    (toolList: typeof filteredTools) => {
-      return toolList.reduce(
-        (acc, tool) => {
-          acc[tool.status]++;
-          return acc;
-        },
-        { ready: 0, loading: 0, failed: 0, unavailable: 0 } as Record<ToolStatus, number>
-      );
-    },
-    []
-  );
+  const getStatusCounts = useCallback((toolList: ToolWithStatus[]) => {
+    return toolList.reduce(
+      (acc, tool) => {
+        acc[tool.status] = (acc[tool.status] || 0) + 1;
+        return acc;
+      },
+      { ready: 0, loading: 0, failed: 0, unavailable: 0 } as Record<ToolStatus, number>
+    );
+  }, []);
 
-  const totalCounts = getStatusCounts(tools);
-  const filteredCounts = getStatusCounts(filteredTools);
+  const totalCounts = useMemo(() => getStatusCounts(tools), [tools, getStatusCounts]);
+  const filteredCounts = useMemo(() => getStatusCounts(filteredTools), [filteredTools, getStatusCounts]);
 
+  const failedTools = useMemo(() => tools.filter((t) => t.status === 'failed'), [tools]);
+
+  // Compact Mode
   if (compact) {
     return (
       <div className={`${styles.compactPanel} ${className}`} role="region" aria-label="Tool status summary">
@@ -115,30 +153,84 @@ export function ToolStatusPanel({
             </span>
           </div>
         </div>
-        {totalCounts.failed > 0 && (
+
+        {failedTools.length > 0 && (
           <div className={styles.compactErrors}>
-            {tools
-              .filter((t) => t.status === 'failed')
-              .slice(0, 3)
-              .map((tool) => (
-                <ToolStatusBadge
-                  key={tool.id}
-                  tool={tool}
-                  onClick={() => handleErrorClick(tool.id)}
-                  showError={expandedError === tool.id}
-                />
-              ))}
-            {tools.filter((t) => t.status === 'failed').length > 3 && (
+            {failedTools.slice(0, 3).map((tool) => (
+              <ToolStatusBadge
+                key={tool.id}
+                tool={tool}
+                onClick={() => handleErrorClick(tool.id)}
+                showError={expandedError === tool.id}
+              />
+            ))}
+            {failedTools.length > 3 && (
               <span className={styles.moreErrors}>
-                +{tools.filter((t) => t.status === 'failed').length - 3} more
+                +{failedTools.length - 3} more{' '}
+                <button
+                  className={styles.showAllButton}
+                  onClick={() => setShowAllFailedModal(true)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--accent-color, #38bdf8)',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    fontSize: 11,
+                    padding: 0,
+                  }}
+                >
+                  Show all
+                </button>
               </span>
             )}
           </div>
+        )}
+
+        {/* Failed Tools Modal in Compact Mode */}
+        {showAllFailedModal && (
+          <div className={styles.modalOverlay} onClick={() => setShowAllFailedModal(false)}>
+            <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+              <div className={styles.modalHeader}>
+                <h3>Failed Tools ({failedTools.length})</h3>
+                <button className={styles.closeBtn} onClick={() => setShowAllFailedModal(false)}>×</button>
+              </div>
+              <div className={styles.failedList} style={{ maxHeight: 300, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, padding: 12 }}>
+                {failedTools.map((tool) => (
+                  <div key={tool.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(239, 68, 68, 0.1)', padding: '8px 12px', borderRadius: 6 }}>
+                    <div>
+                      <strong>{tool.name}</strong>
+                      <div style={{ fontSize: 11, color: '#f87171' }}>{tool.error?.message || 'Execution error'}</div>
+                    </div>
+                    <button
+                      onClick={() => handleRetry(tool.id)}
+                      style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {expandedError && (
+          <ToolErrorDetails
+            error={tools.find((t) => t.id === expandedError)?.error || {
+              code: 'UNKNOWN',
+              message: 'Error details not found',
+              correlationId: 'N/A',
+            }}
+            onDismiss={() => setExpandedError(null)}
+            onRetry={() => handleRetry(expandedError)}
+          />
         )}
       </div>
     );
   }
 
+  // Full Mode
   return (
     <div className={`${styles.panel} ${className}`} role="region" aria-label="Tool status panel">
       {/* Header */}
@@ -158,7 +250,11 @@ export function ToolStatusPanel({
           </div>
         </div>
         <div className={styles.headerRight}>
-          <SearchBox value={searchQuery} onChange={setSearchQuery} placeholder="Search tools..." />
+          <SearchBox
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search tools..."
+          />
           <CategoryFilter
             selected={selectedCategory}
             onChange={setSelectedCategory}
@@ -172,10 +268,11 @@ export function ToolStatusPanel({
         {Object.entries(toolsByCategory).map(([category, categoryTools]) => {
           if (categoryTools.length === 0) return null;
           const catCounts = categoryCounts[category as ToolCategory] || {
-            total: 0,
             ready: 0,
             loading: 0,
             failed: 0,
+            unavailable: 0,
+            total: 0,
           };
 
           return (
@@ -191,7 +288,7 @@ export function ToolStatusPanel({
                   <ToolStatusCard
                     key={tool.id}
                     tool={tool}
-                    onRetry={handleRetry}
+                    onRetry={(id, e) => handleRetry(id, e)}
                     onErrorClick={handleErrorClick}
                     showError={expandedError === tool.id}
                   />
@@ -203,11 +300,15 @@ export function ToolStatusPanel({
       </div>
 
       {/* Error Details Modal */}
-      {expandedErrorData && (
+      {expandedError && (
         <ToolErrorDetails
-          error={expandedErrorData}
+          error={tools.find((t) => t.id === expandedError)?.error || {
+            code: 'UNKNOWN',
+            message: 'Error details not found',
+            correlationId: 'N/A',
+          }}
           onDismiss={() => setExpandedError(null)}
-          onRetry={() => expandedError && handleRetry(expandedError, { stopPropagation: () => {} } as React.MouseEvent)}
+          onRetry={() => handleRetry(expandedError)}
         />
       )}
 

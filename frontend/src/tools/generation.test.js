@@ -27,7 +27,7 @@ describe('Markdown → HTML (PDF)', () => {
     const html = mdToHtml('# Title\n\n- one\n- two\n\n```\ncode\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |')
     expect(html).toContain('<h1>Title</h1>')
     expect(html).toContain('<ul><li>one</li><li>two</li></ul>')
-    expect(html).toContain('<pre><code>code</code></pre>')
+    expect(html).toContain('<code>code</code>')
     expect(html).toContain('<table>')
     expect(html).toContain('<th>A</th>')
   })

@@ -3,9 +3,12 @@
 // event the renderer listens for; the rest use built-in Electron roles.
 
 const { app, Menu, shell, dialog } = require('electron')
+const { safeSend, alive } = require('./safeWindow.cjs')
 
 function buildMenu(win, opts = {}) {
-  const send = (action) => { if (win && !win.isDestroyed()) win.webContents.send('menu', action) }
+  // isDestroyed() on the WINDOW is not enough — its webContents is a separate
+  // object with its own lifetime and is torn down first.
+  const send = (action) => safeSend(win, 'menu', action)
   const isMac = process.platform === 'darwin'
   const getRoot = opts.getRoot || (() => null)
   const login = app.getLoginItemSettings?.() || {}

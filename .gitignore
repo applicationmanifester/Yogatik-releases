@@ -16,7 +16,14 @@ chroma_data/
 
 # Environment Variables & Secrets
 .env
+.env.*
+*.env
+*.env.*
 *.env.local
+*.pem
+*.key
+*service-account*.json
+*credentials*.json
 
 # OS / Editor junk
 .DS_Store
@@ -27,9 +34,22 @@ Thumbs.db
 # Vitest / Vite timestamps
 *.timestamp-*.mjs
 
-# Electron build outputs — 178MB of these got committed once and GitHub
-# rejected the push (100MB file limit). Never track build artefacts.
+# Electron build outputs — Never track build artefacts.
 terminal/dist-electron/
 terminal/dist-electron-fresh/
 **/win-unpacked/
 **/release-electron/
+**/release-studio/
+**/release-personal/
+frontend/dist-electron/
+*.exe
+*.blockmap
+*.tsbuildinfo
+*.log
+*.tmp
+*.bak
+.firebase/
+
+# Licence signing key — the private half must NEVER be committed.
+# It lives in Firebase secrets (functions:secrets:set LICENSE_PRIVATE_KEY).
+functions/.keys/

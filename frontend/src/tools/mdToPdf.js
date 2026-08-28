@@ -18,11 +18,16 @@ export function mdToHtml(md) {
   while (i < lines.length) {
     const line = lines[i]
     if (/^```/.test(line)) {                                   // fenced code
+      const lang = line.replace(/^```/, '').trim().toLowerCase()
       const buf = []
       i++
       while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++])
       i++
-      out.push(`<pre><code>${esc(buf.join('\n'))}</code></pre>`)
+      if (lang === 'mermaid') {
+        out.push(`<div style="margin:16px 0;padding:12px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;"><div style="font-size:8.5pt;font-weight:700;color:#0284c7;text-transform:uppercase;margin-bottom:6px;letter-spacing:0.5px;">📊 Diagram Structure (Mermaid)</div><pre style="background:#0f172a;color:#f8fafc;padding:10px 14px;border-radius:6px;font-size:9pt;margin:0;"><code>${esc(buf.join('\n'))}</code></pre></div>`)
+      } else {
+        out.push(`<div style="margin:14px 0;border-radius:8px;overflow:hidden;border:1px solid #334155;"><div style="background:#1e293b;color:#94a3b8;font-size:8pt;font-weight:700;padding:4px 10px;text-transform:uppercase;">${lang || 'CODE'}</div><pre style="background:#0f172a;color:#f8fafc;padding:12px 14px;margin:0;overflow-x:auto;"><code>${esc(buf.join('\n'))}</code></pre></div>`)
+      }
     } else if (/^\s*!\[([^\]]*)\]\(([^)]+)\)\s*$/.test(line)) { // standalone image
       const m = line.match(/^\s*!\[([^\]]*)\]\(([^)]+)\)\s*$/)
       out.push(`<figure style="margin:18px 0;text-align:center;"><img src="${m[2]}" alt="${esc(m[1])}" style="max-width:100%;height:auto;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.1);"/>${m[1] ? `<figcaption style="font-size:9pt;color:#64748b;margin-top:6px;font-style:italic;">${esc(m[1])}</figcaption>` : ''}</figure>`)
@@ -95,10 +100,13 @@ const PRINT_CSS = `
 
 export const mdToPdfTool = {
   schema: {
-    description: 'Convert markdown text to a polished, downloadable PDF (headings, lists, tables, code, blockquotes).',
+    description: 'Create, generate, or export a PDF file from Markdown text. ' +
+      'USE THIS TOOL whenever the user asks to "create a PDF", "generate a PDF", "make a PDF", "export as PDF", "download as PDF", "save as PDF", or "convert to PDF". ' +
+      'Produces a real, polished, downloadable PDF (A4, print-quality, with headings, lists, tables, code blocks, blockquotes). ' +
+      'Do NOT use doc_export for PDF — always use this tool for any PDF output.',
     parameters: { type: 'object', properties: {
-      markdown: { type: 'string', description: 'Markdown content' },
-      filename: { type: 'string', description: 'Output filename (default document.pdf)' },
+      markdown: { type: 'string', description: 'Markdown content to convert to PDF' },
+      filename: { type: 'string', description: 'Output filename (default document.pdf). Must end in .pdf.' },
     }, required: ['markdown'] },
   },
   async execute({ markdown, filename = 'document.pdf' }) {
@@ -130,6 +138,13 @@ export const mdToPdfTool = {
       reader.readAsDataURL(blob)
     })
 
-    return { success: true, tool: 'md_to_pdf', filename: outName, size: `${(blob.size / 1024).toFixed(1)} KB`, pdf_data_url: dataUrl }
+    return {
+      success: true,
+      tool: 'md_to_pdf',
+      filename: outName,
+      size: `${(blob.size / 1024).toFixed(1)} KB`,
+      pdf_data_url: dataUrl,
+      message: `PDF '${outName}' generated successfully (${(blob.size / 1024).toFixed(1)} KB). A download button is already presented to the user in the UI. No further tool calls or file writing are required. Summarize your completion to the user.`,
+    }
   }
 }

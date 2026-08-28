@@ -10,7 +10,7 @@ const INTENT_RULES = [
   {
     id: 'python_code',
     regex: /\b(python|pyodide|def\s+|import\s+pandas|import\s+numpy|matplotlib|scipy|execute code|run python)\b/i,
-    load: () => import('./codeExec'),
+    load: () => import('./codeExec').then(m => m.prewarmPyodide?.()),
   },
   {
     id: 'ocr_vision',
@@ -20,6 +20,11 @@ const INTENT_RULES = [
   {
     id: 'doc_export',
     regex: /\b(ppt|pptx|powerpoint|slides|export to doc|create word document|pdf export)\b/i,
+    load: () => import('./independentTools'),
+  },
+  {
+    id: 'academic_research',
+    regex: /\b(ieee|paper|arxiv|doi|citations|bibliography|bibtex|overleaf|latex)\b/i,
     load: () => import('./independentTools'),
   },
   {

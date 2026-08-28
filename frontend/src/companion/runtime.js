@@ -35,7 +35,56 @@ export function getCompanionHistory() { return history }
 export function isCompanionBusy() { return busy }
 
 /** Wipe the in-memory window (the stored conversation is untouched). */
-export function _resetCompanionRuntime() { history = []; listeners = new Set(); busy = false }
+export function _resetCompanionRuntime() {
+  history = []
+  listeners = new Set()
+  busy = false
+  hydrated = false
+  hydrating = null
+}
+
+let hydrated = false
+let hydrating = null
+
+/**
+ * Load the tail of the stored companion conversation into the window.
+ *
+ * Turns were already being SAVED — they just were not read back, so every
+ * reload showed an empty companion that had, in the database, been talking to
+ * this user for weeks. The model got no history either: `history` started empty,
+ * so the first turn after a restart had no idea what had just been discussed.
+ *
+ * Idempotent and shared: the panel and the floating window mount at the same
+ * moment and must not both hydrate.
+ */
+export async function hydrateCompanion() {
+  if (hydrated) return history
+  if (hydrating) return hydrating
+  hydrating = (async () => {
+    try {
+      const api = await import('../api')
+      const id = await getCompanionConversationId().catch(() => null)
+      if (id) {
+        const conv = await api.getConversation(id).catch(() => null)
+        // A conversation ROW does not carry `messages`; getConversation joins
+        // them in. Reading conv.messages off the row is the drift that emptied
+        // the vault search, and it would silently produce an empty companion
+        // here for exactly the same reason.
+        const msgs = Array.isArray(conv?.messages) ? conv.messages : []
+        const usable = msgs
+          .filter(m => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+          .map(m => ({ role: m.role, content: m.content }))
+        if (usable.length) {
+          history = usable.slice(-WINDOW)
+          emit({ type: 'hydrated', messages: history })
+        }
+      }
+    } catch { /* a companion with no memory is still a working companion */ }
+    hydrated = true
+    return history
+  })()
+  try { return await hydrating } finally { hydrating = null }
+}
 
 /**
  * Ask the companion something.
@@ -61,14 +110,33 @@ export async function askCompanion({
   watching = false,
   surface = 'panel',
   tools = false,
+  canAct = false,
+  persona = 'pair',
   provider,
   model,
 } = {}) {
   if (!text || busy) return { skipped: true }
   busy = true
 
+  // Before the first turn, load what was said last session. Without this the
+  // model's "memory" restarted at every reload while the transcript sat in the
+  // database being written to and never read.
+  if (!hydrated) await hydrateCompanion().catch(() => {})
+
   const api = await import('../api')
   const conversationId = await getCompanionConversationId({ provider, model }).catch(() => null)
+
+  // What it already knows about this person. Skipped for ambient looks: a
+  // background glance at a screen is not the moment to spend a third of a small
+  // model's context on recall, and the recall would be scored against a prompt
+  // ("the screen changed") that says nothing about the user.
+  let memory = ''
+  if (!ambient) {
+    try {
+      const m = await import('../memory4')
+      memory = await m.memoryBlockFromStores(text)
+    } catch { /* memory is an enhancement, never a prerequisite */ }
+  }
 
   const userTurn = { role: 'user', content: text, ambient }
   history = [...history, userTurn].slice(-WINDOW)
@@ -89,7 +157,7 @@ export async function askCompanion({
         tools,
         use_tools: tools,
         use_web_search: false,
-        system_prompt: companionSystemPrompt({ watching, surface }),
+        system_prompt: companionSystemPrompt({ watching, surface, memory, canAct: canAct && tools, persona }),
         provider,
         model: model || undefined,
         channel: CHANNEL,
@@ -98,7 +166,14 @@ export async function askCompanion({
       () => {},
       () => resolve(),
       (err) => { failed = err; resolve() },
-      () => {}, () => {}, () => {}, () => {},
+      (status) => emit({ type: 'status', text: status }),
+      () => {},
+      // Tool activity is surfaced, not swallowed. The floating window already
+      // had a steps HUD; it was fed by a separate activity subscription that
+      // the panel never had, so the same companion showed its work on one
+      // surface and appeared to freeze on the other.
+      (calls) => emit({ type: 'tools', calls }),
+      (result) => emit({ type: 'tool-result', result }),
     ).catch((e) => { failed = e?.message || String(e); resolve() })
   })
 

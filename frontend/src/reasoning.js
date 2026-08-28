@@ -4,21 +4,30 @@
  * the whole answer sat inside it. Pull reasoning out so the answer renders plainly
  * and the reasoning can go in a panel of its own. Handles an unclosed <think>
  * while the reply is still streaming.
- *
- * Lives here rather than inside MessageBubble because three places need it now —
- * the bubble, the agent's empty-answer guard, and the live activity panel — and
- * three copies would drift.
  */
+
+/**
+ * Detects and truncates repetitive degenerate loops in text
+ * (e.g. "Also we looked at src/tools/registry... Also we looked at src/tools/registry...")
+ */
+export function deduplicateRepetitions(text) {
+  if (!text || typeof text !== 'string' || text.length < 40) return text
+  // Matches any repeating block of 10-150 chars that repeats 3 or more times consecutively
+  return text.replace(/(.{10,150}?)(?:\s*\1){2,}/gis, '$1')
+}
+
 export function splitReasoning(content) {
   if (typeof content !== 'string') return { reasoning: '', answer: content }
   let reasoning = ''
   const answer = content
     .replace(/<think>([\s\S]*?)<\/think>/gi, (_, r) => { reasoning += r + '\n'; return '' })
-    // An unclosed block is reasoning still being written. Capture it rather than
-    // discarding it, so a live view can show the thinking as it happens instead
-    // of nothing at all until </think> finally lands.
+    // An unclosed block is reasoning still being written.
     .replace(/<think>([\s\S]*)$/i, (_, r) => { reasoning += r; return '' })
-  return { reasoning: reasoning.trim(), answer: answer.trim() }
+
+  const cleanReasoning = deduplicateRepetitions(reasoning.trim())
+  const cleanAnswer = deduplicateRepetitions(answer.trim())
+
+  return { reasoning: cleanReasoning, answer: cleanAnswer }
 }
 
 /** Just the part the user is meant to read. Reasoning alone is not an answer. */
@@ -29,20 +38,38 @@ export function visibleAnswer(content) {
 /**
  * Reasoning models return their scratch-work in a SEPARATE streaming field —
  * `reasoning_content` on DeepSeek-R1 and NVIDIA's reasoning models, `reasoning`
- * on OpenRouter — not inline in `content`. llm.js read only `delta.content`, so
- * that thinking was silently discarded and the Thinking panel was always empty
- * for exactly the models that have the most to show.
+ * on OpenRouter — not inline in `content`.
  *
- * Rather than teach every consumer a second channel, wrap it in <think> tags as
- * it streams. splitReasoning already understands those everywhere: the message
- * bubble, the activity panel, and the agent's empty-answer guard.
+ * Wraps reasoning in <think> tags and includes a stream-level repetition breaker
+ * to prevent runaway loops (common in 120B+ Nemotron reasoning collapse).
  */
 export function createReasoningTagger() {
   let open = false
+  let reasoningTail = ''
+  let suppressedDueToLoop = false
+
   return {
     /** Text from the reasoning channel. Opens the block on first use. */
     reasoning(text) {
       if (!text) return ''
+
+      // If we already detected an infinite repetition loop, suppress further duplicate tokens
+      if (suppressedDueToLoop) {
+        return ''
+      }
+
+      reasoningTail += text
+      if (reasoningTail.length > 300) {
+        reasoningTail = reasoningTail.slice(-300)
+      }
+
+      // Check if the tail contains a 3x repeating pattern
+      const loopMatch = reasoningTail.match(/(.{12,80}?)(?:\s*\1){2,}/is)
+      if (loopMatch) {
+        suppressedDueToLoop = true
+        return '\n\n*(…repetitive reasoning loop truncated)*'
+      }
+
       const prefix = open ? '' : '<think>'
       open = true
       return prefix + text
@@ -50,6 +77,7 @@ export function createReasoningTagger() {
     /** Text from the answer channel. Closes any open reasoning block first. */
     content(text) {
       if (!text) return ''
+      suppressedDueToLoop = false
       const prefix = open ? '</think>' : ''
       open = false
       return prefix + text
@@ -58,6 +86,7 @@ export function createReasoningTagger() {
     end() {
       const out = open ? '</think>' : ''
       open = false
+      suppressedDueToLoop = false
       return out
     },
     isOpen() { return open },

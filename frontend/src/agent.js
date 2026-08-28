@@ -13,12 +13,13 @@ import { summariseToolResults } from './toolSummary'
 import { getToolSchemas, prioritizeToolSchemas, executeTool } from './tools/index'
 import { enrichToolError } from './tools/toolReflection'
 import { compactToolResult } from './tools/toolCompactor'
-import { buildToolPrompt, parseToolCalls, formatToolResults } from './promptedTools'
+import { buildToolPrompt, parseToolCalls, formatToolResults, stripToolCallSyntax } from './promptedTools'
 import { setVisionContext } from './tools/see'
 import { describeWithoutModel } from './vision/source'
-import { getSetting } from './db'
+import { getSetting, logAgentTrace } from './db'
 import { beginTool, settleTool } from './toolStatus'
 import { assessSafety, crisisResourceCard } from './safety'
+import { localeSnapshot, formatDate, formatTime } from './locale'
 import { resolveFeatures } from './features'
 import { getActiveSkill, skillDisabledTools } from './skills'
 import { getActiveAgent, agentDisabledTools } from './agents'
@@ -27,6 +28,8 @@ import { loadProjectInstructions } from './projectInstructions'
 import { todoBlock } from './todos'
 import { compactHistory } from './compaction'
 import { getTodos } from './tools/todo'
+// Synchronous by design: buildSystemPrompt runs mid-turn and cannot await.
+import { isLocked as isEntitlementLocked, entitlement as entitlementSnapshot } from './entitlement'
 
 /** Durable memories the user asked to keep, injected so the model recalls them
  *  without needing a memory tool call (like ChatGPT/Claude memory). */
@@ -125,6 +128,31 @@ async function gateAllows(name, args) {
 
 function platformBlock() {
   if (isDesktopRuntime()) {
+    // THIRD STATE. A locked desktop build still HOLDS every desktop tool — the
+    // gate refuses at the IPC boundary, not by removing the tool. Left with the
+    // wording below, the model confidently promises to edit the file and then
+    // emits a refusal, which is exactly the failure recorded in CLAUDE.md for
+    // the inverse case (the desktop build reading the web prompt and declaring
+    // real work impossible). Tell it the truth: the tools are there and locked.
+    if (isEntitlementLocked()) {
+      const ent = entitlementSnapshot()
+      // "Not signed in yet" and "your subscription lapsed" are the same lock
+      // and completely different sentences. Telling a first-run user their
+      // trial has ended is both wrong and the worst possible first impression.
+      const why = ent.state === 'anonymous'
+        ? `the user has NOT SIGNED IN yet, so the privileged tools are LOCKED. Signing in starts a
+free 30-day trial that unlocks all of them — offer that, once, when one is needed.`
+        : `the subscription or trial has ENDED, so the privileged tools are LOCKED.`
+      return `RUNTIME: You are running inside the Yogatik DESKTOP APP, but ${why}
+terminal_run, proc_start, fs_* (read AND write), git_*, browser_control, computer_control,
+clipboard_access, watch_folder and the scheduler WILL REFUSE with "Yogatik Pro is required".
+Everything else still works normally: chat, web search, code_execute (the Python sandbox),
+image/video/audio generation, charts, diagrams, OCR, translation, document retrieval over uploaded
+files, and reading a file the user picks through the file dialog.
+When a task needs a locked tool, say so plainly in one sentence and offer to open the upgrade
+screen. Do NOT retry the tool, do NOT claim the task is impossible in general, and do NOT pretend
+you performed it.`
+    }
     return `RUNTIME: You are running inside the Yogatik DESKTOP APP, with REAL access to this computer.
 You CAN: run shell commands (terminal_run for commands that finish quickly, proc_start for
 long-running ones such as dev servers, watch-mode tests and streaming builds), read and write the
@@ -141,6 +169,27 @@ browser_control, computer_control, clipboard_access) WILL REFUSE here. If the us
 plainly that it requires the Yogatik desktop app — never improvise or pretend you ran it.`
 }
 
+/**
+ * Where the user is, told to the model.
+ *
+ * Without this the model defaults to American conventions for everything it is
+ * not explicitly told about: Fahrenheit, dollars, US spelling, US law, US
+ * holidays, MM/DD dates. The timezone alone does not fix that — knowing it is
+ * 14:00 in Asia/Kolkata does not stop a model quoting prices in USD.
+ */
+function localeBlock(L) {
+  if (!L) return ''
+  const bits = [
+    `LOCALE: The user's locale is ${L.locale}${L.regionLabel ? ` (${L.regionLabel})` : ''}.`,
+    `Write in ${L.language} unless the user writes to you in another language, in which case match theirs.`,
+    `Use ${L.measurement} units, ${L.hourCycle === 'h12' ? '12-hour' : '24-hour'} time, and this locale's date and number conventions.`,
+    L.region
+      ? `Assume ${L.regionLabel || L.region} for anything region-dependent — prices and currency, laws and regulations, public holidays, availability of products and services, spelling conventions — and say which country you are answering for when it changes the answer.`
+      : 'The region is unknown, so ask which country the user means whenever the answer depends on it rather than assuming one.',
+  ]
+  return bits.join('\n')
+}
+
 // Key order must not make two identical calls look different, so sort it.
 function callSignature(name, args) {
   const stable = (v) => {
@@ -155,18 +204,19 @@ function callSignature(name, args) {
   return `${name}::${payload}`
 }
 
-function buildSystemPrompt({ webEnabled, persona, planMode }) {
+function buildSystemPrompt({ webEnabled, persona, planMode, locale }) {
   const now = new Date()
-  const today = now.toLocaleDateString('en-US', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  })
-  const time = now.toLocaleTimeString('en-US', {
-    hour: 'numeric', minute: '2-digit', hour12: true
-  })
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  // The timezone was always right — it came from Intl. The FORMAT was hardcoded
+  // to en-US in three places, so a user in Delhi or Berlin was told the date the
+  // American way, in 12-hour time they may never use. Both now follow them.
+  const L = locale || localeSnapshot()
+  const today = formatDate(now, L.locale, { timeZone: L.timeZone || undefined })
+  const time = formatTime(now, L.locale, { timeZone: L.timeZone || undefined, cycle: L.hourCycle })
+  const timeZone = L.timeZone || 'local time'
 
   return `You are Yogatik, a helpful AI assistant with access to a powerful toolset.
 ${platformBlock()}
+${localeBlock(L)}
 CURRENT SYSTEM CLOCK: ${today} at ${time} (${timeZone}).
 CRITICAL TIME INSTRUCTION: If the user asks for the current time, date, or timezone, you MUST report this exact local time: ${time} on ${today} (${timeZone}). Do NOT invent any other time.
 
@@ -234,17 +284,15 @@ it override the tool and research rules above:
 ${persona}` : ''}`
 }
 
-function buildLocalSystemPrompt({ persona }) {
+function buildLocalSystemPrompt({ persona, locale }) {
   const now = new Date()
-  const today = now.toLocaleDateString('en-US', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  })
-  const time = now.toLocaleTimeString('en-US', {
-    hour: 'numeric', minute: '2-digit', hour12: true
-  })
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const L = locale || localeSnapshot()
+  const today = formatDate(now, L.locale, { timeZone: L.timeZone || undefined })
+  const time = formatTime(now, L.locale, { timeZone: L.timeZone || undefined, cycle: L.hourCycle })
+  const timeZone = L.timeZone || 'local time'
 
   return `You are Yogatik, a helpful on-device AI assistant.
+${localeBlock(L)}
 Current Time: ${time} on ${today} (${timeZone}).
 
 Strict Output Rules:
@@ -274,8 +322,7 @@ const LOCAL_MAX_TURNS = 6
  */
 function stripImage(result) {
   if (!result || typeof result !== 'object') return result
-  if (!result.image && !result.images && !result.video_url) return result
-  const { image, images, video_url, ...rest } = result
+  const { image, images, video_url, pdf_data_url, pptx_data_url, data_url, ...rest } = result
   return rest
 }
 
@@ -331,15 +378,20 @@ function collectSources(result) {
 export async function runAgent({
   provider, apiKey, model, history = [], userMessage, userImage = null,
   toolsEnabled = true, webEnabled = true, disabledTools = [], persona = null, temperature = 0.7, signal,
+  conversationId = null, projectId = null,
   modelCanSee = false, localVisionEnabled = true, maxRounds: explicitMaxRounds = null,
   onToken, onStatus, onToolStart, onToolResult, onDone, onError, onSources,
   initialToolMode = null, onToolModeChange = null, agentOverride = null, onSafety = null,
 }) {
+  const executionCtx = { conversationId: conversationId || null, projectId: projectId || null }
   // On-device safety screen (crisis + professional-boundary). Pure, zero-latency,
   // offline. Feeds the system prompt and surfaces a resource card to the UI.
   let safetyDirective = ''
   try {
-    const verdict = assessSafety(typeof userMessage === 'string' ? userMessage : '')
+    // The region decides which helpline is named. Getting this wrong hands
+    // someone in crisis a number that does not connect.
+    const verdict = assessSafety(typeof userMessage === 'string' ? userMessage : '',
+      { region: localeSnapshot().region })
     safetyDirective = verdict.systemDirective
     if (verdict.hasConcern) onSafety?.(verdict, crisisResourceCard(verdict))
   } catch { /* safety must never block a turn */ }
@@ -392,9 +444,21 @@ export async function runAgent({
   let taskBlock = ''
   try { taskBlock = todoBlock(await getTodos()) } catch { taskBlock = '' }
 
+  // Dynamic @skill mentions in userMessage (AAS Core v16 / Manifest v1 support)
+  let mentionedSkillsBlock = ''
+  try {
+    const { resolveSkillMentions } = await import('./skillsCatalog')
+    const mentions = resolveSkillMentions(userMessage)
+    if (mentions.length > 0) {
+      mentionedSkillsBlock = '\n\n' + mentions.map(m =>
+        `INVOKED SKILL [@${m.id}] — "${m.name}":\n${m.systemPrompt || m.system || ''}\nGuidelines: Apply ${m.name} best practices and domain rules to this turn.`
+      ).join('\n\n')
+    }
+  } catch {}
+
   const systemBase = (isLocalProvider
-    ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + (await memoryBlock())
-    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + (await memoryBlock())
+    ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + (await memoryBlock())
+    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + (await memoryBlock())
   ) + safetyDirective
 
   const hBudget = isLocalProvider ? LOCAL_HISTORY_BUDGET : HISTORY_BUDGET
@@ -463,9 +527,10 @@ export async function runAgent({
   const isAskingTime = /time|date|clock|day is it|what hour|timezone|current year/i.test(userMessage || '')
   if (isAskingTime) {
     const now = new Date()
-    const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-    const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-    const tzStr = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const L = localeSnapshot()
+    const timeStr = formatTime(now, L.locale, { timeZone: L.timeZone || undefined, cycle: L.hourCycle })
+    const dateStr = formatDate(now, L.locale, { timeZone: L.timeZone || undefined })
+    const tzStr = L.timeZone || 'local time'
     messages[0].content += `\n\n[System Time Info]: Current Local Time is ${timeStr} on ${dateStr} (${tzStr}). Ground your answer in this exact timestamp.`
   }
 
@@ -661,10 +726,13 @@ export async function runAgent({
   let toolCallsToProcess = []
   let forcedFinal = false  // a 'stop using tools, answer now' pass already ran
 
+  let streamingReported = false
   const processStream = () => new Promise((resolve, reject) => {
     toolCallsToProcess = []
     roundContent = ''
     let rejectedTools = false
+    streamingReported = false
+    onStatus?.('🧠 Thinking & formulating response…')
 
     streamChat({
       provider, apiKey, model, messages, tools, temperature, signal,
@@ -672,6 +740,10 @@ export async function runAgent({
       // only shown once we know it is prose.
       onToken: (t) => {
         roundContent += t
+        if (!streamingReported && t.trim()) {
+          streamingReported = true
+          onStatus?.('⚡ Streaming response…')
+        }
         if (toolMode !== 'prompted') { fullContent += t; onToken?.(t) }
       },
       onToolCall: (tc) => { toolCallsToProcess.push(tc) },
@@ -685,11 +757,26 @@ export async function runAgent({
   let promptedRepairTried = false
   // Returns true when a tool block was attempted but unparseable AND we have not
   // yet retried — the caller then reprompts for valid JSON once.
-  const harvestPromptedCalls = () => {
+  /**
+   * @param {boolean} stripOnly - in a FORCED FINAL pass there is no round left
+   *   to run a tool in, so a tool call found here must be removed from the
+   *   answer rather than executed. Without this the raw `<tool_call>` XML is
+   *   rendered to the user verbatim, which is what a nemotron turn did after
+   *   hitting the round cap.
+   */
+  const harvestPromptedCalls = (stripOnly = false) => {
     // If native tool calls were already collected by provider, nothing more needed
     if (toolCallsToProcess.length > 0) return false
 
     const { calls, text, malformed } = parseToolCalls(roundContent)
+    if (calls.length && stripOnly) {
+      // Keep the prose, drop the markup, and say plainly that the budget ran
+      // out — silently deleting the call would leave an answer that reads as
+      // if the model simply stopped mid-thought.
+      const prose = (text || '').trim()
+      fullContent = prose || 'I ran out of tool steps for this turn before I could finish checking. Ask me to continue and I will pick up from here.'
+      return false
+    }
     if (calls.length) {
       toolCallsToProcess = calls
       // If we were in native mode, remove the raw tool call tags from fullContent so the user
@@ -775,9 +862,46 @@ export async function runAgent({
         })
       }
 
+      const describeAction = (tc) => {
+        const name = tc.name || ''
+        const args = tc.parsedArgs || {}
+        if (name === 'fs_search' || name === 'fs_find_files') {
+          const q = args.query || args.pattern || ''
+          return q ? `🔍 Searching for "${q.slice(0, 32)}"${q.length > 32 ? '…' : ''}` : '🔍 Searching workspace…'
+        }
+        if (name === 'fs_read' || name === 'fs_batch_read' || name === 'fs_file_tree' || name === 'fs_file_info') {
+          const p = args.path || (Array.isArray(args.paths) ? args.paths[0] : '') || ''
+          const base = p ? p.split(/[/\\]/).pop() : ''
+          return base ? `📂 Reading ${base}…` : '📂 Reading project files…'
+        }
+        if (name === 'fs_write' || name === 'fs_edit' || name === 'fs_replace_content' || name === 'fs_multi_replace' || name === 'fs_batch_write') {
+          const p = args.path || (Array.isArray(args.files) ? args.files[0]?.path : '') || ''
+          const base = p ? p.split(/[/\\]/).pop() : ''
+          return base ? `✏️ Editing ${base}…` : '✏️ Updating code…'
+        }
+        if (name === 'fs_git') {
+          return `🌿 Running Git ${args.action || 'operation'}…`
+        }
+        if (name === 'terminal_run' || name === 'terminal_exec' || name === 'proc_start') {
+          const cmd = (args.command || args.cmd || '').trim()
+          return cmd ? `💻 Running: ${cmd.slice(0, 28)}${cmd.length > 28 ? '…' : ''}` : '💻 Executing terminal command…'
+        }
+        if (name === 'web_search') {
+          const q = args.query || args.q || ''
+          return q ? `🌐 Searching web for "${q.slice(0, 32)}"${q.length > 32 ? '…' : ''}` : '🌐 Searching the web…'
+        }
+        if (name === 'deep_research') {
+          return '🔬 Conducting deep research…'
+        }
+        if (name === 'browser_control' || name === 'web_navigate') {
+          return '🌐 Browser automation…'
+        }
+        return `⚙️ Running ${name}…`
+      }
+
       onStatus?.(round.length > 1
-        ? `Running ${round.length} tools…`
-        : `Using ${round[0].name}…`)
+        ? `⚡ Executing ${round.length} actions (${round.map(r => r.name).join(', ')})…`
+        : describeAction(round[0]))
       const statusIds = []
       round.forEach((tc, i) => {
         onToolStart?.(tc.name, tc.parsedArgs)
@@ -823,7 +947,10 @@ export async function runAgent({
               seenCalls.set(sig, blocked)
               return blocked
             }
-            const result = await executeTool(tc.name, args, { signal })
+            const result = await executeTool(tc.name, args, {
+              signal,
+              ...(executionCtx.conversationId || executionCtx.projectId ? { ctx: executionCtx } : {})
+            })
             seenCalls.set(sig, result)
             return result
           } catch (e) {
@@ -841,6 +968,17 @@ export async function runAgent({
         onToolResult?.(tc.name, result)
         const step = [...traceRef].reverse().find(s => s.tool === tc.name && s.status === 'running')
         if (step) step.status = result?.error ? 'error' : 'done'
+
+        if (executionCtx.conversationId) {
+          logAgentTrace({
+            conversationId: executionCtx.conversationId,
+            tool: tc.name,
+            args: tc.parsedArgs || undefined,
+            status: result?.error ? 'error' : 'done',
+            error: result?.error ? String(result.error) : undefined,
+            summary: typeof result === 'object' && result?.message ? String(result.message) : undefined,
+          }).catch(() => {})
+        }
 
         if (SOURCE_TOOLS.has(tc.name)) {
           for (const s of collectSources(result)) {
@@ -917,7 +1055,11 @@ export async function runAgent({
       onStatus?.('Finalizing answer…')
       forcedFinal = true
       await processStream()
-      if (toolMode === 'prompted') harvestPromptedCalls()
+      // stripOnly: this is the FORCED FINAL, so there is no round left to run
+      // a tool in. Harvesting in EVERY mode (not just prompted) is what stops a
+      // native-mode model's `<tool_call>` XML being rendered verbatim — which
+      // is exactly what a nemotron turn did after hitting the round cap.
+      harvestPromptedCalls(true)
     }
 
     // A turn that ends with nothing visible is indistinguishable from a crash.
@@ -942,7 +1084,11 @@ export async function runAgent({
         onStatus?.('Finalizing answer…')
         forcedFinal = true
         await processStream()
-        if (toolMode === 'prompted') harvestPromptedCalls()
+        // stripOnly: this is the FORCED FINAL, so there is no round left to run
+      // a tool in. Harvesting in EVERY mode (not just prompted) is what stops a
+      // native-mode model's `<tool_call>` XML being rendered verbatim — which
+      // is exactly what a nemotron turn did after hitting the round cap.
+      harvestPromptedCalls(true)
       }
 
       if (!visibleAnswer(fullContent)) {
@@ -967,15 +1113,75 @@ export async function runAgent({
       }
     }
 
+    // ── Reasoning Auto-Extraction Guard ────────────────────────────
+    // Nemotron and deep-thinking models sometimes dump rich conclusions inside
+    // <think> blocks while leaving the main prose as a short transitional phrase (e.g. "Let's check utils").
+    // If visible content is trivial but reasoning holds actionable analysis, promote it cleanly.
+    if (fullContent.length < 80 && roundContent && roundContent.includes('<think>')) {
+      const thinkMatch = roundContent.match(/<think>([\s\S]*?)<\/think>/i)
+      if (thinkMatch && thinkMatch[1]) {
+        const reasoningText = thinkMatch[1].trim()
+        if (reasoningText.length > 150) {
+          const formattedReasoning = `\n\n### 📋 Analysis & Review Findings\n${reasoningText}`
+          fullContent += formattedReasoning
+          onToken?.(formattedReasoning)
+        }
+      }
+    }
+
+    // ── Task Completion & Continuity Guard ─────────────────────────
+    // Detect if the model stopped prematurely (e.g. unclosed code fence ```,
+    // dangling sentence ending in a colon or comma, transitional phrases like "Let's check",
+    // or truncated output token limit).
+    const isPotentiallyTruncated = (text) => {
+      if (!text || text.length < 20) return false
+      const trimmed = text.trim()
+      // Check for unclosed markdown code blocks (odd number of ``` fences)
+      const codeBlockMatches = trimmed.match(/```/g)
+      const hasUnclosedCodeBlock = codeBlockMatches && (codeBlockMatches.length % 2 !== 0)
+      // Check for trailing transitional phrases (e.g. "Let's check utils", "Now we will inspect...")
+      const isTransitionalEnding = /\b(let'?s (also )?(check|inspect|look at|examine|see|run)|now (we will|let's|inspect)|next step is to)\s*[^.?!]*$/i.test(trimmed)
+      // Check for trailing mid-thought indicators (ends with colon, comma, dash, or unfinished operator)
+      const endsMidSentence = /[:,(\-&|+=]\s*$/.test(trimmed) || /\b(and|or|because|such as|for example|step \d+:?|following:?)\s*$/i.test(trimmed)
+      return hasUnclosedCodeBlock || endsMidSentence || isTransitionalEnding
+    }
+
+    // Keep the agent in a loop until all tasks and thoughts are fully resolved
+    let autoContinueAttempts = 0
+    const maxAutoContinues = 3
+    while (isPotentiallyTruncated(fullContent) && !forcedFinal && rounds < maxRounds && autoContinueAttempts < maxAutoContinues) {
+      autoContinueAttempts++
+      try {
+        throwIfAborted()
+        onStatus?.(`⚡ Continuing uncompleted task (${autoContinueAttempts}/${maxAutoContinues})…`)
+        const continuationPrompt = 'Your previous output ended mid-thought or mid-task. Continue immediately to complete all remaining analysis, code, and conclusions without repeating prior text:'
+        messages.push({ role: 'assistant', content: fullContent })
+        messages.push({ role: 'user', content: continuationPrompt })
+        
+        let continuedChunk = ''
+        await new Promise((resolve) => {
+          streamChat({
+            provider, apiKey, model, messages, tools: null, temperature, signal,
+            onToken: (t) => {
+              continuedChunk += t
+              fullContent += t
+              onToken?.(t)
+            },
+            onDone: () => resolve(),
+            onError: () => resolve(), // Soft fail: keep existing content if continuation errors
+          })
+        })
+        if (!continuedChunk.trim()) break
+      } catch {
+        break
+      }
+    }
+
     throwIfAborted()
-    const cleanedContent = fullContent
-      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
-      .replace(/<function=\w+>[\s\S]*?<\/function>/gi, '')
+    const cleanedContent = stripToolCallSyntax(fullContent)
     onDone?.({ content: cleanedContent, toolResults, sources, toolMode, trace: traceRef ? [...traceRef] : undefined })
   } catch (err) {
-    const cleanedContent = fullContent
-      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
-      .replace(/<function=\w+>[\s\S]*?<\/function>/gi, '')
+    const cleanedContent = stripToolCallSyntax(fullContent)
     if (err.name === 'AbortError') {
       // User pressed Stop: keep whatever was generated instead of dropping it.
       onDone?.({ content: cleanedContent, toolResults, sources, aborted: true, trace: traceRef ? [...traceRef] : undefined })

@@ -170,14 +170,60 @@ function createTab(s, url) {
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   })
   const tabId = newTabId()
-  const tab = { view, refEpoch: 0 }
+  // `console` is a ring of the page's own console output and uncaught errors.
+  // Without it the model has no way to answer "does the UI work" — it was
+  // observed inventing `window.__errors` and evaluating that, because reading
+  // the real console was not a capability the tool offered.
+  const tab = { view, refEpoch: 0, console: [], failed: [] }
   s.tabs.set(tabId, tab)
   s.activeTabId = tabId
 
   const wc = view.webContents
   // A fresh document invalidates every ref issued against the old one.
   wc.on('did-start-navigation', (_e, _url, _inPlace, isMainFrame) => {
-    if (isMainFrame) tab.refEpoch++
+    if (isMainFrame) {
+      tab.refEpoch++
+      // Console output belongs to the DOCUMENT. Carrying warnings from the
+      // previous page into a report about this one would be worse than none.
+      tab.console = []
+      tab.failed = []
+    }
+  })
+
+  const LEVELS = ['debug', 'info', 'warning', 'error']
+  const pushLog = (entry) => {
+    tab.console.push(entry)
+    // A render loop can emit thousands of identical warnings; keep the tail.
+    if (tab.console.length > 300) tab.console.splice(0, tab.console.length - 300)
+  }
+  wc.on('console-message', (...args) => {
+    // Electron changed this signature: newer versions pass ONE event object,
+    // older ones pass (event, level, message, line, sourceId). Handling only
+    // one shape means the capture silently records nothing on the other.
+    const e = args[0]
+    const modern = e && typeof e === 'object' && ('message' in e || 'level' in e)
+    const level = modern ? e.level : args[1]
+    const message = modern ? e.message : args[2]
+    const line = modern ? e.lineNumber : args[3]
+    const source = modern ? e.sourceId : args[4]
+    pushLog({
+      level: typeof level === 'number' ? (LEVELS[level] || 'log') : String(level || 'log'),
+      message: String(message ?? '').slice(0, 2000),
+      source: source ? String(source).slice(0, 300) : null,
+      line: Number(line) || null,
+      at: Date.now(),
+    })
+  })
+  // A page that throws during render logs nothing to the console in some
+  // frameworks — this is the other half of "did the UI actually work".
+  wc.on('preload-error', (_e, preloadPath, error) => {
+    pushLog({ level: 'error', message: `Preload failed: ${error?.message || error}`, source: preloadPath, line: null, at: Date.now() })
+  })
+  wc.on('did-fail-load', (_e, code, desc, failedUrl, isMainFrame) => {
+    // -3 is ERR_ABORTED, which same-page redirects raise routinely.
+    if (code === -3) return
+    tab.failed.push({ code, description: desc, url: failedUrl, mainFrame: !!isMainFrame, at: Date.now() })
+    if (tab.failed.length > 50) tab.failed.shift()
   })
   wc.on('page-title-updated', () => syncTabBar(s))
   wc.on('did-finish-load', () => syncTabBar(s))
@@ -410,6 +456,74 @@ async function screenshot(s, tabId) {
   }
 }
 
+async function hover(s, { tabId, ref, x, y } = {}) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  const pt = await resolveTarget(t, { ref, x, y })
+  if (pt.error) return { success: false, error: pt.error, stale: !!pt.stale }
+  t.view.webContents.sendInputEvent({ type: 'mouseMove', x: pt.x, y: pt.y })
+  return { success: true, hovered: { x: pt.x, y: pt.y }, ref: ref || null }
+}
+
+async function printToPDF(s, { tabId, landscape = false } = {}) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  try {
+    const data = await t.view.webContents.printToPDF({ landscape: !!landscape })
+    return { success: true, pdfBase64: data.toString('base64'), bytes: data.length }
+  } catch (err) {
+    return { success: false, error: err?.message || String(err) }
+  }
+}
+
+async function handleCookies(s, { tabId, action = 'get', name, value, domain } = {}) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  try {
+    const currentUrl = t.view.webContents.getURL() || ''
+    const ses = t.view.webContents.session
+    if (action === 'clear') {
+      await ses.clearStorageData({ storages: ['cookies'] })
+      return { success: true, cleared: true }
+    }
+    if (action === 'set' && name && value) {
+      await ses.cookies.set({ url: currentUrl, name, value, domain: domain || undefined })
+      return { success: true, set: { name, value } }
+    }
+    const cookieList = await ses.cookies.get(currentUrl ? { url: currentUrl } : {})
+    return { success: true, count: cookieList.length, cookies: cookieList.map(c => ({ name: c.name, domain: c.domain, path: c.path, secure: c.secure })) }
+  } catch (err) {
+    return { success: false, error: err?.message || String(err) }
+  }
+}
+
+async function handleStorage(s, { tabId, type = 'local' } = {}) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  try {
+    const targetStorage = type === 'session' ? 'sessionStorage' : 'localStorage'
+    const items = await t.view.webContents.executeJavaScript(
+      `(() => {
+        try {
+          const store = window.${targetStorage}
+          const out = {}
+          for (let i = 0; i < store.length; i++) {
+            const k = store.key(i)
+            out[k] = store.getItem(k)
+          }
+          return out
+        } catch (e) {
+          return { error: e.message }
+        }
+      })()`,
+      false,
+    )
+    return { success: true, storageType: targetStorage, items }
+  } catch (err) {
+    return { success: false, error: err?.message || String(err) }
+  }
+}
+
 // ── IPC ───────────────────────────────────────────────────────────────────
 
 function registerBrowserControl(getMainWindow) {
@@ -430,10 +544,14 @@ function registerBrowserControl(getMainWindow) {
 
   ipcMain.handle('browser:read', (_e, p = {}) => readPage(S(p), p.tabId))
   ipcMain.handle('browser:click', (_e, p = {}) => click(S(p), p))
+  ipcMain.handle('browser:hover', (_e, p = {}) => hover(S(p), p))
   ipcMain.handle('browser:type', (_e, p = {}) => typeText(S(p), p))
   ipcMain.handle('browser:key', (_e, p = {}) => pressKey(S(p), p))
   ipcMain.handle('browser:scroll', (_e, p = {}) => scroll(S(p), p))
   ipcMain.handle('browser:screenshot', (_e, p = {}) => screenshot(S(p), p.tabId))
+  ipcMain.handle('browser:pdf', (_e, p = {}) => printToPDF(S(p), p))
+  ipcMain.handle('browser:cookies', (_e, p = {}) => handleCookies(S(p), p))
+  ipcMain.handle('browser:storage', (_e, p = {}) => handleStorage(S(p), p))
 
   ipcMain.handle('browser:new-tab', async (_e, p = {}) => {
     const s = S(p)
@@ -457,6 +575,244 @@ function registerBrowserControl(getMainWindow) {
   })
 
   ipcMain.handle('browser:close-tab', (_e, p = {}) => closeTab(S(p), p.tabId))
+
+  // ── evaluate / get-html / wait-for ────────────────────────────────────────
+  //
+  // The tool schema has advertised `evaluate`, `extract_text` and `wait_for`
+  // since it was written, and NONE of them could work: the first two needed
+  // bridge methods that did not exist ("evaluate is not supported by this
+  // browser bridge version"), and wait_for fell back to string-matching a CSS
+  // selector against the ACCESSIBILITY TREE, which essentially never matches —
+  // so it polled for ten seconds and reported a timeout.
+  //
+  // That is the same class of failure as the missing `reload`: the model is
+  // told a capability exists, reaches for it, and concludes the whole tool is
+  // broken. "Verify the UI on localhost" reaches for exactly these.
+  //
+  // SECURITY: this runs model-written JavaScript in a real browsing context
+  // that may hold the user's logged-in sessions. It is not sandboxed and
+  // cannot be — that is the point of the tool. It is reachable only on desktop,
+  // only behind the SHELL/BROWSER entitlement, and only through a tool the
+  // permission layer classifies as destructive. Do not widen it further.
+  ipcMain.handle('browser:evaluate', async (_e, p = {}) => {
+    const s = S(p)
+    const t = tabFor(s, p.tabId)
+    if (!t) return { success: false, error: 'No such tab' }
+    const expression = String(p.expression ?? '')
+    if (!expression.trim()) return { success: false, error: 'expression is required' }
+    try {
+      // userGesture:false — a script must not be able to trigger things the
+      // page only allows in response to a real click (popups, autoplay,
+      // permission prompts).
+      const value = await t.view.webContents.executeJavaScript(
+        // Wrapped so a bare expression AND a statement body both work: the
+        // model writes both, and `executeJavaScript('const x = 1; x')` throws.
+        `(async () => { return (${expression}) })()`,
+        false,
+      ).catch(async () => t.view.webContents.executeJavaScript(
+        `(async () => { ${expression} })()`, false,
+      ))
+      // The result crosses IPC, so it must be structured-cloneable. A DOM node
+      // or a function is not, and would arrive as an opaque failure.
+      let result = value
+      try { result = JSON.parse(JSON.stringify(value ?? null)) } catch { result = String(value) }
+      return { success: true, result }
+    } catch (err) {
+      // A page-script error is a RESULT the model can act on, not a tool
+      // failure — it usually means the selector was wrong.
+      return { success: false, error: `Script error: ${err?.message || err}` }
+    }
+  })
+
+  ipcMain.handle('browser:get-html', async (_e, p = {}) => {
+    const s = S(p)
+    const t = tabFor(s, p.tabId)
+    if (!t) return { success: false, error: 'No such tab' }
+    try {
+      const html = await t.view.webContents.executeJavaScript(
+        'document.documentElement.outerHTML', false,
+      )
+      return { success: true, html: String(html || '').slice(0, 2_000_000) }
+    } catch (err) {
+      return { success: false, error: err?.message || String(err) }
+    }
+  })
+
+  // A REAL wait: polled IN THE PAGE against the live DOM, so a CSS selector
+  // means what the model thinks it means.
+  ipcMain.handle('browser:wait-for', async (_e, p = {}) => {
+    const s = S(p)
+    const t = tabFor(s, p.tabId)
+    if (!t) return { success: false, error: 'No such tab' }
+    const selector = String(p.selector ?? '')
+    if (!selector.trim()) return { success: false, error: 'selector is required' }
+    const timeout = Math.min(Math.max(1000, Number(p.timeout) || 10000), 30000)
+    const started = Date.now()
+
+    while (Date.now() - started < timeout) {
+      try {
+        // JSON.stringify, not string interpolation: a selector containing a
+        // quote would otherwise terminate the literal and change the script.
+        const found = await t.view.webContents.executeJavaScript(
+          `!!document.querySelector(${JSON.stringify(selector)})`, false,
+        )
+        if (found) return { success: true, found: selector, waitedMs: Date.now() - started }
+      } catch { /* mid-navigation: the context is being replaced, keep waiting */ }
+      await new Promise(r => setTimeout(r, 250))
+    }
+    // "Timed out waiting for #root > *" with no context is unactionable — it
+    // does not say WHICH PAGE was being watched, and the commonest cause is
+    // that the tab was never navigated there in the first place. Report the
+    // url, the title and whether anything rendered at all.
+    let where = { url: safe(() => t.view.webContents.getURL(), ''), title: '', bodyLength: 0 }
+    try {
+      const probe = await t.view.webContents.executeJavaScript(
+        '({ title: document.title, bodyLength: (document.body?.innerText || "").trim().length,' +
+        ' readyState: document.readyState })', false,
+      )
+      where = { ...where, ...probe }
+    } catch { /* the page is not scriptable; the url alone still helps */ }
+
+    const errs = t.console.filter(l => l.level === 'error').slice(-5)
+    return {
+      success: false,
+      url: where.url,
+      title: where.title,
+      ready_state: where.readyState,
+      visible_text_length: where.bodyLength,
+      console_errors: errs,
+      error:
+        `Timed out after ${timeout}ms waiting for "${selector}" on ${where.url || 'an unknown page'}. ` +
+        (where.bodyLength === 0
+          ? 'Nothing has rendered on that page at all' + (errs.length ? ` and it logged ${errs.length} console error(s)` : '') + '. '
+          : `The page has ${where.bodyLength} characters of visible text, so the selector is probably wrong. `) +
+        'Use action "diagnose" for a full report, or "read" to see the actual elements.',
+    }
+  })
+
+  ipcMain.handle('browser:console', (_e, p = {}) => {
+    const s = S(p)
+    const t = tabFor(s, p.tabId)
+    if (!t) return { success: false, error: 'No such tab' }
+    const level = String(p.level || 'all')
+    const wanted = level === 'errors'
+      ? (l) => l.level === 'error'
+      : level === 'warnings'
+        ? (l) => l.level === 'error' || l.level === 'warning'
+        : () => true
+    const logs = t.console.filter(wanted).slice(-Number(p.limit || 100))
+    return {
+      success: true,
+      url: safe(() => t.view.webContents.getURL(), ''),
+      logs,
+      failed_requests: t.failed.slice(-20),
+      errors: t.console.filter(l => l.level === 'error').length,
+      warnings: t.console.filter(l => l.level === 'warning').length,
+    }
+  })
+
+  /**
+   * ONE call that answers "is this page actually working".
+   *
+   * MEASURED: a "verify the UI on localhost" turn spent 27 steps and still
+   * failed. The model has to navigate, guess a selector, wait for it, time out
+   * with no idea what page it is on, then invent `window.__errors` to look for
+   * problems. Every one of those is a round trip, and the round cap kills the
+   * turn before it can answer.
+   *
+   * This is the shape of the question that was actually being asked, so it is
+   * the shape of the tool: navigate if asked, wait for the app to render,
+   * report what is on the page and everything that went wrong.
+   */
+  ipcMain.handle('browser:diagnose', async (_e, p = {}) => {
+    const s = S(p)
+    let t = tabFor(s, p.tabId)
+    if (p.url) {
+      const tabId = t ? (p.tabId || s.activeTabId) : createTab(s, null)
+      await navigate(s, tabId, p.url)
+      t = tabFor(s, tabId)
+    }
+    if (!t) return { success: false, error: 'No tab is open. Pass a url to open one.' }
+    const wc = t.view.webContents
+    const budget = Math.min(Math.max(1000, Number(p.timeout) || 12000), 30000)
+    const started = Date.now()
+
+    // Wait for the app to actually RENDER, not merely for the document to
+    // load. A single-page app serves an empty <div id="root"> instantly; the
+    // interesting question is whether anything mounted into it.
+    const probe = `(() => {
+      const body = document.body
+      const mounts = ['#root', '#app', 'main', '[data-reactroot]']
+      let mounted = false, mountSel = null
+      for (const sel of mounts) {
+        const el = document.querySelector(sel)
+        if (el && el.children.length > 0) { mounted = true; mountSel = sel; break }
+      }
+      const text = (body ? body.innerText || '' : '').trim()
+      return {
+        readyState: document.readyState,
+        title: document.title,
+        mounted,
+        mountSelector: mountSel,
+        textLength: text.length,
+        sample: text.slice(0, 1500),
+        headings: [...document.querySelectorAll('h1,h2')].slice(0, 10).map(h => h.innerText.trim()).filter(Boolean),
+        interactive: document.querySelectorAll('button,a[href],input,select,textarea').length,
+      }
+    })()`
+
+    let snap = null
+    while (Date.now() - started < budget) {
+      try {
+        snap = await wc.executeJavaScript(probe, false)
+        if (snap && (snap.mounted || snap.textLength > 0)) break
+      } catch { /* mid-navigation: the execution context is being replaced */ }
+      await new Promise(r => setTimeout(r, 300))
+    }
+
+    const errors = t.console.filter(l => l.level === 'error')
+    const warnings = t.console.filter(l => l.level === 'warning')
+    const url = safe(() => wc.getURL(), '')
+
+    return {
+      success: true,
+      url,
+      title: snap?.title || safe(() => wc.getTitle(), ''),
+      // The verdict, stated plainly, so the model does not have to infer it
+      // from four separate fields and get it wrong.
+      rendered: !!(snap && (snap.mounted || snap.textLength > 20)),
+      ready_state: snap?.readyState || 'unknown',
+      mounted_into: snap?.mountSelector || null,
+      visible_text_length: snap?.textLength ?? 0,
+      text_sample: snap?.sample || '',
+      headings: snap?.headings || [],
+      interactive_elements: snap?.interactive ?? 0,
+      console_errors: errors.slice(-25),
+      console_warnings: warnings.slice(-15),
+      failed_requests: t.failed.slice(-15),
+      waited_ms: Date.now() - started,
+      note: !snap
+        ? 'The page never became scriptable. It may still be loading, or the dev server may not be serving this URL.'
+        : (!snap.mounted && snap.textLength === 0
+          ? 'The document loaded but nothing rendered into it — for a single-page app that usually means a JavaScript error. Check console_errors.'
+          : undefined),
+    }
+  })
+
+  ipcMain.handle('browser:reload', (_e, p = {}) => {
+    const s = S(p)
+    const t = tabFor(s, p.tabId)
+    if (!t) return { success: false, error: 'No such tab' }
+    // reloadIgnoringCache: the reason a human reloads a page an agent is
+    // driving is almost always that it is showing something stale.
+    t.view.webContents.reloadIgnoringCache()
+    // Refs are page-scoped and every one of them is invalidated by a reload.
+    // Not bumping the epoch here would let a ref from before the reload resolve
+    // to whatever now sits at that index — a click on the wrong element, which
+    // looks exactly like success.
+    s.epoch = (s.epoch || 0) + 1
+    return { success: true, url: safe(() => t.view.webContents.getURL(), ''), refs_invalidated: true }
+  })
 
   ipcMain.handle('browser:history', (_e, p = {}) => {
     const s = S(p)

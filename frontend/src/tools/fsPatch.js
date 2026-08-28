@@ -4,6 +4,8 @@
  * offset line tracking, and atomic execution.
  */
 
+import { fsReadTool, fsWriteTool } from './localFs'
+
 /**
  * Parses a standard unified diff string into structured hunks.
  * @param {string} diffText
@@ -144,15 +146,17 @@ export const fsPatchTool = {
         path: { type: 'string', description: 'Path of the file to patch.' },
         patch: { type: 'string', description: 'Unified diff text containing @@ -start,len +start,len @@ headers and +/- lines.' },
         fuzzy: { type: 'boolean', description: 'Allow fuzzy whitespace matching for minor indentation variations (default true).' },
+        expected_hash: { type: 'string', description: 'Optional hash returned by fs_read. The write reports if the file changed after it was read.' },
       },
       required: ['path', 'patch'],
     },
   },
 
-  async execute(args = {}) {
+  async execute(args = {}, opts = {}) {
     const path = args.path || args.file || args.filepath || args.target_file || args.TargetFile || args.filename
     const patch = args.patch ?? args.diff ?? args.unified_diff ?? args.content ?? args.patches ?? ''
     const fuzzy = args.fuzzy !== false
+    const expectedHash = args.expected_hash ?? args.expectedHash ?? args.hash ?? null
 
     if (!path || !patch) {
       return { success: false, error: 'path and patch string are required (e.g. { path: "src/file.js", patch: "@@ ..." }).' }
@@ -163,33 +167,46 @@ export const fsPatchTool = {
       return { success: false, error: 'No valid unified diff hunks (@@ ... @@) found in patch.' }
     }
 
-    try {
-      const { invoke } = await import('./localFs')
-      const readRes = await invoke('fs_read', { path, maxBytes: 1000000 })
-      const originalText = typeof readRes === 'string' ? readRes : (readRes?.content || '')
-      
-      const patched = applyPatchToText(originalText, hunks, { fuzzy })
-      if (!patched.success) {
-        return { success: false, error: `Patch failed to apply: ${patched.error}` }
-      }
+    // Reuse the canonical local-file tools rather than reaching for an
+    // unexported IPC helper. The old dynamic import always failed, then its
+    // catch block fabricated a successful "validated" patch without writing
+    // any file. A code agent cannot recover from being told that a change it
+    // never made was applied.
+    const read = await fsReadTool.execute({ path, max_bytes: 1000000 }, opts)
+    if (!read?.success) {
+      return { tool: 'fs_patch', success: false, path, hunksCount: hunks.length, error: read?.error || 'Unable to read the target file.' }
+    }
+    if (read.binary) {
+      return { tool: 'fs_patch', success: false, path, hunksCount: hunks.length, error: 'Refusing to apply a text patch to a binary file.' }
+    }
+    if (read.truncated) {
+      return { tool: 'fs_patch', success: false, path, hunksCount: hunks.length, error: 'Target file is larger than the safe patch-read limit. Read and edit it in smaller ranges instead.' }
+    }
 
-      await invoke('fs_write', { path, content: patched.text })
-      return {
-        tool: 'fs_patch',
-        success: true,
-        path,
-        hunksCount: hunks.length,
-        appliedHunks: patched.appliedHunks,
-        message: `Successfully applied ${patched.appliedHunks} diff hunk(s) to ${path}`,
-      }
-    } catch {
-      return {
-        tool: 'fs_patch',
-        path,
-        hunksCount: hunks.length,
-        appliedHunks: hunks.length,
-        message: `Validated ${hunks.length} diff hunk(s) for ${path}`,
-      }
+    const patched = applyPatchToText(read.content || '', hunks, { fuzzy })
+    if (!patched.success) {
+      return { tool: 'fs_patch', success: false, path, hunksCount: hunks.length, appliedHunks: patched.appliedHunks, error: `Patch failed to apply: ${patched.error}` }
+    }
+
+    const write = await fsWriteTool.execute({
+      path,
+      content: patched.text,
+      expected_hash: expectedHash || read.hash || null,
+    }, opts)
+    if (!write?.success) {
+      return { tool: 'fs_patch', success: false, path, hunksCount: hunks.length, appliedHunks: patched.appliedHunks, error: write?.error || 'Unable to write the patched file.' }
+    }
+
+    return {
+      tool: 'fs_patch',
+      success: true,
+      path,
+      hunksCount: hunks.length,
+      appliedHunks: patched.appliedHunks,
+      hash: write.hash,
+      stale: write.stale || false,
+      warning: write.warning,
+      message: `Applied ${patched.appliedHunks} diff hunk(s) to ${path}${write.stale ? ' (the file changed on disk; see warning)' : ''}.`,
     }
   },
 }

@@ -9,12 +9,12 @@ import { Modal } from './Modal'
 import { ModelPicker } from './ModelPicker'
 import { FEATURES, resolveFeatures, FEATURE_DEFAULTS } from '../features'
 import { VOICE_LABELS, DEFAULT_VOICE } from '../video/speech'
-import {
-  getModels, saveProviderApiKey, removeProvider, testProvider,
+import { getModels, saveProviderApiKey, removeProvider, testProvider,
   addProvider, exportConversation, downloadBackup, restoreBackup,
   syncCloudKeys, pushCloudData, pullCloudData, cloudSyncStatus,
   requestTTS, stopTTS
 } from '../api'
+import { pullOllamaModel, cancelOllamaPull, listOllamaModels, startOllamaDaemon, isDesktopWithOllama, SUGGESTED_MODELS } from '../ollama'
 import {
   getElevenLabsApiKey, saveElevenLabsApiKey, testElevenLabsKey,
   fetchElevenLabsVoices, DEFAULT_ELEVENLABS_VOICE
@@ -146,7 +146,9 @@ export function SettingsModal({
   const [storageEstimate, setStorageEstimate] = useState(null)
   const [copiedReport, setCopiedReport] = useState(false)
   const [errorLogs, setErrorLogs] = useState([])
-
+  const [refreshingOllama, setRefreshingOllama] = useState(false)
+  // { [modelName]: { percent: number, status: string, pulling: bool } }
+  const [pullState, setPullState] = useState({})
   // Voice Preview
   const [previewingVoice, setPreviewingVoice] = useState(false)
   const [elevenLabsKey, setElevenLabsKey] = useState('')
@@ -454,7 +456,13 @@ export function SettingsModal({
                           <div className="provider-name-row">
                             <span className="provider-name">{prov.name || id}</span>
                             {isCur && <span className="settings-badge active-tag">In Use</span>}
-                            {prov.available ? (
+                            {prov.is_ollama ? (
+                              prov.available ? (
+                                <span className="settings-badge green">Daemon Running</span>
+                              ) : (
+                                <span className="settings-badge red">No Daemon</span>
+                              )
+                            ) : prov.available ? (
                               <span className="settings-badge green">Ready</span>
                             ) : (
                               <span className="settings-badge gray">Key Needed</span>
@@ -537,6 +545,150 @@ export function SettingsModal({
                               </button>
                             )}
                           </div>
+                        </div>
+                      )}
+
+                      {/* Ollama: Zero-touch daemon + model manager */}
+                      {prov.is_ollama && (
+                        <div className="provider-key-box" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+                          {/* Row 1: status + action buttons */}
+                          <div className="provider-btns-row">
+                            {!prov.available && (
+                              <button
+                                className="settings-btn primary sm"
+                                disabled={refreshingOllama}
+                                onClick={async () => {
+                                  setRefreshingOllama(true)
+                                  try {
+                                    await startOllamaDaemon()
+                                    // Reload model list after daemon starts
+                                    const fresh = await getModels()
+                                    setProviders(fresh)
+                                  } catch {} finally { setRefreshingOllama(false) }
+                                }}
+                              >
+                                <Zap size={11} className={refreshingOllama ? 'spin' : ''} />
+                                {refreshingOllama ? 'Starting…' : 'Start Daemon'}
+                              </button>
+                            )}
+                            <button
+                              className="settings-btn secondary sm"
+                              disabled={refreshingOllama}
+                              onClick={async () => {
+                                setRefreshingOllama(true)
+                                try {
+                                  const { default: db } = await import('../db')
+                                  await db.setSetting('models_ollama', null)
+                                  const fresh = await getModels()
+                                  setProviders(fresh)
+                                } catch {} finally { setRefreshingOllama(false) }
+                              }}
+                            >
+                              <RefreshCw size={11} className={refreshingOllama ? 'spin' : ''} />
+                              {refreshingOllama ? 'Checking…' : 'Refresh'}
+                            </button>
+                            {!isCur && (
+                              <button className="settings-btn ghost sm" onClick={() => onSelectProvider?.(id)}>Select</button>
+                            )}
+                          </div>
+
+                          {/* Row 2: installed models */}
+                          {(prov.models || []).length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                              {(prov.models || []).map(m => (
+                                <span key={m} style={{
+                                  background: 'rgba(34,197,94,0.12)', color: '#4ade80',
+                                  border: '1px solid rgba(34,197,94,0.25)',
+                                  borderRadius: '6px', padding: '2px 8px', fontSize: '11px', fontWeight: 600,
+                                }}>✓ {m}</span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Row 3: suggested models to pull (only if not already installed) */}
+                          {isDesktopWithOllama() && (() => {
+                            const installed = new Set(prov.models || [])
+                            const suggestions = SUGGESTED_MODELS.filter(s => !installed.has(s.name))
+                            if (!suggestions.length) return null
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <p style={{ fontSize: '11px', opacity: 0.6, margin: 0 }}>Available to download:</p>
+                                {suggestions.map(s => {
+                                  const ps = pullState[s.name]
+                                  const isPulling = ps?.pulling
+                                  return (
+                                    <div key={s.name} style={{
+                                      display: 'flex', alignItems: 'center', gap: '8px',
+                                      background: 'rgba(255,255,255,0.04)', borderRadius: '8px',
+                                      padding: '7px 10px',
+                                    }}>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 600 }}>{s.label}</div>
+                                        <div style={{ fontSize: '10px', opacity: 0.55 }}>{s.size} · {s.note}</div>
+                                        {isPulling && (
+                                          <div style={{ marginTop: '4px' }}>
+                                            <div style={{
+                                              height: '3px', borderRadius: '2px',
+                                              background: 'rgba(255,255,255,0.1)', overflow: 'hidden',
+                                            }}>
+                                              <div style={{
+                                                height: '100%', borderRadius: '2px',
+                                                background: 'linear-gradient(90deg,#8b5cf6,#3b82f6)',
+                                                width: `${ps.percent ?? 5}%`,
+                                                transition: 'width 0.3s ease',
+                                              }} />
+                                            </div>
+                                            <div style={{ fontSize: '9px', opacity: 0.5, marginTop: '2px' }}>
+                                              {ps.status || 'Downloading…'} {ps.percent != null ? `${ps.percent}%` : ''}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                      {isPulling ? (
+                                        <button
+                                          className="settings-btn danger-ghost sm"
+                                          style={{ whiteSpace: 'nowrap' }}
+                                          onClick={() => {
+                                            cancelOllamaPull(s.name)
+                                            setPullState(p => { const n = {...p}; delete n[s.name]; return n })
+                                          }}
+                                        >Cancel</button>
+                                      ) : (
+                                        <button
+                                          className="settings-btn primary sm"
+                                          style={{ whiteSpace: 'nowrap' }}
+                                          disabled={!prov.available}
+                                          title={prov.available ? `Download ${s.name}` : 'Start daemon first'}
+                                          onClick={async () => {
+                                            if (!prov.available) {
+                                              // auto-start daemon first then pull
+                                              setRefreshingOllama(true)
+                                              await startOllamaDaemon().catch(() => {})
+                                              setRefreshingOllama(false)
+                                            }
+                                            setPullState(p => ({ ...p, [s.name]: { pulling: true, percent: 0, status: 'Starting…' } }))
+                                            pullOllamaModel(s.name, ({ percent, status }) => {
+                                              setPullState(p => ({ ...p, [s.name]: { pulling: true, percent, status } }))
+                                            }).then(async () => {
+                                              setPullState(p => { const n = {...p}; delete n[s.name]; return n })
+                                              const fresh = await getModels()
+                                              setProviders(fresh)
+                                            }).catch(() => {
+                                              setPullState(p => { const n = {...p}; delete n[s.name]; return n })
+                                            })
+                                          }}
+                                        >
+                                          <Download size={11} /> Download
+                                        </button>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })()}
+
                         </div>
                       )}
 

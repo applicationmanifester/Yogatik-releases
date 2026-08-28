@@ -2,6 +2,7 @@
 
 const { app, Tray, Menu, nativeImage, shell } = require('electron')
 const path = require('path')
+const { safeSend, alive } = require('./safeWindow.cjs')
 
 let tray = null
 
@@ -16,16 +17,21 @@ function createTray(getWindow, { onToggleCompanion } = {}) {
   tray.setToolTip('Yogatik Desktop AI')
 
   const sendMenuAction = (action) => {
-    const win = getWindow()
-    if (win && !win.isDestroyed()) win.webContents.send('menu', action)
+    try {
+      const win = getWindow()
+      if (safeSend(win, 'menu', action)) {
+      }
+    } catch {}
   }
 
   const show = () => {
-    const win = getWindow()
-    if (!win) return
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
+    try {
+      const win = getWindow()
+      if (!win || win.isDestroyed()) return
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    } catch {}
   }
 
   const menu = Menu.buildFromTemplate([
@@ -43,13 +49,15 @@ function createTray(getWindow, { onToggleCompanion } = {}) {
     {
       label: 'Always on Top',
       type: 'checkbox',
-      checked: getWindow() ? getWindow().isAlwaysOnTop() : false,
+      checked: (getWindow() && !getWindow().isDestroyed()) ? getWindow().isAlwaysOnTop() : false,
       click: (item) => {
-        const win = getWindow()
-        if (win && !win.isDestroyed()) {
-          win.setAlwaysOnTop(item.checked)
-          sendMenuAction({ type: 'always-on-top-changed', value: item.checked })
-        }
+        try {
+          const win = getWindow()
+          if (win && !win.isDestroyed()) {
+            win.setAlwaysOnTop(item.checked)
+            sendMenuAction({ type: 'always-on-top-changed', value: item.checked })
+          }
+        } catch {}
       },
     },
     { label: 'Settings', click: () => { show(); sendMenuAction('open-settings') } },

@@ -3,7 +3,7 @@ import { AlarmClock, X, Trash2 } from 'lucide-react'
 import { subscribeTimers, getActiveTimers, cancelTimer } from '../tools/timer'
 
 export function ActiveTimerIndicator({ onShowToast }) {
-  const [timers, setTimers] = useState([])
+  const [timers, setTimers] = useState(() => getActiveTimers() || [])
   const [isOpen, setIsOpen] = useState(false)
   const popoverRef = useRef(null)
 
@@ -14,30 +14,21 @@ export function ActiveTimerIndicator({ onShowToast }) {
     })
 
     let interval = null
-    // Only run the 1-second ticking interval when active timers actually exist!
-    const tick = () => {
+    const sync = () => {
       const active = getActiveTimers() || []
       setTimers(active)
       if (active.length === 0 && interval) {
         clearInterval(interval)
         interval = null
+      } else if (active.length > 0 && !interval) {
+        interval = setInterval(() => {
+          setTimers(getActiveTimers() || [])
+        }, 1000)
       }
     }
 
-    if ((getActiveTimers() || []).length > 0) {
-      interval = setInterval(tick, 1000)
-    }
-
-    // Re-check interval when list changes
-    const checkInterval = setInterval(() => {
-      const active = getActiveTimers() || []
-      if (active.length > 0 && !interval) {
-        interval = setInterval(tick, 1000)
-      } else if (active.length === 0 && interval) {
-        clearInterval(interval)
-        interval = null
-      }
-    }, 2000)
+    sync()
+    const checkInterval = setInterval(sync, 2000)
 
     return () => {
       unsub()

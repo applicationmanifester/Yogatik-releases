@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Files, GitBranch, Search, PanelLeftClose, Sparkles } from 'lucide-react'
+import { Files, GitBranch, Search, PanelLeftClose, Sparkles, Lock } from 'lucide-react'
 import ExplorerPanel from './ExplorerPanel'
 import ChangesPanel from './ChangesPanel'
 import CodeEditorPane from './CodeEditorPane'
@@ -8,6 +8,7 @@ import { useWorkspaceTree } from '../workspace/useWorkspaceTree'
 import { loadCodeMirror } from '../workspace/codemirror'
 import { addRoot, isDesktop } from '../tools/localFs'
 import { nodeId, normPath } from '../workspace/treeStore'
+import { isLocked } from '../entitlement'
 
 /** Absolute path → root-relative, so tree ids and editor tabs agree on one key. */
 function toRelative(abs, rootPath) {
@@ -275,6 +276,31 @@ export function WorkspaceDock(props) {
             <p>Desktop only</p>
             <span>The file explorer reads real files on this computer, which a browser tab cannot do. Open Yogatik&apos;s desktop app to use it.</span>
             <button className="ws-primary-btn" onClick={props.onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+  // Locked: the dock is the one place the paywall has to be honest rather than
+  // silent. Every panel behind it (explorer, search, source control, editor)
+  // reads the disk through gated IPC, so rendering the chrome with empty
+  // contents would look like the app being broken — which is the failure the
+  // "desktop only" fallbacks above exist to avoid, in its other form.
+  if (isLocked()) {
+    if (!props.open) return null
+    return (
+      <div className="ws-dock" style={{ width: 320 }}>
+        <div className="ws-body">
+          <div className="ws-locked">
+            <Lock size={24} />
+            <p>File access is locked</p>
+            <span>
+              Your trial has ended. Chat, web search, the Python sandbox, image and video
+              generation and everything else keep working — nothing has been deleted, and your
+              granted folders are still here when you come back.
+            </span>
+            <button className="ws-primary-btn" onClick={props.onUpgrade}>View plans</button>
+            <button className="ws-ghost-btn sm" onClick={props.onClose}>Close</button>
           </div>
         </div>
       </div>

@@ -597,12 +597,29 @@ describe('runtime platform awareness', () => {
   // so on the desktop build it confidently refused real work: "I cannot run a
   // dev server — I have no shell/terminal access, no Node.js runtime." It was
   // believing the system prompt, not misbehaving.
-  afterEach(() => { delete window.__YOGATIK_ELECTRON__ })
+  afterEach(async () => {
+    delete window.__YOGATIK_ELECTRON__
+    delete window.__YOGATIK_ENTITLEMENT__
+    const ent = await import('./entitlement')
+    await ent.loadEntitlement()   // reset the module-level snapshot between cases
+  })
 
   const systemOf = () => streamChat.mock.calls[0][0].messages[0].content
 
-  it('tells the model it has REAL machine access in the desktop app', async () => {
+  /** A desktop build whose licence is current. Without this the prompt is the
+   *  LOCKED one, because an unlicensed desktop app is exactly what a fresh
+   *  install is — the default has to be locked, so the test must opt in. */
+  const asLicensedDesktop = async () => {
     window.__YOGATIK_ELECTRON__ = true
+    window.__YOGATIK_ENTITLEMENT__ = {
+      get: async () => ({ success: true, state: 'pro', edition: 'store', endsAt: 0, daysLeft: 0 }),
+    }
+    const ent = await import('./entitlement')
+    await ent.loadEntitlement()
+  }
+
+  it('tells the model it has REAL machine access in the desktop app', async () => {
+    await asLicensedDesktop()
     scriptRounds([{ tokens: ['ok'] }])
     await runAgent({ ...base, onDone: vi.fn() })
 
@@ -623,10 +640,56 @@ describe('runtime platform awareness', () => {
   })
 
   it('never claims browser-native tools on desktop', async () => {
-    window.__YOGATIK_ELECTRON__ = true
+    await asLicensedDesktop()
     scriptRounds([{ tokens: ['ok'] }])
     await runAgent({ ...base, onDone: vi.fn() })
     expect(systemOf()).not.toMatch(/browser-native tools/i)
+  })
+
+  // THE THIRD STATE. A locked desktop build still HOLDS every desktop tool —
+  // the gate refuses at the IPC boundary rather than removing the tool. Given
+  // the licensed wording the model promises to edit the file and then emits a
+  // refusal; given the WEB wording it says the desktop app is needed, which the
+  // user is already running. Both are the same bug in different directions.
+  it('tells the model the tools are LOCKED, not absent, when the licence lapsed', async () => {
+    window.__YOGATIK_ELECTRON__ = true
+    window.__YOGATIK_ENTITLEMENT__ = {
+      get: async () => ({ success: true, state: 'locked', edition: 'store' }),
+    }
+    const ent = await import('./entitlement')
+    await ent.loadEntitlement()
+
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, onDone: vi.fn() })
+
+    const sys = systemOf()
+    expect(sys).toMatch(/locked/i)
+    expect(sys).toMatch(/trial has ENDED/)
+    expect(sys).toMatch(/do not retry/i)
+    // It must NOT claim the machine is unavailable, and must NOT tell someone
+    // running the desktop app to go and get the desktop app.
+    expect(sys).not.toMatch(/never say you have no shell/i)
+    expect(sys).not.toMatch(/requires the Yogatik desktop app/i)
+  })
+
+  it('asks a first-run user to sign in rather than announcing an expiry', async () => {
+    // Anonymous and lapsed are the same lock and completely different
+    // sentences. "Your trial has ended" to someone who just installed the app
+    // is both false and the worst possible first impression.
+    window.__YOGATIK_ELECTRON__ = true
+    window.__YOGATIK_ENTITLEMENT__ = {
+      get: async () => ({ success: true, state: 'anonymous', edition: 'store' }),
+    }
+    const ent = await import('./entitlement')
+    await ent.loadEntitlement()
+
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, onDone: vi.fn() })
+
+    const sys = systemOf()
+    expect(sys).toMatch(/NOT SIGNED IN/)
+    expect(sys).toMatch(/30-day trial/)
+    expect(sys).not.toMatch(/trial has ENDED/)
   })
 })
 

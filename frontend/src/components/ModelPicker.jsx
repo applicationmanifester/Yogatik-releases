@@ -1,6 +1,18 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { ChevronDown, Search, Check, Zap, X, Plus } from 'lucide-react'
 
+// Provider catalogs persisted by older desktop builds may contain model objects
+// ({ id, name }) rather than the string IDs used by the picker.  Normalize at
+// the component boundary so a stale local cache cannot crash the renderer.
+function modelId(model) {
+  if (typeof model === 'string') return model
+  if (model && typeof model === 'object') {
+    if (typeof model.id === 'string') return model.id
+    if (typeof model.name === 'string') return model.name
+  }
+  return ''
+}
+
 /**
  * Model selector.
  *
@@ -17,11 +29,17 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
   const inputRef = useRef(null)
   const listRef = useRef(null)
 
+  const modelIds = useMemo(
+    () => [...new Set((Array.isArray(models) ? models : []).map(modelId).filter(Boolean))],
+    [models],
+  )
+  const selectedValue = modelId(value)
+
   // Fastest measured first, then everything else alphabetically.
   const ordered = useMemo(() => {
     const withTime = []
     const rest = []
-    for (const m of models) {
+    for (const m of modelIds) {
       const st = measured[m]
       if (st?.success) withTime.push({ m, ms: st.latencyMs ?? 9e9 })
       else rest.push(m)
@@ -29,7 +47,7 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
     withTime.sort((a, b) => a.ms - b.ms)
     rest.sort((a, b) => a.localeCompare(b))
     return [...withTime.map(x => x.m), ...rest]
-  }, [models, measured])
+  }, [modelIds, measured])
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -40,7 +58,7 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
   useEffect(() => {
     if (!open) return
     setQ('')
-    setSel(Math.max(0, ordered.indexOf(value)))
+    setSel(Math.max(0, ordered.indexOf(selectedValue)))
     const t = setTimeout(() => inputRef.current?.focus(), 0)
     return () => clearTimeout(t)
   }, [open])
@@ -69,8 +87,8 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
     }
   }
 
-  const label = value || 'Auto (provider default)'
-  const current = measured[value]
+  const label = selectedValue || 'Auto (provider default)'
+  const current = measured[selectedValue]
   const cleanQ = q.trim()
 
   return (
@@ -101,7 +119,7 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
               <span className="model-name">Auto (provider default)</span>
             </button>
 
-            {cleanQ && !models.includes(cleanQ) && (
+            {cleanQ && !modelIds.includes(cleanQ) && (
               <button className="model-option custom-add" onClick={() => pick(cleanQ)}
                 style={{ background: 'rgba(59, 130, 246, 0.12)', color: '#60a5fa', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                 <Plus size={12} className="model-tick" />
@@ -113,10 +131,10 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
               const st = measured[m]
               return (
                 <button key={m} data-sel={i === sel}
-                  className={`model-option ${m === value ? 'active' : ''} ${i === sel ? 'hover' : ''}`}
+                  className={`model-option ${m === selectedValue ? 'active' : ''} ${i === sel ? 'hover' : ''}`}
                   onMouseEnter={() => setSel(i)} onClick={() => pick(m)}
-                  role="option" aria-selected={m === value}>
-                  {m === value ? <Check size={11} className="model-tick" /> : <span className="model-tick" />}
+                  role="option" aria-selected={m === selectedValue}>
+                  {m === selectedValue ? <Check size={11} className="model-tick" /> : <span className="model-tick" />}
                   <span className="model-name" title={m}>{m}</span>
                   {st?.success && (
                     <span className={`model-ms ${st.latencyMs < 2000 ? 'fast' : st.latencyMs > 15000 ? 'slow' : ''}`}>

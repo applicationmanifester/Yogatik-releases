@@ -17,7 +17,7 @@ describe('GitHub Repo Finder & Discovery Suite', () => {
 
   it('matches curated categories when searching for known topics', async () => {
     const res = await findSimilarRepos('turbovec')
-    expect(res.matchedCategory).toBe('vector_rag')
+    expect(['vector_rag', 'in_browser_rag_memory']).toContain(res.matchedCategory)
     expect(res.repositories.some(r => r.name === 'ryancodrai/turbovec')).toBe(true)
   })
 

@@ -12,11 +12,14 @@ const FS_COMMANDS = new Set([
   // is exactly how fs_find_files shipped with a tool, five aliases and no way
   // to reach it. Every new fs_* handler must be added on this line.
   'fs_multi_edit', 'fs_stat', 'fs_copy',
-  'roots_add', 'roots_list', 'roots_remove', 'roots_set_primary', 'roots_rebind',
+  'roots_add', 'roots_list', 'roots_remove', 'roots_set_primary', 'roots_rebind', 'roots_unbind',
   'journal_list', 'journal_revert', 'journal_diff',
   'proc_start', 'proc_output', 'proc_stop', 'proc_list',
   'hooks_run', 'hooks_list', 'hooks_trust', 'hooks_trusted',
   'git_run', 'git_status', 'git_log', 'git_diff', 'git_write', 'git_show_untracked',
+  // A handler not named here is rejected as "Unknown command" — that is how
+  // fs_find_files shipped dead. Every new git_* handler goes in this list.
+  'git_file_history', 'git_show_file',
   'watch_start', 'watch_stop', 'watch_changes',
   'mcp_stdio_start', 'mcp_stdio_call', 'mcp_stdio_stop', 'mcp_stdio_list',
 ])
@@ -72,9 +75,49 @@ contextBridge.exposeInMainWorld('__YOGATIK_SEARCH__', {
   search: (query, options) => ipcRenderer.invoke('local-search', query, options),
 })
 
-// Terminal execution bridge for local shell commands
+// Terminal execution bridge for local shell commands.
+//
+// ONE TIMELINE PER CHAT, written by the agent AND the human. `exec` is the
+// agent's path (terminal_run); `run` is the drawer's. Both produce blocks on
+// the same stream, which is what makes the model's shell watchable.
 contextBridge.exposeInMainWorld('__YOGATIK_TERMINAL__', {
   exec: (command, options) => ipcRenderer.invoke('terminal:exec', { command, ...options }),
+
+  session: (ctx) => ipcRenderer.invoke('terminal:session', { ctx }),
+  run: (p) => ipcRenderer.invoke('terminal:run', p || {}),
+  stop: (id) => ipcRenderer.invoke('terminal:stop', { id }),
+  clear: (ctx) => ipcRenderer.invoke('terminal:clear', { ctx }),
+
+  // Tier 2 — only meaningful when node-pty is installed. `session()` reports
+  // ptyAvailable so the UI can say which tier it is on rather than offering an
+  // interactive prompt that silently swallows every keystroke.
+  attach: (p) => ipcRenderer.invoke('terminal:attach', p || {}),
+  ptyWrite: (p) => ipcRenderer.invoke('terminal:pty-write', p || {}),
+  ptyResize: (p) => ipcRenderer.invoke('terminal:pty-resize', p || {}),
+  ptyKill: (p) => ipcRenderer.invoke('terminal:pty-kill', p || {}),
+
+  /** A block started, or finished. Carries the whole serialized block. */
+  onBlock: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('terminal:block', handler)
+    return () => ipcRenderer.removeListener('terminal:block', handler)
+  },
+  /** Coalesced output for a running block: { chatId, blockId, chunk }. */
+  onOutput: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('terminal:output', handler)
+    return () => ipcRenderer.removeListener('terminal:output', handler)
+  },
+  onPtyData: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('terminal:pty-data', handler)
+    return () => ipcRenderer.removeListener('terminal:pty-data', handler)
+  },
+  onPtyExit: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('terminal:pty-exit', handler)
+    return () => ipcRenderer.removeListener('terminal:pty-exit', handler)
+  },
 })
 
 // Native-menu actions (New Chat / Settings / Grant Folder / update-ready / palette / arena) → renderer.
@@ -176,6 +219,22 @@ contextBridge.exposeInMainWorld('__YOGATIK_BROWSER__', {
   selectTab: (p) => ipcRenderer.invoke('browser:select-tab', p || {}),
   closeTab: (p) => ipcRenderer.invoke('browser:close-tab', p || {}),
   history: (p) => ipcRenderer.invoke('browser:history', p || {}),
+  reload: (p) => ipcRenderer.invoke('browser:reload', p || {}),
+  hover: (p) => ipcRenderer.invoke('browser:hover', p || {}),
+  pdf: (p) => ipcRenderer.invoke('browser:pdf', p || {}),
+  cookies: (p) => ipcRenderer.invoke('browser:cookies', p || {}),
+  storage: (p) => ipcRenderer.invoke('browser:storage', p || {}),
+  // These three were advertised by the tool schema and had NO bridge method,
+  // so `evaluate` and `extract_text` answered "not supported by this browser
+  // bridge version" and `wait_for` silently degraded to matching a CSS
+  // selector against the accessibility tree.
+  evaluate: (p) => ipcRenderer.invoke('browser:evaluate', p || {}),
+  getPageHtml: (p) => ipcRenderer.invoke('browser:get-html', p || {}),
+  waitFor: (p) => ipcRenderer.invoke('browser:wait-for', p || {}),
+  // The page's OWN console + a one-call "is this page working" report. The
+  // model was inventing `window.__errors` because neither existed.
+  consoleLogs: (p) => ipcRenderer.invoke('browser:console', p || {}),
+  diagnose: (p) => ipcRenderer.invoke('browser:diagnose', p || {}),
   setMode: (p) => ipcRenderer.invoke('browser:set-mode', p || {}),
   setBounds: (p) => ipcRenderer.invoke('browser:set-bounds', p || {}),
   setDetached: (p) => ipcRenderer.invoke('browser:set-detached', p || {}),
@@ -233,10 +292,46 @@ contextBridge.exposeInMainWorld('__YOGATIK_MCP_STDIO__', {
   stop: (id) => ipcRenderer.invoke('mcp-stdio:stop', id),
 })
 
+// Licence / entitlement. These four are FREE in the capability matrix on
+// purpose: buying is not a paid feature, and a locked app that cannot reach its
+// own upgrade screen is a dead end.
+contextBridge.exposeInMainWorld('__YOGATIK_ENTITLEMENT__', {
+  get: () => ipcRenderer.invoke('entitlement:get'),
+  refresh: (opts) => ipcRenderer.invoke('entitlement:refresh', opts || {}),
+  checkout: (url) => ipcRenderer.invoke('entitlement:checkout', { url }),
+  signOut: () => ipcRenderer.invoke('entitlement:sign-out'),
+  onChange: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('entitlement-changed', handler)
+    return () => ipcRenderer.removeListener('entitlement-changed', handler)
+  },
+})
+
 // Real OS path for a File dropped onto the window (web gives only opaque blobs).
 contextBridge.exposeInMainWorld('__YOGATIK_DND__', {
   getPathForFile: (file) => {
     try { return webUtils.getPathForFile(file) } catch { return null }
+  },
+})
+
+// Zero-touch Ollama daemon manager.
+// The main process handles spawn / pull / progress — the renderer just calls these.
+contextBridge.exposeInMainWorld('__YOGATIK_OLLAMA__', {
+  /** { installed, running, models: [{name,size,modified}], bin } */
+  status: () => ipcRenderer.invoke('ollama:status'),
+  /** Start the daemon if not running. Returns { ok, already, error? } */
+  start: () => ipcRenderer.invoke('ollama:start'),
+  /** [{name,size,modified}] — models already pulled to disk */
+  list: () => ipcRenderer.invoke('ollama:list'),
+  /** Pull a model. Progress comes via onPullProgress. Returns { ok } */
+  pull: (model) => ipcRenderer.invoke('ollama:pull', { model }),
+  /** Cancel an in-progress pull */
+  cancel: (model) => ipcRenderer.invoke('ollama:cancel', { model }),
+  /** Subscribe to pull progress: { model, status, percent } */
+  onPullProgress: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch {} }
+    ipcRenderer.on('ollama:pull-progress', handler)
+    return () => ipcRenderer.removeListener('ollama:pull-progress', handler)
   },
 })
 
