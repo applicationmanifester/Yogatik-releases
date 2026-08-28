@@ -79,7 +79,7 @@ const CHANNELS = {
   fs_stat: P(CAP.FILES), fs_copy: P(CAP.FILES),
   // Granting a working folder is the door itself.
   roots_add: P(CAP.FILES), roots_list: P(CAP.FILES), roots_remove: P(CAP.FILES),
-  roots_set_primary: P(CAP.FILES), roots_rebind: P(CAP.FILES),
+  roots_set_primary: P(CAP.FILES), roots_rebind: P(CAP.FILES), roots_unbind: P(CAP.FILES),
   // The journal holds snapshotted file BYTES — reading it is reading files.
   journal_list: P(CAP.FILES), journal_revert: P(CAP.FILES), journal_diff: P(CAP.FILES),
   // git reads and writes the repository on disk.
@@ -130,6 +130,7 @@ const CHANNELS = {
   'browser:reload': P(CAP.BROWSER), 'browser:evaluate': P(CAP.BROWSER),
   'browser:get-html': P(CAP.BROWSER), 'browser:wait-for': P(CAP.BROWSER),
   'browser:console': P(CAP.BROWSER), 'browser:diagnose': P(CAP.BROWSER),
+  'browser:assert': P(CAP.BROWSER), 'browser:audit-a11y': P(CAP.BROWSER),
   'browser:set-mode': P(CAP.BROWSER), 'browser:set-bounds': P(CAP.BROWSER),
   'browser:set-detached': P(CAP.BROWSER), 'browser:close': P(CAP.BROWSER),
 
