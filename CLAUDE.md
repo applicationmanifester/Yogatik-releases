@@ -1,5 +1,42 @@
 # Yogatik — Project Knowledge
 
+## PAYMENTS COULD NOT WORK IN A SHIPPED BUILD — four blockers (2026-08-30)
+Any ONE of these alone meant zero revenue. The server half (webhooks, signatures,
+Firestore rules, the seconds-vs-ms handling) was correct; every failure was in the client
+half and in the wiring between them.
+- `entitlement.cjs` `licenseApiBase: process.env.YOGATIK_LICENSE_API || ''` — and NOTHING
+  sets that variable: not package.json, not electron-builder, not CI. So in every shipped
+  .exe the base was empty and `refresh()` returned at its own guard. Defaults to the
+  deployed function now (`https://asia-south1-yogatik.cloudfunctions.net`); the env var
+  still overrides for the emulator.
+- `idToken` WAS NEVER PRODUCED. App.jsx passed `userData?.idToken`, but firebaseAuth's
+  `profileOf()` returns uid/displayName/email/photoURL and never carried one, so
+  `store.idToken` stayed null and short-circuited the same line. New `getIdToken()` fetches
+  a FRESH token (they expire in an hour, so a copy taken at sign-in is stale by the time a
+  licence is checked), and `refreshEntitlement` resolves it itself so a new call site
+  cannot reintroduce the drift. Same reader/writer class as is_dir/isDir — on the revenue path.
+- `/checkout` DID NOT EXIST. UpgradeModal has always opened
+  `yogatik.web.app/checkout?plan=…`, there was no checkout.html and no rewrite, so the `**`
+  catch-all served index.html: the button opened the chat app in a browser tab while the
+  desktop app polled for a webhook that could never fire. New `public/checkout.html` +
+  rewrite ABOVE the catch-all.
+- Razorpay subscriptions were never created server-side, so `notes.uid` — the ONLY link
+  between a payment and an account, which `razorpayWebhook` reads — was never attached. A
+  hosted payment link carries none, so the webhook would fire and reply "no uid". New
+  `functions/createSubscription` (Basic auth with the key secret, `notes:{uid}` from a
+  VERIFIED ID token). The token reaches the page in the URL FRAGMENT, never the query
+  string, so it stays out of server logs and Referer headers.
+- Failure is LOUD now: a licence response that will not verify logs and returns
+  `licenseError` (the likeliest cause is the shipped public key not matching the Cloud
+  Function's private key), and `entitlement:refresh` returns `needsSignIn` rather than
+  reporting a successful no-op. "I paid and nothing happened" must never be silent.
+- STILL REQUIRED BY HAND: generate the Ed25519 keypair, put the PUBLIC half in
+  entitlementCore.cjs and set LICENSE_PRIVATE_KEY; set RAZORPAY_KEY_ID/KEY_SECRET/
+  PLAN_MONTHLY/PLAN_YEARLY and the webhook secrets; copy
+  `public/checkout-config.example.json` to `checkout-config.json` with real Paddle ids.
+  Absent config reports "not configured on this deployment yet" and charges nothing — an
+  unconfigured checkout and a declined card must never look the same.
+
 ## A THIRD context-limits table, and the dead list is down to 7 (2026-08-30)
 - `components/ContextMeter.jsx` carried its OWN table of model context limits, independent
   of `compaction.js:getModelContextLimits`, which is the one agent.js actually budgets and
