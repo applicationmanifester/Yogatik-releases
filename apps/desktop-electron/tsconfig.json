@@ -5,6 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
+    "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
     "isolatedModules": true,
@@ -19,5 +20,5 @@
     }
   },
   "include": ["src", "vite.config.ts", "vite.renderer.config.ts"],
-  "references": [{ "path": "./tsconfig.main.json" }, { "path": "./tsconfig.renderer.json" }]
+  "exclude": ["node_modules", "dist"]
 }

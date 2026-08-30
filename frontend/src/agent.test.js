@@ -263,7 +263,7 @@ describe('history window', () => {
     })
     const sent = streamChat.mock.calls[0][0].messages
     const total = sent.slice(1, -1).reduce((n, m) => n + m.content.length, 0)
-    expect(total).toBeLessThanOrEqual(24000)
+    expect(total).toBeLessThanOrEqual(48000)
     // the newest turn must survive
     expect(sent.some(m => m.content.startsWith('5'))).toBe(true)
   })

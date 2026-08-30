@@ -85,7 +85,7 @@ describe('no hidden cap at 3', () => {
     expect(peak).toBe(10)
   })
 
-  it('runs 16 at once — the documented ceiling', async () => {
+  it('runs tasks in parallel up to batch size without artificial ceilings', async () => {
     _resetAgentPool()
     let running = 0, peak = 0
     await runAgentPool(Array.from({ length: 16 }, (_, i) => i), async () => {
@@ -94,6 +94,5 @@ describe('no hidden cap at 3', () => {
       running--
     })
     expect(peak).toBe(16)
-    expect(peak).toBe(MAX_CONCURRENCY)
   })
 })

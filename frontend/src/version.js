@@ -3,16 +3,61 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '3.21.0'
+export const APP_VERSION = '3.22.0'
 export const BUILD_DATE = 'August 2026'
-export const APP_CODENAME = 'Yogatik Ultra — Zero-Latency Streaming, Isolated Workspace Bindings & Enterprise Academic Engine'
+export const APP_CODENAME = 'Yogatik Ultra — Human-In-The-Loop Question Engine, Inline Video Streaming & Execution Control'
 
 export const APP_RELEASES = [
+  {
+    version: '3.22.0',
+    title: 'Yogatik Ultra: Interactive Human-In-The-Loop Execution, Native Video Players & Command Controls',
+    date: 'August 29, 2026',
+    isLatest: true,
+    highlights: [
+      'Interactive Human-In-The-Loop Execution: Added ask_user tool with interactive decision cards and option selection mid-turn',
+      'Continuous Input & Steer Mode: Send messages seamlessly while the AI is busy; toggle between FIFO Queue and Immediate Steer execution',
+      'Terminal Command Auto Execution Settings: Configure terminal approval policies (Always Proceed, Ask for Confirmation, Never Allow) in Settings',
+      'Native Embedded Video & YouTube Player: Responsive in-chat YouTube video player with resilient ID parsing and HTML5 direct video playback',
+      'Document Deduplication & Multi-Tier Translation: Zero-storage SHA-256 hash deduplication and multi-tier fallback translation pipeline',
+    ],
+    sections: [
+      {
+        category: '⚡ Execution & Human-In-The-Loop',
+        items: [
+          {
+            title: 'Interactive Question Prompt',
+            description: 'AI pauses mid-execution when user preferences or decisions are needed, displaying interactive choices and resuming continuously upon selection.',
+          },
+          {
+            title: 'Terminal Execution Approval Mode',
+            description: 'Customizable execution policies for terminal commands: Always Proceed (autonomous), Ask for Confirmation, or Never Allow.',
+          },
+          {
+            title: 'Follow-up Delivery Config',
+            description: 'Switch between FIFO queued message delivery or immediate steering while the agent is running.',
+          },
+        ],
+      },
+      {
+        category: '🎬 Multimedia & Performance',
+        items: [
+          {
+            title: 'Inline YouTube & HTML5 Video Player',
+            description: 'Embedded responsive video players for YouTube URLs, direct MP4/WebM files, and AI-generated animations.',
+          },
+          {
+            title: 'Content Hash Deduplication',
+            description: 'Instant SHA-256 hash checking prevents redundant file indexing and cuts IndexedDB storage waste.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '3.21.0',
     title: 'Yogatik Ultra: Isolated Workspace Roots, Zero-Latency Streaming & Academic Peer Review Swarm',
     date: 'August 28, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Strict Per-Chat Root Isolation: Added automatic unbinding on chat deletion and eliminated global default folder pollution',
       'Ultra-Low Latency Pipeline: Speculative Pyodide WASM pre-warming and parallel multi-agent swarm evaluation cut execution delays by >50%',

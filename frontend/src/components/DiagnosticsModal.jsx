@@ -34,7 +34,7 @@ export function DiagnosticsModal({ onClose }) {
   useEffect(() => {
     try {
       db.traces.orderBy('createdAt').reverse().limit(50).toArray()
-        .then(t => setTraces(t || []))
+        .then(t => setTraces((t || []).filter(item => item.status === 'error' || item.error)))
         .catch(() => {})
     } catch {}
   }, [activeTab])
@@ -121,7 +121,7 @@ export function DiagnosticsModal({ onClose }) {
               fontWeight: 600, fontSize: 12.5, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6
             }}
           >
-            <Activity size={14} /> Live Agent Tool Traces ({traces.length})
+            <Activity size={14} /> Failed Tool Traces ({traces.length})
           </button>
         </div>
 
@@ -132,7 +132,7 @@ export function DiagnosticsModal({ onClose }) {
             {activeTab === 'diagnostics' ? (
               <span>Total Errors: <strong style={{ color: logs.length ? '#f59e0b' : '#10b981' }}>{logs.length}</strong></span>
             ) : (
-              <span>Logged Tool Traces: <strong style={{ color: '#10b981' }}>{traces.length}</strong></span>
+              <span>Logged Tool Failures: <strong style={{ color: traces.length ? '#ef4444' : '#10b981' }}>{traces.length}</strong></span>
             )}
           </div>
 
@@ -285,11 +285,11 @@ export function DiagnosticsModal({ onClose }) {
           <div className="palette-list" style={{ padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {traces.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted, #71717a)' }}>
-                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--accent, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                  <Activity size={22} />
+                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                  <Check size={22} />
                 </div>
-                <h4 style={{ margin: '0 0 6px', color: 'var(--text-primary, #f4f4f5)', fontSize: 14 }}>No Agent Tool Traces Logged</h4>
-                <p style={{ margin: 0, fontSize: 12 }}>Tool calls executed by the agent will be captured here in real-time for step replay and inspection.</p>
+                <h4 style={{ margin: '0 0 6px', color: 'var(--text-primary, #f4f4f5)', fontSize: 14 }}>No Tool Failures Logged</h4>
+                <p style={{ margin: 0, fontSize: 12 }}>Only failed tool executions are captured here for diagnostics and troubleshooting.</p>
               </div>
             ) : (
               traces.map((tr, idx) => {

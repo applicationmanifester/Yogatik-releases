@@ -344,6 +344,20 @@ async function duckDuckGoSearch(query, count) {
   }
 }
 
+const SEARCH_CACHE = new Map()
+const SEARCH_CACHE_TTL = 5 * 60_000 // 5 minutes
+
+function withFastTimeout(promise, ms = 2200) {
+  let timer
+  const timeoutPromise = new Promise(resolve => {
+    timer = setTimeout(() => resolve([]), ms)
+  })
+  return Promise.race([
+    promise.then(res => { clearTimeout(timer); return res }),
+    timeoutPromise
+  ]).catch(() => [])
+}
+
 export const webSearchTool = {
   schema: {
     description: 'Search the live web across 8 independent free indexes (DuckDuckGo, Google News, Wikipedia, Marginalia, ArXiv, Crossref, Reddit, and Brave), merged and deduplicated. Multi-engine agreement increases result rank.',
@@ -376,67 +390,118 @@ export const webSearchTool = {
     const n = Math.min(Math.max(1, count | 0), MAX_RESULTS)
     if (!query) return { error: 'Empty query' }
 
+    // Instant Cache Hit check (0ms latency for repeated queries)
+    const cacheKey = `${query.toLowerCase()}_${n}_${recency}_${site || ''}_${engines}`
+    const cached = SEARCH_CACHE.get(cacheKey)
+    if (cached && (Date.now() - cached.ts) < SEARCH_CACHE_TTL) {
+      return { ...cached.data, cached: true }
+    }
+
     const braveKey = await getSetting('apikey_brave')
     const wide = engines === 'all' && !site
     const intent = detectSearchIntent(query)
 
     const tasks = []
     if (braveKey) {
-      tasks.push(braveSearch(site ? `${query} site:${site}` : query, braveKey, n, recency).catch(() => []))
+      tasks.push(withFastTimeout(braveSearch(site ? `${query} site:${site}` : query, braveKey, n, recency), 2500))
     }
-    tasks.push(duckDuckGoSearch(ddgQuery(query, recency, site), n).catch(() => []))
+    tasks.push(withFastTimeout(duckDuckGoSearch(ddgQuery(query, recency, site), n), 2500))
     if (wide) {
       // Smart engine routing based on detected intent
       if (intent === 'code' || intent === 'howto') {
-        tasks.push(githubSearch(query, 3).catch(() => []))
-        tasks.push(stackOverflowSearch(query, 3).catch(() => []))
-        tasks.push(wikipediaSearch(query, 2).catch(() => []))
+        tasks.push(withFastTimeout(githubSearch(query, 3), 2000))
+        tasks.push(withFastTimeout(stackOverflowSearch(query, 3), 2000))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), 1500))
       } else if (intent === 'academic') {
-        tasks.push(arxivSearch(query, 3).catch(() => []))
-        tasks.push(crossrefSearch(query, 3).catch(() => []))
-        tasks.push(semanticScholarSearch(query, 3).catch(() => []))
-        tasks.push(wikipediaSearch(query, 2).catch(() => []))
+        tasks.push(withFastTimeout(arxivSearch(query, 3), 2000))
+        tasks.push(withFastTimeout(crossrefSearch(query, 3), 2000))
+        tasks.push(withFastTimeout(semanticScholarSearch(query, 3), 2000))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), 1500))
       } else if (intent === 'news') {
-        tasks.push(googleNewsSearch(query, 4).catch(() => []))
-        tasks.push(redditSearch(query, 2).catch(() => []))
-        tasks.push(wikipediaSearch(query, 2).catch(() => []))
+        tasks.push(withFastTimeout(googleNewsSearch(query, 4), 2200))
+        tasks.push(withFastTimeout(redditSearch(query, 2), 2000))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), 1500))
       } else if (intent === 'community') {
-        tasks.push(redditSearch(query, 3).catch(() => []))
-        tasks.push(stackOverflowSearch(query, 2).catch(() => []))
-        tasks.push(googleNewsSearch(query, 2).catch(() => []))
-        tasks.push(wikipediaSearch(query, 2).catch(() => []))
+        tasks.push(withFastTimeout(redditSearch(query, 3), 2000))
+        tasks.push(withFastTimeout(stackOverflowSearch(query, 2), 2000))
+        tasks.push(withFastTimeout(googleNewsSearch(query, 2), 2200))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), 1500))
       } else {
         // General: wide net across all general web search engines
-        tasks.push(googleNewsSearch(query, 3).catch(() => []))
-        tasks.push(wikipediaSearch(query, 2).catch(() => []))
-        tasks.push(marginaliaSearch(query, 3).catch(() => []))
-        tasks.push(githubSearch(query, 2).catch(() => []))
+        tasks.push(withFastTimeout(googleNewsSearch(query, 3), 2200))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), 1500))
+        tasks.push(withFastTimeout(marginaliaSearch(query, 3), 2000))
+        tasks.push(withFastTimeout(githubSearch(query, 2), 2000))
         if (/\b(paper|arxiv|study|research|algorithm|theorem|science|physics|academic|scholar)\b/i.test(query)) {
-          tasks.push(semanticScholarSearch(query, 2).catch(() => []))
-          tasks.push(arxivSearch(query, 2).catch(() => []))
-          tasks.push(crossrefSearch(query, 2).catch(() => []))
+          tasks.push(withFastTimeout(semanticScholarSearch(query, 2), 2000))
+          tasks.push(withFastTimeout(arxivSearch(query, 2), 2000))
+          tasks.push(withFastTimeout(crossrefSearch(query, 2), 2000))
         }
         if (/\b(review|opinion|problem|issue|reddit|forum|fix|discussion)\b/i.test(query)) {
-          tasks.push(redditSearch(query, 2).catch(() => []))
-          tasks.push(stackOverflowSearch(query, 2).catch(() => []))
+          tasks.push(withFastTimeout(redditSearch(query, 2), 2000))
+          tasks.push(withFastTimeout(stackOverflowSearch(query, 2), 2000))
         }
       }
     }
 
     try {
-      const lists = await Promise.all(tasks)
+      // Early-exit stream racing: Return as soon as sufficient results arrive
+      const lists = []
+      let completed = 0
+      const total = tasks.length
+
+      await new Promise((resolve) => {
+        let resolved = false
+        const finish = () => {
+          if (resolved) return
+          resolved = true
+          clearTimeout(timer)
+          resolve()
+        }
+
+        // Hard cap at 1800ms, but early exit when top engines respond
+        const timer = setTimeout(finish, 1800)
+
+        tasks.forEach(async (taskPromise) => {
+          try {
+            const res = await taskPromise
+            if (Array.isArray(res) && res.length > 0) {
+              lists.push(res)
+            }
+          } catch {}
+          completed++
+
+          // Early exit if we have >= n results from >= 2 engines, or all done
+          if (lists.length >= 2) {
+            const merged = mergeResults(lists, n)
+            if (merged.length >= n || completed === total) {
+              finish()
+            }
+          } else if (completed === total) {
+            finish()
+          }
+        })
+      })
+
       const results = mergeResults(lists, n)
       if (!results.length) {
         return { query, results: [], note: 'No results found. Try different wording or fewer filters.' }
       }
       const used = [...new Set(results.flatMap(r => r.engines || []))]
-      return {
+      const out = {
         query, recency, site, intent,
         engine: used.join('+') || (braveKey ? 'brave' : 'duckduckgo'),
         engines_queried: tasks.length,
         count: results.length,
         results,
       }
+      // Populate LRU cache
+      if (SEARCH_CACHE.size > 100) {
+        const firstKey = SEARCH_CACHE.keys().next().value
+        SEARCH_CACHE.delete(firstKey)
+      }
+      SEARCH_CACHE.set(cacheKey, { data: out, ts: Date.now() })
+      return out
     } catch (err) {
       return { error: `Search failed: ${err.message}` }
     }

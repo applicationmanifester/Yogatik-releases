@@ -10,15 +10,15 @@
 // Inlined so there is no extra public/ asset to lose on deploy.
 const WORKLET_SRC = `
 class Capture extends AudioWorkletProcessor {
-  constructor() { super(); this.buf = new Float32Array(2048); this.n = 0 }
+  constructor() { super(); this.buf = new Float32Array(512); this.n = 0 }
   process(inputs) {
     const ch = inputs[0] && inputs[0][0]
     if (!ch) return true
     for (let i = 0; i < ch.length; i++) {
       this.buf[this.n++] = ch[i]
       if (this.n === this.buf.length) {
-        // 2048 frames @16kHz = 128ms — small enough that VAD stays snappy,
-        // large enough that we are not spamming 300 messages/sec.
+        // 512 frames @16kHz = 32ms — ultra-low latency for snappy VAD while
+        // keeping message rate manageable (~31/sec).
         const pcm = new Int16Array(this.n)
         for (let j = 0; j < this.n; j++) {
           const s = Math.max(-1, Math.min(1, this.buf[j]))
@@ -51,7 +51,7 @@ export function base64ToPcm16(b64) {
   return new Int16Array(bytes.buffer)
 }
 
-/** Microphone -> 128ms base64 PCM16 chunks. */
+/** Microphone -> 32ms base64 PCM16 chunks (ultra-low latency). */
 export async function createMicCapture(onChunk) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
@@ -95,7 +95,7 @@ export function createPlayer({ onLevel, onSpeakingChange } = {}) {
   const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 })
   const gain = ctx.createGain()
   const analyser = ctx.createAnalyser()
-  analyser.fftSize = 256
+  analyser.fftSize = 128   // smaller FFT = faster level updates for orb animation
   gain.connect(analyser)
   analyser.connect(ctx.destination)
 
@@ -132,7 +132,7 @@ export function createPlayer({ onLevel, onSpeakingChange } = {}) {
       node.connect(gain)
       // Never schedule in the past — that is what produces the stutter when a
       // chunk arrives late.
-      const at = Math.max(ctx.currentTime + 0.02, nextAt)
+      const at = Math.max(ctx.currentTime + 0.005, nextAt)
       node.start(at)
       nextAt = at + buf.duration
       live.add(node)

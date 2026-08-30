@@ -187,6 +187,127 @@ describe('browser automation suite — extended actions', () => {
     expect(ACTION_ALIASES.batch).toBe('run_script')
   })
 
+  it('can choose an option in a <select>', () => {
+    // A native dropdown opens an OS-level popup that sendInputEvent cannot
+    // reach, so `type` at a <select> did nothing at all while returning
+    // success — every form with a country, quantity or date dropdown was
+    // silently unfillable. It needs a real value-set plus input/change events.
+    expect(VALID_ACTIONS).toContain('select')
+    expect(schemaActions()).toContain('select')
+    expect(MAIN).toContain("ipcMain.handle('browser:select'")
+    expect(PRELOAD).toContain('browser:select')
+    expect(entitlement.capabilityFor('browser:select')).toBeTruthy()
+    // `select` must never collide with `select_tab`: reaching for one and
+    // getting the other would switch tabs in the middle of filling a form.
+    expect(ACTION_ALIASES.select_option).toBe('select')
+    expect(ACTION_ALIASES.dropdown).toBe('select')
+    expect(ACTION_ALIASES.select).toBeUndefined()
+    expect(VALID_ACTIONS).toContain('select_tab')
+  })
+
+  it('hover never falls back to click', async () => {
+    // Hover is the read-only action — it opens a menu or reveals a tooltip
+    // without committing to anything. Substituting a click can navigate,
+    // submit or purchase, and the old code did exactly that whenever the
+    // bridge had no hover method, then reported success.
+    global.window = { __YOGATIK_BROWSER__: { click: vi.fn().mockResolvedValue({ success: true }) } }
+    const res = await browserControlTool.execute({ action: 'hover', ref: 'ref_1_2' })
+    expect(res.success).toBe(false)
+    expect(global.window.__YOGATIK_BROWSER__.click).not.toHaveBeenCalled()
+    global.window = undefined
+  })
+
+  it('typing into a named field replaces its contents', async () => {
+    // Appending produced values like "londonnew york" with no error anywhere.
+    const type = vi.fn().mockResolvedValue({ success: true })
+    global.window = { __YOGATIK_BROWSER__: { type } }
+    await browserControlTool.execute({ action: 'type', ref: 'ref_1_2', text: 'new york' })
+    expect(type.mock.calls[0][0].clear).toBe(true)
+    // ...but an explicit clear:false still appends, and typing with no ref
+    // (into whatever already has focus) does not clear by default.
+    await browserControlTool.execute({ action: 'type', ref: 'ref_1_2', text: 'x', clear: false })
+    expect(type.mock.calls[1][0].clear).toBe(false)
+    await browserControlTool.execute({ action: 'type', text: 'x' })
+    expect(type.mock.calls[2][0].clear).toBe(false)
+    global.window = undefined
+  })
+
+  it('fill_form reports failure when fields could not be filled', async () => {
+    // This returned success:true unconditionally, so a form where every field
+    // failed read as filled and the model went on to submit it.
+    global.window = {
+      __YOGATIK_BROWSER__: {
+        type: vi.fn().mockResolvedValue({ success: false, error: 'stale ref' }),
+      },
+    }
+    const res = await browserControlTool.execute({ action: 'fill_form', fields: { ref_1_2: 'a' } })
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/could not be filled/)
+    global.window = undefined
+  })
+
+  it('run_script refuses to nest instead of recursing forever', async () => {
+    global.window = { __YOGATIK_BROWSER__: { read: vi.fn().mockResolvedValue({ success: true }) } }
+    const res = await browserControlTool.execute({
+      action: 'run_script',
+      steps: [{ action: 'run_script', steps: [{ action: 'read' }] }],
+    })
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/nested/i)
+    global.window = undefined
+  })
+
+  it('storage reads the store named by `type`, not by `text`', async () => {
+    // It took the store name from `text`, so {action:'storage', type:'session'}
+    // silently returned localStorage and the model reported it as fact.
+    const storage = vi.fn().mockResolvedValue({ success: true, items: {} })
+    global.window = { __YOGATIK_BROWSER__: { storage } }
+    await browserControlTool.execute({ action: 'storage', type: 'session' })
+    expect(storage.mock.calls[0][0].type).toBe('session')
+    global.window = undefined
+  })
+
+  it('evaluate retries the statement form ONLY on a syntax error', () => {
+    // A blanket .catch(retry) re-ran the expression whenever the first form
+    // rejected at RUNTIME, so a click that threw after clicking executed twice.
+    expect(MAIN).toMatch(/isSyntax/)
+    expect(MAIN).toMatch(/if \(!isSyntax\) throw first/)
+    // And the result is capped: document.body.innerHTML on a real page is
+    // megabytes, all of which lands in the model's context.
+    expect(MAIN).toMatch(/MAX_RESULT/)
+  })
+
+  it('a stale ref comes back with the fresh page, not just a refusal', async () => {
+    // Refusing a stale ref is right — clicking whatever now sits at that index
+    // looks exactly like success. But refusing ALONE costs two more turns: one
+    // to read again, one to retry. The page is right there.
+    const read = vi.fn().mockResolvedValue({ success: true, tree: '[ref_2_1] Login' })
+    global.window = {
+      __YOGATIK_BROWSER__: {
+        click: vi.fn().mockResolvedValue({ success: false, stale: true, error: 'stale ref' }),
+        read,
+      },
+    }
+    const res = await browserControlTool.execute({ action: 'click', ref: 'ref_1_5' })
+    expect(res.success).toBe(false)
+    expect(res.page_after_reload).toContain('ref_2_1')
+    expect(read).toHaveBeenCalledTimes(1)
+    global.window = undefined
+  })
+
+  it('an ordinary failure does not spend a page read', async () => {
+    const read = vi.fn().mockResolvedValue({ success: true, tree: 'x' })
+    global.window = {
+      __YOGATIK_BROWSER__: {
+        click: vi.fn().mockResolvedValue({ success: false, error: 'No such tab' }),
+        read,
+      },
+    }
+    await browserControlTool.execute({ action: 'click', ref: 'ref_1_5' })
+    expect(read).not.toHaveBeenCalled()
+    global.window = undefined
+  })
+
   it('run_script executes batch steps sequentially with bridge mock', async () => {
     const mockBridge = {
       navigate: vi.fn().mockResolvedValue({ success: true, url: 'https://example.com' }),

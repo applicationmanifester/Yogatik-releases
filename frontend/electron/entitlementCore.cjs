@@ -121,6 +121,7 @@ const CHANNELS = {
   /* ── browser: a real top-level browsing context ────────────────────── */
   'browser:navigate': P(CAP.BROWSER), 'browser:read': P(CAP.BROWSER),
   'browser:click': P(CAP.BROWSER), 'browser:type': P(CAP.BROWSER),
+  'browser:select': P(CAP.BROWSER),
   'browser:hover': P(CAP.BROWSER), 'browser:pdf': P(CAP.BROWSER),
   'browser:cookies': P(CAP.BROWSER), 'browser:storage': P(CAP.BROWSER),
   'browser:key': P(CAP.BROWSER), 'browser:scroll': P(CAP.BROWSER),

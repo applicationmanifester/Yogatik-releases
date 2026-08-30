@@ -3,9 +3,9 @@ import {
   useContext,
   useState,
   useCallback,
+  useId,
   type ReactNode,
   type KeyboardEvent,
-  type RefObject,
 } from 'react';
 import styles from './Tabs.module.css';
 
@@ -22,13 +22,15 @@ export interface TabsContextValue {
 
 const TabsContext = createContext<TabsContextValue | null>(null);
 
-function useTabsContext() {
+export function useTabs() {
   const context = useContext(TabsContext);
   if (!context) {
-    throw new Error('Tabs compound components must be used within Tabs');
+    throw new Error('useTabs must be used within a Tabs component');
   }
   return context;
 }
+
+export const useTabsContext = useTabs;
 
 export interface TabsProps {
   children: ReactNode;
@@ -51,7 +53,8 @@ export function Tabs({
   className = '',
   id: providedId,
 }: TabsProps) {
-  const tabsId = providedId || `tabs-${Math.random().toString(36).slice(2, 9)}`;
+  const generatedId = useId();
+  const tabsId = providedId || `tabs-${generatedId.replace(/:/g, '')}`;
   const isControlled = controlledIndex !== undefined;
   const [uncontrolledIndex, setUncontrolledIndex] = useState(defaultIndex);
   const activeIndex = isControlled ? controlledIndex : uncontrolledIndex;
@@ -132,11 +135,11 @@ export function TabsTrigger({
   const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (disabled) return;
 
-    let newIndex: number | null = null;
     const tabs = Array.from(
-      document.querySelectorAll(`[data-tabs-id="${tabsId}"] [role="tab"]:not([disabled])`)
-    ) as HTMLButtonElement[];
+      e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]:not([disabled])') || []
+    );
     const currentPosition = tabs.findIndex((tab) => tab.id === triggerId);
+    let newIndex: number | null = null;
 
     switch (e.key) {
       case orientation === 'horizontal' ? 'ArrowRight' : 'ArrowDown':

@@ -145,6 +145,37 @@ function rescale(canvas, scale) {
 }
 
 /**
+ * Unsharp mask (3x3 Laplacian sharpen) over an RGBA buffer, in place.
+ *
+ * The one case the contrast/invert/threshold ladder above does NOT rescue is a
+ * MACRO capture of an engraved or debossed marking — a pill imprint, a moulded
+ * serial, a stamped expiry. There the glyph is not a different colour from its
+ * background; it is the same colour with a shadow, so stretching the histogram
+ * stretches the shadow too and thresholding erases it. Sharpening is what turns
+ * that low-frequency relief into an edge Tesseract can find.
+ *
+ * Applied to a grayscale buffer, so reading channel 0 and writing r=g=b is both
+ * correct and ~3x cheaper than sharpening each channel independently.
+ */
+export function sharpen(rgba, width, height, amount = 1) {
+  const copy = new Uint8ClampedArray(rgba)
+  const centre = 4 * amount + 1
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = (y * width + x) * 4
+      const v =
+        copy[i] * centre -
+        amount * (copy[i - width * 4] + copy[i + width * 4] + copy[i - 4] + copy[i + 4])
+      const c = v < 0 ? 0 : v > 255 ? 255 : v
+      rgba[i] = c
+      rgba[i + 1] = c
+      rgba[i + 2] = c
+    }
+  }
+  return rgba
+}
+
+/**
  * Candidate renderings, best guess first.
  *
  * @param {{rgba, width, height}} img  from imageStats.loadImageData
@@ -196,6 +227,17 @@ export function buildOcrVariants(img, analysis = {}) {
     stretchContrast(c)
     adaptiveThreshold(c, width, height)
     push('binarised', c, 'locally thresholded (Sauvola)')
+  }
+
+  // 4. Sharpened. A photo of a physical object — which is what `photo` means
+  // here, and what the pill/barcode/serial questions always produce — is the
+  // one kind the other three variants handle worst, because the marking is
+  // relief rather than ink. Cheap enough (one 3x3 pass) to always offer.
+  if (analysis.kind === 'photo' || analysis.kind === 'document') {
+    const d = new Uint8ClampedArray(img.rgba)
+    stretchContrast(toGrayscale(d))
+    sharpen(d, width, height)
+    push('sharpened', d, 'contrast-stretched + unsharp mask (engraved/embossed text)')
   }
 
   return variants

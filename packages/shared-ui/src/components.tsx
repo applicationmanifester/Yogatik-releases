@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { type ReactNode } from 'react';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'outline';
@@ -12,7 +12,7 @@ export const Button: React.FC<ButtonProps> = ({ children, variant = 'primary', c
   );
 };
 
-export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {}
+export type CardProps = React.HTMLAttributes<HTMLDivElement>;
 
 export const Card: React.FC<CardProps> = ({ children, className = '', style, ...props }) => {
   return (
@@ -31,7 +31,7 @@ export const Heading: React.FC<HeadingProps> = ({ level = 1, children, className
   return React.createElement(Tag, { className: `heading heading-${level} ${className}`, style, ...props }, children);
 };
 
-export interface TextProps extends React.HTMLAttributes<HTMLParagraphElement> {}
+export type TextProps = React.HTMLAttributes<HTMLParagraphElement>;
 
 export const Text: React.FC<TextProps> = ({ children, className = '', style, ...props }) => {
   return (
@@ -52,18 +52,26 @@ export interface ModalProps {
   closeOnOverlayClick?: boolean;
   closeOnEscape?: boolean;
   className?: string;
-  taskState?: import('./Modal').ModalTaskState;
+  taskState?: unknown;
 }
 
-export const Modal: React.FC<ModalProps> = (props) => {
-  return import('./components/Modal').then(mod => mod.default(props));
+export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, className = '' }) => {
+  if (!isOpen) return null;
+  return (
+    <div className={`modal-overlay ${className}`} onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        {title && <h3>{title}</h3>}
+        {children}
+      </div>
+    </div>
+  );
 };
 
 // ChatHeader
 export interface ChatHeaderProps {
   title: string;
   subtitle?: string;
-  onAction?: (data: any) => void;
+  onAction?: (data: { type: string; payload?: unknown }) => void;
   showRefresh?: boolean;
   showSearch?: boolean;
 }
@@ -75,17 +83,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   showRefresh = true,
   showSearch = false
 }) => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasInitialized, setHasInitialized] = useState(false);
-
-  useEffect(() => {
-    setHasInitialized(true);
-    // Simulate async initialization
-    const timeout = setTimeout(() => setIsLoading(false), 500);
-    return () => clearTimeout(timeout);
-  }, []);
-
-  const handleAction = (data: any) => {
+  const handleAction = (data: { type: string; payload?: unknown }) => {
     onAction?.(data);
   };
 
@@ -178,7 +176,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
       <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>
         {role.charAt(0).toUpperCase() + role.slice(1)} • {timestampStr}
       </div>
-      <div dangerouslySetInnerHTML={{ __html: content }} />
+      <div className="chat-message-content" style={{ whiteSpace: 'pre-wrap' }}>{content}</div>
       {metadata && (
         <div style={{
           marginTop: '4px',

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './Modal.module.css';
 
@@ -54,6 +54,24 @@ export function Modal({
   // Merge taskState prop with local state (prop takes precedence when provided)
   const task = taskState || localTaskState;
 
+  const trapFocus = useCallback((e: KeyboardEvent) => {
+    const focusableElements = contentRef.current?.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (!focusableElements?.length) return;
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    if (e.shiftKey && document.activeElement === firstElement) {
+      e.preventDefault();
+      lastElement?.focus();
+    } else if (!e.shiftKey && document.activeElement === lastElement) {
+      e.preventDefault();
+      firstElement?.focus();
+    }
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       previousActiveElement.current = document.activeElement as HTMLElement;
@@ -76,25 +94,7 @@ export function Modal({
         previousActiveElement.current?.focus();
       };
     }
-  }, [isOpen, closeOnEscape, onClose]);
-
-  const trapFocus = (e: KeyboardEvent) => {
-    const focusableElements = contentRef.current?.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    if (!focusableElements?.length) return;
-
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
-
-    if (e.shiftKey && document.activeElement === firstElement) {
-      e.preventDefault();
-      lastElement.focus();
-    } else if (!e.shiftKey && document.activeElement === lastElement) {
-      e.preventDefault();
-      firstElement.focus();
-    }
-  };
+  }, [isOpen, closeOnEscape, onClose, trapFocus]);
 
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (closeOnOverlayClick && e.target === overlayRef.current) {
@@ -110,50 +110,45 @@ export function Modal({
     let timeoutId: NodeJS.Timeout;
     if (task.timeout && task.timeout > 0) {
       timeoutId = setTimeout(() => {
-        setLocalTaskState({
-          ...localTaskState,
+        setLocalTaskState(prev => ({
+          ...prev,
           progress: 100,
           isLoading: false,
           success: 'Task completed automatically',
-        });
+        }));
       }, task.timeout);
     }
 
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [task.isLoading, task.timeout, setLocalTaskState]);
+  }, [task.isLoading, task.timeout]);
 
   useEffect(() => {
     // When task completes (isLoading becomes false with progress 100)
     if (!task.isLoading && task.progress >= 100) {
       const success = !task.error;
-      setLocalTaskState({
-        progress: 0,
-        isLoading: false,
-        error: undefined,
-        success: success ? 'Task completed successfully' : task.error,
-      });
-
-      // Call onComplete callback if provided
-      task.onComplete?.(success);
+      const timer = setTimeout(() => {
+        setLocalTaskState({
+          progress: 0,
+          isLoading: false,
+          error: undefined,
+          success: success ? 'Task completed successfully' : task.error,
+        });
+        task.onComplete?.(success);
+      }, 0);
 
       // Auto-close after a brief delay unless user interaction is needed
       const closeTimer = setTimeout(() => {
         onClose();
       }, 1500);
 
-      return () => clearTimeout(closeTimer);
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(closeTimer);
+      };
     }
-
-    // Update progress indicator during loading
-    if (task.isLoading && task.progress > 0 && task.progress < 100) {
-      setLocalTaskState({
-        ...localTaskState,
-        progress: task.progress,
-      });
-    }
-  }, [task.isLoading, task.progress, task.error, task.onComplete, setLocalTaskState]);
+  }, [task.isLoading, task.progress, task.error, task.onComplete, onClose]);
 
   // Determine if we should show task UI
   const showTaskUI = task.isLoading || task.progress > 0 || task.error || task.success;

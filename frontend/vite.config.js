@@ -101,42 +101,9 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             if (id.includes('firebase')) return 'vendor-firebase'
             if (id.includes('lucide-react')) return 'vendor-lucide'
-            // Prism is deliberately React.lazy inside CodeBlock — most chats
-            // contain no code block and phones should not pay for it on first
-            // paint. Naming it in the SAME chunk as react-markdown silently
-            // undid that: react-markdown is in the eager graph, so the lazy
-            // import resolved to an already-downloaded chunk and the
-            // highlighter shipped on every first load anyway.
+            // Keep heavy code editor and syntax highlighter as async chunks
             if (id.includes('react-syntax-highlighter') || id.includes('prismjs') || id.includes('refractor')) return undefined
-            // CodeMirror, for exactly the same reason and caught the same way.
             if (id.includes('@codemirror') || id.includes('@lezer')) return undefined
-            if (
-              id.includes('react-markdown') ||
-              id.includes('remark-') ||
-              id.includes('rehype-') ||
-              id.includes('micromark') ||
-              id.includes('unist-') ||
-              id.includes('mdast-') ||
-              id.includes('vfile') ||
-              id.includes('unified') ||
-              id.includes('devlop') ||
-              id.includes('property-information') ||
-              id.includes('html-void-elements') ||
-              id.includes('space-separated-tokens') ||
-              id.includes('comma-separated-tokens') ||
-              id.includes('decode-named-character-reference') ||
-              id.includes('character-entities') ||
-              id.includes('zwitch') ||
-              id.includes('longest-streak') ||
-              id.includes('markdown-table') ||
-              id.includes('ccount') ||
-              id.includes('bail')
-            ) return 'vendor-markdown'
-            if (id.includes('dexie')) return 'vendor-dexie'
-            if (id.includes('zustand') || id.includes('zod')) return 'vendor-state'
-            if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) return 'vendor-react'
-            if (id.includes('canvas-confetti') || id.includes('chart.js') || id.includes('mermaid')) return 'vendor-viz'
-            return 'vendor-libs'
           }
         },
       },

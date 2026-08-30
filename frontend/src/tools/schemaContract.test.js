@@ -47,11 +47,10 @@ describe('tool schema contract', () => {
   })
 })
 
-describe('per-request tool budget', () => {
-  it('caps the list — the whole registry is ~32k tokens of schemas per turn', () => {
+describe('tool prioritization and schema availability', () => {
+  it('preserves all schemas with ranking when unconstrained', () => {
     const all = schemas()
-    expect(all.length).toBeGreaterThan(MAX_TOOLS_PER_REQUEST)
-    expect(prioritizeToolSchemas(all, 'hello').length).toBe(MAX_TOOLS_PER_REQUEST)
+    expect(prioritizeToolSchemas(all, 'hello', { limit: null }).length).toBe(all.length)
   })
 
   it('keeps the core tools whatever the wording, including a keyword-free follow-up', () => {

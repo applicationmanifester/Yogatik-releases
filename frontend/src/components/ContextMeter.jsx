@@ -1,22 +1,19 @@
-import React from 'react'
-import { Activity, Zap, Layers, Sparkles } from 'lucide-react'
+import React, { useMemo } from 'react'
+import { Activity } from 'lucide-react'
+import { getModelContextLimits } from '../compaction'
 
 /**
- * Approximate context token capacity based on active model/provider.
+ * Approximate context token capacity for the active model.
+ *
+ * This file used to carry its OWN table of context limits, independent of the
+ * one in compaction.js that the agent actually budgets against. Two tables for
+ * one fact is how this app ended up with two relay lists, two usage meters and
+ * two context-limit tables — and here the consequence would be a meter telling
+ * the user they had 128k of headroom while the agent was compacting at 60k.
+ * One table: compaction.js owns it, because that is the one with teeth.
  */
 export function getModelContextLimit(provider, model) {
-  const m = (model || '').toLowerCase()
-  const p = (provider || '').toLowerCase()
-
-  if (m.includes('gemini-1.5-pro') || m.includes('gemini-2.0') || m.includes('gemini-2.5')) return 1000000
-  if (m.includes('gemini-1.5-flash')) return 1000000
-  if (m.includes('claude-3') || m.includes('claude-3.5') || m.includes('claude-3-7') || m.includes('claude-sonnet')) return 200000
-  if (m.includes('gpt-4o') || m.includes('o1') || m.includes('o3')) return 128000
-  if (m.includes('deepseek') || m.includes('deepseek-v4') || m.includes('deepseek-r1') || m.includes('deepseek-v3')) return 128000
-  if (m.includes('llama-3.3') || m.includes('llama-3.1')) return 128000
-  if (m.includes('mistral') || m.includes('codestral') || m.includes('qwen')) return 64000
-  if (p === 'local') return 8192
-  return 64000
+  return getModelContextLimits(provider, model).estimatedMaxTokens
 }
 
 /**
@@ -35,8 +32,17 @@ export function estimateConversationTokens(messages = [], systemPrompt = '', inp
 }
 
 export function ContextMeter({ messages = [], systemPrompt = '', input = '', provider = 'local', model = '' }) {
-  const estimatedTokens = estimateConversationTokens(messages, systemPrompt, input)
-  const limit = getModelContextLimit(provider, model)
+  // Memoised on the message list, not recomputed per render: this walks every
+  // message and JSON.stringifies every tool result, and the component sits in
+  // the header, which re-renders for reasons that have nothing to do with the
+  // conversation length. `input` is folded in separately so a keystroke costs a
+  // string length rather than a full pass.
+  const historyTokens = useMemo(
+    () => estimateConversationTokens(messages, systemPrompt, ''),
+    [messages, systemPrompt],
+  )
+  const estimatedTokens = historyTokens + Math.ceil((input || '').length / 4)
+  const limit = useMemo(() => getModelContextLimit(provider, model), [provider, model])
   const percent = Math.min(100, Math.round((estimatedTokens / limit) * 100))
 
   const getColor = () => {

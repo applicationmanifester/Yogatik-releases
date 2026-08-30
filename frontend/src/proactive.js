@@ -13,8 +13,14 @@ import { dueMilestones } from './memory4'
 const SEEN_KEY = 'yogatik.proactive.seen' // date-string of last shown check-in
 const DAY = 24 * 60 * 60 * 1000
 
-/** Pure: given episodic items + now, return a check-in suggestion or null. */
-export function buildCheckin(episodic, now = Date.now()) {
+/** Pure: given episodic + emotional items + now, return a check-in suggestion or null. */
+export function buildCheckin(episodic = [], emotional = [], now = Date.now()) {
+  // If only 2 arguments and 2nd argument is a timestamp:
+  if (typeof emotional === 'number') {
+    now = emotional
+    emotional = []
+  }
+
   const milestones = dueMilestones(episodic, now)
   if (milestones.length) {
     const m = milestones[0]
@@ -25,6 +31,19 @@ export function buildCheckin(episodic, now = Date.now()) {
       prompt: `${yr} ago I noted: "${m.text}". Let's check in on how that has gone since then.`,
     }
   }
+
+  // High-salience emotional context (within 5 days) → gentle check-in
+  const emo = (emotional || [])
+    .filter(e => e.at && (now - e.at) < 5 * DAY && (e.importance ?? 0.5) >= 0.7)
+    .sort((a, b) => b.at - a.at)[0]
+  if (emo) {
+    return {
+      kind: 'emotional_followup',
+      text: `Thinking back to "${emo.text}" — how are you feeling about that today?`,
+      prompt: `Regarding "${emo.text}" — how is that going now?`,
+    }
+  }
+
   // Recent high-salience episodic event (within a week) → light follow-up.
   const recent = (episodic || [])
     .filter(e => e.at && (now - e.at) < 7 * DAY && (e.importance ?? 0.5) >= 0.6)
@@ -58,6 +77,7 @@ export async function getProactiveCheckin() {
   try {
     const { allMemories } = await import('./memory4')
     const episodic = await allMemories('episodic')
-    return buildCheckin(episodic)
+    const emotional = await allMemories('emotional')
+    return buildCheckin(episodic, emotional)
   } catch { return null }
 }

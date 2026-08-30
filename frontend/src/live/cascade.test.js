@@ -25,12 +25,16 @@ describe('echo guard', () => {
 
 describe('adaptive endpointing', () => {
   it('commits a finished-sounding sentence fastest', () => {
-    expect(endpointDelay('what time is it?')).toBe(350)
+    expect(endpointDelay('what time is it?')).toBe(200)
   })
   it('commits a long phrase sooner than a short fragment', () => {
     const long = endpointDelay('can you tell me what the weather is like today outside')
     const short = endpointDelay('um')
     expect(long).toBeLessThan(short)
+  })
+  it('gives extra pause time when the utterance ends with a connector', () => {
+    expect(endpointDelay('I wanted to check this because')).toBe(650)
+    expect(endpointDelay('We can deploy now and')).toBe(650)
   })
 })
 

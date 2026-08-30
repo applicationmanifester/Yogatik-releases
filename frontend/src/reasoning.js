@@ -7,17 +7,53 @@
  */
 
 /**
- * Detects and truncates repetitive degenerate loops in text
- * (e.g. "Also we looked at src/tools/registry... Also we looked at src/tools/registry...")
+ * Detects and truncates repetitive degenerate loops in text without locking the main thread.
  */
 export function deduplicateRepetitions(text) {
-  if (!text || typeof text !== 'string' || text.length < 40) return text
-  // Matches any repeating block of 10-150 chars that repeats 3 or more times consecutively
-  return text.replace(/(.{10,150}?)(?:\s*\1){2,}/gis, '$1')
+  if (!text || typeof text !== 'string' || text.length < 60) return text
+  if (text.length > 30000) return text // Skip heavy scan on massive documents
+  
+  // Fast line-based deduplication for runaway generation loops (e.g. repeated lines)
+  const lines = text.split('\n')
+  if (lines.length > 6) {
+    const cleanLines = []
+    let repeatCount = 0
+    let lastLine = null
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (trimmed && trimmed.length > 5 && trimmed === lastLine) {
+        repeatCount++
+        if (repeatCount <= 2) {
+          cleanLines.push(line)
+        } else if (repeatCount === 3) {
+          cleanLines.push('*(…repetitive output truncated)*')
+        }
+      } else {
+        repeatCount = 0
+        lastLine = trimmed.length > 5 ? trimmed : null
+        cleanLines.push(line)
+      }
+    }
+    return cleanLines.join('\n')
+  }
+  return text
 }
+
+const reasoningCache = new Map()
 
 export function splitReasoning(content) {
   if (typeof content !== 'string') return { reasoning: '', answer: content }
+  
+  // Fast path: if no reasoning markup, bypass all parsing instantly
+  if (!content.includes('<think>')) {
+    return { reasoning: '', answer: deduplicateRepetitions(content) }
+  }
+
+  // Fast LRU cache for unchanged completed strings
+  if (reasoningCache.has(content)) {
+    return reasoningCache.get(content)
+  }
+
   let reasoning = ''
   const answer = content
     .replace(/<think>([\s\S]*?)<\/think>/gi, (_, r) => { reasoning += r + '\n'; return '' })
@@ -27,7 +63,13 @@ export function splitReasoning(content) {
   const cleanReasoning = deduplicateRepetitions(reasoning.trim())
   const cleanAnswer = deduplicateRepetitions(answer.trim())
 
-  return { reasoning: cleanReasoning, answer: cleanAnswer }
+  const res = { reasoning: cleanReasoning, answer: cleanAnswer }
+  if (reasoningCache.size > 200) {
+    const firstKey = reasoningCache.keys().next().value
+    reasoningCache.delete(firstKey)
+  }
+  reasoningCache.set(content, res)
+  return res
 }
 
 /** Just the part the user is meant to read. Reasoning alone is not an answer. */

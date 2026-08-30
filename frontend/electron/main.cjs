@@ -94,6 +94,15 @@ process.on('unhandledRejection', (reason) => {
 // Windows needs an explicit AppUserModelID for notifications to display.
 app.setAppUserModelId('app.yogatik.desktop')
 
+// ── Performance & High-Computation Hardware Acceleration ─────────────────────
+app.commandLine.appendSwitch('enable-gpu-rasterization')
+app.commandLine.appendSwitch('enable-zero-copy')
+app.commandLine.appendSwitch('ignore-gpu-blocklist')
+app.commandLine.appendSwitch('enable-webgl2-compute-context')
+app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder,WebGPU,CanvasOopRasterization')
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=8192')
+app.commandLine.appendSwitch('enable-hardware-overlays')
+
 function createWindow() {
   const state = windowState.restore({ width: 1200, height: 820 })
 
@@ -385,7 +394,7 @@ if (!gotLock) {
     // and forwarded none of it until the process closed — a 30-second command
     // was a spinner and then a card, and anything run before the panel was
     // opened was invisible forever.
-    ipcMain.handle('terminal:exec', async (_e, { ctx, command, cwd, timeout = 30000, env: extraEnv } = {}) => {
+    ipcMain.handle('terminal:exec', async (_e, { ctx, command, cwd, timeout = 300000, env: extraEnv } = {}) => {
       const block = await runTerminalBlock({
         ctx, command, cwd, timeout, env: extraEnv, author: 'agent',
       })

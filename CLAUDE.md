@@ -1,5 +1,220 @@
 # Yogatik — Project Knowledge
 
+## A THIRD context-limits table, and the dead list is down to 7 (2026-08-30)
+- `components/ContextMeter.jsx` carried its OWN table of model context limits, independent
+  of `compaction.js:getModelContextLimits`, which is the one agent.js actually budgets and
+  compacts against. They agreed everywhere except `local` — 8192 here, 4096 there — so a
+  wired meter would have shown the user twice the headroom they had while the agent quietly
+  compacted their history away. It reads compaction.js now; a test asserts the two agree
+  for every provider, not just that each returns a number.
+- ContextMeter is WIRED, in the sidebar under the model picker rather than the header (the
+  header already overflows at 480px). `estimateConversationTokens` walks every message and
+  JSON.stringifies every tool result, so it is memoised on `messages` and the composer's
+  input is folded in as a length rather than triggering a full pass per keystroke.
+- Dead modules 21 → 7. Deleted with their tests: promptEnhancer.js (api.enhancePromptText
+  is what the composer calls), memoryPaging.js, and the spawnSubagent/macroEnhancer stubs
+  (nothing imported them; their tests are renamed toolRegistry.test.js and sharpen.test.js
+  to name what they actually cover).
+- Still allowlisted, each with a reason: AdModal (ads off), TerminalPanel (retired stub),
+  downloadConsent / analyticsSink / experiments (a test names each), stagehandHealing, and
+  LivePill (UNTRACKED — deleting it is unrecoverable).
+- A stale ref now returns `page_after_reload` — the freshly-read tree — alongside the
+  refusal, for click/type/select. Refusing is right (clicking whatever now sits at that
+  index looks exactly like success) but refusing ALONE costs two more turns: one to read,
+  one to retry. Only for `stale`, never for an ordinary failure, or every unrelated error
+  would spend a page read.
+
+## Browser automation: seven defects and a missing action (2026-08-30)
+- `<select>` COULD NOT BE SET AT ALL. A native dropdown opens an OS-level popup that
+  `sendInputEvent` cannot reach, so `type` at one did nothing and returned success —
+  every form with a country / quantity / date dropdown was silently unfillable, and
+  nothing in the tool said so. New `select` action end to end: `browser:select` in
+  browserControl.cjs, `select` in preload's FS-style whitelist, `P(CAP.BROWSER)` in the
+  entitlement matrix, `select`/`select_option`/`dropdown`/`choose` in the tool. It sets
+  `selectedIndex` and dispatches input+change (a React/Vue `<select>` ignores a bare value
+  assignment), matches by value → exact label → case-insensitive label → index, and on no
+  match RETURNS THE REAL OPTIONS so the model recovers in one turn.
+- `hover` fell back to `b.click` when the bridge had no hover method. Hover is the
+  read-only action; substituting a click can navigate, submit or buy, and it reported
+  success. It refuses now. NEVER substitute a side-effecting action for a safe one.
+- `type` APPENDED to the field's existing contents, so re-using a search box produced
+  "londonnew york" with no error. `clear` defaults to true when a `ref` is given (naming a
+  field means filling it). Cleared with select-all + Delete, NOT by assigning `.value`: a
+  controlled React input ignores a programmatic assignment and re-renders the old value.
+- `submit` sent keyDown for Return with no keyUp, so a handler bound to keyup never fired
+  — "type and press Enter" worked on some forms and silently did nothing on others.
+- `browser:evaluate` had `.catch(() => run the statement form)`. That retried on ANY
+  rejection, including a runtime one, so `document.querySelector('#buy').click()` that
+  threw after clicking RAN TWICE. It retries only on a SyntaxError now (where the first
+  form never executed). Its result is also capped at 100k chars — `document.body.innerHTML`
+  on a real page is megabytes, all of it landing in the model's context.
+- `fill_form` returned `success: true` unconditionally, so a form where every field failed
+  read as filled and the model went on to submit it.
+- `run_script` re-entered `execute` with no depth guard, so a step whose action was
+  `run_script` recursed until the stack blew. Nested pipelines are refused with a reason.
+- `storage` took the store name from `text`, so `{action:'storage', type:'session'}` — the
+  obvious call, and now a legal enum value — silently returned localStorage.
+- `scripts/check-select-script.mjs` renders the injected page script the way selectOption
+  does and parses + runs it against a fake DOM. Worth keeping: a mistake inside a template
+  literal is invisible to `node --check` (the template is a valid string either way) and
+  surfaces only as an opaque page error. Note the extraction must stop at `})()` and not
+  at the next backtick — the cssSelector interpolation contains nested template literals —
+  and must collapse `\\\\` to `\\`, or `/^\\\\d+$/` compiles as backslash-then-d.
+
+## The prompt-injection guard is wired now (2026-08-30) — agent.js guardExternal
+- `tools/rebuffGuard.js` was written, tested, and reached by NOTHING. A detector nobody
+  calls is not a defence — the reachability guard is what found it.
+- The seam is the LAST point before untrusted bytes become context: the tool result on its
+  way into `role:'tool'` (native) and into the replayed user turn (prompted, which is if
+  anything more exposed). `UNTRUSTED_TOOLS` = web_search / web_extract / deep_research /
+  link_preview / rss_feed / youtube / browser_control / browser_autopilot / identify, plus
+  anything `mcp__*`. fs_*, terminal_run and code_execute are deliberately NOT in it: that
+  output is the user's own machine answering the user's own request, and marking it up
+  would corrupt real file contents.
+- NON-BLOCKING by design. `sanitizeExternalContext` replaces a matched directive with a
+  visible marker and keeps the rest, so an article ABOUT prompt injection degrades to a
+  readable summary instead of an empty tool result. The model is also TOLD the guard ran —
+  silently rewriting a page and presenting it as the page is its own kind of lie.
+- rebuffGuard.test.js pins the maths AND the wiring (both call sites, and that no fs_/
+  terminal/code tool is in the untrusted set). The wiring assertions are the point.
+
+## Nine dead modules deleted, twelve left with reasons (2026-08-30)
+- Deleted (git-tracked, so `git show HEAD:<path>` recovers any): Toast.jsx,
+  ToastContainer.jsx (hooks/useToast.jsx does this), EmptyState.jsx, EmptyStates.jsx,
+  SkeletonLoaders.jsx, OnboardingTour.jsx (Tour.jsx is the one wired to the palette),
+  computeWorker.js, workers/compute.worker.js, workers/indexer.worker.js. None had a test
+  or an importer.
+- Kept and allowlisted: AdModal (ads deliberately off); the three retirement stubs; and
+  ContextMeter / downloadConsent / promptEnhancer / memoryPaging / stagehandHealing /
+  analyticsSink / experiments, each of which still has a test naming it — deleting the
+  module means deciding about the test too.
+- LivePill.jsx, spawnSubagent.js and macroEnhancer.js are UNTRACKED. Deleting an untracked
+  file is unrecoverable, so they stay until deleted deliberately.
+- `askUserTool.execute({...})` had no `= {}` on the parameter, so a no-argument call threw
+  "Cannot destructure property 'question' of undefined" — a raw TypeError the model cannot
+  act on, so it retries the same broken call. Every other tool is total on missing args.
+- CROSS-CHECKED and clean: all 158 `ipcMain.handle` names appear in preload.cjs AND in the
+  entitlement capability matrix. Note the matrix uses BARE object keys (`fs_read: P(...)`),
+  so a grep for quoted strings reports 50 false positives.
+
+## 21 modules were dead, and only components were guarded (2026-08-30)
+- buildGuards' reachability check looked at `components/` ONLY, and matched by reading
+  source TEXT — so a plain `.js` module could die in total silence, and did.
+- The new guard asks the real question: bundle `src/main.jsx` with esbuild and read the
+  METAFILE. An import that appears only in a comment, a string, or another dead module does
+  not count — which is the flaw that hid StreamingMessage behind a code comment and Tour
+  behind a button label. It needs `outdir` even with `write:false`, or esbuild refuses to
+  resolve main.jsx's `import './styles.css'`, and it must resolve
+  `new Worker(new URL('./x', import.meta.url))` by hand or every worker reads as dead.
+- MEASURED: 305 of 327 src modules reachable. The 21 dead ones are allowlisted WITH A
+  REASON each, in three groups — RETIRED stubs, SUPERSEDED duplicates, and BUILT-NEVER-WIRED.
+  The most worth fixing is `tools/rebuffGuard.js`: a prompt-injection detector and
+  canary-leak check that nothing calls. `sanitizeExternalContext` belongs on web_extract /
+  web_search / MCP results before they enter the agent loop.
+- `chatExport.js` was in that dead set — the entire v3.8 md/html/pdf export. App had its own
+  hand-rolled markdown instead, and set `a.download = data.filename`, a field
+  `api.exportConversation` has never returned, so every saved chat downloaded as an
+  extension-less file called "download". App now calls `downloadChat(conv, format)`;
+  palette gained HTML and PDF entries. NOTE the header button must be
+  `onClick={() => handleExport('md')}` — bound bare, React passes the click EVENT as the
+  format.
+- LivePill.jsx is left in place, not deleted: it is UNTRACKED, so deleting it is
+  unrecoverable. Wire it or delete it deliberately.
+
+## Two usage meters, and they already disagreed (2026-08-30) — api.js
+- `recordUsage` (IndexedDB day rollup, sidebar meter) and `recordTurnUsage` (localStorage
+  per-turn, DataDashboard cost) were called from DIFFERENT places: the primary streaming
+  path wrote only the rollup; ONLY the provider-fallback path wrote both. So the cost
+  dashboard was not at risk of drifting — it was already showing the cost of the small
+  minority of turns that had failed over to a second provider, labelled as the total.
+- One choke point `recordTurn(provider, model, {inTokens, outTokens})` writes both, same
+  shape as db.js's getSetting/setSetting choke point for the keychain. Consolidating onto a
+  single store is still worth doing; this makes it safe to do later rather than urgent now.
+
+## A model-written regex could freeze the renderer too (2026-08-30) — src/tools/registry.ts
+- `electron/safeRegex.cjs` guards fs_search on the MAIN process. The parallel TS tool
+  registry had a bare `new RegExp(pattern, flags)` on a model-supplied pattern with no
+  guard at all. Same failure, different thread: catastrophic backtracking holds the thread,
+  so no timeout, AbortSignal or try/catch can rescue it — only termination from outside,
+  and there is nothing outside a renderer's main thread.
+- Same structural check (nested quantifier / repeated overlapping alternation, 500-char
+  pattern cap), plus a 1MB input cap and a 1000-match cap. Also: `matchAll` THROWS without
+  the `g` flag, so `{pattern, flags:'i'}` — a perfectly reasonable call — surfaced as an
+  opaque "Regex execution failed". `g` is added rather than refused.
+
+## The ceilings were removed, and the tests were rewritten to agree (2026-08-30)
+- FOUR safety ceilings were set to Infinity in the uncommitted v3.22 work. Each one is
+  restored, because in every case "unbounded" is not more capable, it is broken:
+  - `MAX_TOOLS_PER_REQUEST` 64 → Infinity. Ranking still ran, truncation stopped, so all
+    **203** registered tools (~36k tokens of schemas) shipped on EVERY turn. OpenAI
+    hard-caps a request at **128 functions**, so on that provider this does not degrade the
+    answer — it 400s the turn. Now 96 (under the cap, more headroom than the old 64). If
+    tools are dropping mid-task the lever is CORE_TOOL_SCORES, not the cap.
+  - `agentPool` DEFAULT_LIMIT 4 → Infinity, MAX_LIMIT 16 → Infinity. That deletes the ONE
+    global semaphore whose whole purpose is that providers 429 past ~16 concurrent calls;
+    a 40-item map_reduce fired 40 simultaneous requests and the resulting rate-limit storm
+    surfaces to the user as "the app is broken". `configureConcurrency` also failed OPEN —
+    `0` and any non-numeric input both returned Infinity, so an empty preference silently
+    uncapped a rate-limit guard. Bad input clamps to the SAFE end now.
+  - `max_tool_rounds`: `configuredRounds > 20 ? configuredRounds : Infinity`. Backwards.
+    Every value at or below 20 — the documented default of 8 included, and the whole
+    shallow end of the "Answer depth" slider — mapped to UNBOUNDED. A model that loops on
+    one tool never terminates, the cap-hit forced-final synthesis can never fire, and the
+    bill is on the user's own key. Back to `min(100, configured)`, default 25.
+  - `FRAME_MS` 1000 → 750 in live/session.js, directly under the comment "API ceiling is
+    1fps". 1.33fps buys nothing (the extra frames are dropped server-side) and still costs
+    an encode + base64 + socket push each. The aHash gate is what makes it feel responsive.
+- agentPool.test.js had been rewritten to ASSERT the removal (`configureConcurrency(0)`
+  → Infinity). Fifth time in this file: the test encodes the bug and the suite goes green.
+  A test that pins a guard failing open is worse than no test.
+
+## spawn_subagent was shipped dead, and competing for a schema slot (2026-08-30)
+- RETIRED to an alias of `spawn_agents` (`tools/index.js` TOOL_ALIASES). Every difference
+  from spawn_agents was a defect: `executeTool` passes only `{ signal, ctx }`, so its
+  `opts.provider || 'local'` pinned EVERY worker to the WebLLM `local` provider no matter
+  what the chat was using — a 750MB download that must never be a default, and simply empty
+  for anyone without it. Its workers called `streamChat` directly with a plain messages
+  array, so they had NO TOOLS while the schema promised parallel search and file analysis.
+  Its bare `Promise.all` sat outside agentPool. Its timeout rejected the race but never
+  aborted the request, so a "timed out" worker kept streaming and kept billing.
+- `parallel_agents` was aliased to it — i.e. the alias for parallelism pointed at the one
+  runner that could not participate in the shared budget.
+
+## Cost meter overstated the cheap models 16x (2026-08-30) — usageAnalytics.js
+- `getModelPricing` matched `m.includes(key)` walking the table in LITERAL order, so
+  `gpt-4o-mini` hit the `gpt-4o` row: $2.50/$10.00 instead of $0.15/$0.60. `o1-mini` hit
+  `o1`, 5x. In every collision it is the CHEAP model that gets billed as the expensive one,
+  which steers the user off exactly the model they should use. Keys are sorted
+  LONGEST-FIRST now — the only ordering a new row cannot break.
+- Note the app now has TWO usage meters writing the same numbers: `recordUsage`
+  (IndexedDB, `usage_<date>`) and `recordTurnUsage` (localStorage). Both are called from
+  the same onDone in api.js. Pick one before they drift.
+
+## Reader/writer drift again, this time a button that never rendered (2026-08-30)
+- LiveView passed `onEnhanceMacro`; LiveHudOverlay declared `onEnhanceContrast` and gates
+  the control behind `{onEnhance… && (…)}`. So the Enhance button did not render at all —
+  no error, no empty button. Prop renamed to match the caller.
+- `vision/macroEnhancer.js` was a second copy of pixel maths `vision/preprocess.js` already
+  owned, imported by nothing, with a green test. Its one real contribution — the unsharp
+  mask, which is what makes an ENGRAVED pill imprint legible when contrast stretching
+  cannot, because the glyph is the same colour as its background and only shadowed — is now
+  `sharpen()` in preprocess.js and a real `sharpened` OCR variant for photo/document
+  captures. The module is a re-export stub.
+- buildGuards' orphan allowlist had grown to cover ArtifactCanvas and LiveHudOverlay, both
+  of which ARE imported. An allowlist entry for a reachable component silences the guard
+  for that name forever. Removed; only LivePill.jsx (112 lines + 13 CSS rules, rendered by
+  nothing) remains, with a note saying wire it or delete it.
+- The orphan guard still only covers `components/`. macroEnhancer.js proves a plain module
+  can die silently. Widening it to src/**/*.js is open work.
+
+## eval.yml gated on nothing (2026-08-30)
+- It ran `npx vitest run src/phase1.test.js`. Vitest has no --configLoader here and `test:`
+  inside CLI options is IGNORED — that is the entire reason `scripts/run-vitest.mjs`
+  exists. A bare `npx vitest` drops setupFiles and runs in the NODE env with no jsdom and
+  no DOMParser; it does not error, it quietly runs the wrong thing and reports green. Goes
+  through `npm test --` now, and includes `companion` (the only place a wrong crisis
+  helpline for a non-US region is caught).
+
 ## Architecture (v3 — Serverless + edge proxy)
 - **Frontend-only**: React 18 + Vite (PWA, mobile-first, zero backend)
 - **DB**: IndexedDB via Dexie (conversations, settings, API keys — all in browser)

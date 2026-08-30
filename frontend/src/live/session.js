@@ -63,6 +63,11 @@ import { createCamera, createScreenCapture } from './video'
 import { setSharedVisualSource, clearSharedVisualSource } from '../vision/source'
 import { executeTool, getToolSchemas } from '../tools/index'
 
+// 1000, not 750: the Live API ceiling is 1fps. 750ms is 1.33fps, which does not
+// buy responsiveness — the extra frames are dropped or throttled server-side,
+// and each one is still encoded, base64'd and pushed over the socket locally.
+// The aHash gate in video.js is what actually makes this feel responsive: it
+// skips unchanged scenes, so a moving scene already sends at the ceiling.
 const FRAME_MS = 1000        // API ceiling is 1fps
 const RECONNECT_MAX = 3
 
@@ -187,7 +192,7 @@ You can see them through their camera and hear them through their microphone. Be
       return
     }
     emit({ type: 'reconnecting', attempt: reconnects })
-    setTimeout(() => { if (!closed) open() }, 400 * reconnects)
+    setTimeout(() => { if (!closed) open() }, 200 * reconnects)
   }
 
   async function start() {

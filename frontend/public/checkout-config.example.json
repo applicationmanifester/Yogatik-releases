@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "Copy to frontend/public/checkout-config.json and fill in. It is fetched at",
+    "runtime by /checkout, NOT baked into the bundle, so changing a price id is a",
+    "deploy rather than a rebuild.",
+    "",
+    "Everything in this file is PUBLIC by design: a Paddle client token, a Paddle",
+    "price id and a Cloud Function URL are all safe in a page. The Razorpay key",
+    "SECRET is not here and must never be — the subscription is created by",
+    "functions/createSubscription, which is also the only place notes.uid can be",
+    "attached from a verified ID token.",
+    "",
+    "If this file is absent, /checkout says 'not configured on this deployment",
+    "yet' and charges nothing. That is deliberate: an unconfigured checkout and a",
+    "declined card must never look the same to the person paying.",
+    "",
+    "Add checkout-config.json to .gitignore if you would rather not commit ids."
+  ],
+
+  "paddle": {
+    "environment": "production",
+    "token": "live_xxxxxxxxxxxxxxxxxxxxxxxxx",
+    "prices": {
+      "intl_monthly": "pri_xxxxxxxxxxxxxxxxxxxxxxxxx",
+      "intl_yearly": "pri_xxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  },
+
+  "razorpay": {
+    "createSubscriptionUrl": "https://asia-south1-yogatik.cloudfunctions.net/createSubscription"
+  }
+}

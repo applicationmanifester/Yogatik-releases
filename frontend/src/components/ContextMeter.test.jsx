@@ -15,10 +15,26 @@ describe('ContextMeter Logic', () => {
     expect(tokens).toBe(34)
   })
 
-  it('resolves correct model limits', () => {
+  it('resolves limits from the SAME table the agent budgets against', () => {
+    // This component used to carry its own copy of the limits. `local` was the
+    // number that differed — 8192 here against compaction.js's 4096 — so a
+    // wired meter would have shown the user 50% headroom they did not have,
+    // while the agent compacted their history away underneath them. The meter
+    // must read the table with teeth, not a second opinion.
     expect(getModelContextLimit('gemini', 'gemini-1.5-pro')).toBe(1000000)
     expect(getModelContextLimit('anthropic', 'claude-3-7-sonnet')).toBe(200000)
     expect(getModelContextLimit('openai', 'gpt-4o')).toBe(128000)
-    expect(getModelContextLimit('local', '')).toBe(8192)
+    expect(getModelContextLimit('local', '')).toBe(4096)
+  })
+
+  it('agrees with compaction.js for every provider it knows', async () => {
+    const { getModelContextLimits } = await import('../compaction')
+    for (const [p, m] of [
+      ['gemini', 'gemini-1.5-pro'], ['anthropic', 'claude-3-7-sonnet'],
+      ['openai', 'gpt-4o'], ['groq', 'llama-3.3-70b-versatile'],
+      ['deepseek', 'deepseek-chat'], ['local', 'Qwen2.5-0.5B'], ['unknown', 'whatever'],
+    ]) {
+      expect(getModelContextLimit(p, m), `${p}/${m}`).toBe(getModelContextLimits(p, m).estimatedMaxTokens)
+    }
   })
 })

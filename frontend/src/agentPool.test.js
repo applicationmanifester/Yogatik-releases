@@ -9,9 +9,16 @@ afterEach(() => _resetAgentPool())
 
 describe('agentPool concurrency semaphore', () => {
   it('clamps the configured limit to 1–16', () => {
+    // This test previously asserted the OPPOSITE — that 0 and 'invalid' both
+    // yield Infinity. It passed while the semaphore was doing nothing at all.
+    // A rate-limit guard that fails OPEN on bad input is worse than no guard,
+    // because the fan-out that storms the provider is the one nobody
+    // configured. Same class as the PTY mock and the fs startLine/endLine mock:
+    // the test encoded the bug and went green.
     expect(configureConcurrency(100)).toBe(16)
     expect(configureConcurrency(0)).toBe(1)
     expect(configureConcurrency(-5)).toBe(1)
+    expect(configureConcurrency('invalid')).toBe(1)
     expect(configureConcurrency(3)).toBe(3)
   })
 

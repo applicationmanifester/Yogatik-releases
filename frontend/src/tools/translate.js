@@ -15,7 +15,7 @@ function normLang(l, fallback = 'en') {
   return LANG_MAP[s] || s.slice(0, 2)
 }
 
-// MyMemory Translation API — free, CORS-friendly, no key needed
+// Multi-tier Translation Engine: MyMemory -> Google GTX -> LLM Fallback
 export const translateTool = {
   schema: {
     description: 'Translate text between languages',
@@ -32,38 +32,80 @@ export const translateTool = {
 
     if (srcLang === tgtLang) return { success: false, error: `Source and target are both "${tgtLang}"` }
 
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.trim())}&langpair=${srcLang}|${tgtLang}`
+    let translated = ''
+    let match = 1
+    let quotaError = null
 
-    let data
+    // 1. Try MyMemory API (supports unit tests and standard requests)
     try {
-      const resp = await fetch(url)
-      if (!resp.ok) return { success: false, error: `Translation service returned ${resp.status}` }
-      data = await resp.json()
-    } catch (e) {
-      return { success: false, error: `Could not reach the translation service: ${e.message}` }
+      const myMemoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.trim())}&langpair=${srcLang}|${tgtLang}`
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 4000)
+      const resp = await fetch(myMemoryUrl, { signal: controller.signal })
+      clearTimeout(timeoutId)
+      if (resp.ok) {
+        const data = await resp.json()
+        if (data.quotaFinished) {
+          quotaError = 'Daily translation quota for this network has been used up.'
+        }
+        if (Number(data.responseStatus) === 200 && data.responseData?.translatedText) {
+          translated = data.responseData.translatedText
+          match = data.responseData.match || 1
+        }
+      }
+    } catch { /* proceed to Google GTX fallback */ }
+
+    // 2. Fallback to Google Translate (GTX) endpoint if MyMemory fails
+    if (!translated && !quotaError) {
+      try {
+        const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${srcLang}&tl=${tgtLang}&dt=t&q=${encodeURIComponent(text.trim())}`
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 4000)
+        const resp = await fetch(gtxUrl, { signal: controller.signal })
+        clearTimeout(timeoutId)
+        if (resp.ok) {
+          const raw = await resp.json()
+          if (Array.isArray(raw?.[0])) {
+            translated = raw[0].map(item => item?.[0] || '').join('')
+          }
+        }
+      } catch { /* proceed to LLM translation fallback */ }
     }
 
-    // responseStatus arrives as a number or a string depending on the endpoint.
-    if (Number(data.responseStatus) !== 200) {
-      return { success: false, error: data.responseDetails || 'Translation failed' }
+    // 3. Fallback to LLM translation if external network endpoints are blocked by CORS/firewall
+    if (!translated && !quotaError) {
+      try {
+        const { chatComplete } = await import('../llm')
+        const { getActiveProvider, getActiveModel } = await import('../api')
+        const prov = getActiveProvider() || 'nvidia'
+        const mdl = getActiveModel() || 'meta/llama-3.1-70b-instruct'
+        const prompt = `Translate the following text accurately from ${srcLang} to ${tgtLang}. Output ONLY the translated text without commentary, quotes, or markdown fences:\n\n${text.trim()}`
+        const res = await chatComplete({
+          provider: prov,
+          model: mdl,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.1,
+          maxTokens: 500,
+        })
+        const reply = res?.choices?.[0]?.message?.content?.trim()
+        if (reply) translated = reply
+      } catch { /* final fallback handled below */ }
     }
-    const translated = data.responseData?.translatedText
+
     if (!translated) {
       return {
         success: false,
-        error: data.quotaFinished
-          ? 'Daily translation quota for this network has been used up. Try again tomorrow.'
-          : 'The translation service returned nothing.',
+        error: quotaError || `Could not translate text from ${srcLang} to ${tgtLang}. Please check your connection or retry.`,
       }
     }
+
     return {
       success: true, tool: 'translate',
       original: text, translated,
       source: srcLang, target: tgtLang,
-      // ToolResultCard reads source_text/source_lang/target_lang; without these
-      // aliases the card rendered "Translation (undefined → undefined)".
+      // ToolResultCard reads source_text/source_lang/target_lang
       source_text: text, source_lang: srcLang, target_lang: tgtLang,
-      match: data.responseData?.match,
+      match,
     }
   }
 }

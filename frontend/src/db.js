@@ -103,8 +103,10 @@ export async function deleteMedia(id) {
   return db.media.delete(Number(id))
 }
 
-// ─── Agent Traces & Replay Log ───
+// ─── Agent Traces & Replay Log (Only tracking failures) ───
 export async function logAgentTrace(trace = {}) {
+  // Only persist failed/errored tool traces
+  if (trace.status !== 'error' && !trace.error) return null
   try {
     return await withReopen(() => db.traces.add({
       ...trace,
@@ -190,6 +192,14 @@ export async function updateConversationTitle(id, title) {
   return withReopen(() => db.conversations.update(id, { title, updatedAt: Date.now() }))
 }
 
+export async function updateConversationFolder(id, folder = null) {
+  return withReopen(() => db.conversations.update(id, { folder, updatedAt: Date.now() }))
+}
+
+export async function updateConversationTags(id, tags = []) {
+  return withReopen(() => db.conversations.update(id, { tags, updatedAt: Date.now() }))
+}
+
 export async function updateConversationModel(id, provider, model, settings = null) {
   const updateData = { provider, model }
   if (settings !== null) updateData.settings = settings
@@ -197,13 +207,22 @@ export async function updateConversationModel(id, provider, model, settings = nu
 }
 
 // ─── Messages ───
-export async function addMessage(conversationId, role, content, toolResults = null, sources = null) {
+export async function addMessage(conversationId, role, content, toolResults = null, sources = null, extra = {}) {
   return withReopen(async () => {
     const msg = {
       conversationId, role, content,
       toolResults: toolResults || undefined,
       sources: sources || undefined,
-      createdAt: Date.now(),
+      image: extra.image || undefined,
+      imageName: extra.imageName || undefined,
+      file: extra.file || undefined,
+      files: extra.files || undefined,
+      model: extra.model || undefined,
+      provider: extra.provider || undefined,
+      toolsUsed: extra.toolsUsed || undefined,
+      trace: extra.trace || undefined,
+      error: extra.error || undefined,
+      createdAt: extra.createdAt || Date.now(),
     }
     const id = await db.messages.add(msg)
     await db.conversations.update(conversationId, { updatedAt: Date.now() })
@@ -232,6 +251,13 @@ export async function trimMessages(conversationId, from) {
 export async function addDocument(doc) {
   const id = await db.documents.add({ ...doc, createdAt: Date.now() })
   return { id, ...doc }
+}
+export async function findDocumentByHash(hash, projectId) {
+  if (!hash) return null
+  return withReopen(async () => {
+    const all = await db.documents.toArray()
+    return all.find(d => d.hash === hash && (projectId === undefined || (d.projectId ?? null) === (projectId ?? null))) || null
+  })
 }
 export async function getDocuments(projectId) {
   const all = await db.documents.orderBy('createdAt').reverse().toArray()

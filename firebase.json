@@ -40,6 +40,11 @@
         "destination": "/terms.html"
       },
       {
+        "comment": "The checkout page. MUST come before the SPA catch-all: without an entry here `**` answered /checkout with index.html, so the Upgrade button opened the chat app in a browser tab and no payment could ever be taken.",
+        "source": "/checkout",
+        "destination": "/checkout.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

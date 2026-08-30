@@ -31,6 +31,14 @@ const db = admin.firestore()
 const LICENSE_PRIVATE_KEY = defineSecret('LICENSE_PRIVATE_KEY')
 const PADDLE_WEBHOOK_SECRET = defineSecret('PADDLE_WEBHOOK_SECRET')
 const RAZORPAY_WEBHOOK_SECRET = defineSecret('RAZORPAY_WEBHOOK_SECRET')
+// Creating the subscription is what puts `notes.uid` on it, and notes.uid is
+// the ONLY thing that lets razorpayWebhook know whose account to upgrade. A
+// plain hosted payment-page link carries no uid, so the webhook would arrive,
+// find nothing, and reply "no uid" — money taken, nobody upgraded.
+const RAZORPAY_KEY_ID = defineSecret('RAZORPAY_KEY_ID')
+const RAZORPAY_KEY_SECRET = defineSecret('RAZORPAY_KEY_SECRET')
+const RAZORPAY_PLAN_MONTHLY = defineSecret('RAZORPAY_PLAN_MONTHLY')
+const RAZORPAY_PLAN_YEARLY = defineSecret('RAZORPAY_PLAN_YEARLY')
 
 const DAY = 24 * 60 * 60 * 1000
 const TRIAL_DAYS = 30
@@ -129,6 +137,81 @@ exports.license = onRequest(
     }, LICENSE_PRIVATE_KEY.value())
 
     return res.json({ token, plan, currentPeriodEnd: per })
+  },
+)
+
+/* ── POST /createSubscription — Razorpay, server-side ────────────────────── */
+
+/**
+ * Create a Razorpay subscription for the SIGNED-IN user and return its id.
+ *
+ * This has to happen on the server for two independent reasons:
+ *  - The Razorpay key SECRET is required to create a subscription, and a secret
+ *    in a page the user can view is not a secret.
+ *  - `notes.uid` has to be attached HERE, from a verified ID token. It is the
+ *    only link between the payment and the account: razorpayWebhook reads
+ *    `sub.notes.uid` and, without it, replies "no uid" and upgrades nobody. A
+ *    uid supplied by the browser would let anyone upgrade any account.
+ *
+ * Returns 503 with a plain reason when the Razorpay credentials are not
+ * configured, rather than a generic failure — "payments are not set up yet" and
+ * "your card was declined" must never look the same to the person paying.
+ */
+exports.createSubscription = onRequest(
+  {
+    secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_PLAN_MONTHLY, RAZORPAY_PLAN_YEARLY],
+    cors: true,
+    region: 'asia-south1',
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
+
+    const authz = String(req.headers.authorization || '')
+    if (!authz.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing identity' })
+    let uid
+    try {
+      const decoded = await admin.auth().verifyIdToken(authz.slice(7), true)
+      uid = decoded.uid
+    } catch { return res.status(401).json({ error: 'Invalid identity' }) }
+
+    const keyId = RAZORPAY_KEY_ID.value()
+    const keySecret = RAZORPAY_KEY_SECRET.value()
+    if (!keyId || !keySecret) {
+      return res.status(503).json({ error: 'not-configured', detail: 'Razorpay keys are not set on this deployment.' })
+    }
+
+    const period = String(req.body?.period || 'monthly')
+    const planId = period === 'yearly' ? RAZORPAY_PLAN_YEARLY.value() : RAZORPAY_PLAN_MONTHLY.value()
+    if (!planId) {
+      return res.status(503).json({ error: 'not-configured', detail: `No Razorpay plan id configured for ${period}.` })
+    }
+
+    try {
+      const r = await fetch('https://api.razorpay.com/v1/subscriptions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`,
+        },
+        body: JSON.stringify({
+          plan_id: planId,
+          // 120 monthly cycles / 10 yearly. Razorpay requires a finite count;
+          // this is "until they cancel" expressed in its API.
+          total_count: period === 'yearly' ? 10 : 120,
+          customer_notify: 1,
+          notes: { uid },
+        }),
+      })
+      const body = await r.json()
+      if (!r.ok) {
+        return res.status(502).json({ error: 'razorpay-rejected', detail: body?.error?.description || `HTTP ${r.status}` })
+      }
+      // The key id is public by design (it goes into the checkout widget); the
+      // secret never leaves this function.
+      return res.json({ subscriptionId: body.id, keyId, period })
+    } catch (e) {
+      return res.status(502).json({ error: 'razorpay-unreachable', detail: e?.message || String(e) })
+    }
   },
 )
 

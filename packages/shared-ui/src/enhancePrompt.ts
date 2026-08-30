@@ -30,5 +30,3 @@ export function enhancePrompt(
       return trimmed;
   }
 }
-
-export type { enhancePrompt };

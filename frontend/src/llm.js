@@ -465,7 +465,16 @@ export async function streamChat({
         anthropicMessages.push(m)
       }
     }
-    if (systemPrompt) body.system = systemPrompt
+    // Enable Anthropic prompt caching: mark system prompt block with ephemeral cache_control
+    if (systemPrompt) {
+      body.system = [
+        {
+          type: 'text',
+          text: systemPrompt,
+          cache_control: { type: 'ephemeral' },
+        },
+      ]
+    }
     body.messages = anthropicMessages.length ? anthropicMessages : [{ role: 'user', content: 'hello' }]
   }
 
@@ -690,7 +699,15 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
         anthropicMessages.push(m)
       }
     }
-    if (systemPrompt) body.system = systemPrompt
+    if (systemPrompt) {
+      body.system = [
+        {
+          type: 'text',
+          text: systemPrompt,
+          cache_control: { type: 'ephemeral' },
+        },
+      ]
+    }
     body.messages = anthropicMessages.length ? anthropicMessages : [{ role: 'user', content: 'hello' }]
   }
 

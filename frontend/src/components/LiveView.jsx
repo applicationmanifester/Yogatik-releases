@@ -8,10 +8,12 @@ import {
 import { runAgent } from '../agent'
 import { createLiveSession } from '../live/session'
 import { createCascadeSession } from '../live/cascade'
+import { formatLiveSessionRecap } from '../live/sessionHandoff'
 import { captureProfile, describeWithoutModel } from '../vision/source'
 import { buzz } from '../features'
 import { VisionModal } from './VisionModal'
 import { LiveTranscriptPanel } from './LiveTranscriptPanel'
+import { LiveHudOverlay } from './LiveHudOverlay'
 
 /**
  * Full-screen face-to-face call with:
@@ -368,13 +370,26 @@ export function LiveView({
     }
   }
 
-  /** Hand the question to the call itself, so the answer lands in context. */
-  const askInCall = () => {
-    const q = visionQ.trim()
-    if (!q) return
-    sessionRef.current?.sendText(q)
-    setVision({ open: false })
-  }
+  const startTimeRef = useRef(Date.now())
+
+  const handleEnd = useCallback(() => {
+    const durationSec = Math.max(1, (Date.now() - startTimeRef.current) / 1000)
+    const validTranscripts = (transcript || []).filter(t => t.type === 'message' && t.text)
+    const toolsRun = (transcript || []).filter(t => t.type === 'toolResult')
+    const recapMarkdown = formatLiveSessionRecap({
+      durationSec,
+      transcripts: validTranscripts,
+      toolsExecuted: toolsRun,
+      provider: activeProvider.provider || provider,
+      model: activeProvider.model || model,
+    })
+    onEnd?.({
+      durationSec,
+      transcripts: validTranscripts,
+      toolsExecuted: toolsRun,
+      recapMarkdown,
+    })
+  }, [transcript, activeProvider, provider, model, onEnd])
 
   // Build capability map for models
   const modelCanSeeMap = useMemo(() => {
@@ -399,6 +414,23 @@ export function LiveView({
   return (
     <div className="live-view" role="dialog" aria-modal="true" aria-label="Live conversation">
       <video ref={videoRef} className={`live-self ${camOn ? '' : 'off'}`} autoPlay playsInline muted />
+      {camOn && (
+        <LiveHudOverlay
+          isAnalyzing={thinking || speaking}
+          onIdentifyPill={() => {
+            buzz()
+            sessionRef.current?.sendText?.('Identify this pill in the camera frame: check its imprint code, shape, color, and drug facts.')
+          }}
+          onScanBarcode={() => {
+            buzz()
+            sessionRef.current?.sendText?.('Scan the barcode/packaging in the camera frame and look up the product information.')
+          }}
+          onEnhanceMacro={() => {
+            buzz()
+            sessionRef.current?.sendText?.('Inspect the fine macro details and text in the center of the camera frame.')
+          }}
+        />
+      )}
 
       {/* Awareness badges */}
       <div className="live-badges">
@@ -536,7 +568,7 @@ export function LiveView({
         <div className="live-error">
           <AlertTriangle size={18} />
           <p>{error}</p>
-          <button className="btn" onClick={onEnd}>Close</button>
+          <button className="btn" onClick={handleEnd}>Close</button>
         </div>
       )}
 
@@ -565,7 +597,7 @@ export function LiveView({
         >
           {screenOn ? <MonitorOff size={20} /> : <Monitor size={20} />}
         </button>
-        <button className="live-btn end" onClick={onEnd} aria-label="End call">
+        <button className="live-btn end" onClick={handleEnd} aria-label="End call">
           <PhoneOff size={22} />
         </button>
         <button

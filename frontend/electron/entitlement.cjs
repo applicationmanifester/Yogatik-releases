@@ -88,10 +88,31 @@ let store = {
   lastRefresh: 0,
   /** Set by the renderer after Firebase auth; main never talks to Firebase. */
   idToken: null,
-  licenseApiBase: process.env.YOGATIK_LICENSE_API || '',
+  /**
+   * Where the licence server lives.
+   *
+   * This was `process.env.YOGATIK_LICENSE_API || ''`, and nothing anywhere sets
+   * that variable — not package.json, not electron-builder, not CI. So in every
+   * SHIPPED .exe the base was empty, refresh() returned at the guard below, and
+   * NO USER COULD EVER BE LICENSED. Payment would take their money and the app
+   * would stay locked, with no error to explain it. A paid feature whose only
+   * configuration is an env var nobody sets is a paid feature that does not
+   * exist.
+   *
+   * The default is the deployed Cloud Function's own URL (region asia-south1,
+   * project yogatik — see functions/index.js). The env var still overrides, for
+   * the emulator and for staging.
+   */
+  licenseApiBase: process.env.YOGATIK_LICENSE_API || 'https://asia-south1-yogatik.cloudfunctions.net',
 }
 let statePath = null
 let cached = { state: core.STATE.ANONYMOUS, reason: 'boot' }
+/**
+ * Why the last licence refresh did not produce a token. Surfaced to the
+ * renderer so "I paid and nothing happened" has an answer on screen instead of
+ * only in a log file the user will never open.
+ */
+let lastRefreshError = null
 
 function load(userDataDir) {
   statePath = path.join(userDataDir, LICENSE_FILE)
@@ -171,12 +192,27 @@ async function refresh({ force = false } = {}) {
       body: JSON.stringify({ edition: 'store' }),
       signal: AbortSignal.timeout(15000),
     })
-    if (!res.ok) return cached
+    if (!res.ok) {
+      lastRefreshError = `licence server returned ${res.status}`
+      return cached
+    }
     const body = await res.json()
-    if (!body?.token) return cached
+    if (!body?.token) {
+      lastRefreshError = body?.error ? `licence server: ${body.error}` : 'licence server returned no token'
+      return cached
+    }
 
     const v = core.verifyToken(body.token)
-    if (!v.ok) return cached   // a token we cannot verify is not an upgrade
+    if (!v.ok) {
+      // A token we cannot verify is not an upgrade — but this must NOT be
+      // silent. The commonest cause is the shipped public key not matching the
+      // private key the Cloud Function signs with, and the symptom for the user
+      // is "I paid and nothing happened" with nothing anywhere to explain it.
+      lastRefreshError = `licence signature rejected (${v.reason}) — the app's public key does not match the signing key`
+      console.error('[entitlement]', lastRefreshError)
+      return cached
+    }
+    lastRefreshError = null
 
     store.token = body.token
     store.uid = v.payload.sub
@@ -228,7 +264,17 @@ function registerEntitlementIpc(ipcMain, { shell, openCheckout } = {}) {
   ipcMain.handle('entitlement:refresh', async (_e, opts = {}) => {
     if (opts?.idToken || opts?.uid) setIdentity(opts)
     const st = await refresh({ force: true })
-    return { success: true, ...st, daysLeft: core.daysLeft(st.endsAt, Date.now()) }
+    return {
+      success: true,
+      ...st,
+      daysLeft: core.daysLeft(st.endsAt, Date.now()),
+      // Why an upgrade did not arrive. Without this the UI can only say
+      // "still not Pro", which is indistinguishable from "your payment failed".
+      licenseError: lastRefreshError,
+      // A refresh with no identity cannot possibly return a licence. Say so
+      // rather than reporting a successful no-op.
+      needsSignIn: !store.idToken,
+    }
   })
 
   ipcMain.handle('entitlement:sign-out', () => ({ success: true, ...signOut() }))

@@ -92,6 +92,13 @@ export async function loadNarrator(onProgress) {
 
 export function unloadNarrator() { tts = null }
 
+/** Pre-warm the neural narrator in the background during idle time. */
+export function prewarmNarrator() {
+  if (!tts && !loading && narratorCached()) {
+    loadNarrator().catch(() => {})
+  }
+}
+
 /**
  * Speak one line.
  * @returns {Promise<{pcm: Float32Array, sampleRate: number, seconds: number}>}

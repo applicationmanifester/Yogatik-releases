@@ -222,6 +222,10 @@ contextBridge.exposeInMainWorld('__YOGATIK_BROWSER__', {
   reload: (p) => ipcRenderer.invoke('browser:reload', p || {}),
   hover: (p) => ipcRenderer.invoke('browser:hover', p || {}),
   pdf: (p) => ipcRenderer.invoke('browser:pdf', p || {}),
+  // A <select> has no input-event path: the native dropdown is an OS popup that
+  // sendInputEvent cannot reach, so typing at one did nothing while reporting
+  // success. Every form with a country/quantity/date dropdown was unfillable.
+  select: (p) => ipcRenderer.invoke('browser:select', p || {}),
   cookies: (p) => ipcRenderer.invoke('browser:cookies', p || {}),
   storage: (p) => ipcRenderer.invoke('browser:storage', p || {}),
   // These three were advertised by the tool schema and had NO bridge method,

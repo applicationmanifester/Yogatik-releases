@@ -326,7 +326,7 @@ async function existingMode(file) {
  * @param {number} [opts.offset]    1-based first line, for a ranged read
  * @param {number} [opts.limit]     number of lines to return
  */
-async function readFileSmart(file, { maxBytes = 500_000, offset = 0, limit = 0 } = {}) {
+async function readFileSmart(file, { maxBytes = 100_000_000, offset = 0, limit = 0 } = {}) {
   const stat = await fs.promises.stat(file)
   if (stat.isDirectory()) throw new Error('Path is a directory, not a file')
 

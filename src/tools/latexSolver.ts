@@ -93,13 +93,13 @@ export function parseLatexErrors(logOutput: string): LatexDiagnostic[] {
   const lines = logOutput.split('\n')
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
+    const line = lines[i] || ''
 
     // 1. Undefined control sequence: ! Undefined control sequence. \foo
     if (line.includes('Undefined control sequence')) {
       const nextLine = lines[i + 1] || ''
       const lineNumMatch = lines.slice(Math.max(0, i - 3), i + 4).join('\n').match(/l\.(\d+)/)
-      const lineNum = lineNumMatch ? parseInt(lineNumMatch[1], 10) : undefined
+      const lineNum = lineNumMatch && lineNumMatch[1] ? parseInt(lineNumMatch[1], 10) : undefined
 
       diagnostics.push({
         line: lineNum,
@@ -124,7 +124,7 @@ export function parseLatexErrors(logOutput: string): LatexDiagnostic[] {
     if (line.includes('Runaway argument') || line.includes('Emergency stop')) {
       const lineNumMatch = lines.slice(Math.max(0, i - 3), i + 4).join('\n').match(/l\.(\d+)/)
       diagnostics.push({
-        line: lineNumMatch ? parseInt(lineNumMatch[1], 10) : undefined,
+        line: lineNumMatch && lineNumMatch[1] ? parseInt(lineNumMatch[1], 10) : undefined,
         errorType: 'missing_bracket',
         message: 'Unmatched braces, runaway argument, or unescaped special character (%, _, &).',
         suggestedFix: 'Ensure every { has a matching } and escape %, _, &, and # with a backslash.',

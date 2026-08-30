@@ -1,4 +1,4 @@
-import { forwardRef, type TextareaHTMLAttributes, type ForwardRefExoticComponent, type RefAttributes } from 'react';
+import { useState, forwardRef, type TextareaHTMLAttributes, type ForwardRefExoticComponent, type RefAttributes } from 'react';
 import styles from './Textarea.module.css';
 
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
@@ -54,7 +54,5 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
 );
 
 Textarea.displayName = 'Textarea';
-
-import { useState } from 'react';
 
 export default Textarea as ForwardRefExoticComponent<TextareaProps & RefAttributes<HTMLTextAreaElement>>;

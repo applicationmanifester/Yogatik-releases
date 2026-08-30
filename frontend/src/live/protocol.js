@@ -89,9 +89,9 @@ export function buildSetup({ model, systemInstruction, schemas = [], voice = 'Pu
         automaticActivityDetection: {
           startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
           endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
-          prefixPaddingMs: 120,
-          // Below ~500ms the model cuts in on natural pauses mid-sentence.
-          silenceDurationMs: 600,
+          prefixPaddingMs: 60,
+          // Below ~400ms the model cuts in on natural pauses mid-sentence.
+          silenceDurationMs: 400,
         },
         activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
         turnCoverage: 'TURN_INCLUDES_AUDIO_ACTIVITY_AND_ALL_VIDEO',

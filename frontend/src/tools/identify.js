@@ -17,6 +17,8 @@
 
 import { describeWithoutModel } from '../vision/source'
 import { webSearchTool } from './webSearch'
+import { pillLookupTool } from './pillLookup'
+import { barcodeLookupTool } from './barcodeLookup'
 
 /** Chrome, units and UI furniture — never worth a search on their own. */
 const STOPWORDS = new Set([
@@ -155,6 +157,9 @@ export function searchHint(question = '') {
     ['anime', 'anime'], ['game', 'video game'], ['song', 'song'], ['album', 'album'],
     ['book', 'book'], ['product', 'product'], ['error', 'error'], ['logo', 'logo'],
     ['plant', 'plant species'], ['bird', 'bird species'], ['car', 'car model'],
+    ['pill', 'pill identification imprint'], ['tablet', 'tablet medication imprint'],
+    ['medicine', 'medication pill'], ['drug', 'pharmaceutical drug'],
+    ['barcode', 'upc barcode product'],
   ]
   for (const [needle, hint] of KINDS) if (q.includes(needle)) return hint
   return ''
@@ -167,13 +172,13 @@ export const identifyTool = {
       'Reads the image with every on-device signal available (structure, OCR, zero-shot labels, ' +
       'object detection), extracts the strings that could identify it, searches for them, and ' +
       'returns the evidence with sources. Use this for "what is this / what series / what product / ' +
-      'what error is this" questions about an image — it is the tool that can answer them, because ' +
+      'what error / what pill or medication is this" questions about an image — it is the tool that can answer them, because ' +
       'the answer is usually on the internet rather than in the pixels.',
     parameters: {
       type: 'object',
       properties: {
         image_url: { type: 'string', description: 'URL or data URL of the image.' },
-        question: { type: 'string', description: 'What the user actually asked, e.g. "what series is this".' },
+        question: { type: 'string', description: 'What the user actually asked, e.g. "what series is this" or "what pill is this".' },
         search: { type: 'boolean', description: 'Look the findings up on the web (default true).' },
       },
       required: ['image_url'],
@@ -194,6 +199,7 @@ export const identifyTool = {
     const identifiers = extractIdentifiers(reading)
     const hint = searchHint(question)
     const queries = buildQueries(identifiers, hint)
+    const isMedical = /\b(pill|tablet|capsule|medicine|medication|drug|dose|prescription)\b/i.test(question)
 
     const result = {
       success: true,
@@ -204,6 +210,19 @@ export const identifyTool = {
       queries,
       findings: [],
       sources: [],
+    }
+
+    // Direct specialized lookup for medical pills/tablets via RxNav & OpenFDA
+    if (isMedical && identifiers.length > 0) {
+      for (const id of identifiers.slice(0, 2)) {
+        try {
+          const pillRes = await pillLookupTool.execute({ imprint: id.text, drug_name: id.text })
+          if (pillRes?.matches?.length || pillRes?.fda_facts) {
+            result.medication_lookup = pillRes
+            break
+          }
+        } catch {}
+      }
     }
 
     if (!search || !queries.length) {
@@ -227,7 +246,7 @@ export const identifyTool = {
       } catch { /* one dead query must not sink the identification */ }
     }
 
-    if (!result.findings.length) {
+    if (!result.findings.length && !result.medication_lookup) {
       result.note = 'The image was read, but searching for what it contains returned nothing usable. ' +
         'Report what the image shows and be explicit that the identification is unconfirmed.'
     }

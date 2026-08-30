@@ -40,9 +40,9 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
   const features = resolveFeatures(prefs.features)
   const voice = prefs.live_voice_local || DEFAULT_VOICE
   const neural = prefs.live_voice_engine !== 'system'
-  const speed = prefs.voice_speed ?? 1
-  const rounds = Math.max(5, Math.min(100, Number(prefs.max_tool_rounds) || 50))
-  const browserSurface = prefs.browser_display_mode === 'panel' ? 'panel' : 'window'
+  const rawRounds = Number(prefs.max_tool_rounds)
+  const isUnlimited = !rawRounds || rawRounds >= 100 || rawRounds === 0
+  const rounds = isUnlimited ? 100 : Math.max(5, Math.min(95, rawRounds))
   const [previewing, setPreviewing] = useState(false)
 
   const gender = GENDER.male.includes(voice) ? 'male' : 'female'
@@ -132,18 +132,64 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
       </section>
 
       <section className="personalise-group">
+        <h4><Sliders size={13} /> Tone &amp; Relationship Boundary</h4>
+        <p className="personalise-hint">
+          Tune how the companion or assistant communicates and connects with you.
+        </p>
+
+        <div className="toggle-row">
+          <label htmlFor="p-boundary">Relationship role</label>
+          <select
+            id="p-boundary"
+            className="style-select"
+            value={prefs.companion_boundary || 'assistant'}
+            onChange={e => onChange('companion_boundary', e.target.value)}
+          >
+            <option value="assistant">Helpful Assistant (Task-focused &amp; direct)</option>
+            <option value="companion">Friendly Companion (Warm &amp; conversational)</option>
+            <option value="mentor">Strict Mentor (Challenging &amp; rigorous)</option>
+          </select>
+        </div>
+
+        <div className="toggle-row">
+          <label htmlFor="p-emotional">
+            Emotional engagement <span className="personalise-value">{Math.round((prefs.emotional_engagement ?? 0.5) * 100)}%</span>
+          </label>
+          <input
+            id="p-emotional" type="range" min="0" max="1" step="0.1"
+            value={prefs.emotional_engagement ?? 0.5}
+            onChange={e => onChange('emotional_engagement', Number(e.target.value))}
+          />
+        </div>
+
+        <div className="toggle-row">
+          <label htmlFor="p-formality">
+            Formality level <span className="personalise-value">{Math.round((prefs.formality_level ?? 0.5) * 100)}%</span>
+          </label>
+          <input
+            id="p-formality" type="range" min="0" max="1" step="0.1"
+            value={prefs.formality_level ?? 0.5}
+            onChange={e => onChange('formality_level', Number(e.target.value))}
+          />
+        </div>
+      </section>
+
+      <section className="personalise-group">
         <h4><Sliders size={13} /> Answer depth</h4>
         <p className="personalise-hint">
-          How many tool/refinement rounds the assistant may take before it must
-          answer. Higher digs deeper on complex tasks but is slower.
+          How many tool/refinement rounds the assistant may take before answering.
+          Set to Unlimited so the agent executes continuously without stopping.
         </p>
         <div className="toggle-row">
           <label htmlFor="p-rounds">
-            Max rounds <span className="personalise-value">{rounds}</span>
+            Max rounds <span className="personalise-value">{isUnlimited ? 'Unlimited (∞)' : rounds}</span>
           </label>
           <input
             id="p-rounds" type="range" min="5" max="100" step="5" value={rounds}
-            onChange={e => onChange('max_tool_rounds', Number(e.target.value))}
+            onChange={e => {
+              const val = Number(e.target.value)
+              onChange('max_tool_rounds', val >= 100 ? 0 : val)
+            }}
           />
         </div>
       </section>
@@ -218,6 +264,56 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
             <option value="12">12-hour</option>
             <option value="24">24-hour</option>
           </select>
+        </div>
+      </section>
+
+      <section className="personalise-group">
+        <h4><Sliders size={13} /> Accessibility &amp; Display</h4>
+        <p className="personalise-hint">
+          WCAG 2.1 AA compliant adjustments to enhance legibility and reduce cognitive strain.
+        </p>
+
+        <div className="toggle-row">
+          <label htmlFor="p-high-contrast">High contrast mode</label>
+          <label className="toggle" aria-label="Toggle high contrast mode">
+            <input
+              id="p-high-contrast"
+              type="checkbox"
+              checked={prefs.high_contrast === true}
+              onChange={e => onChange('high_contrast', e.target.checked)}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+
+        <div className="toggle-row">
+          <label htmlFor="p-simple-mode">Simplified interface mode
+            <span className="personalise-sub">Hides dense technical metadata and badges</span>
+          </label>
+          <label className="toggle" aria-label="Toggle simplified interface mode">
+            <input
+              id="p-simple-mode"
+              type="checkbox"
+              checked={prefs.simple_mode === true}
+              onChange={e => onChange('simple_mode', e.target.checked)}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+
+        <div className="toggle-row">
+          <label htmlFor="p-reduce-motion">Reduced motion
+            <span className="personalise-sub">Minimizes smooth animations &amp; transitions</span>
+          </label>
+          <label className="toggle" aria-label="Toggle reduced motion">
+            <input
+              id="p-reduce-motion"
+              type="checkbox"
+              checked={prefs.reduce_motion === true}
+              onChange={e => onChange('reduce_motion', e.target.checked)}
+            />
+            <span className="slider" />
+          </label>
         </div>
       </section>
 

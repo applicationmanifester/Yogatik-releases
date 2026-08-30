@@ -22,12 +22,12 @@ export const SILENCE_RMS = 0.012
 // Trailing silence that ends an utterance. Shorter than the Web Speech
 // endpointer because Whisper handles a clipped tail better than a merged pair
 // of sentences.
-export const TRAILING_SILENCE_MS = 700
+export const TRAILING_SILENCE_MS = 450
 // A segment is force-closed here even mid-sentence: Whisper's accuracy falls
 // off on long audio, and a caller who never pauses should still get answers.
 export const MAX_SEGMENT_MS = 15000
 // Ignore blips too short to be a word — a cough, a door, a keyboard clack.
-export const MIN_SEGMENT_MS = 400
+export const MIN_SEGMENT_MS = 250
 
 export function isSilent(rms, threshold = SILENCE_RMS) {
   return !(Number.isFinite(rms) && rms >= threshold)
@@ -90,7 +90,7 @@ export async function createLocalRecognizer({ lang, onFinal, onStatus, onError }
   let segmentMs = 0
   let peak = 0
   let timer = null
-  const TICK = 100
+  const TICK = 60
 
   const newRecorder = () => {
     chunks = []

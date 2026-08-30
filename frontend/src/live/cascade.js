@@ -86,7 +86,7 @@ export function speechRecognitionAvailable() {
 
 const MAX_HISTORY_TURNS = 20   // Keep context tight for fast providers
 const MIN_BARGE_CHARS = 6      // Shorter than this is usually echo or a cough
-const ECHO_TAIL_MS = 1500      // Keep filtering echo this long after speech ends
+const ECHO_TAIL_MS = 800      // Keep filtering echo this long after speech ends
 
 /** Loose overlap test: is `heard` just the synthesiser being picked up again? */
 export function isEcho(heard, spoken) {
@@ -107,13 +107,17 @@ export function isEcho(heard, spoken) {
 // complete-sounding utterance can commit sooner; a short fragment waits a touch
 // longer in case the speaker is only pausing. Cuts perceived latency vs a fixed
 // 700ms without chopping people off mid-thought.
+export const CONTINUATION_CONNECTORS = /\b(and|or|but|because|so|if|that|which|where|when|with|to|then|like|although|plus|as well as|such as|for example|including|meaning)\s*$/i
+
 export function endpointDelay(text = '') {
   const t = String(text).trim()
-  if (/[.!?]$/.test(t)) return 350
+  if (/[.!?]$/.test(t)) return 200
+  // Semantic continuation gating: If user paused on a connective word, give them more time
+  if (CONTINUATION_CONNECTORS.test(t)) return 650
   const words = t ? t.split(/\s+/).length : 0
-  if (words >= 8) return 450
-  if (words >= 4) return 650
-  return 850
+  if (words >= 8) return 300
+  if (words >= 4) return 450
+  return 600
 }
 
 // ─── Hands-free voice commands ─────────────────────────────────────────────

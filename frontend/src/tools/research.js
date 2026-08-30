@@ -11,7 +11,13 @@ import { chunkText, buildIndex, search as bm25, tokenize } from '../retrieval'
 
 const PER_PAGE_CHARS = 6000      // what the model finally sees, per page
 const EXTRACT_CHARS = 36000     // what we keep to rank against the question
-const FETCH_TIMEOUT = 15000
+const FETCH_TIMEOUT = 4500
+
+const PAGE_CACHE = new Map()
+const PAGE_CACHE_TTL = 10 * 60_000
+
+const RESEARCH_CACHE = new Map()
+const RESEARCH_CACHE_TTL = 5 * 60_000
 
 /**
  * Search engines want keywords, but the model tends to forward the user's
@@ -282,12 +288,22 @@ const AD_TRACKER = /\b(?:duckduckgo\.com\/y\.js|bing\.com\/aclick|google\.com\/a
 
 async function fetchPage(url) {
   if (!url || AD_TRACKER.test(url)) return null
+  const cached = PAGE_CACHE.get(url)
+  if (cached && (Date.now() - cached.ts) < PAGE_CACHE_TTL) {
+    return cached.data
+  }
   const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), FETCH_TIMEOUT))
   try {
     const html = await Promise.race([proxyText(url), timeout])
     const page = extractReadable(html, { maxChars: EXTRACT_CHARS })
     if (page.text.length < 200) return null
-    return { url, ...page }
+    const res = { url, ...page }
+    if (PAGE_CACHE.size > 200) {
+      const firstKey = PAGE_CACHE.keys().next().value
+      PAGE_CACHE.delete(firstKey)
+    }
+    PAGE_CACHE.set(url, { data: res, ts: Date.now() })
+    return res
   } catch {
     return null
   }
@@ -329,6 +345,13 @@ export const researchTool = {
     if (!query) return { error: 'Empty query' }
     const { depth = 3, recency = 'any', site, follow_up = false } = (typeof args === 'object' && args !== null) ? args : {}
     const n = Math.min(Math.max(1, depth | 0), 8)
+
+    const rCacheKey = `${query.toLowerCase()}_${n}_${recency}_${site || ''}_${follow_up}`
+    const rCached = RESEARCH_CACHE.get(rCacheKey)
+    if (rCached && (Date.now() - rCached.ts) < RESEARCH_CACHE_TTL) {
+      return { ...rCached.data, cached: true }
+    }
+
     const subQueries = decomposeQuery(query)
 
     // Execute sub-queries concurrently for comprehensive coverage

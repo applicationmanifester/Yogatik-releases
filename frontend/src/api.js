@@ -21,6 +21,7 @@ import { logError } from './errorLog'
 import { signInWithGoogle, checkRedirectResult, logOutGoogle, saveUserApiKey, getUserApiKeys, purgePlaintextKeys, authRedirectPending, saveVault, loadVault, getVaultMeta } from './firebaseAuth'
 import { encryptSecret, decryptSecret } from './crypto'
 import { selectIncoming } from './syncMerge'
+import { recordTurnUsage, getModelPricing } from './usageAnalytics'
 
 // ─── Auth (Google Sign-In & encrypted Firestore key vault) ───
 
@@ -352,10 +353,10 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         onSafety: body.onSafety || null,
         onDone: ({ content, sources, aborted, trace, toolResults }) => {
           if (sources?.length) onSources?.(sources)
-          recordUsage(pid, mdl, {
+          recordTurn(pid, mdl, {
             inTokens: estimateTokens(body.message || ''),
             outTokens: estimateTokens(content || ''),
-          }).catch(() => {})
+          })
           onDone?.(content, { aborted, provider: pid, model: mdl, trace, toolResults })
         },
         onError: (err) => { failure = err?.message || String(err) },
@@ -395,10 +396,10 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
               onSafety: body.onSafety || null,
               onDone: ({ content, sources, aborted, trace, toolResults }) => {
                 if (sources?.length) onSources?.(sources)
-                recordUsage(pid, fallbackMdl, {
+                recordTurn(pid, fallbackMdl, {
                   inTokens: estimateTokens(body.message || ''),
                   outTokens: estimateTokens(content || ''),
-                }).catch(() => {})
+                })
                 onDone?.(content, { aborted, provider: pid, model: fallbackMdl, trace, toolResults })
               },
               onError: (err) => { failure = err?.message || String(err) },
@@ -659,6 +660,36 @@ export function estimateTokens(text = '') {
 
 const today = () => new Date().toISOString().slice(0, 10)
 
+/**
+ * The ONE place a finished turn is metered.
+ *
+ * There are two usage stores — `recordUsage` (the per-day, per-provider rollup
+ * in IndexedDB that the sidebar meter reads) and `recordTurnUsage` (the
+ * per-turn record in localStorage that DataDashboard reads for cost). They were
+ * called from two different places: the primary streaming path wrote only the
+ * rollup, and only the provider-fallback path wrote both. So the cost dashboard
+ * was not merely at risk of drifting from the sidebar meter — it was already
+ * showing the cost of the small minority of turns that had failed over to a
+ * second provider, and reporting it as the total.
+ *
+ * Routing both through one function is the same fix as db.js's getSetting /
+ * setSetting choke point for the keychain: two stores cannot disagree if one
+ * function writes both. Consolidating onto a single store is still worth doing;
+ * this makes it safe to do later instead of urgent now.
+ */
+export function recordTurn(providerId, model, { inTokens = 0, outTokens = 0, latencyMs = 0 } = {}) {
+  recordUsage(providerId, model, { inTokens, outTokens }).catch(() => {})
+  try {
+    recordTurnUsage({
+      provider: providerId,
+      model,
+      promptTokens: inTokens,
+      completionTokens: outTokens,
+      latencyMs,
+    })
+  } catch { /* localStorage can be unavailable or full; the rollup still landed */ }
+}
+
 export async function recordUsage(providerId, model, { inTokens = 0, outTokens = 0 } = {}) {
   const key = `usage_${today()}`
   const day = await db.getSetting(key, {})
@@ -749,12 +780,34 @@ export async function saveMessage(conversationId, msg) {
     conversationId, msg.role, msg.content,
     msg.toolResults ? stripBlobUrls(msg.toolResults) : null,
     msg.sources || null,
+    {
+      image: msg.image || undefined,
+      imageName: msg.imageName || undefined,
+      file: msg.file || undefined,
+      files: msg.files || undefined,
+      model: msg.model || undefined,
+      provider: msg.provider || undefined,
+      toolsUsed: msg.toolsUsed || undefined,
+      trace: msg.trace || undefined,
+      error: msg.error || undefined,
+      createdAt: msg.createdAt || undefined,
+    }
   )
 }
 
 export async function renameConversation(id, title) {
   if (!id) return
   return db.updateConversationTitle(id, title)
+}
+
+export async function updateConversationFolder(id, folder = null) {
+  if (!id) return
+  return db.updateConversationFolder(id, folder)
+}
+
+export async function updateConversationTags(id, tags = []) {
+  if (!id) return
+  return db.updateConversationTags(id, tags)
 }
 
 export async function updateConversationModel(id, provider, model, settings = null) {
@@ -888,20 +941,54 @@ async function extractText(file) {
   throw new Error(`Unsupported file type: ${file.type || name}. Supported: PDF, TXT, MD, CSV, JSON, code files.`)
 }
 
+async function computeTextHash(text) {
+  if (typeof crypto !== 'undefined' && crypto.subtle?.digest) {
+    try {
+      const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+      return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+    } catch { /* fallback */ }
+  }
+  let h = 0
+  for (let i = 0; i < text.length; i++) {
+    h = ((h << 5) - h) + text.charCodeAt(i)
+    h |= 0
+  }
+  return `h_${Math.abs(h).toString(16)}_${text.length}`
+}
+
 const INLINE_LIMIT = 12000 // small docs ride along in the prompt; larger ones are retrieved
 
-export async function uploadDocument(file) {
+export async function uploadDocument(file, projectId) {
   if (!file) return { success: false, error: 'No file provided' }
 
   const text = (await extractText(file)).trim()
   if (!text) return { success: false, error: 'File appears to be empty' }
+
+  const hash = await computeTextHash(text)
+
+  // Deduplication check: if identical document content already exists in database, reuse it
+  const existing = await db.findDocumentByHash(hash, projectId)
+  if (existing) {
+    return {
+      success: true,
+      id: existing.id,
+      name: file.name,
+      chars: existing.chars || text.length,
+      chunks: existing.chunks?.length || 0,
+      deduplicated: true,
+      inline: text.length <= INLINE_LIMIT ? text : null,
+      message: text.length <= INLINE_LIMIT
+        ? `Reused ${file.name} (${text.length.toLocaleString()} chars, 0 bytes duplicated).`
+        : `Reused ${file.name} — ${existing.chunks?.length || 0} passages ready via doc_search (0 bytes duplicated).`,
+    }
+  }
 
   const chunks = chunkText(text)
   // Only chunks are ever read back (doc_search joins them); keeping the full
   // text too doubled IndexedDB usage for every upload.
   const doc = await db.addDocument({
     name: file.name, type: file.type || 'text', size: file.size,
-    chars: text.length, chunks,
+    chars: text.length, hash, chunks, projectId: projectId || null,
   })
   invalidateDocIndex(doc.id)
 
@@ -911,6 +998,7 @@ export async function uploadDocument(file) {
     name: file.name,
     chars: text.length,
     chunks: chunks.length,
+    deduplicated: false,
     // Short documents are cheaper and more accurate injected whole than retrieved.
     inline: text.length <= INLINE_LIMIT ? text : null,
     message: text.length <= INLINE_LIMIT
@@ -1333,9 +1421,16 @@ export async function routeModel(providerId, message) {
   const matching = measured.filter(m => prefer.test(m.model.toLowerCase()))
   const pool = matching.length ? matching : measured
 
-  // Within the right category, fastest wins.
-  const pick = pool.sort((a, b) => a.latencyMs - b.latencyMs)[0]
-  const value = pick ? { model: pick.model, kind, latencyMs: pick.latencyMs } : null
+  // Within the right category, score by cost-efficiency and latency.
+  const scored = pool.map(m => {
+    const [inCost, outCost] = getModelPricing(m.model, providerId)
+    const avgCost = (inCost + outCost) / 2
+    const score = (m.latencyMs / 1000) * 0.6 + (avgCost || 0.1) * 0.4
+    return { ...m, score, cost: avgCost }
+  })
+
+  const pick = scored.sort((a, b) => a.score - b.score)[0]
+  const value = pick ? { model: pick.model, kind, latencyMs: pick.latencyMs, estimatedCostPerM: pick.cost } : null
   routeCache.set(cacheKey, { at: Date.now(), value })
   return value
 }

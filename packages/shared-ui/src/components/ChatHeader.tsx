@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 
 export interface ChatHeaderProps {
   title: string;
   subtitle?: string;
-  onAction?: (data: any) => void;
+  onAction?: (data: { type: string; payload?: unknown }) => void;
   showRefresh?: boolean;
   showSearch?: boolean;
 }
@@ -15,17 +15,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   showRefresh = true,
   showSearch = false
 }) => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasInitialized, setHasInitialized] = useState(false);
-
-  useEffect(() => {
-    setHasInitialized(true);
-    // Simulate async initialization
-    const timeout = setTimeout(() => setIsLoading(false), 500);
-    return () => clearTimeout(timeout);
-  }, []);
-
-  const handleAction = (data: any) => {
+  const handleAction = (data: { type: string; payload?: unknown }) => {
     onAction?.(data);
   };
 
@@ -64,17 +54,19 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           </button>
         )}
         {showSearch && (
-          <input
-            type="text"
-            placeholder="Search..."
+          <button
+            onClick={() => handleAction({ type: 'search' })}
             style={{
               padding: '4px 8px',
-              fontSize: '0.875rem',
+              fontSize: '0.75rem',
+              background: 'transparent',
               border: '1px solid #ccc',
               borderRadius: '4px',
-              width: 200
+              cursor: 'pointer'
             }}
-          />
+          >
+            Search
+          </button>
         )}
       </div>
     </div>

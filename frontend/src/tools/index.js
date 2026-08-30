@@ -58,8 +58,10 @@ import {
   docExportTool, docEnhanceTool,
 } from './independentTools'
 import { visualVerifyTool } from './visualVerify'
+import { askUserTool, setUserQuestionHandler } from './askUser'
 import { fsPatchTool } from './fsPatch'
 import { codeOutlineTool } from './codeOutline'
+import { fsOutlineTool, fsSmartReadTool } from './fsSmartRead'
 import { pushAmbientSignal, popAmbientSignal } from './http'
 import { repairToolArguments } from './schemaRepair'
 import { validateToolSafety } from './toolGuard'
@@ -152,6 +154,8 @@ import {
 } from './desktopCompanion'
 import { localInferenceTool } from './localInference'
 import { dspyOptimizerTool } from './dspyOptimizer'
+import { pillLookupTool } from './pillLookup'
+import { barcodeLookupTool } from './barcodeLookup'
 import { haystackRagTool } from './haystackRag'
 import { aiderCopilotTool } from './aiderCopilot'
 import { langsmithObservabilityTool } from './langsmithObservability'
@@ -295,6 +299,9 @@ const ALL_TOOLS = {
   social_post_generator: socialPostTool,
   background_task_spawn: backgroundTaskSpawnTool,
   background_task: backgroundTaskSpawnTool,
+  ask_user: askUserTool,
+  ask_question: askUserTool,
+  user_input: askUserTool,
   // Desktop-only local filesystem tools (Tauri shell). Present in every build;
   // in the browser they return an honest "desktop only" note.
   fs_add_folder: fsAddFolderTool,
@@ -306,6 +313,8 @@ const ALL_TOOLS = {
   fs_multi_replace: fsMultiReplaceTool,
   fs_patch: fsPatchTool,
   code_outline: codeOutlineTool,
+  fs_outline: fsOutlineTool,
+  fs_smart_read: fsSmartReadTool,
   fs_file_info: fsFileInfoTool,
   fs_copy: fsCopyTool,
   identify: identifyTool,
@@ -368,6 +377,8 @@ const ALL_TOOLS = {
   browser_autopilot: browserAutopilotTool,
   browser_control: browserControlTool,
   qa_report_generate: qaReportTool,
+  pill_lookup: pillLookupTool,
+  barcode_lookup: barcodeLookupTool,
   // Open Public API Tools (Keyless, Free, Browser-Native)
   drug_info: drugInfoTool,
   crypto_price: cryptoPriceTool,
@@ -529,6 +540,20 @@ export const TOOL_ALIASES = {
   fs_glob: 'fs_find_files',
   locate_file: 'fs_find_files',
   read_file: 'fs_read',
+  smart_read: 'fs_smart_read',
+  file_outline: 'fs_outline',
+  // RETIRED: spawn_subagent was a strictly worse second copy of spawn_agents.
+  // executeTool only ever passes { signal, ctx }, so its `opts.provider ||
+  // 'local'` pinned EVERY worker to the WebLLM provider regardless of the chat's
+  // actual provider — a 750MB download that must never be a default, and empty
+  // for anyone without it. Its workers called streamChat directly, so they had
+  // NO TOOLS at all while the description promised parallel searching and file
+  // analysis; and its bare Promise.all sat outside agentPool, the one global
+  // semaphore that keeps concurrent sub-agent calls under the provider rate
+  // limit. Same class as terminal_exec: two near-identical descriptions in a
+  // 64-slot budget, one of which could not do the job.
+  spawn_subagent: 'spawn_agents',
+  parallel_agents: 'spawn_agents',
   view_file: 'fs_read',
   write_file: 'fs_write',
   create_file: 'fs_write',
@@ -550,9 +575,6 @@ export const TOOL_ALIASES = {
   search_code: 'fs_search',
   batch_read: 'fs_batch_read',
   git: 'fs_git',
-  git_status: 'fs_git',
-  git_diff: 'fs_git',
-  git_log: 'fs_git',
   git_commit: 'fs_git',
   git_stage: 'fs_git',
   git_unstage: 'fs_git',
@@ -622,6 +644,15 @@ export const TOOL_ALIASES = {
   code_security: 'deepsec',
   vuln_scan: 'deepsec',
   vulnerability_scan: 'deepsec',
+  pill_identifier: 'pill_lookup',
+  pill_id: 'pill_lookup',
+  identify_pill: 'pill_lookup',
+  rx_lookup: 'pill_lookup',
+  medication_lookup: 'pill_lookup',
+  barcode_reader: 'barcode_lookup',
+  upc_lookup: 'barcode_lookup',
+  ean_lookup: 'barcode_lookup',
+  product_barcode: 'barcode_lookup',
   sast_scan: 'deepsec',
   schedule: 'scheduler',
   set_alarm: 'timer',
@@ -963,7 +994,19 @@ export function getToolSchemas(disabled = []) {
  * is also simply invalid there. Ranking without truncating changed nothing about
  * the payload; the cap is what makes the ranking matter.
  */
-export const MAX_TOOLS_PER_REQUEST = 64
+// Was raised from 64 to Infinity, which turned the paragraph above from a
+// description into a contradiction: ranking still ran, truncation stopped, and
+// the payload went back to the whole registry — 203 tools as of this change,
+// ~36k tokens of function schemas on EVERY turn. On OpenAI that is not merely
+// expensive, it is an INVALID REQUEST: the API hard-caps a call at 128
+// functions, so a raised cap does not degrade the answer, it 400s the turn.
+//
+// 96 rather than back to 64: comfortably under the provider limit, but half as
+// much headroom sacrificed as the original value, since the registry has since
+// tripled. If tools are being dropped mid-task the fix is CORE_TOOL_SCORES —
+// that floor is what keeps fs_*/terminal/browser/delegation in the list when a
+// follow-up carries no keywords — not removing the cap.
+export const MAX_TOOLS_PER_REQUEST = 96
 
 /**
  * Tools that must survive the cap on EVERY turn, whatever the wording.
@@ -1275,7 +1318,7 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
     const scoreB = scores[nameB] || 0
     return scoreB - scoreA
   })
-  return limit > 0 ? ranked.slice(0, limit) : ranked
+  return (Number.isFinite(limit) && limit > 0) ? ranked.slice(0, limit) : ranked
 }
 
 /** Execute a tool by name */
@@ -1328,6 +1371,8 @@ export function getToolNames() {
 
 export {
   ALL_TOOLS,
+  askUserTool,
+  setUserQuestionHandler,
   localInferenceTool,
   dspyOptimizerTool,
   haystackRagTool,

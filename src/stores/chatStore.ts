@@ -33,6 +33,7 @@ export interface ChatState {
   isStreaming: boolean
   currentStreamingContent: string
   currentReasoningContent: string
+  abortController: AbortController | null
 
   // Actions
   createSession: (title?: string) => string
@@ -42,6 +43,8 @@ export interface ChatState {
   setStreaming: (isStreaming: boolean) => void
   appendStreamingToken: (token: string, isReasoning?: boolean) => void
   resetStreaming: () => void
+  startStreamController: () => AbortController
+  abortStreaming: () => void
   branchFromMessage: (messageId: string) => void
 }
 
@@ -58,6 +61,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStreaming: false,
   currentStreamingContent: '',
   currentReasoningContent: '',
+  abortController: null,
 
   createSession: (title = 'New Research Chat') => {
     const id = `sess_${Date.now()}`
@@ -146,8 +150,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }))
   },
 
-  resetStreaming: () => {
+  startStreamController: () => {
+    const existing = get().abortController
+    if (existing) {
+      existing.abort()
+    }
+    const next = new AbortController()
     set({
+      abortController: next,
+      isStreaming: true,
+      currentStreamingContent: '',
+      currentReasoningContent: '',
+    })
+    return next
+  },
+
+  abortStreaming: () => {
+    const ctrl = get().abortController
+    if (ctrl) {
+      ctrl.abort()
+    }
+    set({
+      abortController: null,
+      isStreaming: false,
+    })
+  },
+
+  resetStreaming: () => {
+    const ctrl = get().abortController
+    if (ctrl) {
+      ctrl.abort()
+    }
+    set({
+      abortController: null,
       isStreaming: false,
       currentStreamingContent: '',
       currentReasoningContent: '',

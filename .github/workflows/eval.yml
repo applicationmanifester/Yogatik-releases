@@ -1,0 +1,43 @@
+name: Eval & Golden-Set Regression Gate
+
+on:
+  push:
+    branches: ['main', 'master', 'develop']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  eval-gate:
+    name: Golden-Set Eval & Safety Screen Recall
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # MUST go through scripts/run-vitest.mjs, never `npx vitest`. Vitest has no
+      # --configLoader flag here and `test:` inside CLI options is IGNORED, so a
+      # bare `npx vitest run` drops setupFiles and runs every file in the NODE
+      # environment with no DOMParser and no jsdom. The suite does not error —
+      # it quietly runs the wrong thing and reports green, which is worse than
+      # no gate at all. This is the same wrapper `npm test` uses.
+      #
+      # phase1     — golden-set eval + adaptation/experiments
+      # companion  — assessSafety crisis recall AND the per-region crisis
+      #              resources. That file is the ONLY place a wrong helpline for
+      #              a non-US region is caught, and it has already encoded that
+      #              bug once (it asserted /988/ for a region-less call), so it
+      #              belongs in this gate rather than only in the full suite.
+      - name: Run golden-set eval + safety-screen recall
+        working-directory: frontend
+        run: npm test -- phase1 companion

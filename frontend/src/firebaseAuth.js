@@ -51,6 +51,36 @@ function fb() {
 
 export const getFirebase = fb
 
+/**
+ * A fresh Firebase ID token for the signed-in user, or null.
+ *
+ * The licence server authenticates with this and NOTHING PRODUCED IT. App.jsx
+ * called `refreshEntitlement({ idToken: userData?.idToken })`, but the user
+ * object here is `profileOf()` — uid, displayName, email, photoURL — and has
+ * never carried an idToken. So the field was always undefined, main's
+ * `store.idToken` stayed null, and `refresh()` returned at its guard every
+ * time: no user could ever be licensed, however much they paid. The same
+ * reader/writer field drift as `is_dir`/`isDir` and `doc.text`/`doc.chunks`,
+ * except this one is the revenue path.
+ *
+ * Deliberately fetched fresh on demand rather than stored on the profile: an ID
+ * token expires in an hour, so a copy taken at sign-in is stale by the time
+ * anyone checks a licence, and a stale token means a 401 the caller reads as
+ * "not entitled".
+ */
+export async function getIdToken({ forceRefresh = false } = {}) {
+  try {
+    const f = await fb()
+    const user = f.auth?.currentUser
+    if (!user?.getIdToken) return null
+    return await user.getIdToken(forceRefresh)
+  } catch {
+    // Signed out, offline, or Firebase unavailable — all of which mean "no
+    // token", not "crash the caller".
+    return null
+  }
+}
+
 const PENDING = 'yogatik.authRedirect'
 /** A redirect is in flight (survives the round trip to Google and back). */
 export function authRedirectPending() {

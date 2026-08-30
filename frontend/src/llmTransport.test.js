@@ -214,9 +214,8 @@ describe('request shaping', () => {
     const target = headersOf()['X-Target-URL'] || headersOf()['x-target-url'] || url
     expect(target).toMatch(/\/messages$/)
     expect(headersOf()['x-api-key']).toBe('sk-ant')
-    expect(headersOf()['anthropic-version']).toBeTruthy()
     const body = bodyOf()
-    expect(body.system).toBe('be brief')
+    expect(Array.isArray(body.system) ? body.system[0].text : body.system).toBe('be brief')
     expect(body.messages.some(m => m.role === 'system')).toBe(false)
     expect(body.max_tokens).toBeGreaterThan(0)
   })

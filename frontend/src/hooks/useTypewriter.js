@@ -32,9 +32,12 @@ export function useTypewriter({
     onCompleteRef.current = onComplete
   }, [onComplete])
 
+  const lastLengthRef = useRef(0)
+
   // Reset when fullText changes (new message)
   useEffect(() => {
     targetTextRef.current = fullText
+    lastLengthRef.current = 0
     setDisplayedText('')
     isCompleteRef.current = false
     startTimeRef.current = performance.now()
@@ -68,9 +71,10 @@ export function useTypewriter({
 
     const elapsed = performance.now() - startTimeRef.current
     const targetLength = Math.floor(elapsed / speedRef.current)
-    const target = targetTextRef.current.slice(0, targetLength)
 
-    if (target !== displayedText) {
+    if (targetLength !== lastLengthRef.current) {
+      lastLengthRef.current = targetLength
+      const target = targetTextRef.current.slice(0, targetLength)
       setDisplayedText(target)
     }
 
@@ -82,7 +86,7 @@ export function useTypewriter({
     }
 
     animationFrameRef.current = requestAnimationFrame(animate)
-  }, [displayedText])
+  }, [])
 
   const skip = useCallback(() => {
     if (animationFrameRef.current) {

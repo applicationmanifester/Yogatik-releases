@@ -378,7 +378,7 @@ async function click(s, { tabId, ref, x, y, button = 'left', double = false } = 
   return { success: true, clicked: { x: pt.x, y: pt.y }, ref: ref || null }
 }
 
-async function typeText(s, { tabId, ref, text, submit = false } = {}) {
+async function typeText(s, { tabId, ref, text, submit = false, clear = false } = {}) {
   const t = tabFor(s, tabId)
   if (!t) return { success: false, error: 'No such tab' }
   if (typeof text !== 'string') return { success: false, error: 'text is required' }
@@ -387,11 +387,82 @@ async function typeText(s, { tabId, ref, text, submit = false } = {}) {
     if (!r.success) return r
   }
   const wc = t.view.webContents
+
+  // Typing APPENDED to whatever the field already held. A search box the model
+  // had just used, or a form the page had prefilled, silently became
+  // "londonnew york" — no error, and the model reported the field as set.
+  //
+  // Select-all + Delete rather than assigning .value directly: a React or Vue
+  // controlled input ignores a programmatic value assignment (its state never
+  // changes, and the next render puts the old value back), whereas real key
+  // events go through the framework's own onChange.
+  if (clear) {
+    wc.sendInputEvent({ type: 'keyDown', keyCode: 'a', modifiers: [process.platform === 'darwin' ? 'meta' : 'control'] })
+    wc.sendInputEvent({ type: 'keyUp', keyCode: 'a', modifiers: [process.platform === 'darwin' ? 'meta' : 'control'] })
+    wc.sendInputEvent({ type: 'keyDown', keyCode: 'Delete' })
+    wc.sendInputEvent({ type: 'keyUp', keyCode: 'Delete' })
+  }
+
   for (const ch of text) {
     wc.sendInputEvent({ type: 'char', keyCode: ch })
   }
-  if (submit) wc.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
-  return { success: true, typed: text.length, submitted: !!submit }
+  if (submit) {
+    // keyUp as well: a handler bound to keyup (or one that tracks key state)
+    // never fired, so "type and press Enter" worked on some forms and silently
+    // did nothing on others. pressKey() has always sent both.
+    wc.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
+    wc.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
+  }
+  return { success: true, typed: text.length, cleared: !!clear, submitted: !!submit }
+}
+
+/**
+ * Choose an option in a <select>.
+ *
+ * There is no input-event path to this: a native dropdown opens an OS-level
+ * popup that sendInputEvent cannot reach, so typing at it does nothing at all
+ * while reporting success. Setting .value and dispatching input+change is the
+ * only way, and the events are what make React/Vue see the change.
+ *
+ * Matching is by value, then exact label, then case-insensitive label, then
+ * index — the model rarely knows which of those it has.
+ */
+async function selectOption(s, { tabId, ref, selector, value } = {}) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  if (value == null) return { success: false, error: 'value is required' }
+
+  const cssSelector = selector || ''
+  // A stale ref is refused, never degraded to "whatever is at that index now" —
+  // silently changing the wrong dropdown looks exactly like success.
+  if (ref && !cssSelector && isStaleRef(ref, t.refEpoch)) {
+    return { success: false, stale: true, error: `${ref} is from an earlier version of this page. Call read again.` }
+  }
+
+  try {
+    const out = await t.view.webContents.executeJavaScript(`(() => {
+      const wanted = ${JSON.stringify(String(value))}
+      const el = ${cssSelector ? `document.querySelector(${JSON.stringify(cssSelector)})` : `(window.__yogatikRefs__ && window.__yogatikRefs__[${JSON.stringify(ref || '')}]) || null`}
+      if (!el) return { ok: false, error: 'Element not found' }
+      if (el.tagName !== 'SELECT') return { ok: false, error: 'Not a <select> element: ' + el.tagName + '. Use type or click instead.' }
+      const opts = Array.from(el.options)
+      let idx = opts.findIndex(o => o.value === wanted)
+      if (idx < 0) idx = opts.findIndex(o => (o.label || o.text || '').trim() === wanted)
+      if (idx < 0) idx = opts.findIndex(o => (o.label || o.text || '').trim().toLowerCase() === wanted.toLowerCase())
+      if (idx < 0 && /^\\d+$/.test(wanted) && Number(wanted) < opts.length) idx = Number(wanted)
+      if (idx < 0) {
+        return { ok: false, error: 'No matching option', options: opts.slice(0, 40).map(o => ({ value: o.value, label: (o.label || o.text || '').trim() })) }
+      }
+      el.selectedIndex = idx
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      return { ok: true, selected: { value: opts[idx].value, label: (opts[idx].label || opts[idx].text || '').trim(), index: idx } }
+    })()`, false)
+    if (!out?.ok) return { success: false, error: out?.error || 'select failed', options: out?.options }
+    return { success: true, ...out.selected }
+  } catch (err) {
+    return { success: false, error: err?.message || String(err) }
+  }
 }
 
 const KEYMAP = {
@@ -576,6 +647,7 @@ function registerBrowserControl(getMainWindow) {
   ipcMain.handle('browser:click', (_e, p = {}) => click(S(p), p))
   ipcMain.handle('browser:hover', (_e, p = {}) => hover(S(p), p))
   ipcMain.handle('browser:type', (_e, p = {}) => typeText(S(p), p))
+  ipcMain.handle('browser:select', (_e, p = {}) => selectOption(S(p), p))
   ipcMain.handle('browser:key', (_e, p = {}) => pressKey(S(p), p))
   ipcMain.handle('browser:scroll', (_e, p = {}) => scroll(S(p), p))
   ipcMain.handle('browser:screenshot', (_e, p = {}) => screenshot(S(p), p))
@@ -834,18 +906,41 @@ function registerBrowserControl(getMainWindow) {
       // userGesture:false — a script must not be able to trigger things the
       // page only allows in response to a real click (popups, autoplay,
       // permission prompts).
-      const value = await t.view.webContents.executeJavaScript(
-        // Wrapped so a bare expression AND a statement body both work: the
-        // model writes both, and `executeJavaScript('const x = 1; x')` throws.
-        `(async () => { return (${expression}) })()`,
-        false,
-      ).catch(async () => t.view.webContents.executeJavaScript(
-        `(async () => { ${expression} })()`, false,
-      ))
+      // Wrapped so a bare expression AND a statement body both work: the model
+      // writes both, and `executeJavaScript('const x = 1; x')` throws.
+      //
+      // The retry must fire ONLY on a SyntaxError. A blanket `.catch(retry)`
+      // re-ran the expression whenever the FIRST form rejected at runtime — so
+      // `document.querySelector('#buy').click()` that threw after clicking
+      // executed a second time. Double-clicking Buy because the first attempt
+      // errored is not a recoverable mistake.
+      let value
+      try {
+        value = await t.view.webContents.executeJavaScript(`(async () => { return (${expression}) })()`, false)
+      } catch (first) {
+        const isSyntax = first?.name === 'SyntaxError'
+          || /SyntaxError|Unexpected (token|identifier|end of input)/i.test(String(first?.message || first))
+        if (!isSyntax) throw first
+        // Statement-body form. Safe to run now: the expression form never
+        // reached execution, so nothing has happened yet.
+        value = await t.view.webContents.executeJavaScript(`(async () => { ${expression} })()`, false)
+      }
       // The result crosses IPC, so it must be structured-cloneable. A DOM node
       // or a function is not, and would arrive as an opaque failure.
       let result = value
       try { result = JSON.parse(JSON.stringify(value ?? null)) } catch { result = String(value) }
+      // `document.body.innerHTML` on a real page is megabytes, and every byte
+      // of it lands in the model's context. Truncate and say so.
+      const MAX_RESULT = 100_000
+      if (typeof result === 'string' && result.length > MAX_RESULT) {
+        return {
+          success: true,
+          result: result.slice(0, MAX_RESULT),
+          truncated: true,
+          totalLength: result.length,
+          note: `Result truncated to ${MAX_RESULT} characters. Narrow the expression, or use extract_text.`,
+        }
+      }
       return { success: true, result }
     } catch (err) {
       // A page-script error is a RESULT the model can act on, not a tool

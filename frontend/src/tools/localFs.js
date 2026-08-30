@@ -53,7 +53,7 @@ function workspaceCtx(override) {
 
 export function getWorkspaceCtx(override) { return workspaceCtx(override) }
 
-async function invoke(cmd, args, ctxOverride) {
+export async function invoke(cmd, args, ctxOverride) {
   const core = window.__TAURI__?.core
   if (!core?.invoke) throw new Error('Tauri bridge unavailable')
   return core.invoke(cmd, { ...(args || {}), ctx: workspaceCtx(ctxOverride) })
@@ -64,11 +64,11 @@ const DESKTOP_ONLY = {
   error: 'Local file access runs only in the Yogatik desktop app. Download it from the app’s Platforms page, or grant a folder there first.',
 }
 
-function ok(extra) { return { success: true, ...extra } }
-function fail(e) { return { success: false, error: typeof e === 'string' ? e : (e?.message || String(e)) } }
+export function ok(extra) { return { success: true, ...extra } }
+export function fail(e) { return { success: false, error: typeof e === 'string' ? e : (e?.message || String(e)) } }
 
 // A single grant guards every op; surfaces a clear prompt to run fs_grant first.
-async function guard(fn) {
+export async function guard(fn) {
   if (!isDesktop()) return DESKTOP_ONLY
   try { return await fn() }
   catch (e) {
@@ -358,25 +358,40 @@ import { recordSnapshot } from '../workspaceTimeMachine'
 
 export const fsReadTool = {
   schema: {
-    description: 'Read a UTF-8 text file inside this chat’s folders. Supports line-range windowing (start_line, end_line) for token-efficient reads. Desktop app only.',
+    description: 'Read a UTF-8 text file inside this chat’s folders. Supports line-range windowing (start_line/offset, end_line/limit) for reading specific sections of large files with line numbers. Desktop app only.',
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Absolute path, or relative to this chat’s primary folder.' },
-        max_bytes: { type: 'number', description: 'Optional byte cap (default 500000).' },
-        start_line: { type: 'number', description: 'Optional 1-indexed starting line number.' },
+        max_bytes: { type: 'number', description: 'Optional byte cap (default 5000000).' },
+        start_line: { type: 'number', description: 'Optional 1-indexed starting line number (or offset).' },
+        offset: { type: 'number', description: 'Optional 1-indexed starting line number (alias for start_line).' },
         end_line: { type: 'number', description: 'Optional 1-indexed ending line number.' },
+        limit: { type: 'number', description: 'Optional number of lines to read starting from offset/start_line.' },
       },
       required: ['path'],
     },
   },
-  async execute({ path, max_bytes, start_line, end_line } = {}, opts = {}) {
-    if (!path) return fail('path is required')
+  async execute(args = {}, opts = {}) {
+    const path = args.path || args.file || args.filepath || args.target || args.target_file || args.TargetFile || args.filename
+    if (!path) return fail('path is required (e.g. { path: "src/file.js" })')
     return guard(async () => {
-      // In-memory cache hit for full-file reads (<0.01ms)
-      const offset = start_line > 0 ? start_line : 0
-      const limit = offset && end_line >= offset ? (end_line - offset + 1) : 0
-      if (!offset && !limit && !max_bytes) {
+      // Robust offset and line range parameter extraction across all model conventions
+      const rawStart = args.start_line ?? args.offset ?? args.line_start ?? args.startLine ?? args.offset_lines ?? args.from_line ?? args.StartLine
+      const rawEnd = args.end_line ?? args.endLine ?? args.line_end ?? args.to_line ?? args.EndLine
+      const rawLimit = args.limit ?? args.length ?? args.max_lines ?? args.lines ?? args.count ?? args.Limit
+
+      let offset = Number(rawStart) > 0 ? Number(rawStart) : 0
+      let limit = 0
+
+      if (rawLimit && Number(rawLimit) > 0) {
+        limit = Number(rawLimit)
+      } else if (rawEnd && Number(rawEnd) >= offset) {
+        limit = offset > 0 ? (Number(rawEnd) - offset + 1) : Number(rawEnd)
+      }
+
+      // In-memory cache hit only for complete, unbounded full-file reads (<0.01ms)
+      if (!offset && !limit && !args.max_bytes) {
         const cached = globalFsCache.get(path)
         if (cached && typeof cached === 'string') {
           return ok({ tool: 'fs_read', path, bytes: cached.length, content: cached, cached: true })
@@ -385,7 +400,7 @@ export const fsReadTool = {
 
       const res = await invoke('fs_read', {
         path,
-        maxBytes: max_bytes || 500000,
+        maxBytes: args.max_bytes || 5000000,
         offset,
         limit,
       }, opts?.ctx)
@@ -407,7 +422,7 @@ export const fsReadTool = {
         encoding: res.encoding,
         eol: res.eol,
         hash: res.hash,
-        range: res.range,
+        range: res.range || (offset || limit ? { offset: offset || 1, limit } : undefined),
         note: res.note || undefined,
       })
     })

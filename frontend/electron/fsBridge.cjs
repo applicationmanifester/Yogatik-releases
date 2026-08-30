@@ -99,7 +99,7 @@ function registerFsBridge() {
   // and returned the fragment with nothing to mark it — the model could not
   // tell a whole file from its first 500KB, and rewrote files from the half it
   // had seen. `offset`/`limit` are the supported way to page through a big one.
-  ipcMain.handle('fs_read', async (_e, { ctx, path: rel, maxBytes = 500000, offset = 0, limit = 0 }) => {
+  ipcMain.handle('fs_read', async (_e, { ctx, path: rel, maxBytes = 100_000_000, offset = 0, limit = 0 }) => {
     const file = resolvePath(ctx, rel)
     const res = await readFileSmart(file, { maxBytes, offset, limit })
     return { path: file, ...res }

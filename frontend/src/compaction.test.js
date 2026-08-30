@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitForCompaction, buildCompactionPrompt, formatSummaryTurn, compactHistory } from './compaction'
+import { splitForCompaction, buildCompactionPrompt, formatSummaryTurn, compactHistory, getModelContextLimits, estimateTokens } from './compaction'
 
 function turns(n, size = 100) {
   return Array.from({ length: n }, (_, i) => ({
@@ -122,5 +122,32 @@ describe('compactHistory normalization', () => {
     })
     expect(Array.isArray(out[0].content)).toBe(true)
     expect(out[0].content).toEqual(parts)
+  })
+})
+
+describe('getModelContextLimits & estimateTokens', () => {
+  it('assigns larger context budgets to large-window models', () => {
+    const gemini = getModelContextLimits('gemini', 'gemini-1.5-pro')
+    const claude = getModelContextLimits('anthropic', 'claude-3-7-sonnet')
+    const gpt = getModelContextLimits('openai', 'gpt-4o')
+    const local = getModelContextLimits('local', 'Qwen2.5-0.5B')
+
+    expect(gemini.budget).toBeGreaterThan(gpt.budget)
+    expect(claude.budget).toBeGreaterThan(gpt.budget)
+    expect(gpt.budget).toBeGreaterThan(local.budget)
+    expect(local.budget).toBe(4000)
+    expect(local.maxTurns).toBe(6)
+  })
+
+  it('estimates token counts with character ratios and turn overheads', () => {
+    const tokens = estimateTokens('Hello world! How are you?')
+    expect(tokens).toBeGreaterThan(0)
+    expect(tokens).toBeLessThan(10)
+
+    const turnTokens = estimateTokens([
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'World' },
+    ])
+    expect(turnTokens).toBeGreaterThan(8)
   })
 })

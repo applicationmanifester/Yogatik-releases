@@ -10,9 +10,14 @@ interface EnhanceButtonProps {
 export function EnhanceButton({ onEnhance, prompt, disabled = false }: EnhanceButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
+  const [options, setOptions] = useState({
+    context: true,
+    clarity: true,
+    constraints: false,
+  });
   const tooltipRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const { toast } = useToast();
+  const { show } = useToast();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -36,18 +41,10 @@ export function EnhanceButton({ onEnhance, prompt, disabled = false }: EnhanceBu
 
     try {
       const enhanced = await onEnhance(prompt);
-      toast({
-        title: 'Prompt Enhanced',
-        description: 'Your prompt has been enhanced successfully.',
-        variant: 'success',
-      });
+      show('Your prompt has been enhanced successfully.', { type: 'success' });
       return enhanced;
     } catch (error) {
-      toast({
-        title: 'Enhancement Failed',
-        description: error instanceof Error ? error.message : 'Failed to enhance prompt',
-        variant: 'destructive',
-      });
+      show(error instanceof Error ? error.message : 'Failed to enhance prompt', { type: 'error' });
       throw error;
     } finally {
       setIsLoading(false);
@@ -169,15 +166,27 @@ export function EnhanceButton({ onEnhance, prompt, disabled = false }: EnhanceBu
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="checkbox" defaultChecked />
+                <input
+                  type="checkbox"
+                  checked={options.context}
+                  onChange={e => setOptions(prev => ({ ...prev, context: e.target.checked }))}
+                />
                 <span>Add context & examples</span>
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="checkbox" defaultChecked />
+                <input
+                  type="checkbox"
+                  checked={options.clarity}
+                  onChange={e => setOptions(prev => ({ ...prev, clarity: e.target.checked }))}
+                />
                 <span>Improve clarity & structure</span>
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="checkbox" />
+                <input
+                  type="checkbox"
+                  checked={options.constraints}
+                  onChange={e => setOptions(prev => ({ ...prev, constraints: e.target.checked }))}
+                />
                 <span>Add constraints & requirements</span>
               </label>
             </div>
@@ -185,7 +194,7 @@ export function EnhanceButton({ onEnhance, prompt, disabled = false }: EnhanceBu
         </div>
       )}
 
-      <style jsx>{`
+      <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }

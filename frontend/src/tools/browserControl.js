@@ -35,7 +35,7 @@ const DESKTOP_ONLY = {
  * class that has bitten this codebase repeatedly.
  */
 export const VALID_ACTIONS = [
-  'navigate', 'read', 'click', 'double_click', 'right_click', 'hover', 'type', 'key',
+  'navigate', 'read', 'click', 'double_click', 'right_click', 'hover', 'type', 'select', 'key',
   'scroll', 'screenshot', 'pdf', 'cookies', 'storage', 'new_tab', 'list_tabs', 'select_tab', 'close_tab',
   'back', 'forward', 'reload', 'set_mode', 'close',
   'wait_for', 'fill_form', 'evaluate', 'extract_text',
@@ -63,7 +63,11 @@ export const ACTION_ALIASES = {
   check: 'diagnose', verify: 'diagnose', test: 'diagnose', health: 'diagnose',
   console_logs: 'console', logs: 'console', errors: 'console', get_logs: 'console',
   tabs: 'list_tabs', newtab: 'new_tab',
-  press: 'key', input: 'type',
+  press: 'key', input: 'type', fill: 'type',
+  // `select_option`/`choose`/`dropdown` must map to `select`, and `select` must
+  // never be confused with `select_tab` — the two are unrelated and a model
+  // reaching for one and getting the other would switch tabs mid-form.
+  select_option: 'select', choose: 'select', dropdown: 'select', set_select: 'select',
   assert_text: 'assert', assert_element: 'assert', assertion: 'assert', expect: 'assert',
   a11y: 'audit_a11y', accessibility: 'audit_a11y', wcag: 'audit_a11y', audit: 'audit_a11y',
 }
@@ -104,7 +108,7 @@ export const browserControlTool = {
           action: {
             type: 'string',
             enum: [
-              'navigate', 'read', 'click', 'double_click', 'right_click', 'hover', 'type', 'key',
+              'navigate', 'read', 'click', 'double_click', 'right_click', 'hover', 'type', 'select', 'key',
               'scroll', 'screenshot', 'pdf', 'cookies', 'storage', 'new_tab', 'list_tabs', 'select_tab', 'close_tab',
               'back', 'forward', 'reload', 'set_mode', 'close',
               'wait_for', 'fill_form', 'evaluate', 'extract_text',
@@ -117,7 +121,13 @@ export const browserControlTool = {
           x: { type: 'number', description: 'Fallback X coordinate, only when no ref exists (canvas/custom widgets).' },
           y: { type: 'number', description: 'Fallback Y coordinate, only when no ref exists.' },
           text: { type: 'string', description: 'Text to type for action "type".' },
+          value: { type: 'string', description: 'Option to choose for action "select" — matches the option\'s value, its visible label, or its index.' },
           submit: { type: 'boolean', description: 'Press Enter after typing. Confirm with the user first — this submits.' },
+          clear: {
+            type: 'boolean',
+            description: 'For action "type": replace the field\'s current contents instead of appending. '
+              + 'Defaults to true when a ref is given (typing into a named field means filling it).',
+          },
           keys: { type: 'string', description: 'Key or combo for action "key": "enter", "tab", "escape", "ctrl+a".' },
           amount: { type: 'number', description: 'Scroll distance in pixels; negative scrolls down (default -400).' },
           tabId: { type: 'string', description: 'Target tab. Defaults to the active tab.' },
@@ -132,8 +142,8 @@ export const browserControlTool = {
           },
           type: {
             type: 'string',
-            enum: ['text', 'element', 'count', 'attribute', 'url', 'title'],
-            description: 'Assertion type for action "assert".',
+            enum: ['text', 'element', 'count', 'attribute', 'url', 'title', 'local', 'session'],
+            description: 'Assertion type for action "assert"; for action "storage", which store to read ("local" or "session").',
           },
           expected: {
             type: 'string',
@@ -166,7 +176,7 @@ export const browserControlTool = {
     },
   },
 
-  async execute({ action: rawAction, url, ref, x, y, text, submit, keys, amount, tabId, display, selector, type, expected, target, timeout, fields, expression, steps } = {}) {
+  async execute({ action: rawAction, url, ref, x, y, text, submit, clear, keys, amount, tabId, display, selector, type, expected, target, timeout, fields, expression, steps, value, _depth = 0 } = {}) {
     const b = bridge()
     if (!b) return DESKTOP_ONLY
     const base = await ctx(display)
@@ -176,6 +186,26 @@ export const browserControlTool = {
     // These are ALIASES, and none of them shadows a real action, which is the
     // rule that the `watch` collision established.
     const action = ACTION_ALIASES[rawAction] || rawAction
+
+    /**
+     * A stale ref is refused — correctly, because clicking whatever now sits at
+     * that index looks exactly like success. But refusing alone costs TWO more
+     * turns: one to read again, one to retry. The page is right there, so hand
+     * back the fresh tree with the refusal and the model recovers in one.
+     *
+     * Only for refs. A stale COORDINATE is not a thing, and re-reading after an
+     * ordinary failure would spend a page read on every unrelated error.
+     */
+    const withFreshTree = async (res) => {
+      if (!res?.stale || !b.read) return res
+      try {
+        const page = await b.read({ ...base, tabId })
+        const tree = page?.tree || page?.text
+        if (!tree) return res
+        return { ...res, page_after_reload: tree, note: 'The page was re-read for you — use the refs below and retry.' }
+      } catch { return res }
+    }
+
     try {
       switch (action) {
         case 'navigate':
@@ -188,22 +218,43 @@ export const browserControlTool = {
         case 'right_click':
           return {
             tool: 'browser_control', action,
-            ...(await b.click({
+            ...(await withFreshTree(await b.click({
               ...base, tabId, ref, x, y,
               button: action === 'right_click' ? 'right' : 'left',
               double: action === 'double_click',
-            })),
+            }))),
           }
         case 'hover':
-          return {
-            tool: 'browser_control', action,
-            ...(await (b.hover
-              ? b.hover({ ...base, tabId, ref, x, y })
-              : b.click({ ...base, tabId, ref, x, y }))),
-          }
+          // NEVER fall back to click. Hover is the read-only action — it is how
+          // a menu is opened or a tooltip revealed without committing to
+          // anything — and clicking instead can navigate, submit or purchase.
+          // Substituting a side-effectful action for a safe one and reporting
+          // success is the worst possible failure mode for an agent driving a
+          // real browser with the user's logged-in sessions.
+          if (!b.hover) return { success: false, error: 'hover is not supported by this browser bridge version' }
+          return { tool: 'browser_control', action, ...(await b.hover({ ...base, tabId, ref, x, y })) }
         case 'type':
           if (typeof text !== 'string') return { success: false, error: 'text is required to type' }
-          return { tool: 'browser_control', action, ...(await b.type({ ...base, tabId, ref, text, submit })) }
+          // `clear` defaults to true when a field is named by ref, because
+          // "type X into ref_4" means fill that field — and appending to
+          // whatever was already there produced values like
+          // "londonnew york" with no error anywhere. Pass clear:false for the
+          // append-to-existing case.
+          return {
+            tool: 'browser_control', action,
+            ...(await withFreshTree(await b.type({ ...base, tabId, ref, text, submit, clear: clear ?? !!ref }))),
+          }
+        case 'select': {
+          // A <select> cannot be driven by typing: characters go nowhere and
+          // the tool reported success, so every form with a country, quantity
+          // or date dropdown was silently unfillable. It needs a real
+          // value-set plus input/change events, which is what the bridge does.
+          if (!b.select) return { success: false, error: 'select is not supported by this browser bridge version' }
+          const wanted = value ?? text
+          if (!ref && !selector) return { success: false, error: 'ref or selector is required to select an option' }
+          if (wanted == null || wanted === '') return { success: false, error: 'value is required — the option value, its visible label, or its index' }
+          return { tool: 'browser_control', action, ...(await withFreshTree(await b.select({ ...base, tabId, ref, selector, value: String(wanted) }))) }
+        }
         case 'key':
           if (!keys) return { success: false, error: 'keys is required' }
           return { tool: 'browser_control', action, ...(await b.key({ ...base, tabId, keys })) }
@@ -219,7 +270,11 @@ export const browserControlTool = {
           return { tool: 'browser_control', action, ...(await b.cookies({ ...base, tabId, ...fields })) }
         case 'storage':
           if (!b.storage) return { success: false, error: 'storage inspection is not supported by this browser bridge version' }
-          return { tool: 'browser_control', action, ...(await b.storage({ ...base, tabId, type: text || 'local' })) }
+          // Read `type` FIRST. This took the store name from `text`, so the
+          // obvious call — {action:'storage', type:'session'} — silently
+          // returned localStorage and the model reported the wrong data as
+          // fact. `text` is still accepted so existing calls keep working.
+          return { tool: 'browser_control', action, ...(await b.storage({ ...base, tabId, type: type || text || 'local' })) }
         case 'new_tab':
           return { tool: 'browser_control', action, ...(await b.newTab({ ...base, url })) }
         case 'list_tabs':
@@ -248,10 +303,16 @@ export const browserControlTool = {
         case 'run_script': {
           const scriptSteps = Array.isArray(steps) ? steps : []
           if (!scriptSteps.length) return { success: false, error: 'steps array is required for run_script' }
+          // A step may itself be a run_script. Without this the tool recurses
+          // until the stack blows — and a model that emits a nested pipeline is
+          // not doing anything unreasonable, it just wrote the obvious thing.
+          if (_depth > 0) {
+            return { success: false, error: 'run_script cannot be nested. Flatten the steps into one list.' }
+          }
           const stepResults = []
           for (let i = 0; i < scriptSteps.length; i++) {
             const step = scriptSteps[i]
-            const stepRes = await browserControlTool.execute({ ...step, display: display || base.display })
+            const stepRes = await browserControlTool.execute({ ...step, display: display || base.display, _depth: _depth + 1 })
             stepResults.push({ step: i + 1, action: step.action, ...stepRes })
             if (stepRes.success === false) {
               return {
@@ -303,15 +364,28 @@ export const browserControlTool = {
         case 'fill_form': {
           if (!fields || typeof fields !== 'object') return { success: false, error: 'fields object is required for fill_form, e.g. {"ref_3": "value"}' }
           const results = []
-          for (const [fieldRef, value] of Object.entries(fields)) {
+          for (const [fieldRef, fieldValue] of Object.entries(fields)) {
             try {
-              const r = await b.type({ ...base, tabId, ref: fieldRef, text: String(value), submit: false })
-              results.push({ ref: fieldRef, success: r?.success !== false })
+              // clear:true — filling a form means setting each field to the
+              // given value, not appending to whatever the page had prefilled.
+              const r = await b.type({ ...base, tabId, ref: fieldRef, text: String(fieldValue), submit: false, clear: true })
+              results.push({ ref: fieldRef, success: r?.success !== false, error: r?.error })
             } catch (e) {
               results.push({ ref: fieldRef, success: false, error: e?.message })
             }
           }
-          return { tool: 'browser_control', action, success: true, filled: results }
+          // This returned success:true unconditionally, so a form where EVERY
+          // field failed reported as filled and the model went on to submit it.
+          const failed = results.filter(r => !r.success)
+          return {
+            tool: 'browser_control', action,
+            success: failed.length === 0,
+            filled: results,
+            ...(failed.length ? {
+              error: `${failed.length} of ${results.length} fields could not be filled: ${failed.map(f => f.ref).join(', ')}. `
+                + 'Re-read the page — the refs may be stale.',
+            } : {}),
+          }
         }
         case 'evaluate': {
           if (!expression) return { success: false, error: 'expression is required for evaluate' }

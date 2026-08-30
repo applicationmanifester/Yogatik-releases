@@ -100,3 +100,28 @@ export async function captureBehaviour(events) {
     return prefs.length
   } catch { /* silent */ }
 }
+
+/**
+ * Seed procedural memory explicitly from first-run onboarding selections
+ * so that turn 1 is already tailored to the user's desired style and boundary.
+ */
+export async function seedOnboardingPreferences({ persona, style, boundary } = {}) {
+  try {
+    const { remember } = await import('./memory4')
+    if (style && style !== 'balanced') {
+      const text = style === 'concise'
+        ? 'prefers concise, direct responses with minimal preamble'
+        : 'prefers detailed, thorough explanations with rich context'
+      await remember({ store: 'procedural', text, importance: 0.8 })
+    }
+    if (boundary) {
+      const text = boundary === 'companion'
+        ? 'warm, supportive, and conversational interaction tone'
+        : 'professional, task-focused, and direct assistant tone'
+      await remember({ store: 'procedural', text, importance: 0.8 })
+    }
+    if (persona && persona !== 'default') {
+      await remember({ store: 'procedural', text: `selected the "${persona}" personality as initial preference`, importance: 0.7 })
+    }
+  } catch { /* silent */ }
+}

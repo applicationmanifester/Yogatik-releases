@@ -90,3 +90,25 @@ export function formatBytes(n = 0) {
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
   return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`
 }
+
+/**
+ * Storage optimizer: purges obsolete traces and media blobs older than maxAgeDays
+ */
+export async function optimizeAndCleanStorage({ maxAgeDays = 30 } = {}) {
+  const cutoff = Date.now() - (maxAgeDays * 24 * 60 * 60 * 1000)
+  let purgedTraces = 0
+  let purgedMedia = 0
+
+  try {
+    const { db } = await import('./db')
+    if (db?.traces) {
+      purgedTraces = await db.traces.where('createdAt').below(cutoff).delete()
+    }
+    if (db?.media) {
+      purgedMedia = await db.media.where('createdAt').below(cutoff).delete()
+    }
+  } catch {}
+
+  return { purgedTraces, purgedMedia }
+}
+

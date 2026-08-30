@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react'
+import { stripToolCallSyntax } from '../promptedTools'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useTypewriter } from '../hooks/useTypewriter'
@@ -39,8 +40,8 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
     onGrow, 
     initialText = '', 
     bare = false,
-    typewriterSpeed = 30,
-    typewriterEnabled = true,
+    typewriterSpeed = 0,
+    typewriterEnabled = false,
   }, ref,
 ) {
   const [text, setText] = useState(() => initialText)
@@ -48,8 +49,7 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
   const pending = useRef('')
   const started = useRef(!!initialText)
 
-  // Typewriter effect for smooth character-by-character reveal
-  // Disable typewriter for initialText so it displays immediately
+  // Optional typewriter effect (bypassed by default for ultra-low latency real-time streaming)
   const { displayedText, isComplete, skip } = useTypewriter({
     fullText: text,
     enabled: typewriterEnabled && !!text && !initialText,
@@ -68,17 +68,22 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
     })
   }, [onFirstToken])
 
+  const [activeAction, setActiveAction] = useState(null)
+
   const clear = useCallback(() => {
     if (frame.current) { cancelAnimationFrame(frame.current); frame.current = 0 }
     pending.current = ''
     started.current = false
     setText('')
+    setActiveAction(null)
   }, [])
 
   useImperativeHandle(ref, () => ({
     /** @param {string} full the complete text so far, not a delta */
     push,
     clear,
+    /** Set active in-flight tool action pill */
+    setActiveAction: (action) => setActiveAction(action),
     /** Skip typewriter animation and show full text immediately */
     skipTypewriter: skip,
   }), [push, clear, skip])
@@ -89,11 +94,13 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
 
   useEffect(() => () => { if (frame.current) cancelAnimationFrame(frame.current) }, [])
 
-  if (!text) return null
-  const { reasoning, answer } = splitReasoning(text)
+  const sanitizedText = stripToolCallSyntax(text || '')
+  const { reasoning, answer } = splitReasoning(sanitizedText)
   
-  // Use displayedText for typewriter effect, fall back to full text when complete
-  const displayContent = isComplete ? (answer || (reasoning ? '' : text)) : displayedText
+  // Directly use answer/text when typewriter is disabled for zero-latency 60fps streaming
+  const displayContent = !typewriterEnabled || isComplete 
+    ? (answer || (reasoning ? '' : sanitizedText)) 
+    : stripToolCallSyntax(displayedText || '')
   
   const body = (
     <>
@@ -103,12 +110,39 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
           <div className="reasoning-body">{reasoning}</div>
         </details>
       ) : null}
-      <div className="message-content">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
-        {!isComplete && <span className="typewriter-cursor" aria-hidden="true">▌</span>}
-      </div>
+      {displayContent ? (
+        <div className="message-content">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
+          {!isComplete && <span className="typewriter-cursor" aria-hidden="true">▌</span>}
+        </div>
+      ) : null}
+      {activeAction && (
+        <div className="streaming-action-pill" style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '6px 12px',
+          borderRadius: '999px',
+          background: 'rgba(59, 130, 246, 0.12)',
+          border: '1px solid rgba(59, 130, 246, 0.25)',
+          color: '#60a5fa',
+          fontSize: '11.5px',
+          fontWeight: 500,
+          marginTop: '8px',
+        }}>
+          <span style={{
+            width: '6px',
+            height: '6px',
+            borderRadius: '50%',
+            backgroundColor: '#3b82f6',
+            boxShadow: '0 0 8px #3b82f6',
+          }} />
+          <span>{activeAction.label || `⚡ Executing ${activeAction.name || 'tool'}…`}</span>
+        </div>
+      )}
     </>
   )
+  if (!displayContent && !activeAction && !reasoning) return null
   if (bare) return body
   return (
     <div className="message assistant" role="article" aria-busy={!isComplete} aria-label={isComplete ? "Assistant response complete" : "Assistant is responding"}>

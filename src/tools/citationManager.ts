@@ -120,8 +120,8 @@ export function formatCslJson(items: CitationItem[]): CslJsonItem[] {
   return items.map((item, idx) => {
     const authors = item.authors.map((authorStr) => {
       const parts = authorStr.trim().split(' ')
-      if (parts.length === 1) return { family: parts[0] }
-      const family = parts.pop() || ''
+      if (parts.length === 1) return { family: parts[0] || 'Unknown' }
+      const family = parts.pop() || 'Unknown'
       const given = parts.join(' ')
       return { given, family }
     })

@@ -41,7 +41,7 @@ export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked }
     return undefined
   }, [open])
 
-  const checkoutUrl = useMemo(() => {
+  const checkoutBase = useMemo(() => {
     // The hosted checkout page carries the SKU and the account. Entitlement is
     // granted by the provider's WEBHOOK, never by the redirect that follows —
     // a redirect is a browser navigation and can be forged.
@@ -52,7 +52,34 @@ export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked }
 
   const buy = async () => {
     setBusy(true); setErr(null)
-    const res = await openCheckout(checkoutUrl)
+
+    // Razorpay subscriptions must be created server-side (that is where
+    // notes.uid is attached from a VERIFIED token — the webhook has no other
+    // way to know whose account to upgrade), and the checkout page has no
+    // Firebase session of its own. So it needs the ID token.
+    //
+    // In the FRAGMENT, not the query string: a fragment is never sent to the
+    // server, so it stays out of access logs and out of the Referer header on
+    // any request the page makes afterwards.
+    let url = checkoutBase
+    if (plan.provider === 'razorpay') {
+      try {
+        const { getIdToken } = await import('../firebaseAuth')
+        const t = await getIdToken()
+        if (!t) {
+          setBusy(false)
+          setErr('Sign in first — the payment has to be attached to your account.')
+          return
+        }
+        url += `#t=${encodeURIComponent(t)}`
+      } catch {
+        setBusy(false)
+        setErr('Could not verify your sign-in. Try signing out and back in.')
+        return
+      }
+    }
+
+    const res = await openCheckout(url)
     setBusy(false)
     if (!res?.success) { setErr(res?.error || 'Could not open the checkout page.'); return }
     // The purchase completes in another window. Poll until the webhook lands

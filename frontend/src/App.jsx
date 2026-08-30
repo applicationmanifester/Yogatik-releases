@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain } from 'lucide-react'
-import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, exportConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, FolderPlus, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play } from 'lucide-react'
+import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
+import { setUserQuestionHandler } from './tools/askUser'
 import { runMultiAgentDebate } from './multiAgent'
 import { startActivityTurn, publishStream, publishStep, endActivityTurn, setActivityConversation } from './activityStream'
 import { YogatikLogo } from './components/YogatikLogo'
@@ -13,11 +14,14 @@ import CrisisCard from './components/CrisisCard'
 import { getProactiveCheckin, markCheckinShown } from './proactive'
 import { recordTurn } from './adaptation'
 import { startTurn } from './telemetry'
+import { downloadChat } from './chatExport'
 import { MessageBubble } from './components/MessageBubble'
 import { StreamingMessage } from './components/StreamingMessage'
+import { ArtifactCanvas } from './components/ArtifactCanvas'
 import { Modal } from './components/Modal'
 import { TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 import { ModelPicker } from './components/ModelPicker'
+import { ContextMeter } from './components/ContextMeter'
 import { runWorkflow } from './workflows'
 import { FloatingCompanion } from './components/FloatingCompanion'
 import { ActiveTimerIndicator } from './components/ActiveTimerIndicator'
@@ -32,6 +36,7 @@ import { looksVisionCapable } from './vision/capability'
 import { getProviders as getLLMProviders, normalizeModelName, preconnectProvider } from './llm'
 import { prepareImage, isImageFile, imageFromClipboard, imageFromDrop } from './vision/attach'
 import { registerServiceWorker } from './pwa'
+import { enqueueOutbox, flushOutbox } from './offlineQueue'
 import { requestPersistence, storageReport, formatBytes } from './storage'
 import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clearLocalModelCache } from './localLLM'
 import { isDirectTimeQuery } from './timeQuery'
@@ -96,6 +101,8 @@ const ShareSheet = safeLazy(() => import('./components/ShareSheet').then(m => ({
 const ShortcutsModal = safeLazy(() => import('./components/ShortcutsModal').then(m => ({ default: m.ShortcutsModal })))
 const SlashCommandsMenu = safeLazy(() => import('./components/SlashCommandsMenu').then(m => ({ default: m.SlashCommandsMenu })))
 const StarterCards = safeLazy(() => import('./components/StarterCards').then(m => ({ default: m.StarterCards })))
+const CitationGraphModal = safeLazy(() => import('./components/CitationGraphModal').then(m => ({ default: m.CitationGraphModal })))
+const EvalDashboard = safeLazy(() => import('./components/EvalDashboard').then(m => ({ default: m.EvalDashboard })))
 
 
 // Messages rendered at once; older turns load on demand.
@@ -247,6 +254,8 @@ export default function App() {
   const [storage, setStorage] = useState(null)
   const [docs, setDocs] = useState([])
   const [convQuery, setConvQuery] = useState('')
+  const [activeFolder, setActiveFolder] = useState(null)
+  const [activeTag, setActiveTag] = useState(null)
   const [showAllTools, setShowAllTools] = useState(false)
   const [providerStatus, setProviderStatus] = useState({})
   const [verifying, setVerifying] = useState(false)
@@ -285,6 +294,8 @@ export default function App() {
   // browserOccluded, because it occupies the same pixels as the docked browser.
   const [showWorkspace, setShowWorkspace] = useState(false)
   const [showShortcutsModal, setShowShortcutsModal] = useState(false)
+  const [showCitationGraph, setShowCitationGraph] = useState(false)
+  const [showEvalDashboard, setShowEvalDashboard] = useState(false)
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
   // Entitlement. The GATE is in the main process; this is only what the UI says.
@@ -340,11 +351,13 @@ export default function App() {
     }
   }, [rootsOpen])
 
-  // Speculative runtime & tool pre-warming as user types
+  // Speculative runtime & tool pre-warming as user types (debounced 300ms)
   useEffect(() => {
-    if (input && input.length >= 3) {
+    if (!input || input.length < 3) return
+    const timer = setTimeout(() => {
       prewarmToolsFromInput(input)
-    }
+    }, 300)
+    return () => clearTimeout(timer)
   }, [input])
   const [toast, setToast] = useState(null)
   const showToast = useCallback((msg) => {
@@ -534,9 +547,35 @@ export default function App() {
   const [projectNameModal, setProjectNameModal] = useState(null) // { onSubmit }
   // Restore-mode modal — replaces confirm() in handleRestore
   const [restoreModal, setRestoreModal] = useState(null) // { file }
+  // Folder & Tag assignment modals — interactive UI replacing prompt()
+  const [folderModalConv, setFolderModalConv] = useState(null) // { idx, conv, folder }
+  const [tagModalConv, setTagModalConv] = useState(null) // { idx, conv, tags }
+  // Interactive human-in-the-loop question prompt (ask_user tool)
+  const [userQuestionPrompt, setUserQuestionPrompt] = useState(null) // { question, options, placeholder, allow_custom, resolve, reject }
+  const [userQuestionAnswer, setUserQuestionAnswer] = useState('')
   const [apiKeyInput, setApiKeyInput] = useState({})
   const [savingApiKey, setSavingApiKey] = useState(null)
   const [errorModalMsg, setErrorModalMsg] = useState(null)
+
+  // Wire interactive question handler so AI model can ask questions mid-execution
+  useEffect(() => {
+    setUserQuestionHandler((args) => {
+      return new Promise((resolve, reject) => {
+        setUserQuestionAnswer('')
+        setUserQuestionPrompt({
+          ...args,
+          resolve: (ans) => {
+            setUserQuestionPrompt(null)
+            resolve(ans)
+          },
+          reject: (err) => {
+            setUserQuestionPrompt(null)
+            reject(err)
+          },
+        })
+      })
+    })
+  }, [])
 
   // Memory-based proactive check-in (once/day, opt-out via proactiveAgent).
   useEffect(() => {
@@ -980,12 +1019,22 @@ export default function App() {
   }, [activeClientId, companionMode, pipWindow])
 
   useEffect(() => {
-    const on = () => setOnline(true)
+    const on = async () => {
+      setOnline(true)
+      try {
+        const sent = await flushOutbox(async (text) => {
+          if (sendRef.current) await sendRef.current(text)
+        })
+        if (sent > 0) {
+          showToast(`Reconnected — sent ${sent} queued message${sent === 1 ? '' : 's'}`)
+        }
+      } catch {}
+    }
     const off = () => setOnline(false)
     window.addEventListener('online', on)
     window.addEventListener('offline', off)
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
-  }, [])
+  }, [showToast])
 
   // PWA install prompt
   useEffect(() => {
@@ -1338,6 +1387,8 @@ export default function App() {
       clientId: `c_${c.id}_${i}`,
       id: c.id,
       title: c.title,
+      folder: c.folder || null,
+      tags: c.tags || [],
       provider: c.provider || provider || 'local',
       model: c.model !== undefined ? c.model : (model || ''),
       systemPrompt: c.settings?.systemPrompt ?? c.systemPrompt ?? '',
@@ -1429,9 +1480,17 @@ export default function App() {
     setShowAuthModal(true)
   }
 
+  const resizeRafRef = useRef(0)
   const autoResize = useCallback(() => {
-    const ta = textareaRef.current
-    if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 280) + 'px' }
+    if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current)
+    resizeRafRef.current = requestAnimationFrame(() => {
+      resizeRafRef.current = 0
+      const ta = textareaRef.current
+      if (ta) {
+        ta.style.height = 'auto'
+        ta.style.height = Math.min(ta.scrollHeight, 280) + 'px'
+      }
+    })
   }, [])
 
   // Global Ctrl+Alt+C copies whatever is selected in ANY application and relays
@@ -1695,19 +1754,24 @@ export default function App() {
     doDelete()
   }
 
-  const handleExport = async () => {
-    if (!conv.id) {
-      const md = (conv.messages || []).map(m => `**${m.role === 'user' ? 'You' : 'Yogatik'}**:\n\n${m.content}`).join('\n\n---\n\n')
-      const blob = new Blob([md], { type: 'text/markdown' })
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${conv.title}.md`; a.click()
-      showToast('Chat exported as Markdown')
-      return
-    }
+  /**
+   * Export the open chat as md | html | pdf.
+   *
+   * This used to hand-roll markdown in two places and then set
+   * `a.download = data.filename` — a field api.exportConversation has never
+   * returned (it returns { content, format }), so every saved chat with an id
+   * came down as an extension-less file called "download". chatExport.js has
+   * done this properly since v3.8 (real block markdown, self-contained HTML,
+   * PDF via html2pdf, safe filenames) and nothing in the app imported it.
+   *
+   * conv already carries .messages in memory, which is the shape
+   * conversationToMarkdown/Html want, so there is no reason to round-trip
+   * through the database for the saved case either.
+   */
+  const handleExport = async (format = 'md') => {
     try {
-      const data = await exportConversation(conv.id)
-      const blob = new Blob([data.content], { type: 'text/markdown' })
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = data.filename; a.click()
-      showToast('Chat exported as Markdown')
+      await downloadChat(conv, format)
+      showToast(`Chat exported as ${format.toUpperCase()}`)
     } catch { showToast('Export failed') }
   }
 
@@ -1720,6 +1784,36 @@ export default function App() {
       setStatusMap(prev => ({ ...prev, [activeClientId]: '' }))
     }
   }
+
+  const setConvFolder = useCallback(async (idx, newFolder) => {
+    const c = conversationsRef.current[idx] || conversations[idx]
+    if (!c) return
+    const folderVal = (newFolder || '').trim() || null
+    setConversations(prev => {
+      const copy = [...prev]
+      if (copy[idx]) copy[idx] = { ...copy[idx], folder: folderVal }
+      conversationsRef.current = copy
+      return copy
+    })
+    if (c.id) {
+      await updateConversationFolder(c.id, folderVal).catch(() => {})
+    }
+  }, [conversations])
+
+  const setConvTags = useCallback(async (idx, newTags) => {
+    const c = conversationsRef.current[idx] || conversations[idx]
+    if (!c) return
+    const tagsArr = Array.isArray(newTags) ? newTags : (newTags || '').split(',').map(t => t.trim()).filter(Boolean)
+    setConversations(prev => {
+      const copy = [...prev]
+      if (copy[idx]) copy[idx] = { ...copy[idx], tags: tagsArr }
+      conversationsRef.current = copy
+      return copy
+    })
+    if (c.id) {
+      await updateConversationTags(c.id, tagsArr).catch(() => {})
+    }
+  }, [conversations])
 
   const handleStopRef = useRef(handleStop)
   handleStopRef.current = handleStop
@@ -1752,7 +1846,7 @@ export default function App() {
     }
   }
 
-  const handleAutoPick = async (pid = provider) => {
+  const handleAutoPick = useCallback(async (pid = provider) => {
     setAutoPicking(true)
     try {
       const res = await autoPickModel(pid, { onProgress: setAutoPickMsg })
@@ -1766,7 +1860,10 @@ export default function App() {
       setAutoPicking(false)
       setAutoPickMsg('')
     }
-  }
+  }, [provider, showToast])
+
+  const handleOpenArtifact = useCallback((art) => setActiveArtifact(art), [])
+  const handleOpenSettings = useCallback(() => { setSidebarOpen(true); setSettingsOpen(true) }, [])
 
   const retestProvider = async (pid) => {
     setSavingApiKey(pid)
@@ -1996,7 +2093,8 @@ export default function App() {
     const isLocalOrOllama = useProvider === 'ollama' || useProvider === 'local' || Boolean(provDef?.isLocal || provDef?.isOllama || provDef?.offlineReady || (provDef?.baseUrl && /localhost|127\.0\.0\.1/i.test(provDef.baseUrl)))
 
     if (!navigator.onLine && !isLocalOrOllama) {
-      setErrorModalMsg("You're offline. Cloud models require an internet connection.\n\n👉 Switch to Ollama (local) or On-device model in the bottom picker to chat 100% offline without internet!")
+      enqueueOutbox(text)
+      showToast("You're offline — message saved to outbox and will send automatically when reconnected.")
       return
     }
 
@@ -2048,6 +2146,13 @@ export default function App() {
     setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
 
     let fileContext = ''
+    const sentFile = attachedFile ? {
+      name: attachedFile.name,
+      size: attachedFile.size,
+      type: attachedFile.type,
+      path: attachedFilePath || null,
+    } : null
+
     if (attachedFile) {
       setStatusMap(prev => ({ ...prev, [targetClientId]: `Reading ${attachedFile.name}...` }))
       try {
@@ -2081,10 +2186,11 @@ export default function App() {
 
     const fallbackPrompt = sentImage ? 'What is in this image?' : 'Process the attached file'
     const finalText = fileContext + (isMultiAgent ? collaborateTopic : (msgText || fallbackPrompt))
-    const displayText = msgText || (attachedFile ? `📎 ${attachedFile.name}` : (sentImage ? '' : ''))
+    const displayText = msgText || (sentFile ? `📎 ${sentFile.name}` : (sentImage ? '' : ''))
     const userMsg = {
       role: 'user', content: displayText, sources: [], createdAt: Date.now(),
-      ...(sentImage ? { image: sentImage.thumb } : {}),
+      ...(sentImage ? { image: sentImage.dataUrl || sentImage.thumb, imageName: sentImage.name } : {}),
+      ...(sentFile ? { file: sentFile } : {}),
     }
     const updated = {
       ...targetConv,
@@ -2683,6 +2789,11 @@ export default function App() {
     } catch (e) { console.error('Failed to persist live turn', e) }
   }, [provider, model])
 
+  const continueTurn = async () => {
+    if (isStreamingHere) return
+    sendRef.current?.('Continue from where you left off. Proceed immediately to execute the next steps and tool calls to complete the task.')
+  }
+
   const regenerate = async () => {
     if (isStreamingHere) return
     const curIdx = activeIdxRef.current
@@ -2901,8 +3012,11 @@ export default function App() {
     const cmds = [
       { id: 'new', group: 'Chat', label: 'New chat', hint: 'Ctrl+Shift+O', run: newChat },
       { id: 'compare', group: 'Chat', label: 'Model Arena (Compare 2 models)', hint: 'Side-by-side', run: () => setCompareMode(true) },
+      { id: 'continue', group: 'Chat', label: 'Continue task from where model stopped', run: continueTurn },
       { id: 'regen', group: 'Chat', label: 'Regenerate last reply', run: regenerate },
-      { id: 'export', group: 'Chat', label: 'Export this chat as markdown', run: handleExport },
+      { id: 'export', group: 'Chat', label: 'Export this chat as Markdown', run: () => handleExport('md') },
+      { id: 'export-html', group: 'Chat', label: 'Export this chat as HTML', run: () => handleExport('html') },
+      { id: 'export-pdf', group: 'Chat', label: 'Export this chat as PDF', run: () => handleExport('pdf') },
       { id: 'backup', group: 'Data', label: 'Export all data (backup)', run: handleBackup },
       { id: 'import', group: 'Data', label: 'Import a backup file', run: () => backupInput.current?.click() },
       { id: 'theme', group: 'View', label: `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`, run: () => setTheme(t => t === 'dark' ? 'light' : 'dark') },
@@ -2983,17 +3097,35 @@ export default function App() {
   const providerEntries = Object.entries(models)
   const providerModels = models[provider]?.models || []
 
-  // Conversation filter — matches title and message text (memoised to prevent full-tree scan on every render)
+  // Folders & Tags for organization
+  const allFolders = useMemo(() => {
+    const set = new Set()
+    conversations.forEach(c => { if (c.folder) set.add(c.folder) })
+    return Array.from(set)
+  }, [conversations])
+
+  const allTags = useMemo(() => {
+    const set = new Set()
+    conversations.forEach(c => { (c.tags || []).forEach(t => set.add(t)) })
+    return Array.from(set)
+  }, [conversations])
+
+  // Conversation filter — matches title and message text, folder, and tags (deferred and memoised to prevent UI blocking on keystrokes)
+  const deferredConvQuery = useDeferredValue(convQuery)
   const visibleConvs = useMemo(() => {
     return conversations
       .map((c, i) => ({ c, i }))
       .filter(({ c }) => {
-        if (!convQuery.trim()) return true
-        const q = convQuery.toLowerCase()
+        if (activeFolder && (c.folder || '') !== activeFolder) return false
+        if (activeTag && !(c.tags || []).includes(activeTag)) return false
+        if (!deferredConvQuery.trim()) return true
+        const q = deferredConvQuery.toLowerCase()
         return c.title.toLowerCase().includes(q) ||
+          (c.folder && c.folder.toLowerCase().includes(q)) ||
+          (c.tags && c.tags.some(t => t.toLowerCase().includes(q))) ||
           c.messages.some(m => (m.content || '').toLowerCase().includes(q))
       })
-  }, [conversations, convQuery])
+  }, [conversations, deferredConvQuery, activeFolder, activeTag])
 
   // Bucketed for the sidebar. Grouping is pure and lives in convGroups.js so the
   // date boundaries are testable rather than a clock-dependent render detail.
@@ -3126,6 +3258,41 @@ export default function App() {
 
         <div className="sidebar-scroll">
         <div className="conversation-list">
+          {(allFolders.length > 0 || allTags.length > 0) && (
+            <div className="folder-filter-bar" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', padding: '4px 6px', margin: '2px 0 8px', fontSize: 11 }}>
+              <button
+                type="button"
+                className={`small-btn ${!activeFolder && !activeTag ? 'active' : ''}`}
+                style={{ padding: '2px 6px', fontSize: 10, borderRadius: 12, border: '1px solid var(--border)', background: !activeFolder && !activeTag ? 'var(--accent, #6366f1)' : 'transparent', color: !activeFolder && !activeTag ? '#fff' : 'inherit' }}
+                onClick={() => { setActiveFolder(null); setActiveTag(null); }}
+              >
+                All
+              </button>
+              {allFolders.map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  className={`small-btn ${activeFolder === f ? 'active' : ''}`}
+                  style={{ padding: '2px 6px', fontSize: 10, borderRadius: 12, border: '1px solid var(--border)', background: activeFolder === f ? 'var(--accent, #6366f1)' : 'transparent', color: activeFolder === f ? '#fff' : 'inherit', display: 'flex', alignItems: 'center', gap: 3 }}
+                  onClick={() => { setActiveFolder(activeFolder === f ? null : f); setActiveTag(null); }}
+                >
+                  <Folder size={10} /> {f}
+                </button>
+              ))}
+              {allTags.map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`small-btn ${activeTag === t ? 'active' : ''}`}
+                  style={{ padding: '2px 6px', fontSize: 10, borderRadius: 12, border: '1px solid var(--border)', background: activeTag === t ? 'var(--accent, #6366f1)' : 'transparent', color: activeTag === t ? '#fff' : 'inherit', display: 'flex', alignItems: 'center', gap: 3 }}
+                  onClick={() => { setActiveTag(activeTag === t ? null : t); setActiveFolder(null); }}
+                >
+                  <Tag size={10} /> {t}
+                </button>
+              ))}
+            </div>
+          )}
+
           {convGroups.map(group => (
           <div key={group.label} className="conv-group">
             <div className="conv-group-label">{group.label}</div>
@@ -3144,11 +3311,28 @@ export default function App() {
               ) : (
                 <span className="conv-title" title={c.title}>
                   {c.title}
+                  {c.folder && (
+                    <span style={{ fontSize: 9.5, opacity: 0.75, padding: '1px 4px', borderRadius: 3, background: 'rgba(255,255,255,0.08)', marginLeft: 4 }}>
+                      📁 {c.folder}
+                    </span>
+                  )}
                   {!!(c.clientId && loadingMap[c.clientId]) && <span className="conv-streaming-dot" title="Generating response…" />}
                 </span>
               )}
               {i === activeIdx && renamingIdx !== i && (
                 <span className="conv-actions">
+                  <button className="icon-btn" onClick={e => {
+                    e.stopPropagation()
+                    setFolderModalConv({ idx: i, conv: c, folder: c.folder || '' })
+                  }} aria-label="Set folder" title="Organize into folder">
+                    <FolderPlus size={11} />
+                  </button>
+                  <button className="icon-btn" onClick={e => {
+                    e.stopPropagation()
+                    setTagModalConv({ idx: i, conv: c, tags: [...(c.tags || [])] })
+                  }} aria-label="Set tags" title="Tag conversation">
+                    <Tag size={11} />
+                  </button>
                   <button className="icon-btn" onClick={e => { e.stopPropagation(); startRename(i) }} aria-label="Rename conversation">
                     <Pencil size={11} />
                   </button>
@@ -3364,6 +3548,17 @@ export default function App() {
             formatLatency={formatLatency}
             disabled={!models[conv?.provider || provider]?.available}
             onChange={(m) => chooseModel(m, conv?.provider || provider)} />
+
+          {/* How full the context window is — the user is paying for every
+              token of it on their own key. Lives here rather than in the
+              header: the header already overflows at 480px, and this reads the
+              same limits table the agent compacts against. */}
+          <div style={{ margin: '6px 0 2px' }}>
+            <ContextMeter
+              messages={conv?.messages || []}
+              provider={conv?.provider || provider}
+              model={conv?.model !== undefined ? conv.model : model} />
+          </div>
 
           <button className="small-btn auto-pick wide" onClick={() => handleAutoPick(conv?.provider || provider)}
             disabled={autoPicking || !models[conv?.provider || provider]?.available}
@@ -3758,7 +3953,9 @@ export default function App() {
             </div>
             <div className="header-btn-group" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
               <button className="icon-btn" onClick={() => setShowPalette(true)} title="Universal Search & Commands (Ctrl+K)" aria-label="Universal Search"><Search size={17} /></button>
-              <button className="icon-btn" onClick={handleExport} title="Export chat transcript" aria-label="Export chat"><Download size={17} /></button>
+              {/* Must not be `onClick={handleExport}`: React would pass the click
+                  event as the format argument. */}
+              <button className="icon-btn" onClick={() => handleExport('md')} title="Export chat as Markdown (Ctrl+K for HTML / PDF)" aria-label="Export chat"><Download size={17} /></button>
               <button className="icon-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
                 {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
               </button>
@@ -3919,12 +4116,13 @@ export default function App() {
                 return (
                   <MessageBubble key={absolute} msg={m} showToolCards={features.toolCards}
                     onTTS={handleTTS}
-                    onOpenArtifact={(art) => setActiveArtifact(art)}
+                    onOpenArtifact={handleOpenArtifact}
                     onRegenerate={isLastAssistant && !isStreamingHere ? regenerate : undefined}
+                    onContinue={isLastAssistant && !isStreamingHere ? continueTurn : undefined}
                     onEdit={!isStreamingHere ? (text) => editAndResend(absolute, text) : undefined}
                     onRetry={m.error && !isStreamingHere ? regenerate : undefined}
-                    onOpenSettings={() => { setSidebarOpen(true); setSettingsOpen(true) }}
-                    onAutoPick={() => handleAutoPick(m.provider || provider)} />
+                    onOpenSettings={handleOpenSettings}
+                    onAutoPick={handleAutoPick} />
                 )
               })}
               {/* Show pending tool results while streaming */}
@@ -4167,10 +4365,18 @@ export default function App() {
               </button>
             )}
             {!isStreamingHere && conv?.messages?.some(m => m.role === 'assistant') && (
-              <button className="small-btn" onClick={regenerate}
-                title="Regenerate last response" aria-label="Regenerate last response">
-                <RefreshCw size={12} /> Regenerate
-              </button>
+              <>
+                <button className="small-btn btn-continue" onClick={continueTurn}
+                  title="Continue from where the model stopped and execute remaining steps"
+                  aria-label="Continue last response"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 500 }}>
+                  <Play size={12} /> Continue
+                </button>
+                <button className="small-btn" onClick={regenerate}
+                  title="Regenerate last response" aria-label="Regenerate last response">
+                  <RefreshCw size={12} /> Regenerate
+                </button>
+              </>
             )}
           </div>
           {compareMode && (
@@ -4479,6 +4685,8 @@ export default function App() {
           onToolPrefChange={(name, en) => toggleTool(name, en)}
           prefs={prefs}
           onPrefChange={(k, v) => updatePref(k, v)}
+          theme={theme}
+          onThemeChange={setTheme}
           user={user}
           onSignIn={requestSignIn}
         />
@@ -4504,10 +4712,17 @@ export default function App() {
             const visionCapable = status.cached ?? status.guessed
             setLiveConfig(prev => prev ? { ...prev, model: newModel, modelCanSee: visionCapable } : null)
           }}
-          onEnd={() => {
+          onEnd={(handoff) => {
+            if (handoff?.recapMarkdown && handoff?.transcripts?.length > 0) {
+              setConversations(prev => prev.map((c, i) => i === activeIdx ? {
+                ...c,
+                messages: [
+                  ...(c.messages || []),
+                  { role: 'assistant', content: handoff.recapMarkdown, id: `live_recap_${Date.now()}` }
+                ]
+              } : c))
+            }
             setLiveConfig(null)
-            liveConvRef.current = null
-            loadConversations()
           }}
         />
       )}
@@ -4714,6 +4929,410 @@ export default function App() {
       {showDiagnosticsModal && <DiagnosticsModal onClose={() => setShowDiagnosticsModal(false)} />}
       {showShortcutsModal && <ShortcutsModal onClose={() => setShowShortcutsModal(false)} />}
       {showDataDashboard && <DataDashboard onClose={() => setShowDataDashboard(false)} onExport={() => { downloadBackup().catch(() => {}); showToast('Backup exported') }} />}
+
+      {/* Folder Assignment Modal */}
+      {folderModalConv && (
+        <Modal
+          title="Organize Chat into Folder"
+          icon={<Folder size={18} />}
+          onClose={() => setFolderModalConv(null)}
+        >
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+              Assign <strong>"{folderModalConv.conv?.title || 'this chat'}"</strong> to a folder for easy categorization.
+            </p>
+
+            {allFolders.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                  Existing Folders:
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {allFolders.map(f => (
+                    <button
+                      key={f}
+                      type="button"
+                      className="small-btn"
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '12px',
+                        borderRadius: '6px',
+                        background: folderModalConv.folder === f ? 'var(--accent, #6366f1)' : 'rgba(255,255,255,0.06)',
+                        color: folderModalConv.folder === f ? '#fff' : 'inherit',
+                        border: '1px solid var(--border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => setFolderModalConv(prev => ({ ...prev, folder: f }))}
+                    >
+                      <Folder size={12} /> {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                Folder Name:
+              </label>
+              <input
+                type="text"
+                autoFocus
+                placeholder="e.g. Work, Research, Personal, Projects..."
+                value={folderModalConv.folder || ''}
+                onChange={e => setFolderModalConv(prev => ({ ...prev, folder: e.target.value }))}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    setConvFolder(folderModalConv.idx, folderModalConv.folder)
+                    showToast(folderModalConv.folder ? `Moved to folder "${folderModalConv.folder}"` : 'Folder cleared')
+                    setFolderModalConv(null)
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  background: 'var(--bg-input, rgba(255,255,255,0.05))',
+                  border: '1px solid var(--border, rgba(255,255,255,0.15))',
+                  borderRadius: '6px',
+                  color: 'var(--text-primary, inherit)',
+                  fontSize: '13px',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '6px' }}>
+              {folderModalConv.conv?.folder && (
+                <button
+                  type="button"
+                  className="small-btn"
+                  style={{ color: '#ff6b6b' }}
+                  onClick={() => {
+                    setConvFolder(folderModalConv.idx, null)
+                    showToast('Folder cleared')
+                    setFolderModalConv(null)
+                  }}
+                >
+                  Clear Folder
+                </button>
+              )}
+              <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                <button
+                  type="button"
+                  className="small-btn"
+                  onClick={() => setFolderModalConv(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="small-btn btn-primary"
+                  onClick={() => {
+                    setConvFolder(folderModalConv.idx, folderModalConv.folder)
+                    showToast(folderModalConv.folder ? `Moved to folder "${folderModalConv.folder}"` : 'Folder cleared')
+                    setFolderModalConv(null)
+                  }}
+                >
+                  Save Folder
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Tag Assignment Modal */}
+      {tagModalConv && (
+        <Modal
+          title="Manage Chat Tags"
+          icon={<Tag size={18} />}
+          onClose={() => setTagModalConv(null)}
+        >
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+              Tag <strong>"{tagModalConv.conv?.title || 'this chat'}"</strong> for quick label-based filtering.
+            </p>
+
+            {/* Current active tags on this conversation */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                Active Tags:
+              </label>
+              {(tagModalConv.tags || []).length === 0 ? (
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                  No tags added yet.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {(tagModalConv.tags || []).map(t => (
+                    <span
+                      key={t}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '3px 8px',
+                        borderRadius: '12px',
+                        background: 'var(--accent, #6366f1)',
+                        color: '#fff',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                      }}
+                    >
+                      #{t}
+                      <button
+                        type="button"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#fff',
+                          cursor: 'pointer',
+                          padding: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        onClick={() => {
+                          setTagModalConv(prev => ({
+                            ...prev,
+                            tags: (prev.tags || []).filter(x => x !== t),
+                          }))
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Suggested existing tags from other chats */}
+            {allTags.filter(t => !(tagModalConv.tags || []).includes(t)).length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                  Add from Existing Tags:
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {allTags
+                    .filter(t => !(tagModalConv.tags || []).includes(t))
+                    .map(t => (
+                      <button
+                        key={t}
+                        type="button"
+                        className="small-btn"
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: '11px',
+                          borderRadius: '12px',
+                          background: 'rgba(255,255,255,0.06)',
+                          border: '1px solid var(--border)',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => {
+                          setTagModalConv(prev => ({
+                            ...prev,
+                            tags: [...(prev.tags || []), t],
+                          }))
+                        }}
+                      >
+                        + #{t}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Input to add new tags */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                Add New Tag:
+              </label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  id="new-tag-input"
+                  type="text"
+                  placeholder="e.g. priority, ai, draft, bug, feature..."
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      const val = e.target.value.trim().replace(/^#/, '')
+                      if (val && !(tagModalConv.tags || []).includes(val)) {
+                        setTagModalConv(prev => ({
+                          ...prev,
+                          tags: [...(prev.tags || []), val],
+                        }))
+                        e.target.value = ''
+                      }
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '8px 10px',
+                    background: 'var(--bg-input, rgba(255,255,255,0.05))',
+                    border: '1px solid var(--border, rgba(255,255,255,0.15))',
+                    borderRadius: '6px',
+                    color: 'var(--text-primary, inherit)',
+                    fontSize: '13px',
+                  }}
+                />
+                <button
+                  type="button"
+                  className="small-btn btn-primary"
+                  onClick={() => {
+                    const inputEl = document.getElementById('new-tag-input')
+                    const val = inputEl?.value.trim().replace(/^#/, '')
+                    if (val && !(tagModalConv.tags || []).includes(val)) {
+                      setTagModalConv(prev => ({
+                        ...prev,
+                        tags: [...(prev.tags || []), val],
+                      }))
+                      if (inputEl) inputEl.value = ''
+                    }
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
+              <button
+                type="button"
+                className="small-btn"
+                onClick={() => setTagModalConv(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="small-btn btn-primary"
+                onClick={() => {
+                  setConvTags(tagModalConv.idx, tagModalConv.tags || [])
+                  showToast('Tags updated')
+                  setTagModalConv(null)
+                }}
+              >
+                Save Tags
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Interactive Human-In-The-Loop AI Question Modal */}
+      {userQuestionPrompt && (
+        <Modal
+          title="AI Needs Your Input"
+          icon={<Bot size={18} style={{ color: 'var(--accent, #6366f1)' }} />}
+          onClose={() => userQuestionPrompt.reject('User skipped prompt')}
+        >
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'rgba(99,102,241,0.08)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(99,102,241,0.2)' }}>
+              <Sparkles size={18} style={{ color: 'var(--accent, #6366f1)', marginTop: 2, flexShrink: 0 }} />
+              <div style={{ fontSize: '13.5px', lineHeight: 1.5, fontWeight: 500 }}>
+                {userQuestionPrompt.question}
+              </div>
+            </div>
+
+            {/* Multiple Choice Options */}
+            {userQuestionPrompt.options && userQuestionPrompt.options.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                  Select an Option:
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '6px' }}>
+                  {userQuestionPrompt.options.map((opt, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className="small-btn"
+                      style={{
+                        padding: '10px 14px',
+                        fontSize: '13px',
+                        textAlign: 'left',
+                        borderRadius: '8px',
+                        background: userQuestionAnswer === opt ? 'var(--accent, #6366f1)' : 'rgba(255,255,255,0.05)',
+                        color: userQuestionAnswer === opt ? '#fff' : 'inherit',
+                        border: '1px solid var(--border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onClick={() => {
+                        userQuestionPrompt.resolve(opt)
+                      }}
+                    >
+                      <span>{opt}</span>
+                      <CheckCircle2 size={15} style={{ opacity: userQuestionAnswer === opt ? 1 : 0.3 }} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Custom Input */}
+            {userQuestionPrompt.allow_custom !== false && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                  {userQuestionPrompt.options?.length ? 'Or Provide Custom Input:' : 'Your Response:'}
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder={userQuestionPrompt.placeholder || 'Type your instructions or response here...'}
+                  value={userQuestionAnswer}
+                  onChange={e => setUserQuestionAnswer(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      if (userQuestionAnswer.trim()) {
+                        userQuestionPrompt.resolve(userQuestionAnswer.trim())
+                      }
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    background: 'var(--bg-input, rgba(255,255,255,0.05))',
+                    border: '1px solid var(--border, rgba(255,255,255,0.15))',
+                    borderRadius: '6px',
+                    color: 'var(--text-primary, inherit)',
+                    fontSize: '13px',
+                  }}
+                />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '6px' }}>
+              <button
+                type="button"
+                className="small-btn"
+                onClick={() => userQuestionPrompt.reject('User skipped')}
+              >
+                Skip / Cancel
+              </button>
+              <button
+                type="button"
+                className="small-btn btn-primary"
+                disabled={!userQuestionAnswer.trim()}
+                onClick={() => {
+                  if (userQuestionAnswer.trim()) {
+                    userQuestionPrompt.resolve(userQuestionAnswer.trim())
+                  }
+                }}
+              >
+                Submit Response
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {showOnboarding && (
         <OnboardingModal
           templates={promptTemplates}
@@ -4740,7 +5359,16 @@ export default function App() {
           sendRef.current?.(p)
         }}
       />}
+      {showCitationGraph && <CitationGraphModal isOpen={showCitationGraph} onClose={() => setShowCitationGraph(false)} />}
+      {showEvalDashboard && <EvalDashboard onClose={() => setShowEvalDashboard(false)} />}
       {showDownloadModal && <DownloadModal isOpen={showDownloadModal} onClose={() => setShowDownloadModal(false)} onInstallPwa={installPwa} showPwa={!!showPwaInstall} />}
+      {activeArtifact && (
+        <ArtifactCanvas
+          isOpen={!!activeArtifact}
+          onClose={() => setActiveArtifact(null)}
+          {...activeArtifact}
+        />
+      )}
       </React.Suspense>
       {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
       {/* Generic confirm modal — no more native confirm() dialogs */}

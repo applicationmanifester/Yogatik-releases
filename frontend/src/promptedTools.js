@@ -156,8 +156,9 @@ function parseXmlToolBlock(xmlContent) {
  */
 export function parseToolCalls(reply = '') {
   const found = []
-  // Reasoning-then-format: drop <think>…</think> (and an unclosed one) first.
-  const clean = String(reply)
+  const rawReply = String(reply)
+  // Reasoning-then-format: drop <think>…</think> (and an unclosed one) first for prose.
+  const clean = rawReply
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
     .replace(/<think>[\s\S]*$/i, '')
   let text = clean
@@ -187,17 +188,21 @@ export function parseToolCalls(reply = '') {
   }
 
   // 1. Check XML <tool_call> and <function_call> formats (Nemotron, Hermes, Qwen, DeepSeek)
-  for (const re of [XML_TOOL_CALL, XML_FUNCTION_CALL]) {
-    re.lastIndex = 0
-    let m
-    while ((m = re.exec(clean))) {
-      attempted = true
-      const parsedXml = parseXmlToolBlock(m[1])
-      if (parsedXml.length > 0) {
-        for (const call of parsedXml) {
-          found.push({ name: call.name, parsedArgs: call.args, id: `pt_${found.length}` })
+  // Search against both rawReply and clean so calls inside <think> are not lost.
+  for (const targetText of [clean, rawReply]) {
+    if (found.length > 0) break
+    for (const re of [XML_TOOL_CALL, XML_FUNCTION_CALL]) {
+      re.lastIndex = 0
+      let m
+      while ((m = re.exec(targetText))) {
+        attempted = true
+        const parsedXml = parseXmlToolBlock(m[1])
+        if (parsedXml.length > 0) {
+          for (const call of parsedXml) {
+            found.push({ name: call.name, parsedArgs: call.args, id: `pt_${found.length}` })
+          }
+          text = text.replace(m[0], '')
         }
-        text = text.replace(m[0], '')
       }
     }
   }
@@ -274,6 +279,17 @@ export function formatToolResults(results = []) {
  * open tag can only be the tail of the reply.
  */
 export function stripToolCallSyntax(text) {
+  if (!text || typeof text !== 'string') return ''
+  // Blazing-fast path: if no tool markers exist, return instantly with 0ms overhead
+  if (
+    !text.includes('<') &&
+    !text.includes('[TOOL_CALLS]') &&
+    !text.includes('<|python_tag|>') &&
+    !text.includes('Action:')
+  ) {
+    return text
+  }
+
   const input = String(text ?? '')
   const out = input
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
@@ -288,9 +304,6 @@ export function stripToolCallSyntax(text) {
     // Provider-specific call markers that are never prose.
     .replace(/<\|python_tag\|>[\s\S]*$/i, '')
     .replace(/\[TOOL_CALLS\][\s\S]*$/i, '')
-  // Trim ONLY when something was actually removed. The abort path preserves
-  // the partial answer verbatim so the user sees exactly what had streamed
-  // when they pressed Stop; silently trimming it here would change text this
-  // function was not asked to touch.
+  // Trim ONLY when something was actually removed.
   return out === input ? input : out.trim()
 }

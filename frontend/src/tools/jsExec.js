@@ -29,26 +29,42 @@ function serialize(v) {
   try { return JSON.parse(JSON.stringify(v)) } catch { return String(v) }
 }
 
+import { isDesktop } from './localFs'
+import { terminalRunTool } from './terminalRun'
+
 export const jsExecTool = {
   schema: {
     description:
-      'Execute JavaScript in a sandboxed Web Worker (no DOM, no network to the page, no app access). ' +
+      'Execute JavaScript in a sandboxed runner or Node environment. ' +
       'Returns anything console.log-ged and the value you `return`. ' +
-      'Use for calculations, data transforms, JSON manipulation, string/regex work, algorithms, and quick simulations — anything more reliable done in code than by hand. Async/await is supported. ' +
-      'It is NOT Node: there is no require/import, no fs, no process and no filesystem — ' +
-      'use fs_read/fs_write for files and terminal_run to run a real Node script.',
+      'Use for calculations, data transforms, JSON manipulation, string/regex work, algorithms, and quick simulations. ' +
+      'Async/await is supported.',
     parameters: {
       type: 'object',
       properties: {
-        code: { type: 'string', description: 'JavaScript to run. Use return X to output a value.' },
+        code: { type: 'string', description: 'JavaScript to run. Use return X or console.log to output a value.' },
         timeout_ms: { type: 'number', description: 'Hard timeout (default 5000, max 15000)' },
       },
       required: ['code'],
     },
   },
   async execute({ code, timeout_ms = 5000 }) {
+    if (!code?.trim()) return { success: false, error: 'No code provided' }
+
+    // In Desktop Electron, run directly through Node CLI for 100% unrestricted JS execution (0 CSP issues)
+    if (isDesktop()) {
+      try {
+        const wrapped = `(async () => {\n${code}\n})().then(v => { if (v !== undefined) console.log(typeof v === 'object' ? JSON.stringify(v, null, 2) : v); }).catch(e => { console.error(e); process.exit(1); })`
+        const res = await terminalRunTool.execute({ command: `node -e "${wrapped.replace(/"/g, '\\"')}"`, timeout_ms })
+        if (res.exit_code === 0 || res.exitCode === 0) {
+          const out = (res.stdout || res.output || '').trim()
+          return { success: true, tool: 'js_execute', result: out, output: out, logs: out ? out.split('\n') : [] }
+        }
+      } catch { /* proceed to worker fallback */ }
+    }
+
     if (typeof Worker === 'undefined' || typeof Blob === 'undefined') {
-      return { success: false, error: 'JavaScript execution needs a browser environment with Web Workers.' }
+      return { success: false, error: 'JavaScript execution needs a browser environment with Web Workers or Desktop app.' }
     }
     const limit = Math.min(Math.max(250, timeout_ms | 0), 15000)
     const url = URL.createObjectURL(new Blob([WORKER_SRC], { type: 'application/javascript' }))
@@ -61,7 +77,16 @@ export const jsExecTool = {
         }, limit)
         worker.onmessage = (e) => {
           clearTimeout(timer)
-          const { ok, value, error, logs } = e.data || {}
+          const { ok, value, error, logs = [] } = e.data || {}
+          if (!ok && error && String(error).includes('unsafe-eval')) {
+            resolve({
+              success: false,
+              tool: 'js_execute',
+              error: 'Browser Content Security Policy blocks runtime eval in workers. In the Desktop App, full Node.js execution is available.',
+              logs,
+            })
+            return
+          }
           resolve(ok
             ? { success: true, tool: 'js_execute', result: serialize(value), logs, output: logs.join('\n') }
             : { success: false, tool: 'js_execute', error, logs })

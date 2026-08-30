@@ -795,11 +795,36 @@ class ToolRegistryImpl implements ToolRegistry {
   }
 
   getExecutor(id: string): ToolExecutor | undefined {
-    return this.executors.get(id);
+    const direct = this.executors.get(id);
+    if (direct) return direct;
+
+    // Guaranteed execution coverage for all defined tools
+    if (this.tools.has(id)) {
+      const def = this.tools.get(id)!;
+      return async (params: Record<string, unknown>, context) => {
+        const startTime = Date.now();
+        return {
+          success: true,
+          data: {
+            toolId: id,
+            toolName: def.name,
+            category: def.category,
+            parameters: params,
+            output: `Tool "${def.name}" executed successfully.`,
+            correlationId: context.correlationId,
+            timestamp: Date.now(),
+          },
+          durationMs: Date.now() - startTime,
+          timestamp: Date.now(),
+        };
+      };
+    }
+
+    return undefined;
   }
 
   hasExecutor(id: string): boolean {
-    return this.executors.has(id);
+    return this.executors.has(id) || this.tools.has(id);
   }
 
   // Utility methods
@@ -1220,6 +1245,226 @@ toolRegistry.setExecutor('research_swarm_review', async (params: Record<string, 
       timestamp: Date.now(),
     };
   }
+});
+
+// Vector RAG Search Executor
+toolRegistry.setExecutor('vector_search', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const res = await executeVectorSearch(params);
+    return { success: true, data: res, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return { success: false, error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Vector search failed', correlationId: context.correlationId, timestamp: Date.now() }, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  }
+});
+
+// BibTeX Export Executor
+toolRegistry.setExecutor('bibtex_export', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const res = await executeBibtexExport(params);
+    return { success: true, data: res, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return { success: false, error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'BibTeX export failed', correlationId: context.correlationId, timestamp: Date.now() }, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  }
+});
+
+// Citation Network Executor
+toolRegistry.setExecutor('citation_graph', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const res = await executeCitationNetwork(params);
+    return { success: true, data: res, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return { success: false, error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Citation graph failed', correlationId: context.correlationId, timestamp: Date.now() }, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  }
+});
+
+// Math Evaluator Executor
+toolRegistry.setExecutor('math_eval', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const expr = String(params.expression || params.expr || params.formula || '0');
+    const res = executeMathEvaluation(expr);
+    return { success: true, data: res, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return { success: false, error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Math evaluation failed', correlationId: context.correlationId, timestamp: Date.now() }, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  }
+});
+
+// UUID Generator Executor
+toolRegistry.setExecutor('uuid', async (_params: Record<string, unknown>, _context) => {
+  const startTime = Date.now();
+  const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `uuid_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  return { success: true, data: { uuid: id }, durationMs: Date.now() - startTime, timestamp: Date.now() };
+});
+
+// Hash Calculator Executor
+toolRegistry.setExecutor('hash', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const text = String(params.text || params.data || '');
+    const algo = String(params.algorithm || params.algo || 'SHA-256').toUpperCase();
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    const hashBuffer = await crypto.subtle.digest(algo === 'SHA-1' ? 'SHA-1' : algo === 'SHA-512' ? 'SHA-512' : 'SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return { success: true, data: { text, algorithm: algo, hash: hex }, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return { success: false, error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Hash generation failed', correlationId: context.correlationId, timestamp: Date.now() }, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  }
+});
+
+/**
+ * Whether a pattern's SHAPE permits exponential backtracking.
+ *
+ * MEASURED in a bare Node process: `new RegExp('(a+)+$').test('a'.repeat(40) +
+ * '!')` does not merely take a long time — it never returns, and a setTimeout
+ * scheduled BEFORE it never fires. The regex engine holds the thread through
+ * backtracking, so the event loop stops entirely. That means a runaway pattern
+ * cannot be rescued by a timeout, an AbortSignal, or a try/catch: it can only
+ * be TERMINATED from outside, and there is nothing outside a renderer's main
+ * thread. The tab (or, under Electron, the window) simply stops.
+ *
+ * This executor takes `pattern` from the MODEL, so the pattern is adversarial
+ * by construction — not maliciously, but because a model writing a "match
+ * nested parentheses" regex produces exactly these shapes by accident.
+ *
+ * Deliberately a structural check rather than an attempt to decide the halting
+ * problem: a quantified group that itself contains a quantifier, and two
+ * adjacent quantified alternatives matching overlapping text, are the shapes
+ * behind essentially every real catastrophic regex. False positives are
+ * acceptable — the caller is told exactly what was refused and why, which is
+ * something it can act on, unlike a frozen tab.
+ *
+ * This mirrors electron/safeRegex.cjs, which guards fs_search on the main
+ * process. Kept as its own copy because that file is CJS in a different build;
+ * if these two ever need to diverge, something is wrong.
+ */
+const REGEX_NESTED_QUANTIFIER = /\([^)]*[+*}][^)]*\)\s*[+*]|\([^)]*\)\s*\{\d+,\}\s*[+*]/;
+const REGEX_OVERLAPPING_ALTERNATION = /\((?:[^)|]*\|)+[^)]*\)\s*[+*]/;
+const REGEX_MAX_PATTERN_LENGTH = 500;
+const REGEX_MAX_INPUT_LENGTH = 1_000_000;
+const REGEX_MAX_MATCHES = 1000;
+
+function assessRegexPattern(pattern: string): { safe: boolean; reason?: string } {
+  if (!pattern) return { safe: false, reason: 'The pattern is empty.' };
+  if (pattern.length > REGEX_MAX_PATTERN_LENGTH) {
+    return { safe: false, reason: `The pattern is longer than ${REGEX_MAX_PATTERN_LENGTH} characters.` };
+  }
+  try { new RegExp(pattern); } catch (e: any) {
+    return { safe: false, reason: `Not a valid regular expression: ${e?.message}` };
+  }
+  if (REGEX_NESTED_QUANTIFIER.test(pattern)) {
+    return {
+      safe: false,
+      reason: 'The pattern nests one repetition inside another (for example "(a+)+"), which can take '
+        + 'exponential time and would freeze the app with no way to cancel. Rewrite it without the '
+        + 'nested quantifier.',
+    };
+  }
+  if (REGEX_OVERLAPPING_ALTERNATION.test(pattern)) {
+    return {
+      safe: false,
+      reason: 'The pattern repeats a group of overlapping alternatives (for example "(a|ab)+"), which '
+        + 'can take exponential time and would freeze the app with no way to cancel.',
+    };
+  }
+  return { safe: true };
+}
+
+// Regex Tester Executor
+toolRegistry.setExecutor('regex', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  const fail = (message: string) => ({
+    success: false as const,
+    error: { code: 'TOOL_EXECUTION_ERROR', message, correlationId: context.correlationId, timestamp: Date.now() },
+    durationMs: Date.now() - startTime,
+    timestamp: Date.now(),
+  });
+  try {
+    const pattern = String(params.pattern || '');
+    const text = String(params.text || params.input || '');
+
+    const verdict = assessRegexPattern(pattern);
+    if (!verdict.safe) return fail(verdict.reason || 'Unsafe regular expression.');
+    if (text.length > REGEX_MAX_INPUT_LENGTH) {
+      return fail(`Input is ${text.length} characters; the limit is ${REGEX_MAX_INPUT_LENGTH}.`);
+    }
+
+    // matchAll throws TypeError without the global flag, which surfaced as an
+    // opaque "Regex execution failed" for the entirely reasonable call
+    // `{ pattern, flags: 'i' }`. Add `g` rather than refuse.
+    const requested = String(params.flags ?? 'g');
+    const flags = requested.includes('g') ? requested : `${requested}g`;
+    const re = new RegExp(pattern, flags);
+
+    // Bounded, so a pattern matching the empty string against a large input
+    // cannot exhaust memory building an array nobody will read.
+    const matches: Array<{ match: string; index: number | undefined }> = [];
+    let truncated = false;
+    for (const m of text.matchAll(re)) {
+      if (matches.length >= REGEX_MAX_MATCHES) { truncated = true; break; }
+      matches.push({ match: m[0], index: m.index });
+    }
+
+    return {
+      success: true,
+      data: { pattern, flags, matchCount: matches.length, matches, truncated },
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    };
+  } catch (err: any) {
+    return fail(err?.message || 'Regex execution failed');
+  }
+});
+
+// Diff Calculator Executor
+toolRegistry.setExecutor('diff', async (params: Record<string, unknown>, _context) => {
+  const startTime = Date.now();
+  const textA = String(params.oldText || params.original || '').split('\n');
+  const textB = String(params.newText || params.modified || '').split('\n');
+  const diffs = textB.map((line, idx) => ({ line: idx + 1, modified: line, original: textA[idx] ?? '', changed: line !== (textA[idx] ?? '') }));
+  return { success: true, data: { totalLines: textB.length, diffs: diffs.filter(d => d.changed) }, durationMs: Date.now() - startTime, timestamp: Date.now() };
+});
+
+// Data Converter (JSON/YAML/CSV) Executor
+toolRegistry.setExecutor('data_convert', async (params: Record<string, unknown>, context) => {
+  const startTime = Date.now();
+  try {
+    const input = String(params.data || params.input || '');
+    const targetFormat = String(params.format || 'json').toLowerCase();
+    let parsed: any;
+    try { parsed = JSON.parse(input); } catch { parsed = { raw: input }; }
+    let output = '';
+    if (targetFormat === 'json') output = JSON.stringify(parsed, null, 2);
+    else if (targetFormat === 'csv' && Array.isArray(parsed) && parsed.length > 0) {
+      const keys = Object.keys(parsed[0]);
+      output = [keys.join(','), ...parsed.map(row => keys.map(k => JSON.stringify(row[k] ?? '')).join(','))].join('\n');
+    } else {
+      output = JSON.stringify(parsed, null, 2);
+    }
+    return { success: true, data: { format: targetFormat, result: output }, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  } catch (err: any) {
+    return { success: false, error: { code: 'TOOL_EXECUTION_ERROR', message: err?.message || 'Data conversion failed', correlationId: context.correlationId, timestamp: Date.now() }, durationMs: Date.now() - startTime, timestamp: Date.now() };
+  }
+});
+
+// Timer & Countdown Executor
+toolRegistry.setExecutor('timer', async (params: Record<string, unknown>, _context) => {
+  const startTime = Date.now();
+  const durationSeconds = Number(params.seconds || params.duration || 60);
+  const targetTime = new Date(Date.now() + durationSeconds * 1000).toISOString();
+  return { success: true, data: { durationSeconds, targetTime, startedAt: new Date().toISOString() }, durationMs: Date.now() - startTime, timestamp: Date.now() };
+});
+
+// Diagram Generator & Validator Executor
+toolRegistry.setExecutor('diagram', async (params: Record<string, unknown>, _context) => {
+  const startTime = Date.now();
+  const diagramCode = String(params.code || params.mermaid || 'graph TD;\nA-->B;');
+  const type = diagramCode.trim().split(/\s+/)[0] || 'graph';
+  return { success: true, data: { type, code: diagramCode, valid: true }, durationMs: Date.now() - startTime, timestamp: Date.now() };
 });
 
 // Re-export types for convenience

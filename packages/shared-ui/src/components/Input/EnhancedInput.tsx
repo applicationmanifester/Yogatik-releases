@@ -1,8 +1,9 @@
 // Enhanced Input component with integrate Enhance button
 // Extends the base Input component with prompt enhancement capabilities
 
-import React, { useState } from 'react';
-import { EnhanceButton } from '../../../../enhancePrompt';
+import React from 'react';
+import { EnhanceButton } from '../EnhanceButton';
+import { enhancePrompt } from '../../enhancePrompt';
 import styles from './Input.module.css';
 
 export interface EnhancedInputProps {
@@ -31,21 +32,16 @@ export const EnhancedInput: React.FC<EnhancedInputProps> = ({
   enhanceType = 'grammar',
   isLoading = false
 }) => {
-  const handleEnhance = () => {
-    if (!value.trim()) {
-      return;
-    }
-
-    // Apply enhancement and call the callback
-    const enhanced = value.trim().split(' ').length > 0
-      ? value // In a full implementation, would call enhancePrompt
-      : value;
-
+  const handleEnhance = async (currentPrompt: string): Promise<string> => {
+    if (!currentPrompt.trim()) return currentPrompt;
+    const enhanced = enhancePrompt(currentPrompt, enhanceType);
+    onChange(enhanced);
     onEnhance?.(enhanced);
+    return enhanced;
   };
 
   return (
-    <div className={`${styles.wrapper} ${styles.enhancedWrapper}`}>
+    <div className={`${styles.wrapper || ''} ${styles.enhancedWrapper || ''}`} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -58,20 +54,16 @@ export const EnhancedInput: React.FC<EnhancedInputProps> = ({
           borderRadius: '6px',
           fontSize: '0.875rem',
           minHeight: '48px',
-          resize: 'vertical',
           boxSizing: 'border-box'
         }}
       />
       <EnhanceButton
         prompt={value}
-        onEnhanced={handleEnhance}
-        type={enhanceType}
-        isLoading={isLoading}
-        className={styles.enhanceBtn}
+        onEnhance={handleEnhance}
+        disabled={isLoading}
       />
     </div>
   );
 };
 
-// Apply module CSS styles for the enhanced wrapper
 EnhancedInput.displayName = 'EnhancedInput';

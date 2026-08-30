@@ -36,7 +36,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
       <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>
         {role.charAt(0).toUpperCase() + role.slice(1)} • {timestampStr}
       </div>
-      <div dangerouslySetInnerHTML={{ __html: content }} />
+      <div className="chat-message-content" style={{ whiteSpace: 'pre-wrap' }}>{content}</div>
       {metadata && (
         <div style={{
           marginTop: '4px',

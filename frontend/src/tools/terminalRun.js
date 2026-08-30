@@ -37,7 +37,7 @@ export const terminalRunTool = {
       properties: {
         command: { type: 'string', description: 'The exact CLI command string to run.' },
         cwd: { type: 'string', description: 'Optional relative path for working directory.' },
-        timeout: { type: 'number', description: 'Optional timeout in milliseconds (default 30000).' },
+        timeout: { type: 'number', description: 'Optional timeout in milliseconds (default 300000 / 5 minutes).' },
         timeout_ms: { type: 'number', description: 'Alias for timeout.' },
         env: { type: 'object', description: 'Optional extra environment variables for this command.' },
       },
@@ -61,7 +61,7 @@ export const terminalRunTool = {
       return { success: false, error: 'Terminal bridge is unavailable in this environment.' }
     }
 
-    const waitMs = Number(timeout) || 30000
+    const waitMs = Number(timeout) || 300000
     const startedAt = Date.now()
     try {
       const res = await bridge.exec(command, {

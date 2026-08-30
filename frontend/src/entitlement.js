@@ -105,7 +105,20 @@ export async function loadEntitlement() {
 export async function refreshEntitlement({ idToken = null, uid = null } = {}) {
   const b = bridge()
   if (!b) return entitlement()
-  try { return apply(await b.refresh({ idToken, uid })) } catch { return entitlement() }
+  // Fetch the ID token HERE when the caller did not supply one. Every call site
+  // passed `userData?.idToken`, a field the auth layer has never produced, so
+  // the token was always undefined and main's refresh() bailed at its guard —
+  // no user could be licensed. Resolving it in one place means a new call site
+  // cannot reintroduce that, and an ID token expires in an hour so fetching it
+  // at use is more correct than carrying a copy from sign-in anyway.
+  let token = idToken
+  if (!token) {
+    try {
+      const { getIdToken } = await import('./firebaseAuth')
+      token = await getIdToken()
+    } catch { token = null }
+  }
+  try { return apply(await b.refresh({ idToken: token, uid })) } catch { return entitlement() }
 }
 
 export async function signOutEntitlement() {

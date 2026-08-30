@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { splitReasoning } from '../reasoning'
+import { stripToolCallSyntax } from '../promptedTools'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   Volume2, Wrench, Copy, Check, RefreshCw, Pencil, AlertTriangle,
   FileDown, FileText, Download, Zap, Key, Settings, HelpCircle,
-  ChevronDown, ChevronUp, ShieldAlert, Cpu
+  ChevronDown, ChevronUp, ShieldAlert, Cpu, Play
 } from 'lucide-react'
 import { CodeBlock } from './CodeBlock'
 import { exportPptx } from '../tools/independentTools'
@@ -128,6 +129,62 @@ function useMarkdownComponents(msgContent, onOpenArtifact) {
           : String(children || '').trim()
       const cleanLabel = rawLabel.replace(/^download\s+/i, '').trim()
       const hrefStr = typeof href === 'string' ? href : ''
+
+      // 1. YouTube Video Embeds
+      const cleanHref = hrefStr.replace(/[.,;:!?)\]]+$/, '')
+      const ytMatch = cleanHref.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:[?&/#]|$)/i)
+      if (ytMatch && ytMatch[1]) {
+        const vidId = ytMatch[1]
+        return (
+          <div className="chat-inline-video-wrap" style={{ margin: '12px 0', maxWidth: '560px', width: '100%' }}>
+            <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.3)', background: '#111' }}>
+              <iframe
+                src={`https://www.youtube-nocookie.com/embed/${vidId}?rel=0`}
+                title="YouTube video player"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerPolicy="strict-origin-when-cross-origin"
+                allowFullScreen
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', fontSize: '11.5px' }}>
+              <a
+                href={`https://www.youtube.com/watch?v=${vidId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="chat-link"
+                style={{ opacity: 0.85, fontWeight: 500 }}
+              >
+                ▶ Watch "{children || 'Video'}" on YouTube
+              </a>
+              <span style={{ fontSize: '10px', opacity: 0.5 }}>(If video is restricted by creator, click link to open)</span>
+            </div>
+          </div>
+        )
+      }
+
+      // 2. Direct Video Files (.mp4, .webm, .ogg, .mov)
+      if (hrefStr.match(/\.(mp4|webm|ogg|mov)($|\?)/i)) {
+        return (
+          <div className="chat-inline-video-wrap" style={{ margin: '12px 0', maxWidth: '560px', width: '100%' }}>
+            <video
+              src={hrefStr}
+              controls
+              playsInline
+              preload="metadata"
+              style={{ width: '100%', maxHeight: '400px', borderRadius: '10px', background: '#000', boxShadow: '0 4px 14px rgba(0,0,0,0.3)' }}
+            />
+            <div style={{ marginTop: '4px' }}>
+              <a href={href} target="_blank" rel="noopener noreferrer" className="chat-link" style={{ fontSize: '11px', opacity: 0.8 }}>
+                ▶ Open video source
+              </a>
+            </div>
+          </div>
+        )
+      }
+
+      // 3. Document Download Links
       const isDocLink = (hrefStr && hrefStr.match(/\.(rtf|doc|docx|ppt|pptx|pdf|csv|html|txt)($|\?)/i)) ||
                         (rawLabel && rawLabel.match(/\.(rtf|doc|docx|ppt|pptx|pdf|csv|html|txt)\b/i))
       if (isDocLink || hrefStr.startsWith('data:') || hrefStr.startsWith('blob:')) {
@@ -161,6 +218,21 @@ function useMarkdownComponents(msgContent, onOpenArtifact) {
       }
       return <a href={href} target="_blank" rel="noopener noreferrer" className="chat-link" {...props}>{children}</a>
     },
+    img({ src, alt, ...props }) {
+      const srcStr = typeof src === 'string' ? src : ''
+      if (srcStr.match(/\.(mp4|webm|ogg|mov)($|\?)/i)) {
+        return (
+          <video
+            src={srcStr}
+            controls
+            playsInline
+            preload="metadata"
+            style={{ width: '100%', maxWidth: '560px', maxHeight: '420px', borderRadius: '10px', background: '#000', margin: '8px 0' }}
+          />
+        )
+      }
+      return <img src={src} alt={alt || ''} className="chat-inline-img" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', margin: '8px 0' }} {...props} />
+    },
     p({ node, children, ...props }) {
       return <div className="md-p" {...props}>{children}</div>
     },
@@ -182,7 +254,7 @@ function useMarkdownComponents(msgContent, onOpenArtifact) {
 }
 
 const MessageBubble = React.memo(function MessageBubble({
-   msg, onTTS, onOpenArtifact, onRegenerate, onEdit, onRetry, onOpenSettings, onAutoPick, showToolCards = true,
+   msg, onTTS, onOpenArtifact, onRegenerate, onContinue, onEdit, onRetry, onOpenSettings, onAutoPick, showToolCards = true,
 }) {
    const [copied, setCopied] = useState(false)
    const [showExportMenu, setShowExportMenu] = useState(false)
@@ -289,7 +361,7 @@ const MessageBubble = React.memo(function MessageBubble({
             )}
 
             {(diagnosis.actionType === 'autopick' || diagnosis.type === 'quota' || diagnosis.type === 'model_not_found') && onAutoPick && (
-              <button type="button" className="error-btn-secondary" onClick={onAutoPick}>
+              <button type="button" className="error-btn-secondary" onClick={() => onAutoPick(msg.provider)}>
                 <Zap size={13} /> {diagnosis.actionLabel || 'Auto-Pick Model'}
               </button>
             )}
@@ -369,6 +441,11 @@ const MessageBubble = React.memo(function MessageBubble({
               </span>
             </>
           )}
+          {msg.role === 'assistant' && onContinue && (
+            <button className="icon-btn" onClick={onContinue} title="Continue / Resume task" aria-label="Continue this task">
+              <Play size={12} />
+            </button>
+          )}
           {msg.role === 'assistant' && onRegenerate && (
             <button className="icon-btn" onClick={onRegenerate} title="Regenerate" aria-label="Regenerate this reply">
               <RefreshCw size={12} />
@@ -428,23 +505,68 @@ const MessageBubble = React.memo(function MessageBubble({
           </ol>
         </details>
       )}
-      {msg.image && (
-        <img src={msg.image} alt="Attached image" className="msg-image"
-          onClick={() => window.open(msg.image, '_blank', 'noopener')} />
+      {msg.file && (
+        <div className="msg-attachment-badge">
+          <FileText size={15} className="msg-attachment-icon" />
+          <div className="msg-attachment-info">
+            <span className="msg-attachment-name">{msg.file.name}</span>
+            {msg.file.size ? (
+              <span className="msg-attachment-size">
+                {msg.file.size > 1048576
+                  ? `${(msg.file.size / 1048576).toFixed(1)} MB`
+                  : `${Math.round(msg.file.size / 1024)} KB`}
+              </span>
+            ) : null}
+          </div>
+        </div>
       )}
-      {(() => { const s = splitReasoning(typeof msg.content === 'string' ? msg.content : String(msg.content ?? '')); reasoning = s.reasoning; answer = s.answer; return null })()}
+      {Array.isArray(msg.files) && msg.files.map((f, i) => (
+        <div key={i} className="msg-attachment-badge">
+          <FileText size={15} className="msg-attachment-icon" />
+          <div className="msg-attachment-info">
+            <span className="msg-attachment-name">{f.name}</span>
+            {f.size ? (
+              <span className="msg-attachment-size">
+                {f.size > 1048576
+                  ? `${(f.size / 1048576).toFixed(1)} MB`
+                  : `${Math.round(f.size / 1024)} KB`}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ))}
+      {msg.image && (
+        <div className="msg-image-wrap">
+          <img src={msg.image} alt={msg.imageName || "Attached image"} className="msg-image"
+            onClick={() => window.open(msg.image, '_blank', 'noopener')} />
+          {msg.imageName && <span className="msg-image-caption">{msg.imageName}</span>}
+        </div>
+      )}
+      {(() => {
+        const rawText = stripToolCallSyntax(typeof msg.content === 'string' ? msg.content : String(msg.content ?? ''))
+        const s = splitReasoning(rawText)
+        reasoning = s.reasoning
+        answer = stripToolCallSyntax(s.answer)
+        return null
+      })()}
       {reasoning && (
         <details className="reasoning-panel">
           <summary>Thinking</summary>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{reasoning}</ReactMarkdown>
         </details>
       )}
-      {/* A successful turn with no visible answer (e.g. reasoning-only) must not
-          render blank — say so instead of looking broken. */}
+      {/* If there is no separate answer, show a clean action summary without duplicating internal thinking */}
       {msg.role === 'assistant' && typeof answer === 'string' && !answer && (
-        <div className="message-content message-empty">
-          {reasoning ? '(The model returned only reasoning — no final answer.)'
-                     : '(The model returned an empty response. Try Regenerate or a stronger model.)'}
+        <div className="message-content">
+          {msg.toolsUsed?.length ? (
+            <div className="message-tool-summary" style={{ color: 'var(--text-secondary, #888)', fontStyle: 'italic' }}>
+              ✓ Completed actions ({msg.toolsUsed.join(', ')}). See the Thinking & Actions panel for step details.
+            </div>
+          ) : !reasoning ? (
+            <div className="message-empty">
+              (The model returned an empty response. Try Regenerate or a stronger model.)
+            </div>
+          ) : null}
         </div>
       )}
        {/* Check if message content is long enough to warrant collapsing */}
@@ -483,13 +605,25 @@ const MessageBubble = React.memo(function MessageBubble({
           </div>
         )}
       {msg.sources?.length > 0 && (
-        <div className="sources">
-          <div className="sources-title">Sources</div>
-          {msg.sources.filter(s => s.url).map((s, i) => (
-            <div key={i} className="source-item">
-              <a href={s.url} target="_blank" rel="noopener">{s.title || s.url}</a>
-            </div>
-          ))}
+        <div className="sources" style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg-input, rgba(0,0,0,0.15))', borderRadius: 8, border: '1px solid var(--border)' }}>
+          <div className="sources-title" style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <FileText size={12} /> Sources &amp; Retrieved Citations ({msg.sources.length})
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {msg.sources.map((s, i) => {
+              const label = s.title || (s.url ? s.url.replace(/^https?:\/\//, '').split('/')[0] : `Document ${i + 1}`)
+              const scoreBadge = s.score ? ` (${Math.round(s.score * 100)}% match)` : ''
+              return s.url ? (
+                <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="source-item source-chip" style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: 'var(--accent)' }}>
+                  🌐 {label}{scoreBadge}
+                </a>
+              ) : (
+                <span key={i} className="source-item source-chip" title={s.snippet || s.content || ''} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-secondary)' }}>
+                  📄 {label}{scoreBadge}
+                </span>
+              )
+            })}
+          </div>
         </div>
       )}
       {msg.role === 'assistant' && (msg.tokens || msg.tokSec || msg.ttfbMs) && (

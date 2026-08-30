@@ -92,6 +92,21 @@ export const FEATURES = {
     hint: 'Automatically switch to a vision model when an image is attached',
     default: false,
   },
+  terminalApproval: {
+    label: 'Terminal Command Auto Execution',
+    hint: 'Controls whether terminal commands require your approval before running',
+    default: 'auto', // 'auto' | 'ask' | 'deny'
+  },
+  queuedMessageMode: {
+    label: 'Queued Messages',
+    hint: 'Configure when follow-up messages are sent',
+    default: 'queue', // 'queue' | 'immediate'
+  },
+  autoOpenEditedFiles: {
+    label: 'Auto-Open Edited Files',
+    hint: 'Open files in the background if Agent creates or edits them',
+    default: true,
+  },
 }
 
 export const FEATURE_DEFAULTS = Object.fromEntries(

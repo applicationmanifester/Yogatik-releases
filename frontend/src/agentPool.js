@@ -15,6 +15,17 @@
  * builds. The semaphore is DOM-free and unit-tested.
  */
 
+// These were set to Infinity. That does not make the app faster — it deletes
+// the one mechanism the paragraph above describes. An "unbounded autonomous
+// swarm" against Groq, OpenAI or OpenRouter is a 429 storm: a 40-item
+// map_reduce fires 40 simultaneous requests, most of them fail, and the failure
+// surfaces to the user as the app being broken rather than as a rate limit. The
+// ceiling is not an arbitrary limit, it is the number past which providers
+// refuse, so removing it makes large fan-outs slower AND less reliable.
+//
+// configureConcurrency was also failing OPEN: `configureConcurrency(0)` and any
+// non-numeric input both returned Infinity, so a bad or empty preference
+// silently uncapped a rate-limit guard. Bad input must clamp to the safe end.
 const DEFAULT_LIMIT = 4    // semaphore's idle value before any batch configures it
 const MIN_LIMIT = 1
 const MAX_LIMIT = 16       // safety ceiling: beyond this providers 429 hard
@@ -23,7 +34,7 @@ let limit = DEFAULT_LIMIT
 let active = 0
 const waiters = [] // queued acquire() callbacks
 
-/** Set the global concurrency budget (clamped). */
+/** Set the global concurrency budget (clamped to MIN_LIMIT..MAX_LIMIT). */
 export function configureConcurrency(n) {
   const v = Math.floor(Number(n))
   if (Number.isFinite(v)) limit = Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, v))

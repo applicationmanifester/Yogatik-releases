@@ -25,7 +25,9 @@ describe('Browser Control Tool Extensions', () => {
     const props = browserControlTool.schema.function.parameters.properties
     expect(props.action.enum).toContain('assert')
     expect(props.action.enum).toContain('audit_a11y')
-    expect(props.type.enum).toEqual(['text', 'element', 'count', 'attribute', 'url', 'title'])
+    for (const t of ['text', 'element', 'count', 'attribute', 'url', 'title']) {
+      expect(props.type.enum).toContain(t)
+    }
     expect(props.expected).toBeDefined()
     expect(props.target).toBeDefined()
   })

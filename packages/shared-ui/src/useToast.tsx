@@ -1,19 +1,42 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 
-const ToastContext = createContext(null)
+export interface ToastItem {
+  id: number
+  message: string
+  duration?: number
+  type?: 'success' | 'error' | 'info'
+  [key: string]: unknown
+}
+
+export interface ToastContextValue {
+  show: (message: string, options?: Partial<ToastItem>) => number
+  dismiss: (id: number | string) => void
+  toasts: ToastItem[]
+}
+
+declare global {
+  interface Window {
+    __YOGATIK_TOAST__?: {
+      show: (msg: unknown, opts?: Record<string, unknown>) => number | void
+      dismiss: (id: unknown) => void
+    }
+  }
+}
+
+const ToastContext = createContext<ToastContextValue | null>(null)
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState([])
+  const [toasts, setToasts] = useState<ToastItem[]>([])
   const timerIdsRef = useRef<number[]>([])
 
-  const dismiss = useCallback((id) => {
+  const dismiss = useCallback((id: number | string) => {
     setToasts(prev => prev.filter(t => t.id !== id))
   }, [])
 
-  const show = useCallback((message, options = {}) => {
+  const show = useCallback((message: string, options: Partial<ToastItem> = {}) => {
     const id = Date.now() + Math.random()
-    const toast = { id, message, ...options }
-    setToasts(prev => [...prev, toast])
+    const toastItem: ToastItem = { id, message, ...options }
+    setToasts(prev => [...prev, toastItem])
 
     const duration = options.duration ?? 3000
     const timerId = window.setTimeout(() => {
@@ -32,11 +55,28 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // Expose to window for desktop bridge
+  // Expose to window for desktop bridge with frozen descriptor and input validation
   useEffect(() => {
-    window.__YOGATIK_TOAST__ = { show, dismiss }
+    if (typeof window !== 'undefined') {
+      try {
+        Object.defineProperty(window, '__YOGATIK_TOAST__', {
+          value: Object.freeze({
+            show: (msg: unknown, opts: Record<string, unknown> = {}) => {
+              if (typeof msg === 'string') return show(msg, opts)
+            },
+            dismiss: (id: unknown) => {
+              if (typeof id === 'number' || typeof id === 'string') dismiss(id)
+            }
+          }),
+          configurable: true,
+          writable: false,
+        })
+      } catch {}
+    }
     return () => {
-      window.__YOGATIK_TOAST__ = null
+      try {
+        delete (window as unknown as Record<string, unknown>).__YOGATIK_TOAST__
+      } catch {}
     }
   }, [show, dismiss])
 
@@ -54,14 +94,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function useToast() {
+export function useToast(): ToastContextValue {
   const ctx = useContext(ToastContext)
   if (!ctx) throw new Error('useToast must be used within ToastProvider')
   return ctx
 }
 
 // Export `toast` as an alias for `show` for convenience
-export const toast = (message: string, options?: { duration?: number; type?: 'success' | 'error' | 'info' }) => {
+export const toast = (message: string, options?: Partial<ToastItem>) => {
   // This will be set by ToastProvider via window.__YOGATIK_TOAST__
   if (typeof window !== 'undefined' && window.__YOGATIK_TOAST__) {
     return window.__YOGATIK_TOAST__.show(message, options)

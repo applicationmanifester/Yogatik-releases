@@ -16,7 +16,7 @@ export async function webgpuDevice() {
   cached = 'wasm'
   try {
     if (typeof navigator !== 'undefined' && navigator.gpu) {
-      const adapter = await navigator.gpu.requestAdapter()
+      const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
       if (adapter) cached = 'webgpu'
     }
   } catch { /* no adapter: wasm it is */ }

@@ -18,6 +18,53 @@ function textOf(msg) {
 }
 
 /**
+ * Estimate token count from history text or message array (~3.8 chars per token).
+ */
+export function estimateTokens(textOrTurns) {
+  if (typeof textOrTurns === 'string') {
+    return Math.ceil(textOrTurns.length / 3.8)
+  }
+  if (Array.isArray(textOrTurns)) {
+    let total = 0
+    for (const turn of textOrTurns) {
+      total += Math.ceil(textOf(turn).length / 3.8) + 4
+    }
+    return total
+  }
+  return 0
+}
+
+/**
+ * Model-aware context limits.
+ * Translates provider and model families into dynamic history character budgets and turn counts.
+ */
+export function getModelContextLimits(provider = '', model = '') {
+  const p = String(provider || '').toLowerCase()
+  const m = String(model || '').toLowerCase()
+
+  if (p === 'local') {
+    return { budget: 4000, maxTurns: 6, estimatedMaxTokens: 4096 }
+  }
+  if (p === 'gemini' || m.includes('gemini')) {
+    return { budget: 120000, maxTurns: 40, estimatedMaxTokens: 1000000 }
+  }
+  if (p === 'anthropic' || m.includes('claude')) {
+    return { budget: 80000, maxTurns: 35, estimatedMaxTokens: 200000 }
+  }
+  if (p === 'openai' || m.includes('gpt-4') || m.includes('o1') || m.includes('o3')) {
+    return { budget: 60000, maxTurns: 30, estimatedMaxTokens: 128000 }
+  }
+  if (p === 'deepseek' || m.includes('deepseek') || m.includes('qwen-2.5-72b')) {
+    return { budget: 48000, maxTurns: 25, estimatedMaxTokens: 64000 }
+  }
+  if (p === 'groq' || p === 'cerebras' || p === 'together') {
+    return { budget: 32000, maxTurns: 20, estimatedMaxTokens: 32000 }
+  }
+  // Default cloud fallback
+  return { budget: 24000, maxTurns: 20, estimatedMaxTokens: 16000 }
+}
+
+/**
  * Decide which turns to summarize and which to keep verbatim. The newest turns
  * are always kept — at least one, whatever the budget.
  */
