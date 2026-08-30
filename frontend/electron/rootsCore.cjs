@@ -167,7 +167,7 @@ function removeRoot(state, ctx, rootId) {
   const st = materialise(state, ctx)
   const key = chatKey(ctx) || 'default'
   st.bindings[key] = (st.bindings[key] || []).filter(id => id !== rootId)
-  if (Array.isArray(st.bindings['default'])) {
+  if (!chatKey(ctx) && Array.isArray(st.bindings['default'])) {
     st.bindings['default'] = st.bindings['default'].filter(id => id !== rootId)
   }
   const stillUsed = Object.values(st.bindings).some(list => (list || []).includes(rootId))
@@ -181,7 +181,7 @@ function setPrimary(state, ctx, rootId) {
   const list = st.bindings[key] || []
   if (!list.includes(rootId)) return st
   st.bindings[key] = [rootId, ...list.filter(id => id !== rootId)]
-  if (Array.isArray(st.bindings['default']) && st.bindings['default'].includes(rootId)) {
+  if (!chatKey(ctx) && Array.isArray(st.bindings['default']) && st.bindings['default'].includes(rootId)) {
     st.bindings['default'] = [rootId, ...st.bindings['default'].filter(id => id !== rootId)]
   }
   return st

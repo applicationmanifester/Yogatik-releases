@@ -189,6 +189,28 @@ describe('state transforms', () => {
     expect(st.bindings['chat:42']).toBeUndefined()
   })
 
+  it('removeRoot from a chat does not wipe default roots or affect other chats', () => {
+    let st = emptyState()
+    const { state: s1, root: root1 } = addRoot(st, { conversationId: 'chat1' }, '/folder1')
+    st = s1
+    expect(resolveRootPaths(st, { conversationId: 'chat1' })).toEqual([nodePath.resolve('/folder1')])
+
+    // User creates chat2 and inherits or adds a new folder
+    const { state: s2, root: root2 } = addRoot(st, { conversationId: 'chat2' }, '/folder2')
+    st = s2
+    expect(resolveRootPaths(st, { conversationId: 'chat2' })).toEqual([nodePath.resolve('/folder1'), nodePath.resolve('/folder2')])
+
+    // User removes folder1 in chat2
+    st = removeRoot(st, { conversationId: 'chat2' }, root1.id)
+
+    // Chat2 only has folder2
+    expect(resolveRootPaths(st, { conversationId: 'chat2' })).toEqual([nodePath.resolve('/folder2')])
+
+    // Chat1 STILL has folder1!
+    expect(resolveRootPaths(st, { conversationId: 'chat1' })).toEqual([nodePath.resolve('/folder1')])
+    expect(st.roots[root1.id]).toBeTruthy()
+  })
+
   it('migrateLegacyGrant makes the old single root the default', () => {
     const st = migrateLegacyGrant(emptyState(), '/legacy')
     const id = rootIdFor('/legacy')

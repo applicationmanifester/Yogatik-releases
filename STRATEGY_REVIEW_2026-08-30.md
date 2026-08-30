@@ -88,6 +88,51 @@ action (notably `select` vs `select_tab`).
 | 28 | A stale ref cost two extra turns | Refusing is right, but refusing *alone* means one turn to re-read and one to retry. Click/type/select now return `page_after_reload` — the freshly-read tree — with the refusal. Only on `stale`, never on an ordinary failure. |
 | 29 | 14 more dead modules | Deleted with their tests: `promptEnhancer` (superseded by `api.enhancePromptText`), `memoryPaging`, and the two retirement stubs. Dead list **21 → 7**. |
 
+### Fixed — payments (this one was the whole business)
+
+**The release build could not take money. Four independent blockers, any one of which
+alone meant zero revenue.** The server half — webhook signatures over `rawBody`,
+`timingSafeEqual`, Razorpay's seconds-not-milliseconds, `subscription.halted`, the
+`allow write: if false` Firestore rules — was genuinely correct. Every failure was in the
+client half and the wiring between them.
+
+| # | Blocker | Why it meant £0 |
+|---|---|---|
+| 30 | `licenseApiBase: process.env.YOGATIK_LICENSE_API \|\| ''` | **Nothing anywhere sets that variable** — not package.json, not electron-builder, not CI. Every shipped `.exe` had an empty base, so `refresh()` returned at its own guard. No user could ever be licensed. |
+| 31 | `idToken` was never produced | App passed `userData?.idToken`; the auth layer's `profileOf()` returns uid/displayName/email/photoURL and never carried one. Always `undefined` → `store.idToken` null → same guard. The `is_dir`/`isDir` drift again, on the revenue path. |
+| 32 | **`/checkout` did not exist** | UpgradeModal has always opened `yogatik.web.app/checkout?plan=…`. There was no `checkout.html` and no rewrite, so the `**` catch-all answered with `index.html` — the button opened the chat app in a browser tab while the desktop app sat polling for a webhook that could never fire. |
+| 33 | Razorpay subscriptions were never created server-side | `razorpayWebhook` identifies the account from `sub.notes.uid`, and a hosted payment link carries none — the webhook would fire and reply `no uid`. Money taken, nobody upgraded. |
+
+Fixed: real default for the licence URL; `getIdToken()` that fetches a **fresh** token
+(they expire hourly, so a copy taken at sign-in is stale by the time a licence is checked)
+resolved inside `refreshEntitlement` so no future call site can reintroduce the drift;
+a real `public/checkout.html` plus a rewrite above the catch-all; and
+`functions/createSubscription`, which attaches `notes.uid` from a **verified** ID token.
+The token reaches the page in the URL **fragment**, never the query string, so it stays
+out of server logs and Referer headers.
+
+Failure is loud now. A licence response that won't verify logs and returns `licenseError`
+— the likeliest cause being the shipped public key not matching the Cloud Function's
+private key — and `entitlement:refresh` returns `needsSignIn` instead of reporting a
+successful no-op. "I paid and nothing happened" must never be silent.
+
+### Before you can charge anyone — manual steps
+
+These need credentials only you have; the code is ready for them and reports
+"not configured on this deployment yet" (charging nothing) until they land.
+
+1. Generate the Ed25519 keypair (command is in `functions/index.js`). Put the **public**
+   half in `entitlementCore.cjs` and set `LICENSE_PRIVATE_KEY`. **The key currently baked
+   in is almost certainly orphaned** — if its private half is gone, every licence will
+   verify-fail and no paying customer will unlock.
+2. `firebase functions:secrets:set RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET
+   RAZORPAY_PLAN_MONTHLY RAZORPAY_PLAN_YEARLY PADDLE_WEBHOOK_SECRET RAZORPAY_WEBHOOK_SECRET`
+3. Copy `public/checkout-config.example.json` → `checkout-config.json` with real Paddle
+   ids. Everything in it is public by design; the Razorpay secret stays in the function.
+4. Point both providers' webhooks at the deployed URLs, and **test with a real ₹1 / $1
+   plan before announcing**. The gap between "the code is right" and "the money arrives"
+   is exactly the four things above, and only a live transaction proves it closed.
+
 ### Still open — deliberately
 
 Seven modules remain dead, each with a stated reason in the guard:
