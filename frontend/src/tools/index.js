@@ -79,6 +79,7 @@ import { backgroundTaskSpawnTool } from '../backgroundWorkers'
 import { mcpSearchTool } from './mcpSearchTool'
 import { computerControlTool } from './computerControl'
 import { identifyTool } from './identify'
+import { segmentTool } from './segment'
 import { browserControlTool } from './browserControl'
 import { qaReportTool } from './qaReportGen'
 import { clipboardAccessTool } from './clipboardAccess'
@@ -315,6 +316,7 @@ const ALL_TOOLS = {
   code_outline: codeOutlineTool,
   fs_outline: fsOutlineTool,
   fs_smart_read: fsSmartReadTool,
+  segment: segmentTool,
   fs_file_info: fsFileInfoTool,
   fs_copy: fsCopyTool,
   identify: identifyTool,
@@ -542,6 +544,10 @@ export const TOOL_ALIASES = {
   read_file: 'fs_read',
   smart_read: 'fs_smart_read',
   file_outline: 'fs_outline',
+  // `segment` is what a model reaches for by many names. None of these shadow
+  // a registered tool — `crop` and `cutout` in particular are not tools.
+  segment_object: 'segment', cutout: 'segment', remove_background: 'segment',
+  isolate_object: 'segment', crop_to_object: 'segment', mask_object: 'segment',
   // RETIRED: spawn_subagent was a strictly worse second copy of spawn_agents.
   // executeTool only ever passes { signal, ctx }, so its `opts.provider ||
   // 'local'` pinned EVERY worker to the WebLLM provider regardless of the chat's
@@ -1025,7 +1031,7 @@ const CORE_TOOL_SCORES = {
   clipboard_access: 28, file_dialog: 28,
   // An image in the turn is the whole reason identify exists; without a floor
   // the 64-tool cap can drop it exactly when it is needed.
-  identify: 30, ocr: 26,
+  identify: 30, ocr: 26, segment: 26,
 }
 
 /** Rank and prioritize tools based on the active user query context */
@@ -1108,6 +1114,16 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   }
   if (/\b(qr|qr code|barcode)\b/i.test(text)) {
     scores['qr_generate'] = 200
+  }
+  // Isolating one object before reading it is the difference between an
+  // imprint that fills the frame and one that is 4% of a cluttered photo —
+  // which is the exact case identify and pill_lookup keep meeting.
+  if (/\b(imprint|engrav\w*|serial|expiry|small print|fine print|tiny text|this pill|this tablet|the label on)\b/i.test(text)) {
+    scores['segment'] = 210
+    scores['ocr'] = 190
+  }
+  if (/\b(cut ?out|remove the background|isolate|segment|just the (object|product|item)|crop to (the|this))\b/i.test(text)) {
+    scores['segment'] = 200
   }
   if (/\b(delegate|sub-agent|subagent|multi-agent|plan|steps|roadmap|complex task|workflow)\b/i.test(text)) {
     scores['spawn_agents'] = 200

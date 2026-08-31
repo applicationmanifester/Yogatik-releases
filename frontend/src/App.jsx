@@ -30,6 +30,7 @@ import { getErrorLog, clearErrorLog, getDiagnosticsReport, diagnoseError } from 
 import { isDbClosedError } from './db'
 import { resolveFeatures } from './features'
 import { setLocalVLMConsent } from './vision/localVLM'
+import { setSegmentConsent } from './vision/sam'
 import { setDetectorConsent } from './vision/detect'
 import { setSemanticConsent } from './semantic'
 import { looksVisionCapable } from './vision/capability'
@@ -397,7 +398,13 @@ export default function App() {
   }, [])
   const features = useMemo(() => resolveFeatures(prefs.features), [prefs.features])
   // The vision fallback lives outside React; it needs the toggle, not a prop.
-  useEffect(() => { setLocalVLMConsent(features.localVision) }, [features.localVision])
+  // Segmentation rides on the SAME on-device-vision consent as the VLM and the
+  // detectors: it is another model download, and asking twice for the same
+  // decision trains people to click through both.
+  useEffect(() => {
+    setLocalVLMConsent(features.localVision)
+    setSegmentConsent(features.localVision)
+  }, [features.localVision])
   // The zero-shot classifier and the object detector are downloads too, so
   // they answer to the same switch as the VLM rather than pulling weights on
   // the first blind-model image.

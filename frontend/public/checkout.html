@@ -29,37 +29,104 @@
 -->
 <link rel="icon" href="/icon-192.svg" />
 <style>
-  :root { color-scheme: dark light; }
+  /*
+    Yogatik's own palette, not a generic blue. A payment page that does not
+    look like the app it belongs to reads as a phishing page, which is the one
+    impression a checkout can least afford — the brand orange IS the trust
+    signal here.
+
+    Tokens mirror src/styles.css :root and [data-theme="light"]. The theme is
+    read from the same `yogatik_theme` key the app writes, so the page arrives
+    in whichever theme the user was just looking at; failing that it follows the
+    system. Duplicated rather than imported because this is a standalone static
+    page with no bundle — if the app's palette moves, move these four lines too.
+  */
+  :root {
+    color-scheme: dark;
+    --bg: #0a0e14;
+    --panel: #111820;
+    --line: #253040;
+    --text: #e4e8ee;
+    --muted: #8899aa;
+    --accent: #ff6b35;
+    --accent-hover: #ff8c5a;
+    --ok-bg: #10231a; --ok-line: #1e4433; --ok-text: #86e0b4;
+    --err-bg: #2a1518; --err-line: #4d2027; --err-text: #ffb4bd;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f5f7fa;
+    --panel: #ffffff;
+    --line: #d0d8e0;
+    --text: #1a2332;
+    /* #5f7182 measures 5.03:1 on white — the dark theme's #8899aa is 2.92:1
+       there, the worst contrast in either palette. Same fix as styles.css. */
+    --muted: #5f7182;
+    --accent: #d4570a;
+    --accent-hover: #e8752e;
+    --ok-bg: #e7f6ee; --ok-line: #b7e0c9; --ok-text: #16643f;
+    --err-bg: #fdeaec; --err-line: #f3c2c8; --err-text: #9b1c2b;
+  }
+  /* No stored preference: follow the system rather than assuming dark. */
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]):not([data-theme="light"]) {
+      color-scheme: light;
+      --bg: #f5f7fa; --panel: #ffffff; --line: #d0d8e0;
+      --text: #1a2332; --muted: #5f7182;
+      --accent: #d4570a; --accent-hover: #e8752e;
+      --ok-bg: #e7f6ee; --ok-line: #b7e0c9; --ok-text: #16643f;
+      --err-bg: #fdeaec; --err-line: #f3c2c8; --err-text: #9b1c2b;
+    }
+  }
+
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100dvh; display: grid; place-items: center; padding: 24px;
     font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #0b0d12; color: #e6e9ef;
+    background: var(--bg); color: var(--text);
   }
   .card {
-    width: 100%; max-width: 460px; background: #12151d; border: 1px solid #232838;
-    border-radius: 14px; padding: 28px;
+    width: 100%; max-width: 460px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 28px;
   }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .brand img { width: 26px; height: 26px; }
+  .brand span { font-weight: 800; font-size: 15px; letter-spacing: -0.02em; }
   h1 { margin: 0 0 4px; font-size: 20px; letter-spacing: -0.01em; }
-  .sub { margin: 0 0 22px; color: #98a0b3; font-size: 13px; }
-  .row { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; border-top: 1px solid #1e2331; }
+  .sub { margin: 0 0 22px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
   .row:first-of-type { border-top: 0; }
-  .k { color: #98a0b3; font-size: 13px; }
+  .k { color: var(--muted); font-size: 13px; }
   .v { font-weight: 600; }
   button {
     width: 100%; margin-top: 22px; padding: 12px 16px; border-radius: 10px; border: 0;
-    background: #4f7cff; color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer;
+    transition: background 160ms ease;
   }
+  button:hover:not([disabled]) { background: var(--accent-hover); }
   button[disabled] { opacity: .5; cursor: default; }
   .msg { margin-top: 16px; font-size: 13px; padding: 12px 14px; border-radius: 10px; display: none; }
-  .msg.err { display: block; background: #2a1518; border: 1px solid #4d2027; color: #ffb4bd; }
-  .msg.ok  { display: block; background: #10231a; border: 1px solid #1e4433; color: #86e0b4; }
-  .note { margin-top: 18px; font-size: 12px; color: #6f778a; }
-  a { color: #8fb0ff; }
+  .msg.err { display: block; background: var(--err-bg); border: 1px solid var(--err-line); color: var(--err-text); }
+  .msg.ok  { display: block; background: var(--ok-bg); border: 1px solid var(--ok-line); color: var(--ok-text); }
+  .note { margin-top: 18px; font-size: 12px; color: var(--muted); }
+  a { color: var(--accent); }
 </style>
+<script>
+  // Before first paint, or the page flashes dark and then corrects itself —
+  // and a payment page that visibly changes appearance on load is exactly the
+  // wrong first impression. Inline and synchronous for that reason.
+  try {
+    var t = localStorage.getItem('yogatik_theme')
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t)
+  } catch (e) { /* private mode: fall through to prefers-color-scheme */ }
+</script>
 </head>
 <body>
 <div class="card">
+  <!-- The mark, because this page is on the same origin as the app and should
+       look like it. An unbranded payment form is indistinguishable from a
+       phishing one. -->
+  <div class="brand"><img src="/icon-192.svg" alt="" /><span>Yogatik</span></div>
   <h1>Yogatik Pro</h1>
   <p class="sub">Payment is handled by the provider. Your card details never reach Yogatik.</p>
 
@@ -175,17 +242,55 @@
       return fail('This checkout link is missing its sign-in token. Open Upgrade from inside Yogatik rather than reusing an old link.')
     }
     ready(function () {
-      fetch(cfg.razorpay.createSubscriptionUrl, {
+      var url = cfg.razorpay.createSubscriptionUrl
+      fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: 'Bearer ' + idToken },
         body: JSON.stringify({ period: sku.period }),
       })
-        .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b } }) })
+        .catch(function (e) {
+          // A rejected fetch is a NETWORK-level failure — DNS, CORS, or an
+          // endpoint that does not exist. The browser reports all of them as
+          // the same useless "Failed to fetch", and a 404 from a Cloud
+          // Functions URL carries no CORS headers, so a backend that was
+          // never deployed looks identical to one that is down. Say which it
+          // probably is, and name the URL, or this is undebuggable from the
+          // one screen the user is actually looking at.
+          throw new Error(
+            'Could not reach the payment service at ' + url + '. '
+            + 'Nothing has been charged. If you are the operator: this is what a '
+            + 'missing deployment looks like — run `firebase deploy --only functions`. '
+            + '(' + (e && e.message ? e.message : 'network error') + ')',
+          )
+        })
+        .then(function (r) {
+          // A 404 or a 5xx from the Functions frontend is HTML, not JSON, so
+          // parsing blind turns a clear status code into "Unexpected token <".
+          return r.text().then(function (raw) {
+            var body = null
+            try { body = JSON.parse(raw) } catch (_) { /* not JSON */ }
+            if (!body) {
+              throw new Error(
+                'The payment service answered ' + r.status + ' but not with JSON. '
+                + (r.status === 404
+                  ? 'That endpoint does not exist — the Cloud Functions are probably not deployed.'
+                  : 'Nothing has been charged.'),
+              )
+            }
+            return { ok: r.ok, b: body }
+          })
+        })
         .then(function (out) {
           if (!out.ok || !out.b.subscriptionId) {
-            return fail(out.b && out.b.error === 'not-configured'
-              ? 'UPI/card checkout is not configured on this deployment yet. Nothing has been charged.'
-              : 'Could not start the subscription: ' + ((out.b && out.b.detail) || 'unknown error'))
+            if (out.b && out.b.error === 'not-configured') {
+              return fail('UPI/card checkout is not configured on this deployment yet '
+                + '(' + (out.b.detail || 'missing Razorpay keys or plan ids') + '). Nothing has been charged.')
+            }
+            if (out.b && out.b.error === 'Invalid identity') {
+              return fail('Your sign-in has expired. Go back to Yogatik, open Upgrade again, and retry — '
+                + 'the link carries a token that is only valid for an hour.')
+            }
+            return fail('Could not start the subscription: ' + ((out.b && out.b.detail) || out.b.error || 'unknown error'))
           }
           return script('https://checkout.razorpay.com/v1/checkout.js').then(function () {
             var rzp = new window.Razorpay({

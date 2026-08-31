@@ -370,6 +370,34 @@ export function LiveView({
     }
   }
 
+  /**
+   * "Ask out loud" — take the question the user typed into the vision panel and
+   * put it into the CALL, so the answer is spoken instead of appearing in a
+   * panel they then have to read.
+   *
+   * This was referenced by the VisionModal and DEFINED NOWHERE: rendering the
+   * modal threw `askInCall is not defined`, which is a ReferenceError during
+   * render, so the whole app fell into the error boundary. `npm run lint` uses
+   * no-undef precisely to catch this — it has caught the same class twice
+   * before (PUBLIC_RELAYS, research.js `search`) — so run it before deploying.
+   */
+  const askInCall = useCallback(() => {
+    const q = (visionQ || '').trim()
+    if (!q) return
+    // sendText returns nothing on either engine, so its return value cannot be
+    // used to tell success from a dropped socket. Check the session is there
+    // instead — closing the panel when there was nowhere to send would look
+    // exactly like it worked.
+    const send = sessionRef.current?.sendText
+    if (typeof send !== 'function') {
+      setVision({ text: `${visionText}\n\n[Could not send: the live session is not connected.]` })
+      return
+    }
+    send(q)
+    buzz(features, 30)
+    setVision({ open: false })
+  }, [visionQ, visionText, features])
+
   const startTimeRef = useRef(Date.now())
 
   const handleEnd = useCallback(() => {

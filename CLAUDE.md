@@ -1,5 +1,46 @@
 # Yogatik — Project Knowledge
 
+## On-device segmentation (2026-08-30) — vision/maskOps.js, vision/sam.js, tools/segment.js
+- The gap: the pipeline could say what KIND of image it is (imageStats), what is in it
+  (DETR), what it resembles (CLIP) and what text it holds (OCR) — but not "just this
+  thing, without the rest of the picture". That is the difference between reading a pill
+  imprint that FILLS the frame and one that is 4% of a cluttered photo, which is exactly
+  the failure identify/pill_lookup were built around. So `segment`'s headline action is
+  `read` — segment, crop, then OCR only the crop. The cutout is the by-product.
+- SlimSAM (`Xenova/slimsam-77-uniform`, ~40MB), NOT SAM. Meta's SAM is a heavy ViT ENCODER
+  plus a tiny mask DECODER, and their own web demo runs only the decoder in-browser with
+  the encoder on a server — ViT-H is 2.4GB, ViT-B ~375MB. This app has no server by
+  design, so that split is unavailable to it. SlimSAM is the pruned/distilled version
+  whose encoder fits client-side. SAM is Apache-2.0 so a port would have been legal; the
+  maths is written from the definitions anyway, which is cleaner and no harder.
+- Consent rides on the EXISTING `localVision` toggle. Asking twice for the same decision
+  trains people to click through both.
+- `vision/maskOps.js` is PURE (no DOM, no model, no network) so the cheap half is testable
+  without the 40MB half. Same split as imageStats/preprocess and rootsCore.
+- Non-obvious things it exists to prevent, each pinned by a test:
+  - ONE stray pixel in a corner makes the bounding box the whole image, so "crop to the
+    object" silently returns the original photo. removeSmallRegions + largestComponent.
+  - `stabilityScore` returns 0, not Infinity, when the low threshold is also empty —
+    otherwise a mask containing nothing scores PERFECT stability.
+  - `pickBestMask` refuses coverage >95% or <0.05%. "Segment the pill" returning the whole
+    photograph is confidently wrong and reads downstream as success. It blends the model's
+    predicted IoU with the MEASURED stability, because the IoU is only the model's opinion.
+  - `connectedComponents` is ITERATIVE. A mask covering a 1024x1024 image is a
+    million-deep recursion and a blown stack — the fsIndex walk failure again.
+  - COCO RLE is COLUMN-major. Encoded along the wrong axis it decodes to noise with the
+    correct pixel count, so every size check passes and only the picture is wrong. The
+    round-trip test uses an ASYMMETRIC mask; a square one hides the swap.
+  - The result returns `mask_rle`, never the raw mask: a million-entry array serialised
+    into a tool result is megabytes of digits in the model's context.
+  - `post_process_masks` is required — the raw 256x256 logits give a mask that looks right
+    and is offset from the image it describes.
+  - The cutout is PNG. JPEG has no alpha, so a transparent background exported as JPEG
+    comes out black.
+- `google/sam` (Sovereign Agent Mesh) was evaluated and REJECTED: a Go/libp2p P2P mesh
+  needing a control plane, router nodes and Docker/K8s. It is architecturally opposite to
+  a zero-backend local-first app, its MCP routing is already covered by mcp.js (http +
+  stdio), and it is explicitly not an officially supported Google product.
+
 ## One subscription, two surfaces (2026-08-30) — buy on web OR desktop
 - The subscription belongs to the ACCOUNT, not the machine. Pay on the website and the
   desktop app unlocks; pay in the desktop app and the website stops showing ads. Both
