@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Check, Loader2, Lock, ExternalLink, Sparkles } from 'lucide-react'
+import { Check, Loader2, Lock, ExternalLink, Sparkles, LogIn } from 'lucide-react'
 import { Modal } from './Modal'
 import {
   PLANS, CAPABILITY_COPY, suggestedRegion, openCheckout, pollForUpgrade,
@@ -21,7 +21,7 @@ import {
  *     timezone, and the PAYMENT METHOD is what actually determines which one
  *     applies. IP is one VPN away — the instrument is not.
  */
-export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked }) {
+export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked, onSignIn }) {
   const [region, setRegion] = useState(() => suggestedRegion())
   const [cycle, setCycle] = useState('yearly')   // annual leads: see the fee note in entitlement.js
   const [busy, setBusy] = useState(false)
@@ -171,14 +171,28 @@ export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked }
               Check now
             </button>
           </div>
+        ) : !uid ? (
+          // Signed out, the checkout button was DISABLED with a line of text
+          // telling the user to sign in — and no way to do it from here. A
+          // paywall whose only instruction is "go somewhere else and come back"
+          // is where a funnel loses people. Offer the actual action instead.
+          <button className="ws-primary-btn up-buy" onClick={() => onSignIn?.()}>
+            <LogIn size={14} />
+            Sign in to continue
+          </button>
         ) : (
-          <button className="ws-primary-btn up-buy" disabled={busy || !uid} onClick={buy}>
+          <button className="ws-primary-btn up-buy" disabled={busy} onClick={buy}>
             {busy ? <Loader2 size={14} className="ws-spin" /> : <ExternalLink size={14} />}
             Continue to checkout · {sku.label}
           </button>
         )}
 
-        {!uid && <p className="up-note warn">Sign in first so the subscription attaches to your account.</p>}
+        {!uid && (
+          <p className="up-note">
+            The subscription attaches to your account, so it works in the web app and the
+            desktop app on any machine you sign in to.
+          </p>
+        )}
 
         <p className="up-fine">
           Cancel any time. If a payment lapses the app returns to the free tier — nothing is

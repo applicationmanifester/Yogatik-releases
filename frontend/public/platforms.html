@@ -88,7 +88,11 @@
   <div class="wrap">
     <header>
       <a class="logo" href="/"><img src="/icon-192.svg" alt="" /> Yogatik</a>
-      <a class="nav-cta" href="/">Open in browser →</a>
+      <nav style="display:flex;align-items:center;gap:10px">
+        <a class="nav-cta" href="#pricing">Pricing</a>
+        <a class="nav-cta" href="/?upgrade=1">Sign in</a>
+        <a class="nav-cta" href="/">Open in browser →</a>
+      </nav>
     </header>
 
     <section class="hero">
@@ -175,7 +179,7 @@
       <p class="lead">A zero-backend AI workspace that lives on your machine. Install once — the app auto-updates itself from there.</p>
       <div class="grid">
         <div class="feature"><div class="ic">⚡</div><h3>Native performance</h3><p>A lightweight Electron shell wrapping the full web app. Launches from your Start menu, runs offline, and keeps a window state, tray icon and native notifications.</p></div>
-        <div class="feature"><div class="ic">🔑</div><h3>No account required</h3><p>Start instantly. Bring your own free API key (Groq, OpenRouter, OpenAI) or run fully local with Ollama — no sign-up, no subscription, no data leaves your device.</p></div>
+        <div class="feature"><div class="ic">🔑</div><h3>Your keys, your data</h3><p>Bring your own API key (Groq, OpenRouter, OpenAI) or run fully local with Ollama. Keys and conversations stay on your device — Yogatik never proxies your prompts or holds your data.</p></div>
         <div class="feature"><div class="ic">🔄</div><h3>Auto-updating</h3><p>New versions install themselves silently in the background via the built-in updater, so you're always on the latest build without redownloading.</p></div>
         <div class="feature"><div class="ic">📁</div><h3>Scoped file access</h3><p>Grant a single folder and the agent reads, edits and organises files inside it — path-escape guarded, nothing outside the folder is ever touched.</p></div>
         <div class="feature"><div class="ic">🧩</div><h3>Skills &amp; workflows</h3><p>Save reusable prompt skills, chain multi-step workflows with variables, and connect MCP servers — all the power features from the web app included.</p></div>
@@ -186,6 +190,62 @@
         <div class="step"><div class="n">2</div><div><h4>Add a model</h4><p>Enter a free API key in Settings, or install <a href="https://ollama.com/download" style="color:var(--brand2)">Ollama</a> and pick <strong>Ollama (local)</strong> to run entirely offline.</p></div></div>
         <div class="step"><div class="n">3</div><div><h4>Grant a folder (optional)</h4><p>Point the agent at a working folder to unlock local file reading and editing. Everything else works without it.</p></div></div>
       </div>
+    </section>
+
+    <!-- Pricing. Deliberately hands off to the app rather than growing its own
+         checkout: one upgrade surface and one sign-in surface means there is
+         only one place for the pricing, the plan ids and the auth flow to be
+         wrong. /?upgrade=1 opens the same modal the app uses. -->
+    <section class="feat" id="pricing">
+      <h2>Free to use. Pro when you want more.</h2>
+      <p class="lead">
+        One subscription covers both apps, because it belongs to your account rather than to a
+        machine. Buy it on the web and the desktop app unlocks; buy it on the desktop and the
+        website stops showing ads. Sign in on any computer and it follows you.
+      </p>
+
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));max-width:820px;margin:0 auto">
+        <div class="feature">
+          <div class="ic">🆓</div>
+          <h3>Free — ₹0</h3>
+          <p style="color:var(--muted);margin-bottom:12px">No account needed. Bring your own API key and start.</p>
+          <ul style="list-style:none;font-size:14.5px;line-height:2;color:var(--muted)">
+            <li>✓ Every chat model and browser-based tool</li>
+            <li>✓ Local Ollama and on-device models</li>
+            <li>✓ Skills, workflows, MCP servers</li>
+            <li>✓ 30-day desktop trial of everything below</li>
+            <li style="opacity:.75">· Ads in the web app</li>
+          </ul>
+        </div>
+
+        <div class="feature" style="border-color:var(--brand)">
+          <div class="ic">✨</div>
+          <h3>Pro — ₹99/month or ₹999/year</h3>
+          <p style="color:var(--muted);margin-bottom:12px">$2/month or $12/year outside India. Cancel any time.</p>
+          <ul style="list-style:none;font-size:14.5px;line-height:2;color:var(--muted)">
+            <li>✓ <b style="color:var(--text)">No ads</b> in the web app</li>
+            <li>✓ Read, write and search files on your computer</li>
+            <li>✓ Run terminal commands, dev servers and scripts</li>
+            <li>✓ Drive a real browser the agent can see and click</li>
+            <li>✓ Watch your screen, control mouse and keyboard</li>
+            <li>✓ Scheduled jobs and background sub-agents</li>
+          </ul>
+          <a class="btn primary" style="display:block;text-align:center;margin-top:18px" href="/?upgrade=1">Sign in &amp; go Pro</a>
+        </div>
+      </div>
+
+      <div class="steps" style="max-width:820px;margin-left:auto;margin-right:auto">
+        <div class="step"><div class="n">1</div><div><h4>Sign in</h4><p>Google sign-in, from the web app or the desktop app. The account is what the subscription attaches to — that is the only reason an account exists.</p></div></div>
+        <div class="step"><div class="n">2</div><div><h4>Pay in your own browser</h4><p>Checkout opens in your real browser, never inside the app. India pays by UPI Autopay or card through Razorpay; everywhere else by card or PayPal through Paddle, taxes included.</p></div></div>
+        <div class="step"><div class="n">3</div><div><h4>Both apps unlock</h4><p>Access is granted when your provider confirms the payment, usually within seconds, and applies everywhere you sign in.</p></div></div>
+      </div>
+
+      <p class="note" style="text-align:center;max-width:700px;margin:22px auto 0">
+        <b>What Pro does not change:</b> your API keys and conversations still live on your own
+        device, and the free tier keeps working if a payment lapses — nothing is deleted, no
+        folder grant is revoked, and your chats, keys and documents are untouched.
+        Yogatik never sees your card: payments are handled entirely by Razorpay and Paddle.
+      </p>
     </section>
 
     <div class="cta">

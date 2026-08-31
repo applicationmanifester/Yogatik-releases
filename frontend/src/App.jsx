@@ -1197,7 +1197,12 @@ export default function App() {
     // Live is a standalone mode: launched from a PWA shortcut it opens the
     // call directly, without needing a conversation or a chat provider.
     if (params.get('live')) startLive()
-    if (shared || params.get('new') || params.get('intent') || params.get('live')) {
+    // Deep link from the marketing pages (/platforms, /pricing) straight to the
+    // paywall. One upgrade surface and one sign-in surface: the static pages
+    // describe the plans and hand off here, rather than growing a second
+    // checkout and a second auth flow that can drift from these.
+    if (params.get('upgrade')) setShowUpgrade(true)
+    if (shared || params.get('new') || params.get('intent') || params.get('live') || params.get('upgrade')) {
       history.replaceState(null, '', location.pathname)   // don't re-fire on reload
     }
     // Note: Speech Recognition is initialised on-demand in toggleVoiceInput;
@@ -1415,9 +1420,17 @@ export default function App() {
     }
   }, [activeProject, provider, model, temperature, webSearch, tools])
 
+  // Set when sign-in was started FROM the paywall, so the user lands back on it
+  // instead of on the chat screen wondering whether the purchase happened.
+  const resumeUpgradeRef = useRef(false)
+
   const handleAuth = (userData) => {
     setUser(userData)
     loadConversations()
+    if (resumeUpgradeRef.current) {
+      resumeUpgradeRef.current = false
+      setShowUpgrade(true)
+    }
     // Sign-in is what starts the trial and fetches the licence. The ID token is
     // handed to main here and held only in memory — it is short-lived, and
     // persisting it would be storing a credential for no benefit.
@@ -4916,6 +4929,10 @@ export default function App() {
             idToken={user?.idToken || null}
             uid={user?.uid || user?.id || null}
             onUnlocked={setEnt}
+            // The paywall has to be able to start a sign-in. Closing the
+            // upgrade modal first, so the user is not looking at two stacked
+            // dialogs and cannot dismiss the wrong one.
+            onSignIn={() => { resumeUpgradeRef.current = true; setShowUpgrade(false); requestSignIn() }}
           />
         </React.Suspense>
       )}

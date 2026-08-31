@@ -3,16 +3,42 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '3.22.1'
+export const APP_VERSION = '3.22.2'
 export const BUILD_DATE = 'August 2026'
-export const APP_CODENAME = 'Yogatik Ultra — Multi-Surface Entitlements, Seamless Checkout & Enhanced Ad Suppression'
+export const APP_CODENAME = 'Yogatik Ultra — Deep-Link Paywall Flow, Direct Modal Sign-In & Pricing Architecture'
 
 export const APP_RELEASES = [
+  {
+    version: '3.22.2',
+    title: 'Yogatik Ultra: Seamless Marketing-to-Paywall Routing, In-Modal Sign-In & Platform Pricing Matrix',
+    date: 'August 31, 2026',
+    isLatest: true,
+    highlights: [
+      'Deep-Linked Upgrade Funnel: Instant navigation from marketing pages (/platforms) directly to the interactive paywall with ?upgrade=1',
+      'In-Modal Frictionless Sign-In: Direct sign-in action within the upgrade modal with automatic modal restoration post-auth',
+      'Unified Marketing Pricing Matrix: Complete transparent tiers comparison on the platforms showcase',
+    ],
+    sections: [
+      {
+        category: '✨ Funnel & Conversion UX',
+        items: [
+          {
+            title: 'Marketing Paywall Integration',
+            description: 'Direct deep linking from static landing and download pages into the live checkout modal.',
+          },
+          {
+            title: 'Seamless Authentication Recovery',
+            description: 'One-click sign-in trigger from the upgrade modal that automatically restores checkout flow after Google auth.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '3.22.1',
     title: 'Yogatik Ultra: Multi-Surface Entitlements, Razorpay/Paddle Checkout Routing & Ad Suppression',
     date: 'August 31, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Multi-Surface Pro Entitlement: Unified single account subscription across web and desktop with reactive ad suppression',
       'Dedicated /checkout Gateway: Seamless routing for Razorpay (UPI/Card) and Paddle with token protection and CSP security',
