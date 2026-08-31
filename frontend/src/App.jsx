@@ -1452,17 +1452,25 @@ export default function App() {
     return () => { alive = false; off() }
   }, [conv?.clientId, conv?.id])
 
-  // Re-check on focus: the purchase completes in ANOTHER window, and coming
-  // back to a still-locked app after paying is the worst moment in the funnel.
+  // Re-check on focus: the purchase completes in ANOTHER window or tab, and
+  // coming back to a still-locked app after paying is the worst moment in the
+  // funnel. Both surfaces — checkout opens a browser window from the desktop
+  // app and a second tab from the website, so neither can see its own result.
+  //
+  // It also runs once whenever `user` changes, which is what catches a returning
+  // visitor: Firebase restores the session asynchronously, so the mount-time
+  // read reports "free" for a signed-in Pro customer and nothing else would
+  // ever correct it — they would sit there looking at ads they had paid to
+  // remove.
   useEffect(() => {
-    if (!isDesktop()) return undefined
-    const onFocus = () => {
-      if (!user) return
+    if (!user) return undefined
+    const recheck = () => {
       refreshEntitlement({ idToken: user?.idToken || null, uid: user?.uid || user?.id || null })
         .then(setEnt).catch(() => {})
     }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
+    recheck()
+    window.addEventListener('focus', recheck)
+    return () => window.removeEventListener('focus', recheck)
   }, [user])
 
   /**
@@ -3843,17 +3851,33 @@ export default function App() {
             {isPersonalEdition() && <span className="edition-badge" title="Personal build — no licence check">Personal</span>}
             {/* Trial countdown / locked state. Silent while PRO: a paying user
                 does not need a permanent reminder that they are paying. */}
-            {isDesktop() && !isPersonalEdition() && (ent.state === 'trial' || ent.state === 'locked') && (
-              <button
-                className={`trial-chip${ent.state === 'locked' ? ' locked' : ent.daysLeft <= 5 ? ' urgent' : ''}`}
-                onClick={() => setShowUpgrade(true)}
-                title="Yogatik Pro"
-              >
-                {ent.state === 'locked'
-                  ? 'Upgrade'
-                  : `${ent.daysLeft}d trial`}
-              </button>
-            )}
+            {/* One subscription, two surfaces. The desktop chip counts down a
+                trial and then says Upgrade; the web chip only ever offers the
+                ad-free upgrade, because nothing on the web is locked. Both open
+                the same modal and buy the same thing against the same account —
+                paying on either surface unlocks both.
+
+                Silent while PRO on either: a paying customer does not need a
+                permanent reminder that they are paying. */}
+            {!isPersonalEdition() && ent.state !== 'pro' && (isDesktop()
+              ? (ent.state === 'trial' || ent.state === 'locked') && (
+                <button
+                  className={`trial-chip${ent.state === 'locked' ? ' locked' : ent.daysLeft <= 5 ? ' urgent' : ''}`}
+                  onClick={() => setShowUpgrade(true)}
+                  title="Yogatik Pro"
+                >
+                  {ent.state === 'locked' ? 'Upgrade' : `${ent.daysLeft}d trial`}
+                </button>
+              )
+              : (
+                <button
+                  className="trial-chip"
+                  onClick={() => setShowUpgrade(true)}
+                  title="Yogatik Pro — remove ads, and unlock the desktop app on this account"
+                >
+                  Go Pro
+                </button>
+              ))}
             {isDesktop() && (
               <button
                 className={`icon-btn${showTerminal ? ' active' : ''}`}

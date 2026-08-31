@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { isDesktop } from '../tools/localFs'
+import { isPro, onEntitlementChange } from '../entitlement'
 
 const AD_CLIENT = import.meta.env.VITE_ADSENSE_CLIENT || 'ca-pub-8240433260986072'
 const AD_SLOT = import.meta.env.VITE_ADSENSE_SLOT || '1098428395'
@@ -8,7 +9,11 @@ export const adsAvailable = !!AD_CLIENT && !isDesktop()
 let scriptInjected = false
 
 export function loadAdSenseWhenIdle() {
-  if (!adsAvailable || typeof window === 'undefined' || scriptInjected) return
+  // A paying customer's browser must never fetch the ad script at all. Hiding
+  // the slot with CSS would still load Google's script, still let it set
+  // cookies and still let it walk the DOM (see shellGuard.js) — "no ads" has
+  // to mean no ad network, not an invisible one.
+  if (!adsAvailable || isPro() || typeof window === 'undefined' || scriptInjected) return
   const inject = () => {
     if (scriptInjected || document.querySelector('script[src*="pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"]')) {
       scriptInjected = true
@@ -54,9 +59,14 @@ export function AdSenseBanner({
   const [unfilled, setUnfilled] = useState(false)
   const adRef = useRef(null)
   const pushedRef = useRef(false)
+  // Re-read on change, not once at mount: entitlement resolves asynchronously
+  // after sign-in, so a Pro user who lands on the page signed out would
+  // otherwise keep the ad slot for the rest of the session.
+  const [pro, setPro] = useState(() => isPro())
+  useEffect(() => onEntitlementChange(() => setPro(isPro())), [])
 
   useEffect(() => {
-    if (!adsAvailable || pushedRef.current) return
+    if (!adsAvailable || pro || pushedRef.current) return
     loadAdSenseWhenIdle()
     try {
       if (typeof window !== 'undefined') {
@@ -76,9 +86,9 @@ export function AdSenseBanner({
       if (status !== 'filled') setUnfilled(true)
     }, 4000)
     return () => clearTimeout(t)
-  }, [])
+  }, [pro])
 
-  if (!adsAvailable || !AD_CLIENT || unfilled) return null
+  if (!adsAvailable || !AD_CLIENT || pro || unfilled) return null
 
   return (
     <div

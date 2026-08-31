@@ -38,14 +38,36 @@ export function isDesktopBuild() {
 
 /**
  * Synchronous snapshot for callers that cannot await (system prompt assembly,
- * a render pass). On the WEB this is always unlocked-irrelevant: the web build
- * has no privileged tools to lock, so gating anything there would only remove
- * features the user already has for free.
+ * a render pass).
+ *
+ * ONE SUBSCRIPTION, TWO SURFACES. The subscription belongs to the ACCOUNT, not
+ * to the machine: buy it on the website and the desktop app unlocks; buy it in
+ * the desktop app and the website stops showing ads. Both read the same
+ * `accounts/{uid}` document, which only the webhook writes.
+ *
+ * `locked` still means only one thing — "the desktop app must refuse privileged
+ * IPC" — and stays FALSE on the web, because the web build has no privileged
+ * tools to lock and gating there would remove features people already have for
+ * free. What the web uses instead is `isPro()`, which is about what a paying
+ * customer GAINS (no ads) rather than what a non-paying one loses.
  */
 export function entitlement() {
-  if (!isDesktopBuild()) return { ...snapshot, state: 'web', locked: false }
   if (isUnrestrictedEdition()) return { ...snapshot, state: 'pro', edition: snapshot.edition || 'studio', locked: false }
-  return { ...snapshot, locked: isLocked() }
+  if (!isDesktopBuild()) return { ...snapshot, locked: false, surface: 'web' }
+  return { ...snapshot, locked: isLocked(), surface: 'desktop' }
+}
+
+/**
+ * Is this account on a paid plan right now?
+ *
+ * Deliberately NOT the inverse of `isLocked()`: a trial is unlocked but not
+ * paid, so a trialling desktop user still sees ads on the website. Ads are the
+ * free tier's price; the trial is a preview of Pro's capabilities, not of its
+ * ad-free-ness.
+ */
+export function isPro() {
+  if (isUnrestrictedEdition()) return true
+  return snapshot.state === 'pro'
 }
 
 export function isLocked() {
@@ -90,10 +112,63 @@ function apply(res) {
   return entitlement()
 }
 
-/** Read the current state from main. Safe on the web (returns the web shape). */
+const DAY = 24 * 60 * 60 * 1000
+const TRIAL_DAYS = 30
+
+/**
+ * Read the account's billing state directly from Firestore, for the web.
+ *
+ * There is no Cloud Function call here on purpose. `accounts/{uid}` is already
+ * `allow read: if request.auth.uid == userId` and `allow write: if false`, so
+ * the owner can read it and nobody — including this code — can forge it. A
+ * signed licence token exists for the DESKTOP because the desktop enforces a
+ * gate offline; the web enforces nothing, it only decides whether to draw an
+ * advert, so a plain authenticated read is the right weight of mechanism.
+ *
+ * Mirrors functions/index.js `planFor()`. If those two ever disagree, the
+ * server is right — this only decides what the page shows.
+ */
+export async function loadWebEntitlement() {
+  if (isDesktopBuild() || isUnrestrictedEdition()) return entitlement()
+  try {
+    const { getFirebase } = await import('./firebaseAuth')
+    const f = await getFirebase()
+    const uid = f.auth?.currentUser?.uid
+    // Signed out is a legitimate answer, not a failure: no account, no plan.
+    if (!uid) return applyWeb({ state: 'free', reason: 'signed-out' })
+
+    const snap = await f.getDoc(f.doc(f.db, 'accounts', uid))
+    if (!snap.exists()) return applyWeb({ state: 'free', reason: 'no-account' })
+    const acct = snap.data() || {}
+    const now = Date.now()
+
+    // A paid subscription always wins over a trial, including one that has not
+    // expired — someone who paid early must not be downgraded on renewal.
+    if (acct.plan === 'pro' && ['active', 'past_due'].includes(acct.status)) {
+      return applyWeb({ state: 'pro', endsAt: Number(acct.currentPeriodEnd) || 0, reason: acct.status })
+    }
+    const trialEnd = Number(acct.trialStartedAt || 0) + TRIAL_DAYS * DAY
+    if (acct.trialStartedAt && now < trialEnd) {
+      return applyWeb({ state: 'trial', endsAt: trialEnd, reason: 'trialing' })
+    }
+    return applyWeb({ state: 'free', reason: 'expired' })
+  } catch {
+    // Offline, rules changed, Firebase unavailable — fail to the FREE side.
+    // Failing open would hand out an ad-free experience to anyone who can make
+    // a network request fail.
+    return applyWeb({ state: 'free', reason: 'unavailable' })
+  }
+}
+
+function applyWeb({ state, endsAt = 0, reason = '' }) {
+  const daysLeft = endsAt ? Math.max(0, Math.ceil((endsAt - Date.now()) / DAY)) : 0
+  return apply({ success: true, state, edition: 'store', reason, endsAt, daysLeft })
+}
+
+/** Read the current state — from main on desktop, from Firestore on the web. */
 export async function loadEntitlement() {
   const b = bridge()
-  if (!b) { snapshot = { ...snapshot, loaded: true }; return entitlement() }
+  if (!b) return loadWebEntitlement()
   try { return apply(await b.get()) } catch { return entitlement() }
 }
 
@@ -104,7 +179,9 @@ export async function loadEntitlement() {
  */
 export async function refreshEntitlement({ idToken = null, uid = null } = {}) {
   const b = bridge()
-  if (!b) return entitlement()
+  // On the web there is no main process to hand an identity to — the account
+  // doc IS the state, so re-read it.
+  if (!b) return loadWebEntitlement()
   // Fetch the ID token HERE when the caller did not supply one. Every call site
   // passed `userData?.idToken`, a field the auth layer has never produced, so
   // the token was always undefined and main's refresh() bailed at its guard —
@@ -123,7 +200,10 @@ export async function refreshEntitlement({ idToken = null, uid = null } = {}) {
 
 export async function signOutEntitlement() {
   const b = bridge()
-  if (!b) return entitlement()
+  // The subscription belongs to the account, so signing out must drop it here
+  // too. Leaving the snapshot on `pro` would keep the next person at this
+  // browser ad-free on someone else's subscription.
+  if (!b) return applyWeb({ state: 'free', reason: 'signed-out' })
   try { return apply(await b.signOut()) } catch { return entitlement() }
 }
 
@@ -142,10 +222,14 @@ export async function openCheckout(url) {
 export function pollForUpgrade({ idToken, uid, onUnlocked, attempts = 40, intervalMs = 3000 } = {}) {
   let stop = false
   let n = 0
+  // What counts as "the purchase landed" differs by surface, and testing
+  // `!st.locked` on both is wrong: `locked` is always false on the web, so the
+  // poll would report success the instant it started — before any payment.
+  const arrived = (st) => (isDesktopBuild() ? !st.locked : st.state === 'pro')
   const tick = async () => {
     if (stop || n++ >= attempts) return
     const st = await refreshEntitlement({ idToken, uid })
-    if (!st.locked) { onUnlocked?.(st); return }
+    if (arrived(st)) { onUnlocked?.(st); return }
     setTimeout(tick, intervalMs)
   }
   setTimeout(tick, intervalMs)

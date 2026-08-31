@@ -1,5 +1,38 @@
 # Yogatik — Project Knowledge
 
+## One subscription, two surfaces (2026-08-30) — buy on web OR desktop
+- The subscription belongs to the ACCOUNT, not the machine. Pay on the website and the
+  desktop app unlocks; pay in the desktop app and the website stops showing ads. Both
+  read the same `accounts/{uid}` doc, which only the webhook writes.
+- The WEB reads that doc DIRECTLY from Firestore (`loadWebEntitlement`), not through a
+  Cloud Function. The rules already say `allow read: if request.auth.uid == userId` /
+  `allow write: if false`, so the owner can read it and nobody can forge it. The signed
+  licence token exists because the DESKTOP enforces a gate offline; the web enforces
+  nothing, it only decides whether to draw an advert, so an authenticated read is the
+  right weight of mechanism. `loadWebEntitlement` mirrors functions/index.js `planFor()`.
+- `locked` STILL means only "the desktop must refuse privileged IPC" and stays FALSE on
+  web — the web build has no privileged tools, so gating there removes features people
+  already have free. Ads key off the new `isPro()` instead.
+- A TRIAL IS NOT PRO. It is unlocked but unpaid, so a trialling user still sees ads. Ads
+  are the free tier's price; the trial previews Pro's capabilities, not its ad-free-ness.
+  Keying ad removal off `!locked` would have made every trial ad-free by accident.
+- Failure is CLOSED: offline / rules changed / Firebase down all resolve to `free`.
+  Failing open hands an ad-free experience to anyone who can make a fetch fail.
+- `loadAdSenseWhenIdle` checks isPro BEFORE injecting: hiding the slot with CSS still
+  loads Google's script, still sets cookies, still lets it walk the DOM (shellGuard.js).
+  "No ads" has to mean no ad network.
+- `pollForUpgrade` cannot test `!st.locked` — that is always false on web, so the poll
+  would report success before any payment. It tests `state === 'pro'` there.
+- The focus re-check is no longer desktop-only, and now also runs when `user` changes:
+  Firebase restores a session ASYNCHRONOUSLY, so the mount-time read says "free" for a
+  signed-in Pro customer and nothing would ever correct it — they would sit looking at
+  ads they had paid to remove.
+- NOT POSSIBLE, do not promise it: "unrestricted local file access" in a WEB page. The
+  File System Access API is Chromium-only and is a per-directory user grant, not
+  unrestricted. The web UpgradeModal banner says what is true — no ads here, full file /
+  shell / browser access in the desktop app on the same account.
+- Tests: webEntitlement.test.js (11).
+
 ## PAYMENTS COULD NOT WORK IN A SHIPPED BUILD — four blockers (2026-08-30)
 Any ONE of these alone meant zero revenue. The server half (webhooks, signatures,
 Firestore rules, the seconds-vs-ms handling) was correct; every failure was in the client

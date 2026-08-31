@@ -110,6 +110,18 @@ export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked }
             browser and screen tools are locked.
           </div>
         )}
+        {/* On the web nothing is locked, so the pitch is what you GAIN. Saying
+            "unlock file access" here would be a lie: a web page cannot have
+            arbitrary filesystem access however much anyone pays. What the
+            purchase really does is attach Pro to the ACCOUNT — which removes
+            ads here and unlocks the desktop app when they install it. */}
+        {ent.surface === 'web' && (
+          <div className="up-banner">
+            <Sparkles size={14} />
+            One subscription, both apps: no ads here, and full file, shell and browser
+            access in the Yogatik desktop app on the same account.
+          </div>
+        )}
 
         <ul className="up-caps">
           {Object.entries(CAPABILITY_COPY).map(([k, text]) => (

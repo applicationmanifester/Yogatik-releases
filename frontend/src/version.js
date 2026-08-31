@@ -3,16 +3,43 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '3.22.0'
+export const APP_VERSION = '3.22.1'
 export const BUILD_DATE = 'August 2026'
-export const APP_CODENAME = 'Yogatik Ultra — Human-In-The-Loop Question Engine, Inline Video Streaming & Execution Control'
+export const APP_CODENAME = 'Yogatik Ultra — Multi-Surface Entitlements, Seamless Checkout & Enhanced Ad Suppression'
 
 export const APP_RELEASES = [
+  {
+    version: '3.22.1',
+    title: 'Yogatik Ultra: Multi-Surface Entitlements, Razorpay/Paddle Checkout Routing & Ad Suppression',
+    date: 'August 31, 2026',
+    isLatest: true,
+    highlights: [
+      'Multi-Surface Pro Entitlement: Unified single account subscription across web and desktop with reactive ad suppression',
+      'Dedicated /checkout Gateway: Seamless routing for Razorpay (UPI/Card) and Paddle with token protection and CSP security',
+      'Live Account Sync: Direct Firestore account integration for real-time subscription status without Cloud Function overhead',
+      'Enhanced Upgrade Pitch: Surface-aware upgrade modals tailored for web and desktop capabilities',
+    ],
+    sections: [
+      {
+        category: '💎 Entitlement & Monetization',
+        items: [
+          {
+            title: 'Unified Cross-Surface Subscriptions',
+            description: 'Subscribing on web immediately unlocks desktop capabilities; desktop Pro users automatically enjoy ad-free web browsing.',
+          },
+          {
+            title: 'Standalone Checkout Routing',
+            description: 'Dedicated static checkout route bypassing SPA catch-all with signature verification and error guards.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '3.22.0',
     title: 'Yogatik Ultra: Interactive Human-In-The-Loop Execution, Native Video Players & Command Controls',
     date: 'August 29, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Interactive Human-In-The-Loop Execution: Added ask_user tool with interactive decision cards and option selection mid-turn',
       'Continuous Input & Steer Mode: Send messages seamlessly while the AI is busy; toggle between FIFO Queue and Immediate Steer execution',
