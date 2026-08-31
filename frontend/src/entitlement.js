@@ -244,7 +244,7 @@ export function pollForUpgrade({ idToken, uid, onUnlocked, attempts = 40, interv
  * here at all — both are shown, and choosing the checkout *is* the routing.
  *
  * The fixed $0.50 in Paddle's 5% + $0.50 is what makes a $1/month plan lose
- * more than half its revenue, so international monthly is priced at $2 and the
+ * more than half its revenue, so international monthly is priced at $9 and the
  * annual plan is the one that leads. India is percentage-only, so ₹99 survives.
  */
 export const PLANS = {
@@ -261,8 +261,17 @@ export const PLANS = {
     currency: '$',
     provider: 'paddle',
     note: 'Card or PayPal · billed by Paddle, taxes included',
-    monthly: { id: 'intl_monthly', price: 2, label: '$2', per: 'month' },
-    yearly: { id: 'intl_yearly', price: 12, label: '$12', per: 'year', saveLabel: 'Save $12' },
+    // $9/$99, not $2/$12. Paddle takes 5% + a FIXED $0.50, which ate a quarter
+    // of a $2 charge before anything else — and $2/month needs ~50,000 paying
+    // customers to reach $1.2M ARR where $9 needs ~11,000. The annual plan is
+    // twelve months for the price of eleven, which is also two fewer chances
+    // for a card to decline.
+    //
+    // India stays at ₹99/₹999: it is priced for its market, Razorpay is
+    // percentage-only with no fixed fee, and UPI Autopay makes small recurring
+    // amounts viable there in a way cards do not.
+    monthly: { id: 'intl_monthly', price: 9, label: '$9', per: 'month' },
+    yearly: { id: 'intl_yearly', price: 99, label: '$99', per: 'year', saveLabel: 'Save $9' },
   },
 }
 

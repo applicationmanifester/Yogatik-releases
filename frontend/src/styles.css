@@ -6597,12 +6597,24 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
   padding: 2px 6px; border-radius: 5px;
   background: rgba(163, 113, 247, .16); color: #c9a6ff; border: 1px solid rgba(163, 113, 247, .3);
 }
+/* The upgrade chip is the app's own accent, not a generic blue. It was
+   #79c0ff, which is the one control in the header that did not look like
+   Yogatik — and it is the control asking for money, so it is the last one that
+   should look borrowed. --accent tracks the theme, so this stays correct in
+   light mode (where it resolves to the darker #d4570a) without a second rule. */
 .trial-chip {
-  font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; cursor: pointer;
-  background: rgba(88, 166, 255, .12); color: #79c0ff; border: 1px solid rgba(88, 166, 255, .25);
+  font-size: 10.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; cursor: pointer;
+  background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent);
+  transition: background var(--transition), color var(--transition);
 }
-.trial-chip.urgent { background: rgba(217, 164, 65, .14); color: #e8c885; border-color: rgba(217, 164, 65, .3); }
-.trial-chip.locked { background: rgba(229, 83, 75, .12); color: #f0a8a3; border-color: rgba(229, 83, 75, .3); }
+.trial-chip:hover { background: var(--accent); color: #fff; }
+/* Urgent and locked stay off-accent on purpose: once the accent means "buy
+   this", an amber countdown and a red lock still have to read as different
+   states rather than as three shades of the same button. */
+.trial-chip.urgent { background: rgba(217, 164, 65, .14); color: #e8c885; border-color: rgba(217, 164, 65, .45); }
+.trial-chip.urgent:hover { background: rgba(217, 164, 65, .3); color: #f3dcae; }
+.trial-chip.locked { background: rgba(229, 83, 75, .12); color: #f0a8a3; border-color: rgba(229, 83, 75, .45); }
+.trial-chip.locked:hover { background: rgba(229, 83, 75, .28); color: #ffd0cc; }
 
 /* Source Control: branch picker, remote actions and the destructive gate. */
 .ws-branch-select {
@@ -7230,4 +7242,61 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
 @keyframes slideInRight {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
+}
+
+/* ── Live device picker ──────────────────────────────────────────────────────
+   Phone-first: a bottom sheet with 44px rows, because the live controls sit at
+   the bottom of the screen and a centred dialog puts the choices where a thumb
+   cannot reach. On a wide screen it centres instead. */
+.ldp-backdrop {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.ldp-sheet {
+  width: 100%; max-width: 460px;
+  background: var(--bg-secondary); color: var(--text-primary);
+  border: 1px solid var(--border); border-bottom: 0;
+  border-radius: 16px 16px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+  max-height: 78dvh; overflow-y: auto;
+  animation: ldp-rise 180ms ease;
+}
+@keyframes ldp-rise { from { transform: translateY(14px); opacity: .6 } to { transform: none; opacity: 1 } }
+@media (prefers-reduced-motion: reduce) { .ldp-sheet { animation: none } }
+
+.ldp-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+.ldp-head-actions { display: flex; gap: 4px; }
+.ldp-group { margin-bottom: 14px; }
+.ldp-group-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); margin: 0 2px 6px;
+}
+.ldp-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  /* 44px: the smallest target a thumb hits reliably. */
+  min-height: 44px; padding: 8px 12px; margin-bottom: 6px;
+  background: var(--bg-tertiary); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 10px;
+  font-size: 13.5px; text-align: left; cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.ldp-row:hover:not(:disabled) { border-color: var(--accent); }
+.ldp-row.active { border-color: var(--accent); background: var(--accent-glow); }
+.ldp-row:disabled { opacity: .55; cursor: default; }
+.ldp-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ldp-tag {
+  flex: 0 0 auto; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px;
+  background: var(--bg-input); color: var(--text-secondary);
+}
+.ldp-check { flex: 0 0 auto; color: var(--accent); }
+.ldp-empty { font-size: 12.5px; color: var(--text-muted); padding: 6px 2px; }
+.ldp-error {
+  font-size: 12.5px; color: #f0a8a3; background: rgba(229, 83, 75, .12);
+  border: 1px solid rgba(229, 83, 75, .3); border-radius: 8px; padding: 8px 10px; margin: 2px 0 0;
+}
+
+@media (min-width: 640px) {
+  .ldp-backdrop { align-items: center; }
+  .ldp-sheet { border-radius: 16px; border-bottom: 1px solid var(--border); }
 }

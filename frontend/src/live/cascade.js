@@ -67,7 +67,8 @@
 
 import { runAgent } from '../agent'
 import { splitReasoning } from '../reasoning'
-import { createCamera, createScreenCapture } from './video'
+import { createCamera, createScreenCapture, switchCamera as switchCameraTrack } from './video'
+import { enumerate, nextCamera, loadPreferredDevices, savePreferredDevices } from './devices'
 import { createSpeaker, defaultLang } from './voice'
 import {
   setSharedVisualSource, clearSharedVisualSource,
@@ -729,7 +730,11 @@ export function createCascadeSession({
 
   async function enableCamera(on) {
     if (on && !cam) {
-      cam = await createCamera()
+      // Open the camera the user last chose. A remembered device that is gone
+      // falls back to any camera inside createCamera rather than throwing
+      // OverconstrainedError and failing the whole call.
+      const pref = loadPreferredDevices()
+      cam = await createCamera({ deviceId: pref.cameraId, facingMode: pref.facing || 'user' })
       // The `see` tool must borrow this stream: a second getUserMedia fails
       // on most phones, which used to make `see` unusable inside a call.
       if (!screen) setSharedVisualSource(cam)
@@ -781,6 +786,50 @@ export function createCascadeSession({
     setLang: (l) => { if (l) { lang = l; speaker.configure({ lang }); if (recog) { try { recog.lang = lang } catch { /* mid-restart */ } } } },
     /** Current frame for the vision panel — never opens a second camera. */
     grabFrame: (profile) => (screen || cam)?.grab(true, profile) || null,
+
+    listDevices: () => enumerate(),
+
+    /**
+     * Swap the camera without ending the call: the TRACK is replaced on the
+     * existing stream, so the preview, the aHash gate and the `see` tool all
+     * keep the same MediaStream and none of them notice.
+     */
+    async switchCamera({ deviceId, facingMode } = {}) {
+      if (!cam) return { success: false, error: 'The camera is off.' }
+      try {
+        const info = await switchCameraTrack(cam, { deviceId, facingMode })
+        savePreferredDevices({ cameraId: info.deviceId, facing: facingMode || '' })
+        emit({ type: 'camera', stream: cam.stream, video: cam.video, deviceId: info.deviceId, label: info.label })
+        return { success: true, ...info }
+      } catch (e) {
+        return { success: false, error: e?.message || 'Could not switch camera' }
+      }
+    },
+
+    async flipCamera() {
+      if (!cam) return { success: false, error: 'The camera is off.' }
+      const { cameras } = await enumerate()
+      const currentId = cam.stream.getVideoTracks()[0]?.getSettings?.().deviceId || ''
+      const next = nextCamera(cameras, currentId)
+      if (!next) return { success: false, error: 'Only one camera is available.' }
+      return this.switchCamera({ deviceId: next.deviceId, facingMode: next.facing || undefined })
+    },
+
+    /**
+     * Cascade listens through the Web Speech API, which picks the microphone
+     * itself and accepts NO deviceId — so this cannot switch mics the way the
+     * realtime engine can. Saying so is the whole point: silently ignoring the
+     * choice would look exactly like a switch that did not take effect.
+     */
+    async switchMic() {
+      return {
+        success: false,
+        error: 'On this engine the microphone follows your system default — '
+          + 'browser speech recognition does not accept a device choice. '
+          + 'Change it in your OS sound settings, or use the realtime engine.',
+      }
+    },
+
     get cameraOn() { return !!cam },
     get screenOn() { return !!screen },
   }

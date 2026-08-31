@@ -69,16 +69,29 @@ export function AdSenseBanner({
     if (!adsAvailable || pro || pushedRef.current) return
     loadAdSenseWhenIdle()
     try {
-      if (typeof window !== 'undefined') {
-        const unhandledIns = document.querySelectorAll('ins.adsbygoogle:not([data-adsbygoogle-status="done"])')
-        if (unhandledIns.length > 0) {
-          ;(window.adsbygoogle = window.adsbygoogle || []).push({})
-          pushedRef.current = true
-          setAdLoaded(true)
-        }
+      // Ask about THIS component's own <ins>, not a global query.
+      //
+      // MEASURED in the field: "TagError: adsbygoogle.push() error: All 'ins'
+      // elements in the DOM with class=adsbygoogle already have ads in them."
+      // A document-wide `querySelectorAll` answers about somebody else's slot,
+      // so an already-filled banner elsewhere let this one push again — and one
+      // push({}) fills exactly ONE ins, so a page with two slots and two
+      // pushes double-fills the first and starves the second.
+      //
+      // The rule AdSense actually wants: one push per <ins>, after that <ins>
+      // is in the DOM, never twice for the same one.
+      const el = adRef.current
+      if (typeof window !== 'undefined' && el && !el.getAttribute('data-adsbygoogle-status')) {
+        // Claim the slot BEFORE pushing. React 18 StrictMode double-invokes
+        // effects in development, and the second invocation would otherwise
+        // race the first and throw this exact TagError.
+        pushedRef.current = true
+        ;(window.adsbygoogle = window.adsbygoogle || []).push({})
+        setAdLoaded(true)
       }
     } catch {
-      // Gracefully ignore ad blocker or duplicate tag errors
+      // An ad blocker, a duplicate tag, or a script that never loaded. None of
+      // them is worth a crash; the slot folds away below if it stays unfilled.
     }
     // AdSense stamps data-ad-status="filled" | "unfilled" once it has decided.
     const t = setTimeout(() => {

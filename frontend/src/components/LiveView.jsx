@@ -3,7 +3,7 @@ import {
   Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Wrench,
   AlertTriangle, Monitor, MonitorOff, MessageSquare, Eye, EyeOff,
   Aperture, Volume2, Scan,
-  RefreshCw,
+  RefreshCw, SwitchCamera, Settings2,
 } from 'lucide-react'
 import { runAgent } from '../agent'
 import { createLiveSession } from '../live/session'
@@ -14,6 +14,8 @@ import { buzz } from '../features'
 import { VisionModal } from './VisionModal'
 import { LiveTranscriptPanel } from './LiveTranscriptPanel'
 import { LiveHudOverlay } from './LiveHudOverlay'
+import { LiveDevicePicker } from './LiveDevicePicker'
+import { enumerate, canFlipCamera } from '../live/devices'
 
 /**
  * Full-screen face-to-face call with:
@@ -67,6 +69,13 @@ export function LiveView({
     autoScan: features.autoScan === true,
     retakeFlash: false,
   })
+
+  // Which camera/mic the call is actually using, and whether a front/back
+  // flip is even meaningful here — two REAR cameras (a phone's wide and
+  // telephoto) are a choice, not a flip, and offering one there looks broken.
+  const [deviceIds, setDeviceIds] = useState({ cameraId: '', micId: '' })
+  const [showDevices, setShowDevices] = useState(false)
+  const [hasFlip, setHasFlip] = useState(false)
 
   const videoRef = useRef(null)
   const sessionRef = useRef(null)
@@ -137,6 +146,18 @@ export function LiveView({
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [visionState.open, visionState.q])
+
+  // Is a front/back flip meaningful on this device? Asked once the camera is
+  // on, because device LABELS are blank until permission has been granted —
+  // before that every camera looks the same and canFlipCamera cannot tell.
+  useEffect(() => {
+    if (!camOn) { setHasFlip(false); return undefined }
+    let alive = true
+    enumerate()
+      .then(({ cameras }) => { if (alive) setHasFlip(canFlipCamera(cameras)) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [camOn])
 
   // Breathing animation when idle
   useEffect(() => {
@@ -285,6 +306,35 @@ export function LiveView({
     const v = !screenOn
     await sessionRef.current?.enableScreenShare(v)
     buzz(features, 30)
+  }
+
+  /**
+   * Flip front/back. This is the single most-wanted control on a phone — you
+   * point the BACK camera at the thing you are asking about — and the camera
+   * used to be hardcoded to `facingMode: 'user'` with no way to change it
+   * short of ending the call.
+   *
+   * The track is replaced on the existing stream, so the preview, the aHash
+   * change-gate and the `see` tool all keep the same MediaStream.
+   */
+  const flipCam = async () => {
+    if (!camOn) return
+    buzz(features, 30)
+    const res = await sessionRef.current?.flipCamera?.()
+    if (res?.success === false) setState({ error: res.error })
+    else if (res?.deviceId) setDeviceIds(d => ({ ...d, cameraId: res.deviceId }))
+  }
+
+  const pickDevice = async (kind, deviceId) => {
+    const s = sessionRef.current
+    const res = kind === 'camera'
+      ? await s?.switchCamera?.({ deviceId })
+      : await s?.switchMic?.({ deviceId })
+    if (res?.success) {
+      setDeviceIds(d => ({ ...d, [kind === 'camera' ? 'cameraId' : 'micId']: deviceId }))
+      buzz(features, 30)
+    }
+    return res
   }
   // Toggle continuous watching: 'always' makes ANY model (vision-capable or not)
   // look at the camera/screen every turn; 'auto' looks only when relevant.
@@ -460,6 +510,18 @@ export function LiveView({
         />
       )}
 
+      <LiveDevicePicker
+        open={showDevices}
+        onClose={() => setShowDevices(false)}
+        onPick={pickDevice}
+        currentCameraId={deviceIds.cameraId}
+        currentMicId={deviceIds.micId}
+        // Cascade listens through the Web Speech API, which picks the mic
+        // itself and accepts no deviceId. Showing a mic list there would be a
+        // picker that silently does nothing.
+        micSwitchable={engine === 'gemini'}
+      />
+
       {/* Awareness badges */}
       <div className="live-badges">
         {availableModels && availableModels.length > 0 ? (
@@ -624,6 +686,19 @@ export function LiveView({
           aria-label={screenOn ? 'Stop screen sharing' : 'Share screen'}
         >
           {screenOn ? <MonitorOff size={20} /> : <Monitor size={20} />}
+        </button>
+        {camOn && hasFlip && (
+          <button className="live-btn" onClick={flipCam} aria-label="Switch between front and back camera" title="Flip camera">
+            <SwitchCamera size={21} />
+          </button>
+        )}
+        <button
+          className="live-btn"
+          onClick={() => setShowDevices(true)}
+          aria-label="Choose camera and microphone"
+          title="Camera & microphone"
+        >
+          <Settings2 size={20} />
         </button>
         <button className="live-btn end" onClick={handleEnd} aria-label="End call">
           <PhoneOff size={22} />

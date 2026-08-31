@@ -3,16 +3,43 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '3.22.2'
+export const APP_VERSION = '3.22.3'
 export const BUILD_DATE = 'August 2026'
-export const APP_CODENAME = 'Yogatik Ultra — Deep-Link Paywall Flow, Direct Modal Sign-In & Pricing Architecture'
+export const APP_CODENAME = 'Yogatik Ultra — Live Device Selection, Seamless Camera Flipping & On-Device Segmentation'
 
 export const APP_RELEASES = [
+  {
+    version: '3.22.3',
+    title: 'Yogatik Ultra: Live Device Picker, Front/Back Camera Flipping, On-Device Image Segmentation & Crash Hardening',
+    date: 'August 31, 2026',
+    isLatest: true,
+    highlights: [
+      'Live Device Selection: Real-time audio and camera device picker bottom sheet with instant front/back camera flipping without ending the call',
+      'On-Device Image Segmentation: Added segment tool for instant background removal, object isolation and cutout operations',
+      'Lint & Stability Hardening: Resolved undefined variable crashes in LiveView and PersonalisePanel, and prevented AdSense push TagError',
+      'Global Pricing Normalization: Unified Pro tier at $9/mo or $99/year internationally across all checkout and landing pages',
+    ],
+    sections: [
+      {
+        category: '🎙️ Live Voice & Vision',
+        items: [
+          {
+            title: 'Live Device Picker & Flip',
+            description: 'Hot-swap microphones and cameras during an active live call with thumb-friendly controls and auto hardware detection.',
+          },
+          {
+            title: 'On-Device Segmentation',
+            description: 'Extract and isolate objects or remove image backgrounds locally on-device without cloud upload.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '3.22.2',
     title: 'Yogatik Ultra: Seamless Marketing-to-Paywall Routing, In-Modal Sign-In & Platform Pricing Matrix',
     date: 'August 31, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Deep-Linked Upgrade Funnel: Instant navigation from marketing pages (/platforms) directly to the interactive paywall with ?upgrade=1',
       'In-Modal Frictionless Sign-In: Direct sign-in action within the upgrade modal with automatic modal restoration post-auth',

@@ -59,7 +59,8 @@ import {
   decodeServerMessage, rateFromMime, LIVE_MODELS,
 } from './protocol'
 import { createMicCapture, createPlayer, base64ToPcm16 } from './audio'
-import { createCamera, createScreenCapture } from './video'
+import { createCamera, createScreenCapture, switchCamera as switchCameraTrack } from './video'
+import { enumerate, nextCamera, loadPreferredDevices, savePreferredDevices } from './devices'
 import { setSharedVisualSource, clearSharedVisualSource } from '../vision/source'
 import { executeTool, getToolSchemas } from '../tools/index'
 
@@ -202,7 +203,9 @@ You can see them through their camera and hear them through their microphone. Be
     })
     await player.resume()          // must happen inside the click handler
 
-    mic = await createMicCapture((b64) => send(audioChunk(b64)))
+    // Open the microphone the user last chose; an unplugged one falls back
+    // to the system default inside createMicCapture rather than failing.
+    mic = await createMicCapture((b64) => send(audioChunk(b64)), { deviceId: loadPreferredDevices().micId })
     emit({ type: 'mic', stream: mic.stream })
 
     if (camera) await enableCamera(true)
@@ -211,7 +214,14 @@ You can see them through their camera and hear them through their microphone. Be
 
   async function enableCamera(on) {
     if (on && !cam) {
-      cam = await createCamera()
+      // Open the camera the user last chose. `exact:false` inside
+      // createCamera means a remembered device that is now gone falls back to
+      // any camera instead of failing the call with OverconstrainedError.
+      const pref = loadPreferredDevices()
+      cam = await createCamera({
+        deviceId: pref.cameraId,
+        facingMode: pref.facing || 'user',
+      })
       // Let the `see` tool and the vision panel borrow this stream — a second
       // getUserMedia fails on most phones.
       setSharedVisualSource(cam)
@@ -287,6 +297,61 @@ You can see them through their camera and hear them through their microphone. Be
     },
     /** Current frame for the vision panel — never opens a second camera. */
     grabFrame: (profile) => (screen || cam)?.grab(true, profile) || null,
+
+    /* ── device selection ────────────────────────────────────────────────── */
+
+    listDevices: () => enumerate(),
+
+    /**
+     * Change camera mid-call. Replaces the TRACK on the existing stream, so the
+     * preview, the aHash gate, `see` and the vision panel all keep the same
+     * MediaStream and none of them notice — closing and reopening the source
+     * would drop the shared-visual-source registration and, on a phone, risk a
+     * second getUserMedia that simply fails.
+     */
+    async switchCamera({ deviceId, facingMode } = {}) {
+      if (!cam) return { success: false, error: 'The camera is off.' }
+      try {
+        const info = await switchCameraTrack(cam, { deviceId, facingMode })
+        savePreferredDevices({ cameraId: info.deviceId, facing: facingMode || '' })
+        emit({ type: 'camera', stream: cam.stream, video: cam.video, deviceId: info.deviceId, label: info.label })
+        return { success: true, ...info }
+      } catch (e) {
+        return { success: false, error: e?.message || 'Could not switch camera' }
+      }
+    },
+
+    /** Flip between front and back without needing to know the device list. */
+    async flipCamera() {
+      if (!cam) return { success: false, error: 'The camera is off.' }
+      const { cameras } = await enumerate()
+      const currentId = cam.stream.getVideoTracks()[0]?.getSettings?.().deviceId || ''
+      const next = nextCamera(cameras, currentId)
+      if (!next) return { success: false, error: 'Only one camera is available.' }
+      return this.switchCamera({ deviceId: next.deviceId, facingMode: next.facing || undefined })
+    },
+
+    /**
+     * Change microphone mid-call. The mic owns an AudioWorklet and a 16kHz
+     * context, so unlike the camera it genuinely has to be rebuilt — but the
+     * SOCKET stays open, so the conversation is not interrupted.
+     */
+    async switchMic({ deviceId } = {}) {
+      try {
+        const wasMuted = !!mic?.isMuted()
+        const next = await createMicCapture((b64) => send(audioChunk(b64)), { deviceId })
+        // Close the old one only once the new one is live, or a failure here
+        // leaves the call with no microphone at all.
+        mic?.close()
+        mic = next
+        if (wasMuted) mic.setMuted(true)
+        savePreferredDevices({ micId: deviceId || '' })
+        emit({ type: 'mic', stream: mic.stream, deviceId: deviceId || '' })
+        return { success: true }
+      } catch (e) {
+        return { success: false, error: e?.message || 'Could not switch microphone' }
+      }
+    },
     setMuted: (v) => { mic?.setMuted(v); emit({ type: 'muted', value: v }) },
     isMuted: () => !!mic?.isMuted(),
     get cameraOn() { return !!cam },

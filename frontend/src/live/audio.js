@@ -7,6 +7,8 @@
  * against each other sample-exactly instead of clicking.
  */
 
+import { audioConstraints } from './devices'
+
 // Inlined so there is no extra public/ asset to lose on deploy.
 const WORKLET_SRC = `
 class Capture extends AudioWorkletProcessor {
@@ -52,15 +54,20 @@ export function base64ToPcm16(b64) {
 }
 
 /** Microphone -> 32ms base64 PCM16 chunks (ultra-low latency). */
-export async function createMicCapture(onChunk) {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      // The model's own voice comes out of the speakers; without these the
-      // session hears itself and interrupts itself forever.
-      echoCancellation: true, noiseSuppression: true, autoGainControl: true,
-      channelCount: 1, sampleRate: 16000,
-    },
-  })
+export async function createMicCapture(onChunk, { deviceId = '' } = {}) {
+  // The echo guards live in devices.audioConstraints — they are not optional
+  // and must not be re-spelled per call site, or one of them loses a guard and
+  // the session starts hearing itself.
+  let stream
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(audioConstraints({ deviceId }))
+  } catch (err) {
+    // A remembered microphone that has been unplugged fails the whole call.
+    // Fall back to the system default rather than refusing to start.
+    if (deviceId && err?.name === 'OverconstrainedError') {
+      stream = await navigator.mediaDevices.getUserMedia(audioConstraints({}))
+    } else throw err
+  }
   const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 })
   const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'application/javascript' }))
   try {

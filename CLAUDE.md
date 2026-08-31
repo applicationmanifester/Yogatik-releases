@@ -1,5 +1,50 @@
 # Yogatik — Project Knowledge
 
+## FOUR no-undef crashes, and lint was not being run (2026-08-30)
+- `askInCall` was referenced by LiveView and DEFINED NOWHERE. A ReferenceError during
+  render takes the WHOLE APP into the error boundary — it shipped, and the diagnostics
+  report shows it crashing repeatedly in production. `PersonalisePanel` had three more:
+  `speed` twice and `browserSurface` once, so opening Personalise crashed the app too.
+- `npm run lint` (react/jsx-no-undef + no-undef) reports all four in one pass. It has now
+  caught this class FOUR times (PUBLIC_RELAYS, research.js `search`, and these). RUN IT
+  BEFORE EVERY DEPLOY — vite build does not fail on an undefined identifier, and vitest
+  never renders the component.
+- eslint takes ~10 minutes over a network-mounted checkout; run it locally.
+
+## Live: camera and microphone selection (2026-08-30) — live/devices.js
+- `createCamera()` hardcoded `facingMode: 'user'`. On a phone that is the camera you do
+  NOT want — you point the BACK camera at the thing you are asking about — and there was
+  no way to change it without ending the call. `createMicCapture()` took the OS default
+  with no choice at all.
+- `live/devices.js` is PURE (grouping, facing detection, flip target, constraint building,
+  persistence) so it is testable without a browser; only `enumerate()` and getUserMedia
+  touch the platform. Same split as maskOps/sam and rootsCore/roots.
+- Things that are invisible when wrong, each pinned by a test:
+  - DEVICE LABELS AND IDS ARE BLANK until permission has been granted once — a
+    fingerprinting defence. A picker built before that shows a list of blanks, and code
+    keyed on deviceId sees one empty string for every device. `needsPermission` detects it
+    and `primeDeviceLabels()` asks once, then STOPS the stream (holding it would light the
+    recording indicator for someone who only opened a menu).
+  - A remembered deviceId is `ideal`, never `exact`: an unplugged webcam with `exact`
+    fails the whole call with OverconstrainedError instead of falling back. Only an
+    explicit in-session pick is `exact`, and even that falls back on Overconstrained.
+  - TWO REAR CAMERAS ARE A CHOICE, NOT A FLIP. `canFlipCamera` requires both a `user` and
+    an `environment` facing; a phone's wide + telephoto would otherwise give a flip button
+    that moves between two back cameras and looks broken.
+  - `guessFacing` returns null when the label says nothing, rather than guessing — a wrong
+    guess turns on the wrong camera.
+  - `switchCamera` REPLACES THE TRACK on the existing MediaStream instead of closing and
+    reopening the source, so the preview, the aHash change-gate, `see` and the vision
+    panel all keep the same stream object. It opens the new track BEFORE stopping the old
+    one, or a failed switch leaves the call with no camera at all.
+  - Cascade CANNOT switch microphones: the Web Speech API picks the mic itself and takes
+    no deviceId. It says so and the picker hides the mic list there — silently ignoring
+    the choice would look exactly like a switch that did not take.
+- Mobile: the picker is a bottom SHEET with 44px rows and safe-area padding, because the
+  live controls sit at the bottom and a centred dialog puts the choices out of thumb reach.
+  It centres at >=640px.
+- Tests: live/devices — 25 assertions.
+
 ## On-device segmentation (2026-08-30) — vision/maskOps.js, vision/sam.js, tools/segment.js
 - The gap: the pipeline could say what KIND of image it is (imageStats), what is in it
   (DETR), what it resembles (CLIP) and what text it holds (OCR) — but not "just this

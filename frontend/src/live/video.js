@@ -9,6 +9,8 @@
  * questions capture big and sharp (768px @ q0.7 cannot read a serial number).
  */
 
+import { videoConstraints } from './devices'
+
 const MAX_EDGE = 768        // MEDIA_RESOLUTION_MEDIUM gets nothing from more
 const HASH_EDGE = 16        // 16x16 grayscale average hash
 const HASH_THRESHOLD = 16   // ~6% of bits flipped; below that it is sensor noise
@@ -105,11 +107,58 @@ async function attach(stream) {
   }
 }
 
-export async function createCamera({ facingMode = 'user' } = {}) {
-  return attach(await navigator.mediaDevices.getUserMedia({
-    video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
-    audio: false,
-  }))
+/**
+ * Open a camera.
+ *
+ * `facingMode: 'user'` used to be hardcoded, which on a phone is the one camera
+ * you usually do NOT want — you point the BACK camera at the thing you are
+ * asking about. A specific `deviceId` now wins over `facingMode`, and both are
+ * built by live/devices.js so the exact/ideal rules live in one place.
+ */
+export async function createCamera({ facingMode = 'user', deviceId = '', exact = false } = {}) {
+  const constraints = videoConstraints({ deviceId, facingMode, exact })
+  try {
+    return attach(await navigator.mediaDevices.getUserMedia(constraints))
+  } catch (err) {
+    // OverconstrainedError: the remembered camera is gone (unplugged webcam,
+    // a phone that reports different ids after an OS update). Falling back to
+    // "any camera" is far better than a call that cannot start — but only when
+    // the caller did not INSIST on this exact device.
+    if (!exact && (deviceId || facingMode) && err?.name === 'OverconstrainedError') {
+      return attach(await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      }))
+    }
+    throw err
+  }
+}
+
+/**
+ * Swap the camera WITHOUT tearing the call down.
+ *
+ * Replacing the track on the existing stream keeps the same MediaStream object,
+ * so every consumer that already holds it — the <video> preview, the aHash
+ * gate, `see`, the vision panel — keeps working. Closing and recreating the
+ * source would drop the shared visual source registration and, on a phone,
+ * risk a second getUserMedia that simply fails.
+ */
+export async function switchCamera(source, { facingMode, deviceId, exact = true } = {}) {
+  if (!source?.stream) throw new Error('No camera to switch')
+  const next = await navigator.mediaDevices.getUserMedia(
+    videoConstraints({ deviceId, facingMode, exact }),
+  )
+  const track = next.getVideoTracks()[0]
+  if (!track) { next.getTracks().forEach(t => t.stop()); throw new Error('The chosen camera returned no video') }
+  // Stop the OLD track only after the new one is open: stopping first turns
+  // the preview black for the whole permission round trip, and if the new
+  // camera then fails the user is left with nothing.
+  for (const old of source.stream.getVideoTracks()) {
+    source.stream.removeTrack(old)
+    old.stop()
+  }
+  source.stream.addTrack(track)
+  return { deviceId: track.getSettings?.().deviceId || deviceId || '', label: track.label || '' }
 }
 
 export async function createScreenCapture() {

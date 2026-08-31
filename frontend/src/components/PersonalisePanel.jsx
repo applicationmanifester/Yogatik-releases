@@ -46,6 +46,13 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
   const [previewing, setPreviewing] = useState(false)
 
   const gender = GENDER.male.includes(voice) ? 'male' : 'female'
+  // These two were READ BUT NEVER DECLARED — `speed.toFixed()` and
+  // `browserSurface` are ReferenceErrors the moment this panel renders, which
+  // takes the whole app into the error boundary exactly like `askInCall` did.
+  // eslint's no-undef reports all three; the lesson is to run `npm run lint`,
+  // not to keep finding them one crash at a time.
+  const speed = Number(prefs.voice_speed ?? 1) || 1
+  const browserSurface = prefs.browser_display_mode === 'panel' ? 'panel' : 'window'
 
   const setFeature = (name, on) => onChange('features', { ...features, [name]: on })
 

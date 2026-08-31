@@ -9,7 +9,10 @@ because both are one-line reversals and neither was worth blocking on:
 
 - **§2.4 file picker: ALLOWED in the free tier.** Otherwise the free desktop build
   is worse than the website, which contradicts the rule it implements.
-- **§7 pricing: option A.** ₹99/₹999 India, **$2/month and $12/year** international.
+- **§7 pricing: REVISED 2026-08-30.** ₹99/₹999 India, **$9/month and $99/year** international.
+  Was $2/$12. Paddle's fixed $0.50 ate a quarter of a $2 charge, and $2/mo needs ~50,000
+  paying customers for $1.2M ARR where $9 needs ~11,000. Changing a price before customers
+  exist is a text edit; after, it is a migration.
   Change `PLANS` in `src/entitlement.js` to move it.
 
 Still open: **read-only git in the free tier** (§10.3) is currently gated, per your
