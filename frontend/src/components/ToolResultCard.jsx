@@ -67,6 +67,7 @@ export function CopyButton({ text, title = 'Copy', className = 'copy-btn', style
 
 export const TOOL_ICONS = {
   weather: CloudSun, image_generate: Image, code_execute: Code, video_render: Film,
+  local_image_generate: Image, local_video_generate: Film,
   calculator: Calculator, translate: Languages, youtube: Youtube,
   web_extract: Link, web_search: Search, deep_research: Telescope,
   doc_search: FileSearch, doc_list: Files, chart: Image, tts: Volume2,
@@ -144,6 +145,60 @@ function RenderedVideo({ result }) {
       {src && (
         <a className="small-btn" href={src} download={result.filename}>
           <FileDown size={12} /> Download {result.filename?.endsWith('.mp4') ? 'MP4' : 'WebM'}
+        </a>
+      )}
+    </div>
+  )
+}
+
+/**
+ * local_video_generate output is an ANIMATED WEBP, not an MP4/WebM — a <video>
+ * element cannot decode that (no browser treats WEBP as a video codec
+ * container), it would silently show a black box. An <img> plays an animated
+ * WEBP natively, so this is a distinct component rather than a RenderedVideo
+ * mime-branch — the two have different failure DOMs, not just different props.
+ */
+function RenderedLocalVideo({ result }) {
+  const [src, setSrc] = React.useState(result.video_url && !result.video_url.startsWith('blob:') ? result.video_url : null)
+  const [gone, setGone] = React.useState(false)
+
+  React.useEffect(() => {
+    if (src && !src.startsWith('blob:')) return
+    if (!result.media_id) return
+    let url = null
+    let cancelled = false
+    getMedia(result.media_id).then((row) => {
+      if (cancelled) return
+      if (!row?.blob) { setGone(true); return }
+      url = URL.createObjectURL(row.blob)
+      setSrc(url)
+    }).catch(() => setGone(true))
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url) }
+  }, [result.media_id])
+
+  const mb = result.bytes ? (result.bytes / 1048576).toFixed(1) : null
+
+  return (
+    <div className="tool-result-card">
+      <div className="tool-result-header"><Film size={14} /> Locally Generated Clip (animated WEBP)</div>
+      {src
+        ? <img src={src} alt="Generated animated clip" className="generated-video" loading="lazy" onError={() => {
+            if (result.media_id) {
+              getMedia(result.media_id).then(row => {
+                if (row?.blob) setSrc(URL.createObjectURL(row.blob))
+                else setGone(true)
+              }).catch(() => setGone(true))
+            } else {
+              setGone(true)
+            }
+          }} />
+        : <p className="tool-detail">{gone ? 'This clip was cleared to make room for newer ones.' : 'Loading clip…'}</p>}
+      <p className="tool-prompt">
+        {result.fps}fps · {result.frames} frames{mb ? ` · ${mb} MB` : ''} · {result.checkpoint}
+      </p>
+      {src && (
+        <a className="small-btn" href={src} download={result.filename || 'local_video.webp'}>
+          <FileDown size={12} /> Download WEBP
         </a>
       )}
     </div>
@@ -463,6 +518,17 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
 
   if (tool === 'video_render' && (result.video_url || result.media_id)) {
     return <RenderedVideo result={result} />
+  }
+
+  // Local generation reuses the same generic image/video card — the fields
+  // (image_url/display_url/media_id, video_url/media_id) are identical to
+  // image_generate/video_render, only the source differs.
+  if (tool === 'local_image_generate' && (result.image_url || result.display_url || result.media_id)) {
+    return <RenderedImage result={result} isSticker={false} />
+  }
+
+  if (tool === 'local_video_generate' && (result.video_url || result.media_id)) {
+    return <RenderedLocalVideo result={result} />
   }
 
   if (tool === 'chart' && result.image_url) {

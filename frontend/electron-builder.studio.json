@@ -1,6 +1,7 @@
 {
   "appId": "app.yogatik.studio",
   "productName": "Yogatik Studio",
+  "electronVersion": "43.5.0",
   "directories": { "output": "release-studio" },
   "files": [
     "dist-electron/**/*",

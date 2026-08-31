@@ -32,39 +32,94 @@ const MAX_LIMIT = 16       // safety ceiling: beyond this providers 429 hard
 
 let limit = DEFAULT_LIMIT
 let active = 0
-const waiters = [] // queued acquire() callbacks
+
+/**
+ * Queued acquires, GROUPED BY CHAT, served round-robin.
+ *
+ * A single FIFO array starves. Chat A fires a 40-item map_reduce and takes all
+ * 16 slots with 24 queued; chat B then asks for 2 sub-agents and lands at
+ * positions 25 and 26, so B waits for 24 of A's tasks before starting any of
+ * its own. The pool exists to protect the provider from the fleet, not to let
+ * whichever chat asked first monopolise it.
+ *
+ * Round-robin does NOT add concurrency — the global ceiling is unchanged and
+ * still the only thing standing between a large fan-out and a 429 storm. It
+ * changes who gets the next free slot, so every active chat makes progress.
+ */
+const queues = new Map()   // scope -> [attempt fns]
+let cursor = 0             // round-robin position across scope keys
 
 /** Set the global concurrency budget (clamped to MIN_LIMIT..MAX_LIMIT). */
 export function configureConcurrency(n) {
   const v = Math.floor(Number(n))
   if (Number.isFinite(v)) limit = Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, v))
   // A raised limit may let queued waiters proceed immediately.
-  while (active < limit && waiters.length) waiters.shift()()
+  pump()
+  return limit
+}
+
+/**
+ * Raise the budget toward what a batch needs, never lower it.
+ *
+ * THE BUG THIS REPLACES: runAgentPool called configureConcurrency(batchSize) on
+ * every batch, and the budget is global. Chat A starting a 40-item batch set it
+ * to 16; chat B then starting a 2-item batch set it to 2 — throttling chat A's
+ * sixteen in-flight agents down to two. One chat silently strangled another's
+ * fan-out, and nothing anywhere reported it. Same class as every other global
+ * mutated per-caller in this codebase.
+ */
+export function requestConcurrency(n) {
+  const v = Math.floor(Number(n))
+  if (!Number.isFinite(v)) return limit
+  const want = Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, v))
+  if (want > limit) { limit = want; pump() }
   return limit
 }
 
 export function getConfiguredConcurrency() { return limit }
 export function activeCount() { return active }
+/** How many distinct chats currently have work queued or running. */
+export function queuedScopes() { return queues.size }
 
-function acquire() {
+/** Start as many queued waiters as the budget allows, fairly across chats. */
+function pump() {
+  while (active < limit && queues.size) {
+    const keys = [...queues.keys()]
+    const key = keys[cursor % keys.length]
+    cursor++
+    const q = queues.get(key)
+    const next = q.shift()
+    if (!q.length) queues.delete(key)
+    if (next) next()
+    else if (!queues.size) break
+  }
+}
+
+function acquire(scope) {
+  const key = scope == null ? '' : String(scope)
   return new Promise((resolve) => {
-    const attempt = () => {
-      if (active < limit) { active++; resolve() }
-      else waiters.push(attempt)
-    }
-    attempt()
+    const attempt = () => { active++; resolve() }
+    if (active < limit && !queues.size) { attempt(); return }
+    // Queue even when a slot looks free if others are already waiting —
+    // jumping the queue is what makes round-robin meaningless.
+    if (!queues.has(key)) queues.set(key, [])
+    queues.get(key).push(attempt)
+    pump()
   })
 }
 
 function release() {
   active = Math.max(0, active - 1)
-  const next = waiters.shift()
-  if (next) next()
+  pump()
 }
 
-/** Run fn while holding one global slot; the slot is always released. */
-export async function withSlot(fn) {
-  await acquire()
+/**
+ * Run fn while holding one global slot; the slot is always released.
+ * `scope` is the chat the work belongs to, so the queue can be fair across
+ * chats. Omitting it is safe — everything unscoped shares one bucket.
+ */
+export async function withSlot(fn, scope) {
+  await acquire(scope)
   try { return await fn() }
   finally { release() }
 }
@@ -92,13 +147,16 @@ export async function getAgentConcurrency() {
  * semaphore), order-preserving. A worker that throws yields `{ error }` in its
  * slot instead of rejecting the whole batch.
  */
-export async function runAgentPool(items, worker) {
+export async function runAgentPool(items, worker, scope) {
   if (!Array.isArray(items) || items.length === 0) return []
   const configured = await getAgentConcurrency()
-  const limit = configured ?? Math.min(items.length, MAX_LIMIT) // auto = one slot per task
-  configureConcurrency(limit)
+  const want = configured ?? Math.min(items.length, MAX_LIMIT) // auto = one slot per task
+  // REQUEST, never set. Setting it lowered the ceiling for every other chat's
+  // in-flight batch; requesting raises it toward what this batch needs and
+  // leaves a larger neighbour alone.
+  requestConcurrency(want)
   return Promise.all(items.map((item, i) =>
-    withSlot(() => worker(item, i)).catch((e) => ({ error: e?.message || String(e) }))
+    withSlot(() => worker(item, i), scope).catch((e) => ({ error: e?.message || String(e) }))
   ))
 }
 
@@ -106,5 +164,6 @@ export async function runAgentPool(items, worker) {
 export function _resetAgentPool() {
   limit = DEFAULT_LIMIT
   active = 0
-  waiters.length = 0
+  queues.clear()
+  cursor = 0
 }

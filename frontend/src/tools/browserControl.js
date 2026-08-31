@@ -40,6 +40,7 @@ export const VALID_ACTIONS = [
   'back', 'forward', 'reload', 'set_mode', 'close',
   'wait_for', 'fill_form', 'evaluate', 'extract_text',
   'diagnose', 'console', 'run_script', 'assert', 'audit_a11y',
+  'upload_file', 'network',
 ]
 
 /**
@@ -70,6 +71,8 @@ export const ACTION_ALIASES = {
   select_option: 'select', choose: 'select', dropdown: 'select', set_select: 'select',
   assert_text: 'assert', assert_element: 'assert', assertion: 'assert', expect: 'assert',
   a11y: 'audit_a11y', accessibility: 'audit_a11y', wcag: 'audit_a11y', audit: 'audit_a11y',
+  upload: 'upload_file', set_input_files: 'upload_file', attach_file: 'upload_file', choose_file: 'upload_file',
+  network_requests: 'network', requests: 'network', network_log: 'network', network_inspect: 'network',
 }
 
 // `callerCtx` is the chat that issued the call, threaded from executeTool. It
@@ -102,6 +105,8 @@ export const browserControlTool = {
         'that costs many turns and usually runs out of them. Use "console" for the page\'s console log on its own. ' +
         'Use "assert" (with type="text"|"element"|"count"|"url") for automated test assertions. ' +
         'Use "audit_a11y" for full automated WCAG 2.2 accessibility audits. ' +
+        'Use "upload_file" to put real files into an <input type=file> — read the page first, pass its ref and an array of absolute file paths (use file_dialog to get real paths from the user). ' +
+        'Use "network" to see the requests/responses the page has made (status, method, url) — useful for checking whether an API call actually succeeded. ' +
         'ALWAYS call action "read" before clicking: it returns the page as a tree where every clickable element has a [ref_N] handle. ' +
         'Then click or type using that ref — do not guess x/y coordinates unless the target is a canvas or custom widget with no ref. ' +
         'Refs go stale when the page changes; if you get a stale-ref error, call "read" again. ' +
@@ -117,6 +122,7 @@ export const browserControlTool = {
               'back', 'forward', 'reload', 'set_mode', 'close',
               'wait_for', 'fill_form', 'evaluate', 'extract_text',
               'diagnose', 'console', 'run_script', 'assert', 'audit_a11y',
+              'upload_file', 'network',
             ],
             description: 'What to do.',
           },
@@ -174,13 +180,22 @@ export const browserControlTool = {
             items: { type: 'object' },
             description: 'For run_script: array of action objects to execute in sequence.',
           },
+          files: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'For upload_file: absolute file paths to set on the file input named by ref. Use file_dialog to get real paths from the user first — do not invent paths.',
+          },
+          limit: {
+            type: 'number',
+            description: 'For action "network": how many recent requests to return (default 50, max 200).',
+          },
         },
         required: ['action'],
       },
     },
   },
 
-  async execute({ action: rawAction, url, ref, x, y, text, submit, clear, keys, amount, tabId, display, selector, type, expected, target, timeout, fields, expression, steps, value, _depth = 0 } = {}, opts = {}) {
+  async execute({ action: rawAction, url, ref, x, y, text, submit, clear, keys, amount, tabId, display, selector, type, expected, target, timeout, fields, expression, steps, value, files, limit, _depth = 0 } = {}, opts = {}) {
     const b = bridge()
     if (!b) return DESKTOP_ONLY
     const base = await ctx(display, opts?.ctx)
@@ -259,6 +274,19 @@ export const browserControlTool = {
           if (wanted == null || wanted === '') return { success: false, error: 'value is required — the option value, its visible label, or its index' }
           return { tool: 'browser_control', action, ...(await withFreshTree(await b.select({ ...base, tabId, ref, selector, value: String(wanted) }))) }
         }
+        case 'upload_file': {
+          // A file input has no settable .value from outside the page (browsers
+          // refuse it) — this is not something `type` can be made to cover.
+          if (!b.upload) return { success: false, error: 'file upload is not supported by this browser bridge version' }
+          if (!ref) return { success: false, error: 'ref is required — read the page first and pass the file input\'s ref' }
+          if (!Array.isArray(files) || !files.length) {
+            return { success: false, error: 'files is required — an array of absolute file paths. Use file_dialog to let the user pick real files first; do not invent paths.' }
+          }
+          return { tool: 'browser_control', action, ...(await withFreshTree(await b.upload({ ...base, tabId, ref, files }))) }
+        }
+        case 'network':
+          if (!b.network) return { success: false, error: 'network inspection is not supported by this browser bridge version' }
+          return { tool: 'browser_control', action, ...(await b.network({ ...base, tabId, limit })) }
         case 'key':
           if (!keys) return { success: false, error: 'keys is required' }
           return { tool: 'browser_control', action, ...(await b.key({ ...base, tabId, keys })) }

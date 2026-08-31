@@ -5,6 +5,7 @@ import { localeSnapshot } from '../locale'
 import { FEATURES, resolveFeatures, FEATURE_DEFAULTS } from '../features'
 import { McpServers } from './McpServers'
 import { PluginsManager } from './PluginsManager'
+import { ComfyPanel } from './ComfyPanel'
 import { VOICE_LABELS, DEFAULT_VOICE } from '../video/speech'
 import { requestTTS, stopTTS } from '../api'
 
@@ -353,6 +354,7 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
 
       <McpServers />
       <PluginsManager />
+      <ComfyPanel />
     </Modal>
   )
 }

@@ -15,7 +15,7 @@
 const { BrowserWindow, WebContentsView, ipcMain } = require('electron')
 const path = require('path')
 const {
-  buildTree, walkerSource, refResolverSource, parseRef, isStaleRef,
+  buildTree, walkerSource, refResolverSource, elementRefExpression, parseRef, isStaleRef,
 } = require('./browserTree.cjs')
 
 const TAB_BAR_H = 40
@@ -174,7 +174,11 @@ function createTab(s, url) {
   // Without it the model has no way to answer "does the UI work" — it was
   // observed inventing `window.__errors` and evaluating that, because reading
   // the real console was not a capability the tool offered.
-  const tab = { view, refEpoch: 0, console: [], failed: [] }
+  const tab = {
+    view, refEpoch: 0, console: [], failed: [],
+    // CDP (Network domain) request/response capture — see ensureDebugger().
+    network: [], debuggerAttached: false, debuggerWired: false, pendingRequests: new Map(),
+  }
   s.tabs.set(tabId, tab)
   s.activeTabId = tabId
 
@@ -187,6 +191,11 @@ function createTab(s, url) {
       // previous page into a report about this one would be worse than none.
       tab.console = []
       tab.failed = []
+      // Same reasoning: a captured request belongs to the document that made
+      // it. Carrying the previous page's network log into a report about this
+      // one is worse than an empty one.
+      tab.network = []
+      tab.pendingRequests.clear()
     }
   })
 
@@ -625,6 +634,145 @@ async function handleStorage(s, { tabId, type = 'local' } = {}) {
   }
 }
 
+// ── CDP: file upload + network inspection ───────────────────────────────
+//
+// Electron's own Chromium already speaks CDP (webContents.debugger) — this is
+// how the app gets Puppeteer/Playwright-grade capability (real file inputs,
+// real request logging) without bundling a second browser engine.
+
+const NETWORK_CAP = 200
+
+function pushNetwork(t, entry) {
+  t.network.push(entry)
+  if (t.network.length > NETWORK_CAP) t.network.splice(0, t.network.length - NETWORK_CAP)
+}
+
+// Idempotent: safe to call before every upload/network action. Attaching a
+// debugger that is already attached throws — caught and ignored, since it
+// means the earlier attach already wired everything this call needs.
+async function ensureDebugger(t) {
+  const wc = t.view.webContents
+  const dbg = wc.debugger
+  if (!t.debuggerAttached) {
+    try {
+      dbg.attach('1.3')
+      t.debuggerAttached = true
+    } catch (e) {
+      // "already attached" is not an error for our purposes; anything else is.
+      if (!/already attach/i.test(String(e?.message || e))) throw e
+      t.debuggerAttached = true
+    }
+  }
+  // Detaching (devtools opened, tab closed, crash) must flip the flag back, or
+  // the next call believes the domain is still enabled when it is not.
+  if (!t._debuggerDetachWired) {
+    dbg.on('detach', () => { t.debuggerAttached = false; t.debuggerWired = false })
+    t._debuggerDetachWired = true
+  }
+  if (!t.debuggerWired) {
+    dbg.on('message', (_e, method, params) => {
+      if (method === 'Network.requestWillBeSent') {
+        t.pendingRequests.set(params.requestId, {
+          url: params.request?.url, method: params.request?.method, at: Date.now(),
+        })
+      } else if (method === 'Network.responseReceived') {
+        const pending = t.pendingRequests.get(params.requestId)
+        pushNetwork(t, {
+          requestId: params.requestId,
+          url: params.response?.url || pending?.url,
+          method: pending?.method || null,
+          status: params.response?.status,
+          statusText: params.response?.statusText,
+          mimeType: params.response?.mimeType,
+          type: params.type,
+          failed: false,
+          at: Date.now(),
+        })
+      } else if (method === 'Network.loadingFailed') {
+        const pending = t.pendingRequests.get(params.requestId)
+        pushNetwork(t, {
+          requestId: params.requestId,
+          url: pending?.url || null,
+          method: pending?.method || null,
+          status: null,
+          errorText: params.errorText,
+          type: params.type,
+          failed: true,
+          at: Date.now(),
+        })
+        t.pendingRequests.delete(params.requestId)
+      } else if (method === 'Network.loadingFinished') {
+        t.pendingRequests.delete(params.requestId)
+      }
+    })
+    t.debuggerWired = true
+  }
+  await dbg.sendCommand('Network.enable')
+  await dbg.sendCommand('DOM.enable')
+}
+
+// DOM.setFileInputFiles is the ONLY way to put real files into a page's
+// <input type=file> from outside it — a page never exposes a settable .value
+// on one (browsers refuse it, for the obvious reason). This is genuinely a
+// gap the ref/click/type system cannot cover, not a duplicate of `type`.
+async function uploadFiles(s, { tabId, ref, files } = {}) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  if (!ref) return { success: false, error: 'ref is required — read the page first and pass the file input\'s ref' }
+  if (isStaleRef(ref, t.refEpoch)) {
+    return { success: false, error: 'stale ref — the page changed; call read again', stale: true }
+  }
+  if (!Array.isArray(files) || !files.length || files.some(f => typeof f !== 'string' || !f.trim())) {
+    return { success: false, error: 'files is required — a non-empty array of absolute file paths. Use file_dialog to let the user pick real files first.' }
+  }
+  const { index } = parseRef(ref)
+  const dbg = t.view.webContents.debugger
+  try {
+    await ensureDebugger(t)
+    const evalRes = await dbg.sendCommand('Runtime.evaluate', {
+      expression: elementRefExpression(index),
+      returnByValue: false,
+    })
+    if (evalRes.exceptionDetails) {
+      // The page-side throw (e.g. "ref does not point at a file input") is the
+      // most actionable message available — surface it verbatim.
+      const msg = evalRes.exceptionDetails.exception?.description
+        || evalRes.exceptionDetails.text || 'element could not be resolved'
+      return { success: false, error: msg }
+    }
+    if (!evalRes.result?.objectId) {
+      return { success: false, error: 'stale ref — element is gone; call read again', stale: true }
+    }
+    await dbg.sendCommand('DOM.setFileInputFiles', {
+      files,
+      objectId: evalRes.result.objectId,
+    })
+    return { success: true, uploaded: files.length, ref }
+  } catch (err) {
+    return { success: false, error: err?.message || String(err) }
+  }
+}
+
+async function readNetwork(s, { tabId, limit } = {}) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  try {
+    await ensureDebugger(t)
+  } catch (err) {
+    return { success: false, error: err?.message || String(err) }
+  }
+  const n = Math.min(Math.max(1, Number(limit) || 50), NETWORK_CAP)
+  return {
+    success: true,
+    url: safe(() => t.view.webContents.getURL(), ''),
+    requests: t.network.slice(-n).reverse(),
+    count: t.network.length,
+    note: t.network.length
+      ? 'Newest first. Capture began when network inspection was first requested on this page — requests made before that are not included.'
+      : 'No requests captured yet. Network inspection just attached; reload or navigate, then call again.',
+  }
+}
+
 // ── IPC ───────────────────────────────────────────────────────────────────
 
 function registerBrowserControl(getMainWindow) {
@@ -648,6 +796,7 @@ function registerBrowserControl(getMainWindow) {
   ipcMain.handle('browser:hover', (_e, p = {}) => hover(S(p), p))
   ipcMain.handle('browser:type', (_e, p = {}) => typeText(S(p), p))
   ipcMain.handle('browser:select', (_e, p = {}) => selectOption(S(p), p))
+  ipcMain.handle('browser:upload', (_e, p = {}) => uploadFiles(S(p), p))
   ipcMain.handle('browser:key', (_e, p = {}) => pressKey(S(p), p))
   ipcMain.handle('browser:scroll', (_e, p = {}) => scroll(S(p), p))
   ipcMain.handle('browser:screenshot', (_e, p = {}) => screenshot(S(p), p))
@@ -1014,6 +1163,8 @@ function registerBrowserControl(getMainWindow) {
         'Use action "diagnose" for a full report, or "read" to see the actual elements.',
     }
   })
+
+  ipcMain.handle('browser:network', (_e, p = {}) => readNetwork(S(p), p))
 
   ipcMain.handle('browser:console', (_e, p = {}) => {
     const s = S(p)

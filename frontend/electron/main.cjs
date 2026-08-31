@@ -18,6 +18,7 @@ const entitlement = require('./entitlement.cjs')
 const { registerRootsIpc, rootPathsFor, resolvePath, getTrustState } = require('./roots.cjs')
 const { enableProviderCors } = require('./cors.cjs')
 const { buildMenu } = require('./menu.cjs')
+const { registerDeepLink, handleSecondInstance } = require('./deepLink.cjs')
 const { createTray } = require('./tray.cjs')
 const { registerNotifications } = require('./notify.cjs')
 const { initAutoUpdate, checkForUpdates } = require('./updater.cjs')
@@ -51,6 +52,7 @@ const { registerGitIpc } = require('./git.cjs')
 const { registerFsWatcherIpc, stopAllFsWatchers } = require('./fsWatcher.cjs')
 const { registerMcpStdioClientIpc, stopAllMcpStdioClients } = require('./mcpStdioClient.cjs')
 const { registerOllamaIpc, destroyOllamaDaemon } = require('./ollamaDaemon.cjs')
+const { loadConfig: loadComfyConfig, registerComfyIpc, destroyComfyDaemon } = require('./comfyDaemon.cjs')
 const windowState = require('./windowState.cjs')
 
 const isDev = !app.isPackaged
@@ -172,7 +174,10 @@ const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_e, argv) => {
+    // A yogatik:// link launched this second process; the URL is in its argv.
+    // Without this the link only ever works on macOS.
+    try { handleSecondInstance(argv) } catch { /* still focus the window below */ }
     try {
       if (mainWindow && !mainWindow.isDestroyed()) {
         if (mainWindow.isMinimized()) mainWindow.restore()
@@ -258,6 +263,8 @@ if (!gotLock) {
     entitlement.installGate(ipcMain)
     entitlement.registerEntitlementIpc(ipcMain, { shell })
 
+    registerDeepLink({ getWindow })
+
     // Roots first: it loads the state fsBridge resolves every path against.
     registerRootsIpc({ getWindow })
     // Undo journal for file mutations; lives beside the roots registry.
@@ -307,6 +314,10 @@ if (!gotLock) {
       initAutoUpdate(getWindow)
       // Zero-touch Ollama daemon: probe, auto-start, pull — no terminal needed.
       registerOllamaIpc(getWindow)
+      // Zero-touch ComfyUI manager: probe, auto-start a configured install,
+      // submit/poll/fetch generation jobs — no terminal needed.
+      loadComfyConfig(app.getPath('userData'))
+      registerComfyIpc(getWindow)
     })
 
     // Start the local search sidecar WITHOUT awaiting it.
@@ -716,6 +727,7 @@ if (!gotLock) {
     destroyAllSessions()   // close any agent browser windows and their tabs
     destroyCompanion()     // and the floating companion
     destroyOllamaDaemon()  // kill any managed Ollama daemon + in-progress pulls
+    destroyComfyDaemon()   // kill any managed ComfyUI process
     if (searchSidecar) {
       searchSidecar.kill()
     }

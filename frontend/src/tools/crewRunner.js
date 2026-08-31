@@ -95,7 +95,7 @@ async function streamAgent(agentId, prompt, priorContext = '', sessionId = 'defa
 /**
  * Sequential Pipeline: executes agents in order, passing cumulative context forward.
  */
-export async function runSequentialCrew(steps = []) {
+export async function runSequentialCrew(steps = [], scope = null) {
   if (!Array.isArray(steps) || steps.length === 0) {
     return { success: false, error: 'Provide at least one step in steps array.' }
   }
@@ -128,7 +128,7 @@ export async function runSequentialCrew(steps = []) {
 /**
  * Hierarchical Crew: dispatches subtasks in parallel, then uses a synthesizer agent.
  */
-export async function runHierarchicalCrew(goal, specialists = [], synthesizer = 'agent_writer') {
+export async function runHierarchicalCrew(goal, specialists = [], synthesizer = 'agent_writer', scope = null) {
   if (!goal) return { success: false, error: 'goal is required' }
   const tasks = specialists.length ? specialists : [
     { agent: 'agent_researcher', task: `Research foundational facts and background for: ${goal}` },
@@ -136,7 +136,7 @@ export async function runHierarchicalCrew(goal, specialists = [], synthesizer = 
   ]
 
   // Run specialists concurrently under the shared global agent budget.
-  const specialistOutputs = await runAgentPool(tasks, ({ agent, task }) => streamAgent(agent, task))
+  const specialistOutputs = await runAgentPool(tasks, ({ agent, task }) => streamAgent(agent, task), scope)
 
   // Synthesize with manager/writer
   const mergedContext = specialistOutputs.map((s, idx) =>
@@ -159,7 +159,7 @@ export async function runHierarchicalCrew(goal, specialists = [], synthesizer = 
 /**
  * Reflexion / Self-Correction: Generator creates output, Critic reviews and scores it, Generator refines.
  */
-export async function runReflexionCrew(task, generatorAgent = 'agent_coder', criticAgent = 'agent_qa_engineer', maxIterations = 2) {
+export async function runReflexionCrew(task, generatorAgent = 'agent_coder', criticAgent = 'agent_qa_engineer', maxIterations = 2, scope = null) {
   if (!task) return { success: false, error: 'task is required' }
 
   let currentDraft = (await streamAgent(generatorAgent, task)).output
@@ -193,12 +193,13 @@ export async function runReflexionCrew(task, generatorAgent = 'agent_coder', cri
  * these 8 documents", "classify each row"). Concurrency is bounded by the shared
  * global agent budget.
  */
-export async function runMapReduceCrew(goal, items = [], mapper = 'agent_analyst', reducer = 'agent_writer') {
+export async function runMapReduceCrew(goal, items = [], mapper = 'agent_analyst', reducer = 'agent_writer', scope = null) {
   if (!goal) return { success: false, error: 'goal is required' }
   if (!Array.isArray(items) || items.length === 0) return { success: false, error: 'items[] is required for map_reduce' }
 
   const mapped = await runAgentPool(items, (item, i) =>
-    streamAgent(mapper, `Task (item ${i + 1} of ${items.length}) for the overall goal "${goal}":\n${typeof item === 'string' ? item : JSON.stringify(item)}`)
+    streamAgent(mapper, `Task (item ${i + 1} of ${items.length}) for the overall goal "${goal}":\n${typeof item === 'string' ? item : JSON.stringify(item)}`),
+    scope
   )
 
   const mergedContext = mapped.map((m, idx) =>
@@ -219,17 +220,84 @@ export async function runMapReduceCrew(goal, items = [], mapper = 'agent_analyst
 }
 
 /**
+ * Pull a JSON array out of a planner reply. Models wrap JSON in prose and
+ * fenced code blocks more often than they return it bare, so this looks for a
+ * ```json fence first, then falls back to the outermost [ ... ] span, and
+ * strips trailing commas before parsing — the single most common way a model
+ * breaks otherwise-valid JSON. Never throws; the caller decides what an empty
+ * result means.
+ */
+function parsePlanJson(text) {
+  const raw = String(text || '')
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(raw)
+  const candidate = fenced ? fenced[1] : raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1)
+  if (!candidate || !candidate.trim()) return null
+  const cleaned = candidate.trim().replace(/,\s*([\]}])/g, '$1')
+  try {
+    const parsed = JSON.parse(cleaned)
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Auto Crew: ONE planning call decomposes the goal into a specialist task
+ * list, grounded in the REAL roster (id/role/description of every available
+ * agent) so the plan names agents that exist rather than inventing roles —
+ * then delegates into runHierarchicalCrew, the same parallel-execute +
+ * synthesize machinery every other workflow already shares. This is the
+ * "auto-plan" gap the hand-authored workflows leave: today the CALLER
+ * decomposes the goal (steps[]/specialists[]); this is for when the caller
+ * wants ONE goal in and has no opinion on how to split the work.
+ */
+export async function runAutoCrew(goal, scope = null, synthesizer = 'agent_writer') {
+  if (!goal) return { success: false, error: 'goal is required' }
+
+  const roster = PRESET_AGENTS
+    .filter(a => a.id !== 'agent_orchestrator')
+    .map(a => `- ${a.id} (${a.role}): ${a.description || a.name}`)
+    .join('\n')
+
+  const plannerPrompt =
+    `Decompose this goal into 2-5 independent specialist subtasks that can run IN PARALLEL ` +
+    `(no subtask should depend on another's output — that is what the synthesis step is for). ` +
+    `Pick each "agent" from this exact roster by its id:\n${roster}\n\n` +
+    `Goal: "${goal}"\n\n` +
+    `Reply with ONLY a JSON array, no prose, no markdown fence: ` +
+    `[{"agent": "agent_id", "task": "self-contained instruction for that specialist"}, ...]`
+
+  const planned = await streamAgent('agent_planner', plannerPrompt)
+  const steps = parsePlanJson(planned.output)
+    ?.filter(s => s && typeof s.task === 'string' && s.task.trim())
+    ?.map(s => ({ agent: findPresetAgent(s.agent) ? s.agent : 'agent_analyst', task: s.task }))
+    ?.slice(0, 5)
+
+  if (!steps?.length) {
+    // A planner that returns nothing usable must not fail the whole call —
+    // fall back to the same default split runHierarchicalCrew already uses
+    // when the caller supplies no specialists at all.
+    const fallback = await runHierarchicalCrew(goal, [], synthesizer, scope)
+    return { ...fallback, workflow: 'auto', plan_source: 'fallback', planner_raw: planned.output.slice(0, 500) }
+  }
+
+  const result = await runHierarchicalCrew(goal, steps, synthesizer, scope)
+  return { ...result, workflow: 'auto', plan_source: 'planned', plan: steps }
+}
+
+/**
  * Best-of-N: run N instances of one generator agent on the SAME task in parallel
  * (diverse attempts), then a critic agent evaluates all candidates and returns
  * the strongest — or a merge of their best parts. Trades tokens for quality.
  */
-export async function runBestOfNCrew(task, generator = 'agent_writer', n = 3, critic = 'agent_auditor') {
+export async function runBestOfNCrew(task, generator = 'agent_writer', n = 3, critic = 'agent_auditor', scope = null) {
   if (!task) return { success: false, error: 'task is required' }
   const count = Math.max(2, Math.min(5, Number(n) || 3))
 
   const candidates = await runAgentPool(
     Array.from({ length: count }, (_, i) => i),
-    (i) => streamAgent(generator, `${task}\n\n(Attempt ${i + 1} of ${count} — aim for a distinct, high-quality take.)`)
+    (i) => streamAgent(generator, `${task}\n\n(Attempt ${i + 1} of ${count} — aim for a distinct, high-quality take.)`),
+    scope
   )
 
   const candidateBlock = candidates.map((c, idx) =>
@@ -255,19 +323,21 @@ export const crewOrchestratorTool = {
   schema: {
     description:
       'Execute multi-agent autonomous crew workflows inspired by CrewAI, AutoGen, and LangGraph. ' +
-      'Supports 5 workflow patterns: ' +
-      '1. "sequential" (Pipeline of agents passing context forward) ' +
-      '2. "hierarchical" (Parallel specialist agents + Lead synthesizer) ' +
-      '3. "reflexion" (Generator agent + Critic/QA evaluator refinement loop) ' +
-      '4. "map_reduce" (run one agent on MANY items in parallel, then a reducer merges — fastest for per-item work) ' +
-      '5. "best_of_n" (run N instances of one agent on the SAME task in parallel, then a critic picks/merges the best — higher quality). ' +
+      'Supports 6 workflow patterns: ' +
+      '1. "auto" (give ONLY a goal — a planning pass decomposes it into specialist subtasks itself, ' +
+      'runs them in parallel, and synthesizes; use this when you have not already decided how to split the work) ' +
+      '2. "sequential" (Pipeline of agents passing context forward) ' +
+      '3. "hierarchical" (Parallel specialist agents you name yourself + Lead synthesizer) ' +
+      '4. "reflexion" (Generator agent + Critic/QA evaluator refinement loop) ' +
+      '5. "map_reduce" (run one agent on MANY items in parallel, then a reducer merges — fastest for per-item work) ' +
+      '6. "best_of_n" (run N instances of one agent on the SAME task in parallel, then a critic picks/merges the best — higher quality). ' +
       'Use for complex multi-agent engineering, research pipelines, per-item batch work, and quality-critical answers.',
     parameters: {
       type: 'object',
       properties: {
         workflow: {
           type: 'string',
-          enum: ['sequential', 'hierarchical', 'reflexion', 'map_reduce', 'best_of_n'],
+          enum: ['auto', 'sequential', 'hierarchical', 'reflexion', 'map_reduce', 'best_of_n'],
           description: 'Orchestration workflow pattern',
         },
         items: {
@@ -295,25 +365,41 @@ export const crewOrchestratorTool = {
       required: ['workflow'],
     },
   },
-  async execute({ workflow, steps = [], goal = '', items = [], n = 3, generator = 'agent_coder', critic = 'agent_qa_engineer' }) {
+  async execute({ workflow, steps = [], goal = '', items = [], n = 3, generator = 'agent_coder', critic = 'agent_qa_engineer' }, opts = {}) {
+    const startedAt = Date.now()
+    const traceLabel = goal || steps?.[0]?.task || null
     try {
-      if (workflow === 'sequential') {
-        return runSequentialCrew(steps)
+      // The chat that ordered this crew. It scopes the pool's fair queue, so a
+      // 40-item map_reduce here cannot starve another conversation's agents.
+      const { getWorkspaceCtx } = await import('./localFs')
+      const scope = getWorkspaceCtx(opts?.ctx)?.conversationId ?? null
+
+      let result
+      if (workflow === 'auto') {
+        result = await runAutoCrew(goal, scope)
+      } else if (workflow === 'sequential') {
+        result = await runSequentialCrew(steps, scope)
+      } else if (workflow === 'hierarchical') {
+        result = await runHierarchicalCrew(goal, steps, 'agent_writer', scope)
+      } else if (workflow === 'reflexion') {
+        result = await runReflexionCrew(goal, generator, critic, 2, scope)
+      } else if (workflow === 'map_reduce') {
+        result = await runMapReduceCrew(goal, items, generator || 'agent_analyst', critic || 'agent_writer', scope)
+      } else if (workflow === 'best_of_n') {
+        result = await runBestOfNCrew(goal, generator || 'agent_writer', n, critic || 'agent_auditor', scope)
+      } else {
+        result = { success: false, error: `Unknown workflow: ${workflow}` }
       }
-      if (workflow === 'hierarchical') {
-        return runHierarchicalCrew(goal, steps)
-      }
-      if (workflow === 'reflexion') {
-        return runReflexionCrew(goal, generator, critic)
-      }
-      if (workflow === 'map_reduce') {
-        return runMapReduceCrew(goal, items, generator || 'agent_analyst', critic || 'agent_writer')
-      }
-      if (workflow === 'best_of_n') {
-        return runBestOfNCrew(goal, generator || 'agent_writer', n, critic || 'agent_auditor')
-      }
-      return { success: false, error: `Unknown workflow: ${workflow}` }
+
+      // Single choke point for trace recording — every workflow returns
+      // through here, so a new workflow can never ship without a trace the
+      // way a new IPC channel can never ship ungated past installGate.
+      const { recordCrewRun } = await import('../crewTrace')
+      recordCrewRun({ workflow, goal: traceLabel, durationMs: Date.now() - startedAt, result })
+      return result
     } catch (e) {
+      const { recordCrewRun } = await import('../crewTrace')
+      recordCrewRun({ workflow, goal: traceLabel, durationMs: Date.now() - startedAt, error: e.message })
       return { success: false, error: e.message }
     }
   },

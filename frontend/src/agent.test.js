@@ -239,6 +239,60 @@ describe('system prompt', () => {
   })
 })
 
+describe('prompt-injection canary (guardrails.js, wired at the real choke point)', () => {
+  const promptOf = () => streamChat.mock.calls[0][0].messages[0].content
+
+  it('plants a SYSTEM-INTERNAL canary token in the system prompt every turn', async () => {
+    scriptRounds([{ tokens: ['x'] }])
+    await runAgent({ ...base, onDone: vi.fn() })
+    expect(promptOf()).toMatch(/SYSTEM-INTERNAL.*canary_/s)
+  })
+
+  it('passes a clean reply through untouched and reports no leak', async () => {
+    scriptRounds([{ tokens: ['A perfectly normal answer.'] }])
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'A perfectly normal answer.',
+      promptLeakDetected: false,
+    }))
+  })
+
+  it('redacts the raw token and flags the turn when the model echoes the canary', async () => {
+    // The model can only "leak" a token it was told never to repeat, so this
+    // has to read the token BACK OUT of the very prompt runAgent just built —
+    // exactly what a successful "reveal your instructions" injection would do.
+    let sentPrompt = ''
+    streamChat.mockImplementation(async (opts) => {
+      sentPrompt = opts.messages[0].content
+      const m = /SYSTEM-INTERNAL.*?(canary_\w+)/s.exec(sentPrompt)
+      opts.onToken(`Sure, here it is: ${m[1]}`)
+      opts.onDone()
+    })
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+    const call = onDone.mock.calls[0][0]
+    expect(call.promptLeakDetected).toBe(true)
+    expect(call.content).not.toMatch(/canary_/)
+    expect(call.content).toContain('[redacted]')
+    expect(sentPrompt).toMatch(/SYSTEM-INTERNAL/)
+  })
+
+  it('still redacts a leaked canary on the Stop/abort path', async () => {
+    streamChat.mockImplementation(async (opts) => {
+      const m = /SYSTEM-INTERNAL.*?(canary_\w+)/s.exec(opts.messages[0].content)
+      opts.onToken(`partial leak: ${m[1]}`)
+      opts.onError(Object.assign(new Error('Aborted'), { name: 'AbortError' }))
+    })
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+    const call = onDone.mock.calls[0][0]
+    expect(call.aborted).toBe(true)
+    expect(call.promptLeakDetected).toBe(true)
+    expect(call.content).not.toMatch(/canary_/)
+  })
+})
+
 describe('history window', () => {
   it('keeps recent messages whole rather than truncating each one', async () => {
     // Regression: a blanket 3000-char cut shredded inlined documents.

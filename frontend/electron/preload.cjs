@@ -121,6 +121,22 @@ contextBridge.exposeInMainWorld('__YOGATIK_TERMINAL__', {
 })
 
 // Native-menu actions (New Chat / Settings / Grant Folder / update-ready / palette / arena) → renderer.
+contextBridge.exposeInMainWorld('__YOGATIK_LINKS__', {
+  /** Tell main the renderer can receive links; returns one that arrived first. */
+  ready: () => ipcRenderer.invoke('deeplink:ready'),
+  /** Subscribe to yogatik:// links that arrive while the app is running. */
+  on(cb) {
+    const handler = (_e, link) => { try { cb(link) } catch { /* ignore */ } }
+    ipcRenderer.on('deep-link', handler)
+    return () => ipcRenderer.removeListener('deep-link', handler)
+  },
+  recent: {
+    list: () => ipcRenderer.invoke('recent:list'),
+    add: (path) => ipcRenderer.invoke('recent:add', { path }),
+    clear: () => ipcRenderer.invoke('recent:clear'),
+  },
+})
+
 contextBridge.exposeInMainWorld('__YOGATIK_MENU__', {
   on(cb) {
     const handler = (_e, action) => { try { cb(action) } catch { /* ignore */ } }
@@ -226,6 +242,10 @@ contextBridge.exposeInMainWorld('__YOGATIK_BROWSER__', {
   // sendInputEvent cannot reach, so typing at one did nothing while reporting
   // success. Every form with a country/quantity/date dropdown was unfillable.
   select: (p) => ipcRenderer.invoke('browser:select', p || {}),
+  // Real file inputs, real request logging — via Electron's own CDP bridge
+  // (webContents.debugger), not a second bundled browser engine.
+  upload: (p) => ipcRenderer.invoke('browser:upload', p || {}),
+  network: (p) => ipcRenderer.invoke('browser:network', p || {}),
   cookies: (p) => ipcRenderer.invoke('browser:cookies', p || {}),
   storage: (p) => ipcRenderer.invoke('browser:storage', p || {}),
   // These three were advertised by the tool schema and had NO bridge method,
@@ -338,6 +358,28 @@ contextBridge.exposeInMainWorld('__YOGATIK_OLLAMA__', {
     const handler = (_e, payload) => { try { cb(payload) } catch {} }
     ipcRenderer.on('ollama:pull-progress', handler)
     return () => ipcRenderer.removeListener('ollama:pull-progress', handler)
+  },
+})
+
+// Zero-touch ComfyUI manager — local image/video generation. The main process
+// handles detect/spawn/submit/poll/fetch; the renderer only sees bytes.
+contextBridge.exposeInMainWorld('__YOGATIK_COMFY__', {
+  /** { installed, running, root, port, checkpoints, svdCheckpoints, samplers, schedulers } */
+  status: () => ipcRenderer.invoke('comfy:status'),
+  /** Point Yogatik at an existing ComfyUI install folder. { ok, status? , error? } */
+  setRoot: (root) => ipcRenderer.invoke('comfy:set-root', { root }),
+  /** Start the managed server if a root is configured and nothing is running. */
+  start: () => ipcRenderer.invoke('comfy:start'),
+  /** txt2img. Returns { success, bytes (base64), mime, filename, seed, width, height } */
+  generateImage: (args) => ipcRenderer.invoke('comfy:generate-image', args || {}),
+  /** img2vid (Stable Video Diffusion). Returns { success, bytes (base64 WEBP), mime, filename, seed, fps, frames } */
+  generateVideo: (args) => ipcRenderer.invoke('comfy:generate-video', args || {}),
+  /** Best-effort interrupt of whatever ComfyUI is currently running. */
+  cancel: () => ipcRenderer.invoke('comfy:cancel'),
+  onProgress: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch {} }
+    ipcRenderer.on('comfy:progress', handler)
+    return () => ipcRenderer.removeListener('comfy:progress', handler)
   },
 })
 

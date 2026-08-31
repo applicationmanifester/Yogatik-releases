@@ -4,7 +4,9 @@ import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, Us
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { setUserQuestionHandler } from './tools/askUser'
+import { useToast } from './hooks/useToast'
 import { copyChatScope, rebindChatScope } from './chatScope'
+import { playCue, configureSoundCues } from './soundCues'
 import { runMultiAgentDebate } from './multiAgent'
 import { startActivityTurn, publishStream, publishStep, endActivityTurn, setActivityConversation } from './activityStream'
 import { YogatikLogo } from './components/YogatikLogo'
@@ -23,6 +25,7 @@ import { Modal } from './components/Modal'
 import { TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 import { ModelPicker } from './components/ModelPicker'
 import { ContextMeter } from './components/ContextMeter'
+import { StylePicker } from './components/StylePicker'
 import { runWorkflow } from './workflows'
 import { FloatingCompanion } from './components/FloatingCompanion'
 import { ActiveTimerIndicator } from './components/ActiveTimerIndicator'
@@ -361,13 +364,14 @@ export default function App() {
     }, 300)
     return () => clearTimeout(timer)
   }, [input])
-  const [toast, setToast] = useState(null)
-  const showToast = useCallback((msg) => {
-    setToast(msg)
-    // Scale dismiss timeout by message length — short messages 2s, long messages up to 5s
-    const ms = Math.min(5000, Math.max(2000, msg.length * 60))
-    setTimeout(() => setToast(t => (t === msg ? null : t)), ms)
-  }, [])
+  // Toasts live in the ToastProvider (hooks/useToast.jsx), which main.jsx
+  // already wraps this component in. App used to keep its own single-slot
+  // toast state and a `.toast` div with `pointer-events: none` — so only one
+  // message could show at a time and no toast could ever carry a button.
+  const { show: pushToast, update: updateToast, dismiss: dismissToast } = useToast()
+  // Same signature as before, so every existing call site is unchanged; the
+  // second argument is what unlocks actions and progress at new ones.
+  const showToast = useCallback((msg, options) => pushToast(msg, options), [pushToast])
   const showConfirm = useCallback((msg, onOk, { okLabel = 'OK', cancelLabel = 'Cancel', onCancel } = {}) => {
     setConfirmModal({ msg, okLabel, cancelLabel, onOk, onCancel })
   }, [])
@@ -398,6 +402,14 @@ export default function App() {
     setChatRoots(updated || [])
   }, [])
   const features = useMemo(() => resolveFeatures(prefs.features), [prefs.features])
+
+  // Push the sound preference into the (non-React) cue module whenever it
+  // changes. playCue is called from a streaming callback that has no access to
+  // React state, so the module has to hold the setting itself — the same shape
+  // as locale.js's overrides, and for the same reason.
+  useEffect(() => {
+    configureSoundCues({ enabled: features.soundCues === true })
+  }, [features.soundCues])
   // The vision fallback lives outside React; it needs the toggle, not a prop.
   // Segmentation rides on the SAME on-device-vision consent as the VLM and the
   // detectors: it is another model download, and asking twice for the same
@@ -986,6 +998,96 @@ export default function App() {
   const scrollToBottom = useCallback((behavior = 'smooth') => {
     messagesEnd.current?.scrollIntoView({ behavior })
     setAtBottom(true)
+  }, [])
+
+  const getSystemPrompt = useCallback((query = '', customSystemPrompt = '', convPersona = null) => {
+    const personaToUse = convPersona || activeTemplate
+    const t = promptTemplates.find(tpl => tpl.id === personaToUse)
+    const basePrompt = customSystemPrompt || t?.system_prompt || 'You are Yogatik, an intelligent AI assistant.'
+
+    let queryContext = ''
+    const q = (query || '').toLowerCase()
+
+    if (q.includes('ppt') || q.includes('presentation') || q.includes('slides') || q.includes('deck')) {
+      queryContext = '\n\nQUERY-SPECIFIC FORMATTING (PRESENTATION SLIDES):\n' +
+        '- Format content into clear slide blocks starting with `# Slide 1: [Title]`, `# Slide 2: [Title]`.\n' +
+        '- Keep text concise, bullet-pointed, and executive-ready for 1-click PowerPoint (.ppt) export.'
+    } else if (q.includes('prd') || q.includes('product requirement') || q.includes('spec') || q.includes('architecture')) {
+      queryContext = '\n\nQUERY-SPECIFIC FORMATTING (EXECUTIVE PRD / SPEC):\n' +
+        '- Include: 1. Executive Summary 2. Problem Statement 3. User Stories (Table) 4. Technical Architecture (Diagram) 5. Milestones & KPI Metrics.'
+    } else if (q.includes('table') || q.includes('csv') || q.includes('compare') || q.includes('data')) {
+      queryContext = '\n\nQUERY-SPECIFIC FORMATTING (DATA TABLE / SPREADSHEET):\n' +
+        '- Present comparative data in structured Markdown tables (| Header 1 | Header 2 |) ready for 1-click CSV export.'
+    }
+
+    const folderCtx = isDesktop()
+      ? `\n\nWORKING FOLDERS & REPOSITORY ACCESS:\n` +
+        (chatRoots.length ? chatRoots.map(r => `- ${r.path}${r.primary ? '  (primary)' : ''}`).join('\n') : '- Current workspace directory\n') +
+        `\nYou have full native file-system access to these folders via the fs_* tools and terminal_run. ` +
+        `Use them proactively when the user asks to inspect, create, read, edit, rename, move, delete files or directories:\n` +
+        `- fs_list   → list contents and directory tree\n` +
+        `- fs_read   → read a file\n` +
+        `- fs_write  → create or overwrite a file\n` +
+        `- fs_edit   → patch a file by exact string replacement\n` +
+        `- fs_search → grep across folders\n` +
+        `- fs_find_files → find files by name / extension\n` +
+        `- fs_delete → delete a file or directory\n` +
+        `- fs_mkdir  → create a directory tree\n` +
+        `- fs_move   → move or rename a file/directory\n` +
+        `- fs_add_folder → pick or grant another folder\n` +
+        `- terminal_run → execute native CLI commands, builds, and tests.\n` +
+        `Never claim you lack file access or ask the user to paste code when you can inspect it directly.`
+      : ''
+
+    return (
+      basePrompt +
+      folderCtx +
+      queryContext +
+      '\n\nTOOL-USE PRIORITY (CRITICAL — always follow these rules):\n' +
+      '- ALWAYS call tools before answering from memory when real-time or external data is needed.\n' +
+      '- For any question about current events, news, prices, weather, stock data, or anything after 2023: call `web_search` FIRST.\n' +
+      '- For any translation request ("translate X to Y", "how do you say X in Y"): call the `translate` tool IMMEDIATELY.\n' +
+      '- For any code execution, math computation, or data processing: call `js_execute` or `code_execute` instead of guessing.\n' +
+      '- For any image generation, photorealistic art, or visual scenes: call `image_generate` or `sticker_generate`.\n' +
+      '- For PDF document creation / PDF export: call `md_to_pdf` (it automatically renders an instant 1-click download button in the chat UI; do NOT output raw base64 or write local files manually).\n' +
+      '- For Word (.doc), PowerPoint (.pptx), or CSV file creation: call `doc_export` or `doc_enhance`.\n' +
+      '- For research/deep analysis: call `deep_research` or `web_search` to gather facts before responding.\n' +
+      '- Accuracy over speed: if you are uncertain about a fact, use a tool to verify it. Do NOT guess or hallucinate.\n' +
+      '- When tools are enabled, prefer multi-step tool chains to build complete, accurate answers.\n' +
+      '\nPRESENTATION, DOCUMENT & SLIDE ENHANCEMENT GUIDELINES:\n' +
+      '- Present answers with high visual clarity: use clear headers (#, ##), formatted bullet points, bold key terms, and structured Markdown tables.\n' +
+      '- When creating PowerPoint presentations (.pptx), structure slides cleanly using horizontal rules (`---`) between slides, `# Slide Title` or `## Slide Title`, formatted bullets with `* **Key Term**: Detailed explanation`, KPI stat callouts (e.g. `+45% Growth`, `$2.5M Revenue`, `99.9% Uptime`), and comparison tables (`| Feature | Value |`).\n' +
+      '- When creating or editing PowerPoint presentations, Word documents, CSV spreadsheets, or reports, call `doc_export` or `doc_enhance` to generate high-quality files with slide graphics, calculated totals, and executive styling.\n' +
+      '- When asked to generate visual aids, graphics, icons, or stickers, call the `sticker_generate` or `image_generate` tools.\n' +
+      '- When explaining processes or workflows, include Mermaid flowcharts using `diagram` or ```mermaid code blocks so diagrams are razor-sharp vector graphics with readable text.\n' +
+      '- Keep document exports (Word .doc, PowerPoint .pptx, CSV) structured into clean sections and slides.'
+    )
+  }, [promptTemplates, activeTemplate, chatRoots])
+
+  /**
+   * Start a face-to-face call. Live is a websocket protocol only Gemini speaks,
+   * so it is gated on a Gemini key rather than the active chat provider.
+   */
+  const startLive = useCallback(async () => {
+    const cfg = await getLiveConfig().catch(() => ({ available: false }))
+    if (!cfg.available) {
+      setErrorModalMsg('Live needs a model to talk to.\n\nAdd a key for any provider in Settings, or add a Gemini key for the realtime engine (lowest latency, true interruption). Free Gemini keys: aistudio.google.com/apikey')
+      return
+    }
+    setLiveConfig({ ...cfg, persona: getSystemPrompt() })
+  }, [getSystemPrompt])
+
+  /** Write each completed spoken turn into the current conversation. */
+  const saveLiveTurn = useCallback(async (role, text) => {
+    const msg = { role, content: text, sources: [], createdAt: Date.now(), live: true }
+    try {
+      let id = liveConvRef.current
+      if (!id) {
+        id = await createConversation(`Live — ${new Date().toLocaleString()}`)
+        liveConvRef.current = id
+      }
+      await saveMessage(id, msg)
+    } catch (e) { console.error('Failed to persist live turn', e) }
   }, [])
 
   // When a chat is opened, loaded, or switched, always show the latest prompt and response at the bottom
@@ -1698,6 +1800,42 @@ export default function App() {
     if (window.innerWidth <= 768) setSidebarOpen(false)
   }, [provider, model, temperature, webSearch, tools])
 
+  /**
+   * yogatik:// deep links.
+   *
+   * `ready()` is what makes a COLD start work: on Windows and Linux the URL is
+   * in the process argv long before React mounts, so main parks it and hands it
+   * over the moment the renderer says it can listen. Without that handshake the
+   * very first link a user ever follows is silently dropped — the app just
+   * opens on the default chat and nothing reports why.
+   */
+  useEffect(() => {
+    const links = typeof window !== 'undefined' ? window.__YOGATIK_LINKS__ : null
+    if (!links?.on) return
+
+    const handle = (link) => {
+      if (!link?.action) return
+      const p = link.params || {}
+      if (link.action === 'open' && p.chat) {
+        openChatById(p.chat)
+      } else if (link.action === 'new') {
+        newChatRef.current?.()
+        if (p.text) setInput(String(p.text))
+      } else if (link.action === 'settings') {
+        setSidebarOpen(true); setSettingsOpen(true)
+      } else if (link.action === 'live') {
+        startLive()
+      } else {
+        // Naming the action beats doing nothing: a mistyped link should say so.
+        showToast(`Unknown link action: ${link.action}`)
+      }
+    }
+
+    const unlisten = links.on(handle)
+    links.ready?.().then(pendingLink => { if (pendingLink) handle(pendingLink) }).catch(() => {})
+    return () => { if (typeof unlisten === 'function') unlisten() }
+  }, [showToast, openChatById, startLive])
+
   const switchChat = async (idx) => {
     setActiveIdx(idx)
     activeIdxRef.current = idx
@@ -1945,69 +2083,7 @@ export default function App() {
     } catch { setTtsPlaying(false); console.error('TTS failed') }
   }
 
-  const getSystemPrompt = useCallback((query = '', customSystemPrompt = '', convPersona = null) => {
-    const personaToUse = convPersona || activeTemplate
-    const t = promptTemplates.find(tpl => tpl.id === personaToUse)
-    const basePrompt = customSystemPrompt || t?.system_prompt || 'You are Yogatik, an intelligent AI assistant.'
 
-    let queryContext = ''
-    const q = (query || '').toLowerCase()
-
-    if (q.includes('ppt') || q.includes('presentation') || q.includes('slides') || q.includes('deck')) {
-      queryContext = '\n\nQUERY-SPECIFIC FORMATTING (PRESENTATION SLIDES):\n' +
-        '- Format content into clear slide blocks starting with `# Slide 1: [Title]`, `# Slide 2: [Title]`.\n' +
-        '- Keep text concise, bullet-pointed, and executive-ready for 1-click PowerPoint (.ppt) export.'
-    } else if (q.includes('prd') || q.includes('product requirement') || q.includes('spec') || q.includes('architecture')) {
-      queryContext = '\n\nQUERY-SPECIFIC FORMATTING (EXECUTIVE PRD / SPEC):\n' +
-        '- Include: 1. Executive Summary 2. Problem Statement 3. User Stories (Table) 4. Technical Architecture (Diagram) 5. Milestones & KPI Metrics.'
-    } else if (q.includes('table') || q.includes('csv') || q.includes('compare') || q.includes('data')) {
-      queryContext = '\n\nQUERY-SPECIFIC FORMATTING (DATA TABLE / SPREADSHEET):\n' +
-        '- Present comparative data in structured Markdown tables (| Header 1 | Header 2 |) ready for 1-click CSV export.'
-    }
-
-    const folderCtx = isDesktop()
-      ? `\n\nWORKING FOLDERS & REPOSITORY ACCESS:\n` +
-        (chatRoots.length ? chatRoots.map(r => `- ${r.path}${r.primary ? '  (primary)' : ''}`).join('\n') : '- Current workspace directory\n') +
-        `\nYou have full native file-system access to these folders via the fs_* tools and terminal_run. ` +
-        `Use them proactively when the user asks to inspect, create, read, edit, rename, move, delete files or directories:\n` +
-        `- fs_list   → list contents and directory tree\n` +
-        `- fs_read   → read a file\n` +
-        `- fs_write  → create or overwrite a file\n` +
-        `- fs_edit   → patch a file by exact string replacement\n` +
-        `- fs_search → grep across folders\n` +
-        `- fs_find_files → find files by name / extension\n` +
-        `- fs_delete → delete a file or directory\n` +
-        `- fs_mkdir  → create a directory tree\n` +
-        `- fs_move   → move or rename a file/directory\n` +
-        `- fs_add_folder → pick or grant another folder\n` +
-        `- terminal_run → execute native CLI commands, builds, and tests.\n` +
-        `Never claim you lack file access or ask the user to paste code when you can inspect it directly.`
-      : ''
-
-    return (
-      basePrompt +
-      folderCtx +
-      queryContext +
-      '\n\nTOOL-USE PRIORITY (CRITICAL — always follow these rules):\n' +
-      '- ALWAYS call tools before answering from memory when real-time or external data is needed.\n' +
-      '- For any question about current events, news, prices, weather, stock data, or anything after 2023: call `web_search` FIRST.\n' +
-      '- For any translation request ("translate X to Y", "how do you say X in Y"): call the `translate` tool IMMEDIATELY.\n' +
-      '- For any code execution, math computation, or data processing: call `js_execute` or `code_execute` instead of guessing.\n' +
-      '- For any image generation, photorealistic art, or visual scenes: call `image_generate` or `sticker_generate`.\n' +
-      '- For PDF document creation / PDF export: call `md_to_pdf` (it automatically renders an instant 1-click download button in the chat UI; do NOT output raw base64 or write local files manually).\n' +
-      '- For Word (.doc), PowerPoint (.pptx), or CSV file creation: call `doc_export` or `doc_enhance`.\n' +
-      '- For research/deep analysis: call `deep_research` or `web_search` to gather facts before responding.\n' +
-      '- Accuracy over speed: if you are uncertain about a fact, use a tool to verify it. Do NOT guess or hallucinate.\n' +
-      '- When tools are enabled, prefer multi-step tool chains to build complete, accurate answers.\n' +
-      '\nPRESENTATION, DOCUMENT & SLIDE ENHANCEMENT GUIDELINES:\n' +
-      '- Present answers with high visual clarity: use clear headers (#, ##), formatted bullet points, bold key terms, and structured Markdown tables.\n' +
-      '- When creating PowerPoint presentations (.pptx), structure slides cleanly using horizontal rules (`---`) between slides, `# Slide Title` or `## Slide Title`, formatted bullets with `* **Key Term**: Detailed explanation`, KPI stat callouts (e.g. `+45% Growth`, `$2.5M Revenue`, `99.9% Uptime`), and comparison tables (`| Feature | Value |`).\n' +
-      '- When creating or editing PowerPoint presentations, Word documents, CSV spreadsheets, or reports, call `doc_export` or `doc_enhance` to generate high-quality files with slide graphics, calculated totals, and executive styling.\n' +
-      '- When asked to generate visual aids, graphics, icons, or stickers, call the `sticker_generate` or `image_generate` tools.\n' +
-      '- When explaining processes or workflows, include Mermaid flowcharts using `diagram` or ```mermaid code blocks so diagrams are razor-sharp vector graphics with readable text.\n' +
-      '- Keep document exports (Word .doc, PowerPoint .pptx, CSV) structured into clean sections and slides.'
-    )
-  }, [promptTemplates, activeTemplate, chatRoots])
 
   const loadingRef = useRef(null)
   useEffect(() => { loadingRef.current = !!(conv?.clientId && loadingMap[conv.clientId]) }, [loadingMap, conv?.clientId])
@@ -2419,14 +2495,20 @@ export default function App() {
         // produced no signal at all. hasReply puts an inline box on the
         // notification, so they can carry on without switching back.
         try {
-          if (shouldNotifyTurn({
+          const notify = shouldNotifyTurn({
             isDesktop: isDesktop(),
             hidden: typeof document !== 'undefined' && document.hidden,
             focused: typeof document !== 'undefined' && document.hasFocus(),
             aborted: !!meta?.aborted,
             error: meta?.error,
             hasText: !!content.trim(),
-          }) && typeof window.__YOGATIK_NOTIFY__ === 'function') {
+          })
+          // The cue rides the SAME decision as the notification: it fires when
+          // the answer landed somewhere the user was not looking. Playing it
+          // for a reply they are already watching stream in is just noise, and
+          // noise is what gets a sound feature switched off for good.
+          if (notify) playCue(meta?.error ? 'error' : 'reply')
+          if (notify && typeof window.__YOGATIK_NOTIFY__ === 'function') {
             window.__YOGATIK_NOTIFY__({
               title: notificationTitle(conversationsRef.current?.[activeIdxRef.current]?.title),
               body: notificationBody(content),
@@ -2607,12 +2689,26 @@ export default function App() {
         apiKey: activeKey,
       })
       if (enhanced && enhanced.trim() && enhanced.trim() !== input.trim()) {
+        // Enhancing REPLACES what the user wrote. Without a way back, one click
+        // destroys the original wording and the only recovery is retyping it —
+        // so the undo travels with the confirmation rather than living in a
+        // separate history UI nobody would find.
+        const original = input
         setInput(enhanced.trim())
         setTimeout(() => {
           autoResize()
           textareaRef.current?.focus()
         }, 50)
-        showToast('✨ Prompt enhanced!')
+        showToast('✨ Prompt enhanced', {
+          variant: 'success',
+          actions: [{
+            label: 'Undo',
+            onClick: () => {
+              setInput(original)
+              setTimeout(() => { autoResize(); textareaRef.current?.focus() }, 50)
+            },
+          }],
+        })
       } else {
         showToast('✨ Prompt is already well-structured')
       }
@@ -2808,33 +2904,7 @@ export default function App() {
     }
   }
 
-  /**
-   * Start a face-to-face call. Live is a websocket protocol only Gemini speaks,
-   * so it is gated on a Gemini key rather than the active chat provider.
-   */
-  const startLive = async () => {
-    const cfg = await getLiveConfig()
-    if (!cfg.available) {
-      setErrorModalMsg('Live needs a model to talk to.\n\nSelect a provider with a saved API key in Settings, or use the On-device model (no key needed). Live works with any provider — Groq, NVIDIA, OpenRouter, OpenAI, Gemini, or local.')
-      return
-    }
-    setLiveConfig({ ...cfg, persona: getSystemPrompt() })
-  }
 
-  /** Write each completed spoken turn into the current conversation. */
-  const saveLiveTurn = useCallback(async (role, text) => {
-    const msg = { role, content: text, sources: [], createdAt: Date.now(), live: true }
-    try {
-      // A call owns its own conversation — it must not depend on, or write
-      // into, whatever chat happens to be open.
-      let id = liveConvRef.current
-      if (!id) {
-        id = await createConversation(`Live — ${new Date().toLocaleString()}`, null, provider, model)
-        liveConvRef.current = id
-      }
-      await saveMessage(id, msg)
-    } catch (e) { console.error('Failed to persist live turn', e) }
-  }, [provider, model])
 
   const continueTurn = async () => {
     if (isStreamingHere) return
@@ -2865,10 +2935,22 @@ export default function App() {
   }
 
   const handleBackup = async () => {
+    // A whole-database export used to run silently and then produce a modal.
+    // On a large vault that is several seconds of a window that looks frozen.
+    // The bar is INDETERMINATE because downloadBackup reports no steps —
+    // inventing a percentage would be a more confident lie than no percentage.
+    const id = pushToast('Exporting your backup…', { progress: null })
     try {
       const c = await downloadBackup()
+      dismissToast(id)
       showInfoModal('Backup Exported', `Exported ${c.conversations} conversations, ${c.messages} messages and ${c.documents} documents.\n\nAPI keys are not included — add them again after restoring.`)
-    } catch (e) { setErrorModalMsg(e.message) }
+    } catch (e) {
+      dismissToast(id)
+      pushToast(`Backup failed: ${e.message}`, {
+        variant: 'error',
+        actions: [{ label: 'Retry', onClick: () => handleBackup(), primary: true }],
+      })
+    }
   }
 
   const handleRestore = async (file) => {
@@ -2877,12 +2959,23 @@ export default function App() {
 
   const doRestore = async (file, mode) => {
     setRestoreModal(null)
+    const id = pushToast(mode === 'replace' ? 'Replacing your data…' : 'Merging the backup…', { progress: null })
     try {
       const c = await restoreBackup(file, mode)
+      updateToast(id, { message: 'Reloading your chats…' })
       await loadConversations()
       refreshDocs()
+      dismissToast(id)
       showInfoModal('Restore Complete', `Restored ${c.conversations} conversations, ${c.messages} messages and ${c.documents} documents.`)
-    } catch (e) { setErrorModalMsg(e.message) }
+    } catch (e) {
+      dismissToast(id)
+      // Retry carries the same file and mode, so the user does not have to
+      // find the file again to try once more.
+      pushToast(`Restore failed: ${e.message}`, {
+        variant: 'error',
+        actions: [{ label: 'Try again', onClick: () => doRestore(file, mode), primary: true }],
+      })
+    }
   }
 
   /**
@@ -3640,6 +3733,12 @@ export default function App() {
               provider={conv?.provider || provider}
               model={conv?.model !== undefined ? conv.model : model} />
           </div>
+
+          {/* styles.js has shipped for months and agent.js appends the active
+              style to every reply, but nothing ever rendered a selector — the
+              feature was reachable only by editing IndexedDB by hand. Sits with
+              the model picker because both answer "how will this chat reply". */}
+          <StylePicker conversationId={scopeId} onToast={showToast} />
 
           <button className="small-btn auto-pick wide" onClick={() => handleAutoPick(conv?.provider || provider)}
             disabled={autoPicking || !models[conv?.provider || provider]?.available}
@@ -5473,7 +5572,7 @@ export default function App() {
         />
       )}
       </React.Suspense>
-      {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
+
       {/* Generic confirm modal — no more native confirm() dialogs */}
       {permRequest && (
         <div className="perm-overlay">

@@ -82,6 +82,28 @@ describe('diagnoseError — on-device model storage', () => {
   })
 })
 
+describe('diagnoseError — prompt-injection canary leak', () => {
+  // The literal message agent.js's checkCanaryForLeak logs. Reported through the
+  // generic bucket this read as "Model Execution Failed — an unexpected response
+  // was received from the model provider" and sent the user to their API key for
+  // a security event that has nothing to do with one.
+  it('recognises a canary leak as a security event, not a provider failure', () => {
+    const d = diagnoseError(
+      'Prompt-injection defense: canary leak detected — the reply echoed an internal marker it was ' +
+      'told never to reveal.',
+    )
+    expect(d.type).toBe('prompt_injection')
+    expect(d.category).toBe('Prompt-Injection Defense')
+    expect(d.suggestion).not.toMatch(/provider/i)
+    expect(d.actionType).toBe('dismiss')
+  })
+
+  it('does not collide with the quota/storage buckets it sits next to', () => {
+    expect(diagnoseError('429: You exceeded your current quota').type).toBe('quota')
+    expect(diagnoseError("QuotaExceededError: Failed to execute 'put' on 'Cache'").type).toBe('model_storage')
+  })
+})
+
 describe('tool-argument errors are not provider failures', () => {
   // Field report: fs_search returned "query is required" and the UI announced
   // "Model Execution Failed — an unexpected response was received from the

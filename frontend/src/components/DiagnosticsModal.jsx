@@ -1,13 +1,20 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import {
   AlertTriangle, Check, Copy, Trash2, X, ShieldAlert, Cpu,
-  RefreshCw, Globe, Smartphone, Key, Zap, Sliders, ChevronDown, Wrench, Activity
+  RefreshCw, Globe, Smartphone, Key, Zap, Sliders, ChevronDown, Wrench, Activity, Database
 } from 'lucide-react'
 import { getErrorLog, clearErrorLog, getDiagnosticsReport, diagnoseError } from '../errorLog'
 import { latencyReport } from '../telemetry'
 import { report as liveReport } from '../live/metrics'
-import { runSafetyScreenEval } from '../evalHarness'
+import { runSafetyScreenEval, runAndRecordEval } from '../evalHarness'
 import { db, getAgentTraces } from '../db'
+
+function fmtDelta(d) {
+  if (d == null || Number.isNaN(d)) return null
+  const pct = Math.round(d * 100)
+  if (pct === 0) return { text: '±0%', color: 'var(--text-muted)' }
+  return pct > 0 ? { text: `+${pct}%`, color: '#10b981' } : { text: `${pct}%`, color: '#ef4444' }
+}
 
 function fmtMs(v) { return v == null ? '—' : `${Math.round(v)}ms` }
 
@@ -30,6 +37,16 @@ export function DiagnosticsModal({ onClose }) {
   // eval pass rate (model-free regression over the golden set).
   const perf = useMemo(() => latencyReport(), [logs])
   const safety = useMemo(() => runSafetyScreenEval(), [])
+  // RAG regression golden set (retrieval-quality answer to the
+  // LLM-Evaluation-Framework / regression-detection repos this app has no
+  // Prometheus/CI to run) — recorded once per modal open so "vs last run"
+  // means something across sessions, not just across renders.
+  const [ragRun, setRagRun] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    runAndRecordEval().then(res => { if (!cancelled) setRagRun(res) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
   // Live had no instrumentation at all, so every decision about that module
   // was a guess. These are the six numbers from the roadmap and nothing else.
   const live = useMemo(() => liveReport(), [logs])
@@ -222,6 +239,32 @@ export function DiagnosticsModal({ onClose }) {
                   Golden set: <strong style={{ color: safety.passRate === 1 ? '#10b981' : '#f59e0b' }}>{Math.round(safety.passRate * 100)}%</strong> ({safety.passed}/{safety.total})
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>crisis · boundary · quality · injection</div>
+              </div>
+              <div style={{ flex: '1 1 160px', background: 'var(--bg-tertiary, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: 8, padding: '8px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  <Database size={13} /> <strong style={{ color: 'var(--text-primary)' }}>Retrieval eval</strong>
+                </div>
+                {ragRun ? (
+                  <>
+                    <div style={{ color: 'var(--text-secondary)' }}>
+                      RAG golden set: <strong style={{ color: ragRun.rag.passRate === 1 ? '#10b981' : '#f59e0b' }}>{Math.round(ragRun.rag.passRate * 100)}%</strong> ({ragRun.rag.passed}/{ragRun.rag.total})
+                    </div>
+                    {ragRun.comparison ? (
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                        vs last run:{' '}
+                        {(() => {
+                          const d = fmtDelta(ragRun.comparison.ragDelta)
+                          return d ? <strong style={{ color: d.color }}>{d.text}</strong> : '—'
+                        })()}
+                        {' · '}{formatTime(ragRun.comparison.at)}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>first recorded run — nothing to compare yet</div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>running…</div>
+                )}
               </div>
             </div>
 

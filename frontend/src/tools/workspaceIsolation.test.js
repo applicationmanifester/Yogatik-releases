@@ -22,7 +22,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 /** Tool modules that reach the user's machine and therefore must be scoped. */
 const SCOPED = [
   'localFs.js', 'terminalRun.js', 'devTools.js', 'browserControl.js',
-  'watchFolder.js', 'todo.js', 'spawnAgents.js', 'index.js',
+  'watchFolder.js', 'todo.js', 'spawnAgents.js', 'index.js', 'crewRunner.js',
 ]
 
 describe('no tool reads the ambient workspace context', () => {

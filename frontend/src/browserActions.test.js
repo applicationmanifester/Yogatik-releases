@@ -308,6 +308,83 @@ describe('browser automation suite — extended actions', () => {
     global.window = undefined
   })
 
+  it('upload_file, network channels are registered across main, preload and entitlement matrix', () => {
+    for (const ch of ['browser:upload', 'browser:network']) {
+      expect(MAIN, `${ch} in main`).toContain(`ipcMain.handle('${ch}'`)
+      expect(PRELOAD, `${ch} in preload`).toContain(ch)
+      expect(entitlement.capabilityFor(ch), `${ch} in entitlement`).toBeTruthy()
+    }
+  })
+
+  it('valid actions include upload_file and network', () => {
+    for (const act of ['upload_file', 'network']) {
+      expect(VALID_ACTIONS).toContain(act)
+      expect(schemaActions()).toContain(act)
+    }
+  })
+
+  it('aliases point upload/attach/choose_file names at upload_file, and requests/network_log at network', () => {
+    expect(ACTION_ALIASES.upload).toBe('upload_file')
+    expect(ACTION_ALIASES.set_input_files).toBe('upload_file')
+    expect(ACTION_ALIASES.attach_file).toBe('upload_file')
+    expect(ACTION_ALIASES.choose_file).toBe('upload_file')
+    expect(ACTION_ALIASES.network_requests).toBe('network')
+    expect(ACTION_ALIASES.requests).toBe('network')
+    expect(ACTION_ALIASES.network_log).toBe('network')
+  })
+
+  it('upload_file requires a ref and a non-empty files array — never invents a path', async () => {
+    const upload = vi.fn().mockResolvedValue({ success: true, uploaded: 1 })
+    global.window = { __YOGATIK_BROWSER__: { upload } }
+    const noRef = await browserControlTool.execute({ action: 'upload_file', files: ['/tmp/a.png'] })
+    expect(noRef.success).toBe(false)
+    expect(noRef.error).toMatch(/ref is required/)
+    const noFiles = await browserControlTool.execute({ action: 'upload_file', ref: 'ref_1_0' })
+    expect(noFiles.success).toBe(false)
+    expect(noFiles.error).toMatch(/files is required/)
+    expect(upload).not.toHaveBeenCalled()
+    await browserControlTool.execute({ action: 'upload_file', ref: 'ref_1_0', files: ['/tmp/a.png'] })
+    expect(upload).toHaveBeenCalledTimes(1)
+    expect(upload.mock.calls[0][0].files).toEqual(['/tmp/a.png'])
+    global.window = undefined
+  })
+
+  it('upload_file surfaces a stale ref with the fresh page, same as click/type', async () => {
+    const read = vi.fn().mockResolvedValue({ success: true, tree: '[ref_2_1] Attach' })
+    global.window = {
+      __YOGATIK_BROWSER__: {
+        upload: vi.fn().mockResolvedValue({ success: false, stale: true, error: 'stale ref' }),
+        read,
+      },
+    }
+    const res = await browserControlTool.execute({ action: 'upload_file', ref: 'ref_1_0', files: ['/tmp/a.png'] })
+    expect(res.success).toBe(false)
+    expect(res.page_after_reload).toContain('ref_2_1')
+    global.window = undefined
+  })
+
+  it('network passes limit through and reports unsupported honestly on an old bridge', async () => {
+    const network = vi.fn().mockResolvedValue({ success: true, requests: [], count: 0 })
+    global.window = { __YOGATIK_BROWSER__: { network } }
+    await browserControlTool.execute({ action: 'network', limit: 20 })
+    expect(network.mock.calls[0][0].limit).toBe(20)
+    global.window = { __YOGATIK_BROWSER__: {} }
+    const res = await browserControlTool.execute({ action: 'network' })
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/not supported by this browser bridge version/)
+    global.window = undefined
+  })
+
+  it('DOM.setFileInputFiles is used, not a value assignment a controlled input would ignore', () => {
+    expect(MAIN).toMatch(/DOM\.setFileInputFiles/)
+    expect(MAIN).toMatch(/Runtime\.evaluate/)
+  })
+
+  it('CDP debugger attach is idempotent and re-armed on detach', () => {
+    expect(MAIN).toMatch(/already attach/i)
+    expect(MAIN).toMatch(/dbg\.on\('detach'/)
+  })
+
   it('run_script executes batch steps sequentially with bridge mock', async () => {
     const mockBridge = {
       navigate: vi.fn().mockResolvedValue({ success: true, url: 'https://example.com' }),

@@ -39,7 +39,7 @@ const sidecarDir = path.join(root, 'bin', 'search-sidecar')
 const sidecarMain = path.join(sidecarDir, 'main.go')
 const sidecarOutput = path.join(sidecarDir, 'search-sidecar' + (process.platform === 'win32' ? '.exe' : ''))
 if (fs.existsSync(sidecarMain)) {
-  if (tryRun('go', ['build', '-o', sidecarOutput, 'main.go'], { cwd: sidecarDir })) {
+  if (tryRun('go', ['build', '-o', path.basename(sidecarOutput), 'main.go'], { cwd: sidecarDir })) {
     console.log('✅ Search sidecar compiled successfully')
   } else {
     console.warn('⚠️ Go not found or build failed, skipping search-sidecar. Install Go 1.22+ to enable.')
@@ -49,7 +49,7 @@ if (fs.existsSync(sidecarMain)) {
 }
 
 console.log('🚀 Step 1/4: [studio] building renderer (YOGATIK_EDITION=studio)…')
-run('node', ['./node_modules/vite/bin/vite.js', '--configLoader', 'runner', 'build', '--base=./', '--outDir', 'dist-electron'])
+run('npx', ['vite', '--configLoader', 'runner', 'build', '--base=./', '--outDir', 'dist-electron'])
 
 console.log('🔨 Step 2/4: [studio] compiling TypeScript main process (optional)…')
 if (fs.existsSync(path.join(root, 'tsconfig.main.json'))) {

@@ -22,6 +22,10 @@ export const TOXIC_PATTERNS = [
 
 // Active canary tokens for detecting prompt leaks
 const ACTIVE_CANARIES = new Map()
+// Now planted once per real agent turn (agent.js), not just on an opt-in tool
+// call — a long-running chat session would otherwise grow this map forever.
+// A Map keeps insertion order, so the first key really is the oldest.
+const MAX_CANARIES = 200
 
 /**
  * Generate a unique canary token and register it
@@ -29,8 +33,14 @@ const ACTIVE_CANARIES = new Map()
 export function generateCanary(sessionId = 'default') {
   const token = `canary_${Math.random().toString(36).substring(2, 10)}_${Date.now().toString(36)}`
   ACTIVE_CANARIES.set(token, { sessionId, createdAt: Date.now() })
+  if (ACTIVE_CANARIES.size > MAX_CANARIES) {
+    ACTIVE_CANARIES.delete(ACTIVE_CANARIES.keys().next().value)
+  }
   return token
 }
+
+/** Test-only accessor, matching the _resetCrewTraces/_resetToolStatus convention. */
+export function _canaryCount() { return ACTIVE_CANARIES.size }
 
 /**
  * Check if text contains any active canary tokens (indicating leak)

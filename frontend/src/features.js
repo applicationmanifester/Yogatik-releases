@@ -52,6 +52,13 @@ export const FEATURES = {
     hint: 'Short vibration on call controls (phones only)',
     default: true,
   },
+  soundCues: {
+    label: 'Sound cues',
+    // OFF by default. An app that starts making noise unprompted is one people
+    // mute at the OS level, after which they hear nothing from it ever again.
+    hint: 'A soft tone when a reply arrives while you are in another window',
+    default: false,
+  },
   liveCaptions: {
     label: 'Live captions',
     hint: 'Subtitles over the call',

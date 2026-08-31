@@ -209,9 +209,26 @@ function refResolverSource(index) {
 })()`
 }
 
+// Resolves one ref index to the LIVE ELEMENT itself, not a point — for CDP
+// Runtime.evaluate (which, unlike executeJavaScript, can return a remote
+// objectId rather than requiring a JSON-cloneable result). Validates the
+// element is a file input before handing it back: DOM.setFileInputFiles on
+// anything else fails opaquely deep in Chromium, and the model needs to be
+// told WHY its ref did not work, not just that it didn't.
+function elementRefExpression(index) {
+  return `(() => {
+  const el = (window.__yogatikRefs__ || [])[${Number(index) || 0}];
+  if (!el || !el.isConnected) return null;
+  if (!(el.tagName === 'INPUT' && el.type === 'file')) {
+    throw new Error('ref does not point at a file input (found <' + el.tagName.toLowerCase() + '>)');
+  }
+  return el;
+})()`
+}
+
 module.exports = {
   MAX_TEXT, MAX_NODES, MAX_INDENT, INTERACTIVE_ROLES,
-  walkerSource, refResolverSource,
+  walkerSource, refResolverSource, elementRefExpression,
   truncateText, isInteractive, nodeLabel,
   simplify, assignRefs, parseRef, isStaleRef,
   formatTree, buildTree,

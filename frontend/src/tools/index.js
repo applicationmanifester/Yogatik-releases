@@ -52,6 +52,7 @@ import { podcastGenerateTool } from './podcastGen'
 import { webAutomationTool } from './webAutomation'
 import { seeTool } from './see'
 import { videoRenderTool } from './videoRender'
+import { localImageGenTool, localVideoGenTool } from './localGen'
 import {
   diagramRenderTool, codeFormatTool, textAnalyticsTool, dataStatsTool,
   keywordExtractTool, entityExtractTool, queryRefineTool,
@@ -285,6 +286,9 @@ const ALL_TOOLS = {
   visual_verify: visualVerifyTool,
   video_render: videoRenderTool,
   video_edit: videoEditTool,
+  // Local on-device generation via a user-installed ComfyUI. Desktop only.
+  local_image_generate: localImageGenTool,
+  local_video_generate: localVideoGenTool,
   diagram_render: diagramRenderTool,
   code_format: codeFormatTool,
   text_analytics: textAnalyticsTool,
@@ -756,6 +760,13 @@ export const TOOL_ALIASES = {
   dalle: 'image_generate',
   imagegen: 'image_generate',
   generate_sticker: 'sticker_generate',
+  comfy_generate: 'local_image_generate',
+  comfyui_generate: 'local_image_generate',
+  local_diffusion: 'local_image_generate',
+  offline_image_generate: 'local_image_generate',
+  animate_image: 'local_video_generate',
+  image_to_video: 'local_video_generate',
+  img2vid: 'local_video_generate',
   draw_chart: 'chart',
   generate_chart: 'chart',
   plot_chart: 'chart',
@@ -1108,6 +1119,16 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   }
   if (/\b(image|picture|photo|draw|illustration|photorealistic|wallpaper|portrait|painting)\b/i.test(text) && !/\b(diagram|flowchart|lifecycle|architecture|schema)\b/i.test(text)) {
     scores['image_generate'] = 200
+  }
+  // Only surface the local/ComfyUI tools when the request actually asks for
+  // local, offline or on-device generation — image_generate/video_render work
+  // everywhere with no setup, so they stay the default the rest of the time.
+  if (/\b(locally|on-device|on device|offline|my own gpu|comfyui|comfy ui|stable diffusion|local checkpoint)\b/i.test(text)) {
+    scores['local_image_generate'] = 210
+    scores['local_video_generate'] = 190
+  }
+  if (/\b(animate (this|that|the) (image|photo|picture)|turn (this|that) image into a video|image to video|img2vid)\b/i.test(text)) {
+    scores['local_video_generate'] = 220
   }
   if (/\b(sticker|icon|emoji|badge)\b/i.test(text)) {
     scores['sticker_generate'] = 200

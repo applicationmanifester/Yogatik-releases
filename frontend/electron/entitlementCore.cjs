@@ -122,6 +122,7 @@ const CHANNELS = {
   'browser:navigate': P(CAP.BROWSER), 'browser:read': P(CAP.BROWSER),
   'browser:click': P(CAP.BROWSER), 'browser:type': P(CAP.BROWSER),
   'browser:select': P(CAP.BROWSER),
+  'browser:upload': P(CAP.BROWSER), 'browser:network': P(CAP.BROWSER),
   'browser:hover': P(CAP.BROWSER), 'browser:pdf': P(CAP.BROWSER),
   'browser:cookies': P(CAP.BROWSER), 'browser:storage': P(CAP.BROWSER),
   'browser:key': P(CAP.BROWSER), 'browser:scroll': P(CAP.BROWSER),
@@ -157,6 +158,11 @@ const CHANNELS = {
   'subagent:kill': P(CAP.AUTOMATION),
   'subagent:python:execute': P(CAP.AUTOMATION), 'subagent:python:install': P(CAP.AUTOMATION),
   'subagent:python:reset': P(CAP.AUTOMATION), 'subagent:python:namespace': P(CAP.AUTOMATION),
+  // Local image/video generation runs an unattended local process to
+  // completion, same class as a sub-agent — gated, but discovery is not (see
+  // the free block below, mirroring ollama:status).
+  'comfy:generate-image': P(CAP.AUTOMATION), 'comfy:generate-video': P(CAP.AUTOMATION),
+  'comfy:cancel': P(CAP.AUTOMATION),
 
   /* ── dialogs: split, deliberately ──────────────────────────────────── */
   // The OS picker returning ONE user-chosen file is functionally identical to
@@ -167,6 +173,13 @@ const CHANNELS = {
   // Writing to an arbitrary path, and picking a FOLDER (which is a grant, not
   // a file), are not web-parity.
   'dialog:save-file': P(CAP.FILES), 'dialog:pick-folder': P(CAP.FILES),
+
+  /* ── deep links + recent files ─────────────────────────────────────── */
+  // A yogatik:// link carries no privilege — it names a chat to open, and the
+  // renderer decides what that means. The recent list holds only PATHS the
+  // user themselves opened; reading a file still goes through the gated fs_*
+  // handlers, so this cannot become a way around them.
+  'deeplink:ready': F, 'recent:list': F, 'recent:add': F, 'recent:clear': F,
 
   /* ── free: desktop conveniences with no privileged reach ───────────── */
   'desktop:isAlwaysOnTop': F, 'desktop:toggleAlwaysOnTop': F,
@@ -184,6 +197,10 @@ const CHANNELS = {
   'entitlement:sign-out': F,
   // Local model discovery & management
   'ollama:status': F, 'ollama:start': F, 'ollama:list': F, 'ollama:pull': F, 'ollama:cancel': F,
+  // Local generation discovery & setup — same free/gated split as Ollama:
+  // finding out whether ComfyUI is installed, pointing at a folder, and
+  // starting it are not the paid part; actually generating is (above).
+  'comfy:status': F, 'comfy:set-root': F, 'comfy:start': F,
 
   /* ── free ALWAYS — gating these breaks something the user owns ─────── */
   // THE TRAP. db.js transparently seals apikey_* values through safeStorage

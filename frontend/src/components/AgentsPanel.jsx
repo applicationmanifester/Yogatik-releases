@@ -1,11 +1,12 @@
 import React from 'react'
-import { Bot, Plus, Trash2, Check, Download, Upload, X, Play, Square, Users, Target } from 'lucide-react'
+import { Bot, Plus, Trash2, Check, Download, Upload, X, Play, Square, Users, Target, GitBranch } from 'lucide-react'
 import { Modal } from './Modal'
 import {
   getAgents, upsertAgent, deleteAgent, getActiveAgentId, setActiveAgent, exportAgent, parseAgent,
 } from '../agents'
 import { autonomousAgent } from '../autonomousAgent'
 import { CopyButton } from './ToolResultCard'
+import { subscribeCrewTraces } from '../crewTrace'
 
 function download(name, text) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
@@ -81,11 +82,18 @@ export function AgentsPanel({ onClose, onToast, conversationId = null }) {
   }
   const stopGoal = () => { abortRef.current?.abort() }
 
+  // crew_orchestrator traces — subscribed for the panel's lifetime, not just
+  // while the "Crew traces" tab is open, so a run that finishes while the
+  // user is on another tab is still there when they switch to it.
+  const [crewTraces, setCrewTraces] = React.useState([])
+  React.useEffect(() => subscribeCrewTraces(setCrewTraces), [])
+
   return (
     <Modal title="Agents" icon={<Bot size={16} />} onClose={onClose}>
       <div className="tab-row" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <button className={tab === 'agents' ? 'active' : ''} onClick={() => setTab('agents')}><Users size={12} /> Agents</button>
         <button className={tab === 'auto' ? 'active' : ''} onClick={() => setTab('auto')}><Target size={12} /> Autonomous</button>
+        <button className={tab === 'crew' ? 'active' : ''} onClick={() => setTab('crew')}><GitBranch size={12} /> Crew traces{crewTraces.length ? ` (${crewTraces.length})` : ''}</button>
       </div>
 
       {tab === 'agents' && (
@@ -182,6 +190,46 @@ export function AgentsPanel({ onClose, onToast, conversationId = null }) {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {tab === 'crew' && (
+        <div className="personalise-group">
+          <p className="personalise-hint">
+            Every crew_orchestrator run (sequential / hierarchical / reflexion / map_reduce / best_of_n / auto),
+            newest first — which specialists ran, how long each took, and whether it succeeded.
+          </p>
+          {crewTraces.length === 0 && (
+            <p className="tool-detail" style={{ opacity: 0.7 }}>No crew runs yet this session.</p>
+          )}
+          {crewTraces.map(t => (
+            <div key={t.id} className="toggle-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 12.5 }}>
+                  <span style={{
+                    background: t.success ? 'rgba(16,185,129,0.15)' : 'rgba(248,113,113,0.15)',
+                    color: t.success ? '#10b981' : '#f87171',
+                    padding: '1px 7px', borderRadius: 10, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
+                  }}>
+                    {t.workflow}
+                  </span>
+                  {t.goal || '(no goal recorded)'}
+                </span>
+                <span className="personalise-sub">{(t.durationMs / 1000).toFixed(1)}s</span>
+              </div>
+              {t.error && <div className="tool-detail" style={{ color: '#f87171', fontSize: 11.5 }}>{t.error}</div>}
+              {t.steps.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {t.steps.map((s, i) => (
+                    <span key={i} style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: 4, fontSize: 10.5, color: '#a6adc8' }}>
+                      {s.agent}{typeof s.durationMs === 'number' ? ` · ${(s.durationMs / 1000).toFixed(1)}s` : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <span className="personalise-sub" style={{ fontSize: 10, opacity: 0.6 }}>{new Date(t.at).toLocaleTimeString()}</span>
+            </div>
+          ))}
         </div>
       )}
     </Modal>

@@ -63,6 +63,25 @@ export function diagnoseError(error) {
     }
   }
 
+  // Checked early and on an unambiguous phrase (only agent.js's own
+  // checkCanaryForLeak ever writes this exact wording), for the same reason
+  // the entitlement bucket sits above tool_input: a security event reported
+  // as "the model provider returned an unexpected response" sends the user
+  // to re-enter an API key for a problem that has nothing to do with one.
+  if (lower.includes('canary leak detected')) {
+    return {
+      type: 'prompt_injection',
+      category: 'Prompt-Injection Defense',
+      title: 'Possible Prompt-Injection Attempt Blocked',
+      suggestion: 'A reply echoed an internal marker it was told never to reveal — usually a sign that '
+        + 'something in a web page, file, or tool result the model read contained a hidden instruction. '
+        + 'The leaked marker was redacted before the reply was shown. If this keeps happening on the same '
+        + 'source, avoid having the model read that page or file, or treat its content as untrusted going forward.',
+      actionType: 'dismiss',
+      actionLabel: 'Got it',
+    }
+  }
+
   if (lower.includes('401') || lower.includes('invalid api key') || lower.includes('unauthorized') || lower.includes('incorrect api key') || lower.includes('authentication') || lower.includes('invalid_api_key')) {
     return {
       type: 'auth',

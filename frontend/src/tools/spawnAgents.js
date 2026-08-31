@@ -139,7 +139,7 @@ export const spawnAgentsTool = {
         _id: node.id,
       }))
 
-      const pooledWave = await runAgentPool(waveTasks, (t) => runOne(t, t._origIndex))
+      const pooledWave = await runAgentPool(waveTasks, (t) => runOne(t, t._origIndex), parentId)
 
       pooledWave.forEach((res, idx) => {
         const origIdx = waveTasks[idx]._origIndex

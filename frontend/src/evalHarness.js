@@ -9,6 +9,7 @@
  * baseline that runs alongside the unit suite.
  */
 import { assessSafety } from './safety'
+import { buildIndex, search } from './retrieval'
 
 /** @typedef {{id:string, category:string, prompt:string, expect?:string[], reject?:string[], mustReferResource?:boolean}} EvalCase */
 
@@ -88,4 +89,107 @@ function summarize(results) {
     if (r.pass) { passed++; byCategory[cat].passed++ } else failures.push(r)
   }
   return { total: results.length, passed, passRate: results.length ? passed / results.length : 1, byCategory, failures }
+}
+
+/**
+ * Retrieval-quality regression — model-free, using the SAME BM25 buildIndex/
+ * search this app's own doc_search/local_vault_search run in production, over
+ * a small fixed corpus of clearly-distinct documents. This answers "did
+ * retrieval quality regress" without a live model, a live vault, or a network
+ * call — the local, always-available complement to a hosted RAG-eval
+ * dashboard, which this zero-backend app has nowhere to run.
+ */
+const RAG_CORPUS = [
+  { id: 'doc-returns', text: 'Our return policy allows returns within 30 days of purchase with a valid receipt. Refunds are issued to the original payment method.' },
+  { id: 'doc-shipping', text: 'Standard shipping takes 5-7 business days. Express shipping is available for an additional fee and arrives in 1-2 business days.' },
+  { id: 'doc-warranty', text: 'All electronics carry a 1-year limited warranty covering manufacturing defects. Accidental damage is not covered.' },
+  { id: 'doc-recipe', text: 'To make a simple tomato soup, saute onions and garlic, add crushed tomatoes and vegetable stock, simmer for 20 minutes, then blend until smooth.' },
+  { id: 'doc-hiking', text: 'The trailhead is accessible via the north parking lot. The loop trail is 6 miles with 1200 feet of elevation gain, moderate difficulty.' },
+]
+
+/** @typedef {{id:string, query:string, expectTopId:string}} RagEvalCase */
+
+export const RAG_EVAL_SET = [
+  { id: 'rag-returns', query: 'how many days do I have to return something', expectTopId: 'doc-returns' },
+  { id: 'rag-shipping', query: 'how long does express shipping take', expectTopId: 'doc-shipping' },
+  { id: 'rag-warranty', query: 'is accidental damage covered under warranty', expectTopId: 'doc-warranty' },
+  { id: 'rag-recipe', query: 'how do I make tomato soup', expectTopId: 'doc-recipe' },
+  { id: 'rag-hiking', query: 'how long is the hiking loop trail', expectTopId: 'doc-hiking' },
+]
+
+// Built once, lazily — the corpus is fixed, so there is never a reason to
+// re-tokenize and re-index it per call.
+let _ragIndex = null
+function ragIndex() {
+  if (!_ragIndex) _ragIndex = buildIndex(RAG_CORPUS.map(d => d.text))
+  return _ragIndex
+}
+
+/** Grade one RAG case: did the expected document come back top-1 and top-3? */
+export function gradeRagCase(evalCase) {
+  const results = search(ragIndex(), evalCase.query, 3)
+  const ids = results.map(r => RAG_CORPUS[r.i]?.id)
+  return {
+    id: evalCase.id,
+    category: 'rag',
+    pass: ids[0] === evalCase.expectTopId,
+    top3: ids.includes(evalCase.expectTopId),
+    kind: 'rag',
+  }
+}
+
+/** Model-free run over the RAG golden set. */
+export function runRagEval(cases = RAG_EVAL_SET) {
+  return summarize(cases.map(gradeRagCase))
+}
+
+/**
+ * Regression tracking — "did quality drop since last time", the local
+ * equivalent of a CI dashboard for a zero-backend app. History lives in the
+ * settings table (getSetting/setSetting), the same lightweight place
+ * status_<provider>::<model> and usage_<date> already live — this does not
+ * warrant its own Dexie table or schema version.
+ */
+const EVAL_HISTORY_KEY = 'eval_history'
+const MAX_EVAL_HISTORY = 20
+
+/** Pure: builds the record and prunes to the cap. Exported for testing without a db. */
+export function buildEvalHistoryEntry(summaries, history = [], at = Date.now()) {
+  const entry = { at, ...summaries }
+  const next = [...history, entry]
+  return next.length > MAX_EVAL_HISTORY ? next.slice(next.length - MAX_EVAL_HISTORY) : next
+}
+
+/** Pure: pass-rate deltas of `current` against the most recent history entry, or null if there is none. */
+export function compareToLast(current, history = []) {
+  const last = history[history.length - 1]
+  if (!last) return null
+  const delta = (key) => (current[key]?.passRate ?? null) - (last[key]?.passRate ?? null)
+  return {
+    at: last.at,
+    safetyDelta: last.safety ? delta('safety') : null,
+    ragDelta: last.rag ? delta('rag') : null,
+  }
+}
+
+/** Runs both model-free evals, records the run, and returns { safety, rag, comparison }. */
+export async function runAndRecordEval() {
+  const { getSetting, setSetting } = await import('./db')
+  const safety = runSafetyScreenEval()
+  const rag = runRagEval()
+  let history = []
+  try { history = await getSetting(EVAL_HISTORY_KEY, []) } catch { history = [] }
+  const comparison = compareToLast({ safety, rag }, Array.isArray(history) ? history : [])
+  const next = buildEvalHistoryEntry({ safety, rag }, Array.isArray(history) ? history : [])
+  try { await setSetting(EVAL_HISTORY_KEY, next) } catch { /* best-effort — never blocks the caller */ }
+  return { safety, rag, comparison }
+}
+
+/** Read-only: the recorded run history, oldest first, capped at MAX_EVAL_HISTORY. */
+export async function getEvalHistory() {
+  const { getSetting } = await import('./db')
+  try {
+    const history = await getSetting(EVAL_HISTORY_KEY, [])
+    return Array.isArray(history) ? history : []
+  } catch { return [] }
 }

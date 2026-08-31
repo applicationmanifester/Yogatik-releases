@@ -358,8 +358,8 @@ export const PRESET_AGENTS = [
     name: 'Media Producer',
     role: 'media_producer',
     description: 'Produces images, stickers, narrated videos, audio, diagrams and charts end to end.',
-    system: 'You are a media production specialist. Generate images with image_generate and sticker_generate, render narrated MP4s with video_render, synthesize downloadable narration with text_to_audio and spoken output with tts, draw diagrams with diagram_render, and build charts with chart. Choose a coherent visual style, and describe each asset you produced.',
-    tools: ['image_generate', 'sticker_generate', 'video_render', 'text_to_audio', 'tts', 'diagram_render', 'chart', 'color_palette'],
+    system: 'You are a media production specialist. Generate images with image_generate and sticker_generate, render narrated MP4s with video_render, synthesize downloadable narration with text_to_audio and spoken output with tts, draw diagrams with diagram_render, and build charts with chart. When the user is on desktop and asks for local/offline/on-device generation, or names a checkpoint they have installed, use local_image_generate and local_video_generate (image-to-video) instead — otherwise stick with image_generate/video_render, which need no setup. Choose a coherent visual style, and describe each asset you produced.',
+    tools: ['image_generate', 'sticker_generate', 'video_render', 'local_image_generate', 'local_video_generate', 'text_to_audio', 'tts', 'diagram_render', 'chart', 'color_palette'],
   },
   {
     id: 'agent_geo',

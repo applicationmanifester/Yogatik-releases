@@ -3,7 +3,7 @@ import {
   nodeLabel, isInteractive, truncateText,
   simplify, assignRefs, parseRef, isStaleRef,
   formatTree, buildTree,
-  walkerSource, refResolverSource,
+  walkerSource, refResolverSource, elementRefExpression,
 } from '../../electron/browserTree.cjs'
 
 describe('browserTree — node classification', () => {
@@ -183,5 +183,25 @@ describe('browserTree — injected sources', () => {
     // The index reaches this from a parsed ref, but a stray string must never
     // land inside the evaluated source.
     expect(refResolverSource('1); alert(1); //')).toContain('[0]')
+  })
+
+  it('elementRefExpression resolves the LIVE ELEMENT, not a point', () => {
+    // Unlike refResolverSource — this is for CDP Runtime.evaluate, which can
+    // return a remote objectId that executeJavaScript's JSON round-trip
+    // cannot carry.
+    const src = elementRefExpression(2)
+    expect(src).toContain('__yogatikRefs__')
+    expect(src).toContain('[2]')
+    expect(src.trim().startsWith('(')).toBe(true)
+  })
+
+  it('elementRefExpression validates a file input before handing the element back', () => {
+    const src = elementRefExpression(0)
+    expect(src).toMatch(/tagName === 'INPUT' && el\.type === 'file'/)
+    expect(src).toMatch(/throw new Error/)
+  })
+
+  it('elementRefExpression coerces its index rather than interpolating it', () => {
+    expect(elementRefExpression('1); alert(1); //')).toContain('[0]')
   })
 })

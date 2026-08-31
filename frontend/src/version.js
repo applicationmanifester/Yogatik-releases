@@ -3,16 +3,52 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '3.22.3'
-export const BUILD_DATE = 'August 2026'
-export const APP_CODENAME = 'Yogatik Ultra — Live Device Selection, Seamless Camera Flipping & On-Device Segmentation'
+export const APP_VERSION = '3.22.4'
+export const BUILD_DATE = 'September 2026'
+export const APP_CODENAME = 'Yogatik Ultra — ComfyUI Local Daemon, Deep Linking & Layered Live HUD'
 
 export const APP_RELEASES = [
+  {
+    version: '3.22.4',
+    title: 'Yogatik Ultra: ComfyUI Local Daemon, Deep Links, Layered Live HUD & Windows Ollama Path Resolution',
+    date: 'September 1, 2026',
+    isLatest: true,
+    highlights: [
+      'Local ComfyUI Daemon & Workflows: Added native ComfyUI daemon lifecycle management and direct HTTP workflow execution for on-device image generation',
+      'Windows Ollama Path Resolution: Fixed user profile path discovery for Windows accounts with special usernames and added HTTP model streaming fallback',
+      'Layered Live HUD Overlay: Re-architected Live call HUD into non-colliding bands with safe-area spacing and Live settings bottom sheet',
+      'Deep Linking & CSP Whitelisting: Added yogatik:// deep link support and updated CSP connect-src with explicit local loopback daemon ports (11434, 1234, 8188)',
+    ],
+    sections: [
+      {
+        category: '🎨 ComfyUI & Local Generation',
+        items: [
+          {
+            title: 'Native ComfyUI Daemon Support',
+            description: 'Automatic detection, probing, and background launching of local ComfyUI instances on port 8188 with text2image workflows.',
+          },
+          {
+            title: 'Windows Ollama Homedir Resolution',
+            description: 'Accurate binary resolution via os.homedir() with HTTP polling fallback so local Ollama models are discovered flawlessly.',
+          },
+        ],
+      },
+      {
+        category: '🎙️ Live Experience',
+        items: [
+          {
+            title: 'Layered Live HUD & Settings',
+            description: 'Non-colliding vertical bands for reticle, real-time speech captions, action chips, and call controls with sound cues.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '3.22.3',
     title: 'Yogatik Ultra: Live Device Picker, Front/Back Camera Flipping, On-Device Image Segmentation & Crash Hardening',
     date: 'August 31, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Live Device Selection: Real-time audio and camera device picker bottom sheet with instant front/back camera flipping without ending the call',
       'On-Device Image Segmentation: Added segment tool for instant background removal, object isolation and cutout operations',
