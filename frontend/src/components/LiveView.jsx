@@ -17,6 +17,7 @@ import { LiveHudOverlay } from './LiveHudOverlay'
 import { LiveDevicePicker } from './LiveDevicePicker'
 import { LiveSettings } from './LiveSettings'
 import { enumerate, canFlipCamera } from '../live/devices'
+import * as liveMetrics from '../live/metrics'
 
 /**
  * Full-screen face-to-face call with:
@@ -205,6 +206,10 @@ export function LiveView({
     })
 
     let cancelled = false
+    // One session record per mounted call. Local only — timings and counts,
+    // never content: those are the numbers that decide what to build next and
+    // the ones that carry no privacy cost.
+    liveMetrics.startSession({ engine, provider, modelCanSee })
     const make = engine === 'gemini' ? createLiveSession : createCascadeSession
     const session = make({
       provider, apiKey, model, voice, voiceEngine, fallbacks,
@@ -259,7 +264,10 @@ export function LiveView({
           case 'reconnecting':
             setState({ connectionState: 'reconnecting', state: 'connecting' })
             break
-          case 'error': setState({ error: e.message, state: 'error', connectionState: 'failed' }); break
+          case 'error':
+            liveMetrics.endSession(liveMetrics.END_REASON.ERROR)
+            setState({ error: e.message, state: 'error', connectionState: 'failed' })
+            break
           case 'ended': setState({ state: 'ended' }); break
           default: break
         }
@@ -280,6 +288,11 @@ export function LiveView({
       cancelled = true
       const t = turnRef.current
       if (t.role && t.text.trim()) onTranscript?.(t.role, t.text.trim())
+      // A no-op if the session was already ended by handleEnd or by an error.
+      // Reaching here with a session still open means the user navigated away
+      // mid-call — a silent ending, and the one most likely to mean the thing
+      // was not working.
+      liveMetrics.endSession(liveMetrics.END_REASON.UNMOUNT)
       session.stop()
     }
   }, [provider, model, apiKey, voice, voiceEngine, engine])
@@ -322,6 +335,10 @@ export function LiveView({
   }
   const toggleCam = async () => {
     const v = !camOn
+    // The strategic metric: if camera use is low, Live is a voice app
+    // competing on latency, which is the race it cannot win. Recorded as
+    // "ever on", not "on now" — the question is whether people reach for it.
+    if (v) liveMetrics.markCameraOn()
     setState({ camOn: v })
     await sessionRef.current?.enableCamera(v)
     if (!v && videoRef.current) videoRef.current.srcObject = null
@@ -476,6 +493,10 @@ export function LiveView({
   const startTimeRef = useRef(Date.now())
 
   const handleEnd = useCallback(() => {
+    // The reason matters more than the duration. "Hung up after two turns" and
+    // "the socket died" are indistinguishable in a length histogram and mean
+    // opposite things.
+    liveMetrics.endSession(liveMetrics.END_REASON.USER)
     const durationSec = Math.max(1, (Date.now() - startTimeRef.current) / 1000)
     const validTranscripts = (transcript || []).filter(t => t.type === 'message' && t.text)
     const toolsRun = (transcript || []).filter(t => t.type === 'toolResult')

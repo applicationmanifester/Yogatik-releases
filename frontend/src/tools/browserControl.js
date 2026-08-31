@@ -72,8 +72,12 @@ export const ACTION_ALIASES = {
   a11y: 'audit_a11y', accessibility: 'audit_a11y', wcag: 'audit_a11y', audit: 'audit_a11y',
 }
 
-async function ctx(display) {
-  const { conversationId } = getWorkspaceCtx() || {}
+// `callerCtx` is the chat that issued the call, threaded from executeTool. It
+// must not be read from the ambient slot: browser sessions are keyed by
+// conversationId and hold LOGGED-IN tabs, so resolving against whichever chat
+// entered last would let one chat drive another chat's authenticated session.
+async function ctx(display, callerCtx) {
+  const { conversationId } = getWorkspaceCtx(callerCtx) || {}
   let mode = display
   if (!mode) {
     try {
@@ -176,10 +180,10 @@ export const browserControlTool = {
     },
   },
 
-  async execute({ action: rawAction, url, ref, x, y, text, submit, clear, keys, amount, tabId, display, selector, type, expected, target, timeout, fields, expression, steps, value, _depth = 0 } = {}) {
+  async execute({ action: rawAction, url, ref, x, y, text, submit, clear, keys, amount, tabId, display, selector, type, expected, target, timeout, fields, expression, steps, value, _depth = 0 } = {}, opts = {}) {
     const b = bridge()
     if (!b) return DESKTOP_ONLY
-    const base = await ctx(display)
+    const base = await ctx(display, opts?.ctx)
     // MEASURED: the model called `refresh` and `go_back`, got "Unsupported
     // action", and concluded the tool was broken. Both are the obvious names
     // for actions that exist — refusing them teaches nothing and costs a turn.
@@ -312,7 +316,9 @@ export const browserControlTool = {
           const stepResults = []
           for (let i = 0; i < scriptSteps.length; i++) {
             const step = scriptSteps[i]
-            const stepRes = await browserControlTool.execute({ ...step, display: display || base.display, _depth: _depth + 1 })
+            // opts carries the calling chat's ctx; a nested step that dropped it
+            // would fall back to the ambient chat mid-script.
+            const stepRes = await browserControlTool.execute({ ...step, display: display || base.display, _depth: _depth + 1 }, opts)
             stepResults.push({ step: i + 1, action: step.action, ...stepRes })
             if (stepRes.success === false) {
               return {

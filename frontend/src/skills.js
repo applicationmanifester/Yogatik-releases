@@ -6,6 +6,7 @@
  * Fully local (IndexedDB); exportable/importable as JSON to share.
  */
 import { getSetting, setSetting } from './db'
+import { getScoped, setScoped, clearScoped } from './chatScope'
 
 const KEY = 'skills'
 const ACTIVE = 'active_skill'
@@ -278,11 +279,22 @@ export async function deleteSkill(id) {
   if ((await getActiveSkillId()) === id) await setActiveSkill(null)
 }
 
-export async function getActiveSkillId() { return getSetting(ACTIVE, null) }
-export async function setActiveSkill(id) { return setSetting(ACTIVE, id ?? null) }
+// Per chat, inheriting the global default (see chatScope.js). Omitting the
+// conversationId reads and writes the global default, which is what a caller
+// with no chat in hand should get.
+export async function getActiveSkillId(conversationId) {
+  return getScoped(ACTIVE, conversationId, null)
+}
+export async function setActiveSkill(id, conversationId) {
+  return setScoped(ACTIVE, conversationId, id ?? null)
+}
+/** Drop this chat's binding so it follows the global default again. */
+export async function inheritActiveSkill(conversationId) {
+  return clearScoped(ACTIVE, conversationId)
+}
 
-export async function getActiveSkill() {
-  const id = await getActiveSkillId()
+export async function getActiveSkill(conversationId) {
+  const id = await getActiveSkillId(conversationId)
   if (!id) return null
   return (await getSkills()).find(s => s.id === id) || null
 }

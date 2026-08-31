@@ -16,10 +16,14 @@ const DESKTOP_ONLY = {
 function ok(extra) { return { success: true, ...extra } }
 function fail(e) { return { success: false, error: typeof e === 'string' ? e : (e?.message || String(e)) } }
 
-async function invoke(cmd, args) {
+// `ctx` is the chat that issued the call, threaded down from executeTool. It
+// must be explicit: two chats stream concurrently, and the ambient slot holds
+// whichever entered last — so reading it here started chat A's dev server, and
+// read chat A's git status, inside chat B's folder.
+async function invoke(cmd, args, ctx) {
   const core = window.__TAURI__?.core
   if (!core?.invoke) throw new Error('Desktop bridge unavailable')
-  return core.invoke(cmd, { ...(args || {}), ctx: getWorkspaceCtx() })
+  return core.invoke(cmd, { ...(args || {}), ctx: getWorkspaceCtx(ctx) })
 }
 
 async function guard(fn) {
@@ -37,9 +41,9 @@ export const gitStatusTool = {
       'and after editing to confirm what you touched. Read-only. Desktop app only.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
-  async execute() {
+  async execute(_args = {}, opts = {}) {
     return guard(async () => {
-      const r = await invoke('git_status')
+      const r = await invoke('git_status', {}, opts?.ctx)
       return r?.success ? ok({ tool: 'git_status', ...r }) : fail(r?.error || 'git status failed')
     })
   },
@@ -54,9 +58,9 @@ export const gitLogTool = {
       required: [],
     },
   },
-  async execute({ limit = 20 } = {}) {
+  async execute({ limit = 20 } = {}, opts = {}) {
     return guard(async () => {
-      const r = await invoke('git_log', { limit })
+      const r = await invoke('git_log', { limit }, opts?.ctx)
       return r?.success ? ok({ tool: 'git_log', ...r }) : fail(r?.error || 'git log failed')
     })
   },
@@ -76,9 +80,9 @@ export const gitDiffTool = {
       required: [],
     },
   },
-  async execute({ staged = false, path } = {}) {
+  async execute({ staged = false, path } = {}, opts = {}) {
     return guard(async () => {
-      const r = await invoke('git_diff', { staged, path })
+      const r = await invoke('git_diff', { staged, path }, opts?.ctx)
       return r?.success ? ok({ tool: 'git_diff', diff: r.diff || '(no changes)' }) : fail(r?.error || 'git diff failed')
     })
   },
@@ -101,10 +105,10 @@ export const procStartTool = {
       required: ['command'],
     },
   },
-  async execute({ command, cwd } = {}) {
+  async execute({ command, cwd } = {}, opts = {}) {
     if (!command) return fail('command is required')
     return guard(async () => {
-      const r = await invoke('proc_start', { command, cwd })
+      const r = await invoke('proc_start', { command, cwd }, opts?.ctx)
       return r?.success
         ? ok({ tool: 'proc_start', id: r.id, command: r.command, message: `Started ${r.id}. Read output with proc_output.` })
         : fail(r?.error || 'Could not start the process.')
@@ -126,10 +130,10 @@ export const procOutputTool = {
       required: ['id'],
     },
   },
-  async execute({ id, cursor } = {}) {
+  async execute({ id, cursor } = {}, opts = {}) {
     if (!id) return fail('id is required')
     return guard(async () => {
-      const r = await invoke('proc_output', { id, cursor })
+      const r = await invoke('proc_output', { id, cursor }, opts?.ctx)
       return r?.success ? ok({ tool: 'proc_output', ...r }) : fail(r?.error || 'No such process.')
     })
   },
@@ -144,10 +148,10 @@ export const procStopTool = {
       required: ['id'],
     },
   },
-  async execute({ id } = {}) {
+  async execute({ id } = {}, opts = {}) {
     if (!id) return fail('id is required')
     return guard(async () => {
-      const r = await invoke('proc_stop', { id })
+      const r = await invoke('proc_stop', { id }, opts?.ctx)
       return r?.success ? ok({ tool: 'proc_stop', id, message: `Stopped ${id}` }) : fail(r?.error || 'No such process.')
     })
   },
@@ -158,9 +162,9 @@ export const procListTool = {
     description: 'List the background processes running for this chat. Desktop app only.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
-  async execute() {
+  async execute(_args = {}, opts = {}) {
     return guard(async () => {
-      const list = await invoke('proc_list')
+      const list = await invoke('proc_list', {}, opts?.ctx)
       return ok({ tool: 'proc_list', count: (list || []).length, processes: list || [] })
     })
   },
@@ -181,10 +185,10 @@ export const watchTool = {
       required: [],
     },
   },
-  async execute({ action = 'changes' } = {}) {
+  async execute({ action = 'changes' } = {}, opts = {}) {
     return guard(async () => {
       const cmd = action === 'start' ? 'watch_start' : action === 'stop' ? 'watch_stop' : 'watch_changes'
-      const r = await invoke(cmd)
+      const r = await invoke(cmd, {}, opts?.ctx)
       return r?.success ? ok({ tool: 'watch', action, ...r }) : fail(r?.error || 'Watch failed.')
     })
   },

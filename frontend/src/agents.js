@@ -12,6 +12,7 @@
  * active chat model). Fully local (IndexedDB); export/import as JSON to share.
  */
 import { getSetting, setSetting } from './db'
+import { getScoped, setScoped, clearScoped } from './chatScope'
 
 const KEY = 'agents'
 const ACTIVE = 'active_agent'
@@ -502,11 +503,23 @@ export async function deleteAgent(id) {
   if ((await getActiveAgentId()) === id) await setActiveAgent(null)
 }
 
-export async function getActiveAgentId() { return getSetting(ACTIVE, null) }
-export async function setActiveAgent(id) { return setSetting(ACTIVE, id ?? null) }
+// Per chat, inheriting the global default (see chatScope.js). Two chats stream
+// at once, so a single global key meant activating the Coder agent in one
+// conversation changed the agent answering in every other one — including
+// mid-turn.
+export async function getActiveAgentId(conversationId) {
+  return getScoped(ACTIVE, conversationId, null)
+}
+export async function setActiveAgent(id, conversationId) {
+  return setScoped(ACTIVE, conversationId, id ?? null)
+}
+/** Drop this chat's binding so it follows the global default again. */
+export async function inheritActiveAgent(conversationId) {
+  return clearScoped(ACTIVE, conversationId)
+}
 
-export async function getActiveAgent() {
-  const id = await getActiveAgentId()
+export async function getActiveAgent(conversationId) {
+  const id = await getActiveAgentId(conversationId)
   if (!id) return null
   return (await getAgents()).find(a => a.id === id) || null
 }

@@ -48,7 +48,7 @@ export const spawnAgentsTool = {
     },
   },
 
-  async execute({ tasks, isolate_workspace: isolateWorkspace = false }) {
+  async execute({ tasks, isolate_workspace: isolateWorkspace = false }, opts = {}) {
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return { success: false, error: 'Provide a non-empty tasks array.' }
     }
@@ -59,7 +59,11 @@ export const spawnAgentsTool = {
     ])
     const allNames = getToolNames()
 
-    const parentId = localFs.getWorkspaceCtx()?.conversationId ?? 'chat'
+    // The parent is the chat that spawned these agents, not whichever chat is
+    // active right now. It decides the isolation plan, the workspace slot each
+    // sub-agent gets and which blackboard they share — so resolving it from the
+    // ambient slot would hand a whole team to the wrong conversation.
+    const parentId = localFs.getWorkspaceCtx(opts?.ctx)?.conversationId ?? 'chat'
     const plan = isolation.planIsolation(parentId, tasks.map(t => t.agent), { isolate: !!isolateWorkspace })
     const blackboard = getSessionBlackboard(parentId)
 

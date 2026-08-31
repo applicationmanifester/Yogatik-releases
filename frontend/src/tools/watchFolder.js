@@ -31,7 +31,7 @@ export const watchFolderTool = {
       required: ['action'],
     },
   },
-  async execute({ action = 'list', path = '.', recursive = true, id } = {}) {
+  async execute({ action = 'list', path = '.', recursive = true, id } = {}, opts = {}) {
     const w = bridge()
     if (!w) return DESKTOP_ONLY
     try {
@@ -39,7 +39,7 @@ export const watchFolderTool = {
         // ctx is injected here, never a tool parameter — the model must not be
         // able to name another chat's folder.
         const { getWorkspaceCtx } = await import('./localFs')
-        return { tool: 'watch_folder', ...(await w.start(path, { recursive, ctx: getWorkspaceCtx() })) }
+        return { tool: 'watch_folder', ...(await w.start(path, { recursive, ctx: getWorkspaceCtx(opts?.ctx) })) }
       }
       if (action === 'stop') {
         if (!id) return { success: false, error: 'id is required to stop a watcher' }

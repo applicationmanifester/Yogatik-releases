@@ -56,6 +56,23 @@ describe('index.html CSP', () => {
     expect(missing).toEqual([])
   })
 
+  it('permits the PLAINTEXT local daemons, which `https:` does not cover', () => {
+    // This is the hole the wildcard above hides. `https:` matches every https
+    // origin and nothing else, so an http:// provider passed that check
+    // vacuously — and Ollama, which serves plain HTTP on the loopback, was
+    // blocked by the app's own CSP on every request. A CSP refusal cannot be
+    // caught or reported by the page, so it surfaced as a bare "Failed to
+    // fetch" and read as a dead daemon on a machine where Ollama was running.
+    //
+    // Checked explicitly rather than by relaxing the directive to `http:`:
+    // naming the two loopback ports keeps the protection everywhere else.
+    const connect = directive('connect-src') || []
+    const plaintext = ['http://127.0.0.1:11434', 'http://localhost:11434']
+    for (const origin of plaintext) {
+      expect(connect, `${origin} must be reachable — Ollama is not https`).toContain(origin)
+    }
+  })
+
   it('keeps the directives that actually harden the page', () => {
     expect(directive('object-src')).toContain("'none'")
     expect(directive('base-uri')).toContain("'self'")

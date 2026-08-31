@@ -500,17 +500,20 @@ export async function runAgent({
   // An active Skill shapes the assistant: its system prompt is appended, and its
   // optional tool allowlist scopes what the model may call this turn.
   let activeSkill = null
-  try { activeSkill = await getActiveSkill() } catch { /* none */ }
+  // Resolved for THIS chat, falling back to the global default. A single
+  // global key meant activating a skill in one conversation changed every other
+  // conversation, including one already mid-turn.
+  try { activeSkill = await getActiveSkill(executionCtx.conversationId) } catch { /* none */ }
   const skillBlock = activeSkill?.system ? `\n\nACTIVE SKILL — "${activeSkill.name}":\n${activeSkill.system}` : ''
 
   // Active agent (or an explicit override from a sub-agent / autonomous step)
   // shapes the assistant and scopes its tools, like a Skill but role-centric.
   let activeAgent = agentOverride
-  if (!activeAgent) { try { activeAgent = await getActiveAgent() } catch { /* none */ } }
+  if (!activeAgent) { try { activeAgent = await getActiveAgent(executionCtx.conversationId) } catch { /* none */ } }
   const agentBlock = activeAgent?.system ? `\n\nACTIVE AGENT — "${activeAgent.name}" (${activeAgent.role || 'agent'}):\n${activeAgent.system}` : ''
 
   let styleBlock = ''
-  try { styleBlock = await getActiveStyleBlock() } catch { /* default */ }
+  try { styleBlock = await getActiveStyleBlock(executionCtx.conversationId) } catch { /* default */ }
 
   const isLocalProvider = provider === 'local' || provider === 'webllm'
 
@@ -534,9 +537,19 @@ export async function runAgent({
     }
   } catch {}
 
+  // Local-first / local-only must reach the MODEL, not just the engine picker.
+  // Telling a local-only user "I'll search the web for that" and then failing
+  // is the platformBlock() failure one layer up: the model believes the prompt.
+  // Returns '' in auto mode, so the common path pays nothing.
+  let capabilityMode = ''
+  try {
+    const { capabilityPromptBlock } = await import('./capabilityRuntime')
+    capabilityMode = await capabilityPromptBlock()
+  } catch { /* the mode is advisory; never fail a turn over it */ }
+
   const systemBase = (isLocalProvider
-    ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + (await memoryBlock())
-    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + (await memoryBlock())
+    ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock())
+    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock())
   ) + safetyDirective
 
   const limits = getModelContextLimits(provider, model)

@@ -7,6 +7,7 @@
 import * as db from './db'
 import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels, chatComplete, proxyAvailable, normalizeModelName } from './llm'
 import { isDesktop } from './tools/localFs'
+import { getScoped, setScoped } from './chatScope'
 import { chunkText } from './retrieval'
 import { invalidateDocIndex } from './tools/documents'
 import { LIVE_MODELS } from './live/protocol'
@@ -342,7 +343,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         initialToolMode: isLocalProvider ? 'prompted' : await getToolMode(pid, mdl),
         webEnabled: body.use_web_search !== false,
         // A caller (e.g. a sub-agent) can scope tools further via body.disabledTools.
-        disabledTools: [...new Set([...(await getDisabledTools()), ...(body.disabledTools || [])])],
+        disabledTools: [...new Set([...(await getDisabledTools(body.conversationId || body.channel || null)), ...(body.disabledTools || [])])],
         agentOverride: body.agent_override || null,
         persona: body.system_prompt || null,
         // Probing costs a round-trip, so per message we trust the cache and
@@ -387,7 +388,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
               toolsEnabled: body.tools !== false && body.use_tools !== false,
               initialToolMode: isLocalProvider ? 'prompted' : await getToolMode(pid, fallbackMdl),
               webEnabled: body.use_web_search !== false,
-              disabledTools: [...new Set([...(await getDisabledTools()), ...(body.disabledTools || [])])],
+              disabledTools: [...new Set([...(await getDisabledTools(body.conversationId || body.channel || null)), ...(body.disabledTools || [])])],
               agentOverride: body.agent_override || null,
               persona: body.system_prompt || null,
               modelCanSee: (await getCachedVision(pid, fallbackMdl)) ?? looksVisionCapable(fallbackMdl),
@@ -1830,30 +1831,36 @@ export function canExecuteScheduledJobs() {
  */
 const DEFAULT_DISABLED = ['tts', 'stt']
 
-export async function getDisabledTools() {
-  const saved = await db.getSetting('disabled_tools')
+// Per chat, inheriting the global default (chatScope.js). A conversation that
+// has never had tools changed follows the global list and picks up changes to
+// it; one that HAS is pinned. Without this, turning off the shell in a chat
+// where it was dangerous turned it off in the chat that needed it.
+export async function getDisabledTools(conversationId) {
+  const saved = await getScoped('disabled_tools', conversationId, null)
   if (saved) return saved
+  // Seed the GLOBAL default only. Writing it per-chat here would pin every
+  // conversation the first time it was read, so none would ever inherit again.
   await db.setSetting('disabled_tools', DEFAULT_DISABLED)
   return DEFAULT_DISABLED
 }
 
-export async function setToolEnabled(name, enabled) {
-  const disabled = new Set(await getDisabledTools())
+export async function setToolEnabled(name, enabled, conversationId) {
+  const disabled = new Set(await getDisabledTools(conversationId))
   if (enabled) disabled.delete(name)
   else disabled.add(name)
-  await db.setSetting('disabled_tools', [...disabled])
+  await setScoped('disabled_tools', conversationId, [...disabled])
   return [...disabled]
 }
 
-export async function setToolsEnabledBulk(names, enabled) {
-  const disabled = new Set(await getDisabledTools())
+export async function setToolsEnabledBulk(names, enabled, conversationId) {
+  const disabled = new Set(await getDisabledTools(conversationId))
   for (const n of names) enabled ? disabled.delete(n) : disabled.add(n)
-  await db.setSetting('disabled_tools', [...disabled])
+  await setScoped('disabled_tools', conversationId, [...disabled])
   return [...disabled]
 }
 
-export async function getTools() {
-  const disabled = new Set(await getDisabledTools())
+export async function getTools(conversationId) {
+  const disabled = new Set(await getDisabledTools(conversationId))
   // Dynamic import: api.js is on the startup path, and a static import of the
   // tool barrel pulled all ~141 tools into the first-paint bundle even though
   // this list is only ever needed by the settings UI.

@@ -5,6 +5,7 @@
  * chat users rely on to keep a consistent voice.
  */
 import { getSetting, setSetting } from './db'
+import { getScoped, setScoped, clearScoped } from './chatScope'
 
 const KEY = 'custom_styles'
 const ACTIVE = 'active_style'
@@ -68,17 +69,26 @@ export async function deleteStyle(id) {
   if ((await getActiveStyleId()) === id) await setActiveStyle('default')
 }
 
-export async function getActiveStyleId() { return (await getSetting(ACTIVE, 'default')) || 'default' }
-export async function setActiveStyle(id) { return setSetting(ACTIVE, id || 'default') }
+// Per chat, inheriting the global default (see chatScope.js).
+export async function getActiveStyleId(conversationId) {
+  return (await getScoped(ACTIVE, conversationId, 'default')) || 'default'
+}
+export async function setActiveStyle(id, conversationId) {
+  return setScoped(ACTIVE, conversationId, id || 'default')
+}
+/** Drop this chat's binding so it follows the global default again. */
+export async function inheritActiveStyle(conversationId) {
+  return clearScoped(ACTIVE, conversationId)
+}
 
-export async function getActiveStyle() {
-  const id = await getActiveStyleId()
+export async function getActiveStyle(conversationId) {
+  const id = await getActiveStyleId(conversationId)
   return (await getStyles()).find(s => s.id === id) || null
 }
 
 /** The system-prompt fragment for the active style ('' for Default/none). */
-export async function getActiveStyleBlock() {
-  const s = await getActiveStyle()
+export async function getActiveStyleBlock(conversationId) {
+  const s = await getActiveStyle(conversationId)
   if (!s?.system) return ''
   return `\n\nRESPONSE STYLE — "${s.name}":\n${s.system}`
 }

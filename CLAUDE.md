@@ -1,5 +1,121 @@
 # Yogatik — Project Knowledge
 
+## Two chats really do run at once, and seven tools resolved the WRONG one (2026-08-31)
+- MEASURED, not argued. `withWorkspaceContext` saved and restored ONE module-level slot
+  around an `await`. Chat A enters (slot=A) and suspends on a permission prompt or a slow
+  read; chat B enters (slot=B); A resumes and reads the slot — and gets **B**. A direct run
+  of the real function prints `ambient read by A -> chat-B`. Reproduce it before touching
+  this: reading the code does not show it.
+- IT IS LIVE, NOT LATENT. `aborters` (api.js) and `loadingMap`/`streamingMap` (App.jsx) are
+  all keyed by clientId, and App passes `channel: targetClientId` — so two turns genuinely
+  stream at once. The window is every await inside a tool call.
+- The browser has no AsyncLocalStorage, so a value CANNOT be bound to an async frame. The
+  only sound answer is an EXPLICIT ctx threaded from executeTool. The chain was already
+  intact for fs_* (runAgent builds `executionCtx` → executeTool → `tool.execute(args,{ctx})`
+  → `invoke(cmd,args,opts?.ctx)`), which is why this was invisible: the dangerous surfaces
+  were the ones that had NOT been threaded.
+  - `terminalRun.js` — `ctx: getWorkspaceCtx()`. Chat A's SHELL COMMAND ran in chat B's folder.
+  - `browserControl.js` — sessions are keyed by conversationId and hold LOGGED-IN tabs, so
+    one chat could drive another chat's authenticated session. The nested `run_script` step
+    had to be threaded too, or a script drifted chats mid-run.
+  - `devTools.js` — one ambient `invoke` behind the whole git + proc family, so `proc_start`
+    launched a dev server in the wrong repo.
+  - `watchFolder.js`, `todo.js` (todos written into another chat's list), `spawnAgents.js`
+    (a whole sub-agent team, its isolation plan and its blackboard handed to the wrong chat).
+- NONE of these throw. A file lands in the wrong folder, a command runs in the wrong repo —
+  and it all looks exactly like success. Same class as `is_dir` vs `isDir` and `doc.text` vs
+  `doc.chunks`, but on the write path.
+- `workspaceIsolation.test.js` is the durable half and is mostly a GREP: `getWorkspaceCtx()`
+  with an empty argument list is the bug, with an argument it is correct. It also asserts the
+  SCOPED list equals every tool file that imports the context at all, so a new desktop tool
+  cannot quietly fall outside it. Note the grep also catches the pattern inside a COMMENT —
+  reword rather than weaken it, and `ctx = getWorkspaceCtx()` as a DEFAULT PARAMETER trips it
+  too (resolve inside the body instead; todo.js does).
+- `concurrentChats()` counts distinct in-flight chats and `workspaceCtx` WARNS when it is
+  asked for an ambient value while more than one is running — that read is provably
+  ambiguous. It does not refuse: refusing would break the parallelism this exists to support.
+- Terminal sessions were ALREADY per-chat (`terminalSession.cjs` keys `sessions` by chatId)
+  and browser sessions already keyed by conversationId. Both were correct and both were being
+  handed the wrong id, which is why the bug survived: the isolation was real, the identity
+  was not.
+
+## The file cache was keyed by PATH ALONE (2026-08-31) — tools/fsCache.js
+- Found by asking "is a chat's folder REALLY isolated now", not by the ctx sweep. Threading
+  ctx fixed which folder was resolved; it did nothing about a cache sitting in front of it.
+- `_key(path)` had no workspace in it. Chat A on /projects/alpha and chat B on /projects/beta
+  both `fs_read('src/index.js')` — and B is served A's file, returned as
+  `success: true, cached: true`. Tool paths are usually RELATIVE to the chat's own folders,
+  so the path alone is the most collision-prone key the app could have chosen.
+- SCOPED READS, GLOBAL INVALIDATION. Reads carry `cacheScope(opts)` = the calling chat.
+  `invalidate(path)` deliberately clears the path in EVERY scope, because two chats are
+  allowed to hold the SAME folder — scoping invalidation as well would trade the leak for a
+  staleness bug where a write in A leaves B serving pre-write bytes. Byte accounting has to
+  sum over all the scopes it removes, or the usable cache silently shrinks to nothing.
+- `globalFsCache.get(path)` was ALSO called with no mtime and no size by its only caller, so
+  the class's own freshness validation never ran. Scoping does not fix that; it is still
+  invalidation-only, which is sound while every writer goes through fs_write/fs_edit.
+- fsCache.test.js pins the collision case AND greps localFs.js so an unscoped call cannot be
+  added back — an unscoped hit reads as a normal fast read and logs nothing.
+
+## Agent, skill, style and tool choice were GLOBAL (2026-08-31) — chatScope.js
+- `active_agent`, `active_skill`, `active_style` and `disabled_tools` were single keys.
+  Activating the Coder agent in one conversation changed the agent answering in EVERY other
+  one, including a conversation already mid-turn.
+- One shared mechanism, not four copies (youtube.js kept its own relay list and missed every
+  fix that landed on the shared one). Resolution mirrors rootsCore's chat → project → default:
+  a chat with no binding FOLLOWS the global default and picks up changes to it; a chat with
+  one keeps it when the default moves.
+- THE SENTINEL IS THE SUBTLE PART. `db.getSetting` returns the FALLBACK for a row holding
+  null — deliberately, so `getSetting(k,'')` never puts null into a controlled input. That
+  makes null and "no row" indistinguishable, so null CANNOT mean "explicitly none": turning
+  a skill off in one chat would read as "inherit" and hand the global skill straight back on
+  the next turn, looking exactly like a broken toggle. Hence `NONE = '__none__'`.
+- IDENTITY CHANGES MID-CHAT, and getting this wrong is invisible. A chat has a clientId from
+  the moment it appears and gains a database id when its first message is persisted — and
+  runAgent resolves `conversationId: convId || targetClientId`, so the key MOVES at that
+  instant. `scopeId` in App must use the SAME rule (`conv.id || conv.clientId`) or the panel
+  writes one key and the agent reads another, and the per-chat choice silently reverts to the
+  global default on turn two. `rebindChatScope` migrates the bindings at exactly the point
+  `rebindChatRoots` already migrated the folders, for the same reason and from the same line.
+  The branch path needs the same rule on BOTH sides.
+- `copyChatScope` runs on BRANCH (editing an earlier turn): without it a branch reverts to the
+  global defaults, so the user talks to a different assistant than the one whose answer they
+  were editing, with nothing on screen saying so.
+- `getDisabledTools` seeds DEFAULT_DISABLED to the GLOBAL key only — writing it per-chat on
+  first read would pin every conversation and nothing would ever inherit again.
+- The Response STYLE picker is still unwired UI: only agent.js consumes styles.js, and no
+  component renders a style selector. styles.js is per-chat now for whenever it is wired.
+
+## Offline is a capability question, and nothing could answer it (2026-08-31) — capabilities.js
+- Every local engine already existed — Whisper, WebLLM, Ollama, Kokoro, SmolVLM, Tesseract,
+  CLIP/DETR, SlimSAM, BM25. What did not exist was anything that could say WHAT WORKS WITH NO
+  NETWORK. Each caller picked its own engine with its own ad-hoc fallback.
+- Three rules, each fixing a real failure: never silently reach the network (a privacy promise
+  that degrades without saying so is worse than none); a download is a DECISION, not a
+  fallback (an engine without its weights is never auto-selected — the blind-model fallback
+  already pulled 230MB with nothing on screen saying so); and always report WHICH engine
+  served, so the UI can say "on-device" honestly rather than by assumption.
+- THE MOST USEFUL LINE IN THE FILE: Web Speech recognition is `hybrid`, NOT local. Chrome
+  STREAMS MICROPHONE AUDIO TO GOOGLE. It needs no key and has no download, so every surface
+  property reads as on-device — and it is the default input for Live's cascade engine.
+  Filing it as local would make the app's own privacy claim false.
+- `search` was ONE capability and that was a lie in both directions — it would report "search
+  works offline" to someone asking about today's news, and "search is unavailable" to someone
+  asking about a PDF in their own vault. Split into `vault_search` (local, offline) and
+  `web_search` (network-only by nature). The test caught this, not review.
+- `local_first` that had to go remote returns `degraded` with a reason, never a plain success:
+  the caller promised the user something it did not deliver and has to be able to say so.
+- capabilities.js is PURE (readiness is INJECTED); capabilityRuntime.js does the probing.
+  EVERY PROBE MUST BE FREE — it runs on the startup path, so Ollama is read from the cached
+  `status_ollama` row, never from `__YOGATIK_OLLAMA__.status()`, which is an IPC round-trip
+  that can wake or wait on the daemon.
+- `capabilityBlock` reaches the MODEL and is injected before memoryBlock (which stays last, by
+  the small-model attention rule). Telling a local-only user "I'll search the web for that"
+  and then failing is the platformBlock() failure one layer up.
+- Tests: capabilities (13 assertions), chatScope (10), workspaceIsolation (concurrency
+  regression + the grep). All were run by direct node execution — vitest and eslint remain
+  unrunnable over the network mount, so RUN `npm test` AND `npm run lint` LOCALLY.
+
 ## "Why can't the AI see me" — and the caption that said everything twice (2026-08-30)
 - THE VISION ANSWER: the chat model was text-only. The badge said "Watching (on-device)",
   which is accurate and explains nothing — frames never reach the model at all, they are

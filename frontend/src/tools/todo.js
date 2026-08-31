@@ -14,12 +14,19 @@ function keyFor(ctx) {
   return `todos_${id}`
 }
 
-export async function getTodos(ctx = getWorkspaceCtx()) {
-  try { return normalizeTodos(await getSetting(keyFor(ctx), [])) } catch { return [] }
+// ctx is resolved INSIDE, not as a default parameter value. A default is
+// evaluated at call time either way, but writing it here keeps one rule true
+// across the file: the ambient chat is only ever a fallback for a caller that
+// supplied nothing (the UI, where a single chat is active). The tool itself
+// always passes the calling chat explicitly.
+export async function getTodos(ctx) {
+  const scope = getWorkspaceCtx(ctx)
+  try { return normalizeTodos(await getSetting(keyFor(scope), [])) } catch { return [] }
 }
 
-export async function saveTodos(list, ctx = getWorkspaceCtx()) {
-  try { await setSetting(keyFor(ctx), list) } catch { /* memory only */ }
+export async function saveTodos(list, ctx) {
+  const scope = getWorkspaceCtx(ctx)
+  try { await setSetting(keyFor(scope), list) } catch { /* memory only */ }
   return list
 }
 
@@ -65,9 +72,12 @@ export const todoTool = {
       required: [],
     },
   },
-  async execute(args = {}) {
+  async execute(args = {}, opts = {}) {
     try {
-      const ctx = getWorkspaceCtx()
+      // Todos are stored under `todos_<conversationId>`. Reading the ambient
+      // chat instead of the calling one would write chat A's plan into chat B's
+      // list whenever both are streaming.
+      const ctx = getWorkspaceCtx(opts?.ctx)
       const current = await getTodos(ctx)
       const hasOps = !!(args.replace || args.add || args.update || args.remove)
       if (!hasOps) {

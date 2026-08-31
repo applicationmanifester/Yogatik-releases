@@ -44,7 +44,7 @@ export const terminalRunTool = {
       required: ['command'],
     },
   },
-  async execute(args = {}) {
+  async execute(args = {}, opts = {}) {
     const command = args.command ?? args.cmd ?? args.CommandLine ?? args.script ?? args.exec
     const cwd = args.cwd ?? args.Cwd ?? args.directory ?? args.dir
     const timeout = args.timeout ?? args.timeout_ms ?? args.timeoutMs ?? args.WaitMsBeforeAsync
@@ -67,7 +67,14 @@ export const terminalRunTool = {
       const res = await bridge.exec(command, {
         cwd,
         timeout: waitMs,
-        ctx: getWorkspaceCtx(),
+        // The ctx MUST come from the chat that issued this command, never from
+        // the ambient "active chat". Two chats can stream at once (aborters and
+        // loadingMap are both keyed by clientId), and the ambient slot holds
+        // whichever entered LAST — so resolving the ambient context here ran
+        // chat A's shell command inside chat B's folder. Explicit ctx wins;
+        // ambient remains the fallback for UI callers, where only one chat is
+        // ever active.
+        ctx: getWorkspaceCtx(opts?.ctx),
         env: { ...NON_INTERACTIVE_ENV, ...(env && typeof env === 'object' ? env : {}) },
       })
       // exitCode -1 means the command never STARTED (no working folder bound, bad

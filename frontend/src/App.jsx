@@ -4,6 +4,7 @@ import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, Us
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { setUserQuestionHandler } from './tools/askUser'
+import { copyChatScope, rebindChatScope } from './chatScope'
 import { runMultiAgentDebate } from './multiAgent'
 import { startActivityTurn, publishStream, publishStep, endActivityTurn, setActivityConversation } from './activityStream'
 import { YogatikLogo } from './components/YogatikLogo'
@@ -1338,18 +1339,27 @@ export default function App() {
     }
   }
 
+  // Tool enablement is per chat, inheriting the global default. clientId is the
+  // conversation identity everywhere else in this file (channel, loadingMap,
+  // aborters, streaming), so it is the identity here too — using conv.id would
+  // silently change key the moment a chat is first saved to the database.
+  // MUST match what runAgent resolves (`conversationId: convId || clientId`),
+  // or the panel writes one key and the agent reads another — and the per-chat
+  // choice silently stops applying the moment the chat is saved.
+  const scopeId = conv?.id || conv?.clientId || null
+
   const refreshToolPrefs = useCallback(() => {
-    getTools().then(setToolPrefs).catch(() => {})
-  }, [])
+    getTools(scopeId).then(setToolPrefs).catch(() => {})
+  }, [scopeId])
 
   const toggleTool = async (name, enabled) => {
-    await setToolEnabled(name, enabled)
+    await setToolEnabled(name, enabled, scopeId)
     refreshToolPrefs()
   }
 
   const toggleToolGroup = async (group, enabled) => {
     const names = toolPrefs.filter(t => t.group === group).map(t => t.name)
-    await setToolsEnabledBulk(names, enabled)
+    await setToolsEnabledBulk(names, enabled, scopeId)
     refreshToolPrefs()
   }
 
@@ -2254,6 +2264,10 @@ export default function App() {
         // Folders added while this chat was still a draft are keyed by clientId;
         // move them onto the real id or they'd be orphaned on the next render.
         if (targetClientId) await rebindChatRoots(targetClientId, convId)
+        // Same migration for the chat's agent / skill / style / tool bindings:
+        // runAgent resolves its scope from `convId || clientId`, so the identity
+        // changes here too, and a binding left on the old key is never read again.
+        if (targetClientId) await rebindChatScope(targetClientId, convId)
       } else if (isNewTitle) {
         await renameConversation(convId, updated.title)
       }
@@ -3004,6 +3018,16 @@ export default function App() {
         tools: forked.settings?.tools ?? source?.tools ?? true,
         messages: (forked.messages || []).map(hydrate),
       }
+      // Carry the source chat's agent / skill / style / tool bindings across.
+      // Without this a branch silently reverts to the global defaults, so the
+      // user would be talking to a different assistant than the one whose
+      // answer they were editing, with nothing on screen saying so.
+      // Both sides use the SAME identity rule as scopeId and runAgent
+      // (`id || clientId`). A branch is created saved, so it already has an id;
+      // copying under clientId would write a key nothing ever reads.
+      const fromScope = source?.id || source?.clientId
+      const toScope = newForked.id || newForked.clientId
+      if (fromScope && toScope) copyChatScope(fromScope, toScope).catch(() => {})
       setConversations(prev => {
         const next = [newForked, ...prev]
         conversationsRef.current = next
@@ -4803,12 +4827,14 @@ export default function App() {
         <SkillsPanel
           onClose={() => setShowSkills(false)}
           onRunWorkflow={runWorkflowNow}
+          conversationId={scopeId}
         />
       )}
       {showAgents && (
         <AgentsPanel
           onClose={() => setShowAgents(false)}
           onToast={showToast}
+          conversationId={scopeId}
         />
       )}
       {/* TerminalPanel manages its own visibility from `open`, so it is always

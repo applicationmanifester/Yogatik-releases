@@ -14,7 +14,7 @@ function download(name, text) {
 }
 
 /** Manage Skills (shape the assistant) and Workflows (multi-step runs). */
-export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter }) {
+export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter, conversationId = null }) {
   const [tab, setTab] = React.useState('skills')
   const [skills, setSkills] = React.useState([])
   const [activeId, setActiveId] = React.useState(null)
@@ -24,11 +24,12 @@ export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter }) {
   const fileRef = React.useRef(null)
 
   const reload = async () => {
-    setSkills(await getSkills()); setActiveId(await getActiveSkillId()); setFlows(await getWorkflows())
+    setSkills(await getSkills()); setActiveId(await getActiveSkillId(conversationId)); setFlows(await getWorkflows())
   }
-  React.useEffect(() => { reload() }, [])
+  React.useEffect(() => { reload() }, [conversationId])
 
-  const activate = async (id) => { await setActiveSkill(id === activeId ? null : id); reload() }
+  // Scoped to THIS chat, inheriting the global default.
+  const activate = async (id) => { await setActiveSkill(id === activeId ? null : id, conversationId); reload() }
 
   const saveSkill = async () => {
     if (!editing?.name?.trim() || !editing?.system?.trim()) return

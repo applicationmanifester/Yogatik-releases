@@ -35,18 +35,51 @@ export function setWorkspaceContext(fn) {
   ctxProvider = typeof fn === 'function' ? fn : () => ({ conversationId: null, projectId: null })
 }
 
+// Every tool call currently in flight, by conversationId. A single ambient slot
+// CANNOT be correct when two chats overlap: `aborters` and `loadingMap` are both
+// keyed by clientId, so two turns genuinely run at once, and a save/restore
+// around an `await` leaves the slot holding whichever chat entered LAST. The
+// browser has no AsyncLocalStorage to bind a value to an async frame, so the
+// only sound answer is an EXPLICIT ctx threaded from executeTool — which every
+// tool now does. This set exists to catch the ones that stop doing it.
+const inFlight = new Map()   // conversationId -> depth
+
 export async function withWorkspaceContext(ctx, fn) {
   const prev = ambientCtx
+  const id = ctx?.conversationId || null
   ambientCtx = ctx || null
+  if (id) inFlight.set(id, (inFlight.get(id) || 0) + 1)
   try {
     return await fn()
   } finally {
     ambientCtx = prev
+    if (id) {
+      const n = (inFlight.get(id) || 1) - 1
+      if (n > 0) inFlight.set(id, n); else inFlight.delete(id)
+    }
   }
 }
 
+/** How many DISTINCT chats have a tool call in flight right now. */
+export function concurrentChats() { return inFlight.size }
+
 function workspaceCtx(override) {
   if (override?.conversationId || override?.projectId) return override
+
+  // An ambient read while two different chats are mid-call is provably
+  // ambiguous — the slot is whichever entered last, not the caller. Rather than
+  // pick one and silently write into the wrong chat's folder, say so. Every
+  // caller that could be ambiguous is a tool, and every tool threads its ctx;
+  // a hit here means a new one forgot to, which is precisely the drift the
+  // grep in workspaceIsolation.test.js is there to stop shipping.
+  if (inFlight.size > 1 && typeof console !== 'undefined') {
+    console.warn(
+      '[workspace] ambient context read while %d chats are running. ' +
+      'The result may belong to another conversation — thread opts.ctx through ' +
+      'to getWorkspaceCtx(opts?.ctx) at this call site.', inFlight.size,
+    )
+  }
+
   if (ambientCtx?.conversationId || ambientCtx?.projectId) return ambientCtx
   try { return ctxProvider() || {} } catch { return {} }
 }
@@ -353,6 +386,17 @@ export const fsListTool = {
 }
 
 import { globalFsCache } from './fsCache'
+
+/**
+ * The cache partition for the chat that issued this tool call.
+ *
+ * Tool paths are usually RELATIVE to the chat's own folders, so the path alone
+ * is not a unique key across chats — it is the single most collision-prone key
+ * the app could have picked.
+ */
+function cacheScope(opts) {
+  return getWorkspaceCtx(opts?.ctx)?.conversationId || null
+}
 import { globalWorkspaceTrie } from './workspaceTrie'
 import { recordSnapshot } from '../workspaceTimeMachine'
 
@@ -392,7 +436,10 @@ export const fsReadTool = {
 
       // In-memory cache hit only for complete, unbounded full-file reads (<0.01ms)
       if (!offset && !limit && !args.max_bytes) {
-        const cached = globalFsCache.get(path)
+        // Scoped to the CALLING chat: a path-only key served chat A's file to
+        // chat B whenever both used the same relative path, reported as a
+        // successful cached read.
+        const cached = globalFsCache.get(path, null, null, cacheScope(opts))
         if (cached && typeof cached === 'string') {
           return ok({ tool: 'fs_read', path, bytes: cached.length, content: cached, cached: true })
         }
@@ -405,11 +452,11 @@ export const fsReadTool = {
         limit,
       }, opts?.ctx)
       if (typeof res === 'string') {
-        globalFsCache.set(path, res)
+        globalFsCache.set(path, res, Date.now(), null, cacheScope(opts))
         return ok({ tool: 'fs_read', path, bytes: res.length, content: res })
       }
       if (res?.content && !offset && !limit && !res.truncated) {
-        globalFsCache.set(path, res.content)
+        globalFsCache.set(path, res.content, Date.now(), null, cacheScope(opts))
       }
       return ok({
         tool: 'fs_read',
@@ -525,7 +572,7 @@ export const fsWriteTool = {
     return guard(async () => {
       // Record Workspace Time Machine snapshot for 1-click rollback
       try {
-        const prev = globalFsCache.get(path) || (await invoke('fs_read', { path, maxBytes: 250000 }).catch(() => null))
+        const prev = globalFsCache.get(path, null, null, cacheScope(opts)) || (await invoke('fs_read', { path, maxBytes: 250000 }, opts?.ctx).catch(() => null))
         const prevText = typeof prev === 'string' ? prev : prev?.content || ''
         await recordSnapshot({
           filePath: path,
@@ -538,7 +585,7 @@ export const fsWriteTool = {
 
       const r = await invoke('fs_write', { path, content: String(content ?? ''), expectedHash: expected_hash || null }, opts?.ctx)
       const res = r && typeof r === 'object' ? r : {}
-      globalFsCache.set(path, String(content ?? ''))
+      globalFsCache.set(path, String(content ?? ''), Date.now(), null, cacheScope(opts))
       globalWorkspaceTrie.insert(path)
       return ok({
         tool: 'fs_write',

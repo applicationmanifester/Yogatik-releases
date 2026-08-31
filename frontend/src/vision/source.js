@@ -14,6 +14,7 @@ import { askLocalVLM, DEFAULT_LOCAL_VLM } from './localVLM'
 import { ocrTool } from '../tools/ocr'
 import { analyseImage, describeStructure } from './imageStats'
 import { classifyZeroShot, detectObjects, summariseDetections, describePosition } from './detect'
+import { assessReadability, shouldTrustDescription } from './readable'
 
 // ─── Shared source ───────────────────────────────────────────────────────────
 
@@ -124,6 +125,22 @@ export async function describeWithoutModel(image, question = '') {
     askLocalVLM(image, question || 'Describe what you see, briefly and concretely.').catch(() => null),
   ])
 
+  // FRAME QUALITY FIRST, before anything derived from the pixels.
+  //
+  // Both Tesseract and a 256M VLM collapse in the dark — they do not fail,
+  // they invent, and the invention arrives looking exactly like a reading.
+  // "Az", "Hoag", "d =" came from an underexposed webcam frame and were
+  // handed to the model as the content of the image. Leading with the caveat
+  // is what stops the model treating noise as text, and it has to come first:
+  // a warning appended after three paragraphs of confident description does
+  // not change the conclusion the model has already drawn.
+  const quality = assessReadability(structure)
+  if (!quality.readable) {
+    parts.push(`FRAME QUALITY: ${quality.reason}. ${quality.advice} `
+      + 'Say this to the user rather than guessing at what is in the picture.')
+    sources.push('quality')
+  }
+
   if (structure) {
     parts.push(`STRUCTURE: ${describeStructure(structure)}`)
     sources.push('structure')
@@ -149,7 +166,20 @@ export async function describeWithoutModel(image, question = '') {
     sources.push('local-vlm')
   }
 
-  if (ocr?.success && ocr.reliable && ocr.text) {
+  // Even "reliable" OCR is not trustworthy out of a frame this bad — the
+  // confidence score is computed over what Tesseract THINKS it saw, so noise
+  // it is sure about still scores well.
+  const trust = shouldTrustDescription({
+    analysis: structure,
+    ocrText: ocr?.text || ocr?.low_confidence_text || '',
+    ocrConfidence: ocr?.confidence ?? null,
+  })
+
+  if (!trust.trust && (ocr?.text || ocr?.low_confidence_text)) {
+    parts.push(`TEXT IN IMAGE: not legible. ${trust.note} `
+      + 'Do NOT repeat or interpret any characters from this frame — they are not real text.')
+    sources.push('ocr-untrusted')
+  } else if (ocr?.success && ocr.reliable && ocr.text) {
     parts.push(`TEXT IN IMAGE (OCR, ${ocr.confidence}% confidence):\n${formatOcrText(ocr.text)}`)
     sources.push('ocr')
   } else if (ocr?.success && ocr.low_confidence_text) {

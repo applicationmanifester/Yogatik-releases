@@ -68,6 +68,8 @@
 import { runAgent } from '../agent'
 import { splitReasoning } from '../reasoning'
 import { createCamera, createScreenCapture, switchCamera as switchCameraTrack } from './video'
+import { pickFiller } from './fillers'
+import * as metrics from './metrics'
 import { enumerate, nextCamera, loadPreferredDevices, savePreferredDevices } from './devices'
 import { createSpeaker, defaultLang } from './voice'
 import {
@@ -324,6 +326,10 @@ export function createCascadeSession({
     speaker.speak(text)
   }
 
+  // Remembers the last spoken filler across turns so the same line is not used
+  // twice in a row; `announced` is reset at the start of every turn.
+  const filler = { announced: false, last: '' }
+
   const flushSentences = (final = false) => {
     let rest = buffer.slice(spoken.length)
     if (final) {
@@ -511,6 +517,17 @@ export function createCascadeSession({
   // ─── A turn ───
   async function respondTo(userText, retry = 0) {
     if (!userText.trim() || closed) return
+    // The clock for time-to-first-word starts the moment the utterance is
+    // committed, not when the request is sent — the user experiences the whole
+    // gap, including anything we do before calling the model.
+    if (retry === 0) metrics.markUtteranceEnd()
+    // Reset the once-per-turn guard HERE, at the top, not further down.
+    // Placed after the vision filler it would still be true from the previous
+    // turn, so the "let me take a closer look" line would fire exactly once
+    // per session and then go quiet forever — a filler that only works the
+    // first time is worse than none, because the silence returns unexplained.
+    // `last` deliberately survives, so two turns do not open identically.
+    if (retry === 0) filler.announced = false
     if (retry === 0) {
       emit({ type: 'transcript', role: 'user', text: userText })
       history.push({ role: 'user', content: userText })
@@ -537,6 +554,15 @@ export function createCascadeSession({
       emit({ type: 'looked', frames: parts.length })
     } else {
       // Non-vision model + shared camera/screen: give it eyes on-device.
+      //
+      // This is AWAITED BEFORE the model is called, and on a text-only model
+      // it means Tesseract plus a small VLM — seconds of silence before the
+      // model has even seen the question, which is the single longest dead air
+      // in the whole turn. The work cannot be made shorter here, but it can
+      // stop sounding like a hang: say "let me take a closer look" first, the
+      // way a person does while they lean in.
+      const line = pickFiller(['identify'], { announced: filler.announced, last: filler.last })
+      if (line) { filler.announced = true; filler.last = line; speak(line) }
       const seen = await describeIfVisual(userText)
       if (seen) content = `${userText}\n\n[Live view (described on-device): ${seen}]`
     }
@@ -574,10 +600,35 @@ export function createCascadeSession({
             buffer += newChunk
             emit({ type: 'transcript', role: 'assistant', text: newChunk })
             flushSentences()
+            metrics.markFirstWord()
           }
         },
         onStatus: (s) => emit({ type: 'status', text: s }),
-        onToolStart: (name) => emit({ type: 'tools', names: [name] }),
+        onToolStart: (name) => {
+          emit({ type: 'tools', names: [name] })
+          // Say something while the tool runs. A web search is 3-4 seconds
+          // whatever the model does, and in a SPOKEN conversation that silence
+          // reads as a crash — people repeat themselves, which barges in,
+          // which cancels the turn, which makes it genuinely broken. Speaking
+          // one short line turns the same wait into an ordinary pause.
+          //
+          // Guarded to once per turn, and never once the model has started its
+          // own answer: talking over the reply is worse than the silence.
+          const line = pickFiller([name], {
+            hasSpoken: produced || !!spoken,
+            announced: filler.announced,
+            last: filler.last,
+          })
+          if (line) {
+            filler.announced = true
+            filler.last = line
+            speak(line)
+            // A filler IS the first word the user hears. Not counting it would
+            // flatter the metric by exactly the number it is meant to measure.
+            metrics.markFirstWord()
+          }
+          metrics.markTool(1)
+        },
         onToolResult: (name, result) => emit({ type: 'toolResult', name, result }),
         onDone: ({ content: full }) => {
           const { answer } = splitReasoning(full || accumulatedContent)
@@ -588,6 +639,7 @@ export function createCascadeSession({
             emit({ type: 'transcript', role: 'assistant', text: finalChunk })
           }
           flushSentences(true)
+          metrics.markTurnEnd()
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
           if (answer?.trim()) { history.push({ role: 'assistant', content: answer.trim() }); lastReply = answer.trim() }
           abort = null
@@ -658,7 +710,13 @@ export function createCascadeSession({
       const echoWindow = speaking || abort || (Date.now() - speechEndedAt) < ECHO_TAIL_MS
       if (echoWindow && isEcho(heard, spokenAloud)) return
       // Genuine barge-in only counts while actually speaking (not during the tail).
-      if ((speaking || abort) && (finalText || heard.length >= MIN_BARGE_CHARS)) interrupt()
+      if ((speaking || abort) && (finalText || heard.length >= MIN_BARGE_CHARS)) {
+        // `spokeAfter` is the whole point of recording this. An interrupt
+        // followed by nothing is noise or the assistant's own echo, and that
+        // is the failure people never report — they just stop using it.
+        metrics.markBargeIn(!!heard.trim())
+        interrupt()
+      }
 
       if (muted) return
 

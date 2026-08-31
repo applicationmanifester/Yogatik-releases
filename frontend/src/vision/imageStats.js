@@ -229,6 +229,12 @@ export function classifyImage({ rgba, width, height }) {
     colours,
     edgeDensity: Number(edges.toFixed(3)),
     meanLuma: Math.round(luma.mean),
+    // Already computed by lumaProfile and previously thrown away. The
+    // readability check needs the TAILS, not just the mean: a frame can average
+    // 120 and still be 85% blown highlights, and a mean alone cannot tell an
+    // evenly-lit scene from a black frame with one bright lamp in it.
+    darkFraction: Number(luma.dark.toFixed(3)),
+    lightFraction: Number(luma.light.toFixed(3)),
     textBands: bands.length,
     bands,
     dominant: dominantColours(rgba),

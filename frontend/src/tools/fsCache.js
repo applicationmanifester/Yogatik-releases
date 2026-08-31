@@ -13,17 +13,24 @@ class FsContentCache {
   }
 
   /**
-   * Generates a unique cache key for a file path.
+   * Generates a unique cache key for a file path IN ONE CHAT'S WORKSPACE.
+   *
+   * The scope is not decoration. Every chat has its own working folders, and
+   * tool paths are routinely RELATIVE to them, so two chats both reading
+   * "src/index.js" collide on a path-only key — and the second one is served
+   * the first one's file, reported as `success: true, cached: true`. That is a
+   * cross-chat content leak that looks exactly like a fast read.
    */
-  _key(path) {
-    return String(path || '').toLowerCase().replace(/\\/g, '/')
+  _key(path, scope) {
+    const p = String(path || '').toLowerCase().replace(/\\/g, '/')
+    return `${scope == null ? '' : String(scope)}::${p}`
   }
 
   /**
    * Retrieves content from cache if mtime and size match.
    */
-  get(path, mtimeMs, size) {
-    const k = this._key(path)
+  get(path, mtimeMs, size, scope) {
+    const k = this._key(path, scope)
     const entry = this.cache.get(k)
     if (!entry) return null
 
@@ -49,8 +56,8 @@ class FsContentCache {
   /**
    * Stores content in the cache.
    */
-  set(path, content, mtimeMs = Date.now(), size = null) {
-    const k = this._key(path)
+  set(path, content, mtimeMs = Date.now(), size = null, scope) {
+    const k = this._key(path, scope)
     const text = String(content || '')
     const bytes = size != null ? Number(size) : text.length
 
@@ -79,16 +86,34 @@ class FsContentCache {
   }
 
   /**
-   * Invalidates a specific file path.
+   * Invalidates a path in EVERY workspace, not just the caller's.
+   *
+   * Reads are scoped so one chat can never be served another's file; writes
+   * must NOT be, because two chats are allowed to hold the SAME folder. Were
+   * invalidation scoped too, a write in chat A would leave chat B serving the
+   * pre-write bytes for a file they genuinely share — trading a leak for a
+   * staleness bug. Scoped reads, global invalidation.
    */
   invalidate(path) {
-    const k = this._key(path)
-    if (this.cache.has(k)) {
+    const suffix = `::${String(path || '').toLowerCase().replace(/\\/g, '/')}`
+    let hit = false
+    for (const k of [...this.cache.keys()]) {
+      if (!k.endsWith(suffix)) continue
       this.currentBytes -= this.cache.get(k).size
       this.cache.delete(k)
-      return true
+      hit = true
     }
-    return false
+    return hit
+  }
+
+  /** Drop everything belonging to one chat (its folders were unbound). */
+  invalidateScope(scope) {
+    const prefix = `${scope == null ? '' : String(scope)}::`
+    for (const k of [...this.cache.keys()]) {
+      if (!k.startsWith(prefix)) continue
+      this.currentBytes -= this.cache.get(k).size
+      this.cache.delete(k)
+    }
   }
 
   /**

@@ -53,6 +53,24 @@
 
     This mirrors the policy served by firebase.json (Report-Only there, so
     violations can be observed before they break anything). Keep the two in sync.
+
+    connect-src NAMES THE LOCAL DAEMON PORTS EXPLICITLY.
+    Ollama (11434) and LM Studio (1234) serve plain HTTP on the loopback, and
+    `https:` does not cover `http://127.0.0.1`. Without these entries the
+    browser refuses the request before it leaves the machine — no CORS
+    negotiation, no daemon involvement — and a CSP refusal cannot be caught or
+    reported by the page, so it surfaced as a bare "Failed to fetch" that the
+    app reported as "network or CORS proxy issue" on a machine where Ollama was
+    running perfectly. The enableProviderCors shim in the main process could
+    never have helped: a meta CSP blocks the fetch upstream of it.
+
+    Both 127.0.0.1 and localhost are listed because the two are NOT
+    interchangeable — on Windows 11 `localhost` resolves to ::1 first, and a
+    user may also override the host with VITE_OLLAMA_HOST.
+
+    Deliberately NOT blanket `http:`. That would let any plaintext origin
+    through and drop the one protection this directive still provides on the
+    web build, where nothing local is expected to be reachable anyway.
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'self';
@@ -62,7 +80,7 @@
     font-src 'self' data: https: ;
     img-src 'self' data: blob: https:;
     media-src 'self' blob: data: https:;
-    connect-src 'self' https: wss: blob: data:;
+    connect-src 'self' https: wss: blob: data: http://127.0.0.1:11434 http://localhost:11434 http://127.0.0.1:1234 http://localhost:1234 ws://127.0.0.1:11434 ws://localhost:11434;
     worker-src 'self' blob:;
     frame-src 'self' https://googleads.g.doubleclick.net https://tpc.googlesyndication.com https://*.googlesyndication.com https://*.google.com https://*.doubleclick.net https://*.adtrafficquality.google https://ep1.adtrafficquality.google https://ep2.adtrafficquality.google https://api.razorpay.com https://checkout.razorpay.com https://*.razorpay.com https://*.paddle.com https://*.firebaseapp.com https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com;
     object-src 'none';

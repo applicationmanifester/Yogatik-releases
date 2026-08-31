@@ -19,7 +19,7 @@ function download(name, text) {
  * runner (goal → plan → execute → report). Sub-agent delegation happens
  * automatically via the spawn_agents tool; this panel manages the roster.
  */
-export function AgentsPanel({ onClose, onToast }) {
+export function AgentsPanel({ onClose, onToast, conversationId = null }) {
   const [tab, setTab] = React.useState('agents')
   const [agents, setAgents] = React.useState([])
   const [activeId, setActiveId] = React.useState(null)
@@ -35,10 +35,13 @@ export function AgentsPanel({ onClose, onToast }) {
   const [report, setReport] = React.useState('')
   const abortRef = React.useRef(null)
 
-  const reload = async () => { setAgents(await getAgents()); setActiveId(await getActiveAgentId()) }
-  React.useEffect(() => { reload() }, [])
+  // Scoped to THIS chat, inheriting the global default. Without the id the
+  // panel read and wrote the single global key, so activating an agent here
+  // changed the agent answering in every other open conversation.
+  const reload = async () => { setAgents(await getAgents()); setActiveId(await getActiveAgentId(conversationId)) }
+  React.useEffect(() => { reload() }, [conversationId])
 
-  const activate = async (id) => { await setActiveAgent(id === activeId ? null : id); reload() }
+  const activate = async (id) => { await setActiveAgent(id === activeId ? null : id, conversationId); reload() }
 
   const saveAgent = async () => {
     if (!editing?.name?.trim() || !editing?.system?.trim()) return

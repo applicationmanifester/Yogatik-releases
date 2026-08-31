@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { getErrorLog, clearErrorLog, getDiagnosticsReport, diagnoseError } from '../errorLog'
 import { latencyReport } from '../telemetry'
+import { report as liveReport } from '../live/metrics'
 import { runSafetyScreenEval } from '../evalHarness'
 import { db, getAgentTraces } from '../db'
 
@@ -29,6 +30,9 @@ export function DiagnosticsModal({ onClose }) {
   // eval pass rate (model-free regression over the golden set).
   const perf = useMemo(() => latencyReport(), [logs])
   const safety = useMemo(() => runSafetyScreenEval(), [])
+  // Live had no instrumentation at all, so every decision about that module
+  // was a guess. These are the six numbers from the roadmap and nothing else.
+  const live = useMemo(() => liveReport(), [logs])
   const latTarget = perf.total.p95 != null && perf.total.p95 < 2000
 
   useEffect(() => {
@@ -179,6 +183,36 @@ export function DiagnosticsModal({ onClose }) {
                 <div style={{ color: 'var(--text-secondary)' }}>
                   Total P50 <strong style={{ color: 'var(--text-primary)' }}>{fmtMs(perf.total.p50)}</strong> · P95 <strong style={{ color: latTarget ? '#10b981' : 'var(--text-primary)' }}>{fmtMs(perf.total.p95)}</strong> <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>(target &lt; 2s)</span>
                 </div>
+              </div>
+              <div style={{ flex: '1 1 160px', background: 'var(--bg-tertiary, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: 8, padding: '8px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  <Activity size={13} /> <strong style={{ color: 'var(--text-primary)' }}>Live sessions</strong>
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)' }}>
+                    {live.sessions ? `${live.sessions} session${live.sessions === 1 ? '' : 's'}` : 'no data yet'}
+                  </span>
+                </div>
+                {live.sessions ? (
+                  <>
+                    <div style={{ color: 'var(--text-secondary)' }}>
+                      First word P50 <strong style={{ color: 'var(--text-primary)' }}>{fmtMs(live.firstWordP50)}</strong> · P95 <strong style={{ color: 'var(--text-primary)' }}>{fmtMs(live.firstWordP95)}</strong>
+                    </div>
+                    <div style={{ color: 'var(--text-secondary)' }}>
+                      {live.turnsPerSession} turns/session · {Math.round((live.over60sRate || 0) * 100)}% over 60s
+                    </div>
+                    {/* The strategic one: low camera use means Live is a voice
+                        app competing on latency, which is the race it cannot win. */}
+                    <div style={{ color: 'var(--text-secondary)' }}>
+                      Camera <strong style={{ color: (live.cameraOnRate ?? 0) >= 0.5 ? '#10b981' : '#f59e0b' }}>{Math.round((live.cameraOnRate || 0) * 100)}%</strong>
+                      {' · '}tools <strong style={{ color: 'var(--text-primary)' }}>{Math.round((live.toolTurnRate || 0) * 100)}%</strong>
+                      {live.bargeInFalsePositiveRate != null && <> · bad barge-in <strong style={{ color: live.bargeInFalsePositiveRate > 0.2 ? '#f59e0b' : 'var(--text-primary)' }}>{Math.round(live.bargeInFalsePositiveRate * 100)}%</strong></>}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                      ended: {Object.entries(live.endReasons).map(([k, v]) => `${k} ${v}`).join(' · ')}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Start a Live call to collect timings. Local only — never sent anywhere.</div>
+                )}
               </div>
               <div style={{ flex: '1 1 160px', background: 'var(--bg-tertiary, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: 8, padding: '8px 12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', marginBottom: 4 }}>

@@ -82,7 +82,27 @@ function enableProviderCors() {
     const url = details.url || ''
 
     if (LOCALHOST_ORIGIN.test(url)) {
-      h['Origin'] = 'http://localhost:11434'
+      // Send an Origin the daemon ALREADY trusts, and derive it from the URL
+      // rather than hardcoding one.
+      //
+      // Ollama's default allowlist is 127.0.0.1 and 0.0.0.0 — anything else
+      // needs OLLAMA_ORIGINS set by the user, which a desktop app must not
+      // require. This previously sent a fixed `http://localhost:11434`, so
+      // when the request went to 127.0.0.1 the Origin named a DIFFERENT host
+      // than the target, and on an Ollama build that does not allowlist
+      // `localhost` the daemon answers 403. A 403 with no CORS headers reaches
+      // the renderer as a bare network failure, which the app then reported as
+      // "network or CORS proxy issue" — the same unhelpful sentence for a
+      // rejected origin as for a daemon that is not running.
+      //
+      // Matching the origin to the target host means the request always looks
+      // same-origin to the daemon, for both Ollama (11434) and LM Studio (1234).
+      try {
+        const u = new URL(url)
+        h['Origin'] = `${u.protocol}//${u.host}`
+      } catch {
+        h['Origin'] = 'http://127.0.0.1:11434'
+      }
     } else if (!isProvider(url) && !isFirstParty(url)) {
       // General web read: go anonymously. See the SAFETY note above.
       delete h['Cookie']
