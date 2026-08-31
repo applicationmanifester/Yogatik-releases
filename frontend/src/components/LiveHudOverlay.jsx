@@ -128,12 +128,15 @@ export function LiveHudOverlay({
         }} />
       </div>
 
-      {/* Bottom Mode Toolbar */}
-      <div style={{
-        display: 'flex',
+      {/* Bottom Mode Toolbar.
+          Positioned by CSS class, not by this flex column: the overlay is
+          `inset: 0` with `space-between`, so this row landed wherever the
+          column pushed it — in the shipped build that was UNDER the control
+          bar, and on a phone under the home indicator, where it cannot be
+          tapped at all. `.live-hud-actions` pins it directly above the
+          controls with a safe-area offset. */}
+      <div className="live-hud-actions" style={{
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: '10px',
         pointerEvents: 'auto',
       }}>
         {onIdentifyPill && (

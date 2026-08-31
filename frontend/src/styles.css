@@ -7300,3 +7300,111 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
   .ldp-backdrop { align-items: center; }
   .ldp-sheet { border-radius: 16px; border-bottom: 1px solid var(--border); }
 }
+
+/* ── Live: layered layout ────────────────────────────────────────────────────
+   Everything in the call is absolutely positioned over the video, so the only
+   thing keeping the layers apart is discipline about where each band sits.
+   Measured against the shipped screenshot, three of them collided: the HUD
+   reticle, the captions and the action chips all landed in the same 200px.
+
+   The bands, bottom-up:
+     controls        40px (24px on a phone) + safe area
+     action chips    directly above the controls, never below them
+     captions        above the chips, capped at 3 lines
+     reticle / orb   the middle of the frame, which the captions now clear
+*/
+.live-captions {
+  /* Was 132px, which put the text inside the HUD reticle and on top of the
+     orb. It now sits above the chip row. */
+  bottom: calc(160px + env(safe-area-inset-bottom));
+  /* A scrim, because white text over a bright frame is unreadable and a
+     text-shadow alone does not carry it. */
+  background: linear-gradient(to top, rgba(0, 0, 0, .55), rgba(0, 0, 0, 0));
+  padding: 26px 14px 10px;
+  border-radius: 14px;
+  /* Three lines maximum; older ones scroll away rather than growing upward
+     into the reticle. */
+  max-height: 30dvh; overflow: hidden;
+}
+.live-caption { overflow-wrap: anywhere; }
+/* The live line is the one being spoken. The others are context, not equals. */
+.live-caption:not(:last-child) { opacity: .55; font-size: 15px; }
+
+/* Action chips (Identify Pill / Scan Barcode / Enhance Macro) sit ABOVE the
+   control bar. In the shipped build they were below it, which on a phone puts
+   them under the home indicator where they cannot be tapped at all. */
+.live-hud-actions {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(108px + env(safe-area-inset-bottom));
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  width: min(560px, 94vw); z-index: 4;
+}
+
+.live-controls {
+  /* The home indicator on iOS overlaps a bar pinned to a flat 40px. */
+  bottom: calc(40px + env(safe-area-inset-bottom));
+  flex-wrap: wrap; justify-content: center;
+  width: min(560px, 96vw);
+}
+
+@media (max-width: 640px) {
+  .live-controls { bottom: calc(20px + env(safe-area-inset-bottom)); gap: 8px; }
+  /* 46px keeps a comfortable touch target while fitting seven controls across
+     a 360px phone without wrapping into two rows. */
+  .live-btn { width: 46px; height: 46px; }
+  .live-btn.end { width: 56px; height: 56px; }
+  .live-captions { bottom: calc(148px + env(safe-area-inset-bottom)); max-height: 26dvh; }
+  .live-caption { font-size: 15px; }
+  .live-caption:last-child { font-size: 17px; }
+  .live-hud-actions { bottom: calc(96px + env(safe-area-inset-bottom)); gap: 6px; }
+}
+
+/* Landscape on a phone is ~380px tall: the captions and the reticle cannot
+   both have the middle, so the captions shrink to one line and hug the edge. */
+@media (max-height: 460px) and (orientation: landscape) {
+  .live-captions { bottom: calc(84px + env(safe-area-inset-bottom)); max-height: 22dvh; padding-top: 14px; }
+  .live-caption:not(:last-child) { display: none; }
+  .live-controls { bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .live-hud-actions { display: none; }
+}
+
+/* ── Live settings sheet (shares the device-picker chrome) ─────────────────── */
+.ls-warn {
+  display: flex; gap: 9px; align-items: flex-start;
+  background: rgba(217, 164, 65, .12); border: 1px solid rgba(217, 164, 65, .35);
+  color: #e8c885; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+}
+.ls-warn b { display: block; font-size: 13px; margin-bottom: 3px; color: #f3dcae; }
+.ls-warn p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+.ls-select { width: 100%; margin-bottom: 8px; }
+.ls-seg { display: flex; gap: 6px; margin-bottom: 6px; }
+.ls-seg-btn {
+  flex: 1 1 0; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  border: 1px solid var(--border); border-radius: 9px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+.ls-seg-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+.ls-row { display: flex; align-items: center; gap: 12px; }
+.ls-row input[type="range"] { flex: 1 1 auto; }
+.ls-value { flex: 0 0 auto; font-size: 12.5px; font-weight: 700; color: var(--text-secondary); min-width: 44px; text-align: right; }
+
+/* The settings button carries the warning when the chat model cannot see, so
+   the answer to "why can't it see me" is one tap from the control bar rather
+   than buried behind a badge that only states the symptom. */
+.live-btn.warn {
+  color: #e8c885;
+  border-color: rgba(217, 164, 65, .5);
+  background: rgba(217, 164, 65, .16);
+}
+.live-btn.warn:hover { background: rgba(217, 164, 65, .3); }
+
+/* A hint is a next step, not a failure — an Ollama daemon that is merely not
+   started yet should not read as red as an invalid API key. */
+.conn-error.conn-hint {
+  color: #e8c885;
+  background: rgba(217, 164, 65, .1);
+  border-left: 2px solid rgba(217, 164, 65, .5);
+  padding: 6px 8px; border-radius: 6px; margin-top: 6px;
+}

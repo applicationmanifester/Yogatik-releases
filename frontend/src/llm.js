@@ -157,7 +157,16 @@ const PROVIDERS = {
     // Override host via VITE_OLLAMA_HOST or chat_prefs.ollama_host.
     baseUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_OLLAMA_HOST
       ? import.meta.env.VITE_OLLAMA_HOST.replace(/\/+$/, '')
-      : 'http://localhost:11434') + '/v1',
+      // 127.0.0.1, NOT localhost.
+      //
+      // `ollama serve` binds 127.0.0.1 — IPv4 only, as its own startup line
+      // says: "listen tcp 127.0.0.1:11434". On Windows 11 `localhost` resolves
+      // to ::1 (IPv6) FIRST, so the browser stack tries the v6 loopback,
+      // nothing is listening there, and the connection is refused. The failure
+      // surfaces as a plain network error, which the app then reported as
+      // "network or CORS proxy issue" — so a perfectly healthy daemon with
+      // four models pulled looked like an unreachable provider.
+      : 'http://127.0.0.1:11434') + '/v1',
     models: [],             // filled live from /v1/models (Ollama serves it keyless)
     default: '',
     publicModels: true,     // no API key — the daemon is on the user's machine

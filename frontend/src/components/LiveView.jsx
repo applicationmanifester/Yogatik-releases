@@ -15,6 +15,7 @@ import { VisionModal } from './VisionModal'
 import { LiveTranscriptPanel } from './LiveTranscriptPanel'
 import { LiveHudOverlay } from './LiveHudOverlay'
 import { LiveDevicePicker } from './LiveDevicePicker'
+import { LiveSettings } from './LiveSettings'
 import { enumerate, canFlipCamera } from '../live/devices'
 
 /**
@@ -75,6 +76,13 @@ export function LiveView({
   // telephoto) are a choice, not a flip, and offering one there looks broken.
   const [deviceIds, setDeviceIds] = useState({ cameraId: '', micId: '' })
   const [showDevices, setShowDevices] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  // Live-only overrides so a change applies to THIS call immediately; the
+  // Personalise panel still owns the persisted default.
+  const [liveRate, setLiveRate] = useState(1)
+  const [liveVoiceId, setLiveVoiceId] = useState(voice || '')
+  const [liveEngine, setLiveEngine] = useState(voiceEngine || 'neural')
+  const [showCaptions, setShowCaptions] = useState(features.liveCaptions !== false)
   const [hasFlip, setHasFlip] = useState(false)
 
   const videoRef = useRef(null)
@@ -104,24 +112,41 @@ export function LiveView({
     ...(typeof updater === 'function' ? updater(prev) : updater)
   }))
 
-  /** Transcript deltas arrive fragmented; merge into the current speaker's line. */
+  /**
+   * Transcript deltas arrive fragmented; merge into the current speaker's line.
+   *
+   * "Merge while the role is the same" is not enough on its own: two CONSECUTIVE
+   * assistant turns then concatenate with no boundary, which is where
+   * "you have got ityou have got it" came from — one reply glued onto the
+   * previous one. Tokens inside a single streamed answer arrive continuously,
+   * so a gap of more than a second means a new turn started; that is the
+   * boundary, and it works on both engines without a protocol change.
+   */
+  const lastDeltaAtRef = useRef(0)
+  const TURN_GAP_MS = 1200
+
   const pushDelta = useCallback((role, text) => {
-    // Captions (last 6 lines)
+    const now = Date.now()
+    const newTurn = now - lastDeltaAtRef.current > TURN_GAP_MS
+    lastDeltaAtRef.current = now
+
+    // Captions: only the last few, and never more than 3 on screen — this sits
+    // over live video, and a six-line wall of text is unreadable on a phone.
     setState((prev) => {
       const lines = [...prev.lines]
       const last = lines[lines.length - 1]
-      if (last && last.role === role) {
+      if (last && last.role === role && !newTurn) {
         lines[lines.length - 1] = { role, text: last.text + text }
       } else {
         lines.push({ role, text })
       }
-      return { ...prev, lines: lines.slice(-6) }
+      return { ...prev, lines: lines.slice(-3) }
     })
     // Full transcript
     setState((prev) => {
       const transcript = [...prev.transcript]
       const last = transcript[transcript.length - 1]
-      if (last && last.role === role && last.type === 'message') {
+      if (last && last.role === role && last.type === 'message' && !newTurn) {
         transcript[transcript.length - 1] = { ...last, text: last.text + text, time: Date.now(), streaming: true }
       } else {
         transcript.push({ role, text, type: 'message', time: Date.now(), streaming: true })
@@ -510,6 +535,37 @@ export function LiveView({
         />
       )}
 
+      <LiveSettings
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        modelCanSee={modelCanSee}
+        provider={activeProvider.provider || provider}
+        model={activeProvider.model || model}
+        availableModels={availableModels}
+        onModelChange={(m) => { onModelChange?.(m); setShowSettings(false) }}
+        visionMode={visionMode}
+        onVisionMode={(m) => { setState({ visionMode: m }); sessionRef.current?.setVisionMode?.(m) }}
+        voiceEngine={liveEngine}
+        onVoiceEngine={(e) => {
+          // Gemini fixes the voice at setup and REFUSES this. Only move the
+          // control once the engine accepted it, or the UI shows a choice that
+          // did not happen.
+          const r = sessionRef.current?.setVoiceEngine?.(e)
+          if (r?.success === false) setState({ error: r.error })
+          else setLiveEngine(e)
+        }}
+        voice={liveVoiceId}
+        onVoice={(v) => {
+          const r = sessionRef.current?.setVoice?.(v)
+          if (r?.success === false) setState({ error: r.error })
+          else setLiveVoiceId(v)
+        }}
+        rate={liveRate}
+        onRate={(r) => { setLiveRate(r); sessionRef.current?.setRate?.(r) }}
+        captions={showCaptions}
+        onCaptions={setShowCaptions}
+      />
+
       <LiveDevicePicker
         open={showDevices}
         onClose={() => setShowDevices(false)}
@@ -663,7 +719,7 @@ export function LiveView({
       )}
 
       {/* Live captions */}
-      {features.liveCaptions !== false && <div className="live-captions" aria-live="polite">
+      {showCaptions && <div className="live-captions" aria-live="polite">
         {lines.map((l, i) => (
           <p key={i} className={`live-caption ${l.role}`}>
             <span>{l.text}</span>
@@ -697,6 +753,17 @@ export function LiveView({
           onClick={() => setShowDevices(true)}
           aria-label="Choose camera and microphone"
           title="Camera & microphone"
+        >
+          <Video size={20} />
+        </button>
+        <button
+          className={`live-btn${modelCanSee ? '' : ' warn'}`}
+          onClick={() => setShowSettings(true)}
+          aria-label="Live settings"
+          // The badge already says "on-device", which is accurate and explains
+          // nothing. Marking the button is what gets someone to open the panel
+          // that tells them their model is text-only.
+          title={modelCanSee ? 'Live settings' : 'Live settings — this model cannot see images'}
         >
           <Settings2 size={20} />
         </button>

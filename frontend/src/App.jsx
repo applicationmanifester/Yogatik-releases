@@ -3470,9 +3470,18 @@ export default function App() {
             const curProv = conv?.provider || provider
             const st = providerStatus[curProv] || {}
             const isFailed = st.state === 'failed'
-            const label = verifying ? 'Checking model…' : (isFailed ? 'Not working' : (st.state === 'connected' ? 'Ready' : (st.state === 'untested' ? 'Ready (Testing…)' : 'Ready')))
+            // "Ready" was the FALLBACK for every state, including undefined —
+            // so a provider that had never been reached still showed a green
+            // dot beside its own error message. Two claims on one card that
+            // contradict each other, and the wrong one is the reassuring one.
+            const untested = !st.state || st.state === 'untested'
+            const label = verifying
+              ? 'Checking model…'
+              : isFailed ? 'Not working'
+                : st.state === 'connected' ? 'Ready'
+                  : 'Not checked yet'
             return (
-              <div className={`conn-status conn-${verifying ? 'testing' : (isFailed ? 'failed' : 'connected')}`}>
+              <div className={`conn-status conn-${verifying ? 'testing' : (isFailed ? 'failed' : (untested ? 'testing' : 'connected'))}`}>
                 <span className="conn-dot" />
                 <span className="conn-label">{label}</span>
                 {!verifying && st.latencyMs != null && (
@@ -3490,8 +3499,23 @@ export default function App() {
               </div>
             )
           })()}
-          {providerStatus[conv?.provider || provider]?.error && (
+          {/* Only show an error that belongs to the CURRENT verdict. The status
+              is persisted in IndexedDB, so a failure from a previous run
+              survives a restart and sat under "Not checked yet" — two
+              statements that contradict each other, where the stale one is the
+              alarming one. Press Retest to get a fresh answer. */}
+          {providerStatus[conv?.provider || provider]?.state === 'failed'
+            && providerStatus[conv?.provider || provider]?.error && (
             <div className="conn-error">{providerStatus[conv?.provider || provider].error}</div>
+          )}
+          {/* Ollama is a LOCAL daemon, so "no models" has a specific cause that
+              getModels() already worked out — not installed, not running, or
+              nothing pulled. Showing it here is the difference between a dead
+              end and a next step. */}
+          {models[conv?.provider || provider]?.unavailable_reason && (
+            <div className="conn-error conn-hint">
+              {models[conv?.provider || provider].unavailable_reason}
+            </div>
           )}
 
           {(conv?.provider || provider) === 'local' ? (

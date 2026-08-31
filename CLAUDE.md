@@ -1,5 +1,37 @@
 # Yogatik — Project Knowledge
 
+## "Why can't the AI see me" — and the caption that said everything twice (2026-08-30)
+- THE VISION ANSWER: the chat model was text-only. The badge said "Watching (on-device)",
+  which is accurate and explains nothing — frames never reach the model at all, they are
+  read locally by OCR + the small VLM and only a DESCRIPTION is sent. In a dim room that
+  description is garbage, so the reply was a faithful account of OCR noise ("Az", "Hoag",
+  "d ="). The user reads that as the app being broken.
+- New `components/LiveSettings.jsx` (gear in the control bar) says it in words, explains
+  the on-device fallback, and puts the model picker underneath with vision-capable models
+  in a "Can see images" optgroup marked 👁 — `looksVisionCapable` already existed and
+  nothing had ever shown it to the user. The gear itself carries `.live-btn.warn` when the
+  model is blind, because a badge that states only the symptom gets nobody to the fix.
+- THE DUPLICATION WAS REAL, not a rendering artefact. cascade commits an utterance on the
+  silence timer (that is what cuts Chrome's ~1s isFinal delay off every reply), and then
+  the FINAL result arrives with the same words and was handled AGAIN. "what are you
+  saying" was submitted twice and answered twice. `sameUtterance()` compares on normalised
+  text because Chrome tidies punctuation and case between the interim and the final —
+  "hi hello" becomes "Hi hello." and a strict `===` lets the duplicate through.
+- Captions also had no TURN boundary: consecutive same-role deltas merged forever, so two
+  replies glued together. A >1.2s gap now starts a new line (tokens within one streamed
+  answer arrive continuously), and the same boundary applies to the saved transcript.
+- In-call settings apply to the LIVE session: voice, voice engine, speaking rate, vision
+  mode, captions. They were previously only in Personalise, i.e. you had to end the call.
+- Gemini Live FIXES the voice in its setup message. `setVoice`/`setVoiceEngine` there
+  return an explicit refusal and the UI shows it and does not move the control — a setter
+  that silently no-ops is indistinguishable from a broken one, and the picker would have
+  sat there showing a voice that never took effect.
+- Live layout had THREE layers in the same 200px: captions at `bottom:132px` sat inside the
+  HUD reticle, and the action chips were positioned by the HUD's flex column and landed
+  UNDER the control bar — on a phone, under the home indicator, untappable. Four explicit
+  bands now (controls / chips / captions / reticle), each with `env(safe-area-inset-bottom)`,
+  checked arithmetically rather than by eye. Captions capped at 3 lines with a scrim.
+
 ## FOUR no-undef crashes, and lint was not being run (2026-08-30)
 - `askInCall` was referenced by LiveView and DEFINED NOWHERE. A ReferenceError during
   render takes the WHOLE APP into the error boundary — it shipped, and the diagnostics

@@ -300,6 +300,22 @@ You can see them through their camera and hear them through their microphone. Be
 
     /* ── device selection ────────────────────────────────────────────────── */
 
+    /**
+     * Gemini Live fixes the voice in the SETUP message, so it cannot be changed
+     * on an open socket. Say so rather than accepting the call and doing
+     * nothing — a setter that silently no-ops is indistinguishable from a
+     * broken control, and the picker would sit there showing the new voice
+     * while the old one kept talking.
+     */
+    setVoice: () => ({
+      success: false,
+      error: 'On the realtime engine the voice is fixed when the call starts. End the call and start a new one to change it.',
+    }),
+    setVoiceEngine: () => ({
+      success: false,
+      error: 'The realtime engine speaks with its own native voice; the neural/system choice applies to the other engine.',
+    }),
+
     listDevices: () => enumerate(),
 
     /**

@@ -110,6 +110,25 @@ export function isEcho(heard, spoken) {
 // 700ms without chopping people off mid-thought.
 export const CONTINUATION_CONNECTORS = /\b(and|or|but|because|so|if|that|which|where|when|with|to|then|like|although|plus|as well as|such as|for example|including|meaning)\s*$/i
 
+/**
+ * Are these two the SAME thing said once, rather than two utterances?
+ *
+ * Chrome normalises between the interim result and the final one — it adds a
+ * full stop, capitalises the first word, sometimes swaps a homophone. So the
+ * endpoint timer commits "hi hello" and the final arrives as "Hi hello.", and
+ * a strict equality check lets the duplicate straight through. Compare on
+ * letters and digits only.
+ */
+export function sameUtterance(a = '', b = '') {
+  const norm = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const x = norm(a)
+  const y = norm(b)
+  if (!x || !y) return false
+  if (x === y) return true
+  // The final is often the interim plus a word the speaker trailed off on.
+  return x.startsWith(y) || y.startsWith(x)
+}
+
 export function endpointDelay(text = '') {
   const t = String(text).trim()
   if (/[.!?]$/.test(t)) return 200
@@ -608,6 +627,19 @@ export function createCascadeSession({
     let endpointTimer = null
     const clearEndpoint = () => { clearTimeout(endpointTimer); endpointTimer = null }
 
+    // What the endpoint timer already committed, and when.
+    //
+    // THIS IS THE DUPLICATION BUG. Committing on a silence timer is what cuts
+    // Chrome's ~1s wait off the front of every reply — but the FINAL result
+    // still arrives a moment later with the same words, and nothing stopped it
+    // being handled a second time. The user said "what are you saying" once and
+    // the caption read "what are you sayingwhat are you saying", because the
+    // utterance really was submitted twice: once from the timer, once from the
+    // final. The model answered it twice too.
+    let committed = ''
+    let committedAt = 0
+    const COMMIT_ECHO_MS = 2500
+
     recog.onresult = (e) => {
       let finalText = ''
       let interim = ''
@@ -631,9 +663,17 @@ export function createCascadeSession({
       if (muted) return
 
       if (finalText.trim()) {
+        const text = finalText.trim()
         clearEndpoint()
         pendingInterim = ''
-        handleUtterance(finalText.trim(), finalConfidence)
+        // Drop the final if the endpoint timer already sent this. Compared on
+        // the normalised text rather than by identity, because Chrome tidies
+        // punctuation and capitalisation between the interim and the final —
+        // "hi hello" becomes "Hi hello." and a strict === would let it through.
+        if (Date.now() - committedAt < COMMIT_ECHO_MS && sameUtterance(text, committed)) return
+        committed = text
+        committedAt = Date.now()
+        handleUtterance(text, finalConfidence)
         return
       }
       if (interim.trim()) {
@@ -644,7 +684,11 @@ export function createCascadeSession({
           const text = pendingInterim
           pendingInterim = ''
           endpointTimer = null
-          if (text.length >= 2) handleUtterance(text, 0)
+          if (text.length >= 2) {
+            committed = text
+            committedAt = Date.now()
+            handleUtterance(text, 0)
+          }
         }, endpointDelay(pendingInterim))
       }
     }
@@ -782,6 +826,29 @@ export function createCascadeSession({
     setWakeWord: (w) => { wakeWord = w ? String(w).trim() : null },
     /** Change speaking rate (0.6–1.6) mid-call. */
     setRate: (r) => { rate = Math.max(0.6, Math.min(1.6, Number(r) || rate)); speaker.configure({ rate }) },
+    /**
+     * Change the voice mid-call. The shared speaker is reconfigured rather than
+     * recreated, so a reply already being spoken finishes in the old voice
+     * instead of being cut off mid-word.
+     */
+    setVoice: (v) => {
+      if (!v) return { success: false, error: 'No voice given.' }
+      speaker.configure({ voice: v })
+      return { success: true }
+    },
+
+    /**
+     * Swap between the on-device neural voice and the browser's built-in one.
+     * Switching TO neural may take a moment on the first use (~90MB); the
+     * speaker falls back to the system voice while it downloads rather than
+     * going silent.
+     */
+    setVoiceEngine: (e) => {
+      if (e !== 'neural' && e !== 'system') return { success: false, error: `Unknown voice engine: ${e}` }
+      speaker.configure({ engine: e })
+      return { success: true }
+    },
+
     /** Change recognition + speaking language mid-call (BCP-47, e.g. es-ES). */
     setLang: (l) => { if (l) { lang = l; speaker.configure({ lang }); if (recog) { try { recog.lang = lang } catch { /* mid-restart */ } } } },
     /** Current frame for the vision panel — never opens a second camera. */

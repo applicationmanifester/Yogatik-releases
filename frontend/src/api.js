@@ -1105,9 +1105,36 @@ export async function getModels() {
     const key = allSettings[`apikey_${id}`]
     const hasKey = !!key || !!p.noKey
     let liveModels = (p.models || []).map(normalizeModelName).filter(Boolean)
+    let ollamaReason = null
     if (p.isLocal && !p.isOllama) {
       const { LOCAL_MODELS } = await import('./localLLM')
       liveModels = Object.keys(LOCAL_MODELS)
+    } else if (p.isOllama && desktop) {
+      // ASK THE DAEMON DIRECTLY, over IPC, not with a fetch from the renderer.
+      //
+      // The renderer path goes to http://localhost:11434 through the browser
+      // stack, so it depends on the CORS shim, on OLLAMA_ORIGINS, and on the
+      // page's own network state — and when any of those is off, the failure
+      // surfaces as "Could not reach the provider — network or CORS proxy
+      // issue", which tells the user nothing about the actual cause. The main
+      // process has no such constraints: it talks to the daemon over Node, and
+      // it can tell "not installed" apart from "not running" apart from
+      // "running with no models pulled". Those are three different problems
+      // with three different fixes, and the fetch path collapsed them into one
+      // unhelpful sentence.
+      try {
+        const { ollamaStatus } = await import('./ollama')
+        const st = await ollamaStatus()
+        if (!st.installed) ollamaReason = 'Ollama is not installed. Get it from ollama.com/download, then reopen this panel.'
+        else if (!st.running) ollamaReason = 'Ollama is installed but not running. It should start automatically — if it does not, run `ollama serve`.'
+        else if (!st.models?.length) ollamaReason = 'Ollama is running but has no models yet. Pull one, e.g. `ollama pull llama3.2`.'
+        liveModels = (st.models || []).map(m => normalizeModelName(m?.name || m)).filter(Boolean)
+      } catch {
+        // The bridge is missing (an older desktop build). Fall back to the
+        // HTTP path rather than reporting no models at all.
+        const cached = await cachedModels(id, key, liveModels, allSettings)
+        liveModels = (Array.isArray(cached) ? cached : []).map(normalizeModelName).filter(Boolean)
+      }
     } else if (hasKey || p.publicModels) {
       const cached = await cachedModels(id, key, liveModels, allSettings)
       liveModels = (Array.isArray(cached) ? cached : []).map(normalizeModelName).filter(Boolean)
@@ -1121,6 +1148,11 @@ export async function getModels() {
       default_model,
       needs_key: !hasKey,
       is_ollama: !!p.isOllama,
+      // Why Ollama has no models, in words the user can act on. Without this
+      // the panel could only show a green "Ready" beside a red CORS error —
+      // two statements that contradict each other and neither of which names
+      // the actual problem.
+      ...(ollamaReason ? { unavailable_reason: ollamaReason } : {}),
       builtin: !custom[id], base_url: p.baseUrl, key_url: p.keyUrl,
     }
   }))
@@ -1247,6 +1279,29 @@ export async function testProvider(id, modelOverride) {
     }
 
     const timedOut = e.name === 'TimeoutError' || /timeout/i.test(errStr)
+
+    // Ollama on the desktop is a LOCAL DAEMON, not a remote API, so
+    // "network or CORS proxy issue" is never the useful answer — the daemon
+    // is either not installed, not running, or has no models. Ask it directly
+    // and say which, because those are three different fixes and the generic
+    // message names none of them.
+    if (p?.isOllama && isDesktop() && /failed to fetch|networkerror|load failed|ECONNREFUSED/i.test(errStr)) {
+      try {
+        const { ollamaStatus } = await import('./ollama')
+        const st = await ollamaStatus()
+        const why = !st.installed
+          ? 'Ollama is not installed on this machine. Install it from ollama.com/download and reopen the app.'
+          : !st.running
+            ? 'Ollama is installed but the daemon is not running. It normally starts by itself — if not, run `ollama serve` in a terminal.'
+            : !st.models?.length
+              ? 'Ollama is running but no models are pulled yet. Run `ollama pull llama3.2`, then press Test again.'
+              : null
+        if (why) {
+          return remember({ success: false, error: why, latencyMs: Math.round(performance.now() - started) })
+        }
+      } catch { /* no bridge — fall through to the generic message */ }
+    }
+
     return remember({
       success: false,
       error: timedOut
