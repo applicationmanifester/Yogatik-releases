@@ -215,6 +215,80 @@ exports.createSubscription = onRequest(
   },
 )
 
+/* ── POST /verifyPayment — Razorpay checkout signature ───────────────────── */
+
+/**
+ * Verify the signature Razorpay Checkout hands back when a payment succeeds.
+ *
+ * THE OPERAND ORDER IS NOT THE SAME FOR BOTH FLOWS, and getting it wrong makes
+ * every verification fail with nothing to say why:
+ *
+ *   one-time order:  HMAC_SHA256(order_id + '|' + payment_id, key_secret)
+ *   subscription:    HMAC_SHA256(payment_id + '|' + subscription_id, key_secret)
+ *
+ * Yogatik sells subscriptions, so the second is the live path here; the first
+ * is supported because Razorpay's own docs lead with it and anyone adding a
+ * one-off purchase later will reach for this endpoint.
+ *
+ * THIS IS NOT WHAT GRANTS ACCESS. `razorpayWebhook` is, and it must stay that
+ * way: the client can simply never call this, so treating a verified response
+ * as the grant would mean access depends on the browser choosing to ask. What
+ * this buys is an honest confirmation on the checkout page — "payment
+ * confirmed" instead of "payment probably went through" — and a signal if
+ * something is tampering with the response.
+ */
+exports.verifyPayment = onRequest(
+  { secrets: [RAZORPAY_KEY_SECRET], cors: true, region: 'asia-south1' },
+  async (req, res) => {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
+
+    const b = req.body || {}
+    const paymentId = String(b.razorpay_payment_id || '')
+    const orderId = String(b.razorpay_order_id || '')
+    const subscriptionId = String(b.razorpay_subscription_id || '')
+    const signature = String(b.razorpay_signature || '')
+
+    if (!paymentId || !signature || (!orderId && !subscriptionId)) {
+      return res.status(400).json({
+        verified: false,
+        error: 'missing-fields',
+        detail: 'razorpay_payment_id, razorpay_signature and one of razorpay_order_id / razorpay_subscription_id are required.',
+      })
+    }
+
+    const keySecret = RAZORPAY_KEY_SECRET.value()
+    if (!keySecret) {
+      // Distinguishable from a bad signature on purpose: "we cannot check" and
+      // "this is forged" are different facts and must not read the same.
+      return res.status(503).json({ verified: false, error: 'not-configured' })
+    }
+
+    const body = subscriptionId
+      ? `${paymentId}|${subscriptionId}`
+      : `${orderId}|${paymentId}`
+    const expected = crypto.createHmac('sha256', keySecret).update(body).digest('hex')
+
+    // timingSafeEqual, not ===. A plain comparison leaks the signature one byte
+    // at a time to anyone who can measure the response.
+    const a = Buffer.from(signature, 'utf8')
+    const e = Buffer.from(expected, 'utf8')
+    const ok = a.length === e.length && crypto.timingSafeEqual(a, e)
+
+    if (!ok) {
+      console.warn('[verifyPayment] signature mismatch', { paymentId, subscriptionId, orderId })
+      return res.status(400).json({ verified: false, error: 'signature-mismatch' })
+    }
+
+    return res.json({
+      verified: true,
+      paymentId,
+      ...(subscriptionId ? { subscriptionId } : { orderId }),
+      // Said plainly so nobody later mistakes this for the entitlement grant.
+      note: 'Signature valid. Entitlement is granted by the webhook, not by this response.',
+    })
+  },
+)
+
 /* ── Paddle webhook ──────────────────────────────────────────────────────── */
 
 exports.paddleWebhook = onRequest(

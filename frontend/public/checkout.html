@@ -188,16 +188,69 @@
               : 'Could not start the subscription: ' + ((out.b && out.b.detail) || 'unknown error'))
           }
           return script('https://checkout.razorpay.com/v1/checkout.js').then(function () {
-            new window.Razorpay({
+            var rzp = new window.Razorpay({
               key: out.b.keyId,
               subscription_id: out.b.subscriptionId,
               name: 'Yogatik',
               description: sku.label,
-              handler: function () {
+              handler: function (resp) {
+                // Verify the signature server-side before telling the user
+                // anything. The handler fires on Razorpay's word alone; a
+                // checked signature is the difference between "payment
+                // confirmed" and "payment probably went through".
+                //
+                // Entitlement still comes from the webhook — this only decides
+                // what this page is honest enough to claim.
                 msg.className = 'msg ok'
-                msg.textContent = 'Payment received. Return to Yogatik — it will unlock as soon as Razorpay confirms.'
+                msg.textContent = 'Confirming payment…'
+                if (!cfg.razorpay.verifyPaymentUrl) {
+                  msg.textContent = 'Payment received. Return to Yogatik — it will unlock as soon as Razorpay confirms.'
+                  return
+                }
+                fetch(cfg.razorpay.verifyPaymentUrl, {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({
+                    razorpay_payment_id: resp.razorpay_payment_id,
+                    razorpay_subscription_id: resp.razorpay_subscription_id,
+                    razorpay_signature: resp.razorpay_signature,
+                  }),
+                })
+                  .then(function (r) { return r.json() })
+                  .then(function (v) {
+                    if (v && v.verified) {
+                      msg.className = 'msg ok'
+                      msg.textContent = 'Payment confirmed. Return to Yogatik — Pro unlocks within a few seconds.'
+                    } else {
+                      // Do NOT say "paid". A mismatch here means the response
+                      // did not come from Razorpay, or the keys are wrong.
+                      fail('The payment could not be verified. Do not retry — contact support with payment id '
+                        + (resp.razorpay_payment_id || 'unknown') + '.')
+                    }
+                  })
+                  .catch(function () {
+                    msg.className = 'msg ok'
+                    msg.textContent = 'Payment received, but confirmation could not be reached. '
+                      + 'Return to Yogatik — it unlocks from the webhook regardless.'
+                  })
               },
-            }).open()
+              modal: {
+                // The user closed the window without paying. Saying nothing
+                // leaves the button stuck on "Opening…" forever.
+                ondismiss: function () {
+                  btn.disabled = false
+                  btn.textContent = 'Pay ' + sku.label
+                  msg.className = 'msg err'
+                  msg.textContent = 'Checkout cancelled. Nothing was charged.'
+                },
+              },
+            })
+            rzp.on('payment.failed', function (e) {
+              var d = (e && e.error) || {}
+              fail('Payment failed: ' + (d.description || 'the payment was not completed')
+                + (d.reason ? ' (' + d.reason + ')' : '') + '. Nothing was charged.')
+            })
+            rzp.open()
             msg.className = 'msg ok'
             msg.textContent = 'Complete the payment, then return to Yogatik — it will unlock on its own.'
           })

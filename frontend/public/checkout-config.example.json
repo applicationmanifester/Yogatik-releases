@@ -27,6 +27,7 @@
   },
 
   "razorpay": {
-    "createSubscriptionUrl": "https://asia-south1-yogatik.cloudfunctions.net/createSubscription"
+    "createSubscriptionUrl": "https://asia-south1-yogatik.cloudfunctions.net/createSubscription",
+    "verifyPaymentUrl": "https://asia-south1-yogatik.cloudfunctions.net/verifyPayment"
   }
 }

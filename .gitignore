@@ -22,6 +22,17 @@ chroma_data/
 *.env.local
 *.pem
 *.key
+# Firebase Functions emulator secret store. NOT covered by the .env patterns
+# above, and it is where the Razorpay key secret lives locally.
+.secret.local
+functions/.secret.local
+# Real provider ids for the hosted checkout page. The .example file is the one
+# that is committed.
+frontend/public/checkout-config.json
+# ...and the templates MUST stay tracked: `.env.*` above swallows them, and a
+# template nobody can see is a setup step nobody knows about.
+!functions/.env.example
+!**/*.example.json
 *service-account*.json
 *credentials*.json
 
