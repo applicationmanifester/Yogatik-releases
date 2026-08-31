@@ -156,6 +156,7 @@ export async function checkGoogleRedirect() {
   const user = await checkRedirectResult()
   if (user) {
     await db.setSetting('user', user)
+    try { localStorage.setItem('yogatik_user', JSON.stringify(user)) } catch {}
     try { await syncCloudKeys() } catch {}
     try { await purgePlaintextKeys() } catch {}
     try { await syncCloudData() } catch {}
@@ -167,6 +168,7 @@ export async function loginWithGoogle() {
   const user = await signInWithGoogle()
   if (user) {
     await db.setSetting('user', user)
+    try { localStorage.setItem('yogatik_user', JSON.stringify(user)) } catch {}
     // Signing in IS the sync step — nothing to type, no button to find.
     try { await syncCloudKeys() } catch {}
     try { await purgePlaintextKeys() } catch {}
@@ -229,12 +231,17 @@ export async function isCloudSyncOn() {
 }
 
 export async function getMe() {
-  return db.getSetting('user')
+  const u = await db.getSetting('user')
+  if (u) {
+    try { localStorage.setItem('yogatik_user', JSON.stringify(u)) } catch {}
+  }
+  return u
 }
 
 export async function logout() {
   if (await db.getSetting('user')) await logOutGoogle()
   await db.setSetting('user', null)
+  try { localStorage.removeItem('yogatik_user') } catch {}
 }
 export async function isLoggedIn() { return !!(await db.getSetting('user')) }
 

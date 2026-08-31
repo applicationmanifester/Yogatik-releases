@@ -81,6 +81,11 @@
     .btn.primary:hover{background:var(--brand2)}
     .btn.ghost{border:1px solid var(--line)}
 
+    .user-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;background:var(--panel);border:1px solid var(--line);border-radius:999px;font-size:13.5px;font-weight:600}
+    .user-chip img{width:22px;height:22px;border-radius:50%;object-fit:cover}
+    .user-chip .signout-link{color:var(--muted);font-size:12px;margin-left:6px;cursor:pointer;background:none;border:none;padding:0;font-weight:500}
+    .user-chip .signout-link:hover{color:var(--brand)}
+
     footer{border-top:1px solid var(--line);padding:30px 0;color:var(--muted);font-size:13px;text-align:center}
   </style>
 </head>
@@ -90,7 +95,9 @@
       <a class="logo" href="/"><img src="/icon-192.svg" alt="" /> Yogatik</a>
       <nav style="display:flex;align-items:center;gap:10px">
         <a class="nav-cta" href="#pricing">Pricing</a>
-        <a class="nav-cta" href="/?upgrade=1">Sign in</a>
+        <div id="auth-container" style="display:inline-flex;align-items:center;gap:8px">
+          <a class="nav-cta" id="signin-btn" href="/?signin=1">Sign in</a>
+        </div>
         <a class="nav-cta" href="/">Open in browser →</a>
       </nav>
     </header>
@@ -372,6 +379,82 @@
     // (The old guard was also self-defeating — clicking the button CLEARED it,
     // so every later visit downloaded the installer again.)
     try { localStorage.removeItem('yogatik_autodl'); } catch (e) { /* ignore */ }
+
+    // Synchronize User Profile and Auth state across Web and Platform pages
+    (function () {
+      function renderUserAuth(user) {
+        var authEl = document.getElementById('auth-container');
+        var priceCta = document.querySelector('#pricing a.btn.primary');
+        if (!authEl) return;
+        if (user && (user.displayName || user.email)) {
+          var name = user.displayName || (user.email ? user.email.split('@')[0] : 'Account');
+          var photo = user.photoURL || '/icon-192.svg';
+          authEl.innerHTML = '<div class="user-chip">' +
+            '<img src="' + photo + '" alt="" onerror="this.src=\'/icon-192.svg\'" />' +
+            '<span>' + name + '</span>' +
+            '<button type="button" class="signout-link" id="signout-btn" title="Sign out">Sign out</button>' +
+            '</div>';
+
+          var so = document.getElementById('signout-btn');
+          if (so) {
+            so.onclick = function () {
+              try { localStorage.removeItem('yogatik_user'); } catch (e) {}
+              if (window.indexedDB) {
+                try {
+                  var req = indexedDB.open('yogatik_db');
+                  req.onsuccess = function (e) {
+                    var idb = e.target.result;
+                    if (idb.objectStoreNames.contains('settings')) {
+                      var tx = idb.transaction('settings', 'readwrite');
+                      tx.objectStore('settings').delete('user');
+                    }
+                  };
+                } catch (err) {}
+              }
+              renderUserAuth(null);
+            };
+          }
+          if (priceCta) {
+            priceCta.textContent = 'Upgrade to Pro →';
+            priceCta.href = '/?upgrade=1';
+          }
+        } else {
+          authEl.innerHTML = '<a class="nav-cta" id="signin-btn" href="/?signin=1">Sign in</a>';
+          if (priceCta) {
+            priceCta.textContent = 'Sign in & go Pro';
+            priceCta.href = '/?upgrade=1';
+          }
+        }
+      }
+
+      // 1. Check instant localStorage cache
+      var cachedUser = null;
+      try {
+        var raw = localStorage.getItem('yogatik_user');
+        if (raw) cachedUser = JSON.parse(raw);
+      } catch (e) {}
+      renderUserAuth(cachedUser);
+
+      // 2. Fallback check from IndexedDB yogatik_db settings
+      if (!cachedUser && window.indexedDB) {
+        try {
+          var openReq = indexedDB.open('yogatik_db');
+          openReq.onsuccess = function (e) {
+            var idb = e.target.result;
+            if (idb.objectStoreNames.contains('settings')) {
+              var tx = idb.transaction('settings', 'readonly');
+              var getReq = tx.objectStore('settings').get('user');
+              getReq.onsuccess = function () {
+                if (getReq.result) {
+                  try { localStorage.setItem('yogatik_user', JSON.stringify(getReq.result)); } catch (err) {}
+                  renderUserAuth(getReq.result);
+                }
+              };
+            }
+          };
+        } catch (err) {}
+      }
+    })();
   </script>
 </body>
 </html>

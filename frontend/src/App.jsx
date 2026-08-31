@@ -1202,7 +1202,8 @@ export default function App() {
     // describe the plans and hand off here, rather than growing a second
     // checkout and a second auth flow that can drift from these.
     if (params.get('upgrade')) setShowUpgrade(true)
-    if (shared || params.get('new') || params.get('intent') || params.get('live') || params.get('upgrade')) {
+    if (params.get('signin')) requestSignIn()
+    if (shared || params.get('new') || params.get('intent') || params.get('live') || params.get('upgrade') || params.get('signin')) {
       history.replaceState(null, '', location.pathname)   // don't re-fire on reload
     }
     // Note: Speech Recognition is initialised on-demand in toggleVoiceInput;
@@ -1426,6 +1427,10 @@ export default function App() {
 
   const handleAuth = (userData) => {
     setUser(userData)
+    try {
+      if (userData) localStorage.setItem('yogatik_user', JSON.stringify(userData))
+      else localStorage.removeItem('yogatik_user')
+    } catch {}
     loadConversations()
     if (resumeUpgradeRef.current) {
       resumeUpgradeRef.current = false
