@@ -28,10 +28,35 @@ const { safeSend } = require('./safeWindow.cjs')
 
 // ── Ollama binary resolution ───────────────────────────────────────────────
 // Common install locations per platform.
+// os.homedir(), NOT 'C:\Users\' + os.userInfo().username.
+//
+// Windows truncates a long account name when it creates the profile folder, so
+// the two routinely disagree — an account called "Bhargav G K" can live in
+// C:\Users\bharg_4mtuttl. Building the path from the username then points at a
+// directory that does not exist, findOllamaBin returns null, and the app
+// reports "Ollama is not installed" on a machine where it plainly is.
+// homedir() asks the OS where the profile actually is.
+const HOME = os.homedir()
+
 const OLLAMA_PATHS = {
-  win32:  ['ollama', 'C:\\Users\\' + os.userInfo().username + '\\AppData\\Local\\Programs\\Ollama\\ollama.exe'],
-  darwin: ['ollama', '/usr/local/bin/ollama', '/opt/homebrew/bin/ollama'],
-  linux:  ['ollama', '/usr/bin/ollama', '/usr/local/bin/ollama'],
+  win32: [
+    'ollama',
+    path.join(HOME, 'AppData', 'Local', 'Programs', 'Ollama', 'ollama.exe'),
+    // A machine-wide install, and the winget/choco shim location.
+    'C:\\Program Files\\Ollama\\ollama.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe'),
+    path.join(process.env.ProgramFiles || '', 'Ollama', 'ollama.exe'),
+  ].filter(p => p && !p.startsWith('\\')),
+  darwin: [
+    'ollama',
+    '/usr/local/bin/ollama',
+    '/opt/homebrew/bin/ollama',
+    // The .app bundle ships the CLI inside it, and a user who installed by
+    // dragging to Applications has nothing on PATH at all.
+    '/Applications/Ollama.app/Contents/Resources/ollama',
+    path.join(HOME, 'Applications', 'Ollama.app', 'Contents', 'Resources', 'ollama'),
+  ],
+  linux: ['ollama', '/usr/bin/ollama', '/usr/local/bin/ollama', path.join(HOME, '.local', 'bin', 'ollama')],
 }
 
 let _daemonProcess = null   // child_process for the managed daemon
@@ -63,6 +88,36 @@ function probeHttp(host = '127.0.0.1', port = 11434, timeoutMs = 3000) {
     const req = http.request({ host, port, path: '/', method: 'GET' }, () => resolve(true))
     req.on('error', () => resolve(false))
     req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false) })
+    req.end()
+  })
+}
+
+/**
+ * List models straight from the daemon's HTTP API.
+ *
+ * The fallback for when the daemon is running but the BINARY could not be
+ * found — the common Windows case where a GUI app's inherited PATH predates
+ * the Ollama install. `ollama list` is unavailable there, but /api/tags is
+ * not, and it is the same information.
+ */
+function listModelsHttp(host = '127.0.0.1', port = 11434, timeoutMs = 4000) {
+  return new Promise(resolve => {
+    const req = http.request({ host, port, path: '/api/tags', method: 'GET' }, (res) => {
+      let body = ''
+      res.on('data', c => { body += c })
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(body)
+          resolve((parsed?.models || []).map(m => ({
+            name: m.name,
+            size: m.size ? `${(m.size / 1e9).toFixed(1)} GB` : '',
+            modified: m.modified_at || '',
+          })))
+        } catch { resolve([]) }
+      })
+    })
+    req.on('error', () => resolve([]))
+    req.setTimeout(timeoutMs, () => { req.destroy(); resolve([]) })
     req.end()
   })
 }
@@ -187,6 +242,52 @@ function pullModel(bin, modelName, onProgress, signal) {
   })
 }
 
+/** Pull a model via HTTP when binary CLI is not accessible. */
+function pullModelHttp(host = '127.0.0.1', port = 11434, modelName, onProgress, signal) {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({ name: modelName, stream: true })
+    const req = http.request({
+      host,
+      port,
+      path: '/api/pull',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+    }, (res) => {
+      let buffer = ''
+      res.on('data', chunk => {
+        buffer += chunk.toString()
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const data = JSON.parse(line)
+            let percent = null
+            if (data.total && data.completed) {
+              percent = Math.round((data.completed / data.total) * 100)
+            }
+            onProgress({ model: modelName, status: data.status || '', percent })
+          } catch {}
+        }
+      })
+      res.on('end', () => {
+        onProgress({ model: modelName, status: 'success', percent: 100 })
+        resolve({ ok: true })
+      })
+    })
+    req.on('error', reject)
+    signal?.addEventListener('abort', () => {
+      req.destroy()
+      reject(new Error('Pull cancelled'))
+    }, { once: true })
+    req.write(postData)
+    req.end()
+  })
+}
+
 // ── IPC handlers ───────────────────────────────────────────────────────────
 function registerOllamaIpc(getWindow) {
   /**
@@ -194,11 +295,23 @@ function registerOllamaIpc(getWindow) {
    * Called by the renderer on startup and whenever the Ollama card is shown.
    */
   ipcMain.handle('ollama:status', async () => {
-    const bin = await findOllamaBin()
-    if (!bin) return { installed: false, running: false, models: [], bin: null }
+    // Probe the PORT first, and treat a responding daemon as installed even
+    // when no binary was found.
+    //
+    // A GUI app on Windows inherits the PATH from whenever Explorer started,
+    // which is often BEFORE Ollama was installed — so `ollama --version` fails
+    // in this process while the daemon is running perfectly well on 11434.
+    // Reporting "not installed" there is both wrong and unfixable by the user,
+    // who can see Ollama running in their tray. The HTTP endpoint is the fact
+    // that matters; the binary is only needed for `list` and `pull`.
     const running = await probeHttp()
-    const models = running ? await listLocalModels(bin) : []
-    return { installed: true, running, models, bin }
+    const bin = await findOllamaBin()
+    if (!bin && !running) return { installed: false, running: false, models: [], bin: null }
+
+    const models = running
+      ? (bin ? await listLocalModels(bin) : await listModelsHttp())
+      : []
+    return { installed: true, running, models, bin, viaHttp: !bin }
   })
 
   /**
@@ -216,11 +329,12 @@ function registerOllamaIpc(getWindow) {
    * Returns models that are already pulled locally.
    */
   ipcMain.handle('ollama:list', async () => {
-    const bin = await findOllamaBin()
-    if (!bin) return []
     const running = await probeHttp()
     if (!running) return []
-    return listLocalModels(bin)
+    const bin = await findOllamaBin()
+    // Same reasoning as ollama:status — a running daemon can list its models
+    // over HTTP whether or not this process can find the CLI.
+    return bin ? listLocalModels(bin) : listModelsHttp()
   })
 
   /**
@@ -230,7 +344,10 @@ function registerOllamaIpc(getWindow) {
    */
   ipcMain.handle('ollama:pull', async (event, { model }) => {
     const bin = await findOllamaBin()
-    if (!bin) throw new Error('Ollama not installed')
+    if (!bin) {
+      const running = await probeHttp()
+      if (!running) throw new Error('Ollama not installed')
+    }
 
     // Make sure daemon is running first
     const running = await probeHttp()
@@ -244,7 +361,10 @@ function registerOllamaIpc(getWindow) {
       safeSend(win, 'ollama:pull-progress', payload)
     }
 
-    return pullModel(bin, model, push)
+    if (bin) {
+      return pullModel(bin, model, push)
+    }
+    return pullModelHttp('127.0.0.1', 11434, model, push)
   })
 
   /**
