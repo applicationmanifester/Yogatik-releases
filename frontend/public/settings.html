@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Settings & Configuration — Yogatik</title>
+<meta name="description" content="Configure AI providers, API keys, local Ollama models, personas, voice settings, and data exports in Yogatik." />
+<meta property="og:title" content="Yogatik Settings & Configuration" />
+<meta property="og:description" content="How to configure API keys, local models, custom personas, and privacy in Yogatik." />
+<link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+<link rel="canonical" href="https://yogatik.web.app/settings" />
+<link rel="stylesheet" href="/site.css" />
+<meta name="google-adsense-account" content="ca-pub-8240433260986072" />
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8240433260986072" crossorigin="anonymous"></script>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="logo" href="/"><img src="/icon-192.svg" alt="" /> Yogatik</a>
+  <nav class="site">
+    <a href="/guide">Guide</a>
+    <a href="/tools">Tools</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/platforms">Desktop</a>
+    <a href="/faq">FAQ</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <span class="pill">Configuration</span>
+  <h1>Settings & Personalisation</h1>
+  <p class="lead">
+    Everything in Yogatik is private, local-first, and customizable. Configure your API keys, offline local models, system instructions, and audio voices.
+  </p>
+  <div style="margin-top: 18px;">
+    <a class="cta" href="/?tab=settings" style="display: inline-block; padding: 10px 20px; background: var(--accent, #ff6b35); color: #fff; border-radius: 8px; font-weight: 600; text-decoration: none;">Launch App Settings Center &rarr;</a>
+  </div>
+</div>
+
+<main>
+
+<section>
+  <h2>1. AI Providers & API Keys</h2>
+  <p>
+    Yogatik operates on a strict <strong>Bring-Your-Own-Key (BYOK)</strong> model. Your keys are stored client-side in your browser's encrypted IndexedDB and never touch a third-party server.
+  </p>
+  <ul>
+    <li><strong>Groq:</strong> Ultra-fast inference with free tier (Llama 3.3 70B, DeepSeek R1, Mixtral).</li>
+    <li><strong>NVIDIA NIM:</strong> Enterprise open models with generous free cloud credits.</li>
+    <li><strong>Google Gemini:</strong> Gemini 2.0 Flash and Flash Thinking experimental keys.</li>
+    <li><strong>OpenAI & Anthropic:</strong> Direct access to GPT-4o, Claude 3.5 Sonnet, and reasoning models.</li>
+    <li><strong>OpenRouter:</strong> Unified gateway to 200+ frontier and specialty models.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>2. 100% Offline & Local Models (Ollama)</h2>
+  <p>
+    Run models completely on your own machine with zero data leaving your device:
+  </p>
+  <ul>
+    <li>Connects directly to your local Ollama daemon at <code>http://127.0.0.1:11434</code>.</li>
+    <li>In the Yogatik Studio Desktop app, Ollama is discovered and spawned automatically.</li>
+    <li>Pull, run, and benchmark models like Llama 3.2, Qwen 2.5, DeepSeek R1, and Gemma 2 offline.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>3. Custom Personas & System Instructions</h2>
+  <p>
+    Tailor how the AI replies to your specific workflow:
+  </p>
+  <ul>
+    <li><strong>Prebuilt Personas:</strong> Coder, Technical Writer, Academic Researcher, Data Analyst, and Concise Assistant.</li>
+    <li><strong>Custom Personas:</strong> Define your own role, tone, guidelines, and tool preferences.</li>
+    <li><strong>Response Styles:</strong> Switch between Technical, Academic, Creative, and Explain-Like-I'm-5.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>4. Data Privacy, Backup & Sync</h2>
+  <p>
+    Your conversations and workspaces belong to you:
+  </p>
+  <ul>
+    <li><strong>Local Storage:</strong> All chat transcripts, documents, and workspace files stay in local IndexedDB.</li>
+    <li><strong>Export Backup:</strong> Export your full history, prompts, and settings as a clean JSON archive anytime.</li>
+    <li><strong>Key Vault Cloud Sync (Optional):</strong> Encrypt your API keys using your Google account to sync them securely across your devices.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <span>&copy; Yogatik. Private, browser-native AI assistant.</span>
+  <span class="links">
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/refunds">Refunds</a>
+    <a href="/pricing">Pricing</a>
+    <a href="mailto:applicationmanifester@gmail.com">Contact</a>
+  </span>
+</footer>
+
+</div>
+</body>
+</html>

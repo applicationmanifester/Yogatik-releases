@@ -1353,8 +1353,27 @@ export default function App() {
     refreshKeys()
     getTodayUsage().then(setUsage).catch(() => {})
 
-    // Android share sheet / app shortcuts land here as query params.
+    // Android share sheet / app shortcuts / direct URL routing
     const params = new URLSearchParams(location.search)
+    const rawPath = (location.pathname || '').toLowerCase().replace(/\/+$/, '')
+    const tabFromPath = rawPath === '/settings' ? 'settings'
+      : rawPath === '/billing' ? 'billing'
+      : rawPath === '/agents' ? 'agents'
+      : rawPath === '/skills' ? 'skills'
+      : rawPath === '/mcp' ? 'mcp'
+      : rawPath === '/plugins' ? 'plugins'
+      : rawPath === '/diagnostics' ? 'diagnostics'
+      : rawPath === '/usage' ? 'usage'
+      : rawPath === '/capabilities' || rawPath === '/tools-picker' ? 'capabilities'
+      : null
+
+    const tabFromQuery = params.get('tab') || params.get('modal') || params.get('section')
+    const activeDashboardTab = tabFromPath || tabFromQuery
+
+    if (activeDashboardTab) {
+      navigateDashboard(activeDashboardTab)
+    }
+
     const shared = [params.get('title'), params.get('text'), params.get('url')]
       .filter(Boolean).join('\n').trim()
     if (shared) {
@@ -1369,8 +1388,8 @@ export default function App() {
     // paywall. One upgrade surface and one sign-in surface: the static pages
     // describe the plans and hand off here, rather than growing a second
     // checkout and a second auth flow that can drift from these.
-    if (params.get('upgrade')) setShowUpgrade(true)
-    if (params.get('signin')) requestSignIn()
+    if (params.get('upgrade') || rawPath === '/upgrade') setShowUpgrade(true)
+    if (params.get('signin') || rawPath === '/signin' || rawPath === '/login') requestSignIn()
     if (shared || params.get('new') || params.get('intent') || params.get('live') || params.get('upgrade') || params.get('signin')) {
       history.replaceState(null, '', location.pathname)   // don't re-fire on reload
     }

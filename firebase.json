@@ -40,6 +40,14 @@
         "destination": "/terms.html"
       },
       {
+        "source": "/settings",
+        "destination": "/settings.html"
+      },
+      {
+        "source": "/pricing",
+        "destination": "/pricing.html"
+      },
+      {
         "source": "/refunds",
         "destination": "/refunds.html"
       },
