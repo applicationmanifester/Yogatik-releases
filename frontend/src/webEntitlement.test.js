@@ -65,14 +65,20 @@ describe('web entitlement', () => {
     expect(st.daysLeft).toBeGreaterThanOrEqual(19)
   })
 
-  it('past_due keeps access, cancelled does not', async () => {
-    // A failed renewal is a dunning window, not a termination — cutting someone
-    // off mid-cycle over one declined card is how you turn a payment blip into
-    // a cancellation.
+  it('past_due keeps access, and cancelled auto-renew retains Pro until paid period ends', async () => {
+    // A failed renewal is a dunning window, not a termination.
     account.data = { plan: 'pro', status: 'past_due', currentPeriodEnd: Date.now() + 3 * DAY }
     expect((await E.loadEntitlement()).state).toBe('pro')
+
+    // Cancelling recurring auto-debit honors the remaining paid duration.
     account.data = { plan: 'pro', status: 'cancelled', currentPeriodEnd: Date.now() + 3 * DAY }
-    expect((await E.loadEntitlement()).state).not.toBe('pro')
+    expect((await E.loadEntitlement()).state).toBe('pro')
+    expect(E.isPro()).toBe(true)
+
+    // Once the paid duration has elapsed, access reverts to free.
+    account.data = { plan: 'pro', status: 'cancelled', currentPeriodEnd: Date.now() - 1 * DAY }
+    expect((await E.loadEntitlement()).state).toBe('free')
+    expect(E.isPro()).toBe(false)
   })
 
   it('a TRIAL is not Pro — trialling users still see ads', async () => {

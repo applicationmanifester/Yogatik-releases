@@ -87,10 +87,14 @@ async function accountDoc(uid) {
 }
 
 function planFor(acct, now) {
-  // A paid subscription always wins over a trial, including a trial that has
-  // not yet expired — someone who paid early must not be downgraded on renewal.
-  if (acct.plan === 'pro' && ['active', 'past_due'].includes(acct.status)) {
-    return { plan: 'pro', per: Number(acct.currentPeriodEnd) || 0 }
+  // A paid subscription grants Pro access for the entire paid duration (until currentPeriodEnd),
+  // even if the user cancelled recurring auto-debit mid-cycle.
+  const periodEnd = Number(acct.currentPeriodEnd) || 0
+  const isPaidPeriodValid = periodEnd > now
+  const isDirectlyActive = ['active', 'authenticated', 'past_due'].includes(acct.status)
+
+  if ((acct.plan === 'pro' || isPaidPeriodValid) && (isPaidPeriodValid || isDirectlyActive)) {
+    return { plan: 'pro', per: periodEnd }
   }
   const trialEnd = Number(acct.trialStartedAt || 0) + TRIAL_DAYS * DAY
   if (acct.trialStartedAt && now < trialEnd) return { plan: 'trial', per: trialEnd }
@@ -389,11 +393,16 @@ exports.paddleWebhook = onRequest(
     const uid = d?.custom_data?.uid
     if (!uid) return res.status(200).send('no uid')   // 200: do not make Paddle retry forever
 
-    const active = ['subscription.created', 'subscription.updated', 'subscription.activated'].includes(evt.event_type)
+    const periodEndMs = d?.current_billing_period?.ends_at
+      ? Date.parse(d.current_billing_period.ends_at) : 0
+    const now = Date.now()
+    const isPaidPeriodValid = periodEndMs > now
+    const isDirectlyActive = ['subscription.created', 'subscription.updated', 'subscription.activated'].includes(evt.event_type)
       && ['active', 'trialing', 'past_due'].includes(d.status)
+    const isPro = isDirectlyActive || isPaidPeriodValid
 
     await db.collection('accounts').doc(uid).set({
-      plan: active ? 'pro' : 'free',
+      plan: isPro ? 'pro' : 'free',
       status: d.status || 'canceled',
       provider: 'paddle',
       subscriptionId: d.id || null,
@@ -404,8 +413,7 @@ exports.paddleWebhook = onRequest(
       // A first-time buyer's account still has none at the moment they
       // check out; it's only ever useful on their SECOND purchase onward.
       customerId: d.customer_id || null,
-      currentPeriodEnd: d?.current_billing_period?.ends_at
-        ? Date.parse(d.current_billing_period.ends_at) : 0,
+      currentPeriodEnd: periodEndMs,
       updatedAt: Date.now(),
     }, { merge: true })
 
@@ -457,17 +465,21 @@ exports.razorpayWebhook = onRequest(
     // debit that keeps failing halts the subscription rather than cancelling
     // it, so treating only `cancelled` as the end means a user who stopped
     // paying months ago still holds a licence.
+    const periodEndMs = sub.current_end ? Number(sub.current_end) * 1000 : 0
+    const now = Date.now()
+    const isPaidPeriodValid = periodEndMs > now
     const ACTIVE = ['subscription.charged', 'subscription.activated', 'subscription.authenticated', 'subscription.resumed']
-    const active = ACTIVE.includes(evt.event) && ['active', 'authenticated'].includes(sub.status)
+    const isDirectlyActive = ACTIVE.includes(evt.event) && ['active', 'authenticated'].includes(sub.status)
+    const isPro = isDirectlyActive || isPaidPeriodValid
 
     await db.collection('accounts').doc(uid).set({
-      plan: active ? 'pro' : 'free',
+      plan: isPro ? 'pro' : 'free',
       status: sub.status || 'cancelled',
       provider: 'razorpay',
       subscriptionId: sub.id || null,
       // Razorpay timestamps are SECONDS. Storing them as milliseconds puts the
       // period end in 1970 and locks every Indian customer out instantly.
-      currentPeriodEnd: sub.current_end ? Number(sub.current_end) * 1000 : 0,
+      currentPeriodEnd: periodEndMs,
       updatedAt: Date.now(),
     }, { merge: true })
 

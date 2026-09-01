@@ -142,10 +142,19 @@ export async function loadWebEntitlement() {
     const acct = snap.data() || {}
     const now = Date.now()
 
-    // A paid subscription always wins over a trial, including one that has not
-    // expired — someone who paid early must not be downgraded on renewal.
-    if (acct.plan === 'pro' && ['active', 'past_due'].includes(acct.status)) {
-      return applyWeb({ state: 'pro', endsAt: Number(acct.currentPeriodEnd) || 0, reason: acct.status })
+    // A paid subscription grants Pro access for the entire paid duration.
+    // If the user paid for a month/year and cancelled recurring billing,
+    // they retain Pro until currentPeriodEnd.
+    const periodEnd = Number(acct.currentPeriodEnd) || 0
+    const isPaidPeriodValid = periodEnd > now
+    const isDirectlyActive = ['active', 'authenticated', 'past_due'].includes(acct.status)
+
+    if ((acct.plan === 'pro' || isPaidPeriodValid) && (isPaidPeriodValid || isDirectlyActive)) {
+      return applyWeb({
+        state: 'pro',
+        endsAt: periodEnd,
+        reason: isPaidPeriodValid && !isDirectlyActive ? 'cancelled-active-until-period-end' : (acct.status || 'active'),
+      })
     }
     const trialEnd = Number(acct.trialStartedAt || 0) + TRIAL_DAYS * DAY
     if (acct.trialStartedAt && now < trialEnd) {

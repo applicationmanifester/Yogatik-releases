@@ -99,7 +99,9 @@ export default function BillingPanel({ onClose, onUpgrade, embedded = false }) {
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                       {planKey === 'pro' && account.currentPeriodEnd
-                        ? `Renews ${formatDate(account.currentPeriodEnd)}`
+                        ? (['cancelled', 'canceled'].includes(account.status)
+                            ? `Active until ${formatDate(account.currentPeriodEnd)} (Auto-renew off)`
+                            : `Renews ${formatDate(account.currentPeriodEnd)}`)
                         : planKey === 'trial' && account.trialEndsAt
                           ? `Trial ends ${formatDate(account.trialEndsAt)}`
                           : 'No active subscription'}

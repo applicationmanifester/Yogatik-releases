@@ -105,14 +105,19 @@ export async function loadBillingHistory({ limit = 50 } = {}) {
 
     const now = Date.now()
     const trialEnd = acct?.trialStartedAt ? Number(acct.trialStartedAt) + TRIAL_DAYS * DAY : 0
+    const periodEnd = Number(acct?.currentPeriodEnd) || 0
+    const isPaidPeriodValid = periodEnd > now
+    const isDirectlyActive = ['active', 'authenticated', 'past_due'].includes(acct?.status)
+    const isPro = (acct?.plan === 'pro' || isPaidPeriodValid) && (isPaidPeriodValid || isDirectlyActive)
+
     const account = acct ? {
-      plan: acct.plan === 'pro' && ['active', 'past_due'].includes(acct.status)
+      plan: isPro
         ? 'pro'
         : (acct.trialStartedAt && now < trialEnd ? 'trial' : 'free'),
       status: acct.status || null,
       provider: acct.provider || null,
       subscriptionId: acct.subscriptionId || null,
-      currentPeriodEnd: Number(acct.currentPeriodEnd) || 0,
+      currentPeriodEnd: periodEnd,
       trialEndsAt: trialEnd || 0,
     } : null
 
