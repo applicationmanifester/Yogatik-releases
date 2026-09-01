@@ -302,8 +302,8 @@ export const PLANS = {
     // India stays at ₹99/₹999: it is priced for its market, Razorpay is
     // percentage-only with no fixed fee, and UPI Autopay makes small recurring
     // amounts viable there in a way cards do not.
-    monthly: { id: 'intl_monthly', price: 9, label: '$9', per: 'month' },
-    yearly: { id: 'intl_yearly', price: 99, label: '$99', per: 'year', saveLabel: 'Save $9' },
+    monthly: { id: 'intl_monthly', price: 9.99, label: '$9.99', per: 'month' },
+    yearly: { id: 'intl_yearly', price: 99.99, label: '$99.99', per: 'year', saveLabel: 'Save $19.89' },
   },
 }
 
