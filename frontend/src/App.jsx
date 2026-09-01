@@ -4093,6 +4093,28 @@ export default function App() {
             <ChevronDown size={13} style={{ transform: 'rotate(-90deg)', opacity: 0.5 }} />
           </button>
 
+          {isDesktop() ? (
+            <a
+              className="sidebar-footer-link"
+              href="https://yogatik.web.app/"
+              target="_blank"
+              rel="noreferrer"
+              title="Open the Yogatik web app in a browser on your mobile or tablet"
+            >
+              <Smartphone size={13} /> <span>Use web app on mobile/tab</span>
+            </a>
+          ) : (
+            <a
+              className="sidebar-footer-link"
+              href="/platforms"
+              target="_blank"
+              rel="noreferrer"
+              title="Download the Yogatik desktop app for Windows, macOS or Linux"
+            >
+              <Monitor size={13} /> <span>Download Desktop App</span>
+            </a>
+          )}
+
           {user ? (
             <div className="user-info">
               <button type="button" className="user-info-identity" onClick={() => navigateDashboard('account')} title="Account">
@@ -4125,6 +4147,8 @@ export default function App() {
             <a href="/guide" target="_blank" rel="noreferrer">Guide</a>
             <span aria-hidden="true">·</span>
             <a href="/pricing" target="_blank" rel="noreferrer">Pricing</a>
+            <span aria-hidden="true">·</span>
+            <a href="/platforms" target="_blank" rel="noreferrer">Platforms</a>
             <span aria-hidden="true">·</span>
             <a href="/terms" target="_blank" rel="noreferrer">Terms</a>
             <span aria-hidden="true">·</span>
