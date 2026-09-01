@@ -2657,7 +2657,8 @@ html, body {
   border: none;
   border-radius: 0;
   box-shadow: none;
-  overflow: hidden;
+  /* clip at viewport but allow children to scroll independently */
+  overflow: clip;
   color: var(--text-primary);
 }
 
@@ -2764,7 +2765,7 @@ html, body {
   color: var(--text-primary); text-decoration: underline;
 }
 
-.dash-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg-secondary); }
+.dash-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-secondary); overflow: hidden; }
 
 .dash-topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -2813,19 +2814,33 @@ html, body {
 }
 
 .dash-content {
-  flex: 1; min-height: 0; overflow-y: auto;
+  /* sole scroll owner — topbar and rail are fixed, only content scrolls */
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* smooth trackpad / mousewheel scroll */
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
   max-width: 1100px; width: 100%; margin: 0 auto;
 }
+/* Scrollbar styling so it's visible but unobtrusive */
+.dash-content::-webkit-scrollbar { width: 6px; }
+.dash-content::-webkit-scrollbar-track { background: transparent; }
+.dash-content::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+.dash-content::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 .dash-page-pad { padding: 24px 32px 48px; }
 .dash-embed-pass { display: contents; }
 .dash-content .modal.embedded-page {
   width: 100%; max-width: none; height: auto; max-height: none;
   box-shadow: none; border: none; border-radius: 0; padding: 24px 32px 48px;
   background: transparent;
+  /* don't let the modal steal scroll events */
+  overflow: visible;
 }
 .dash-content .yg-panel.embedded-page {
-  width: 100%; max-height: none; height: 100%;
+  width: 100%; max-height: none; height: auto;
   box-shadow: none; border: none; border-radius: 0; background: transparent;
+  overflow: visible;
 }
 .dash-content .yg-panel-header,
 .dash-content .modal-header,

@@ -1867,6 +1867,7 @@ export async function getTools(conversationId) {
   const { getToolNames } = await import('./tools/index')
   return getToolNames().map(name => ({
     name,
+    label: name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
     enabled: !disabled.has(name),
     group: TOOL_GROUPS[name] || 'Other',
   }))

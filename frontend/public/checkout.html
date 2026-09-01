@@ -109,6 +109,16 @@
   .msg.err { display: block; background: var(--err-bg); border: 1px solid var(--err-line); color: var(--err-text); }
   .msg.ok  { display: block; background: var(--ok-bg); border: 1px solid var(--ok-line); color: var(--ok-text); }
   .note { margin-top: 18px; font-size: 12px; color: var(--muted); }
+  .redirect-bar { margin-top: 14px; display: none; text-align: center; }
+  .redirect-bar.show { display: block; }
+  .redirect-btn {
+    display: inline-block; margin-top: 8px; padding: 10px 22px;
+    background: var(--accent); color: #fff; border-radius: 8px;
+    font-weight: 700; font-size: 14px; text-decoration: none;
+    transition: background 160ms ease;
+  }
+  .redirect-btn:hover { background: var(--accent-hover); color: #fff; }
+  .countdown { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .legal { margin-top: 10px; font-size: 11px; color: var(--muted); display: flex; gap: 6px; }
   .legal a { color: inherit; text-decoration: none; }
   .legal a:hover { color: var(--text); text-decoration: underline; }
@@ -140,6 +150,10 @@
 
   <button id="pay" disabled>Checking…</button>
   <div class="msg" id="msg"></div>
+  <div class="redirect-bar" id="redirect-bar">
+    <a class="redirect-btn" href="/?paid=1">Open Yogatik →</a>
+    <div class="countdown" id="countdown"></div>
+  </div>
   <p class="note">
     Access is granted when the provider confirms the payment, not when this page
     closes — so it can take a few seconds to appear in the app. Nothing is
@@ -190,6 +204,22 @@
     msg.textContent = text
     btn.disabled = true
     btn.textContent = 'Unavailable'
+  }
+
+  // After a confirmed payment, redirect to the main app so the Pro entitlement
+  // banner can fire. /?paid=1 lets the app show a welcome message.
+  function redirectToApp(delayMs) {
+    var bar = document.getElementById('redirect-bar')
+    var cdEl = document.getElementById('countdown')
+    bar.className = 'redirect-bar show'
+    var secs = Math.round(delayMs / 1000)
+    function tick() {
+      if (secs <= 0) { window.location.replace('/?paid=1'); return }
+      cdEl.textContent = 'Redirecting in ' + secs + 's…'
+      secs--
+      setTimeout(tick, 1000)
+    }
+    tick()
   }
 
   elPlan.textContent = sku ? sku.label : (plan || 'unknown')
@@ -256,7 +286,16 @@
           customer: queryEmail ? { email: queryEmail } : undefined,
         })
         msg.className = 'msg ok'
-        msg.textContent = 'Complete the payment in the Paddle window, then return to Yogatik — it will unlock on its own.'
+        msg.textContent = 'Complete the payment in the Paddle window — you will be redirected to Yogatik automatically.'
+        // Paddle fires a checkout.completed event; listen for it to auto-redirect.
+        window.Paddle.Update({
+          eventCallback: function (ev) {
+            if (ev.name === 'checkout.completed') {
+              msg.textContent = 'Payment confirmed! ✓ Redirecting you to Yogatik…'
+              redirectToApp(3000)
+            }
+          }
+        })
       }).catch(function (e) { fail(e.message) })
     })
   }
@@ -340,7 +379,8 @@
                 msg.className = 'msg ok'
                 msg.textContent = 'Confirming payment…'
                 if (!cfg.razorpay.verifyPaymentUrl) {
-                  msg.textContent = 'Payment received. Return to Yogatik — it will unlock as soon as Razorpay confirms.'
+                  msg.textContent = 'Payment received. Redirecting to Yogatik — it will unlock as soon as Razorpay confirms.'
+                  redirectToApp(3000)
                   return
                 }
                 fetch(cfg.razorpay.verifyPaymentUrl, {
@@ -356,7 +396,8 @@
                   .then(function (v) {
                     if (v && v.verified) {
                       msg.className = 'msg ok'
-                      msg.textContent = 'Payment confirmed. Return to Yogatik — Pro unlocks within a few seconds.'
+                      msg.textContent = 'Payment confirmed! ✓ Redirecting you to Yogatik — Pro unlocks within a few seconds.'
+                      redirectToApp(3000)
                     } else {
                       // Do NOT say "paid". A mismatch here means the response
                       // did not come from Razorpay, or the keys are wrong.
@@ -366,8 +407,8 @@
                   })
                   .catch(function () {
                     msg.className = 'msg ok'
-                    msg.textContent = 'Payment received, but confirmation could not be reached. '
-                      + 'Return to Yogatik — it unlocks from the webhook regardless.'
+                    msg.textContent = 'Payment received! Redirecting to Yogatik — it unlocks from the webhook regardless.'
+                    redirectToApp(4000)
                   })
               },
               modal: {

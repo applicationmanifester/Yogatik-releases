@@ -52,6 +52,7 @@ import { setPermissionPrompt } from './permissions'
 import { setLocaleOverrides, overridesFromPrefs, applyDocumentLocale } from './locale'
 import {
   entitlement, loadEntitlement, refreshEntitlement, signOutEntitlement,
+  pollForUpgrade,
   onEntitlementChange, isPersonalEdition,
 } from './entitlement'
 import * as terminalStore from './terminal/terminalStore'
@@ -1497,6 +1498,36 @@ export default function App() {
     // checkout and a second auth flow that can drift from these.
     if (params.get('upgrade') || rawPath === '/upgrade') setShowUpgrade(true)
     if (params.get('signin') || rawPath === '/signin' || rawPath === '/login') requestSignIn()
+
+    // Redirect back from the /checkout page after a successful payment.
+    // Poll for the webhook to land (up to ~2 minutes) and refresh UI when Pro unlocks.
+    if (params.get('paid') === '1') {
+      // Clean the URL immediately — don't re-poll on a hard refresh.
+      try { history.replaceState(null, '', location.pathname) } catch {}
+      // Show an interim toast
+      setSystemMsg('🎉 Payment received! Activating Pro — this takes a few seconds…')
+      const doPoll = async () => {
+        try {
+          const me = await getMe()
+          const idToken = me?.idToken || null
+          const uid = me?.uid || me?.id || null
+          // Give the webhook a head start before the first tick.
+          await new Promise(r => setTimeout(r, 2000))
+          const stopPoll = pollForUpgrade({
+            idToken, uid,
+            attempts: 40,       // up to ~2 minutes at 3s intervals
+            intervalMs: 3000,
+            onUnlocked: (st) => {
+              setEnt(st)
+              setSystemMsg('✅ You\'re now on Yogatik Pro! Enjoy unlimited access.')
+              stopPoll?.()
+            },
+          })
+        } catch {}
+      }
+      doPoll()
+    }
+
     if (shared || params.get('new') || params.get('intent') || params.get('live') || params.get('upgrade') || params.get('signin')) {
       history.replaceState(null, '', location.pathname)   // don't re-fire on reload
     }
@@ -3628,7 +3659,9 @@ export default function App() {
                                 onChange={e => toggleTool(t.name, e.target.checked)}
                                 style={{ accentColor: 'var(--accent-color, #ff6b35)' }}
                               />
-                              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{t.label}</span>
+                              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>
+                                {t.label || t.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                              </span>
                             </label>
                           ))}
                         </div>
@@ -3645,7 +3678,19 @@ export default function App() {
                     Bring your own key — nothing here ever leaves this device except straight to the provider you pick.
                   </p>
                   <div className="providers-list">
-                    {Object.entries(models).map(([pid, def]) => {
+                    {Object.entries(models)
+                      .sort(([pidA, defA], [pidB, defB]) => {
+                        const isActA = pidA === (conv?.provider || provider)
+                        const isActB = pidB === (conv?.provider || provider)
+                        if (isActA !== isActB) return isActA ? -1 : 1
+
+                        const isReadyA = Boolean(defA.available) || pidA === 'local' || Boolean(defA.is_ollama)
+                        const isReadyB = Boolean(defB.available) || pidB === 'local' || Boolean(defB.is_ollama)
+                        if (isReadyA !== isReadyB) return isReadyA ? -1 : 1
+
+                        return (defA.name || pidA).localeCompare(defB.name || pidB)
+                      })
+                      .map(([pid, def]) => {
                       const isAct = pid === (conv?.provider || provider)
                       const isKeyless = pid === 'local' || def.is_ollama
                       const hasKey = Boolean(def.available)
