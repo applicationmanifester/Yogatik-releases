@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Sliders, DollarSign, AlertTriangle, Bot, Sparkles, Plug, Blocks, BarChart3, Wrench, X, Search } from 'lucide-react'
+import { Sliders, DollarSign, AlertTriangle, Bot, Sparkles, Plug, Blocks, BarChart3, Wrench, X, Search, ArrowLeft } from 'lucide-react'
+import { YogatikLogo } from './YogatikLogo'
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
@@ -68,26 +69,38 @@ export function DashboardShell({ active, onNavigate, onClose, children }) {
   if (typeof document === 'undefined') return null
 
   return createPortal(
-    <div className="dash-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose?.() }}>
+    <div className="dash-overlay dash-page-view" onClick={(e) => { if (e.target === e.currentTarget) onClose?.() }}>
       <div
         ref={ref}
         className="dash-shell"
-        role="dialog"
-        aria-modal="true"
+        role="main"
         aria-labelledby="dash-title"
         tabIndex={-1}
       >
-        <nav className="dash-rail" aria-label="Dashboard sections">
-          <div className="dash-rail-brand">
-            <span className="dash-rail-brand-dot" />
-            Dashboard
+        <nav className="dash-rail" aria-label="Dashboard navigation">
+          <div className="dash-rail-header">
+            <div className="dash-rail-brand">
+              <YogatikLogo size={24} />
+              <span>Yogatik Settings</span>
+            </div>
+            <button
+              type="button"
+              className="dash-back-btn"
+              onClick={onClose}
+              title="Return to Chat Conversation"
+              aria-label="Back to Chat"
+            >
+              <ArrowLeft size={14} />
+              <span>Back to Chat</span>
+            </button>
           </div>
+
           <div className="dash-rail-search">
             <Search size={13} className="dash-rail-search-icon" />
             <input
               ref={searchRef}
               type="text"
-              placeholder="Search settings"
+              placeholder="Search settings & tools…"
               value={query}
               onChange={e => setQuery(e.target.value)}
               aria-label="Search dashboard sections"
@@ -99,43 +112,65 @@ export function DashboardShell({ active, onNavigate, onClose, children }) {
             )}
           </div>
 
-          {grouped.length === 0 ? (
-            <div className="dash-rail-empty">No sections match "{query}"</div>
-          ) : grouped.map(({ group, items }) => (
-            <div className="dash-rail-group" key={group}>
-              <div className="dash-rail-group-label">{group}</div>
-              <div className="dash-rail-nav">
-                {items.map(s => {
-                  const Icon = s.icon
-                  const isActive = s.key === active
-                  return (
-                    <button
-                      key={s.key}
-                      type="button"
-                      className={`dash-nav-item${isActive ? ' active' : ''}`}
-                      aria-current={isActive ? 'page' : undefined}
-                      onClick={() => navigate(s.key)}
-                    >
-                      <span className="dash-nav-icon"><Icon size={16} /></span>
-                      <span className="dash-nav-label">{s.label}</span>
-                    </button>
-                  )
-                })}
+          <div className="dash-rail-scroll">
+            {grouped.length === 0 ? (
+              <div className="dash-rail-empty">No sections match "{query}"</div>
+            ) : grouped.map(({ group, items }) => (
+              <div className="dash-rail-group" key={group}>
+                <div className="dash-rail-group-label">{group}</div>
+                <div className="dash-rail-nav">
+                  {items.map(s => {
+                    const Icon = s.icon
+                    const isActive = s.key === active
+                    return (
+                      <button
+                        key={s.key}
+                        type="button"
+                        className={`dash-nav-item${isActive ? ' active' : ''}`}
+                        aria-current={isActive ? 'page' : undefined}
+                        onClick={() => navigate(s.key)}
+                      >
+                        <span className="dash-nav-icon"><Icon size={16} /></span>
+                        <span className="dash-nav-label">{s.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+
+          <div className="dash-rail-footer">
+            <a href="/pricing" target="_blank" rel="noreferrer">Pricing &amp; Plans</a>
+            <span>·</span>
+            <a href="/guide" target="_blank" rel="noreferrer">User Guide</a>
+            <span>·</span>
+            <a href="/terms" target="_blank" rel="noreferrer">Terms</a>
+          </div>
         </nav>
 
         <div className="dash-main">
           <div className="dash-topbar">
-            <span className="dash-topbar-icon"><section.icon size={17} /></span>
-            <div className="dash-topbar-text">
-              <h2 id="dash-title">{section.label}</h2>
-              <span className="dash-topbar-blurb">{section.blurb}</span>
+            <div className="dash-topbar-left">
+              <span className="dash-topbar-icon"><section.icon size={18} /></span>
+              <div className="dash-topbar-text">
+                <h2 id="dash-title">{section.label}</h2>
+                <span className="dash-topbar-blurb">{section.blurb}</span>
+              </div>
             </div>
-            <button type="button" className="yg-panel-icon-btn" onClick={onClose} title="Close" aria-label="Close dashboard">
-              <X size={16} />
-            </button>
+            <div className="dash-topbar-actions">
+              <button
+                type="button"
+                className="dash-topbar-back-btn"
+                onClick={onClose}
+                title="Back to Chat (Esc)"
+                aria-label="Back to Chat"
+              >
+                <ArrowLeft size={14} />
+                <span>Back to Chat</span>
+                <kbd>Esc</kbd>
+              </button>
+            </div>
           </div>
           <div className="dash-content">
             {children}

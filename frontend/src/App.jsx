@@ -800,6 +800,13 @@ export default function App() {
     setShowPersonalise(false); setShowBilling(false); setShowDiagnosticsModal(false)
     setShowAgents(false); setShowSkills(false); setShowMcpModal(false); setShowPlugins(false)
     setShowDataDashboard(false); setShowToolPicker(false)
+    try {
+      const url = new URL(window.location.href)
+      if (url.searchParams.has('tab')) {
+        url.searchParams.delete('tab')
+        window.history.replaceState(null, '', url.pathname + (url.search ? url.search : '') + url.hash)
+      }
+    } catch {}
   }, [])
   const navigateDashboard = useCallback((key) => {
     setShowPersonalise(key === 'settings')
@@ -811,7 +818,26 @@ export default function App() {
     setShowPlugins(key === 'plugins')
     setShowDataDashboard(key === 'usage')
     setShowToolPicker(key === 'capabilities')
+    try {
+      const url = new URL(window.location.href)
+      if (key) {
+        url.searchParams.set('tab', key)
+      } else {
+        url.searchParams.delete('tab')
+      }
+      window.history.replaceState(null, '', url.pathname + (url.search ? url.search : '') + url.hash)
+    } catch {}
   }, [])
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const tab = params.get('tab')
+      if (tab) {
+        navigateDashboard(tab)
+      }
+    } catch {}
+  }, [navigateDashboard])
 
   // send() reads these refs so it always sees the latest state, even when
   // called from a closure captured during a previous render (e.g. right after
