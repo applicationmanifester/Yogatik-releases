@@ -52,7 +52,7 @@ import { setPermissionPrompt } from './permissions'
 import { setLocaleOverrides, overridesFromPrefs, applyDocumentLocale } from './locale'
 import {
   entitlement, loadEntitlement, refreshEntitlement, signOutEntitlement,
-  pollForUpgrade,
+  pollForUpgrade, isPro,
   onEntitlementChange, isPersonalEdition,
 } from './entitlement'
 import * as terminalStore from './terminal/terminalStore'
