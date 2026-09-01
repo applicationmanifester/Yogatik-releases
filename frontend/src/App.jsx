@@ -3645,52 +3645,77 @@ export default function App() {
                     Bring your own key — nothing here ever leaves this device except straight to the provider you pick.
                   </p>
                   <div className="providers-list">
-                    {ALL_PROVIDERS.map(p => {
-                      const isAct = p.id === (conv?.provider || provider)
-                      const hasKey = Boolean(keys[p.id])
-                      const isEditing = editingProvider === p.id
+                    {Object.entries(models).map(([pid, def]) => {
+                      const isAct = pid === (conv?.provider || provider)
+                      const isKeyless = pid === 'local' || def.is_ollama
+                      const hasKey = Boolean(def.available)
+                      const isEditing = editingProvider === pid
+                      const isSaving = savingApiKey === pid
                       return (
-                        <div key={p.id} className={`provider-card${isAct ? ' active' : ''}`}>
-                          <div className="provider-card-head">
+                        <div key={pid} className={`provider-row-card${isAct ? ' active' : ''}`}>
+                          <div className="provider-row-head">
                             <div className="provider-card-title">
-                              <span className={`provider-dot ${hasKey ? 'configured' : ''}`} />
-                              <strong>{p.name}</strong>
-                              {isAct && <span className="provider-badge-active">Active</span>}
+                              <span className={`conn-dot-inline ${hasKey ? 'conn-connected' : def.unavailable_reason ? 'conn-failed' : 'conn-unknown'}`} />
+                              <strong>{def.name || pid}</strong>
+                              {isAct && <span className="provider-active-badge">Active</span>}
                             </div>
-                            <div className="provider-card-actions">
-                              {p.keyHelpUrl && (
-                                <a className="provider-help-link" href={p.keyHelpUrl} target="_blank" rel="noreferrer">
+                            <div className="provider-row-actions">
+                              {!isKeyless && def.key_url && (
+                                <a className="provider-key-link" href={def.key_url} target="_blank" rel="noreferrer">
                                   Get a key <ExternalLink size={11} />
                                 </a>
                               )}
                               {!isAct && (
-                                <button type="button" className="ws-ghost-btn sm" onClick={() => { setProvider(p.id); setModel(p.models[0]?.id || '') }}>
+                                <button type="button" className="ws-ghost-btn xs" onClick={() => setProvider(pid)}>
                                   Use
                                 </button>
                               )}
-                              {p.requiresKey && (
-                                <button type="button" className="ws-ghost-btn sm" onClick={() => setEditingProvider(isEditing ? null : p.id)}>
+                              {!isKeyless && (
+                                <button type="button" className="ws-ghost-btn xs" onClick={() => setEditingProvider(isEditing ? null : pid)}>
                                   {isEditing ? 'Cancel' : (hasKey ? 'Edit' : 'Add key')}
+                                </button>
+                              )}
+                              {!isKeyless && hasKey && (
+                                <button type="button" className="ws-ghost-btn xs danger" onClick={() => forgetKey(pid)}>
+                                  Remove
+                                </button>
+                              )}
+                              {!def.builtin && (
+                                <button type="button" className="ws-ghost-btn xs danger" onClick={() => handleRemoveProvider(pid)}>
+                                  Delete
                                 </button>
                               )}
                             </div>
                           </div>
-                          {p.requiresKey && (isEditing || !hasKey) && (
-                            <form className="provider-key-form" onSubmit={(e) => { e.preventDefault(); const val = e.target.elements.key.value.trim(); if (val) { saveKey(p.id, val); setEditingProvider(null); showToast(`${p.name} key saved`) } }}>
+                          {def.unavailable_reason && (
+                            <p className="dash-page-hint" style={{ margin: '6px 0 0' }}>{def.unavailable_reason}</p>
+                          )}
+                          {!isKeyless && (isEditing || !hasKey) && (
+                            <div className="provider-key-row">
                               <input
-                                name="key"
                                 type="password"
-                                defaultValue={keys[p.id] || ''}
-                                placeholder={`Paste ${p.name} API key`}
-                                aria-label={`${p.name} API key`}
+                                value={apiKeyInput[pid] || ''}
+                                onChange={e => setApiKeyInput(prev => ({ ...prev, [pid]: e.target.value }))}
+                                placeholder={`Paste ${def.name || pid} API key`}
+                                aria-label={`${def.name || pid} API key`}
                               />
-                              <button type="submit" className="ws-primary-btn sm">Save</button>
-                            </form>
+                              <button type="button" className="ws-primary-btn xs" disabled={isSaving} onClick={() => handleAddApiKey(pid)}>
+                                {isSaving ? 'Saving…' : 'Save'}
+                              </button>
+                              {hasKey && (
+                                <button type="button" className="ws-ghost-btn xs" disabled={isSaving} onClick={() => retestProvider(pid)}>
+                                  Test
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       )
                     })}
                   </div>
+                  <button type="button" className="ws-ghost-btn sm" style={{ marginTop: 12 }} onClick={() => { setEditingProvider(null); setShowProviderModal(true) }}>
+                    <Plus size={13} /> Add a custom provider
+                  </button>
                   <div className="account-card" style={{ marginTop: 24 }}>
                     <div className="account-card-head">
                       <h3>Local Ollama instance</h3>
@@ -3799,9 +3824,6 @@ export default function App() {
             )}
           </DashboardShell>
         </React.Suspense>
-        {toasts.map(t => (
-          <div key={t.id} className={`toast toast-${t.type || 'info'}`}>{t.message}</div>
-        ))}
       </div>
     )
   }
