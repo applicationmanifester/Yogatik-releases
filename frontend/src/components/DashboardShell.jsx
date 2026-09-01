@@ -1,27 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Sliders, DollarSign, AlertTriangle, Bot, Sparkles, Plug, Blocks, BarChart3, Wrench, X, Search } from 'lucide-react'
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
-/**
- * The nine settings-family surfaces (Settings, Billing, Usage, Diagnostics,
- * Capabilities, Agents, Skills, MCP Servers, Plugins) used to be nine
- * independent floating modals, each centred over the chat with its own
- * backdrop. DashboardShell is the one full-page frame all nine now share: a
- * persistent left nav rail (grouped, searchable) plus a content pane, so
- * switching from "Billing" to "Diagnostics" is a rail click inside one page
- * rather than closing one dialog and opening another.
- *
- * Sections are declared here, not per-caller, because the rail is the one
- * piece of chrome every section shares — a section that forgets to register
- * itself here simply cannot be reached, the same reachability guarantee
- * App.jsx already leans on for browserOccluded/isAnyModalOpen membership.
- *
- * Built entirely from the app's existing bg/text/border/accent tokens (see
- * styles.css) — no hardcoded colour anywhere in this file — for the same
- * reason the yg-panel shell exists: content painted onto a hardcoded-dark
- * card goes illegible the moment light theme is on.
- */
 export const DASHBOARD_SECTIONS = [
   { key: 'settings', label: 'Settings', blurb: 'Voice, tone, accessibility & region', icon: Sliders, group: 'Account' },
   { key: 'billing', label: 'Billing', blurb: 'Plan, invoices & payment history', icon: DollarSign, group: 'Account' },
@@ -61,8 +43,6 @@ export function DashboardShell({ active, onNavigate, onClose, children }) {
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        // Escape clears an active rail search before it closes the whole
-        // dashboard — the same two-stage behaviour as Ctrl+K's own search.
         if (query) { setQuery(''); searchRef.current?.focus(); return }
         onClose?.()
         return
@@ -81,17 +61,14 @@ export function DashboardShell({ active, onNavigate, onClose, children }) {
       document.removeEventListener('keydown', onKeyDown, true)
       restoreTo.current?.focus?.()
     }
-    // Re-arm the trap when the section changes — a rail click swaps in an
-    // entirely new focusable tree underneath. Deliberately NOT re-armed on
-    // every `query` keystroke (query is read inside the handler via closure
-    // through the effect re-running only on the deps below would fire the
-    // trap once per character), so it is read fresh each keydown instead.
   }, [onClose, active]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const navigate = (key) => { onNavigate?.(key) }
 
-  return (
-    <div className="dash-overlay">
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div className="dash-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose?.() }}>
       <div
         ref={ref}
         className="dash-shell"
@@ -165,6 +142,7 @@ export function DashboardShell({ active, onNavigate, onClose, children }) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

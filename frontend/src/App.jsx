@@ -3478,6 +3478,7 @@ export default function App() {
 
         <button type="button" className="new-chat-btn" onClick={(e) => { e.preventDefault(); newChat(); }} aria-label="New chat"><Plus size={14} /> New Chat</button>
 
+        {/* Search */}
         <button
           type="button"
           className="sidebar-search-btn"
@@ -3489,39 +3490,6 @@ export default function App() {
           <span>Search & Commands</span>
           <kbd>Ctrl+K</kbd>
         </button>
-
-        <div className="sidebar-quick-nav">
-          <button type="button" className={`quick-nav-pill ${dashActive === 'settings' ? 'active' : ''}`} onClick={() => navigateDashboard('settings')} title="Settings & Preferences">
-            <Sliders size={12} />
-            <span>Settings</span>
-          </button>
-          <button type="button" className={`quick-nav-pill ${dashActive === 'agents' ? 'active' : ''}`} onClick={() => navigateDashboard('agents')} title="Autonomous Agents">
-            <Bot size={12} />
-            <span>Agents</span>
-          </button>
-          <button type="button" className={`quick-nav-pill ${dashActive === 'plugins' ? 'active' : ''}`} onClick={() => navigateDashboard('plugins')} title="Plugins & MCP Tools">
-            <Plug size={12} />
-            <span>Plugins</span>
-          </button>
-          <button type="button" className={`quick-nav-pill ${dashActive === 'skills' ? 'active' : ''}`} onClick={() => navigateDashboard('skills')} title="Skills Catalog">
-            <Compass size={12} />
-            <span>Skills</span>
-          </button>
-          <button type="button" className={`quick-nav-pill ${dashActive === 'usage' ? 'active' : ''}`} onClick={() => navigateDashboard('usage')} title="Usage & Analytics">
-            <Activity size={12} />
-            <span>Usage</span>
-          </button>
-          <button type="button" className={`quick-nav-pill ${dashActive === 'billing' ? 'active' : ''}`} onClick={() => navigateDashboard('billing')} title="Subscription & Billing">
-            <DollarSign size={12} />
-            <span>Billing</span>
-          </button>
-        </div>
-
-        {/* One search, not two. This used to be a SECOND input four rows below
-            the Ctrl+K button, filtering titles by substring. The palette already
-            searches chats — BM25 over titles AND message bodies (chatSearch.js) —
-            so it strictly supersedes this. convQuery is still honoured by
-            visibleConvs, so a search driven from the palette keeps working. */}
 
         <div className="sidebar-scroll">
         <div className="conversation-list">
@@ -3588,17 +3556,6 @@ export default function App() {
               )}
               {i === activeIdx && renamingIdx !== i && (
                 <span className="conv-actions">
-                  {/* "Folder" means two different things in this app: an
-                      IndexedDB category tag (web+desktop, via the folder
-                      modal below) and a real filesystem working directory
-                      (desktop-only, via roots.cjs). Showing one icon for the
-                      category concept read as broken on web, where there is
-                      no filesystem to point at — so on web this icon is
-                      gone entirely (rename/tag/delete still cover chat
-                      organization). On desktop it is repointed at the REAL
-                      working folder for this chat instead, reusing the same
-                      rootsOpen popover the header's folder chip already
-                      drives, rather than opening the category modal. */}
                   {isDesktop() && (
                     <button className="icon-btn" onClick={e => {
                       e.stopPropagation()
@@ -3630,506 +3587,37 @@ export default function App() {
           )}
         </div>
 
-        {/* The ad lives INSIDE the scroll region, never in the settings drawer.
-            adsbygoogle.js un-constrains every ancestor of a responsive unit
-            (inline `height:auto!important; min-height:0!important`), and inline
-            !important outranks any stylesheet — parked in .settings-body it
-            blew #root/.app/.sidebar/.settings out to ~2100px in a 900px window,
-            pushing the drawer and the footer off-screen with body overflow
-            hidden so nothing could scroll to them. Here the mutation cannot
-            reach a flex parent that owns the shell height, and shellGuard.js
-            reverts it if a future unit tries again. */}
         {!isDesktop() && <AdSenseBanner className="sidebar-ad" />}
         </div>
 
-        <div className={`settings ${settingsOpen ? 'open' : 'closed'}`}>
-          <button className="settings-toggle" onClick={() => setSettingsOpen(v => !v)}
-            aria-expanded={settingsOpen} aria-controls="settings-body">
-            {/* Reads as "Settings" now. Labelling it with the provider name meant
-                the only way into model, tools and keys was a row that looked like
-                a status readout. The provider stays visible as a subtitle, and the
-                dot keeps its at-a-glance connection state. */}
-            <span className="settings-toggle-main">
-              <Sliders size={12} />
-              <span className="settings-toggle-label">Settings</span>
-              <span className="settings-toggle-sub">{models[provider]?.name || provider}</span>
-              <span className={`conn-dot conn-dot-inline conn-${providerStatus[provider]?.state === 'failed' ? 'failed' : (verifying ? 'testing' : 'connected')}`} />
-            </span>
-            <ChevronDown size={14} className={settingsOpen ? 'chev open' : 'chev'} />
-          </button>
-
-          <div className="settings-body" id="settings-body" hidden={!settingsOpen}>
-          <button
-            className="small-btn primary wide settings-center-trigger"
-            style={{
-              margin: '8px 0 10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              gap: 6, padding: '8px 12px', background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
-              color: '#fff', fontWeight: 600, borderRadius: 8, border: 0, boxShadow: '0 2px 8px rgba(37,99,235,0.3)'
-            }}
-            onClick={() => { setSettingsModalTab('providers'); setShowSettingsModal(true); }}
-          >
-            <Sliders size={13} /> Open Settings Center
-          </button>
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-            <label style={{ margin: 0 }}><Sparkles size={12} /> Persona</label>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              {(conv?.persona || activeTemplate).startsWith('tmpl-') && (
-                <button className="small-btn delete-persona-btn" style={{ padding: '2px 6px', fontSize: '10px', color: '#ff6b6b', height: 'auto', background: 'rgba(255,107,107,0.1)', border: 'none', borderRadius: '3px', cursor: 'pointer' }} onClick={() =>
-                  showConfirm('Delete this custom persona?', async () => {
-                    await deleteTemplate(conv?.persona || activeTemplate)
-                    setPersona('default')
-                    refreshTemplates()
-                  }, { okLabel: 'Delete' })
-                } title="Delete current custom persona">
-                  Delete
-                </button>
-              )}
-              <button className="small-btn" style={{ padding: '2px 6px', fontSize: '10px', height: 'auto', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '3px', cursor: 'pointer', color: 'var(--text-color, inherit)' }} onClick={() => setShowPersonaModal(true)} title="Create custom persona">
-                <Plus size={11} /> Custom
-              </button>
-            </div>
-          </div>
-          <select value={conv?.persona || activeTemplate} aria-label="Persona" onChange={e => setPersona(e.target.value)}>
-            {promptTemplates.map(t => (
-              <option key={t.id} value={t.id}>{t.icon ? `${t.icon} ` : ''}{t.name}</option>
-            ))}
-          </select>
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-            <label style={{ margin: 0 }}>Provider</label>
-            <button className="small-btn" onClick={() => setShowProviderModal(true)} title="Add custom API">
-              <Plus size={11} /> Custom
-            </button>
-          </div>
-          <select value={conv?.provider || provider} aria-label="Provider" onChange={e => {
-            const nextProvider = e.target.value
-            setProvider(nextProvider)
-          }}>
-            {providerEntries.map(([key, val]) => (
-              <option key={key} value={key}>
-                {val.name || key}
-              </option>
-            ))}
-          </select>
-
-          {(() => {
-            const curProv = conv?.provider || provider
-            const st = providerStatus[curProv] || {}
-            const isFailed = st.state === 'failed'
-            // "Ready" was the FALLBACK for every state, including undefined —
-            // so a provider that had never been reached still showed a green
-            // dot beside its own error message. Two claims on one card that
-            // contradict each other, and the wrong one is the reassuring one.
-            const untested = !st.state || st.state === 'untested'
-            const label = verifying
-              ? 'Checking model…'
-              : isFailed ? 'Not working'
-                : st.state === 'connected' ? 'Ready'
-                  : 'Not checked yet'
-            return (
-              <div className={`conn-status conn-${verifying ? 'testing' : (isFailed ? 'failed' : (untested ? 'testing' : 'connected'))}`}>
-                <span className="conn-dot" />
-                <span className="conn-label">{label}</span>
-                {!verifying && st.latencyMs != null && (
-                  <span className="conn-meta">
-                    {formatLatency(st.latencyMs)}
-                    {st.latencyMs > 15000 ? ' — very slow' : ''}
-                  </span>
-                )}
-                {st.hasKey && (
-                  <button className="small-btn" onClick={() => retestProvider(curProv)}
-                    disabled={savingApiKey === curProv || verifying} aria-label="Re-check this model">
-                    Retest
-                  </button>
-                )}
-              </div>
-            )
-          })()}
-          {/* Only show an error that belongs to the CURRENT verdict. The status
-              is persisted in IndexedDB, so a failure from a previous run
-              survives a restart and sat under "Not checked yet" — two
-              statements that contradict each other, where the stale one is the
-              alarming one. Press Retest to get a fresh answer. */}
-          {providerStatus[conv?.provider || provider]?.state === 'failed'
-            && providerStatus[conv?.provider || provider]?.error && (
-            <div className="conn-error">{providerStatus[conv?.provider || provider].error}</div>
-          )}
-          {/* Ollama is a LOCAL daemon, so "no models" has a specific cause that
-              getModels() already worked out — not installed, not running, or
-              nothing pulled. Showing it here is the difference between a dead
-              end and a next step. */}
-          {models[conv?.provider || provider]?.unavailable_reason && (
-            <div className="conn-error conn-hint">
-              {models[conv?.provider || provider].unavailable_reason}
-            </div>
-          )}
-
-          {(conv?.provider || provider) === 'local' ? (
-            <React.Suspense fallback={null}>
-              <LocalModelPanel
-                model={conv?.model || model || DEFAULT_LOCAL_MODEL}
-                onModelChange={(m) => chooseModel(m, 'local')}
-                onReady={(m) => { chooseModel(m, 'local'); refreshModels() }} />
-            </React.Suspense>
-          ) : (
-            <>
-              <label>API Key {models[conv?.provider || provider]?.key_url && <a href={models[conv?.provider || provider].key_url} target="_blank" rel="noopener" style={{fontSize:10,color:'var(--accent)'}}>(get the key)</a>}</label>
-              {keyInfo[conv?.provider || provider]?.saved ? (
-            <div className="key-saved">
-              <div className="key-saved-row">
-                <Key size={12} />
-                <code>{keyInfo[conv?.provider || provider].masked}</code>
-                <button className="link-btn" onClick={() => forgetKey(conv?.provider || provider)}>Forget</button>
-              </div>
-              <div className="key-where">
-                <span title="Stored in this browser's IndexedDB">
-                  <Smartphone size={10} /> This device
-                </span>
-                <span title={keyInfo[conv?.provider || provider].syncedAt
-                  ? 'Encrypted and synced to your account'
-                  : 'Not uploaded anywhere'}>
-                  {keyInfo[conv?.provider || provider].syncedAt
-                    ? <><Cloud size={10} /> Cloud (encrypted)</>
-                    : <><CloudOff size={10} /> Not in cloud</>}
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="key-none">No key stored for this provider.</div>
-          )}
-
-          <input type="password" aria-label={`API key for ${models[conv?.provider || provider]?.name || (conv?.provider || provider)}`}
-            placeholder={keyInfo[conv?.provider || provider]?.saved ? 'Replace key…' : 'Enter API key...'}
-            value={apiKeyInput[conv?.provider || provider] !== undefined ? apiKeyInput[conv?.provider || provider] : ''}
-            onChange={e => setApiKeyInput({ ...apiKeyInput, [conv?.provider || provider]: e.target.value })}
-            style={{ width:'100%',padding:'6px 8px',background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-primary)',fontSize:'12px',marginBottom:'8px' }}
-          />
-
-          <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-            <button className="small-btn btn-primary" onClick={() => handleAddApiKey(conv?.provider || provider)} disabled={savingApiKey === (conv?.provider || provider)}>
-              <Plus size={11} /> {savingApiKey === (conv?.provider || provider) ? 'Verifying...' : 'Add Key'}
-            </button>
-            <button className="small-btn" onClick={() => { setShowProviderModal(true); setEditingProvider(conv?.provider || provider) }} title="Edit provider details">
-              <Plug size={11} /> Edit
-            </button>
-            <button className="small-btn" onClick={() => handleRemoveProvider(conv?.provider || provider)} title="Remove provider" style={{ color: '#ff4444' }}>
-              <Trash2 size={11} /> Remove
-            </button>
-          </div>
-
-          </>
-          )}
-
-          <div className="cloud-sync" hidden={(conv?.provider || provider) === 'local'}>
-            {!user ? (
-              <span className="cloud-hint">
-                <CloudOff size={11} /> Keys stay on this device.
-                <button className="link-btn" onClick={requestSignIn}>Sign in</button> to use them everywhere.
-              </span>
-            ) : (
-              <>
-                <span className="cloud-hint">
-                  <Cloud size={11} /> Keys sync to your account
-                  <button className="link-btn" onClick={handleSyncNow} disabled={syncing}>
-                    {syncing ? 'Syncing…' : 'Sync now'}
-                  </button>
-                </span>
-                <span className="cloud-note">
-                  Encrypted and tied to your Google account — sign in on any device and your keys
-                  are there. Nothing to remember.
-                </span>
-              </>
-            )}
-          </div>
-
-          {/* ── Model ─────────────────────────────────────────── */}
-          <div className="sidebar-section-title">Model {(models[conv?.provider || provider]?.models || []).length > 0 && <span className="sidebar-count">{(models[conv?.provider || provider]?.models || []).length}</span>}</div>
-          <ModelPicker
-            models={models[conv?.provider || provider]?.models || []}
-            value={conv?.model !== undefined ? conv.model : model}
-            measured={measuredModels}
-            formatLatency={formatLatency}
-            disabled={!models[conv?.provider || provider]?.available}
-            onChange={(m) => chooseModel(m, conv?.provider || provider)} />
-
-          {/* styles.js has shipped for months and agent.js appends the active
-              style to every reply, but nothing ever rendered a selector — the
-              feature was reachable only by editing IndexedDB by hand. Sits with
-              the model picker because both answer "how will this chat reply". */}
-          <StylePicker conversationId={scopeId} onToast={showToast} />
-
-          <button className="small-btn auto-pick wide" onClick={() => handleAutoPick(conv?.provider || provider)}
-            disabled={autoPicking || !models[conv?.provider || provider]?.available}
-            title="Measure a few models and select the fastest that works">
-            <Zap size={11} /> {autoPicking ? (autoPickMsg || 'Testing…') : 'Auto-pick fastest'}
-          </button>
-          <div className="toggle-row">
-            <label title="Pick a model per message from those measured as working">
-              <Zap size={12} /> Auto-route models
-            </label>
-            <label className="toggle" aria-label="Toggle per-message model routing">
-              <input type="checkbox" checked={autoRoute} onChange={e => setAutoRoute(e.target.checked)} /><span className="slider" />
-            </label>
-          </div>
-          {autoRoute && (
-            <div className="route-note">
-              Code questions go to a code model, quick questions to a fast one. Only models that
-              passed a speed check are used — run Auto-pick to measure more.
-            </div>
-          )}
-
-          {/* ── Response ──────────────────────────────────────── */}
-          <div className="sidebar-section-title">Response</div>
-          <label className="slider-label">Temperature <span className="sidebar-count">{conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)}</span></label>
-          <input type="range" aria-label="Response randomness (temperature)" min="0" max="1" step="0.1" value={conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)} onChange={e => setTemperature(parseFloat(e.target.value))} />
-
-          {/* ── Tools ─────────────────────────────────────────── */}
-          <div className="sidebar-section-title">Tools</div>
-          <div className="toggle-row">
-            <label><Wrench size={12} /> AI Tools</label>
-            <label className="toggle" aria-label="Toggle AI tools">
-              <input type="checkbox" checked={conv?.tools !== undefined ? conv.tools : (tools ?? true)} onChange={e => setToolsEnabled(e.target.checked)} /><span className="slider" />
-            </label>
-          </div>
-          {(conv?.tools !== undefined ? conv.tools : (tools ?? true)) && (
-            <button className="small-btn tool-picker-toggle wide" onClick={() => navigateDashboard('capabilities')}>
-              <Wrench size={11} /> Choose &amp; Configure Tools
-              <span className="tool-count">
-                {toolPrefs.filter(t => t.enabled).length}/{toolPrefs.length}
-              </span>
-            </button>
-          )}
-
-          {/* ── More ──────────────────────────────────────────── */}
-          <div className="sidebar-section-title">More</div>
-          <button className="small-btn wide" onClick={() => navigateDashboard('settings')}>
-            <Sliders size={12} /> Personalise — voice &amp; interface
-          </button>
-          <button className="small-btn wide" onClick={() => navigateDashboard('skills')}>
-            <Compass size={12} /> Skills &amp; workflows
-          </button>
-          <div className="toggle-row">
-            <label><Globe size={12} /> Web Research</label>
-            <label className="toggle" aria-label="Toggle web research">
-              <input type="checkbox" checked={conv?.webSearch !== undefined ? conv.webSearch : (webSearch ?? true)} disabled={!(conv?.tools !== undefined ? conv.tools : (tools ?? true))}
-                onChange={e => setWebSearch(e.target.checked)} /><span className="slider" />
-            </label>
-          </div>
-          <div className="toggle-row">
-            <label title="If a provider times out or rate-limits, retry on another provider that has a key">
-              <RefreshCw size={12} /> Provider fallback
-            </label>
-            <label className="toggle" aria-label="Toggle provider fallback">
-              <input type="checkbox" checked={fallback} onChange={e => setFallback(e.target.checked)} /><span className="slider" />
-            </label>
-          </div>
-
-          {features.usage && Object.keys(usage).length > 0 && (
-            <div className="usage-row">
-              <label><Zap size={12} /> Today's usage <span className="usage-approx">(approx.)</span></label>
-              {Object.entries(usage).map(([pid, u]) => (
-                <div key={pid} className="usage-item">
-                  <span className="usage-provider">{models[pid]?.name || pid}</span>
-                  <span className="usage-nums">
-                    {u.messages} msg · {((u.in + u.out) / 1000).toFixed(1)}k tokens
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {storage && (
-            <div className="usage-row storage-row">
-              <div className="storage-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Download size={12} /> On-device storage
-                </label>
-                <button className="small-btn info-btn" style={{ padding: '2px 6px', fontSize: '10px', height: 'auto', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '3px', cursor: 'pointer', color: 'var(--text-color, inherit)' }} onClick={() => setShowStorageDetails(!showStorageDetails)}>
-                  {showStorageDetails ? 'Hide' : 'What & Where?'}
-                </button>
-              </div>
-              <div className="usage-item" style={{ marginTop: '4px' }}>
-                <span className="usage-provider">
-                  {formatBytes(storage.used)} used
-                  {storage.quota ? ` of ${formatBytes(storage.quota)}` : ''}
-                </span>
-                <span 
-                  className={`usage-nums storage-badge ${storage.persisted ? 'persisted' : 'best-effort'}`} 
-                  style={{ cursor: 'pointer', textDecoration: 'underline' }}
-                  onClick={async () => {
-                    if (!storage.persisted) {
-                      const granted = await requestPersistence()
-                      setStorage(prev => prev ? { ...prev, persisted: granted } : null)
-                    }
-                  }}
-                  title={storage.persisted
-                    ? 'Your browser will not evict this data automatically'
-                    : 'Click to request protection. The browser may clear this data when disk space runs low.'}
-                >
-                  {storage.persisted ? 'protected' : 'best-effort (protect?)'}
-                </span>
-              </div>
-              {showStorageDetails && (
-                <div className="storage-details" style={{ fontSize: '11px', marginTop: '8px', padding: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', display: 'flex', flexDirection: 'column', gap: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <button className="small-btn" style={{ padding: '4px 8px' }} onClick={() => navigateDashboard('usage')}>
-                    View & manage what Yogatik remembers about you
-                  </button>
-                  <div>
-                    <strong>What is stored here:</strong>
-                    <ul style={{ margin: '4px 0', paddingLeft: '16px', listStyleType: 'disc' }}>
-                      <li><strong>WebLLM Cache:</strong> Local chat model weights (Qwen/Llama) if downloaded.</li>
-                      <li><strong>IndexedDB:</strong> Your local chat conversations, documents, and settings.</li>
-                      <li><strong>Chrome Native Model:</strong> Chrome's built-in Gemini Nano model weights (typically stored natively in User Data).</li>
-                    </ul>
-                  </div>
-                  <div>
-                    <strong>Chrome Native Model Path (Windows):</strong>
-                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginTop: '2px' }}>
-                      <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px', wordBreak: 'break-all', flex: 1, fontFamily: 'monospace' }}>
-                        %LOCALAPPDATA%\Google\Chrome\User Data\OptGuideOnDeviceModel
-                      </code>
-                      <button className="small-btn" style={{ padding: '2px 6px', height: 'auto' }} onClick={() => {
-                        navigator.clipboard.writeText('%LOCALAPPDATA%\\Google\\Chrome\\User Data\\OptGuideOnDeviceModel')
-                          .then(() => showToast('Path copied to clipboard'))
-                          .catch(() => showToast('Could not copy — try manually'))
-                      }}>Copy</button>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
-                    <button className="small-btn" style={{ flex: 1, padding: '4px' }} onClick={async () => {
-                      if (confirm('Clear all cached WebLLM local models from the browser storage?')) {
-                        await clearLocalModelCache()
-                        const rep = await storageReport()
-                        setStorage(rep)
-                        showToast('Model cache cleared')
-                      }
-                    }}>Clear model cache</button>
-                    <button className="small-btn" style={{ flex: 1, padding: '4px' }} onClick={() => {
-                      setErrorModalMsg('Configure on-device AI settings:\n\n• Type chrome://flags in your address bar and search for "on-device AI".\n• Type chrome://components to update optimization guide components.')
-                    }}>Browser flags info</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="backup-row">
-            <label><Download size={12} /> Backup</label>
-            <div className="backup-actions">
-              <button className="small-btn" onClick={handleBackup}>Export all</button>
-              <button className="small-btn" onClick={() => backupInput.current?.click()}>Import</button>
-              <input ref={backupInput} type="file" accept="application/json" hidden
-                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleRestore(f) }} />
-            </div>
-            <span className="backup-note">
-              Chats, documents and settings — everything except API keys, which never go in a file.
-            </span>
-          </div>
-
-          <div className="diagnostics-row" style={{ marginTop: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
-                <AlertTriangle size={12} style={{ color: 'var(--accent)' }} /> Error Findings &amp; Diagnostics
-              </label>
-              <button
-                className="small-btn info-btn"
-                style={{ padding: '2px 6px', fontSize: 10, height: 'auto', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 3, cursor: 'pointer', color: 'var(--text-color, inherit)' }}
-                onClick={() => navigateDashboard('diagnostics')}
-              >
-                Inspect Logs
-              </button>
-            </div>
-            <span className="backup-note">
-              On-device ring buffer of runtime failures, provider errors, and system health report.
-            </span>
-          </div>
-
-          {user && (
-            <div className="billing-row" style={{ marginTop: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
-                  <DollarSign size={12} style={{ color: 'var(--accent)' }} /> Billing
-                </label>
-                <button
-                  className="small-btn info-btn"
-                  style={{ padding: '2px 6px', fontSize: 10, height: 'auto', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 3, cursor: 'pointer', color: 'var(--text-color, inherit)' }}
-                  onClick={() => navigateDashboard('billing')}
-                >
-                  View history
-                </button>
-              </div>
-              <span className="backup-note">
-                Current plan and every charge, with a link to each provider's own receipt.
-              </span>
-            </div>
-          )}
-
-          {docs.length > 0 && (
-            <div className="doc-list">
-              <label><FileText size={12} /> Documents ({docs.length})</label>
-              {docs.map(d => (
-                <div key={d.id} className="doc-item">
-                  <span className="doc-name" title={`${d.chars.toLocaleString()} chars · ${d.chunks.length} passages`}>{d.name}</span>
-                  <button className="icon-btn" aria-label={`Remove ${d.name}`}
-                    onClick={() => removeDocument(d.id).then(refreshDocs)}><X size={12} /></button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          </div>
-        </div>
-
-        <div className="sidebar-dashboard-banner">
-          <button
-            type="button"
-            className="sidebar-dashboard-btn"
-            onClick={() => navigateDashboard('settings')}
-            title="Open Unified App Dashboard & Settings"
-          >
-            <LayoutDashboard size={16} style={{ color: '#60a5fa' }} />
-            <div className="sidebar-dashboard-btn-text">
-              <span className="sidebar-dashboard-title">Dashboard Center</span>
-              <span className="sidebar-dashboard-sub">All 9 Tools &amp; Settings Panels</span>
-            </div>
-            <ChevronDown size={14} style={{ transform: 'rotate(-90deg)', opacity: 0.6 }} />
-          </button>
-        </div>
-
-        {/* Footer: identity, plus the cross-surface link. Both used to be
-            elsewhere — identity above the chat list where it crowded navigation,
-            and the desktop/web link only inside the hero, so it disappeared the
-            moment a conversation existed. */}
+        {/* Clean Sidebar Footer: Settings & Dashboard trigger + Account & Links */}
         <div className="sidebar-footer">
           <button
-            className="sidebar-footer-link"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}
-            onClick={() => setShowWhatsNew(true)}
-            title="View latest app version and release updates"
+            type="button"
+            className="sidebar-settings-btn"
+            onClick={() => navigateDashboard('settings')}
+            title="Open Settings, Providers, Billing & Tools"
           >
-            <Sparkles size={13} style={{ color: 'var(--accent, #ff6b35)' }} />
-            <span>What's New <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>v{APP_VERSION}</strong></span>
+            <div className="sidebar-settings-btn-main">
+              <Sliders size={14} style={{ color: 'var(--accent, #ff6b35)' }} />
+              <div className="sidebar-settings-btn-text">
+                <span className="sidebar-settings-btn-title">Settings &amp; Dashboard</span>
+                <span className="sidebar-settings-btn-sub">
+                  {models[provider]?.name || provider} · <span className={`conn-dot-inline conn-${providerStatus[provider]?.state === 'failed' ? 'failed' : (verifying ? 'testing' : 'connected')}`} /> {providerStatus[provider]?.state === 'connected' ? 'Ready' : 'Configure'}
+                </span>
+              </div>
+            </div>
+            <ChevronDown size={13} style={{ transform: 'rotate(-90deg)', opacity: 0.5 }} />
           </button>
-          {isDesktop() ? (
-            <a className="sidebar-footer-link" href="https://yogatik.web.app/" target="_blank" rel="noreferrer"
-              title="Open the Yogatik web app in a browser on your mobile or tablet">
-              <Smartphone size={13} /> <span>Use web app on mobile/tab</span>
-            </a>
-          ) : (
-            <a className="sidebar-footer-link" href="/platforms" target="_blank" rel="noreferrer"
-              title="Download the Yogatik desktop app for Windows, macOS or Linux">
-              <Monitor size={13} /> <span>Get the desktop app</span>
-            </a>
-          )}
+
           {user ? (
             <div className="user-info">
               {user.photoURL ? (
-                <img src={user.photoURL} alt="" style={{ width: 20, height: 20, borderRadius: '50%' }} />
+                <img src={user.photoURL} alt="" style={{ width: 22, height: 22, borderRadius: '50%' }} />
               ) : (
-                <User size={14} />
+                <User size={15} />
               )}
-              <span>{user.displayName || user.email}</span>
+              <span className="user-name" title={user.email}>{user.displayName || user.email}</span>
               <button className="icon-btn" onClick={() => { logout(); setUser(null); signOutEntitlement().then(setEnt); loadConversations() }} title="Sign out">
                 <LogOut size={14} />
               </button>
@@ -4139,12 +3627,20 @@ export default function App() {
               <LogIn size={14} /> Sign In
             </button>
           )}
-          {/* These three only otherwise exist as static pages nothing in the
-              live, JavaScript-rendered app ever links to — a real visitor (or
-              a payment provider's verification reviewer) browsing the app as
-              built has no click path to them at all. Small and quiet on
-              purpose: this is a compliance requirement, not a feature to sell. */}
-          <div className="sidebar-footer-legal">
+
+          <div className="sidebar-footer-links">
+            <button
+              className="sidebar-footer-link-btn"
+              onClick={() => setShowWhatsNew(true)}
+              title="View latest release notes"
+            >
+              <Sparkles size={11} style={{ color: 'var(--accent, #ff6b35)' }} /> v{APP_VERSION}
+            </button>
+            <span aria-hidden="true">·</span>
+            <a href="/guide" target="_blank" rel="noreferrer">Guide</a>
+            <span aria-hidden="true">·</span>
+            <a href="/pricing" target="_blank" rel="noreferrer">Pricing</a>
+            <span aria-hidden="true">·</span>
             <a href="/terms" target="_blank" rel="noreferrer">Terms</a>
             <span aria-hidden="true">·</span>
             <a href="/privacy" target="_blank" rel="noreferrer">Privacy</a>
@@ -4153,6 +3649,9 @@ export default function App() {
           </div>
         </div>
       </aside>
+
+      <input ref={backupInput} type="file" accept="application/json" hidden
+        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleRestore(f) }} />
 
       {/* The workspace dock sits IN the flex row, between the sidebar and the
           chat — it narrows the conversation rather than covering it, which is
