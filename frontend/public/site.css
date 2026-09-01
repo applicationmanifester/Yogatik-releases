@@ -27,7 +27,7 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; letter-spacing: -.02em; color: var(--text) }
 .logo:hover { text-decoration: none }
 .logo img { width: 30px; height: 30px }
-nav.site { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14.5px }
+nav.site { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14.5px; align-items: center }
 nav.site a { color: var(--muted); font-weight: 600 }
 nav.site a:hover { color: var(--brand2); text-decoration: none }
 nav.site a[aria-current="page"] { color: var(--text) }
@@ -91,3 +91,26 @@ footer {
 footer nav { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px }
 footer a { color: var(--muted) }
 footer a:hover { color: var(--brand2) }
+
+/* ─── Light theme overrides ───────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg: #f5f6f8; --panel: #ffffff; --panel2: #edf0f4; --line: rgba(0,0,0,.1);
+  --text: #111827; --muted: #5a6575; --brand: #e85d25; --brand2: #c44d1a;
+}
+[data-theme="light"] body { background: var(--bg); color: var(--text) }
+[data-theme="light"] p,
+[data-theme="light"] ul,
+[data-theme="light"] ol,
+[data-theme="light"] td { color: #374151 }
+[data-theme="light"] code { background: rgba(0,0,0,.05); border-color: rgba(0,0,0,.12) }
+[data-theme="light"] pre { background: var(--panel2); border-color: rgba(0,0,0,.1) }
+[data-theme="light"] .card { background: linear-gradient(180deg, var(--panel), var(--panel2)); border-color: var(--line) }
+[data-theme="light"] th { color: var(--text) }
+
+/* ─── Theme toggle button (injected by site-theme.js into every page nav) ─── */
+.theme-toggle-btn {
+  background: none; border: 1px solid var(--line); border-radius: 8px;
+  color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1;
+  padding: 5px 9px; transition: border-color .15s, color .15s;
+}
+.theme-toggle-btn:hover { border-color: var(--brand); color: var(--brand) }

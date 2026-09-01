@@ -21,8 +21,19 @@
 
 export function isDesktop() {
   return typeof window !== 'undefined' &&
-    (!!window.__TAURI_INTERNALS__ || !!window.__TAURI__)
+    (!!window.__TAURI_INTERNALS__ || !!window.__TAURI__ || !!window.__YOGATIK_ELECTRON__ || !!window.__YOGATIK_DESKTOP__)
 }
+
+export const DESKTOP_ONLY_TOOLS = new Set([
+  'fs_add_folder', 'fs_list', 'fs_read', 'fs_write', 'fs_edit', 'fs_replace_content',
+  'fs_multi_replace', 'fs_patch', 'code_outline', 'fs_outline', 'fs_smart_read',
+  'fs_file_info', 'fs_copy', 'fs_batch_write', 'fs_search', 'fs_find_files',
+  'fs_delete', 'fs_mkdir', 'fs_move', 'fs_batch_read', 'fs_file_tree', 'fs_undo', 'fs_git',
+  'terminal_run', 'clipboard_access', 'watch_folder', 'system_state', 'process_manager',
+  'file_dialog', 'git_status', 'git_log', 'git_diff', 'proc_start', 'proc_output',
+  'proc_stop', 'proc_list', 'watch', 'computer_control', 'screen_inspect', 'desktop_action',
+  'local_image_generate', 'local_video_generate', 'aider_copilot',
+])
 
 // The active chat supplies the context for every call. It is injected here, NOT
 // exposed as a tool parameter — the model must never be able to name another

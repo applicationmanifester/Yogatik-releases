@@ -25,28 +25,22 @@ import { APP_VERSION, BUILD_DATE, APP_CODENAME, APP_RELEASES } from '../version'
 const QUICK_TEMPLATES = {
   nvidia: {
     name: 'NVIDIA NIM',
-    badge: 'Free tier',
-    badgeColor: '#22c55e',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     models: ['meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct', 'openai/gpt-oss-20b'],
     default: 'meta/llama-3.3-70b-instruct',
     keyUrl: 'https://build.nvidia.com',
-    note: '1000 free credits/month • 100+ models',
+    note: 'Llama 3.3, Nemotron 70B & GPT-OSS models',
   },
   gemini: {
     name: 'Google Gemini',
-    badge: 'Free tier',
-    badgeColor: '#22c55e',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
     default: 'gemini-2.5-flash',
     keyUrl: 'https://aistudio.google.com/apikey',
-    note: '1500 req/day free • Multimodal',
+    note: 'Gemini 2.5 Flash, 2.5 Pro & 2.0 Flash',
   },
   groq: {
     name: 'Groq',
-    badge: 'Free tier',
-    badgeColor: '#22c55e',
     baseUrl: 'https://api.groq.com/openai/v1',
     models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
     default: 'llama-3.3-70b-versatile',
@@ -55,8 +49,6 @@ const QUICK_TEMPLATES = {
   },
   openrouter: {
     name: 'OpenRouter',
-    badge: '280+ models',
-    badgeColor: '#a78bfa',
     baseUrl: 'https://openrouter.ai/api/v1',
     models: ['meta-llama/llama-3.3-70b-instruct:free', 'qwen/qwen-2.5-72b-instruct', 'deepseek/deepseek-r1:free'],
     default: 'meta-llama/llama-3.3-70b-instruct:free',
@@ -65,8 +57,6 @@ const QUICK_TEMPLATES = {
   },
   anthropic: {
     name: 'Anthropic (Claude)',
-    badge: 'Paid',
-    badgeColor: '#f59e0b',
     baseUrl: 'https://api.anthropic.com/v1',
     models: ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
     default: 'claude-3-7-sonnet-20250219',
@@ -75,8 +65,6 @@ const QUICK_TEMPLATES = {
   },
   openai: {
     name: 'OpenAI',
-    badge: 'Paid',
-    badgeColor: '#f59e0b',
     baseUrl: 'https://api.openai.com/v1',
     models: ['gpt-4o', 'gpt-4o-mini', 'o4-mini'],
     default: 'gpt-4o',
@@ -85,8 +73,6 @@ const QUICK_TEMPLATES = {
   },
   deepseek: {
     name: 'DeepSeek',
-    badge: 'Affordable',
-    badgeColor: '#38bdf8',
     baseUrl: 'https://api.deepseek.com/v1',
     models: ['deepseek-chat', 'deepseek-reasoner'],
     default: 'deepseek-chat',

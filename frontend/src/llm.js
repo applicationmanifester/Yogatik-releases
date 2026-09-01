@@ -337,24 +337,34 @@ function withTimeout(options, ms = REQUEST_TIMEOUT) {
 
 async function smartFetch(url, rawOptions, prov, timeoutMs) {
   const options = withTimeout(rawOptions, timeoutMs)
-  // Desktop: always direct (main process handles CORS). Browser: direct only for
-  // CORS-friendly providers; needsProxy hosts go through the worker.
-  if (isElectron || !prov?.needsProxy) return fetch(url, options)
+  // Desktop: always direct (main process handles CORS).
+  if (isElectron) return fetch(url, options)
 
   const endpoint = getProxyEndpoint()
-  if (!endpoint) throw new Error('This provider requires the proxy, which is not configured.')
+
+  // Providers known to block browser CORS directly (like NVIDIA NIM) go through proxy
+  if (prov?.needsProxy) {
+    if (!endpoint) throw new Error('This provider requires the proxy, which is not configured.')
+    return fetch(endpoint, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
+  }
+
+  // Try direct fetch first for CORS-compliant providers
   try {
-    return await fetch(endpoint, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
-  } catch (e) {
-    // An intentional abort (barge-in, new turn, Stop) is NOT a proxy failure —
-    // rethrow it so the normal abort path handles it silently. Only a real
-    // connection error becomes the "proxy unreachable" message.
-    if (e?.name === 'AbortError' || options.signal?.aborted) throw e
-    // needsProxy hosts (NVIDIA) send no CORS headers, so a direct browser fetch
-    // can NEVER succeed — attempting it only sprayed a guaranteed CORS error.
-    // Surface the real cause: the proxy/worker is unreachable.
-    throw new Error(`Model proxy unreachable (${e?.message || 'connection failed'}). ` +
-      `Retry in a moment, or redeploy the Cloudflare worker (deploy-proxy.bat).`)
+    return await fetch(url, options)
+  } catch (directErr) {
+    // If user cancelled, don't fallback to proxy
+    if (directErr?.name === 'AbortError' || options.signal?.aborted) throw directErr
+
+    // If direct browser fetch failed (e.g. CORS preflight blocked on custom provider endpoint)
+    // and proxy is configured, seamlessly fallback to proxy
+    if (endpoint) {
+      try {
+        return await fetch(endpoint, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
+      } catch (proxyErr) {
+        if (proxyErr?.name === 'AbortError' || options.signal?.aborted) throw proxyErr
+      }
+    }
+    throw directErr
   }
 }
 

@@ -1193,9 +1193,18 @@ export default function App() {
       basePrompt +
       folderCtx +
       queryContext +
+      '\n\nWEB-SESSION FALLBACK RULES (CRITICAL — read before every response):\n' +
+      '- You are running in a WEB SESSION. The fs_* tools (fs_read, fs_write, fs_edit, fs_list, fs_search, terminal_run) are ONLY available when the user has the DESKTOP app open AND has granted folder access.\n' +
+      '- If fs_* tools are NOT available or return an error, DO NOT refuse the task. DO NOT say "I need the desktop app". Instead:\n' +
+      '  1. For research, GitHub repos, trending repos, data lookup → call `web_search` and/or `web_extract` IMMEDIATELY.\n' +
+      '  2. For code tasks without file access → write the code directly in the chat as a code block.\n' +
+      '  3. For file reading tasks → ask the user to paste the content, OR use `web_extract` if the file is at a URL.\n' +
+      '- NEVER output the phrase "I\'m unable to run any fs_* commands" or "requires the Yogatik desktop application" when a web-based alternative exists.\n' +
+      '- NEVER block on fs tools for tasks that are fundamentally about web data (GitHub, news, trending, prices, docs, APIs).\n' +
+      '- The correct fallback chain for ANY blocked task is: web_search → web_extract → js_execute → answer from reasoning.\n' +
       '\n\nTOOL-USE PRIORITY (CRITICAL — always follow these rules):\n' +
       '- ALWAYS call tools before answering from memory when real-time or external data is needed.\n' +
-      '- For any question about current events, news, prices, weather, stock data, or anything after 2023: call `web_search` FIRST.\n' +
+      '- For any question about current events, news, prices, weather, stock data, GitHub repos, trending, or anything after 2023: call `web_search` FIRST — never claim you cannot do it.\n' +
       '- For any translation request ("translate X to Y", "how do you say X in Y"): call the `translate` tool IMMEDIATELY.\n' +
       '- For any code execution, math computation, or data processing: call `js_execute` or `code_execute` instead of guessing.\n' +
       '- For any image generation, photorealistic art, or visual scenes: call `image_generate` or `sticker_generate`.\n' +
@@ -4070,30 +4079,63 @@ export default function App() {
               <Sliders size={14} style={{ color: 'var(--accent, #ff6b35)' }} />
               <div className="sidebar-settings-btn-text">
                 <span className="sidebar-settings-btn-title">Settings &amp; Dashboard</span>
-                <span className="sidebar-settings-btn-sub">
-                  {models[provider]?.name || provider} · <span className={`conn-dot-inline conn-${providerStatus[provider]?.state === 'failed' ? 'failed' : (verifying ? 'testing' : 'connected')}`} /> {providerStatus[provider]?.state === 'connected' ? 'Ready' : 'Configure'}
-                </span>
               </div>
             </div>
             <ChevronDown size={13} style={{ transform: 'rotate(-90deg)', opacity: 0.5 }} />
           </button>
 
-          {/* Quick Providers & Keys access directly below Settings */}
-          <button
-            type="button"
-            className="sidebar-providers-btn"
-            onClick={() => navigateDashboard('providers')}
-            title="Manage AI Providers, API Keys & Models (/app/providers)"
-            aria-label="Providers & Keys"
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Key size={13} style={{ color: 'var(--accent, #ff6b35)' }} />
-              <span style={{ fontWeight: 600, fontSize: '12px' }}>Providers &amp; Keys</span>
-            </div>
-            <span className="sidebar-providers-status-chip">
-              {Object.values(models).filter(m => m.available).length} ready
-            </span>
-          </button>
+          {/* Providers & Keys: button + inline active-provider selector */}
+          <div className="sidebar-providers-widget">
+            <button
+              type="button"
+              className="sidebar-providers-btn"
+              onClick={() => navigateDashboard('providers')}
+              title="Manage AI Providers, API Keys & Models (/app/providers)"
+              aria-label="Providers & Keys"
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Key size={13} style={{ color: 'var(--accent, #ff6b35)' }} />
+                <span style={{ fontWeight: 600, fontSize: '12px' }}>Providers &amp; Keys</span>
+              </div>
+              <span className="sidebar-providers-status-chip">
+                {Object.values(models).filter(m => m.available).length} ready
+              </span>
+            </button>
+            {/* Inline provider selector — shows all ready/configured providers */}
+            {Object.keys(models).length > 0 && (
+              <div className="sidebar-provider-select-row">
+                <span
+                  className={`conn-dot-inline conn-${providerStatus[provider]?.state === 'failed' ? 'failed' : (providerStatus[provider]?.state === 'connected' || models[provider]?.available ? 'connected' : 'unknown')}`}
+                  style={{ flexShrink: 0 }}
+                />
+                <select
+                  className="sidebar-provider-select"
+                  value={provider || ''}
+                  onChange={e => { const pid = e.target.value; if (pid) setProvider(pid) }}
+                  title="Switch active AI provider"
+                  aria-label="Active provider"
+                  onClick={e => e.stopPropagation()}
+                >
+                  {Object.entries(models)
+                    .sort(([pidA, defA], [pidB, defB]) => {
+                      const readyA = defA.available || pidA === 'local' || defA.is_ollama
+                      const readyB = defB.available || pidB === 'local' || defB.is_ollama
+                      if (readyA !== readyB) return readyA ? -1 : 1
+                      return (defA.name || pidA).localeCompare(defB.name || pidB)
+                    })
+                    .map(([pid, def]) => {
+                      const isReady = def.available || pid === 'local' || def.is_ollama
+                      return (
+                        <option key={pid} value={pid}>
+                          {isReady ? '● ' : '○ '}{def.name || pid}{isReady ? ' (ready)' : ''}
+                        </option>
+                      )
+                    })
+                  }
+                </select>
+              </div>
+            )}
+          </div>
 
           {user ? (
             <div className="user-info">

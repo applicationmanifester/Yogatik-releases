@@ -3,16 +3,53 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '4.0.0'
+export const APP_VERSION = '4.1.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 4.0 — Dedicated Full-Page Dashboard, Live Paddle Billing & Complete Theme Synchronization'
+export const APP_CODENAME = 'Yogatik 4.1 — Pro Payment Protection, Multi-Platform Builds & Cloud Hosting'
 
 export const APP_RELEASES = [
+  {
+    version: '4.1.0',
+    title: 'Yogatik 4.1: Pro Payment Versioning, Cross-Platform Desktop Matrix & Unified Clean Provider Hub',
+    date: 'September 2, 2026',
+    isLatest: true,
+    highlights: [
+      'Pro Payment Versioning: File-system access restrictions and pro entitlements tied directly to live Paddle/Razorpay subscription verification',
+      'Cross-Platform Git Builds: Complete multi-platform build matrices configured for Windows (.exe / NSIS), macOS (.dmg / universal), and Linux (.AppImage / .deb)',
+      'Clean AI Provider Hub: Neutral provider directory with auto-loading models across custom API endpoints, Ollama daemons, and on-device WebLLMs',
+      'Sanitized Read Aloud TTS: Model thinking/scratchpads, tool execution traces, and raw code blocks are automatically filtered from voice playback',
+      'Universal Theme Synchronization: Zero-flash light/dark theme persistence across all application surfaces, command palettes, and static marketing pages',
+    ],
+    sections: [
+      {
+        category: '🔐 Pro Payment & Entitlements',
+        items: [
+          {
+            title: 'Pro Feature Gate & Verification',
+            description: 'Unlocks local workspace tools and advanced intelligence capabilities for active subscribers with immediate fallback for standard web users.',
+          },
+          {
+            title: 'Live Subscription Days Counter',
+            description: 'Accurate billing cycle and countdown display showing exact active subscription duration.',
+          },
+        ],
+      },
+      {
+        category: '🌐 Cross-Platform Build Pipelines',
+        items: [
+          {
+            title: 'Windows, macOS & Linux Multi-Targeting',
+            description: 'Automated GitHub release builds producing signed Windows installers, macOS DMG bundles, and Linux AppImages.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '4.0.0',
     title: 'Yogatik 4.0: Dedicated Full-Page Dashboard, Live Paddle Billing, Left Sidebar Overhaul & Theme Sync',
     date: 'September 1, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Dedicated Full-Page Dashboard & Settings: Transformed settings and tool panels into a spacious, full-viewport dashboard experience with dedicated URLs (/app/settings, /app/billing, /app/agents, /app/usage, /app/mcp, /app/skills) and single-step Esc/Back-to-Chat navigation',
       'Clean Minimalist Sidebar: Streamlined conversation history view with date groupings, quick search, and an unobtrusive status and dashboard trigger',

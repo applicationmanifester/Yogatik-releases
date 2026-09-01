@@ -308,7 +308,14 @@ const MessageBubble = React.memo(function MessageBubble({
     return 'AI Model'
   }, [msg.model, msg.provider])
 
-  let reasoning = '', answer = typeof msg.content === 'string' ? msg.content : String(msg.content ?? '')
+  const { reasoning, answer } = useMemo(() => {
+    const rawText = stripToolCallSyntax(typeof msg.content === 'string' ? msg.content : String(msg.content ?? ''))
+    const s = splitReasoning(rawText)
+    return {
+      reasoning: s.reasoning || '',
+      answer: stripToolCallSyntax(s.answer || '')
+    }
+  }, [msg.content])
 
   // Failed turns are rendered with actionable diagnosis, resolution recommendations, and copy tools
   if (msg.error) {
@@ -395,7 +402,7 @@ const MessageBubble = React.memo(function MessageBubble({
           </button>
           {msg.role === 'assistant' && (
             <>
-              <button className="icon-btn" onClick={() => onTTS(msg.content)} title="Read aloud" aria-label="Read aloud">
+              <button className="icon-btn" onClick={() => onTTS(answer || msg.content)} title="Read aloud" aria-label="Read aloud">
                 <Volume2 size={12} />
               </button>
               <span ref={exportMenuRef} style={{ position: 'relative' }}>
@@ -542,13 +549,6 @@ const MessageBubble = React.memo(function MessageBubble({
           {msg.imageName && <span className="msg-image-caption">{msg.imageName}</span>}
         </div>
       )}
-      {(() => {
-        const rawText = stripToolCallSyntax(typeof msg.content === 'string' ? msg.content : String(msg.content ?? ''))
-        const s = splitReasoning(rawText)
-        reasoning = s.reasoning
-        answer = stripToolCallSyntax(s.answer)
-        return null
-      })()}
       {reasoning && (
         <details className="reasoning-panel">
           <summary>Thinking</summary>

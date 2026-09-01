@@ -283,7 +283,7 @@ export function stripToolCallSyntax(text) {
   // Blazing-fast path: if no tool markers exist, return instantly with 0ms overhead
   if (
     !text.includes('<') &&
-    !text.includes('[TOOL_CALLS]') &&
+    !text.includes('[TOOL_CALL') &&
     !text.includes('<|python_tag|>') &&
     !text.includes('Action:')
   ) {
@@ -296,6 +296,7 @@ export function stripToolCallSyntax(text) {
     .replace(/<function_call>[\s\S]*?<\/function_call>/gi, '')
     .replace(/<function(?:=|\s+name=)["']?[\w-]+["']?>[\s\S]*?<\/function>/gi, '')
     .replace(/<invoke\s+name=["']?[^"'>\s]+["']?>[\s\S]*?<\/invoke>/gi, '')
+    .replace(/\[TOOL_CALL:\s*[\s\S]*?\]/gi, '')
     // Truncated tails.
     .replace(/<tool_call>[\s\S]*$/i, '')
     .replace(/<function_call>[\s\S]*$/i, '')
@@ -303,7 +304,8 @@ export function stripToolCallSyntax(text) {
     .replace(/<invoke\s+name=["']?[^"'>\s]+["']?>[\s\S]*$/i, '')
     // Provider-specific call markers that are never prose.
     .replace(/<\|python_tag\|>[\s\S]*$/i, '')
-    .replace(/\[TOOL_CALLS\][\s\S]*$/i, '')
+    .replace(/\[TOOL_CALLS?\][\s\S]*$/i, '')
+    .replace(/\[TOOL_CALL:?[\s\S]*$/i, '')
   // Trim ONLY when something was actually removed.
   return out === input ? input : out.trim()
 }

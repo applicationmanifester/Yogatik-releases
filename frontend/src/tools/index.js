@@ -993,6 +993,17 @@ function toFunctionSchema(name, tool = {}) {
   }
 }
 
+export const DESKTOP_ONLY_TOOLS = new Set([
+  'fs_add_folder', 'fs_list', 'fs_read', 'fs_write', 'fs_edit', 'fs_replace_content',
+  'fs_multi_replace', 'fs_patch', 'code_outline', 'fs_outline', 'fs_smart_read',
+  'fs_file_info', 'fs_copy', 'fs_batch_write', 'fs_search', 'fs_find_files',
+  'fs_delete', 'fs_mkdir', 'fs_move', 'fs_batch_read', 'fs_file_tree', 'fs_undo', 'fs_git',
+  'terminal_run', 'clipboard_access', 'watch_folder', 'system_state', 'process_manager',
+  'file_dialog', 'git_status', 'git_log', 'git_diff', 'proc_start', 'proc_output',
+  'proc_stop', 'proc_list', 'watch', 'computer_control', 'screen_inspect', 'desktop_action',
+  'local_image_generate', 'local_video_generate', 'aider_copilot',
+])
+
 export function getToolSchemas(disabled = []) {
   const off = new Set(disabled)
   const builtin = Object.entries(ALL_TOOLS)
@@ -1038,8 +1049,8 @@ export const MAX_TOOLS_PER_REQUEST = 96
 const CORE_TOOL_SCORES = {
   fs_read: 40, fs_write: 40, fs_edit: 40, fs_list: 40, fs_search: 38, fs_find_files: 38,
   terminal_run: 40, proc_start: 30, browser_control: 38, computer_control: 30,
-  spawn_agents: 34, memory: 34, doc_search: 34, web_search: 34, code_execute: 34,
-  clipboard_access: 28, file_dialog: 28,
+  spawn_agents: 34, memory: 34, doc_search: 34, web_search: 38, web_extract: 38, deep_research: 35, code_execute: 34,
+  js_execute: 34, clipboard_access: 28, file_dialog: 28,
   // An image in the turn is the whole reason identify exists; without a floor
   // the 64-tool cap can drop it exactly when it is needed.
   identify: 30, ocr: 26, segment: 26,
@@ -1054,11 +1065,26 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
 
   const scores = {
     ...CORE_TOOL_SCORES,
-    web_search: 25,
+    web_search: 35,
     calculator: 20,
     doc_export: 20,
     code_execute: 15,
     timer: 15,
+  }
+
+  // Repository & GitHub search boosts
+  if (/\b(repo|repository|repositories|github|gitlab|stars|downloads|npm|pip|pypi|package|open source|oss|trending)\b/i.test(text)) {
+    scores['repo_finder'] = 220
+    scores['package_info'] = 220
+    scores['web_search'] = 200
+    scores['web_extract'] = 180
+    scores['deep_research'] = 160
+  }
+  if (/\b(research|investigate|find out|explore|lookup|search|overview|information on|facts about|analysis of|summary of)\b/i.test(text)) {
+    scores['web_search'] = 220
+    scores['deep_research'] = 200
+    scores['web_extract'] = 180
+    scores['wikipedia'] = 150
   }
 
   // Domain score boosts

@@ -11,6 +11,7 @@ import { visibleAnswer as sharedVisibleAnswer } from './reasoning'
 // better than the blank bubble it replaced.
 import { summariseToolResults } from './toolSummary'
 import { getToolSchemas, prioritizeToolSchemas, executeTool } from './tools/index'
+import { isDesktop, DESKTOP_ONLY_TOOLS } from './tools/localFs'
 import { enrichToolError } from './tools/toolReflection'
 import { compactToolResult } from './tools/toolCompactor'
 import { sanitizeExternalContext } from './tools/rebuffGuard'

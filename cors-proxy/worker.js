@@ -49,6 +49,13 @@ const DEFAULT_CREDENTIALED_HOSTS = [
   'api.groq.com',
   'api.anthropic.com',
   'generativelanguage.googleapis.com',
+  'api.deepseek.com',
+  'api.mistral.ai',
+  'api.together.xyz',
+  'api.x.ai',
+  'api.perplexity.ai',
+  'api.cohere.com',
+  'api.tokenrouter.com',
 ];
 
 function hostIsCredentialed(hostname, env) {
@@ -105,6 +112,12 @@ export default {
     // Get the target URL from the header
     const targetUrl = request.headers.get('X-Target-URL');
     if (!targetUrl) {
+      if (request.method === 'GET' || request.method === 'HEAD') {
+        return new Response(
+          JSON.stringify({ ok: true, name: 'yogatik-llm-proxy', version: '4.1.0' }),
+          { status: 200, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }
+        );
+      }
       return new Response(
         JSON.stringify({ error: 'Missing X-Target-URL header' }),
         { status: 400, headers: { ...corsHeaders(origin, env), 'Content-Type': 'application/json' } }

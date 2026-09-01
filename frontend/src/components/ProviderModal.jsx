@@ -5,13 +5,9 @@ import { addProvider } from '../api'
 import { KEY_STORAGE_DISCLOSURE } from '../crypto'
 
 // ─── Provider Quick Templates ───────────────────────────────────────────────
-// Providers marked `free: true` have a genuinely free tier (no credit card).
 const QUICK_TEMPLATES = {
-  // ── Free / No credit card ──────────────────────────────────────────────────
   nvidia: {
     name: 'NVIDIA NIM',
-    badge: 'Free',
-    badgeColor: '#22c55e',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     models: [
       'meta/llama-3.3-70b-instruct',
@@ -22,33 +18,27 @@ const QUICK_TEMPLATES = {
     ],
     default: 'meta/llama-3.3-70b-instruct',
     keyUrl: 'https://build.nvidia.com',
-    note: '1000 free credits/month • No credit card',
+    note: 'Llama 3.3, Nemotron 70B & GPT-OSS models',
     needsProxy: true,
   },
   gemini: {
     name: 'Google Gemini',
-    badge: 'Free',
-    badgeColor: '#22c55e',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
     default: 'gemini-2.5-flash',
     keyUrl: 'https://aistudio.google.com/apikey',
-    note: '1500 req/day free • No credit card',
+    note: 'Gemini 2.5 Flash, 2.5 Pro & 2.0 Flash',
   },
   groq: {
     name: 'Groq',
-    badge: 'Free',
-    badgeColor: '#22c55e',
     baseUrl: 'https://api.groq.com/openai/v1',
     models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
     default: 'llama-3.3-70b-versatile',
     keyUrl: 'https://console.groq.com/keys',
-    note: 'Very fast inference • Free tier',
+    note: 'Ultra-low latency LPU inference engine',
   },
   openrouter: {
     name: 'OpenRouter',
-    badge: 'Free models',
-    badgeColor: '#a78bfa',
     baseUrl: 'https://openrouter.ai/api/v1',
     models: [
       'meta-llama/llama-3.3-70b-instruct:free',
@@ -59,23 +49,18 @@ const QUICK_TEMPLATES = {
     ],
     default: 'meta-llama/llama-3.3-70b-instruct:free',
     keyUrl: 'https://openrouter.ai/keys',
-    note: '50+ free models + Claude & GPT-4 with credits',
+    note: 'Unified multi-provider model routing',
   },
-  // ── Paid / credits required ────────────────────────────────────────────────
   anthropic_or: {
     name: 'Anthropic (Claude)',
-    badge: 'Paid',
-    badgeColor: '#f59e0b',
     baseUrl: 'https://openrouter.ai/api/v1',
     models: ['anthropic/claude-sonnet-4', 'anthropic/claude-haiku-4', 'anthropic/claude-opus-4'],
     default: 'anthropic/claude-sonnet-4',
     keyUrl: 'https://openrouter.ai/keys',
-    note: 'Via OpenRouter • Claude Sonnet 4, Haiku 4, Opus 4',
+    note: 'Claude Sonnet 4, Haiku 4 & Opus 4',
   },
   openai: {
     name: 'OpenAI (ChatGPT)',
-    badge: 'Paid',
-    badgeColor: '#f59e0b',
     baseUrl: 'https://api.openai.com/v1',
     models: ['gpt-4o', 'gpt-4o-mini', 'o4-mini', 'gpt-4.1'],
     default: 'gpt-4o',
@@ -84,48 +69,38 @@ const QUICK_TEMPLATES = {
   },
   deepseek: {
     name: 'DeepSeek',
-    badge: 'Cheap',
-    badgeColor: '#38bdf8',
     baseUrl: 'https://api.deepseek.com/v1',
     models: ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner'],
     default: 'deepseek-chat',
     keyUrl: 'https://platform.deepseek.com/api_keys',
-    note: 'Very affordable • Excellent coding model',
+    note: 'DeepSeek-V3, R1 & Coder reasoning models',
   },
   mistral: {
     name: 'Mistral AI',
-    badge: 'Paid',
-    badgeColor: '#f59e0b',
     baseUrl: 'https://api.mistral.ai/v1',
     models: ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'],
     default: 'mistral-large-latest',
     keyUrl: 'https://console.mistral.ai/api-keys',
-    note: 'European AI • Great multilingual support',
+    note: 'Mistral Large, Small & Codestral',
   },
   together: {
     name: 'Together AI',
-    badge: 'Paid',
-    badgeColor: '#f59e0b',
     baseUrl: 'https://api.together.xyz/v1',
     models: ['meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', 'mistralai/Mixtral-8x7B-Instruct-v0.1'],
     default: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
     keyUrl: 'https://api.together.xyz/settings/api-keys',
-    note: 'Fast open-source models at scale',
+    note: 'Open-source foundation models at scale',
   },
   anthropic_direct: {
     name: 'Anthropic (Direct)',
-    badge: 'Paid',
-    badgeColor: '#f59e0b',
     baseUrl: 'https://api.anthropic.com/v1',
     models: ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-opus-4-5'],
     default: 'claude-sonnet-4-5',
     keyUrl: 'https://console.anthropic.com/settings/api-keys',
-    note: 'Direct Anthropic API • Claude Sonnet, Haiku, Opus',
+    note: 'Direct Anthropic API • Claude Sonnet & Opus',
   },
   xai: {
     name: 'xAI Grok',
-    badge: 'Paid',
-    badgeColor: '#f59e0b',
     baseUrl: 'https://api.x.ai/v1',
     models: ['grok-3-mini', 'grok-3', 'grok-2-1212'],
     default: 'grok-3-mini',
@@ -134,23 +109,19 @@ const QUICK_TEMPLATES = {
   },
   perplexity: {
     name: 'Perplexity',
-    badge: 'Paid',
-    badgeColor: '#a78bfa',
     baseUrl: 'https://api.perplexity.ai',
     models: ['sonar', 'sonar-pro', 'sonar-reasoning'],
     default: 'sonar',
     keyUrl: 'https://www.perplexity.ai/settings/api',
-    note: 'Real-time web-grounded answers (Sonar)',
+    note: 'Real-time web-grounded search models (Sonar)',
   },
   cohere: {
     name: 'Cohere',
-    badge: 'Paid',
-    badgeColor: '#f59e0b',
     baseUrl: 'https://api.cohere.com/compatibility/v1',
     models: ['command-r-plus', 'command-r7b-12-2024'],
     default: 'command-r-plus',
     keyUrl: 'https://dashboard.cohere.com/api-keys',
-    note: 'Excellent RAG & enterprise models',
+    note: 'Command R+, Command R & Embeddings',
   },
 }
 
@@ -187,9 +158,6 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
     } catch (e) { setSaveError(e.message) }
   }
 
-  const freeTemplates = Object.entries(QUICK_TEMPLATES).filter(([, t]) => t.badge === 'Free' || t.badge === 'Free models')
-  const paidTemplates = Object.entries(QUICK_TEMPLATES).filter(([, t]) => t.badge !== 'Free' && t.badge !== 'Free models')
-
   return (
     <Modal title={isEdit ? 'Edit provider' : 'Add AI provider'} icon={<Plug size={18} />}
       onClose={onClose} labelledBy="provider-title">
@@ -200,44 +168,23 @@ function ProviderModal({ onClose, onSaved, editProvider }) {
           </div>
         )}
         {mode === 'template' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%', minWidth: 0, overflowX: 'hidden' }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                ✅ Free — No credit card required
-              </div>
-              <div className="template-grid">
-                {freeTemplates.map(([key, t]) => (
-                  <div key={key} className="template-card" onClick={() => selectTemplate(key)}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, minWidth: 0, overflow: 'hidden' }}>
-                      <div className="template-name">{t.name}</div>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: t.badgeColor, background: `${t.badgeColor}22`, padding: '1px 6px', borderRadius: 4, flexShrink: 0 }}>{t.badge}</span>
-                    </div>
-                    <div className="template-url" style={{ marginBottom: 2 }}>{t.note}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%', minWidth: 0, overflowX: 'hidden' }}>
+            <div className="template-grid">
+              {Object.entries(QUICK_TEMPLATES).map(([key, t]) => (
+                <div key={key} className="template-card" onClick={() => selectTemplate(key)}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+                    <div className="template-name">{t.name}</div>
+                  </div>
+                  <div className="template-url" style={{ marginBottom: 4 }}>{t.note}</div>
+                  {t.keyUrl && (
                     <a href={t.keyUrl} target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 10, color: '#7c93eb', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, width: 'fit-content' }}
+                      style={{ fontSize: 10, color: 'var(--accent, #38bdf8)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, width: 'fit-content' }}
                       onClick={e => e.stopPropagation()}>
-                      Get free API key <ExternalLink size={9} />
+                      Get API key <ExternalLink size={9} />
                     </a>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                💳 Paid / Credits required
-              </div>
-              <div className="template-grid">
-                {paidTemplates.map(([key, t]) => (
-                  <div key={key} className="template-card" onClick={() => selectTemplate(key)}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, minWidth: 0, overflow: 'hidden' }}>
-                      <div className="template-name">{t.name}</div>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: t.badgeColor, background: `${t.badgeColor}22`, padding: '1px 6px', borderRadius: 4, flexShrink: 0 }}>{t.badge}</span>
-                    </div>
-                    <div className="template-url">{t.note}</div>
-                  </div>
-                ))}
-              </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}

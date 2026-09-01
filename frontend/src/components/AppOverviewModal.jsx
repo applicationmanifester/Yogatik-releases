@@ -36,7 +36,7 @@ import {
 } from 'lucide-react'
 
 export function AppOverviewModal({ onClose, onOpenSettings, onOpenDemo, onOpenTour, onOpenDomainHub, onOpenMcp }) {
-  const [activeTab, setActiveTab] = useState('workflow') // 'workflow' | 'architecture' | 'tools' | 'mcp' | 'companion' | 'shortcuts'
+  const [activeTab, setActiveTab] = useState('workflow') // 'workflow' | 'architecture' | 'tools' | 'mcp' | 'shortcuts'
 
   const workflowSteps = [
     {
@@ -166,9 +166,6 @@ export function AppOverviewModal({ onClose, onOpenSettings, onOpenDemo, onOpenTo
           </button>
           <button className={activeTab === 'mcp' ? 'active' : ''} onClick={() => setActiveTab('mcp')}>
             <Plug size={14} style={{ marginRight: 6 }} /> MCP Connectors
-          </button>
-          <button className={activeTab === 'companion' ? 'active' : ''} onClick={() => setActiveTab('companion')}>
-            <Monitor size={14} style={{ marginRight: 6 }} /> Floating Companion
           </button>
           <button className={activeTab === 'shortcuts' ? 'active' : ''} onClick={() => setActiveTab('shortcuts')}>
             <Zap size={14} style={{ marginRight: 6 }} /> Shortcuts
@@ -338,36 +335,7 @@ export function AppOverviewModal({ onClose, onOpenSettings, onOpenDemo, onOpenTo
           </div>
         )}
 
-        {/* TAB 5: COMPANION & SCREEN WATCHER */}
-        {activeTab === 'companion' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.25)', borderRadius: 10, padding: 14 }}>
-              <strong style={{ fontSize: 14, color: '#a78bfa', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Monitor size={16} /> Floating AI Companion &amp; Screen Watcher
-              </strong>
-              <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Work outside the app across VS Code, Chrome, Excel, Slack, or any desktop application. The companion floats always-on-top, observes what you are working on, and executes actions.
-              </p>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: 12 }}>
-                <strong style={{ fontSize: 13, color: '#38bdf8' }}>🖥️ Desktop App (`Yogatik.exe`)</strong>
-                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  Press <strong>`Ctrl + Shift + Space`</strong> anywhere in Windows. Automatically reads the active foreground window title and takes instant high-res screenshots.
-                </p>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: 12 }}>
-                <strong style={{ fontSize: 13, color: '#34d399' }}>🌐 Web App (`browser`)</strong>
-                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  Uses <strong>Document Picture-in-Picture (PiP)</strong> to pop out an always-on-top floating window, and <strong>`getDisplayMedia`</strong> to monitor selected tabs and apps.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 6: SHORTCUTS */}
+        {/* TAB 5: SHORTCUTS */}
         {activeTab === 'shortcuts' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{
@@ -380,8 +348,8 @@ export function AppOverviewModal({ onClose, onOpenSettings, onOpenDemo, onOpenTo
               border: '1px solid rgba(255,255,255,0.08)',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6 }}>
-                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Summon AI Companion</span>
-                <kbd style={{ fontSize: 11, padding: '2px 6px', background: 'rgba(0,0,0,0.3)', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)' }}>Ctrl + Shift + Space</kbd>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Toggle Sidebar / Workspace</span>
+                <kbd style={{ fontSize: 11, padding: '2px 6px', background: 'rgba(0,0,0,0.3)', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)' }}>Ctrl + B</kbd>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6 }}>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Universal Search / Command Palette</span>

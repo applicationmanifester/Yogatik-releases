@@ -6,7 +6,7 @@
 
 import * as db from './db'
 import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels, chatComplete, proxyAvailable, normalizeModelName } from './llm'
-import { isDesktop } from './tools/localFs'
+import { isDesktop, DESKTOP_ONLY_TOOLS } from './tools/localFs'
 import { getScoped, setScoped } from './chatScope'
 import { chunkText } from './retrieval'
 import { invalidateDocIndex } from './tools/documents'
@@ -23,6 +23,8 @@ import { signInWithGoogle, checkRedirectResult, logOutGoogle, saveUserApiKey, ge
 import { encryptSecret, decryptSecret } from './crypto'
 import { selectIncoming } from './syncMerge'
 import { recordTurnUsage, getModelPricing } from './usageAnalytics'
+import { splitReasoning } from './reasoning'
+import { stripToolCallSyntax } from './promptedTools'
 
 // ─── Auth (Google Sign-In & encrypted Firestore key vault) ───
 
@@ -343,7 +345,11 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         initialToolMode: isLocalProvider ? 'prompted' : await getToolMode(pid, mdl),
         webEnabled: body.use_web_search !== false,
         // A caller (e.g. a sub-agent) can scope tools further via body.disabledTools.
-        disabledTools: [...new Set([...(await getDisabledTools(body.conversationId || body.channel || null)), ...(body.disabledTools || [])])],
+        disabledTools: [...new Set([
+          ...(await getDisabledTools(body.conversationId || body.channel || null)),
+          ...(body.disabledTools || []),
+          ...(!isDesktop() ? DESKTOP_ONLY_TOOLS : []),
+        ])],
         agentOverride: body.agent_override || null,
         persona: body.system_prompt || null,
         // Probing costs a round-trip, so per message we trust the cache and
@@ -388,7 +394,11 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
               toolsEnabled: body.tools !== false && body.use_tools !== false,
               initialToolMode: isLocalProvider ? 'prompted' : await getToolMode(pid, fallbackMdl),
               webEnabled: body.use_web_search !== false,
-              disabledTools: [...new Set([...(await getDisabledTools(body.conversationId || body.channel || null)), ...(body.disabledTools || [])])],
+              disabledTools: [...new Set([
+                ...(await getDisabledTools(body.conversationId || body.channel || null)),
+                ...(body.disabledTools || []),
+                ...(!isDesktop() ? DESKTOP_ONLY_TOOLS : []),
+              ])],
               agentOverride: body.agent_override || null,
               persona: body.system_prompt || null,
               modelCanSee: (await getCachedVision(pid, fallbackMdl)) ?? looksVisionCapable(fallbackMdl),
@@ -1901,11 +1911,43 @@ export const TOOL_GROUPS = {
 
 // ─── TTS (Web Speech API) ───
 /**
+ * Strips model scratch-work (thinking/reasoning blocks), tool call syntax, code blocks,
+ * and markdown noise so Read Aloud only speaks the clean, direct AI response text.
+ */
+export function cleanTextForSpeech(text) {
+  if (!text || typeof text !== 'string') return ''
+  // 1. Strip reasoning blocks (<think>...</think> and unclosed streaming <think>)
+  let clean = splitReasoning(text).answer || ''
+  // 2. Strip prompted tool call syntaxes ([TOOL_CALL: ...], JSON blocks)
+  clean = stripToolCallSyntax(clean)
+  // 3. Strip code fences (```...```) so TTS does not vocalize raw code blocks
+  clean = clean.replace(/```[\s\S]*?```/g, ' ')
+  // 4. Strip inline code (`...`)
+  clean = clean.replace(/`([^`]+)`/g, '$1')
+  // 5. Strip markdown links [text](url) -> text
+  clean = clean.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+  // 6. Strip markdown headings, lists, quotes, decorative symbols
+  clean = clean.replace(/^[#>\-\*\+]\s+/gm, '')
+  clean = clean.replace(/[*_~]{1,3}([^*_~]+)[*_~]{1,3}/g, '$1')
+  // 7. Strip HTML/XML tags (<...>)
+  clean = clean.replace(/<[^>]+>/g, ' ')
+  // 8. Collapse whitespace
+  clean = clean.replace(/\s+/g, ' ').trim()
+  return clean
+}
+
+/**
  * Read a message aloud in the same on-device voice the call uses. Long replies
  * are spoken sentence by sentence so playback starts immediately instead of
  * after the whole thing has been synthesised.
  */
 export async function requestTTS(text, { onEnd } = {}) {
+  const clean = cleanTextForSpeech(text)
+  if (!clean) {
+    onEnd?.()
+    return { success: false, reason: 'empty_clean_text' }
+  }
+
   const prefs = await db.getSetting('chat_prefs', {})
   const speaker = getSharedSpeaker({
     engine: prefs.live_voice_engine === 'system' ? 'system' : 'neural',
@@ -1913,7 +1955,7 @@ export async function requestTTS(text, { onEnd } = {}) {
     onEnd: () => onEnd?.(),
   })
   speaker.cancel()   // a second play button stops the first
-  for (const part of splitForSpeech(text)) speaker.speak(part)
+  for (const part of splitForSpeech(clean)) speaker.speak(part)
   return { success: true }
 }
 
