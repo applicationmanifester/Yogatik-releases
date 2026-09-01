@@ -21,7 +21,7 @@ import {
  *     timezone, and the PAYMENT METHOD is what actually determines which one
  *     applies. IP is one VPN away — the instrument is not.
  */
-export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked, onSignIn }) {
+export default function UpgradeModal({ open, onClose, idToken, uid, email, onUnlocked, onSignIn }) {
   const [region, setRegion] = useState(() => suggestedRegion())
   const [cycle, setCycle] = useState('yearly')   // annual leads: see the fee note in entitlement.js
   const [phone, setPhone] = useState(() => {

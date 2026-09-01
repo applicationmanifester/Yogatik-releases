@@ -88,9 +88,9 @@ export function DiagnosticsModal({ onClose }) {
   }, [logs, filter])
 
   return (
-    <div className="palette-overlay" onClick={onClose}>
+    <div className="yg-panel-overlay" onClick={onClose}>
       <div
-        className="palette diagnostics-modal"
+        className="yg-panel diagnostics-modal"
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -98,21 +98,17 @@ export function DiagnosticsModal({ onClose }) {
         style={{ width: 'min(720px, 96%)', maxHeight: '82vh' }}
       >
         {/* Header */}
-        <div className="palette-input-bar" style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-color, rgba(255,255,255,0.1))' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-            <AlertTriangle size={18} style={{ color: 'var(--accent, #ff6b35)' }} />
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: 'var(--text-primary, #f4f4f5)' }}>
-              Error Findings &amp; Diagnostics Inspector
-            </h3>
-          </div>
+        <div className="yg-panel-header">
+          <AlertTriangle size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <h3>Error Findings &amp; Diagnostics Inspector</h3>
           <button
             type="button"
-            className="palette-clear-btn"
+            className="yg-panel-icon-btn"
             onClick={onClose}
             title="Close modal"
             aria-label="Close"
           >
-            <X size={16} />
+            <X size={15} />
           </button>
         </div>
 
@@ -287,7 +283,7 @@ export function DiagnosticsModal({ onClose }) {
             )}
 
             {/* Logs List */}
-            <div className="palette-list" style={{ padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="yg-panel-body">
               {logs.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted, #71717a)' }}>
                   <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
@@ -359,7 +355,7 @@ export function DiagnosticsModal({ onClose }) {
         )}
 
         {activeTab === 'traces' && (
-          <div className="palette-list" style={{ padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="yg-panel-body">
             {traces.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted, #71717a)' }}>
                 <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
@@ -432,7 +428,7 @@ export function DiagnosticsModal({ onClose }) {
         )}
 
         {/* Footer */}
-        <div className="palette-footer" style={{ padding: '10px 18px' }}>
+        <div className="yg-panel-footer">
           <span>Errors are preserved in an on-device local storage ring buffer.</span>
           <button className="small-btn" onClick={onClose}>Close</button>
         </div>

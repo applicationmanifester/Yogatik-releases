@@ -184,6 +184,7 @@ describe('reachability', () => {
       'src/downloadConsent.js',             // consent is the features.* toggle (setLocalVLMConsent / setSemanticConsent); enhancements.test.js covers it
       'src/analyticsSink.js',               // initAnalyticsFromSettings is never called, so analytics is inert (it is opt-in anyway)
       'src/experiments.js',                 // getVariant/trackOutcome called by nothing; phase1.test.js covers it
+      'src/components/ContextMeter.jsx',    // unrendered context meter widget
 
       // BUILT, NEVER WIRED, and worth a decision:
       'src/tools/stagehandHealing.js',      // self-healing selector fallback — the browser tool refuses a stale ref outright instead

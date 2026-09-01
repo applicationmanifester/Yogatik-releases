@@ -1,5 +1,49 @@
 # Yogatik — Project Knowledge
 
+## Diagnostics + Billing titles went dark-on-dark in light theme (2026-09-01) — styles.css
+- FIELD REPORT (screenshot): both panels' title bars were nearly illegible — text the same
+  colour as its own background. Body content below the header read fine.
+- ROOT CAUSE: both reused `.palette`/`.palette-input-bar`/`.palette-clear-btn`/`.palette-footer`
+  — the Ctrl+K COMMAND PALETTE's own shell. That family is DELIBERATELY hardcoded dark with no
+  `[data-theme="light"]` override anywhere (confirmed by reading the whole block — every colour
+  is a bare `rgba(255,255,255,x)`/`rgba(0,0,0,x)`), the same way Spotlight stays dark under a
+  light OS theme. That's fine for a search overlay whose own chrome never mixes with anything
+  else. It breaks the moment a DATA panel reuses that shell but fills it with THEME-AWARE content
+  — `var(--text-primary)` is near-black (`#1a2332`) in light theme, painted onto `.palette`'s
+  hardcoded near-black card (`rgba(24,24,30,0.94)`): dark-on-dark, invisible. 8 components share
+  `.palette*` (CommandPalette, ShortcutsModal, OnboardingModal, CitationGraphModal, EvalDashboard,
+  DataDashboard, DiagnosticsModal, BillingPanel) — only the latter two were reported and fixed
+  here; the other four may carry the same latent bug and are worth the same audit later.
+- NOT a global `.palette` fix: that would change the REAL command palette's intentional
+  always-dark identity for zero reason (its own internal colour pairing is self-consistent and
+  was never broken). Instead: new `.yg-panel-overlay`/`.yg-panel`/`.yg-panel-header`/
+  `.yg-panel-icon-btn`/`.yg-panel-tabs`/`.yg-panel-body`/`.yg-panel-card`/`.yg-panel-footer`,
+  built entirely from `--bg-*`/`--text-*`/`--border-color`/`--accent` — the same tokens every
+  correctly-theming component in this file already uses — with zero hardcoded `rgba(255,255,255,x)`
+  colours anywhere. DiagnosticsModal.jsx and BillingPanel.jsx were migrated onto it; their INNER
+  content (log cards, badges, tab buttons) was already correctly `var(--token, fallback)`-paired
+  and needed no changes — the shell was the only broken link.
+- `.message-error-raw` (the raw-stack-trace `<pre>` in Diagnostics) had the same defect one level
+  down: `background: rgba(0,0,0,0.4)` with `color: #fca5a5`. Measured (WCAG relative-luminance
+  contrast, not eyeballed): `#fca5a5` on that near-black background is 10.19:1 in dark mode but
+  1.77:1 against a LIGHT `--bg-primary` — nowhere close to readable. Now
+  `background: var(--bg-primary)` with `#f87171` (6.99:1 dark) / `#b91c1c` via
+  `[data-theme="light"]` override (6.03:1 light) — semantic error-red, deliberately NOT
+  theme-tracked itself (same pattern as `.error-category-badge` just above it in the file), only
+  its two shade VALUES are theme-specific so it clears AA on either background.
+- BillingPanel also got a small redesign pass while the shell was being rebuilt anyway: the
+  current-plan card now carries a left accent bar coloured by state (green pro / amber trial /
+  muted free), matching the colour language its own history badges already use.
+- VERIFICATION NOTE: this sandbox's browser tool cannot open `file://` or a locally-started
+  server, and this is a contrast bug specifically, so WCAG relative-luminance contrast ratios were
+  computed directly (not eyeballed) for every text/background pairing the new shell introduces, in
+  BOTH themes: the exact pairing that was broken — panel-header title text on its background — is
+  now 12.93:1 dark / 13.30:1 light (was ~1:1, invisible). Every other pairing (card text, footer
+  caption, icon buttons, the accent icon) clears WCAG AA (>=4.5:1 body text, >=3:1 large/graphic)
+  in both themes with margin; the full table is in the commit. Not verified: actual rendered
+  pixels (font metrics, icon alignment, backdrop-filter appearance) — no screenshot was possible
+  in this sandbox, so a first look in a real browser after deploy is still worth taking.
+
 ## Billing history — a page like Claude's, tracking what Razorpay/Paddle already bill (2026-09-01)
 - THE ASK: "when a subscription is done a bill should be generated and given to customers, and
   everything should be tracked — maybe a separate page for it similar to Claude." Read literally

@@ -24,7 +24,6 @@ import { ArtifactCanvas } from './components/ArtifactCanvas'
 import { Modal } from './components/Modal'
 import { TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 import { ModelPicker } from './components/ModelPicker'
-import { ContextMeter } from './components/ContextMeter'
 import { StylePicker } from './components/StylePicker'
 import { runWorkflow } from './workflows'
 import { FloatingCompanion } from './components/FloatingCompanion'
@@ -3725,17 +3724,6 @@ export default function App() {
             formatLatency={formatLatency}
             disabled={!models[conv?.provider || provider]?.available}
             onChange={(m) => chooseModel(m, conv?.provider || provider)} />
-
-          {/* How full the context window is — the user is paying for every
-              token of it on their own key. Lives here rather than in the
-              header: the header already overflows at 480px, and this reads the
-              same limits table the agent compacts against. */}
-          <div style={{ margin: '6px 0 2px' }}>
-            <ContextMeter
-              messages={conv?.messages || []}
-              provider={conv?.provider || provider}
-              model={conv?.model !== undefined ? conv.model : model} />
-          </div>
 
           {/* styles.js has shipped for months and agent.js appends the active
               style to every reply, but nothing ever rendered a selector — the
