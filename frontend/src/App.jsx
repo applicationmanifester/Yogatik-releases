@@ -3957,23 +3957,6 @@ export default function App() {
           <kbd>Ctrl+K</kbd>
         </button>
 
-        {/* Quick Providers & Keys access in main UI */}
-        <button
-          type="button"
-          className="sidebar-providers-btn"
-          onClick={() => navigateDashboard('providers')}
-          title="Manage AI Providers, API Keys & Models (/app/providers)"
-          aria-label="Providers & Keys"
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Key size={13} style={{ color: 'var(--accent, #ff6b35)' }} />
-            <span style={{ fontWeight: 600, fontSize: '12.5px' }}>Providers &amp; Keys</span>
-          </div>
-          <span className="sidebar-providers-status-chip">
-            {Object.values(models).filter(m => m.available).length} ready
-          </span>
-        </button>
-
         <div className="sidebar-scroll">
         <div className="conversation-list">
           {(allFolders.length > 0 || allTags.length > 0) && (
@@ -4078,8 +4061,8 @@ export default function App() {
           <button
             type="button"
             className="sidebar-settings-btn"
-            onClick={() => navigateDashboard('providers')}
-            title="Open Settings, Providers, Billing & Tools"
+            onClick={() => navigateDashboard('settings')}
+            title="Open Settings & Dashboard (/app/settings)"
           >
             <div className="sidebar-settings-btn-main">
               <Sliders size={14} style={{ color: 'var(--accent, #ff6b35)' }} />
@@ -4092,6 +4075,43 @@ export default function App() {
             </div>
             <ChevronDown size={13} style={{ transform: 'rotate(-90deg)', opacity: 0.5 }} />
           </button>
+
+          {/* Quick Providers & Keys access directly below Settings */}
+          <button
+            type="button"
+            className="sidebar-providers-btn"
+            onClick={() => navigateDashboard('providers')}
+            title="Manage AI Providers, API Keys & Models (/app/providers)"
+            aria-label="Providers & Keys"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Key size={13} style={{ color: 'var(--accent, #ff6b35)' }} />
+              <span style={{ fontWeight: 600, fontSize: '12px' }}>Providers &amp; Keys</span>
+            </div>
+            <span className="sidebar-providers-status-chip">
+              {Object.values(models).filter(m => m.available).length} ready
+            </span>
+          </button>
+
+          {user ? (
+            <div className="user-info">
+              <button type="button" className="user-info-identity" onClick={() => navigateDashboard('account')} title="Account">
+                {user.photoURL ? (
+                  <img src={user.photoURL} alt="" style={{ width: 22, height: 22, borderRadius: '50%' }} />
+                ) : (
+                  <User size={15} />
+                )}
+                <span className="user-name" title={user.email}>{user.displayName || user.email}</span>
+              </button>
+              <button className="icon-btn" onClick={() => { logout(); setUser(null); signOutEntitlement().then(setEnt); loadConversations() }} title="Sign out">
+                <LogOut size={14} />
+              </button>
+            </div>
+          ) : (
+            <button className="auth-btn" onClick={requestSignIn} aria-label="Sign in">
+              <LogIn size={14} /> Sign In
+            </button>
+          )}
 
           {isDesktop() ? (
             <a
@@ -4113,26 +4133,6 @@ export default function App() {
             >
               <Monitor size={13} /> <span>Download Desktop App</span>
             </a>
-          )}
-
-          {user ? (
-            <div className="user-info">
-              <button type="button" className="user-info-identity" onClick={() => navigateDashboard('account')} title="Account">
-                {user.photoURL ? (
-                  <img src={user.photoURL} alt="" style={{ width: 22, height: 22, borderRadius: '50%' }} />
-                ) : (
-                  <User size={15} />
-                )}
-                <span className="user-name" title={user.email}>{user.displayName || user.email}</span>
-              </button>
-              <button className="icon-btn" onClick={() => { logout(); setUser(null); signOutEntitlement().then(setEnt); loadConversations() }} title="Sign out">
-                <LogOut size={14} />
-              </button>
-            </div>
-          ) : (
-            <button className="auth-btn" onClick={requestSignIn} aria-label="Sign in">
-              <LogIn size={14} /> Sign In
-            </button>
           )}
 
           <div className="sidebar-footer-links">
