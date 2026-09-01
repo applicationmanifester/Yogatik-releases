@@ -174,14 +174,15 @@ exports.createSubscription = onRequest(
       uid = decoded.uid
     } catch { return res.status(401).json({ error: 'Invalid identity' }) }
 
-    const keyId = RAZORPAY_KEY_ID.value()
-    const keySecret = RAZORPAY_KEY_SECRET.value()
+    const keyId = (RAZORPAY_KEY_ID.value() || '').trim()
+    const keySecret = (RAZORPAY_KEY_SECRET.value() || '').trim()
     if (!keyId || !keySecret) {
       return res.status(503).json({ error: 'not-configured', detail: 'Razorpay keys are not set on this deployment.' })
     }
 
     const period = String(req.body?.period || 'monthly')
-    const planId = period === 'yearly' ? RAZORPAY_PLAN_YEARLY.value() : RAZORPAY_PLAN_MONTHLY.value()
+    const rawPlan = period === 'yearly' ? RAZORPAY_PLAN_YEARLY.value() : RAZORPAY_PLAN_MONTHLY.value()
+    const planId = (rawPlan || '').trim()
     if (!planId) {
       return res.status(503).json({ error: 'not-configured', detail: `No Razorpay plan id configured for ${period}.` })
     }
@@ -256,7 +257,7 @@ exports.verifyPayment = onRequest(
       })
     }
 
-    const keySecret = RAZORPAY_KEY_SECRET.value()
+    const keySecret = (RAZORPAY_KEY_SECRET.value() || '').trim()
     if (!keySecret) {
       // Distinguishable from a bad signature on purpose: "we cannot check" and
       // "this is forged" are different facts and must not read the same.
@@ -347,7 +348,8 @@ exports.razorpayWebhook = onRequest(
     const sig = String(req.headers['x-razorpay-signature'] || '')
     if (!raw || !sig) return res.status(400).send('bad signature header')
 
-    const expected = crypto.createHmac('sha256', RAZORPAY_WEBHOOK_SECRET.value())
+    const secret = (RAZORPAY_WEBHOOK_SECRET.value() || '').trim()
+    const expected = crypto.createHmac('sha256', secret)
       .update(raw).digest('hex')
     const a = Buffer.from(sig, 'hex')
     const b = Buffer.from(expected, 'hex')
