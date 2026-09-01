@@ -141,8 +141,18 @@ function createWindow() {
 
   // External links open in the user's default browser, not inside the Electron window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) { shell.openExternal(url); return { action: 'deny' } }
-    return { action: 'allow' }
+    if (/^https?:\/\//.test(url)) {
+      shell.openExternal(url)
+      return { action: 'deny' }
+    }
+    if (url.startsWith('file://')) {
+      const parts = url.split(/[/\\]/).filter(Boolean)
+      const lastPart = parts[parts.length - 1] || ''
+      const cleanPath = lastPart.replace(/\.html$/i, '')
+      shell.openExternal(`https://yogatik.web.app/${cleanPath}`)
+      return { action: 'deny' }
+    }
+    return { action: 'deny' }
   })
 
   mainWindow.webContents.on('will-navigate', (event, url) => {

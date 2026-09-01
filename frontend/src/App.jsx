@@ -3712,16 +3712,16 @@ export default function App() {
                         const isActB = pidB === (conv?.provider || provider)
                         if (isActA !== isActB) return isActA ? -1 : 1
 
-                        const isReadyA = Boolean(defA.available) || pidA === 'local' || Boolean(defA.is_ollama)
-                        const isReadyB = Boolean(defB.available) || pidB === 'local' || Boolean(defB.is_ollama)
+                        const isReadyA = Boolean(defA.available) || pidA === 'local' || pidA === 'ollama' || Boolean(defA.is_ollama) || Boolean(defA.isOllama) || Boolean(defA.noKey) || Boolean(defA.isLocal) || (defA.models && defA.models.length > 0)
+                        const isReadyB = Boolean(defB.available) || pidB === 'local' || pidB === 'ollama' || Boolean(defB.is_ollama) || Boolean(defB.isOllama) || Boolean(defB.noKey) || Boolean(defB.isLocal) || (defB.models && defB.models.length > 0)
                         if (isReadyA !== isReadyB) return isReadyA ? -1 : 1
 
                         return (defA.name || pidA).localeCompare(defB.name || pidB)
                       })
                       .map(([pid, def]) => {
                       const isAct = pid === (conv?.provider || provider)
-                      const isKeyless = pid === 'local' || def.is_ollama
-                      const hasKey = Boolean(def.available)
+                      const isKeyless = pid === 'local' || pid === 'ollama' || Boolean(def.is_ollama) || Boolean(def.isOllama) || Boolean(def.noKey) || Boolean(def.isLocal) || (def.name && def.name.toLowerCase().includes('ollama'))
+                      const hasKey = Boolean(def.available) || isKeyless
                       const isEditing = editingProvider === pid
                       const isSaving = savingApiKey === pid
                       return (
@@ -3859,9 +3859,9 @@ export default function App() {
                   <div className="account-card">
                     <div className="account-card-head"><h3>Policies</h3></div>
                     <div className="account-device-row">
-                      <a className="account-device-chip" href="/privacy" target="_blank" rel="noreferrer">Privacy notice</a>
-                      <a className="account-device-chip" href="/terms" target="_blank" rel="noreferrer">Terms of use</a>
-                      <a className="account-device-chip" href="/refunds" target="_blank" rel="noreferrer">Refund policy</a>
+                      <a className="account-device-chip" href="https://yogatik.web.app/privacy" target="_blank" rel="noreferrer">Privacy notice</a>
+                      <a className="account-device-chip" href="https://yogatik.web.app/terms" target="_blank" rel="noreferrer">Terms of use</a>
+                      <a className="account-device-chip" href="https://yogatik.web.app/refunds" target="_blank" rel="noreferrer">Refund policy</a>
                     </div>
                   </div>
                 </div>
@@ -4169,17 +4169,17 @@ export default function App() {
               <Sparkles size={11} style={{ color: 'var(--accent, #ff6b35)' }} /> v{APP_VERSION}
             </button>
             <span aria-hidden="true">·</span>
-            <a href="/guide" target="_blank" rel="noreferrer">Guide</a>
+            <a href="https://yogatik.web.app/guide" target="_blank" rel="noreferrer">Guide</a>
             <span aria-hidden="true">·</span>
-            <a href="/pricing" target="_blank" rel="noreferrer">Pricing</a>
+            <a href="https://yogatik.web.app/pricing" target="_blank" rel="noreferrer">Pricing</a>
             <span aria-hidden="true">·</span>
-            <a href="/platforms" target="_blank" rel="noreferrer">Platforms</a>
+            <a href="https://yogatik.web.app/platforms" target="_blank" rel="noreferrer">Platforms</a>
             <span aria-hidden="true">·</span>
-            <a href="/terms" target="_blank" rel="noreferrer">Terms</a>
+            <a href="https://yogatik.web.app/terms" target="_blank" rel="noreferrer">Terms</a>
             <span aria-hidden="true">·</span>
-            <a href="/privacy" target="_blank" rel="noreferrer">Privacy</a>
+            <a href="https://yogatik.web.app/privacy" target="_blank" rel="noreferrer">Privacy</a>
             <span aria-hidden="true">·</span>
-            <a href="/refunds" target="_blank" rel="noreferrer">Refunds</a>
+            <a href="https://yogatik.web.app/refunds" target="_blank" rel="noreferrer">Refunds</a>
           </div>
         </div>
       </aside>

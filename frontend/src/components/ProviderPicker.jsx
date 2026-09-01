@@ -21,15 +21,15 @@ export function ProviderPicker({
 
   const activeDef = providers[activeProvider] || {}
   const activeName = activeDef.name || activeProvider || 'Select Provider'
-  const isReady = activeDef.available || activeProvider === 'local' || activeDef.is_ollama
+  const isReady = activeDef.available || activeProvider === 'local' || activeProvider === 'ollama' || activeDef.is_ollama || activeDef.isOllama || activeDef.noKey || activeDef.isLocal || (activeDef.models && activeDef.models.length > 0)
   const statusState = providerStatus[activeProvider]?.state
   const dotClass = statusState === 'failed' ? 'failed' : (statusState === 'connected' || isReady ? 'connected' : 'unknown')
 
   const sortedList = useMemo(() => {
     return Object.entries(providers)
       .sort(([pidA, defA], [pidB, defB]) => {
-        const readyA = defA.available || pidA === 'local' || defA.is_ollama
-        const readyB = defB.available || pidB === 'local' || defB.is_ollama
+        const readyA = defA.available || pidA === 'local' || pidA === 'ollama' || defA.is_ollama || defA.isOllama || defA.noKey || defA.isLocal || (defA.models && defA.models.length > 0)
+        const readyB = defB.available || pidB === 'local' || pidB === 'ollama' || defB.is_ollama || defB.isOllama || defB.noKey || defB.isLocal || (defB.models && defB.models.length > 0)
         if (readyA !== readyB) return readyA ? -1 : 1
         return (defA.name || pidA).localeCompare(defB.name || pidB)
       })
