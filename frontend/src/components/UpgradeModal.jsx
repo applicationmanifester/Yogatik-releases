@@ -3,7 +3,7 @@ import { Check, Loader2, Lock, ExternalLink, Sparkles, LogIn } from 'lucide-reac
 import { Modal } from './Modal'
 import {
   PLANS, CAPABILITY_COPY, suggestedRegion, openCheckout, pollForUpgrade,
-  entitlement, refreshEntitlement,
+  entitlement, refreshEntitlement, getPaddleCustomerId,
 } from '../entitlement'
 
 /**
@@ -93,11 +93,17 @@ export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked, 
         setErr('Could not verify your sign-in. Try signing out and back in.')
         return
       }
-    } else if (userEmail) {
+    } else {
       // Paddle needs no server-side step before opening checkout (no idToken
-      // travels with it), so the email can ride the query string here — it
-      // is no more sensitive than the uid checkoutBase already carries there.
-      url += `&${new URLSearchParams({ email: userEmail })}`
+      // travels with it), so both ride the query string here — neither is
+      // any more sensitive than the uid checkoutBase already carries there.
+      const extra = {}
+      if (userEmail) extra.email = userEmail
+      // Best-effort, same as userEmail above: a first-time buyer or a read
+      // failure both just mean no id rides along, never a blocked checkout.
+      const customerId = await getPaddleCustomerId(uid).catch(() => null)
+      if (customerId) extra.customerId = customerId
+      if (Object.keys(extra).length) url += `&${new URLSearchParams(extra)}`
     }
 
     const res = await openCheckout(url)

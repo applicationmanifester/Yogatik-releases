@@ -109,6 +109,10 @@
   .msg.err { display: block; background: var(--err-bg); border: 1px solid var(--err-line); color: var(--err-text); }
   .msg.ok  { display: block; background: var(--ok-bg); border: 1px solid var(--ok-line); color: var(--ok-text); }
   .note { margin-top: 18px; font-size: 12px; color: var(--muted); }
+  .legal { margin-top: 10px; font-size: 11px; color: var(--muted); display: flex; gap: 6px; }
+  .legal a { color: inherit; text-decoration: none; }
+  .legal a:hover { color: var(--text); text-decoration: underline; }
+  .legal span { opacity: 0.6; }
   a { color: var(--accent); }
 </style>
 <script>
@@ -141,6 +145,13 @@
     closes — so it can take a few seconds to appear in the app. Nothing is
     charged until you confirm on the provider's own page.
   </p>
+  <p class="legal">
+    <a href="/terms" target="_blank" rel="noreferrer">Terms</a>
+    <span aria-hidden="true">·</span>
+    <a href="/privacy" target="_blank" rel="noreferrer">Privacy</a>
+    <span aria-hidden="true">·</span>
+    <a href="/refunds" target="_blank" rel="noreferrer">Refunds</a>
+  </p>
 </div>
 
 <script>
@@ -153,6 +164,12 @@
   // fragment instead (see setupRazorpay), because an idToken rides beside it
   // there and a fragment never reaches a server log or Referer header.
   var queryEmail = q.get('email') || ''
+  // Paddle's OWN customer id (ctm_...), present only for a RETURNING buyer
+  // whose account already has one on file (see functions/index.js's
+  // paddleWebhook and entitlement.js's getPaddleCustomerId) — never Yogatik's
+  // uid and never an email. Absent for every first-time buyer; that is the
+  // expected, common case, not a misconfiguration.
+  var queryCustomerId = q.get('customerId') || ''
 
   var elPlan = document.getElementById('plan')
   var elProv = document.getElementById('provider')
@@ -222,7 +239,13 @@
     ready(function () {
       script('https://cdn.paddle.com/paddle/v2/paddle.js').then(function () {
         if (cfg.paddle.environment === 'sandbox') window.Paddle.Environment.set('sandbox')
-        window.Paddle.Setup({ token: cfg.paddle.token })
+        var setup = { token: cfg.paddle.token }
+        // Retain personalises/prefills checkout for a customer it already
+        // knows. Only ever set for a RETURNING buyer (see queryCustomerId
+        // above) — omitted entirely for a first purchase, which is correct,
+        // not a gap: Retain has nothing to personalise against yet either.
+        if (queryCustomerId) setup.pwCustomer = { id: queryCustomerId }
+        window.Paddle.Setup(setup)
         window.Paddle.Checkout.open({
           items: [{ priceId: priceId, quantity: 1 }],
           // The webhook reads this to know whose account to upgrade.

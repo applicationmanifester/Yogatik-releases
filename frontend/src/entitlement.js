@@ -173,6 +173,38 @@ export async function loadEntitlement() {
 }
 
 /**
+ * The signed-in user's Paddle customer id (ctm_...), for Paddle Retain's
+ * `pwCustomer` — NOT threaded through the entitlement snapshot above on
+ * purpose. That snapshot is a narrow, load-bearing shape shared verbatim by
+ * the desktop main-process licence check and the web Firestore read, and
+ * both already agree on exactly what a licence answer looks like; growing
+ * it for one Paddle-specific field would mean the desktop path either grows
+ * a field it can never populate (its licence token carries no customer id)
+ * or the two paths quietly disagree on shape. This is a separate, plain
+ * read of the same document instead.
+ *
+ * Checkout always opens in the real browser (never a webview — see
+ * UpgradeModal), so this is one code path for both platforms.
+ *
+ * Returns null for a first-time buyer (nothing has ever written it yet —
+ * only a Paddle webhook does, and only after a first purchase), for a
+ * signed-out user, or on any read failure. All three are legitimate "don't
+ * prefill pwCustomer" answers, never surfaced as an error — a failure here
+ * must not block checkout, only leave it slightly less personalised.
+ */
+export async function getPaddleCustomerId(uid) {
+  if (!uid) return null
+  try {
+    const { getFirebase } = await import('./firebaseAuth')
+    const f = await getFirebase()
+    const snap = await f.getDoc(f.doc(f.db, 'accounts', uid))
+    return snap.exists() ? (snap.data()?.customerId || null) : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Hand main the Firebase identity and pull a fresh licence.
  * Called after sign-in and on app focus. Main holds the ID token only in
  * memory — it is short-lived and re-supplied by the renderer each time.

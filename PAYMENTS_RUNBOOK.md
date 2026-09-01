@@ -272,9 +272,14 @@ Apply early even though you will ship without it; the review is the wait.
   Having a few months of Razorpay volume behind you makes this materially easier —
   another reason India goes first.
 
-Once approved: create the two prices ($2/mo, $12/yr), add the `paddle` block to
-`checkout-config.json`, set `PADDLE_WEBHOOK_SECRET`, point the webhook at
-`.../paddleWebhook`, redeploy hosting. No code changes.
+Once approved: create the two prices at **$9/mo, $99/yr** — NOT the $2/$12 this
+runbook originally proposed (see the note below; the code has already moved past that
+draft number and this file hadn't caught up). Creating the live prices at any other
+amount means a customer sees "$9/month · Save $9" in the app, clicks buy, and lands on
+a Paddle checkout charging a different number — a mismatch a reviewer or a customer
+will notice immediately. Add the `paddle` block to `checkout-config.json`, set
+`PADDLE_WEBHOOK_SECRET`, point the webhook at `.../paddleWebhook`, redeploy hosting.
+No code changes.
 
 ---
 
@@ -297,11 +302,15 @@ Once approved: create the two prices ($2/mo, $12/yr), add the `paddle` block to
 
 ---
 
-## One business decision to make before Step 6
+## The international price decision — already made, and already shipped
 
-$2/month international needs ~50,000 paying users for $1.2M ARR; $12/month needs
-~8,000. India at ₹99 is priced correctly for its market. The international number is
-not, and Paddle's fixed $0.50 per transaction eats a quarter of a $2 charge before
-anything else. Consider raising international to $12/mo, $99/yr **before** you create
-the Paddle prices — changing a price after customers exist is a migration; changing it
-before is a text edit.
+This used to be an open decision to make before Step 6: $2/month needs ~50,000 paying
+users for $1.2M ARR versus ~8,000 at a higher price, and Paddle's fixed $0.50 per
+transaction eats a quarter of a $2 charge before anything else. It is resolved now —
+`frontend/src/entitlement.js`'s `PLANS.intl` and `checkout.html`'s `LABELS` both hardcode
+**$9/month, $99/year** (with the same reasoning inline in `entitlement.js`), and that is
+what the live UI already shows every visitor, sandbox or not. India at ₹99/₹999 needed
+no change.
+
+Nothing left to decide here — only to make sure the live Paddle catalog is created to
+match ($9/mo, $99/yr), per Step 7 above, rather than at an earlier draft number.

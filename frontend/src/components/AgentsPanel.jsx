@@ -20,7 +20,7 @@ function download(name, text) {
  * runner (goal → plan → execute → report). Sub-agent delegation happens
  * automatically via the spawn_agents tool; this panel manages the roster.
  */
-export function AgentsPanel({ onClose, onToast, conversationId = null }) {
+export function AgentsPanel({ onClose, onToast, conversationId = null, embedded = false }) {
   const [tab, setTab] = React.useState('agents')
   const [agents, setAgents] = React.useState([])
   const [activeId, setActiveId] = React.useState(null)
@@ -89,7 +89,7 @@ export function AgentsPanel({ onClose, onToast, conversationId = null }) {
   React.useEffect(() => subscribeCrewTraces(setCrewTraces), [])
 
   return (
-    <Modal title="Agents" icon={<Bot size={16} />} onClose={onClose}>
+    <Modal title="Agents" icon={<Bot size={16} />} onClose={onClose} embedded={embedded}>
       <div className="tab-row" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <button className={tab === 'agents' ? 'active' : ''} onClick={() => setTab('agents')}><Users size={12} /> Agents</button>
         <button className={tab === 'auto' ? 'active' : ''} onClick={() => setTab('auto')}><Target size={12} /> Autonomous</button>

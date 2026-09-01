@@ -3,8 +3,6 @@ import { Sliders, Volume2, Play, Square, LayoutGrid, RotateCcw, Globe } from 'lu
 import { Modal } from './Modal'
 import { localeSnapshot } from '../locale'
 import { FEATURES, resolveFeatures, FEATURE_DEFAULTS } from '../features'
-import { McpServers } from './McpServers'
-import { PluginsManager } from './PluginsManager'
 import { ComfyPanel } from './ComfyPanel'
 import { VOICE_LABELS, DEFAULT_VOICE } from '../video/speech'
 import { requestTTS, stopTTS } from '../api'
@@ -36,7 +34,7 @@ const REGION_CHOICES = [
   ['BR', 'Brazil'], ['MX', 'Mexico'], ['AR', 'Argentina'],
 ]
 
-export function PersonalisePanel({ prefs, onChange, onClose }) {
+export function PersonalisePanel({ prefs, onChange, onClose, embedded = false }) {
   const L = localeSnapshot()
   const features = resolveFeatures(prefs.features)
   const voice = prefs.live_voice_local || DEFAULT_VOICE
@@ -77,7 +75,7 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
   const resetFeatures = () => onChange('features', { ...FEATURE_DEFAULTS })
 
   return (
-    <Modal title="Personalise" icon={<Sliders size={16} />} onClose={onClose}>
+    <Modal title="Personalise" icon={<Sliders size={16} />} onClose={onClose} embedded={embedded}>
       <section className="personalise-group">
         <h4><Volume2 size={13} /> Voice</h4>
         <p className="personalise-hint">
@@ -352,8 +350,8 @@ export function PersonalisePanel({ prefs, onChange, onClose }) {
         </button>
       </section>
 
-      <McpServers />
-      <PluginsManager />
+      {/* MCP Servers and Plugins are their own DashboardShell pages now
+          (see the rail) — no longer duplicated inline here. */}
       <ComfyPanel />
     </Modal>
   )

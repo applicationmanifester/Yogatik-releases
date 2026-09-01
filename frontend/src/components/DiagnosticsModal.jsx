@@ -25,7 +25,7 @@ function formatTime(ts) {
   })
 }
 
-export function DiagnosticsModal({ onClose }) {
+export function DiagnosticsModal({ onClose, embedded = false }) {
   const [activeTab, setActiveTab] = useState('diagnostics') // 'diagnostics' | 'traces'
   const [logs, setLogs] = useState(() => getErrorLog().slice().reverse())
   const [traces, setTraces] = useState([])
@@ -87,15 +87,18 @@ export function DiagnosticsModal({ onClose }) {
     )
   }, [logs, filter])
 
+  // Embedded inside DashboardShell: the overlay/backdrop collapses to a
+  // passthrough (display:contents) wrapper so this stays one component with
+  // one JSX tree instead of forking the ~300-line body below into two copies.
   return (
-    <div className="yg-panel-overlay" onClick={onClose}>
+    <div className={embedded ? 'dash-embed-pass' : 'yg-panel-overlay'} onClick={embedded ? undefined : onClose}>
       <div
-        className="yg-panel diagnostics-modal"
-        onClick={e => e.stopPropagation()}
+        className={`yg-panel diagnostics-modal${embedded ? ' embedded-page' : ''}`}
+        onClick={embedded ? undefined : e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Error Findings & Diagnostics Inspector"
-        style={{ width: 'min(720px, 96%)', maxHeight: '82vh' }}
+        style={embedded ? undefined : { width: 'min(720px, 96%)', maxHeight: '82vh' }}
       >
         {/* Header */}
         <div className="yg-panel-header">

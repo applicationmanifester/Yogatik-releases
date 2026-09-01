@@ -15,7 +15,7 @@ const STORE_LABELS = {
   emotional: 'Emotional context (local-only)',
 }
 
-export default function DataDashboard({ onClose, onExport }) {
+export default function DataDashboard({ onClose, onExport, embedded = false }) {
   const [activeTab, setActiveTab] = useState('analytics') // 'analytics' | 'memory'
   const [byStore, setByStore] = useState(null)
   const [usage, setUsage] = useState(() => getUsageSummary())
@@ -98,18 +98,23 @@ export default function DataDashboard({ onClose, onExport }) {
     setTimeout(() => setStatusMsg(''), 3000)
   }
 
+  // Was built on the .palette family — the Ctrl+K command palette's own
+  // hardcoded-dark shell (see styles.css) — paired with var(--text-primary)
+  // content. That's the exact dark-on-dark contrast bug already found and
+  // fixed in DiagnosticsModal/BillingPanel; this panel was one of the "may
+  // carry the same latent bug" ones flagged at the time. Fixed here the same
+  // way: the theme-aware .yg-panel-* shell, with the same embedded/
+  // dash-embed-pass passthrough for hosting it inside DashboardShell.
   return (
-    <div className="palette-overlay" onClick={onClose}>
-      <div className="palette data-dashboard" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true"
-        aria-label="Your data" style={{ width: 'min(680px, 96%)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-        
+    <div className={embedded ? 'dash-embed-pass' : 'yg-panel-overlay'} onClick={embedded ? undefined : onClose}>
+      <div className={`yg-panel data-dashboard${embedded ? ' embedded-page' : ''}`} onClick={embedded ? undefined : e => e.stopPropagation()} role="dialog" aria-modal="true"
+        aria-label="Your data" style={embedded ? undefined : { width: 'min(680px, 96%)', maxHeight: '85vh' }}>
+
         {/* Header */}
-        <div className="palette-input-bar" style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Database size={18} style={{ color: 'var(--accent)' }} />
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Data, Usage &amp; Storage Hub</h3>
-          </div>
-          <button className="palette-clear-btn" onClick={onClose} aria-label="Close"><X size={16} /></button>
+        <div className="yg-panel-header">
+          <Database size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <h3>Data, Usage &amp; Storage Hub</h3>
+          <button type="button" className="yg-panel-icon-btn" onClick={onClose} title="Close" aria-label="Close"><X size={15} /></button>
         </div>
 
         {/* Tab Navigation */}
@@ -150,7 +155,7 @@ export default function DataDashboard({ onClose, onExport }) {
         )}
 
         {/* Content Body */}
-        <div className="palette-list" style={{ padding: '14px 18px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="yg-panel-body" style={{ padding: '14px 18px', gap: 14 }}>
           {activeTab === 'analytics' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {/* Analytics Metric Cards */}
@@ -273,7 +278,7 @@ export default function DataDashboard({ onClose, onExport }) {
         </div>
 
         {/* Footer */}
-        <div className="palette-footer" style={{ padding: '10px 18px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="yg-panel-footer" style={{ flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)', flex: 1, minWidth: 160 }}>All data is stored locally in your private IndexedDB.</span>
           <input
             type="file"

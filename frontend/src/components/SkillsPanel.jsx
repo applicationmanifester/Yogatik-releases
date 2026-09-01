@@ -14,7 +14,7 @@ function download(name, text) {
 }
 
 /** Manage Skills (shape the assistant) and Workflows (multi-step runs). */
-export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter, conversationId = null }) {
+export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter, conversationId = null, embedded = false }) {
   const [tab, setTab] = React.useState('skills')
   const [skills, setSkills] = React.useState([])
   const [activeId, setActiveId] = React.useState(null)
@@ -68,7 +68,7 @@ export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter, conversation
   }
 
   return (
-    <Modal title="Skills & Workflows" icon={<Sparkles size={16} />} onClose={onClose}>
+    <Modal title="Skills & Workflows" icon={<Sparkles size={16} />} onClose={onClose} embedded={embedded}>
       <div className="tab-row" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <button className={tab === 'skills' ? 'active' : ''} onClick={() => setTab('skills')}><Sparkles size={12} /> Skills</button>
         <button className={tab === 'flows' ? 'active' : ''} onClick={() => setTab('flows')}><Workflow size={12} /> Workflows</button>

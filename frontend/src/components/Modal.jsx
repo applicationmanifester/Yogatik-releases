@@ -8,11 +8,17 @@ const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:n
  * restored to whatever opened it. Every dialog in the app uses this so the
  * keyboard behaviour can't drift apart between them.
  */
-export function Modal({ title, icon, onClose, children, footer, labelledBy = 'modal-title', className = '' }) {
+export function Modal({ title, icon, onClose, children, footer, labelledBy = 'modal-title', className = '', embedded = false }) {
   const ref = useRef(null)
   const restoreTo = useRef(null)
 
   useEffect(() => {
+    // Embedded inside DashboardShell: the shell's own overlay already owns
+    // focus-trapping and Escape-to-close for whichever section is showing.
+    // Installing a second capture-phase listener here would double-fire
+    // both on every keypress.
+    if (embedded) return
+
     restoreTo.current = document.activeElement
 
     const node = ref.current
@@ -38,7 +44,19 @@ export function Modal({ title, icon, onClose, children, footer, labelledBy = 'mo
       document.removeEventListener('keydown', onKeyDown, true)
       restoreTo.current?.focus?.()
     }
-  }, [onClose])
+  }, [onClose, embedded])
+
+  // No overlay, no backdrop, no own header — DashboardShell's topbar already
+  // shows this section's icon/title and its own close button. Only the
+  // content + footer are this component's job here.
+  if (embedded) {
+    return (
+      <div className={`modal embedded-page ${className}`}>
+        {children}
+        {footer}
+      </div>
+    )
+  }
 
   return (
     <div className={`modal-overlay ${className ? `${className}-overlay` : ''}`} onClick={onClose}>

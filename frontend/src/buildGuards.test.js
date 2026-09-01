@@ -72,6 +72,7 @@ describe('reachability', () => {
       path.join('components', 'AdModal.jsx'),
       path.join('components', 'TerminalPanel.jsx'),
       path.join('components', 'ContextMeter.jsx'),
+      path.join('components', 'McpModal.jsx'),
       path.join('components', 'EmptyState.jsx'),
       path.join('components', 'EmptyStates.jsx'),
       path.join('components', 'OnboardingTour.jsx'),
@@ -185,6 +186,7 @@ describe('reachability', () => {
       'src/analyticsSink.js',               // initAnalyticsFromSettings is never called, so analytics is inert (it is opt-in anyway)
       'src/experiments.js',                 // getVariant/trackOutcome called by nothing; phase1.test.js covers it
       'src/components/ContextMeter.jsx',    // unrendered context meter widget
+      'src/components/McpModal.jsx',        // retired wrapper: McpServers hosted directly in DashboardShell
 
       // BUILT, NEVER WIRED, and worth a decision:
       'src/tools/stagehandHealing.js',      // self-healing selector fallback — the browser tool refuses a stale ref outright instead

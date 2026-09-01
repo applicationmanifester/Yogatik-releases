@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, FolderPlus, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { setUserQuestionHandler } from './tools/askUser'
@@ -96,10 +96,19 @@ const UpgradeModal = safeLazy(() => import('./components/UpgradeModal'))
 const DemoModal = safeLazy(() => import('./components/DemoModal').then(m => ({ default: m.DemoModal })))
 const Tour = safeLazy(() => import('./components/Tour').then(m => ({ default: m.Tour })))
 const AppOverviewModal = safeLazy(() => import('./components/AppOverviewModal').then(m => ({ default: m.AppOverviewModal })))
-const McpModal = safeLazy(() => import('./components/McpModal').then(m => ({ default: m.McpModal })))
 const DownloadModal = safeLazy(() => import('./components/DownloadModal').then(m => ({ default: m.DownloadModal })))
 const DiagnosticsModal = safeLazy(() => import('./components/DiagnosticsModal').then(m => ({ default: m.DiagnosticsModal })))
 const BillingPanel = safeLazy(() => import('./components/BillingPanel'))
+// The seven settings-family panels above (Personalise, Skills, Agents,
+// Diagnostics, Billing) now share one full-page DashboardShell instead of
+// each floating as its own modal. McpServers/PluginsManager were already
+// "bare" content components (McpServers was only ever reached through the
+// thin McpModal wrapper, or embedded directly inside PersonalisePanel) — the
+// shell hosts them directly now, so McpModal itself is retired: nothing in
+// this file imports it any more.
+const DashboardShell = safeLazy(() => import('./components/DashboardShell').then(m => ({ default: m.DashboardShell })))
+const McpServersPage = safeLazy(() => import('./components/McpServers').then(m => ({ default: m.McpServers })))
+const PluginsManagerPage = safeLazy(() => import('./components/PluginsManager').then(m => ({ default: m.PluginsManager })))
 const DomainHubModal = safeLazy(() => import('./components/DomainHubModal').then(m => ({ default: m.DomainHubModal })))
 const WhatsNewModal = safeLazy(() => import('./components/WhatsNewModal').then(m => ({ default: m.WhatsNewModal })))
 const ShareSheet = safeLazy(() => import('./components/ShareSheet').then(m => ({ default: m.ShareSheet })))
@@ -284,6 +293,10 @@ export default function App() {
   const [showPersonalise, setShowPersonalise] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
   const [showAgents, setShowAgents] = useState(false)
+  // Plugins previously had no dedicated toggle at all — it only ever
+  // rendered as a fixed subsection inside PersonalisePanel's modal. It is
+  // one of the seven DashboardShell sections now, so it needs one.
+  const [showPlugins, setShowPlugins] = useState(false)
   const [showTerminal, setShowTerminal] = useState(false)
   // A BOOLEAN, deliberately: the terminal store notifies on every output chunk,
   // and subscribing App to that would re-render the whole shell per chunk —
@@ -673,7 +686,14 @@ export default function App() {
     showPalette || showProviderModal || showAuthModal || showDataDashboard ||
     showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact ||
     showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor ||
-    showWorkspace || showTour || showBilling
+    showWorkspace || showTour || showBilling ||
+    // showAgents/showMcpModal were missing here (and below, in isAnyModalOpen)
+    // before the DashboardShell migration — the same "finished UI nothing
+    // wired up" gap this file's own notes call out elsewhere, just on the
+    // occlusion/modal-open checks instead of on reachability. Fixed here
+    // rather than left as a pre-existing bug now that all seven panels
+    // render through one shared code path.
+    showAgents || showMcpModal || showPlugins
   )
 
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
@@ -751,10 +771,47 @@ export default function App() {
     showDemoModal || showDiagnosticsModal || confirmModal || projectNameModal ||
     restoreModal || showDownloadModal || errorModalMsg || arena ||
     showScheduler || showSubAgents || showAutoSkills || showFileEditor || showWhatsNew ||
-    showTour || showUpgrade || showBilling
+    showTour || showUpgrade || showBilling ||
+    // showAgents/showMcpModal/showPlugins/showDataDashboard/showToolPicker were
+    // missing here before the DashboardShell migration folded all nine
+    // sections onto one mechanism — same gap as browserOccluded above.
+    showAgents || showMcpModal || showPlugins || showDataDashboard || showToolPicker
   )
   const isAnyModalOpenRef = useRef(isAnyModalOpen)
   isAnyModalOpenRef.current = isAnyModalOpen
+
+  // One DashboardShell, nine sections (Settings/Billing/Usage/Diagnostics/
+  // Capabilities/Agents/Skills/MCP/Plugins) sharing it instead of nine
+  // independent floating modals. dashActive picks whichever underlying flag
+  // is on; navigateDashboard flips exactly one on and the rest off, so a
+  // rail click inside the shell (or any external trigger button/command)
+  // can never leave two sections "open" underneath at once.
+  const dashActive = showPersonalise ? 'settings'
+    : showBilling ? 'billing'
+    : showDataDashboard ? 'usage'
+    : showDiagnosticsModal ? 'diagnostics'
+    : showToolPicker ? 'capabilities'
+    : showAgents ? 'agents'
+    : showSkills ? 'skills'
+    : showMcpModal ? 'mcp'
+    : showPlugins ? 'plugins'
+    : null
+  const closeDashboard = useCallback(() => {
+    setShowPersonalise(false); setShowBilling(false); setShowDiagnosticsModal(false)
+    setShowAgents(false); setShowSkills(false); setShowMcpModal(false); setShowPlugins(false)
+    setShowDataDashboard(false); setShowToolPicker(false)
+  }, [])
+  const navigateDashboard = useCallback((key) => {
+    setShowPersonalise(key === 'settings')
+    setShowBilling(key === 'billing')
+    setShowDiagnosticsModal(key === 'diagnostics')
+    setShowAgents(key === 'agents')
+    setShowSkills(key === 'skills')
+    setShowMcpModal(key === 'mcp')
+    setShowPlugins(key === 'plugins')
+    setShowDataDashboard(key === 'usage')
+    setShowToolPicker(key === 'capabilities')
+  }, [])
 
   // send() reads these refs so it always sees the latest state, even when
   // called from a closure captured during a previous render (e.g. right after
@@ -1757,7 +1814,7 @@ export default function App() {
         else if (action === 'open-palette') setShowPalette(true)
         else if (action === 'open-arena') setCompareMode(true)
         else if (action === 'open-live') startLive()
-        else if (action === 'open-diagnostics') setShowDiagnosticsModal(true)
+        else if (action === 'open-diagnostics') navigateDashboard('diagnostics')
         else if (action === 'grant-folder') handleAddFolder()
       }
     })
@@ -3168,13 +3225,22 @@ export default function App() {
       { id: 'export', group: 'Chat', label: 'Export this chat as Markdown', run: () => handleExport('md') },
       { id: 'export-html', group: 'Chat', label: 'Export this chat as HTML', run: () => handleExport('html') },
       { id: 'export-pdf', group: 'Chat', label: 'Export this chat as PDF', run: () => handleExport('pdf') },
+      // The sidebar row's folder icon no longer opens this (web: removed
+      // entirely; desktop: repointed at the real working-folder popover),
+      // so the command palette is now the one place that reaches the
+      // category-folder modal — platform-agnostic, same as the feature
+      // itself always was.
+      {
+        id: 'organize-folder', group: 'Chat', label: 'Organize this chat into a folder',
+        run: () => { if (conv) setFolderModalConv({ idx: activeIdx, conv, folder: conv.folder || '' }) },
+      },
       { id: 'backup', group: 'Data', label: 'Export all data (backup)', run: handleBackup },
       { id: 'import', group: 'Data', label: 'Import a backup file', run: () => backupInput.current?.click() },
       { id: 'theme', group: 'View', label: `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`, run: () => setTheme(t => t === 'dark' ? 'light' : 'dark') },
       { id: 'settings', group: 'View', label: 'Open settings & API keys', run: () => { setSidebarOpen(true); setSettingsOpen(true) } },
-      { id: 'personalise', group: 'View', label: 'Personalise — voice & interface', run: () => setShowPersonalise(true) },
-      { id: 'skills', group: 'View', label: 'Skills & workflows', run: () => setShowSkills(true) },
-      { id: 'agents-panel', group: 'View', label: '🤖 Specialized Agents Panel (Researcher, Modeller, Swarms...)', hint: 'Specialist AI', run: () => setShowAgents(true) },
+      { id: 'personalise', group: 'View', label: 'Personalise — voice & interface', run: () => navigateDashboard('settings') },
+      { id: 'skills', group: 'View', label: 'Skills & workflows', run: () => navigateDashboard('skills') },
+      { id: 'agents-panel', group: 'View', label: '🤖 Specialized Agents Panel (Researcher, Modeller, Swarms...)', hint: 'Specialist AI', run: () => navigateDashboard('agents') },
       // Desktop-only surfaces. They are listed on the web too and say so when
       // opened, rather than being silently absent depending on the build.
       { id: 'terminal', group: 'Tools', label: '⌨️ Terminal — watch the assistant, run your own', hint: 'Ctrl+`', run: () => setShowTerminal(true) },
@@ -3184,7 +3250,8 @@ export default function App() {
       { id: 'scheduler', group: 'Tools', label: '⏰ Scheduled tasks (cron jobs)', hint: 'Manage & cancel', run: () => setShowScheduler(true) },
       { id: 'sub-agents', group: 'Tools', label: '🧩 Sub-agent runner', hint: 'Isolated agents', run: () => setShowSubAgents(true) },
       { id: 'auto-skills', group: 'Tools', label: '✨ Auto-generated skills', hint: 'Review & prune', run: () => setShowAutoSkills(true) },
-      { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => setShowToolPicker(true) },
+      { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => navigateDashboard('capabilities') },
+      { id: 'usage-data', group: 'Settings', label: 'Usage, cost & storage', hint: 'Data hub', run: () => navigateDashboard('usage') },
       { id: 'tools', group: 'Settings', label: `${tools ? 'Disable' : 'Enable'} all AI tools`, run: () => setToolsEnabled(!tools) },
       { id: 'web', group: 'Settings', label: `${webSearch ? 'Disable' : 'Enable'} web research`, run: () => setWebSearch(!webSearch) },
       { id: 'route', group: 'Settings', label: `${autoRoute ? 'Disable' : 'Enable'} auto-routing`, run: () => setAutoRoute(!autoRoute) },
@@ -3198,8 +3265,10 @@ export default function App() {
       { id: 'tour', group: 'View', label: 'Guided tour of the interface', run: () => setShowTour(true) },
       { id: 'download-pwa', group: 'View', label: 'Install / download desktop app (PWA)', run: () => setShowDownloadModal(true) },
       { id: 'new-persona', group: 'Personas', label: 'Create new custom persona...', run: () => setShowPersonaModal(true) },
-      { id: 'diagnostics', group: 'Settings', label: 'Error Findings & Diagnostics Inspector', hint: 'Inspect Logs', run: () => setShowDiagnosticsModal(true) },
-      { id: 'billing', group: 'Settings', label: 'Billing — plan and payment history', hint: 'View invoices', run: () => setShowBilling(true) },
+      { id: 'diagnostics', group: 'Settings', label: 'Error Findings & Diagnostics Inspector', hint: 'Inspect Logs', run: () => navigateDashboard('diagnostics') },
+      { id: 'billing', group: 'Settings', label: 'Billing — plan and payment history', hint: 'View invoices', run: () => navigateDashboard('billing') },
+      { id: 'mcp-servers', group: 'Settings', label: 'MCP Servers — connect external tools & data', hint: 'Connectors', run: () => navigateDashboard('mcp') },
+      { id: 'plugins', group: 'Settings', label: 'Plugins — install & manage extensions', hint: 'Extensions', run: () => navigateDashboard('plugins') },
     ]
 
     for (const [id, p] of Object.entries(models)) {
@@ -3473,12 +3542,25 @@ export default function App() {
               )}
               {i === activeIdx && renamingIdx !== i && (
                 <span className="conv-actions">
-                  <button className="icon-btn" onClick={e => {
-                    e.stopPropagation()
-                    setFolderModalConv({ idx: i, conv: c, folder: c.folder || '' })
-                  }} aria-label="Set folder" title="Organize into folder">
-                    <FolderPlus size={11} />
-                  </button>
+                  {/* "Folder" means two different things in this app: an
+                      IndexedDB category tag (web+desktop, via the folder
+                      modal below) and a real filesystem working directory
+                      (desktop-only, via roots.cjs). Showing one icon for the
+                      category concept read as broken on web, where there is
+                      no filesystem to point at — so on web this icon is
+                      gone entirely (rename/tag/delete still cover chat
+                      organization). On desktop it is repointed at the REAL
+                      working folder for this chat instead, reusing the same
+                      rootsOpen popover the header's folder chip already
+                      drives, rather than opening the category modal. */}
+                  {isDesktop() && (
+                    <button className="icon-btn" onClick={e => {
+                      e.stopPropagation()
+                      setRootsOpen(true)
+                    }} aria-label="Working folder for this chat" title="Working folder — the real folder on disk this chat can read and write">
+                      <Folder size={11} />
+                    </button>
+                  )}
                   <button className="icon-btn" onClick={e => {
                     e.stopPropagation()
                     setTagModalConv({ idx: i, conv: c, tags: [...(c.tags || [])] })
@@ -3765,7 +3847,7 @@ export default function App() {
             </label>
           </div>
           {(conv?.tools !== undefined ? conv.tools : (tools ?? true)) && (
-            <button className="small-btn tool-picker-toggle wide" onClick={() => setShowToolPicker(true)}>
+            <button className="small-btn tool-picker-toggle wide" onClick={() => navigateDashboard('capabilities')}>
               <Wrench size={11} /> Choose &amp; Configure Tools
               <span className="tool-count">
                 {toolPrefs.filter(t => t.enabled).length}/{toolPrefs.length}
@@ -3775,10 +3857,10 @@ export default function App() {
 
           {/* ── More ──────────────────────────────────────────── */}
           <div className="sidebar-section-title">More</div>
-          <button className="small-btn wide" onClick={() => setShowPersonalise(true)}>
+          <button className="small-btn wide" onClick={() => navigateDashboard('settings')}>
             <Sliders size={12} /> Personalise — voice &amp; interface
           </button>
-          <button className="small-btn wide" onClick={() => setShowSkills(true)}>
+          <button className="small-btn wide" onClick={() => navigateDashboard('skills')}>
             <Compass size={12} /> Skills &amp; workflows
           </button>
           <div className="toggle-row">
@@ -3844,7 +3926,7 @@ export default function App() {
               </div>
               {showStorageDetails && (
                 <div className="storage-details" style={{ fontSize: '11px', marginTop: '8px', padding: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', display: 'flex', flexDirection: 'column', gap: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <button className="small-btn" style={{ padding: '4px 8px' }} onClick={() => setShowDataDashboard(true)}>
+                  <button className="small-btn" style={{ padding: '4px 8px' }} onClick={() => navigateDashboard('usage')}>
                     View & manage what Yogatik remembers about you
                   </button>
                   <div>
@@ -3907,7 +3989,7 @@ export default function App() {
               <button
                 className="small-btn info-btn"
                 style={{ padding: '2px 6px', fontSize: 10, height: 'auto', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 3, cursor: 'pointer', color: 'var(--text-color, inherit)' }}
-                onClick={() => setShowDiagnosticsModal(true)}
+                onClick={() => navigateDashboard('diagnostics')}
               >
                 Inspect Logs
               </button>
@@ -3926,7 +4008,7 @@ export default function App() {
                 <button
                   className="small-btn info-btn"
                   style={{ padding: '2px 6px', fontSize: 10, height: 'auto', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 3, cursor: 'pointer', color: 'var(--text-color, inherit)' }}
-                  onClick={() => setShowBilling(true)}
+                  onClick={() => navigateDashboard('billing')}
                 >
                   View history
                 </button>
@@ -3995,6 +4077,18 @@ export default function App() {
               <LogIn size={14} /> Sign In
             </button>
           )}
+          {/* These three only otherwise exist as static pages nothing in the
+              live, JavaScript-rendered app ever links to — a real visitor (or
+              a payment provider's verification reviewer) browsing the app as
+              built has no click path to them at all. Small and quiet on
+              purpose: this is a compliance requirement, not a feature to sell. */}
+          <div className="sidebar-footer-legal">
+            <a href="/terms" target="_blank" rel="noreferrer">Terms</a>
+            <span aria-hidden="true">·</span>
+            <a href="/privacy" target="_blank" rel="noreferrer">Privacy</a>
+            <span aria-hidden="true">·</span>
+            <a href="/refunds" target="_blank" rel="noreferrer">Refunds</a>
+          </div>
         </div>
       </aside>
 
@@ -4142,7 +4236,7 @@ export default function App() {
             <div className="header-btn-group" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: '2px 4px', borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.06))' }}>
               <button
                 className="icon-btn"
-                onClick={() => setShowAgents(true)}
+                onClick={() => navigateDashboard('agents')}
                 title="Specialized Agents & Swarms (Researcher, Modeller, Director...)"
                 aria-label="Specialized Agents"
               >
@@ -4150,7 +4244,7 @@ export default function App() {
               </button>
               <button
                 className="icon-btn"
-                onClick={() => setShowMcpModal(true)}
+                onClick={() => navigateDashboard('mcp')}
                 title="MCP Connectors (Model Context Protocol)"
                 aria-label="MCP Connectors"
               >
@@ -4933,20 +5027,6 @@ export default function App() {
           }}
         />
       )}
-      {showSkills && (
-        <SkillsPanel
-          onClose={() => setShowSkills(false)}
-          onRunWorkflow={runWorkflowNow}
-          conversationId={scopeId}
-        />
-      )}
-      {showAgents && (
-        <AgentsPanel
-          onClose={() => setShowAgents(false)}
-          onToast={showToast}
-          conversationId={scopeId}
-        />
-      )}
       {/* TerminalPanel manages its own visibility from `open`, so it is always
           mounted while showing — unlike the panels below, which take isOpen. */}
       {/* Gated at the render site, not inside the component. These are
@@ -4981,56 +5061,92 @@ export default function App() {
           onSave={(path) => showToast(`Saved ${path}`)}
         />
       )}
-      {showPersonalise && (
-        <PersonalisePanel
-          prefs={prefs}
-          onChange={updatePref}
-          onClose={() => setShowPersonalise(false)}
-        />
-      )}
-      {showToolPicker && (
-        <Modal
-          title="AI Tools Configuration"
-          icon={<Wrench size={18} />}
-          onClose={() => setShowToolPicker(false)}
-          footer={
-            <div className="modal-actions">
-              <button className="btn-primary" onClick={() => setShowToolPicker(false)}>Done</button>
-            </div>
-          }
-        >
-          <div className="tool-picker-modal-content" style={{ maxHeight: '65vh', overflowY: 'auto', paddingRight: 4 }}>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-              Enable or disable specific tools for the AI assistant ({toolPrefs.filter(t => t.enabled).length} of {toolPrefs.length} active).
-            </p>
-            {[...new Set(toolPrefs.map(t => t.group))].map(group => {
-              const inGroup = toolPrefs.filter(t => t.group === group)
-              const allOn = inGroup.every(t => t.enabled)
-              return (
-                <div key={group} className="tool-group-card" style={{ marginBottom: 16, background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: 12, borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
-                  <div className="tool-group-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--border-color, rgba(255,255,255,0.06))' }}>
-                    <strong style={{ fontSize: 13, textTransform: 'capitalize' }}>{group}</strong>
-                    <button className="link-btn" style={{ fontSize: 12, color: 'var(--accent-color, #ff6b35)', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => toggleToolGroup(group, !allOn)}>
-                      {allOn ? 'Disable group' : 'Enable group'}
-                    </button>
+      {dashActive && (
+        <React.Suspense fallback={null}>
+          <DashboardShell active={dashActive} onNavigate={navigateDashboard} onClose={closeDashboard}>
+            {dashActive === 'settings' && (
+              <PersonalisePanel embedded prefs={prefs} onChange={updatePref} onClose={closeDashboard} />
+            )}
+            {dashActive === 'billing' && (
+              <BillingPanel
+                embedded
+                onClose={closeDashboard}
+                onUpgrade={() => { closeDashboard(); setShowUpgrade(true) }}
+              />
+            )}
+            {dashActive === 'diagnostics' && (
+              <DiagnosticsModal embedded onClose={closeDashboard} />
+            )}
+            {dashActive === 'usage' && (
+              <DataDashboard
+                embedded
+                onClose={closeDashboard}
+                onExport={() => { downloadBackup().catch(() => {}); showToast('Backup exported') }}
+              />
+            )}
+            {dashActive === 'capabilities' && (
+              <Modal
+                embedded
+                title="AI Tools Configuration"
+                icon={<Wrench size={18} />}
+                onClose={closeDashboard}
+                footer={
+                  <div className="modal-actions">
+                    <button className="btn-primary" onClick={closeDashboard}>Done</button>
                   </div>
-                  <div className="tool-group-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
-                    {inGroup.map(t => (
-                      <label key={t.name} className="tool-check-card" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', padding: '4px 6px', borderRadius: 4 }}>
-                        <input
-                          type="checkbox"
-                          checked={t.enabled}
-                          onChange={e => toggleTool(t.name, e.target.checked)}
-                        />
-                        <span>{t.name.replace(/_/g, ' ')}</span>
-                      </label>
-                    ))}
-                  </div>
+                }
+              >
+                <div className="tool-picker-modal-content" style={{ maxHeight: '65vh', overflowY: 'auto', paddingRight: 4 }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                    Enable or disable specific tools for the AI assistant ({toolPrefs.filter(t => t.enabled).length} of {toolPrefs.length} active).
+                  </p>
+                  {[...new Set(toolPrefs.map(t => t.group))].map(group => {
+                    const inGroup = toolPrefs.filter(t => t.group === group)
+                    const allOn = inGroup.every(t => t.enabled)
+                    return (
+                      <div key={group} className="tool-group-card" style={{ marginBottom: 16, background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: 12, borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
+                        <div className="tool-group-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--border-color, rgba(255,255,255,0.06))' }}>
+                          <strong style={{ fontSize: 13, textTransform: 'capitalize' }}>{group}</strong>
+                          <button className="link-btn" style={{ fontSize: 12, color: 'var(--accent-color, #ff6b35)', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => toggleToolGroup(group, !allOn)}>
+                            {allOn ? 'Disable group' : 'Enable group'}
+                          </button>
+                        </div>
+                        <div className="tool-group-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+                          {inGroup.map(t => (
+                            <label key={t.name} className="tool-check-card" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', padding: '4px 6px', borderRadius: 4 }}>
+                              <input
+                                type="checkbox"
+                                checked={t.enabled}
+                                onChange={e => toggleTool(t.name, e.target.checked)}
+                              />
+                              <span>{t.name.replace(/_/g, ' ')}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              )
-            })}
-          </div>
-        </Modal>
+              </Modal>
+            )}
+            {dashActive === 'agents' && (
+              <AgentsPanel embedded onClose={closeDashboard} onToast={showToast} conversationId={scopeId} />
+            )}
+            {dashActive === 'skills' && (
+              <SkillsPanel embedded onClose={closeDashboard} onRunWorkflow={runWorkflowNow} conversationId={scopeId} />
+            )}
+            {dashActive === 'mcp' && (
+              <div className="dash-page-pad">
+                <McpServersPage onShowToast={showToast} />
+              </div>
+            )}
+            {dashActive === 'plugins' && (
+              <div className="dash-page-pad">
+                <PluginsManagerPage onShowToast={showToast} />
+              </div>
+            )}
+          </DashboardShell>
+        </React.Suspense>
       )}
       {showPalette && <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} onOpenChat={openChatById} />}
       {showTerms && (
@@ -5131,26 +5247,10 @@ export default function App() {
           onOpenDemo={() => setShowDemoModal(true)}
           onOpenTour={() => setShowTour(true)}
           onOpenDomainHub={() => setShowDomainHub(true)}
-          onOpenMcp={() => setShowMcpModal(true)}
+          onOpenMcp={() => navigateDashboard('mcp')}
         />
       )}
-      {showMcpModal && <McpModal
-        isOpen={showMcpModal}
-        onClose={() => setShowMcpModal(false)}
-        onShowToast={showToast}
-      />}
-      {showDiagnosticsModal && <DiagnosticsModal onClose={() => setShowDiagnosticsModal(false)} />}
-
-      {showBilling && (
-        <React.Suspense fallback={null}>
-          <BillingPanel
-            onClose={() => setShowBilling(false)}
-            onUpgrade={() => { setShowBilling(false); setShowUpgrade(true) }}
-          />
-        </React.Suspense>
-      )}
       {showShortcutsModal && <ShortcutsModal onClose={() => setShowShortcutsModal(false)} />}
-      {showDataDashboard && <DataDashboard onClose={() => setShowDataDashboard(false)} onExport={() => { downloadBackup().catch(() => {}); showToast('Backup exported') }} />}
 
       {/* Folder Assignment Modal */}
       {folderModalConv && (

@@ -35,7 +35,7 @@ function formatDate(ts) {
   } catch { return null }
 }
 
-export default function BillingPanel({ onClose, onUpgrade }) {
+export default function BillingPanel({ onClose, onUpgrade, embedded = false }) {
   const [state, setState] = useState({ loading: true, account: null, events: [], error: null })
 
   const load = useCallback(() => {
@@ -48,15 +48,17 @@ export default function BillingPanel({ onClose, onUpgrade }) {
   const { loading, account, events, error } = state
   const planKey = account?.plan || 'free'
 
+  // Embedded inside DashboardShell: the overlay/backdrop collapses to a
+  // passthrough (display:contents) wrapper — see DiagnosticsModal for why.
   return (
-    <div className="yg-panel-overlay" onClick={onClose}>
+    <div className={embedded ? 'dash-embed-pass' : 'yg-panel-overlay'} onClick={embedded ? undefined : onClose}>
       <div
-        className="yg-panel billing-panel"
-        onClick={e => e.stopPropagation()}
+        className={`yg-panel billing-panel${embedded ? ' embedded-page' : ''}`}
+        onClick={embedded ? undefined : e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Billing"
-        style={{ width: 'min(560px, 96%)', maxHeight: '82vh' }}
+        style={embedded ? undefined : { width: 'min(560px, 96%)', maxHeight: '82vh' }}
       >
         <div className="yg-panel-header">
           <DollarSign size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />

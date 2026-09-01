@@ -291,11 +291,76 @@ exports.verifyPayment = onRequest(
   },
 )
 
+/* ── Paddle webhook: source-IP allowlist ─────────────────────────────────────
+ * Defense in depth, not the primary defense — the HMAC signature check below
+ * is what actually proves a payload is genuine, and stands on its own even
+ * with this disabled. This only narrows WHO can reach that check at all, to
+ * Paddle's own published webhook senders.
+ *
+ * FETCHED, NEVER HARDCODED, per Paddle's own docs (api.paddle.com/ips is the
+ * source of truth and they reserve the right to change it) — cached with a
+ * 1h TTL so a webhook-shaped burst of traffic does not turn into a burst of
+ * outbound calls to Paddle's own API. On a refresh failure, a STALE cache is
+ * served rather than nothing, and if there is no cache at all yet (the very
+ * first call, and that first fetch failed), the check is skipped entirely —
+ * an unrelated network hiccup against Paddle's /ips endpoint must never
+ * reject a real, correctly-signed webhook. That would look exactly like
+ * "stop paying customers" to whoever is watching the failed-payments graph.
+ */
+let _paddleIpCache = { cidrs: null, at: 0 }
+const PADDLE_IP_TTL_MS = 60 * 60 * 1000
+
+async function paddleWebhookCidrs() {
+  const now = Date.now()
+  if (_paddleIpCache.cidrs && now - _paddleIpCache.at < PADDLE_IP_TTL_MS) return _paddleIpCache.cidrs
+  try {
+    const r = await fetch('https://api.paddle.com/ips')
+    if (!r.ok) throw new Error(`status ${r.status}`)
+    const body = await r.json()
+    const cidrs = body?.data?.ipv4_cidrs
+    if (!Array.isArray(cidrs) || !cidrs.length) throw new Error('empty ip list')
+    _paddleIpCache = { cidrs, at: now }
+    return cidrs
+  } catch (e) {
+    console.error('[paddleWebhook] could not refresh the Paddle IP allowlist', e?.message || e)
+    return _paddleIpCache.cidrs || null
+  }
+}
+
+function ipToInt(ip) {
+  const parts = String(ip).split('.').map(Number)
+  if (parts.length !== 4 || parts.some(p => Number.isNaN(p) || p < 0 || p > 255)) return null
+  return ((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3]
+}
+
+function paddleIpAllowed(ip, cidrs) {
+  const ipInt = ipToInt(ip)
+  if (ipInt == null) return false
+  for (const c of cidrs) {
+    const [addr, bitsStr] = String(c).split('/')
+    const bits = bitsStr === undefined ? 32 : Number(bitsStr)
+    const addrInt = ipToInt(addr)
+    if (addrInt == null) continue
+    const mask = bits <= 0 ? 0 : (bits >= 32 ? 0xffffffff : (~0 << (32 - bits)) >>> 0)
+    if (((ipInt & mask) >>> 0) === ((addrInt & mask) >>> 0)) return true
+  }
+  return false
+}
+
 /* ── Paddle webhook ──────────────────────────────────────────────────────── */
 
 exports.paddleWebhook = onRequest(
   { secrets: [PADDLE_WEBHOOK_SECRET], region: 'asia-south1' },
   async (req, res) => {
+    const cidrs = await paddleWebhookCidrs()
+    if (cidrs) {
+      const ip = String(req.ip || req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+      if (!paddleIpAllowed(ip, cidrs)) {
+        console.warn('[paddleWebhook] rejected — source ip not on Paddle\'s published list', ip)
+        return res.status(403).send('forbidden')
+      }
+    }
+
     // rawBody, not the parsed body. JSON.stringify(req.body) re-serialises with
     // different key order and whitespace, so the HMAC never matches and every
     // webhook silently fails verification — a class of bug that looks like the
@@ -331,6 +396,13 @@ exports.paddleWebhook = onRequest(
       status: d.status || 'canceled',
       provider: 'paddle',
       subscriptionId: d.id || null,
+      // Paddle's own customer id, not Yogatik's uid. Nothing wrote this
+      // before — a checkout page had no way to identify a RETURNING
+      // customer to Paddle Retain (pwCustomer needs a real ctm_... id, and
+      // the only place that id is ever handed to Yogatik is this webhook).
+      // A first-time buyer's account still has none at the moment they
+      // check out; it's only ever useful on their SECOND purchase onward.
+      customerId: d.customer_id || null,
       currentPeriodEnd: d?.current_billing_period?.ends_at
         ? Date.parse(d.current_billing_period.ends_at) : 0,
       updatedAt: Date.now(),
