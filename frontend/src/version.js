@@ -3,16 +3,74 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '3.22.4'
+export const APP_VERSION = '4.0.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik Ultra — ComfyUI Local Daemon, Deep Linking & Layered Live HUD'
+export const APP_CODENAME = 'Yogatik 4.0 — Dedicated Full-Page Dashboard, Live Paddle Billing & Complete Theme Synchronization'
 
 export const APP_RELEASES = [
+  {
+    version: '4.0.0',
+    title: 'Yogatik 4.0: Dedicated Full-Page Dashboard, Live Paddle Billing, Left Sidebar Overhaul & Theme Sync',
+    date: 'September 1, 2026',
+    isLatest: true,
+    highlights: [
+      'Dedicated Full-Page Dashboard & Settings: Transformed settings and tool panels into a spacious, full-viewport dashboard experience with dedicated URLs (/app/settings, /app/billing, /app/agents, /app/usage, /app/mcp, /app/skills) and single-step Esc/Back-to-Chat navigation',
+      'Clean Minimalist Sidebar: Streamlined conversation history view with date groupings, quick search, and an unobtrusive status and dashboard trigger',
+      'Live Paddle & Razorpay Billing: Live subscription checkout ($9.99/mo & $99.99/yr), Google Secret Manager automated webhook signature verification, and instant pro entitlement activation',
+      'Universal Light & Dark Theme Synchronization: Complete contrast and theme overhaul across the Universal Search Command Palette (Ctrl+K), Social Media & Domain Hub, and all modal surfaces',
+      'Local AI Daemon & Multimodal Suite: Native ComfyUI daemon lifecycle, Windows Ollama binary resolution, and layered Live Voice & Vision HUD',
+    ],
+    sections: [
+      {
+        category: '🖥️ Dedicated Full-Page Dashboard',
+        items: [
+          {
+            title: 'Full-Viewport Canvas & Clean Navigation',
+            description: 'A 100vw × 100vh dedicated workspace providing plenty of breathing room for AI Providers, API key configurations, Model latency benchmarks, Billing history, Specialized Agents, MCP Servers, and Diagnostics logs.',
+          },
+          {
+            title: 'Direct URL Routing & Deep Links',
+            description: 'Direct deep-linkable URLs (/app/settings, /app/billing, /app/agents, /app/usage, /app/skills, /app/mcp, /app/plugins, /app/diagnostics, /app/capabilities) with full browser history synchronization.',
+          },
+          {
+            title: 'Instant Back-to-Chat Escape',
+            description: 'Seamless Esc keypress and topbar/sidebar "Back to Chat" actions that return you directly to your active chat without reloading state.',
+          },
+        ],
+      },
+      {
+        category: '💳 Production Payments & Billing',
+        items: [
+          {
+            title: 'Paddle Live Billing Gateway',
+            description: 'Integrated live Paddle client token and products ($9.99/month and $99.99/year) with automated Google Secret Manager webhook fulfillment.',
+          },
+          {
+            title: 'Domestic Razorpay UPI Integration',
+            description: 'Full support for Indian domestic UPI and card checkout with live Razorpay payment processing.',
+          },
+        ],
+      },
+      {
+        category: '🎨 Theme Synchronization & Polished UI',
+        items: [
+          {
+            title: 'Universal Search & Palette Theme Sync',
+            description: 'High-contrast light and dark themes for the Ctrl+K Command Palette with crisp typography and responsive shortcut pills.',
+          },
+          {
+            title: 'Social Media & Domain Hub Light Mode',
+            description: 'Clean light mode styling for Naukri, LinkedIn, YouTube, X, and Indeed search integration cards.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '3.22.4',
     title: 'Yogatik Ultra: ComfyUI Local Daemon, Deep Links, Layered Live HUD & Windows Ollama Path Resolution',
     date: 'September 1, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Local ComfyUI Daemon & Workflows: Added native ComfyUI daemon lifecycle management and direct HTTP workflow execution for on-device image generation',
       'Windows Ollama Path Resolution: Fixed user profile path discovery for Windows accounts with special usernames and added HTTP model streaming fallback',
