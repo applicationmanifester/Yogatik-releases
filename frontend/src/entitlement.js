@@ -20,15 +20,56 @@ const isStudioEnv = typeof import.meta !== 'undefined' && (
   import.meta.env?.MODE === 'personal'
 )
 
-/** Last known state. `anonymous` until main answers — never assume unlocked. */
-let snapshot = {
-  state: isStudioEnv ? 'pro' : 'anonymous',
-  edition: isStudioEnv ? 'studio' : 'store',
-  reason: isStudioEnv ? 'studio-edition' : 'boot',
-  endsAt: 0,
-  daysLeft: 0,
-  loaded: isStudioEnv,
+const DAY = 24 * 60 * 60 * 1000
+const TRIAL_DAYS = 30
+const ENTITLEMENT_CACHE_KEY = 'yogatik_entitlement_v1'
+
+function getInitialSnapshot() {
+  if (isStudioEnv) {
+    return {
+      state: 'pro',
+      edition: 'studio',
+      reason: 'studio-edition',
+      endsAt: 0,
+      daysLeft: 0,
+      loaded: true,
+    }
+  }
+
+  // Fast optimistic load from localStorage for instant 0ms render on refresh/revisit
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const raw = window.localStorage.getItem(ENTITLEMENT_CACHE_KEY)
+      if (raw) {
+        const cached = JSON.parse(raw)
+        const now = Date.now()
+        const endsAt = Number(cached?.endsAt) || 0
+        if (cached?.state === 'pro' && (endsAt === 0 || endsAt > now)) {
+          return {
+            state: 'pro',
+            edition: cached.edition || 'store',
+            reason: cached.reason || 'cached-pro',
+            endsAt,
+            daysLeft: endsAt > now ? Math.max(0, Math.ceil((endsAt - now) / DAY)) : 0,
+            loaded: true,
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return {
+    state: 'anonymous',
+    edition: 'store',
+    reason: 'boot',
+    endsAt: 0,
+    daysLeft: 0,
+    loaded: false,
+  }
 }
+
+/** Last known state. Synchronously populated from cache or studio flag. */
+let snapshot = getInitialSnapshot()
 
 const bridge = () => (typeof window !== 'undefined' && window.__YOGATIK_ENTITLEMENT__) || null
 
@@ -102,6 +143,21 @@ function apply(res) {
     daysLeft: Number(res.daysLeft) || 0,
     loaded: true,
   }
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      if (next.state === 'pro') {
+        window.localStorage.setItem(ENTITLEMENT_CACHE_KEY, JSON.stringify({
+          state: next.state,
+          edition: next.edition,
+          endsAt: next.endsAt,
+          reason: next.reason,
+          cachedAt: Date.now(),
+        }))
+      } else if (next.state === 'free' || next.state === 'locked') {
+        window.localStorage.removeItem(ENTITLEMENT_CACHE_KEY)
+      }
+    } catch {}
+  }
   const changed = snapshot.state !== next.state ||
     snapshot.edition !== next.edition ||
     snapshot.loaded !== next.loaded ||
@@ -111,9 +167,6 @@ function apply(res) {
   if (changed) emit()
   return entitlement()
 }
-
-const DAY = 24 * 60 * 60 * 1000
-const TRIAL_DAYS = 30
 
 /**
  * Read the account's billing state directly from Firestore, for the web.
@@ -133,7 +186,26 @@ export async function loadWebEntitlement() {
   try {
     const { getFirebase } = await import('./firebaseAuth')
     const f = await getFirebase()
-    const uid = f.auth?.currentUser?.uid
+    let user = f.auth?.currentUser
+    if (!user && f.auth && typeof f.onAuthStateChanged === 'function') {
+      // If auth hasn't finished reading indexedDB yet, wait for session resolution
+      user = await new Promise(resolve => {
+        let done = false
+        const stop = f.onAuthStateChanged(f.auth, u => {
+          if (done) return
+          done = true
+          if (typeof stop === 'function') stop()
+          resolve(u)
+        })
+        setTimeout(() => {
+          if (done) return
+          done = true
+          if (typeof stop === 'function') stop()
+          resolve(f.auth?.currentUser || null)
+        }, 1500)
+      })
+    }
+    const uid = user?.uid
     // Signed out is a legitimate answer, not a failure: no account, no plan.
     if (!uid) return applyWeb({ state: 'free', reason: 'signed-out' })
 
@@ -240,6 +312,9 @@ export async function refreshEntitlement({ idToken = null, uid = null } = {}) {
 }
 
 export async function signOutEntitlement() {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try { window.localStorage.removeItem(ENTITLEMENT_CACHE_KEY) } catch {}
+  }
   const b = bridge()
   // The subscription belongs to the account, so signing out must drop it here
   // too. Leaving the snapshot on `pro` would keep the next person at this

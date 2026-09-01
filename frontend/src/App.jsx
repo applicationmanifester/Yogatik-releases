@@ -1419,11 +1419,13 @@ export default function App() {
     // Conversations live in IndexedDB and belong to this device, not to an
     // account — load them whether or not the user has signed in.
     getActiveProject().then(pid => { setActiveProjectState(pid); loadConversations(pid) })
-    refreshProjects()
-    getMe().then(u => { if (u) setUser(u) }).catch(() => {})
-    // Entitlement: read the cached licence main already loaded from disk. No
-    // network on this path — a launch must never block on the licence server,
-    // or an outage at Firebase becomes an outage of the whole app.
+    getMe().then(u => {
+      if (u) {
+        setUser(u)
+        loadEntitlement().then(setEnt).catch(() => {})
+      }
+    }).catch(() => {})
+    // Entitlement: fast synchronous cache initialized, plus async validation
     loadEntitlement().then(setEnt).catch(() => {})
     getActiveProvider().then(async (p) => {
       setProviderState(p)
