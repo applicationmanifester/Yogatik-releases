@@ -100,34 +100,47 @@ export async function loadBillingHistory({ limit = 50 } = {}) {
     const uid = f.auth?.currentUser?.uid
     if (!uid) return { ...empty, error: 'signed-out' }
 
-    const acctSnap = await f.getDoc(f.doc(f.db, 'accounts', uid))
-    const acct = acctSnap.exists() ? acctSnap.data() : null
+    let account = null
+    try {
+      const acctSnap = await f.getDoc(f.doc(f.db, 'accounts', uid))
+      const acct = acctSnap.exists() ? acctSnap.data() : null
 
-    const now = Date.now()
-    const trialEnd = acct?.trialStartedAt ? Number(acct.trialStartedAt) + TRIAL_DAYS * DAY : 0
-    const periodEnd = Number(acct?.currentPeriodEnd) || 0
-    const isPaidPeriodValid = periodEnd > now
-    const isDirectlyActive = ['active', 'authenticated', 'past_due'].includes(acct?.status)
-    const isPro = (acct?.plan === 'pro' || isPaidPeriodValid) && (isPaidPeriodValid || isDirectlyActive)
+      const now = Date.now()
+      const trialEnd = acct?.trialStartedAt ? Number(acct.trialStartedAt) + TRIAL_DAYS * DAY : 0
+      const periodEnd = Number(acct?.currentPeriodEnd) || 0
+      const isPaidPeriodValid = periodEnd > now
+      const isDirectlyActive = ['active', 'authenticated', 'past_due'].includes(acct?.status)
+      const isPro = (acct?.plan === 'pro' || isPaidPeriodValid) && (isPaidPeriodValid || isDirectlyActive)
 
-    const account = acct ? {
-      plan: isPro
-        ? 'pro'
-        : (acct.trialStartedAt && now < trialEnd ? 'trial' : 'free'),
-      status: acct.status || null,
-      provider: acct.provider || null,
-      subscriptionId: acct.subscriptionId || null,
-      currentPeriodEnd: periodEnd,
-      trialEndsAt: trialEnd || 0,
-    } : null
+      account = acct ? {
+        plan: isPro
+          ? 'pro'
+          : (acct.trialStartedAt && now < trialEnd ? 'trial' : 'free'),
+        status: acct.status || null,
+        provider: acct.provider || null,
+        subscriptionId: acct.subscriptionId || null,
+        currentPeriodEnd: periodEnd,
+        trialEndsAt: trialEnd || 0,
+      } : null
+    } catch (acctErr) {
+      console.warn('[billing] acct fetch failed:', acctErr)
+    }
 
-    const q = f.query(
-      f.collection(f.db, 'accounts', uid, 'billingEvents'),
-      f.orderBy('occurredAt', 'desc'),
-      f.limit(limit),
-    )
-    const evSnap = await f.getDocs(q)
-    const events = evSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+    let events = []
+    let evError = null
+    try {
+      const q = f.query(
+        f.collection(f.db, 'accounts', uid, 'billingEvents'),
+        f.orderBy('occurredAt', 'desc'),
+        f.limit(limit),
+      )
+      const evSnap = await f.getDocs(q)
+      events = evSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+    } catch (evErr) {
+      // If collection is empty, indexing or permissions in progress, keep events empty without failing account
+      console.warn('[billing] billingEvents query failed:', evErr?.message || evErr)
+      evError = evErr?.message || null
+    }
 
     return { account, events, error: null }
   } catch (e) {

@@ -91,17 +91,37 @@ export default function BillingPanel({ onClose, onUpgrade, embedded = false }) {
               padding: '12px 14px',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap',
             }}>
-              {account ? (
+              {account ? (() => {
+                const now = Date.now()
+                const daysLeft = account.currentPeriodEnd > now
+                  ? Math.max(0, Math.ceil((account.currentPeriodEnd - now) / (24 * 60 * 60 * 1000)))
+                  : 0
+                return (
                 <>
                   <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
-                      {PLAN_LABEL[planKey] || planKey}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {PLAN_LABEL[planKey] || planKey}
+                      </span>
+                      {planKey === 'pro' && daysLeft > 0 && (
+                        <span style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: 999,
+                          background: 'rgba(255, 107, 53, 0.15)',
+                          color: 'var(--accent, #ff6b35)',
+                          border: '1px solid rgba(255, 107, 53, 0.3)',
+                        }}>
+                          {daysLeft} {daysLeft === 1 ? 'day' : 'days'} left
+                        </span>
+                      )}
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
                       {planKey === 'pro' && account.currentPeriodEnd
                         ? (['cancelled', 'canceled'].includes(account.status)
-                            ? `Active until ${formatDate(account.currentPeriodEnd)} (Auto-renew off)`
-                            : `Renews ${formatDate(account.currentPeriodEnd)}`)
+                            ? `Active until ${formatDate(account.currentPeriodEnd)} (${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} remaining · Auto-renew off)`
+                            : `Renews ${formatDate(account.currentPeriodEnd)} (${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} remaining)`)
                         : planKey === 'trial' && account.trialEndsAt
                           ? `Trial ends ${formatDate(account.trialEndsAt)}`
                           : 'No active subscription'}
@@ -112,7 +132,8 @@ export default function BillingPanel({ onClose, onUpgrade, embedded = false }) {
                     <button className="ws-primary-btn sm" onClick={onUpgrade}>Upgrade</button>
                   )}
                 </>
-              ) : (
+                )
+              })() : (
                 <>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
                     No account on file yet — you're on the free tier.

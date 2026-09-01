@@ -38,22 +38,7 @@ const REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000
 function edition() {
   const e = String(process.env.YOGATIK_EDITION || '').toLowerCase()
   if (e === 'studio' || e === 'personal') return e
-
-  try {
-    const { app } = require('electron')
-    const appName = String(app?.getName?.() || app?.name || '').toLowerCase()
-    if (appName.includes('studio')) return 'studio'
-    if (appName.includes('personal')) return 'personal'
-    if (String(process.execPath || '').toLowerCase().includes('studio')) return 'studio'
-    if (String(process.execPath || '').toLowerCase().includes('personal')) return 'personal'
-  } catch {}
-
-  try {
-    const pkg = require('../package.json')
-    if (String(pkg?.name || '').toLowerCase().includes('studio')) return 'studio'
-    if (String(pkg?.name || '').toLowerCase().includes('personal')) return 'personal'
-    if (pkg?.yogatikEdition === 'studio' || pkg?.yogatikEdition === 'personal') return pkg.yogatikEdition
-  } catch {}
+  if (e === 'store' || e === 'commercial' || e === 'production') return 'store'
 
   try {
     const locations = [
@@ -72,7 +57,7 @@ function edition() {
     }
   } catch {}
 
-  return (e === 'personal' || e === 'studio') ? e : (e === 'personal' ? 'personal' : 'store')
+  return (e === 'personal' || e === 'studio') ? e : 'store'
 }
 const isPersonal = () => {
   const ed = edition()

@@ -4214,7 +4214,7 @@ export default function App() {
                 onClick={() => navigateDashboard('billing')}
                 title={ent.endsAt ? `Yogatik Pro active · ${ent.daysLeft > 0 ? `${ent.daysLeft} days remaining in current billing period` : 'Subscribed'}` : 'Yogatik Pro Active'}
               >
-                <Sparkles size={11} /> PRO{ent.daysLeft > 0 ? ` · ${ent.daysLeft}d left` : ''}
+                PRO{ent.daysLeft > 0 ? ` · ${ent.daysLeft}d left` : ''}
               </button>
             )}
             {!isPersonalEdition() && ent.state !== 'pro' && (isDesktop()
