@@ -3914,6 +3914,15 @@ export default function App() {
             title="About Yogatik & Workflow Overview"
           >
             <YogatikLogo size={28} /> Yogatik
+            {(isPro() || ent.state === 'pro') && (
+              <span
+                className="pro-badge-pill"
+                onClick={(e) => { e.stopPropagation(); navigateDashboard('billing'); }}
+                title={ent.endsAt ? `Yogatik Pro active · ${ent.daysLeft > 0 ? `${ent.daysLeft}d left in billing period` : 'Subscribed'}` : 'Yogatik Pro Active'}
+              >
+                PRO
+              </span>
+            )}
           </h2>
           <button className="icon-btn" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar"><X size={16} /></button>
         </div>
@@ -3946,6 +3955,23 @@ export default function App() {
           <Search size={13} />
           <span>Search & Commands</span>
           <kbd>Ctrl+K</kbd>
+        </button>
+
+        {/* Quick Providers & Keys access in main UI */}
+        <button
+          type="button"
+          className="sidebar-providers-btn"
+          onClick={() => navigateDashboard('providers')}
+          title="Manage AI Providers, API Keys & Models (/app/providers)"
+          aria-label="Providers & Keys"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Key size={13} style={{ color: 'var(--accent, #ff6b35)' }} />
+            <span style={{ fontWeight: 600, fontSize: '12.5px' }}>Providers &amp; Keys</span>
+          </div>
+          <span className="sidebar-providers-status-chip">
+            {Object.values(models).filter(m => m.available).length} ready
+          </span>
         </button>
 
         <div className="sidebar-scroll">
@@ -4156,6 +4182,17 @@ export default function App() {
 
                 Silent while PRO on either: a paying customer does not need a
                 permanent reminder that they are paying. */}
+            {/* Pro badge when subscribed, with remaining billing period days */}
+            {(isPro() || ent.state === 'pro') && (
+              <button
+                type="button"
+                className="trial-chip pro"
+                onClick={() => navigateDashboard('billing')}
+                title={ent.endsAt ? `Yogatik Pro active · ${ent.daysLeft > 0 ? `${ent.daysLeft} days remaining in current billing period` : 'Subscribed'}` : 'Yogatik Pro Active'}
+              >
+                <Sparkles size={11} /> PRO{ent.daysLeft > 0 ? ` · ${ent.daysLeft}d left` : ''}
+              </button>
+            )}
             {!isPersonalEdition() && ent.state !== 'pro' && (isDesktop()
               ? (ent.state === 'trial' || ent.state === 'locked') && (
                 <button
@@ -4648,6 +4685,15 @@ export default function App() {
               formatLatency={formatLatency}
               disabled={!models[conv?.provider || provider]?.available}
               onChange={(m) => chooseModel(m, conv?.provider || provider)} />
+            <button
+              type="button"
+              className="btn-providers-quick"
+              onClick={() => navigateDashboard('providers')}
+              title="Manage AI Providers & Keys (/app/providers)"
+              aria-label="Manage Providers"
+            >
+              <Key size={11} style={{ color: 'var(--accent, #ff6b35)' }} /> Providers
+            </button>
             <label className="upload-btn">
               <Upload size={12} /> Upload
               <input type="file" hidden accept="image/*,.pdf,.txt,.md,.csv,.json,.log,.html,.xml,.rtf" onChange={handleUpload} />

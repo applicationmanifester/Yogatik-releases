@@ -7463,6 +7463,19 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
   transition: background var(--transition), color var(--transition);
 }
 .trial-chip:hover { background: var(--accent); color: #fff; }
+.trial-chip.pro {
+  background: linear-gradient(135deg, rgba(255, 107, 53, 0.18), rgba(245, 158, 11, 0.18));
+  color: var(--accent, #ff6b35);
+  border: 1px solid rgba(255, 107, 53, 0.45);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.trial-chip.pro:hover {
+  background: linear-gradient(135deg, #ff6b35, #f59e0b);
+  color: #fff;
+  border-color: transparent;
+}
 /* Urgent and locked stay off-accent on purpose: once the accent means "buy
    this", an amber countdown and a red lock still have to read as different
    states rather than as three shades of the same button. */
@@ -7470,6 +7483,76 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
 .trial-chip.urgent:hover { background: rgba(217, 164, 65, .3); color: #f3dcae; }
 .trial-chip.locked { background: rgba(229, 83, 75, .12); color: #f0a8a3; border-color: rgba(229, 83, 75, .45); }
 .trial-chip.locked:hover { background: rgba(229, 83, 75, .28); color: #ffd0cc; }
+
+.pro-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff6b35, #f59e0b);
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 107, 53, 0.4);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.pro-badge-pill:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 14px rgba(255, 107, 53, 0.6);
+}
+
+.sidebar-providers-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: calc(100% - 24px);
+  margin: 4px 12px 10px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sidebar-providers-btn:hover {
+  background: var(--bg-input);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.sidebar-providers-status-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.btn-providers-quick {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-providers-quick:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-tertiary);
+}
 
 /* Source Control: branch picker, remote actions and the destructive gate. */
 .ws-branch-select {
