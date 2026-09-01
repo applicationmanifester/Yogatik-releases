@@ -23,6 +23,18 @@ service cloud.firestore {
     match /accounts/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if false;
+
+      // Billing HISTORY — one row per webhook-relevant charge/failure/
+      // cancellation event (functions/billingEvents.js builds these,
+      // razorpayWebhook/paddleWebhook write them). Same shape and the same
+      // reasoning as the parent document: read-only to the owner, written
+      // only by the Cloud Functions via the Admin SDK, which bypasses these
+      // rules entirely. A client-writable amount/status here would let
+      // anyone forge their own payment history.
+      match /billingEvents/{eventId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false;
+      }
     }
   }
 }

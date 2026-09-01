@@ -64,14 +64,19 @@ export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked, 
     let url = checkoutBase
     if (plan.provider === 'razorpay') {
       try {
-        const { getIdToken } = await import('../firebaseAuth')
+        const { getIdToken, auth } = await import('../firebaseAuth')
         const t = await getIdToken()
         if (!t) {
           setBusy(false)
           setErr('Sign in first — the payment has to be attached to your account.')
           return
         }
-        url += `#t=${encodeURIComponent(t)}`
+        const userEmail = auth?.currentUser?.email || ''
+        const userPhone = auth?.currentUser?.phoneNumber || ''
+        const fragParams = new URLSearchParams({ t })
+        if (userEmail) fragParams.set('email', userEmail)
+        if (userPhone) fragParams.set('phone', userPhone)
+        url += `#${fragParams.toString()}`
       } catch {
         setBusy(false)
         setErr('Could not verify your sign-in. Try signing out and back in.')

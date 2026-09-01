@@ -21,6 +21,7 @@
 
 const { ipcMain } = require('electron')
 const { spawn, exec } = require('child_process')
+const fs = require('fs')
 const http = require('http')
 const path = require('path')
 const os = require('os')
@@ -46,6 +47,7 @@ const OLLAMA_PATHS = {
     'C:\\Program Files\\Ollama\\ollama.exe',
     path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe'),
     path.join(process.env.ProgramFiles || '', 'Ollama', 'ollama.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WindowsApps', 'ollama.exe'),
   ].filter(p => p && !p.startsWith('\\')),
   darwin: [
     'ollama',
@@ -72,6 +74,10 @@ async function findOllamaBin() {
   if (_ollamaBin) return _ollamaBin
   const candidates = OLLAMA_PATHS[process.platform] || ['ollama']
   for (const bin of candidates) {
+    if (bin !== 'ollama' && fs.existsSync(bin)) {
+      _ollamaBin = bin
+      return bin
+    }
     const found = await new Promise(resolve => {
       exec(`"${bin}" --version`, { timeout: 3000, windowsHide: true }, (err) =>
         resolve(err ? null : bin)

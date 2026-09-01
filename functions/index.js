@@ -24,6 +24,7 @@ const { onRequest } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params')
 const admin = require('firebase-admin')
 const crypto = require('crypto')
+const { buildRazorpayBillingEvent, buildPaddleBillingEvent } = require('./billingEvents')
 
 admin.initializeApp()
 const db = admin.firestore()
@@ -335,6 +336,23 @@ exports.paddleWebhook = onRequest(
       updatedAt: Date.now(),
     }, { merge: true })
 
+    // Billing HISTORY, separate from the entitlement grant above and never
+    // allowed to block it — a write failure here must not turn into a
+    // customer who paid and did not unlock. buildPaddleBillingEvent returns
+    // null for an event with nothing worth a row (only transaction.completed
+    // / transaction.payment_failed produce one); see billingEvents.js for the
+    // scope decision on why this does not generate a PDF.
+    try {
+      const billing = buildPaddleBillingEvent(evt)
+      if (billing) {
+        await db.collection('accounts').doc(billing.uid)
+          .collection('billingEvents').doc(billing.key)
+          .set({ ...billing.record, recordedAt: Date.now() }, { merge: true })
+      }
+    } catch (e) {
+      console.error('[paddleWebhook] billing history write failed', e?.message || e)
+    }
+
     return res.status(200).send('ok')
   },
 )
@@ -379,6 +397,23 @@ exports.razorpayWebhook = onRequest(
       currentPeriodEnd: sub.current_end ? Number(sub.current_end) * 1000 : 0,
       updatedAt: Date.now(),
     }, { merge: true })
+
+    // Billing HISTORY, separate from the entitlement grant above and never
+    // allowed to block it. buildRazorpayBillingEvent turns subscription.charged
+    // (reading payload.payment.entity for the actual amount, which the
+    // entitlement write above never looks at) into a 'charge' row, halted
+    // into a 'failed' row, cancelled into a 'cancelled' row, and returns null
+    // for anything else (activated/authenticated/resumed carry no money).
+    try {
+      const billing = buildRazorpayBillingEvent(evt)
+      if (billing) {
+        await db.collection('accounts').doc(billing.uid)
+          .collection('billingEvents').doc(billing.key)
+          .set({ ...billing.record, recordedAt: Date.now() }, { merge: true })
+      }
+    } catch (e) {
+      console.error('[razorpayWebhook] billing history write failed', e?.message || e)
+    }
 
     return res.status(200).send('ok')
   },

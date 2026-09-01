@@ -237,7 +237,10 @@
     // The ID token has to come from the app, because this page has no Firebase
     // session of its own. Sent in the fragment so it never reaches a server log
     // or a Referer header.
-    var idToken = new URLSearchParams(location.hash.slice(1)).get('t')
+    var frag = new URLSearchParams(location.hash.slice(1))
+    var idToken = frag.get('t')
+    var userEmail = frag.get('email') || q.get('email') || ''
+    var userPhone = frag.get('phone') || q.get('phone') || ''
     if (!idToken) {
       return fail('This checkout link is missing its sign-in token. Open Upgrade from inside Yogatik rather than reusing an old link.')
     }
@@ -249,13 +252,6 @@
         body: JSON.stringify({ period: sku.period }),
       })
         .catch(function (e) {
-          // A rejected fetch is a NETWORK-level failure — DNS, CORS, or an
-          // endpoint that does not exist. The browser reports all of them as
-          // the same useless "Failed to fetch", and a 404 from a Cloud
-          // Functions URL carries no CORS headers, so a backend that was
-          // never deployed looks identical to one that is down. Say which it
-          // probably is, and name the URL, or this is undebuggable from the
-          // one screen the user is actually looking at.
           throw new Error(
             'Could not reach the payment service at ' + url + '. '
             + 'Nothing has been charged. If you are the operator: this is what a '
@@ -264,8 +260,6 @@
           )
         })
         .then(function (r) {
-          // A 404 or a 5xx from the Functions frontend is HTML, not JSON, so
-          // parsing blind turns a clear status code into "Unexpected token <".
           return r.text().then(function (raw) {
             var body = null
             try { body = JSON.parse(raw) } catch (_) { /* not JSON */ }
@@ -298,6 +292,10 @@
               subscription_id: out.b.subscriptionId,
               name: 'Yogatik',
               description: sku.label,
+              prefill: {
+                email: userEmail || '',
+                contact: userPhone || '',
+              },
               handler: function (resp) {
                 // Verify the signature server-side before telling the user
                 // anything. The handler fires on Razorpay's word alone; a
