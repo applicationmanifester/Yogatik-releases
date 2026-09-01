@@ -55,6 +55,70 @@ describe('plain answers', () => {
   })
 })
 
+describe('stall recovery (nudgeIntoAction — bounded retries, not just one shot)', () => {
+  // Field report: three real fs_list tool rounds, then the model replies with
+  // ONLY a <think> block that keeps planning ("also check Ollama integration
+  // ... but first, let's look at the electron folder") and never emits the
+  // next tool call. The old code nudged exactly once; if that single retry
+  // also came back reasoning-only, the turn ended with a canned fallback
+  // summary of whatever had run so far — even though the model's own plan
+  // was not finished.
+  it('recovers from TWO consecutive reasoning-only stalls before giving up', async () => {
+    scriptRounds([
+      // Round 0: the model announces a plan but emits no tool call at all.
+      { tokens: ['<think>I should look at the electron folder next.</think>'] },
+      // Nudge attempt #1: still just reasoning. Previously this alone would
+      // have ended the turn.
+      { tokens: ['<think>Let me think about this some more.</think>'] },
+      // Nudge attempt #2: finally acts.
+      { toolCalls: [{ id: 't1', name: 'fs_list', parsedArgs: { path: 'electron' } }] },
+      // The tool's own follow-up round gives the real final answer.
+      { tokens: ['Here is what I found in electron/.'] },
+    ])
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+
+    expect(streamChat).toHaveBeenCalledTimes(4)
+    // fullContent accumulates every round's raw text (MessageBubble splits
+    // <think> out for DISPLAY, agent.js does not strip it) — so this checks
+    // the real answer made it into the delivered content, not that it is the
+    // ONLY thing there.
+    expect(onDone.mock.calls[0][0].content).toContain('Here is what I found in electron/.')
+    // And critically: it did NOT give up after the first stall the way the
+    // old single-shot nudge would have.
+    expect(executeTool).toHaveBeenCalledWith('fs_list', { path: 'electron' }, expect.anything())
+  })
+
+  it('still terminates in a small, bounded number of calls when the model never recovers', async () => {
+    // Ten reasoning-only rounds queued — if the fix were unbounded, or if the
+    // retry cap were not honoured, this would run all ten (or hang).
+    scriptRounds(Array.from({ length: 10 }, (_, i) => (
+      { tokens: [`<think>Still planning, step ${i}.</think>`] }
+    )))
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+
+    // The bound is: 1 initial round + MAX_NUDGE_RETRIES(2) + at most one
+    // separate "write your final answer now" pass = 4. Loosely asserted
+    // (<=5) so this pins the SAFETY property (never runs anywhere near all
+    // ten) without being brittle to that one adjacent, independently-tested
+    // mechanism's exact call count.
+    expect(streamChat.mock.calls.length).toBeLessThanOrEqual(5)
+    expect(streamChat.mock.calls.length).toBeGreaterThan(0)
+    // It always finishes the turn — no hang, no thrown error.
+    expect(onDone).toHaveBeenCalled()
+  })
+
+  it('sends no nudge at all when the model is genuinely finished on the first try', async () => {
+    scriptRounds([{ tokens: ['A complete, ordinary answer.'] }])
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ content: 'A complete, ordinary answer.' }))
+  })
+})
+
 describe('tool round-trip', () => {
   it('emits ONE assistant message holding every tool_call, then one tool message each', async () => {
     // Regression: interleaved assistant/tool pairs make NVIDIA return 400.

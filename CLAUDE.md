@@ -1,5 +1,40 @@
 # Yogatik — Project Knowledge
 
+## A stalled reasoning-only reply got exactly one chance to recover (2026-09-01) — agent.js
+- FIELD REPORT (screenshot): three real fs_list tool rounds, then the model's next round was
+  ONLY a `<think>` block that kept planning ("also check Ollama integration... but first,
+  let's look at the electron folder") and never emitted the next tool call. The existing
+  self-healing nudge ("proceed immediately, invoke the tool call") fired once; that single
+  retry ALSO came back reasoning-only, so the turn fell through to the canned "I have
+  completed the requested actions" summary of the three fs_list results — while the model's
+  own stated plan was not finished. One nudge is not always enough to unstick a model that is
+  two thoughts deep into its own plan; it needed another try, not a full stop.
+- Two call sites had this near-duplicated, single-shot: "Round 0" (before the tool loop) and
+  the in-loop "self-healing reasoning & transitional action continuation" block. They also
+  DISAGREED — Round 0 checked only `hasUnexecutedToolIntent`, the in-loop one also checked
+  `isOnlyReasoning` (a bare `<think>` block with nothing else visible), so a model that
+  stalled on Round 0 with pure reasoning and no intent-phrasing got no nudge at all.
+- Extracted `nudgeIntoAction(maxRetries = MAX_NUDGE_RETRIES)`, `MAX_NUDGE_RETRIES = 2`, shared
+  by both call sites. Loops sending "proceed immediately, invoke the tool call(s)" up to
+  `maxRetries` times, re-checking `hasIntent || isOnlyReasoning` before each attempt and
+  breaking the moment neither holds — a model that is genuinely finished must still stop, or
+  a model that always "thinks about" one more step never terminates. This is bounded STALL
+  RECOVERY, not a second budget layered on `maxRounds`.
+- Bounded, not unbounded, by design: even a model that never recovers hits a hard ceiling of
+  1 (initial) + 2 (nudge cap) + at most 1 (the SEPARATE, pre-existing empty-final-answer pass,
+  which independently asks once more for plain prose since `forcedFinal` is still false at
+  that point) = 4 `streamChat` calls, then gives up with the canned summary — same "no
+  infinite loop" discipline as `agentPool`'s concurrency cap and `max_tool_rounds`.
+- VERIFICATION NOTE: `npm test` cannot run in this sandbox (Windows-only native rollup/esbuild
+  binaries). Verified instead: `node --check`/scratch-esbuild parse-checked agent.js and
+  agent.test.js; the exact fix (a model stalling twice in a row on reasoning-only output now
+  recovers instead of falling back after one) was reproduced end-to-end as a standalone Node
+  script mirroring the real `nudgeIntoAction` loop against 4 cases — recovers on retry #2,
+  stays bounded (2 attempts, never reads past them) when it never recovers, sends zero nudges
+  when genuinely finished, and leaves the existing single-nudge-success case unchanged. Real
+  vitest cases were added to agent.test.js (stall recovery describe block) so `npm test` pins
+  all four behaviours the next time it runs somewhere the native binaries match the platform.
+
 ## Guardrails wired to the real pipeline + RAG regression eval (2026-09-01)
 - SCOPE DECISION: a third repo-list request (langchain/autogen/llama-index again, plus
   llm-guardrails/guardrails-ai, three "LLM evaluation/regression/benchmarking framework" repos,

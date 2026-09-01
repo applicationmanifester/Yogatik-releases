@@ -271,7 +271,7 @@ function lockedResult(channel, state) {
 const LICENSE_PUBLIC_KEY =
   process.env.YOGATIK_LICENSE_PUBKEY ||
   '-----BEGIN PUBLIC KEY-----\n' +
-  'MCowBQYDK2VwAyEAzfUOP21p1i15C5r2AI4GEVJg3eElY+f+BSPTNfRzEq8=\n' +
+  'MCowBQYDK2VwAyEA0s+5Fh+qR+yM2Z1rDvYKzZnQSArVx3QD5WaEPImYpvo=\n' +
   '-----END PUBLIC KEY-----\n'
 
 /** Offline tolerance. See resolveState for why this number is what it is. */

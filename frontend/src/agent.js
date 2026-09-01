@@ -945,6 +945,49 @@ export async function runAgent({
     harvestPromptedCalls()
   }
 
+  // Reasoning-capable models (Nemotron, DeepSeek, Qwen especially) routinely
+  // "think out loud" — announce a plan in prose or a <think> block — and then
+  // pause instead of emitting the tool call that would carry it out. This used
+  // to get exactly ONE nudge, anywhere it happened: if that single retry also
+  // came back with no tool call, the turn was treated as finished even while
+  // the model's own reasoning kept planning further steps (observed: three
+  // fs_list rounds, then a <think> block that says "also check Ollama
+  // integration... but first, let's look at the electron folder", then
+  // nothing — one nudge failed to unstick it, so the turn fell back to a
+  // canned summary of the fs_list results instead of continuing).
+  //
+  // Bounded to MAX_NUDGE_RETRIES, not unbounded: this is stall RECOVERY, not a
+  // second budget on top of maxRounds — a model that genuinely cannot act
+  // (or is genuinely finished, once hasIntent/isOnlyReasoning both go false)
+  // must still stop, or a model that always "thinks about" one more step
+  // never terminates.
+  const MAX_NUDGE_RETRIES = 2
+  const nudgeIntoAction = async (maxRetries = MAX_NUDGE_RETRIES) => {
+    let attempts = 0
+    while (toolCallsToProcess.length === 0 && attempts < maxRetries) {
+      const isOnlyReasoning = roundContent.includes('<think>')
+        && !visibleAnswer(roundContent.replace(/<think>[\s\S]*?<\/think>/gi, ''))
+      const hasIntent = hasUnexecutedToolIntent(fullContent, roundContent)
+      if (!hasIntent && !isOnlyReasoning) break // genuinely finished, not stalling
+
+      attempts++
+      onStatus?.(attempts > 1
+        ? `⚡ Still working — checking again (${attempts}/${maxRetries})…`
+        : '⚡ Proceeding to execute planned actions…')
+      messages.push({
+        role: 'user',
+        content: 'Proceed immediately now: invoke the tool call(s) (such as fs_read, fs_edit, fs_write, etc.) to execute the plan and actions you announced above. Do NOT stop or wait for another prompt.',
+      })
+      let actionNext = await processStream()
+      if (actionNext?.rejectedTools && toolMode === 'native') {
+        demoteToPrompted()
+        actionNext = await processStream()
+      }
+      await harvestOrRepair()
+    }
+    return attempts
+  }
+
   try {
     // First LLM call — may return text or tool calls
     let first = await processStream()
@@ -959,20 +1002,9 @@ export async function runAgent({
       harvestPromptedCalls()
     }
 
-    // Round 0 action continuation if model announces action intent without tool payload
-    if (toolCallsToProcess.length === 0 && hasUnexecutedToolIntent(fullContent, roundContent)) {
-      onStatus?.('⚡ Proceeding to execute planned actions…')
-      messages.push({
-        role: 'user',
-        content: 'Proceed immediately now: invoke the tool call(s) (such as fs_read, fs_edit, fs_write, etc.) to execute the plan and actions you announced above. Do NOT stop or wait for another prompt.',
-      })
-      let actionNext = await processStream()
-      if (actionNext?.rejectedTools && toolMode === 'native') {
-        demoteToPrompted()
-        actionNext = await processStream()
-      }
-      await harvestOrRepair()
-    }
+    // Round 0 action continuation if the model announces intent without a tool
+    // payload — bounded-retried, same as every later stall point.
+    if (toolCallsToProcess.length === 0) await nudgeIntoAction()
     throwIfAborted()
 
     // Tool execution loop (maxRounds cap prevents infinite loops)
@@ -1188,27 +1220,15 @@ export async function runAgent({
       }
       await harvestOrRepair()
 
-      // Self-healing reasoning & transitional action continuation:
-      // When models (Nemotron, DeepSeek, Qwen) "think out loud" or write transitional phrases
-      // (e.g. "Now I'll add AbortController support to all three" or "Let me apply these fixes now")
-      // but pause before emitting the tool call, prompt them to immediately execute the tool call!
+      // Self-healing reasoning & transitional action continuation, bounded-
+      // retried — see nudgeIntoAction. This is the stall point that actually
+      // fired in the field: three real tool rounds, then a <think>-only reply
+      // that keeps planning ("also check Ollama integration... but first,
+      // let's look at the electron folder") without ever emitting the next
+      // tool call. One nudge is not always enough to unstick a model that is
+      // two thoughts deep into its own plan.
       if (toolCallsToProcess.length === 0 && rounds < maxRounds) {
-        const isOnlyReasoning = roundContent.includes('<think>') && !visibleAnswer(roundContent.replace(/<think>[\s\S]*?<\/think>/gi, ''))
-        const hasIntent = hasUnexecutedToolIntent(fullContent, roundContent)
-        
-        if (hasIntent || isOnlyReasoning) {
-          onStatus?.('⚡ Proceeding to execute planned actions…')
-          messages.push({
-            role: 'user',
-            content: 'Proceed immediately now: invoke the tool call(s) (such as fs_edit, fs_write, fs_read, etc.) to perform the action or code changes you announced above. Do NOT stop or wait for another prompt.',
-          })
-          let actionNext = await processStream()
-          if (actionNext?.rejectedTools && toolMode === 'native') {
-            demoteToPrompted()
-            actionNext = await processStream()
-          }
-          await harvestOrRepair()
-        }
+        await nudgeIntoAction()
       }
     }
 
