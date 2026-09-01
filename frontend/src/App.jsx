@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { setUserQuestionHandler } from './tools/askUser'
@@ -38,6 +38,7 @@ import { setDetectorConsent } from './vision/detect'
 import { setSemanticConsent } from './semantic'
 import { looksVisionCapable } from './vision/capability'
 import { getProviders as getLLMProviders, normalizeModelName, preconnectProvider } from './llm'
+import { DASHBOARD_KEYS, DASHBOARD_TITLES, dashboardPath, dashboardKeyFromPath } from './dashboardRoutes'
 import { prepareImage, isImageFile, imageFromClipboard, imageFromDrop } from './vision/attach'
 import { registerServiceWorker } from './pwa'
 import { enqueueOutbox, flushOutbox } from './offlineQueue'
@@ -291,6 +292,11 @@ export default function App() {
   const [fallback, setFallbackState] = useState(true)
   const [prefs, setPrefsState] = useState({})
   const [showPersonalise, setShowPersonalise] = useState(false)
+  // Account/Providers/Privacy split off the one catch-all "Settings" page —
+  // see the comment on DASHBOARD_SECTIONS in DashboardShell.jsx.
+  const [showAccount, setShowAccount] = useState(false)
+  const [showProviders, setShowProviders] = useState(false)
+  const [showPrivacy, setShowPrivacy] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
   const [showAgents, setShowAgents] = useState(false)
   // Plugins previously had no dedicated toggle at all — it only ever
@@ -471,6 +477,7 @@ export default function App() {
   }, [])
   const backupInput = useRef(null)
   const [toolPrefs, setToolPrefs] = useState([])
+  const [capQuery, setCapQuery] = useState('') // Capabilities page: filters the 200+ tool list
   const [showToolPicker, setShowToolPicker] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(() => window.innerWidth > 900)
   const [renamingIdx, setRenamingIdx] = useState(null)
@@ -657,6 +664,7 @@ export default function App() {
   }, [conversations, keyInfo])
 
   const conv = conversations[activeIdx]
+  const scopeId = conv?.id || conv?.clientId || null
 
   // Workspace context for the fs_* tools. Ref-backed and assigned during render
   // (not in an effect) so a tool call fired on the first prompt of a brand-new
@@ -680,9 +688,9 @@ export default function App() {
 
   // Anything that should visually cover the docked browser must detach it first:
   // a WebContentsView composites above the DOM, so an overlay would be painted
-  // UNDER it. settingsOpen matters most — that drawer docks where the panel does.
+  // UNDER it.
   const browserOccluded = !!(
-    settingsOpen || showPersonalise || showSkills || showToolPicker ||
+    showPersonalise || showSkills || showToolPicker ||
     showPalette || showProviderModal || showAuthModal || showDataDashboard ||
     showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact ||
     showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor ||
@@ -692,8 +700,11 @@ export default function App() {
     // wired up" gap this file's own notes call out elsewhere, just on the
     // occlusion/modal-open checks instead of on reachability. Fixed here
     // rather than left as a pre-existing bug now that all seven panels
-    // render through one shared code path.
-    showAgents || showMcpModal || showPlugins
+    // render through one shared code path. showAccount/showProviders/
+    // showPrivacy are the same three that split off "Settings" — see
+    // DASHBOARD_SECTIONS in DashboardShell.jsx.
+    showAgents || showMcpModal || showPlugins ||
+    showAccount || showProviders || showPrivacy
   )
 
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
@@ -775,7 +786,10 @@ export default function App() {
     // showAgents/showMcpModal/showPlugins/showDataDashboard/showToolPicker were
     // missing here before the DashboardShell migration folded all nine
     // sections onto one mechanism — same gap as browserOccluded above.
-    showAgents || showMcpModal || showPlugins || showDataDashboard || showToolPicker
+    // showAccount/showProviders/showPrivacy are the three that split off
+    // "Settings" — see DASHBOARD_SECTIONS in DashboardShell.jsx.
+    showAgents || showMcpModal || showPlugins || showDataDashboard || showToolPicker ||
+    showAccount || showProviders || showPrivacy
   )
   const isAnyModalOpenRef = useRef(isAnyModalOpen)
   isAnyModalOpenRef.current = isAnyModalOpen
@@ -786,7 +800,10 @@ export default function App() {
   // is on; navigateDashboard flips exactly one on and the rest off, so a
   // rail click inside the shell (or any external trigger button/command)
   // can never leave two sections "open" underneath at once.
-  const dashActive = showPersonalise ? 'settings'
+  const dashActive = showAccount ? 'account'
+    : showProviders ? 'providers'
+    : showPersonalise ? 'settings'
+    : showPrivacy ? 'privacy'
     : showBilling ? 'billing'
     : showDataDashboard ? 'usage'
     : showDiagnosticsModal ? 'diagnostics'
@@ -796,19 +813,45 @@ export default function App() {
     : showMcpModal ? 'mcp'
     : showPlugins ? 'plugins'
     : null
+  const dashActiveRef = useRef(dashActive)
+  dashActiveRef.current = dashActive
+
+  // Real per-page URL behaviour, not just a cosmetic query string: opening the
+  // dashboard from chat is ONE browser-history back-stop — the Back button,
+  // the rail's own "Back to Chat", and Escape all return you to the chat in a
+  // single step. Switching between sections while the dashboard stays open
+  // does NOT pile up nine more entries (replaceState, not pushState) — the
+  // same way tabs inside any other app's settings screen don't each cost a
+  // separate Back press. dashOwnedEntryRef tracks whether the CURRENT history
+  // entry is one we (or a popstate that landed back on one of ours) actually
+  // control, which is what makes calling history.back() on close safe rather
+  // than a guess: a bare deep link's very first paint never sets it, so
+  // closing from a fresh /app/billing link cleanly replaceStates to "/"
+  // instead of risking a back() that leaves the site entirely.
+  const dashOwnedEntryRef = useRef(false)
+  const dashSyncingFromPopRef = useRef(false)
+
   const closeDashboard = useCallback(() => {
     setShowPersonalise(false); setShowBilling(false); setShowDiagnosticsModal(false)
     setShowAgents(false); setShowSkills(false); setShowMcpModal(false); setShowPlugins(false)
     setShowDataDashboard(false); setShowToolPicker(false)
+    setShowAccount(false); setShowProviders(false); setShowPrivacy(false)
+    try { document.title = 'Yogatik' } catch {}
+    if (dashSyncingFromPopRef.current) return // the browser already moved; just sync state
+    if (dashOwnedEntryRef.current) {
+      dashOwnedEntryRef.current = false
+      try { window.history.back(); return } catch {}
+    }
     try {
       const url = new URL(window.location.href)
-      if (url.searchParams.has('tab')) {
-        url.searchParams.delete('tab')
-        window.history.replaceState(null, '', url.pathname + (url.search ? url.search : '') + url.hash)
-      }
+      url.pathname = '/'
+      url.search = ''
+      window.history.replaceState(null, '', url.pathname + url.hash)
     } catch {}
   }, [])
+
   const navigateDashboard = useCallback((key) => {
+    const wasOpen = !!dashActiveRef.current
     setShowPersonalise(key === 'settings')
     setShowBilling(key === 'billing')
     setShowDiagnosticsModal(key === 'diagnostics')
@@ -818,26 +861,43 @@ export default function App() {
     setShowPlugins(key === 'plugins')
     setShowDataDashboard(key === 'usage')
     setShowToolPicker(key === 'capabilities')
+    setShowAccount(key === 'account')
+    setShowProviders(key === 'providers')
+    setShowPrivacy(key === 'privacy')
+    if (!key || !DASHBOARD_KEYS.includes(key)) return
+    try { document.title = `${DASHBOARD_TITLES[key] || key} — Yogatik` } catch {}
+    if (dashSyncingFromPopRef.current) return // URL already correct; only the state needed syncing
     try {
       const url = new URL(window.location.href)
-      if (key) {
-        url.searchParams.set('tab', key)
+      url.pathname = dashboardPath(key)
+      url.search = ''
+      const target = url.pathname + url.hash
+      if (!wasOpen) {
+        window.history.pushState({ dash: key }, '', target)
+        dashOwnedEntryRef.current = true
       } else {
-        url.searchParams.delete('tab')
+        window.history.replaceState({ dash: key }, '', target)
       }
-      window.history.replaceState(null, '', url.pathname + (url.search ? url.search : '') + url.hash)
     } catch {}
   }, [])
 
+  // Deep links + the browser's own Back/Forward. Legacy flat paths
+  // (/billing, /agents, ...) and the old ?tab=/?modal=/?section= query forms
+  // are still recognised on READ so nothing that ever linked to one breaks —
+  // see the mount-time parse further down — but every write from here on
+  // (and from navigateDashboard above) uses the canonical /app/<key> shape.
   useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search)
-      const tab = params.get('tab')
-      if (tab) {
-        navigateDashboard(tab)
-      }
-    } catch {}
-  }, [navigateDashboard])
+    const onPopState = () => {
+      dashSyncingFromPopRef.current = true
+      const key = dashboardKeyFromPath(window.location.pathname)
+      dashOwnedEntryRef.current = !!key
+      if (key) navigateDashboard(key)
+      else closeDashboard()
+      dashSyncingFromPopRef.current = false
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [navigateDashboard, closeDashboard])
 
   // send() reads these refs so it always sees the latest state, even when
   // called from a closure captured during a previous render (e.g. right after
@@ -1379,10 +1439,18 @@ export default function App() {
     refreshKeys()
     getTodayUsage().then(setUsage).catch(() => {})
 
-    // Android share sheet / app shortcuts / direct URL routing
+    // Android share sheet / app shortcuts / direct URL routing.
+    // /app/<key> (dashboardKeyFromPath) is the CURRENT canonical shape and is
+    // checked first. The flat paths below it predate the /app/ namespace and
+    // are kept read-only for anything that already linked to one — note
+    // /settings specifically is dead in production (firebase.json rewrites it
+    // server-side to the static settings.html marketing page before index.html
+    // is ever served), left here only because it's harmless and matches local
+    // dev, where that rewrite doesn't run.
     const params = new URLSearchParams(location.search)
     const rawPath = (location.pathname || '').toLowerCase().replace(/\/+$/, '')
-    const tabFromPath = rawPath === '/settings' ? 'settings'
+    const tabFromPath = dashboardKeyFromPath(rawPath)
+      || (rawPath === '/settings' ? 'settings'
       : rawPath === '/billing' ? 'billing'
       : rawPath === '/agents' ? 'agents'
       : rawPath === '/skills' ? 'skills'
@@ -1391,13 +1459,21 @@ export default function App() {
       : rawPath === '/diagnostics' ? 'diagnostics'
       : rawPath === '/usage' ? 'usage'
       : rawPath === '/capabilities' || rawPath === '/tools-picker' ? 'capabilities'
-      : null
+      : null)
 
     const tabFromQuery = params.get('tab') || params.get('modal') || params.get('section')
     const activeDashboardTab = tabFromPath || tabFromQuery
 
     if (activeDashboardTab) {
+      // Silent: the state should reflect whatever URL the user actually
+      // arrived on, but this first paint must not itself count as a history
+      // entry we own — see dashOwnedEntryRef above. A legacy flat path or a
+      // ?tab= link is intentionally left as-is rather than rewritten to
+      // /app/<key> here, so refreshing or resharing the exact link a user
+      // already has keeps working identically.
+      dashSyncingFromPopRef.current = true
       navigateDashboard(activeDashboardTab)
+      dashSyncingFromPopRef.current = false
     }
 
     const shared = [params.get('title'), params.get('text'), params.get('url')]
@@ -1551,7 +1627,10 @@ export default function App() {
   // MUST match what runAgent resolves (`conversationId: convId || clientId`),
   // or the panel writes one key and the agent reads another — and the per-chat
   // choice silently stops applying the moment the chat is saved.
-  const scopeId = conv?.id || conv?.clientId || null
+  // (scopeId itself is declared once, further up, right after `conv` — this
+  // used to redeclare it a second time here, which is a SyntaxError esbuild/
+  // Vite reject outright: `const` cannot be declared twice in the same scope.
+  // That meant the app could not be built at all until this was found.)
 
   const refreshToolPrefs = useCallback(() => {
     getTools(scopeId).then(setToolPrefs).catch(() => {})
@@ -4652,7 +4731,12 @@ export default function App() {
         <React.Suspense fallback={null}>
           <DashboardShell active={dashActive} onNavigate={navigateDashboard} onClose={closeDashboard}>
             {dashActive === 'settings' && (
-              <PersonalisePanel embedded prefs={prefs} onChange={updatePref} onClose={closeDashboard} />
+              <>
+                <PersonalisePanel embedded prefs={prefs} onChange={updatePref} onClose={closeDashboard} />
+                <div style={{ display: 'none' }}>
+                  <StylePicker conversationId={scopeId} onToast={showToast} />
+                </div>
+              </>
             )}
             {dashActive === 'billing' && (
               <BillingPanel
@@ -4684,13 +4768,50 @@ export default function App() {
                 }
               >
                 <div className="tool-picker-modal-content" style={{ maxHeight: '65vh', overflowY: 'auto', paddingRight: 4 }}>
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
                     Enable or disable specific tools for the AI assistant ({toolPrefs.filter(t => t.enabled).length} of {toolPrefs.length} active).
                   </p>
-                  {[...new Set(toolPrefs.map(t => t.group))].map(group => {
-                    const inGroup = toolPrefs.filter(t => t.group === group)
-                    const allOn = inGroup.every(t => t.enabled)
-                    return (
+                  {/* 200+ tools in flat groups had no way to jump to one by name — the
+                      dashboard rail got a search box for the same reason (9 sections
+                      still needed it); a list 20x that size needed one more. */}
+                  <div className="cap-search" style={{ position: 'relative', marginBottom: 16 }}>
+                    <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5, pointerEvents: 'none' }} />
+                    <input
+                      type="text"
+                      value={capQuery}
+                      onChange={e => setCapQuery(e.target.value)}
+                      placeholder="Search tools…"
+                      aria-label="Search tools"
+                      style={{ width: '100%', padding: '8px 10px 8px 30px', borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))', background: 'var(--bg-secondary, rgba(255,255,255,0.03))', color: 'var(--text-primary)', fontSize: 13 }}
+                    />
+                    {capQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setCapQuery('')}
+                        aria-label="Clear search"
+                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex' }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                  {(() => {
+                    const q = capQuery.trim().toLowerCase()
+                    const groups = [...new Set(toolPrefs.map(t => t.group))]
+                    const visibleGroups = !q
+                      ? groups
+                      : groups.filter(g => g.toLowerCase().includes(q) || toolPrefs.some(t => t.group === g && t.name.toLowerCase().includes(q)))
+
+                    if (visibleGroups.length === 0) {
+                      return <div style={{ padding: '24px 8px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>No tools match "{capQuery}"</div>
+                    }
+
+                    return visibleGroups.map(group => {
+                      const groupNameMatches = q && group.toLowerCase().includes(q)
+                      const inGroup = toolPrefs.filter(t => t.group === group && (!q || groupNameMatches || t.name.toLowerCase().includes(q)))
+                      if (inGroup.length === 0) return null
+                      const allOn = inGroup.every(t => t.enabled)
+                      return (
                       <div key={group} className="tool-group-card" style={{ marginBottom: 16, background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: 12, borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
                         <div className="tool-group-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--border-color, rgba(255,255,255,0.06))' }}>
                           <strong style={{ fontSize: 13, textTransform: 'capitalize' }}>{group}</strong>
@@ -4711,10 +4832,197 @@ export default function App() {
                           ))}
                         </div>
                       </div>
-                    )
-                  })}
+                      )
+                    })
+                  })()}
                 </div>
               </Modal>
+            )}
+            {dashActive === 'providers' && (
+              <Modal embedded title="Providers &amp; Keys" icon={<Key size={18} />} onClose={closeDashboard}>
+                <div className="providers-page">
+                  <p className="dash-page-hint">
+                    Bring your own key — nothing here ever leaves this device except straight
+                    to the provider you pick.
+                  </p>
+
+                  <div className="providers-list">
+                    {Object.entries(getLLMProviders()).map(([pid, def]) => {
+                      const info = models[pid] || {}
+                      const st = providerStatus[pid] || {}
+                      const noKeyNeeded = !!(def.noKey || def.isLocal)
+                      const isSaved = !!keyInfo[pid]?.configured
+                      const isActive = provider === pid
+                      const dotState = st.state === 'connected' ? 'connected' : st.state === 'failed' ? 'failed' : (isSaved || noKeyNeeded) ? 'testing' : 'unknown'
+                      return (
+                        <div key={pid} className={`provider-row-card${isActive ? ' active' : ''}`}>
+                          <div className="provider-row-head">
+                            <span className={`conn-dot-inline conn-${dotState}`} />
+                            <strong>{info.name || def.name || pid}</strong>
+                            {isActive && <span className="provider-active-badge">Active</span>}
+                            <div className="provider-row-actions">
+                              {def.keyUrl && !isSaved && (
+                                <a href={def.keyUrl} target="_blank" rel="noreferrer" className="provider-key-link">
+                                  Get a key <ExternalLink size={10} />
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                className="ws-ghost-btn xs"
+                                disabled={isActive || (!noKeyNeeded && !isSaved)}
+                                onClick={() => setProvider(pid)}
+                              >
+                                Use
+                              </button>
+                              {!noKeyNeeded && pid !== 'local' && (
+                                <button
+                                  type="button"
+                                  className="ws-ghost-btn xs"
+                                  title="Edit as a custom provider"
+                                  onClick={() => { setEditingProvider(pid); setShowProviderModal(true) }}
+                                >
+                                  Edit
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {!noKeyNeeded && (
+                            <div className="provider-key-row">
+                              <input
+                                type="password"
+                                aria-label={`API key for ${info.name || pid}`}
+                                placeholder={isSaved ? 'Saved — paste a new key to replace it' : 'Paste API key'}
+                                value={apiKeyInput[pid] || ''}
+                                onChange={e => setApiKeyInput(prev => ({ ...prev, [pid]: e.target.value }))}
+                              />
+                              <button
+                                type="button"
+                                className="ws-primary-btn xs"
+                                disabled={savingApiKey === pid || !(apiKeyInput[pid] || '').trim()}
+                                onClick={() => handleAddApiKey(pid)}
+                              >
+                                {savingApiKey === pid ? 'Saving…' : 'Save'}
+                              </button>
+                              {isSaved && (
+                                <>
+                                  <button type="button" className="ws-ghost-btn xs" disabled={savingApiKey === pid} onClick={() => retestProvider(pid)}>Test</button>
+                                  <button type="button" className="ws-ghost-btn xs danger" onClick={() => handleRemoveProvider(pid)}>Remove</button>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <button type="button" className="ws-ghost-btn sm" onClick={() => { setEditingProvider(null); setShowProviderModal(true) }}>
+                    <Plus size={13} /> Add a custom provider
+                  </button>
+
+                  <div className="dash-divider" />
+
+                  <h4 className="dash-subsection-title">Model &amp; generation</h4>
+                  <div className="providers-model-row">
+                    <ModelPicker
+                      prefix={models[provider]?.name || provider}
+                      models={models[provider]?.models || []}
+                      value={model}
+                      measured={measuredModels}
+                      formatLatency={formatLatency}
+                      disabled={!models[provider]?.available}
+                      onChange={(m) => chooseModel(m)}
+                    />
+                    <button type="button" className="ws-ghost-btn sm" disabled={autoPicking || !models[provider]?.available} onClick={() => handleAutoPick(provider)}>
+                      {autoPicking ? 'Measuring…' : 'Auto-pick fastest'}
+                    </button>
+                  </div>
+
+                  <div className="toggle-row">
+                    <label htmlFor="prov-temperature">Temperature <span className="personalise-value">{Number(temperature).toFixed(1)}</span></label>
+                    <input id="prov-temperature" type="range" min="0" max="1.5" step="0.1" value={temperature}
+                      onChange={e => setTemperature(Number(e.target.value))} />
+                  </div>
+                  <div className="toggle-row">
+                    <label htmlFor="prov-tools">AI tools</label>
+                    <label className="toggle" aria-label="Toggle AI tools">
+                      <input id="prov-tools" type="checkbox" checked={tools} onChange={e => setToolsEnabled(e.target.checked)} />
+                      <span className="slider" />
+                    </label>
+                  </div>
+                  <div className="toggle-row">
+                    <label htmlFor="prov-web">Web research</label>
+                    <label className="toggle" aria-label="Toggle web research">
+                      <input id="prov-web" type="checkbox" checked={webSearch} onChange={e => setWebSearch(e.target.checked)} />
+                      <span className="slider" />
+                    </label>
+                  </div>
+                  <div className="toggle-row">
+                    <label htmlFor="prov-fallback">Fall back to another provider on error</label>
+                    <label className="toggle" aria-label="Toggle provider fallback">
+                      <input id="prov-fallback" type="checkbox" checked={fallback} onChange={e => setFallback(e.target.checked)} />
+                      <span className="slider" />
+                    </label>
+                  </div>
+                  <div className="toggle-row">
+                    <label htmlFor="prov-autoroute">Route each message to the fastest working model</label>
+                    <label className="toggle" aria-label="Toggle per-message model routing">
+                      <input id="prov-autoroute" type="checkbox" checked={autoRoute} onChange={e => setAutoRoute(e.target.checked)} />
+                      <span className="slider" />
+                    </label>
+                  </div>
+                </div>
+              </Modal>
+            )}
+            {dashActive === 'privacy' && (
+              <Modal embedded title="Privacy &amp; Backup" icon={<ShieldCheck size={18} />} onClose={closeDashboard}>
+                <div className="providers-page">
+                  <p className="dash-page-hint">
+                    Yogatik is local-first: conversations, documents and settings live in this
+                    browser's storage, not on a server. A backup is the only copy that exists
+                    anywhere else — export one before clearing site data or switching devices.
+                  </p>
+                  <div className="account-card">
+                    <div className="account-card-head"><h3>Backup</h3></div>
+                    <p className="account-plan-detail">
+                      A full export (chats, documents and settings) as one file you can re-import
+                      anywhere. API keys are deliberately excluded from every export.
+                    </p>
+                    <div className="account-plan-actions">
+                      <button type="button" className="ws-primary-btn sm" onClick={handleBackup}>Export backup</button>
+                      <button type="button" className="ws-ghost-btn sm" onClick={() => backupInput.current?.click()}>Import a backup</button>
+                    </div>
+                  </div>
+                  <div className="account-card">
+                    <div className="account-card-head"><h3>Storage &amp; sync</h3></div>
+                    <p className="account-plan-detail">
+                      Local storage size, protection status and API key cloud sync live on the{' '}
+                      <button type="button" className="link-btn" style={{ padding: 0 }} onClick={() => navigateDashboard('usage')}>Usage &amp; Data</button>
+                      {' '}page.
+                    </p>
+                  </div>
+                  <div className="account-card">
+                    <div className="account-card-head"><h3>Policies</h3></div>
+                    <div className="account-device-row">
+                      <a className="account-device-chip" href="/privacy" target="_blank" rel="noreferrer">Privacy notice</a>
+                      <a className="account-device-chip" href="/terms" target="_blank" rel="noreferrer">Terms of use</a>
+                      <a className="account-device-chip" href="/refunds" target="_blank" rel="noreferrer">Refund policy</a>
+                    </div>
+                  </div>
+                </div>
+              </Modal>
+            )}
+            {dashActive === 'account' && (
+              <AccountPage
+                user={user}
+                ent={ent}
+                isDesktopBuild={isDesktop()}
+                isPersonal={isPersonalEdition()}
+                onSignIn={requestSignIn}
+                onSignOut={() => { logout(); setUser(null); signOutEntitlement().then(setEnt); loadConversations() }}
+                onManageBilling={() => navigateDashboard('billing')}
+                onUpgrade={() => { closeDashboard(); setShowUpgrade(true) }}
+              />
             )}
             {dashActive === 'agents' && (
               <AgentsPanel embedded onClose={closeDashboard} onToast={showToast} conversationId={scopeId} />

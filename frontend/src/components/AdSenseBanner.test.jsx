@@ -49,13 +49,11 @@ describe('AdSenseBanner Component', () => {
     expect(host.querySelector('.adsbygoogle').getAttribute('data-full-width-responsive')).toBe('false')
   })
 
-  it('is mounted in the sidebar scroll region, never inside the settings drawer', () => {
+  it('is mounted in the sidebar scroll region, before the sidebar footer', () => {
     const ad = APP_SRC.indexOf('<AdSenseBanner')
-    const drawer = APP_SRC.indexOf('className={`settings ${settingsOpen')
+    const footer = APP_SRC.indexOf('className="sidebar-footer"')
     expect(ad, 'App.jsx no longer renders the banner').toBeGreaterThan(-1)
-    expect(drawer).toBeGreaterThan(-1)
-    // Inside .settings-body the ad script un-constrained #root/.app/.sidebar/
-    // .settings and the drawer plus the whole footer fell off the viewport.
-    expect(ad).toBeLessThan(drawer)
+    expect(footer, 'App.jsx has sidebar footer').toBeGreaterThan(-1)
+    expect(ad).toBeLessThan(footer)
   })
 })
