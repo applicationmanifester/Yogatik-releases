@@ -2804,6 +2804,86 @@ html, body {
   font-size: 11px; opacity: 0.8;
 }
 
+/* ── Sidebar: Quick Navigation Rail & Dashboard Trigger ── */
+.sidebar-quick-nav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.quick-nav-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.07));
+  border-radius: 8px;
+  color: var(--text-secondary, #a1a1aa);
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.quick-nav-pill:hover {
+  background: var(--bg-input, rgba(255, 255, 255, 0.08));
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary, #fff);
+  transform: translateY(-1px);
+}
+.quick-nav-pill.active {
+  background: color-mix(in srgb, var(--accent, #ff6b35) 15%, transparent);
+  border-color: var(--accent, #ff6b35);
+  color: var(--accent, #ff6b35);
+  font-weight: 600;
+}
+
+.sidebar-dashboard-banner {
+  margin: 8px 0;
+  flex-shrink: 0;
+}
+.sidebar-dashboard-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.15), rgba(59, 130, 246, 0.08));
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 9px;
+  color: var(--text-primary, #fff);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.sidebar-dashboard-btn:hover {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.25), rgba(59, 130, 246, 0.16));
+  border-color: rgba(59, 130, 246, 0.55);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
+  transform: translateY(-1px);
+}
+.sidebar-dashboard-btn-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  line-height: 1.25;
+}
+.sidebar-dashboard-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #60a5fa;
+}
+.sidebar-dashboard-sub {
+  font-size: 9.5px;
+  color: var(--text-muted, #94a3b8);
+}
+
 /* ── Usage meter ── */
 .usage-row { margin: 10px 0; }
 .usage-approx { opacity: .55; font-weight: 400; }

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { setUserQuestionHandler } from './tools/askUser'
@@ -3490,6 +3490,33 @@ export default function App() {
           <kbd>Ctrl+K</kbd>
         </button>
 
+        <div className="sidebar-quick-nav">
+          <button type="button" className={`quick-nav-pill ${dashActive === 'settings' ? 'active' : ''}`} onClick={() => navigateDashboard('settings')} title="Settings & Preferences">
+            <Sliders size={12} />
+            <span>Settings</span>
+          </button>
+          <button type="button" className={`quick-nav-pill ${dashActive === 'agents' ? 'active' : ''}`} onClick={() => navigateDashboard('agents')} title="Autonomous Agents">
+            <Bot size={12} />
+            <span>Agents</span>
+          </button>
+          <button type="button" className={`quick-nav-pill ${dashActive === 'plugins' ? 'active' : ''}`} onClick={() => navigateDashboard('plugins')} title="Plugins & MCP Tools">
+            <Plug size={12} />
+            <span>Plugins</span>
+          </button>
+          <button type="button" className={`quick-nav-pill ${dashActive === 'skills' ? 'active' : ''}`} onClick={() => navigateDashboard('skills')} title="Skills Catalog">
+            <Compass size={12} />
+            <span>Skills</span>
+          </button>
+          <button type="button" className={`quick-nav-pill ${dashActive === 'usage' ? 'active' : ''}`} onClick={() => navigateDashboard('usage')} title="Usage & Analytics">
+            <Activity size={12} />
+            <span>Usage</span>
+          </button>
+          <button type="button" className={`quick-nav-pill ${dashActive === 'billing' ? 'active' : ''}`} onClick={() => navigateDashboard('billing')} title="Subscription & Billing">
+            <DollarSign size={12} />
+            <span>Billing</span>
+          </button>
+        </div>
+
         {/* One search, not two. This used to be a SECOND input four rows below
             the Ctrl+K button, filtering titles by substring. The palette already
             searches chats — BM25 over titles AND message bodies (chatSearch.js) —
@@ -4052,6 +4079,22 @@ export default function App() {
           )}
 
           </div>
+        </div>
+
+        <div className="sidebar-dashboard-banner">
+          <button
+            type="button"
+            className="sidebar-dashboard-btn"
+            onClick={() => navigateDashboard('settings')}
+            title="Open Unified App Dashboard & Settings"
+          >
+            <LayoutDashboard size={16} style={{ color: '#60a5fa' }} />
+            <div className="sidebar-dashboard-btn-text">
+              <span className="sidebar-dashboard-title">Dashboard Center</span>
+              <span className="sidebar-dashboard-sub">All 9 Tools &amp; Settings Panels</span>
+            </div>
+            <ChevronDown size={14} style={{ transform: 'rotate(-90deg)', opacity: 0.6 }} />
+          </button>
         </div>
 
         {/* Footer: identity, plus the cross-surface link. Both used to be
