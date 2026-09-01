@@ -371,7 +371,8 @@ exports.paddleWebhook = onRequest(
     const h1 = /h1=([a-f0-9]+)/.exec(header)?.[1]
     if (!ts || !h1 || !raw) return res.status(400).send('bad signature header')
 
-    const expected = crypto.createHmac('sha256', PADDLE_WEBHOOK_SECRET.value())
+    const webhookSecret = (PADDLE_WEBHOOK_SECRET.value() || '').trim()
+    const expected = crypto.createHmac('sha256', webhookSecret)
       .update(`${ts}:${raw.toString('utf8')}`).digest('hex')
     // timingSafeEqual, not ===. A plain comparison leaks the signature one byte
     // at a time to anyone willing to measure.
