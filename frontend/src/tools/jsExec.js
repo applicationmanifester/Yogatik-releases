@@ -54,13 +54,20 @@ export const jsExecTool = {
     // In Desktop Electron, run directly through Node CLI for 100% unrestricted JS execution (0 CSP issues)
     if (isDesktop()) {
       try {
-        const wrapped = `(async () => {\n${code}\n})().then(v => { if (v !== undefined) console.log(typeof v === 'object' ? JSON.stringify(v, null, 2) : v); }).catch(e => { console.error(e); process.exit(1); })`
-        const res = await terminalRunTool.execute({ command: `node -e "${wrapped.replace(/"/g, '\\"')}"`, timeout_ms })
+        const wrapped = `(async () => {\n${code}\n})().then(v => { if (v !== undefined) console.log(typeof v === 'object' ? JSON.stringify(v, null, 2) : v); }).catch(e => { console.error(e && e.stack || e); process.exit(1); })`
+        const base64Code = typeof Buffer !== 'undefined'
+          ? Buffer.from(wrapped, 'utf8').toString('base64')
+          : btoa(unescape(encodeURIComponent(wrapped)))
+        const res = await terminalRunTool.execute({ command: `node -e "eval(Buffer.from('${base64Code}','base64').toString('utf8'))"`, timeout_ms })
         if (res.exit_code === 0 || res.exitCode === 0) {
           const out = (res.stdout || res.output || '').trim()
           return { success: true, tool: 'js_execute', result: out, output: out, logs: out ? out.split('\n') : [] }
         }
-      } catch { /* proceed to worker fallback */ }
+        const err = (res.stderr || res.stdout || res.error || '').trim()
+        return { success: false, tool: 'js_execute', error: err || `Node process exited with code ${res.exitCode ?? 1}`, logs: err ? err.split('\n') : [] }
+      } catch (err) {
+        return { success: false, tool: 'js_execute', error: String(err && err.message || err) }
+      }
     }
 
     if (typeof Worker === 'undefined' || typeof Blob === 'undefined') {
