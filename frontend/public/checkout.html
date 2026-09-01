@@ -149,6 +149,10 @@
   var plan = q.get('plan') || ''
   var provider = q.get('provider') || ''
   var uid = q.get('uid') || ''
+  // Only ever read here, for Paddle — Razorpay's copy travels in the
+  // fragment instead (see setupRazorpay), because an idToken rides beside it
+  // there and a fragment never reaches a server log or Referer header.
+  var queryEmail = q.get('email') || ''
 
   var elPlan = document.getElementById('plan')
   var elProv = document.getElementById('provider')
@@ -223,6 +227,10 @@
           items: [{ priceId: priceId, quantity: 1 }],
           // The webhook reads this to know whose account to upgrade.
           customData: { uid: uid },
+          // Prefills the email field Paddle's own checkout otherwise asks
+          // for — same reason as Razorpay's prefill.email, just carried in
+          // the query string here since there is no idToken riding beside it.
+          customer: queryEmail ? { email: queryEmail } : undefined,
         })
         msg.className = 'msg ok'
         msg.textContent = 'Complete the payment in the Paddle window, then return to Yogatik — it will unlock on its own.'
@@ -239,8 +247,11 @@
     // or a Referer header.
     var frag = new URLSearchParams(location.hash.slice(1))
     var idToken = frag.get('t')
+    // Only email is prefilled. The mobile number is left for the user to
+    // type directly into Razorpay's own checkout — it's the number the UPI
+    // Autopay mandate ties to, and Yogatik has no verified number of its
+    // own to hand over on their behalf.
     var userEmail = frag.get('email') || q.get('email') || ''
-    var userPhone = frag.get('phone') || q.get('phone') || ''
     if (!idToken) {
       return fail('This checkout link is missing its sign-in token. Open Upgrade from inside Yogatik rather than reusing an old link.')
     }
@@ -287,17 +298,14 @@
             return fail('Could not start the subscription: ' + ((out.b && out.b.detail) || out.b.error || 'unknown error'))
           }
           return script('https://checkout.razorpay.com/v1/checkout.js').then(function () {
-            var cleanPhone = (userPhone || '').replace(/\D/g, '').slice(-10)
-            var formattedPhone = cleanPhone ? ('+91' + cleanPhone) : ''
             var rzp = new window.Razorpay({
               key: out.b.keyId,
               subscription_id: out.b.subscriptionId,
               name: 'Yogatik',
               description: sku.label,
-              prefill: {
-                email: userEmail || '',
-                contact: formattedPhone || userPhone || '',
-              },
+              // Email only. Mobile is left blank on purpose — the user types
+              // it straight into Razorpay's own contact-details screen.
+              prefill: userEmail ? { email: userEmail } : undefined,
               handler: function (resp) {
                 // Verify the signature server-side before telling the user
                 // anything. The handler fires on Razorpay's word alone; a

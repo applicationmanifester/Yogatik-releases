@@ -21,12 +21,9 @@ import {
  *     timezone, and the PAYMENT METHOD is what actually determines which one
  *     applies. IP is one VPN away — the instrument is not.
  */
-export default function UpgradeModal({ open, onClose, idToken, uid, email, onUnlocked, onSignIn }) {
+export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked, onSignIn }) {
   const [region, setRegion] = useState(() => suggestedRegion())
   const [cycle, setCycle] = useState('yearly')   // annual leads: see the fee note in entitlement.js
-  const [phone, setPhone] = useState(() => {
-    try { return localStorage.getItem('yogatik_phone') || '' } catch { return '' }
-  })
   const [busy, setBusy] = useState(false)
   const [waiting, setWaiting] = useState(false)
   const [err, setErr] = useState(null)
@@ -56,6 +53,16 @@ export default function UpgradeModal({ open, onClose, idToken, uid, email, onUnl
   const buy = async () => {
     setBusy(true); setErr(null)
 
+    // Email is prefilled for BOTH providers — Paddle's checkout asks for one
+    // too, and there is no reason an international customer should retype
+    // an address Yogatik already has from sign-in. Best-effort: a failure to
+    // read it must never block checkout, only leave the field blank.
+    let userEmail = ''
+    try {
+      const { auth } = await import('../firebaseAuth')
+      userEmail = auth?.currentUser?.email || ''
+    } catch { /* checkout still works with an unprefilled email field */ }
+
     // Razorpay subscriptions must be created server-side (that is where
     // notes.uid is attached from a VERIFIED token — the webhook has no other
     // way to know whose account to upgrade), and the checkout page has no
@@ -67,24 +74,30 @@ export default function UpgradeModal({ open, onClose, idToken, uid, email, onUnl
     let url = checkoutBase
     if (plan.provider === 'razorpay') {
       try {
-        const { getIdToken, auth } = await import('../firebaseAuth')
+        const { getIdToken } = await import('../firebaseAuth')
         const t = await getIdToken()
         if (!t) {
           setBusy(false)
           setErr('Sign in first — the payment has to be attached to your account.')
           return
         }
-        const userEmail = auth?.currentUser?.email || ''
-        const userPhone = (phone || auth?.currentUser?.phoneNumber || '').replace(/\D/g, '').slice(-10)
+        // Only email is prefilled — the mobile number is left for the user to
+        // type directly into Razorpay's own checkout, since that is the
+        // number tied to the UPI Autopay mandate and Yogatik has no verified
+        // number of its own to hand over on their behalf.
         const fragParams = new URLSearchParams({ t })
         if (userEmail) fragParams.set('email', userEmail)
-        if (userPhone) fragParams.set('phone', userPhone)
         url += `#${fragParams.toString()}`
       } catch {
         setBusy(false)
         setErr('Could not verify your sign-in. Try signing out and back in.')
         return
       }
+    } else if (userEmail) {
+      // Paddle needs no server-side step before opening checkout (no idToken
+      // travels with it), so the email can ride the query string here — it
+      // is no more sensitive than the uid checkoutBase already carries there.
+      url += `&${new URLSearchParams({ email: userEmail })}`
     }
 
     const res = await openCheckout(url)
@@ -158,29 +171,6 @@ export default function UpgradeModal({ open, onClose, idToken, uid, email, onUnl
             </button>
           ))}
         </div>
-
-        {region === 'in' && uid && (
-          <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <label style={{ fontSize: '12px', opacity: 0.8, textAlign: 'left' }}>
-              Mobile Number (optional — automatically skips Razorpay contact prompt):
-            </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, padding: '7px 10px', borderRadius: '8px', border: '1px solid var(--border-color, rgba(255,255,255,0.12))', opacity: 0.9 }}>+91</span>
-              <input
-                type="tel"
-                placeholder="10-digit mobile number"
-                value={phone}
-                maxLength={10}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, '').slice(0, 10)
-                  setPhone(val)
-                  try { localStorage.setItem('yogatik_phone', val) } catch {}
-                }}
-                style={{ flex: 1, padding: '7px 10px', fontSize: '13px', borderRadius: '8px', border: '1px solid var(--border-color, rgba(255,255,255,0.12))', background: 'transparent', color: 'inherit' }}
-              />
-            </div>
-          </div>
-        )}
 
         <p className="up-note">{plan.note}</p>
 
