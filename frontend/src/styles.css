@@ -2636,6 +2636,17 @@ html, body {
 }
 [data-theme="light"] .dash-overlay.dash-page-view { background: #f8fafc; }
 
+.dash-page-root {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  display: flex;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  position: relative;
+}
+
 .dash-shell {
   width: 100vw;
   height: 100vh;

@@ -108,6 +108,7 @@ const BillingPanel = safeLazy(() => import('./components/BillingPanel'))
 // shell hosts them directly now, so McpModal itself is retired: nothing in
 // this file imports it any more.
 const DashboardShell = safeLazy(() => import('./components/DashboardShell').then(m => ({ default: m.DashboardShell })))
+const AccountPage = safeLazy(() => import('./components/AccountPage').then(m => ({ default: m.AccountPage })))
 const McpServersPage = safeLazy(() => import('./components/McpServers').then(m => ({ default: m.McpServers })))
 const PluginsManagerPage = safeLazy(() => import('./components/PluginsManager').then(m => ({ default: m.PluginsManager })))
 const DomainHubModal = safeLazy(() => import('./components/DomainHubModal').then(m => ({ default: m.DomainHubModal })))
@@ -479,7 +480,11 @@ export default function App() {
   const [toolPrefs, setToolPrefs] = useState([])
   const [capQuery, setCapQuery] = useState('') // Capabilities page: filters the 200+ tool list
   const [showToolPicker, setShowToolPicker] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(() => window.innerWidth > 900)
+  // (settingsOpen used to gate a classic inline settings drawer here. That
+  // drawer no longer renders anywhere — the provider/key/model controls it
+  // held moved to the "Providers & Keys" dashboard page — so every one of its
+  // dozen "open settings" call sites now calls navigateDashboard('providers')
+  // directly instead.)
   const [renamingIdx, setRenamingIdx] = useState(null)
   const [renameText, setRenameText] = useState('')
   const [visibleCount, setVisibleCount] = useState(WINDOW_STEP)
@@ -1934,7 +1939,7 @@ export default function App() {
     const unlisten = window.__YOGATIK_MENU__.on((action) => {
       if (typeof action === 'string') {
         if (action === 'new-chat') newChatRef.current?.()
-        else if (action === 'open-settings') { setSidebarOpen(true); setSettingsOpen(true) }
+        else if (action === 'open-settings') { setSidebarOpen(true); navigateDashboard('providers') }
         else if (action === 'open-palette') setShowPalette(true)
         else if (action === 'open-arena') setCompareMode(true)
         else if (action === 'open-live') startLive()
@@ -2004,7 +2009,7 @@ export default function App() {
         newChatRef.current?.()
         if (p.text) setInput(String(p.text))
       } else if (link.action === 'settings') {
-        setSidebarOpen(true); setSettingsOpen(true)
+        setSidebarOpen(true); navigateDashboard('providers')
       } else if (link.action === 'live') {
         startLive()
       } else {
@@ -2226,7 +2231,7 @@ export default function App() {
   }, [provider, showToast])
 
   const handleOpenArtifact = useCallback((art) => setActiveArtifact(art), [])
-  const handleOpenSettings = useCallback(() => { setSidebarOpen(true); setSettingsOpen(true) }, [])
+  const handleOpenSettings = useCallback(() => { setSidebarOpen(true); navigateDashboard('providers') }, [navigateDashboard])
 
   const retestProvider = async (pid) => {
     setSavingApiKey(pid)
@@ -2421,11 +2426,11 @@ export default function App() {
     if (!isProviderReady) {
       setErrorModalMsg(
         `🔑 API Key Required for ${models[useProvider]?.name || useProvider}\n\n` +
-        `To send messages using ${models[useProvider]?.name || useProvider}, please add your API key in the left sidebar.\n\n` +
-        `👉 Click "get the key" in the sidebar to get a key in seconds, paste it into the API Key field, and click "+ Add Key"!`
+        `To send messages using ${models[useProvider]?.name || useProvider}, add your API key on the ` +
+        `Providers & Keys page.\n\n` +
+        `👉 Click "Get a key" next to ${models[useProvider]?.name || useProvider} to get one in seconds, paste it in, and click "Save"!`
       )
-      setSidebarOpen(true)
-      setSettingsOpen(true)
+      navigateDashboard('providers')
       return
     }
 
@@ -2945,7 +2950,7 @@ export default function App() {
         break
       case '/settings':
         setSidebarOpen(true)
-        setSettingsOpen(true)
+        navigateDashboard('providers')
         setInput('')
         break
       case '/help':
@@ -3361,7 +3366,9 @@ export default function App() {
       { id: 'backup', group: 'Data', label: 'Export all data (backup)', run: handleBackup },
       { id: 'import', group: 'Data', label: 'Import a backup file', run: () => backupInput.current?.click() },
       { id: 'theme', group: 'View', label: `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`, run: () => setTheme(t => t === 'dark' ? 'light' : 'dark') },
-      { id: 'settings', group: 'View', label: 'Open settings & API keys', run: () => { setSidebarOpen(true); setSettingsOpen(true) } },
+      { id: 'settings', group: 'View', label: 'Providers & API keys', run: () => { setSidebarOpen(true); navigateDashboard('providers') } },
+      { id: 'account', group: 'View', label: 'Account — sign-in, plan & this device', run: () => navigateDashboard('account') },
+      { id: 'privacy', group: 'View', label: 'Privacy & backup', run: () => navigateDashboard('privacy') },
       { id: 'personalise', group: 'View', label: 'Personalise — voice & interface', run: () => navigateDashboard('settings') },
       { id: 'skills', group: 'View', label: 'Skills & workflows', run: () => navigateDashboard('skills') },
       { id: 'agents-panel', group: 'View', label: '🤖 Specialized Agents Panel (Researcher, Modeller, Swarms...)', hint: 'Specialist AI', run: () => navigateDashboard('agents') },
@@ -3518,6 +3525,284 @@ export default function App() {
         activeProvider={conv?.provider || provider}
         activeModel={conv?.model || model}
       />
+    )
+  }
+
+  if (dashActive) {
+    return (
+      <div className="dash-page-root" data-theme={theme} style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <React.Suspense fallback={null}>
+          <DashboardShell active={dashActive} onNavigate={navigateDashboard} onClose={closeDashboard}>
+            {dashActive === 'settings' && (
+              <>
+                <PersonalisePanel embedded prefs={prefs} onChange={updatePref} onClose={closeDashboard} />
+                <div style={{ display: 'none' }}>
+                  <StylePicker conversationId={scopeId} onToast={showToast} />
+                </div>
+              </>
+            )}
+            {dashActive === 'billing' && (
+              <BillingPanel
+                embedded
+                onClose={closeDashboard}
+                onUpgrade={() => { closeDashboard(); setShowUpgrade(true) }}
+              />
+            )}
+            {dashActive === 'diagnostics' && (
+              <DiagnosticsModal embedded onClose={closeDashboard} />
+            )}
+            {dashActive === 'usage' && (
+              <DataDashboard
+                embedded
+                onClose={closeDashboard}
+                onExport={() => { downloadBackup().catch(() => {}); showToast('Backup exported') }}
+              />
+            )}
+            {dashActive === 'capabilities' && (
+              <Modal
+                embedded
+                title="AI Tools Configuration"
+                icon={<Wrench size={18} />}
+                onClose={closeDashboard}
+                footer={
+                  <div className="modal-actions">
+                    <button className="btn-primary" onClick={closeDashboard}>Done</button>
+                  </div>
+                }
+              >
+                <div className="tool-picker-modal-content" style={{ maxHeight: '65vh', overflowY: 'auto', paddingRight: 4 }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                    Enable or disable specific tools for the AI assistant ({toolPrefs.filter(t => t.enabled).length} of {toolPrefs.length} active).
+                  </p>
+                  <div className="cap-search" style={{ position: 'relative', marginBottom: 16 }}>
+                    <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5, pointerEvents: 'none' }} />
+                    <input
+                      type="text"
+                      value={capQuery}
+                      onChange={e => setCapQuery(e.target.value)}
+                      placeholder="Search tools…"
+                      aria-label="Search tools"
+                      style={{ width: '100%', padding: '8px 10px 8px 30px', borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))', background: 'var(--bg-secondary, rgba(255,255,255,0.03))', color: 'var(--text-primary)', fontSize: 13 }}
+                    />
+                    {capQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setCapQuery('')}
+                        aria-label="Clear search"
+                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex' }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                  {(() => {
+                    const q = capQuery.trim().toLowerCase()
+                    const groups = [...new Set(toolPrefs.map(t => t.group))]
+                    const visibleGroups = !q
+                      ? groups
+                      : groups.filter(g => g.toLowerCase().includes(q) || toolPrefs.some(t => t.group === g && t.name.toLowerCase().includes(q)))
+
+                    if (visibleGroups.length === 0) {
+                      return <div style={{ padding: '24px 8px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>No tools match "{capQuery}"</div>
+                    }
+
+                    return visibleGroups.map(group => {
+                      const groupNameMatches = q && group.toLowerCase().includes(q)
+                      const inGroup = toolPrefs.filter(t => t.group === group && (!q || groupNameMatches || t.name.toLowerCase().includes(q)))
+                      if (inGroup.length === 0) return null
+                      const allOn = inGroup.every(t => t.enabled)
+                      return (
+                      <div key={group} className="tool-group-card" style={{ marginBottom: 16, background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: 12, borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
+                        <div className="tool-group-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--border-color, rgba(255,255,255,0.06))' }}>
+                          <strong style={{ fontSize: 13, textTransform: 'capitalize' }}>{group}</strong>
+                          <button className="link-btn" style={{ fontSize: 12, color: 'var(--accent-color, #ff6b35)', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => toggleToolGroup(group, !allOn)}>
+                            {allOn ? 'Disable group' : 'Enable group'}
+                          </button>
+                        </div>
+                        <div className="tool-group-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+                          {inGroup.map(t => (
+                            <label key={t.name} className={`tool-toggle-item ${t.enabled ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6, background: t.enabled ? 'rgba(255,107,53,0.08)' : 'transparent', border: `1px solid ${t.enabled ? 'var(--accent-color, #ff6b35)' : 'var(--border-color, rgba(255,255,255,0.05))'}`, cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={t.enabled}
+                                onChange={e => toggleTool(t.name, e.target.checked)}
+                                style={{ accentColor: 'var(--accent-color, #ff6b35)' }}
+                              />
+                              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{t.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )})
+                  })()}
+                </div>
+              </Modal>
+            )}
+            {dashActive === 'providers' && (
+              <Modal embedded title="Providers &amp; Keys" icon={<Key size={18} />} onClose={closeDashboard}>
+                <div className="providers-page">
+                  <p className="dash-page-hint">
+                    Bring your own key — nothing here ever leaves this device except straight to the provider you pick.
+                  </p>
+                  <div className="providers-list">
+                    {ALL_PROVIDERS.map(p => {
+                      const isAct = p.id === (conv?.provider || provider)
+                      const hasKey = Boolean(keys[p.id])
+                      const isEditing = editingProvider === p.id
+                      return (
+                        <div key={p.id} className={`provider-card${isAct ? ' active' : ''}`}>
+                          <div className="provider-card-head">
+                            <div className="provider-card-title">
+                              <span className={`provider-dot ${hasKey ? 'configured' : ''}`} />
+                              <strong>{p.name}</strong>
+                              {isAct && <span className="provider-badge-active">Active</span>}
+                            </div>
+                            <div className="provider-card-actions">
+                              {p.keyHelpUrl && (
+                                <a className="provider-help-link" href={p.keyHelpUrl} target="_blank" rel="noreferrer">
+                                  Get a key <ExternalLink size={11} />
+                                </a>
+                              )}
+                              {!isAct && (
+                                <button type="button" className="ws-ghost-btn sm" onClick={() => { setProvider(p.id); setModel(p.models[0]?.id || '') }}>
+                                  Use
+                                </button>
+                              )}
+                              {p.requiresKey && (
+                                <button type="button" className="ws-ghost-btn sm" onClick={() => setEditingProvider(isEditing ? null : p.id)}>
+                                  {isEditing ? 'Cancel' : (hasKey ? 'Edit' : 'Add key')}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {p.requiresKey && (isEditing || !hasKey) && (
+                            <form className="provider-key-form" onSubmit={(e) => { e.preventDefault(); const val = e.target.elements.key.value.trim(); if (val) { saveKey(p.id, val); setEditingProvider(null); showToast(`${p.name} key saved`) } }}>
+                              <input
+                                name="key"
+                                type="password"
+                                defaultValue={keys[p.id] || ''}
+                                placeholder={`Paste ${p.name} API key`}
+                                aria-label={`${p.name} API key`}
+                              />
+                              <button type="submit" className="ws-primary-btn sm">Save</button>
+                            </form>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="account-card" style={{ marginTop: 24 }}>
+                    <div className="account-card-head">
+                      <h3>Local Ollama instance</h3>
+                    </div>
+                    <p className="account-plan-detail">
+                      Yogatik connects directly to <code style={{ color: 'var(--accent, #ff6b35)' }}>http://localhost:11434</code>.
+                      No API key is needed. Start Ollama and pick any installed model from the provider switcher.
+                    </p>
+                  </div>
+                  <div className="account-card">
+                    <div className="account-card-head">
+                      <h3>Local ComfyUI instance</h3>
+                    </div>
+                    <p className="account-plan-detail">
+                      Local text-to-image workflows run against <code style={{ color: 'var(--accent, #ff6b35)' }}>http://127.0.0.1:8188</code>.
+                      Start ComfyUI to enable on-device generation with SDXL, Flux or Stable Diffusion 1.5.
+                    </p>
+                  </div>
+                  <div className="account-card">
+                    <div className="account-card-head">
+                      <h3>Cloud Sync</h3>
+                    </div>
+                    <p className="account-plan-detail">
+                      Optionally sync your API keys across devices using your Yogatik account. Keys are encrypted before leaving your browser.
+                    </p>
+                    <div className="account-device-row" style={{ marginTop: 8 }}>
+                      <label className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)' }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(prefs.cloudSync)}
+                          onChange={e => updatePref({ cloudSync: e.target.checked })}
+                          style={{ accentColor: 'var(--accent, #ff6b35)' }}
+                        />
+                        <span>Enable encrypted API key cloud backup</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </Modal>
+            )}
+            {dashActive === 'privacy' && (
+              <Modal embedded title="Privacy &amp; Backup" icon={<ShieldCheck size={18} />} onClose={closeDashboard}>
+                <div className="providers-page">
+                  <p className="dash-page-hint">
+                    Yogatik is local-first: conversations, documents and settings live in this
+                    browser's storage, not on a server. A backup is the only copy that exists
+                    anywhere else — export one before clearing site data or switching devices.
+                  </p>
+                  <div className="account-card">
+                    <div className="account-card-head"><h3>Backup</h3></div>
+                    <p className="account-plan-detail">
+                      A full export (chats, documents and settings) as one file you can re-import
+                      anywhere. API keys are deliberately excluded from every export.
+                    </p>
+                    <div className="account-plan-actions">
+                      <button type="button" className="ws-primary-btn sm" onClick={handleBackup}>Export backup</button>
+                      <button type="button" className="ws-ghost-btn sm" onClick={() => backupInput.current?.click()}>Import a backup</button>
+                    </div>
+                  </div>
+                  <div className="account-card">
+                    <div className="account-card-head"><h3>Storage &amp; sync</h3></div>
+                    <p className="account-plan-detail">
+                      Local storage size, protection status and API key cloud sync live on the{' '}
+                      <button type="button" className="link-btn" style={{ padding: 0 }} onClick={() => navigateDashboard('usage')}>Usage &amp; Data</button>
+                      {' '}page.
+                    </p>
+                  </div>
+                  <div className="account-card">
+                    <div className="account-card-head"><h3>Policies</h3></div>
+                    <div className="account-device-row">
+                      <a className="account-device-chip" href="/privacy" target="_blank" rel="noreferrer">Privacy notice</a>
+                      <a className="account-device-chip" href="/terms" target="_blank" rel="noreferrer">Terms of use</a>
+                      <a className="account-device-chip" href="/refunds" target="_blank" rel="noreferrer">Refund policy</a>
+                    </div>
+                  </div>
+                </div>
+              </Modal>
+            )}
+            {dashActive === 'account' && (
+              <AccountPage
+                user={user}
+                ent={ent}
+                isDesktopBuild={isDesktop()}
+                isPersonal={isPersonalEdition()}
+                onSignIn={requestSignIn}
+                onSignOut={() => { logout(); setUser(null); signOutEntitlement().then(setEnt); loadConversations() }}
+                onManageBilling={() => navigateDashboard('billing')}
+                onUpgrade={() => { closeDashboard(); setShowUpgrade(true) }}
+              />
+            )}
+            {dashActive === 'agents' && (
+              <AgentsPanel embedded onClose={closeDashboard} onToast={showToast} conversationId={scopeId} />
+            )}
+            {dashActive === 'skills' && (
+              <SkillsPanel embedded onClose={closeDashboard} onRunWorkflow={runWorkflowNow} conversationId={scopeId} />
+            )}
+            {dashActive === 'mcp' && (
+              <div className="dash-page-pad">
+                <McpServersPage onShowToast={showToast} />
+              </div>
+            )}
+            {dashActive === 'plugins' && (
+              <div className="dash-page-pad">
+                <PluginsManagerPage onShowToast={showToast} />
+              </div>
+            )}
+          </DashboardShell>
+        </React.Suspense>
+        {toasts.map(t => (
+          <div key={t.id} className={`toast toast-${t.type || 'info'}`}>{t.message}</div>
+        ))}
+      </div>
     )
   }
 
@@ -3700,7 +3985,7 @@ export default function App() {
           <button
             type="button"
             className="sidebar-settings-btn"
-            onClick={() => navigateDashboard('settings')}
+            onClick={() => navigateDashboard('providers')}
             title="Open Settings, Providers, Billing & Tools"
           >
             <div className="sidebar-settings-btn-main">
@@ -3717,12 +4002,14 @@ export default function App() {
 
           {user ? (
             <div className="user-info">
-              {user.photoURL ? (
-                <img src={user.photoURL} alt="" style={{ width: 22, height: 22, borderRadius: '50%' }} />
-              ) : (
-                <User size={15} />
-              )}
-              <span className="user-name" title={user.email}>{user.displayName || user.email}</span>
+              <button type="button" className="user-info-identity" onClick={() => navigateDashboard('account')} title="Account">
+                {user.photoURL ? (
+                  <img src={user.photoURL} alt="" style={{ width: 22, height: 22, borderRadius: '50%' }} />
+                ) : (
+                  <User size={15} />
+                )}
+                <span className="user-name" title={user.email}>{user.displayName || user.email}</span>
+              </button>
               <button className="icon-btn" onClick={() => { logout(); setUser(null); signOutEntitlement().then(setEnt); loadConversations() }} title="Sign out">
                 <LogOut size={14} />
               </button>
@@ -4007,7 +4294,7 @@ export default function App() {
                     </span>
                   </div>
                   <div className="setup-actions">
-                    <button className="small-btn" onClick={() => { setSidebarOpen(true); setSettingsOpen(true) }}>
+                    <button className="small-btn" onClick={() => { setSidebarOpen(true); navigateDashboard('providers') }}>
                       I have an API key instead
                     </button>
                   </div>
@@ -4027,7 +4314,7 @@ export default function App() {
                     <a className="btn-primary setup-btn" href="https://build.nvidia.com" target="_blank" rel="noopener">
                       Get a free NVIDIA key
                     </a>
-                    <button className="small-btn" onClick={() => { setSidebarOpen(true); setSettingsOpen(true) }}>
+                    <button className="small-btn" onClick={() => { setSidebarOpen(true); navigateDashboard('providers') }}>
                       I have a key — open settings
                     </button>
                     <button className="small-btn" onClick={() => {
@@ -4038,7 +4325,7 @@ export default function App() {
                         }
                         setProvider('local')
                         setSidebarOpen(true)
-                        setSettingsOpen(true)
+                        navigateDashboard('providers')
                       }).catch(err => {
                         setErrorModalMsg(`Could not check on-device model support.\n\n${err.message}`)
                       })
@@ -4727,322 +5014,6 @@ export default function App() {
           onSave={(path) => showToast(`Saved ${path}`)}
         />
       )}
-      {dashActive && (
-        <React.Suspense fallback={null}>
-          <DashboardShell active={dashActive} onNavigate={navigateDashboard} onClose={closeDashboard}>
-            {dashActive === 'settings' && (
-              <>
-                <PersonalisePanel embedded prefs={prefs} onChange={updatePref} onClose={closeDashboard} />
-                <div style={{ display: 'none' }}>
-                  <StylePicker conversationId={scopeId} onToast={showToast} />
-                </div>
-              </>
-            )}
-            {dashActive === 'billing' && (
-              <BillingPanel
-                embedded
-                onClose={closeDashboard}
-                onUpgrade={() => { closeDashboard(); setShowUpgrade(true) }}
-              />
-            )}
-            {dashActive === 'diagnostics' && (
-              <DiagnosticsModal embedded onClose={closeDashboard} />
-            )}
-            {dashActive === 'usage' && (
-              <DataDashboard
-                embedded
-                onClose={closeDashboard}
-                onExport={() => { downloadBackup().catch(() => {}); showToast('Backup exported') }}
-              />
-            )}
-            {dashActive === 'capabilities' && (
-              <Modal
-                embedded
-                title="AI Tools Configuration"
-                icon={<Wrench size={18} />}
-                onClose={closeDashboard}
-                footer={
-                  <div className="modal-actions">
-                    <button className="btn-primary" onClick={closeDashboard}>Done</button>
-                  </div>
-                }
-              >
-                <div className="tool-picker-modal-content" style={{ maxHeight: '65vh', overflowY: 'auto', paddingRight: 4 }}>
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-                    Enable or disable specific tools for the AI assistant ({toolPrefs.filter(t => t.enabled).length} of {toolPrefs.length} active).
-                  </p>
-                  {/* 200+ tools in flat groups had no way to jump to one by name — the
-                      dashboard rail got a search box for the same reason (9 sections
-                      still needed it); a list 20x that size needed one more. */}
-                  <div className="cap-search" style={{ position: 'relative', marginBottom: 16 }}>
-                    <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5, pointerEvents: 'none' }} />
-                    <input
-                      type="text"
-                      value={capQuery}
-                      onChange={e => setCapQuery(e.target.value)}
-                      placeholder="Search tools…"
-                      aria-label="Search tools"
-                      style={{ width: '100%', padding: '8px 10px 8px 30px', borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))', background: 'var(--bg-secondary, rgba(255,255,255,0.03))', color: 'var(--text-primary)', fontSize: 13 }}
-                    />
-                    {capQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setCapQuery('')}
-                        aria-label="Clear search"
-                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex' }}
-                      >
-                        <X size={13} />
-                      </button>
-                    )}
-                  </div>
-                  {(() => {
-                    const q = capQuery.trim().toLowerCase()
-                    const groups = [...new Set(toolPrefs.map(t => t.group))]
-                    const visibleGroups = !q
-                      ? groups
-                      : groups.filter(g => g.toLowerCase().includes(q) || toolPrefs.some(t => t.group === g && t.name.toLowerCase().includes(q)))
-
-                    if (visibleGroups.length === 0) {
-                      return <div style={{ padding: '24px 8px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>No tools match "{capQuery}"</div>
-                    }
-
-                    return visibleGroups.map(group => {
-                      const groupNameMatches = q && group.toLowerCase().includes(q)
-                      const inGroup = toolPrefs.filter(t => t.group === group && (!q || groupNameMatches || t.name.toLowerCase().includes(q)))
-                      if (inGroup.length === 0) return null
-                      const allOn = inGroup.every(t => t.enabled)
-                      return (
-                      <div key={group} className="tool-group-card" style={{ marginBottom: 16, background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: 12, borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
-                        <div className="tool-group-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--border-color, rgba(255,255,255,0.06))' }}>
-                          <strong style={{ fontSize: 13, textTransform: 'capitalize' }}>{group}</strong>
-                          <button className="link-btn" style={{ fontSize: 12, color: 'var(--accent-color, #ff6b35)', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => toggleToolGroup(group, !allOn)}>
-                            {allOn ? 'Disable group' : 'Enable group'}
-                          </button>
-                        </div>
-                        <div className="tool-group-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
-                          {inGroup.map(t => (
-                            <label key={t.name} className="tool-check-card" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', padding: '4px 6px', borderRadius: 4 }}>
-                              <input
-                                type="checkbox"
-                                checked={t.enabled}
-                                onChange={e => toggleTool(t.name, e.target.checked)}
-                              />
-                              <span>{t.name.replace(/_/g, ' ')}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                      )
-                    })
-                  })()}
-                </div>
-              </Modal>
-            )}
-            {dashActive === 'providers' && (
-              <Modal embedded title="Providers &amp; Keys" icon={<Key size={18} />} onClose={closeDashboard}>
-                <div className="providers-page">
-                  <p className="dash-page-hint">
-                    Bring your own key — nothing here ever leaves this device except straight
-                    to the provider you pick.
-                  </p>
-
-                  <div className="providers-list">
-                    {Object.entries(getLLMProviders()).map(([pid, def]) => {
-                      const info = models[pid] || {}
-                      const st = providerStatus[pid] || {}
-                      const noKeyNeeded = !!(def.noKey || def.isLocal)
-                      const isSaved = !!keyInfo[pid]?.configured
-                      const isActive = provider === pid
-                      const dotState = st.state === 'connected' ? 'connected' : st.state === 'failed' ? 'failed' : (isSaved || noKeyNeeded) ? 'testing' : 'unknown'
-                      return (
-                        <div key={pid} className={`provider-row-card${isActive ? ' active' : ''}`}>
-                          <div className="provider-row-head">
-                            <span className={`conn-dot-inline conn-${dotState}`} />
-                            <strong>{info.name || def.name || pid}</strong>
-                            {isActive && <span className="provider-active-badge">Active</span>}
-                            <div className="provider-row-actions">
-                              {def.keyUrl && !isSaved && (
-                                <a href={def.keyUrl} target="_blank" rel="noreferrer" className="provider-key-link">
-                                  Get a key <ExternalLink size={10} />
-                                </a>
-                              )}
-                              <button
-                                type="button"
-                                className="ws-ghost-btn xs"
-                                disabled={isActive || (!noKeyNeeded && !isSaved)}
-                                onClick={() => setProvider(pid)}
-                              >
-                                Use
-                              </button>
-                              {!noKeyNeeded && pid !== 'local' && (
-                                <button
-                                  type="button"
-                                  className="ws-ghost-btn xs"
-                                  title="Edit as a custom provider"
-                                  onClick={() => { setEditingProvider(pid); setShowProviderModal(true) }}
-                                >
-                                  Edit
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          {!noKeyNeeded && (
-                            <div className="provider-key-row">
-                              <input
-                                type="password"
-                                aria-label={`API key for ${info.name || pid}`}
-                                placeholder={isSaved ? 'Saved — paste a new key to replace it' : 'Paste API key'}
-                                value={apiKeyInput[pid] || ''}
-                                onChange={e => setApiKeyInput(prev => ({ ...prev, [pid]: e.target.value }))}
-                              />
-                              <button
-                                type="button"
-                                className="ws-primary-btn xs"
-                                disabled={savingApiKey === pid || !(apiKeyInput[pid] || '').trim()}
-                                onClick={() => handleAddApiKey(pid)}
-                              >
-                                {savingApiKey === pid ? 'Saving…' : 'Save'}
-                              </button>
-                              {isSaved && (
-                                <>
-                                  <button type="button" className="ws-ghost-btn xs" disabled={savingApiKey === pid} onClick={() => retestProvider(pid)}>Test</button>
-                                  <button type="button" className="ws-ghost-btn xs danger" onClick={() => handleRemoveProvider(pid)}>Remove</button>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  <button type="button" className="ws-ghost-btn sm" onClick={() => { setEditingProvider(null); setShowProviderModal(true) }}>
-                    <Plus size={13} /> Add a custom provider
-                  </button>
-
-                  <div className="dash-divider" />
-
-                  <h4 className="dash-subsection-title">Model &amp; generation</h4>
-                  <div className="providers-model-row">
-                    <ModelPicker
-                      prefix={models[provider]?.name || provider}
-                      models={models[provider]?.models || []}
-                      value={model}
-                      measured={measuredModels}
-                      formatLatency={formatLatency}
-                      disabled={!models[provider]?.available}
-                      onChange={(m) => chooseModel(m)}
-                    />
-                    <button type="button" className="ws-ghost-btn sm" disabled={autoPicking || !models[provider]?.available} onClick={() => handleAutoPick(provider)}>
-                      {autoPicking ? 'Measuring…' : 'Auto-pick fastest'}
-                    </button>
-                  </div>
-
-                  <div className="toggle-row">
-                    <label htmlFor="prov-temperature">Temperature <span className="personalise-value">{Number(temperature).toFixed(1)}</span></label>
-                    <input id="prov-temperature" type="range" min="0" max="1.5" step="0.1" value={temperature}
-                      onChange={e => setTemperature(Number(e.target.value))} />
-                  </div>
-                  <div className="toggle-row">
-                    <label htmlFor="prov-tools">AI tools</label>
-                    <label className="toggle" aria-label="Toggle AI tools">
-                      <input id="prov-tools" type="checkbox" checked={tools} onChange={e => setToolsEnabled(e.target.checked)} />
-                      <span className="slider" />
-                    </label>
-                  </div>
-                  <div className="toggle-row">
-                    <label htmlFor="prov-web">Web research</label>
-                    <label className="toggle" aria-label="Toggle web research">
-                      <input id="prov-web" type="checkbox" checked={webSearch} onChange={e => setWebSearch(e.target.checked)} />
-                      <span className="slider" />
-                    </label>
-                  </div>
-                  <div className="toggle-row">
-                    <label htmlFor="prov-fallback">Fall back to another provider on error</label>
-                    <label className="toggle" aria-label="Toggle provider fallback">
-                      <input id="prov-fallback" type="checkbox" checked={fallback} onChange={e => setFallback(e.target.checked)} />
-                      <span className="slider" />
-                    </label>
-                  </div>
-                  <div className="toggle-row">
-                    <label htmlFor="prov-autoroute">Route each message to the fastest working model</label>
-                    <label className="toggle" aria-label="Toggle per-message model routing">
-                      <input id="prov-autoroute" type="checkbox" checked={autoRoute} onChange={e => setAutoRoute(e.target.checked)} />
-                      <span className="slider" />
-                    </label>
-                  </div>
-                </div>
-              </Modal>
-            )}
-            {dashActive === 'privacy' && (
-              <Modal embedded title="Privacy &amp; Backup" icon={<ShieldCheck size={18} />} onClose={closeDashboard}>
-                <div className="providers-page">
-                  <p className="dash-page-hint">
-                    Yogatik is local-first: conversations, documents and settings live in this
-                    browser's storage, not on a server. A backup is the only copy that exists
-                    anywhere else — export one before clearing site data or switching devices.
-                  </p>
-                  <div className="account-card">
-                    <div className="account-card-head"><h3>Backup</h3></div>
-                    <p className="account-plan-detail">
-                      A full export (chats, documents and settings) as one file you can re-import
-                      anywhere. API keys are deliberately excluded from every export.
-                    </p>
-                    <div className="account-plan-actions">
-                      <button type="button" className="ws-primary-btn sm" onClick={handleBackup}>Export backup</button>
-                      <button type="button" className="ws-ghost-btn sm" onClick={() => backupInput.current?.click()}>Import a backup</button>
-                    </div>
-                  </div>
-                  <div className="account-card">
-                    <div className="account-card-head"><h3>Storage &amp; sync</h3></div>
-                    <p className="account-plan-detail">
-                      Local storage size, protection status and API key cloud sync live on the{' '}
-                      <button type="button" className="link-btn" style={{ padding: 0 }} onClick={() => navigateDashboard('usage')}>Usage &amp; Data</button>
-                      {' '}page.
-                    </p>
-                  </div>
-                  <div className="account-card">
-                    <div className="account-card-head"><h3>Policies</h3></div>
-                    <div className="account-device-row">
-                      <a className="account-device-chip" href="/privacy" target="_blank" rel="noreferrer">Privacy notice</a>
-                      <a className="account-device-chip" href="/terms" target="_blank" rel="noreferrer">Terms of use</a>
-                      <a className="account-device-chip" href="/refunds" target="_blank" rel="noreferrer">Refund policy</a>
-                    </div>
-                  </div>
-                </div>
-              </Modal>
-            )}
-            {dashActive === 'account' && (
-              <AccountPage
-                user={user}
-                ent={ent}
-                isDesktopBuild={isDesktop()}
-                isPersonal={isPersonalEdition()}
-                onSignIn={requestSignIn}
-                onSignOut={() => { logout(); setUser(null); signOutEntitlement().then(setEnt); loadConversations() }}
-                onManageBilling={() => navigateDashboard('billing')}
-                onUpgrade={() => { closeDashboard(); setShowUpgrade(true) }}
-              />
-            )}
-            {dashActive === 'agents' && (
-              <AgentsPanel embedded onClose={closeDashboard} onToast={showToast} conversationId={scopeId} />
-            )}
-            {dashActive === 'skills' && (
-              <SkillsPanel embedded onClose={closeDashboard} onRunWorkflow={runWorkflowNow} conversationId={scopeId} />
-            )}
-            {dashActive === 'mcp' && (
-              <div className="dash-page-pad">
-                <McpServersPage onShowToast={showToast} />
-              </div>
-            )}
-            {dashActive === 'plugins' && (
-              <div className="dash-page-pad">
-                <PluginsManagerPage onShowToast={showToast} />
-              </div>
-            )}
-          </DashboardShell>
-        </React.Suspense>
-      )}
       {showPalette && <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} onOpenChat={openChatById} />}
       {showTerms && (
         <TermsModal onAccept={handleAcceptTerms} onDecline={() => setShowTerms(false)} />
@@ -5138,7 +5109,7 @@ export default function App() {
       {showOverviewModal && (
         <AppOverviewModal
           onClose={() => setShowOverviewModal(false)}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => navigateDashboard('providers')}
           onOpenDemo={() => setShowDemoModal(true)}
           onOpenTour={() => setShowTour(true)}
           onOpenDomainHub={() => setShowDomainHub(true)}
