@@ -538,6 +538,25 @@ html, body {
 .error-category-badge.badge-network { color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); }
 .error-category-badge.badge-webgpu { color: #10b981; border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.1); }
 .error-category-badge.badge-general { color: #f97316; border-color: rgba(249, 115, 22, 0.4); background: rgba(249, 115, 22, 0.1); }
+.error-category-badge.badge-stream_stall { color: #facc15; border-color: rgba(250, 204, 21, 0.4); background: rgba(250, 204, 21, 0.1); }
+
+/* Partial content shown above the error card when the model stalled mid-response */
+.message-partial-content {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--assistant-bg, #18181b) 60%, transparent);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  opacity: 0.85;
+}
+.message-partial-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #facc15;
+  margin-bottom: 8px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
 
 .message-error-title {
   margin: 0; font-size: 14px; font-weight: 600; color: var(--text-primary, #f4f4f5);
@@ -2070,6 +2089,40 @@ html, body {
 .message-actions { display: flex; gap: 1px; margin-left: auto; opacity: 0; transition: opacity var(--transition, .15s); }
 .message:hover .message-actions, .message-actions:focus-within { opacity: 1; }
 @media (hover: none) { .message-actions { opacity: .65; } }
+
+.message-bottom-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.05));
+}
+
+.bottom-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bottom-action-btn:hover {
+  color: var(--text-primary, #f1f5f9);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.bottom-action-btn:active {
+  transform: scale(0.94);
+}
 
 .message-failed .message-error {
   display: flex; align-items: center; gap: 8px;

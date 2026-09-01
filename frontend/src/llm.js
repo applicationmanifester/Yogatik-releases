@@ -585,19 +585,29 @@ export async function streamChat({
     // Per-stream: wraps the provider's separate reasoning channel in <think>.
     const reasoningTagger = createReasoningTagger()
 
-    const STREAM_CHUNK_TIMEOUT_MS = 30000 // 30s max wait between chunks
+    // 90s between-chunk watchdog: 30s was too aggressive on iOS/mobile where
+    // background throttling can hold the stream for 60-90s mid-response without
+    // the provider actually stalling. Status nudges at 30s and 60s so the user
+    // sees "Still working…" instead of a blank spinner.
+    const STREAM_CHUNK_TIMEOUT_MS = 90000
     while (true) {
       // Chunk-stall watchdog: aborts if provider connection freezes mid-stream
-      let chunkTimer
+      let chunkTimer, nudge30, nudge60
       const chunkPromise = new Promise((_, reject) => {
+        nudge30 = setTimeout(() => onStatus?.('⏳ Still working — waiting for the model…'), 30000)
+        nudge60 = setTimeout(() => onStatus?.('⏳ Still working — large model responding, please wait…'), 60000)
         chunkTimer = setTimeout(() => {
-          const err = new Error('Stream stalled — no tokens received from provider for 30s. Try regenerating or choosing a faster model.')
+          const err = new Error('Stream stalled — no tokens received from provider for 90s. Try regenerating or choosing a faster model.')
           err.name = 'TimeoutError'
           reject(err)
         }, STREAM_CHUNK_TIMEOUT_MS)
       })
 
-      const readPromise = reader.read().finally(() => clearTimeout(chunkTimer))
+      const readPromise = reader.read().finally(() => {
+        clearTimeout(chunkTimer)
+        clearTimeout(nudge30)
+        clearTimeout(nudge60)
+      })
       const { done, value } = await Promise.race([readPromise, chunkPromise])
       if (done) break
 
@@ -744,6 +754,8 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
   return data
 }
 
+const INFLIGHT_MODELS = new Map()
+
 /**
  * Fetch available models dynamically from provider's /v1/models endpoint.
  * Providers flagged `publicModels` (NVIDIA) work without a key.
@@ -757,39 +769,51 @@ export async function fetchLiveModels(providerId, apiKey) {
   if (!prov) return []
   if (!isKeyless && !apiKey) return []
 
-  try {
-    const headers = {}
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
-    if (providerId === 'openrouter') {
-      headers['HTTP-Referer'] = 'https://yogatik.app'
-      headers['X-Title'] = 'Yogatik'
-    }
-
-    // Use a short timeout for local daemons — fail fast if Ollama isn't running
-    const timeoutMs = isKeyless ? 4000 : 15000
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
-
-    const targetUrl = `${prov.baseUrl}/models`
-    let resp
-    try {
-      resp = await smartFetch(targetUrl, { method: 'GET', headers, signal: controller.signal }, prov)
-    } finally {
-      clearTimeout(timer)
-    }
-    if (!resp.ok) return []
-
-    const contentType = resp.headers.get('content-type') || ''
-    if (!contentType.includes('application/json')) return []
-
-    const data = await resp.json()
-    const modelList = data.data || data.models || []
-    const ids = [...new Set(modelList.map(m => normalizeModelName(m)).filter(id => id && id.length > 0 && id !== '[object Object]'))]
-      .sort((a, b) => a.localeCompare(b))
-    return ids
-  } catch {
-    return []
+  const dedupeKey = `${providerId}:${isKeyless ? 'keyless' : (apiKey || '').slice(0, 8)}`
+  if (INFLIGHT_MODELS.has(dedupeKey)) {
+    return INFLIGHT_MODELS.get(dedupeKey)
   }
+
+  const p = (async () => {
+    try {
+      const headers = {}
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+      if (providerId === 'openrouter') {
+        headers['HTTP-Referer'] = 'https://yogatik.app'
+        headers['X-Title'] = 'Yogatik'
+      }
+
+      // Use a short timeout for local daemons — fail fast if Ollama isn't running
+      const timeoutMs = isKeyless ? 4000 : 15000
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+      const targetUrl = `${prov.baseUrl}/models`
+      let resp
+      try {
+        resp = await smartFetch(targetUrl, { method: 'GET', headers, signal: controller.signal }, prov)
+      } finally {
+        clearTimeout(timer)
+      }
+      if (!resp.ok) return []
+
+      const contentType = resp.headers.get('content-type') || ''
+      if (!contentType.includes('application/json')) return []
+
+      const data = await resp.json()
+      const modelList = data.data || data.models || []
+      const ids = [...new Set(modelList.map(m => normalizeModelName(m)).filter(id => id && id.length > 0 && id !== '[object Object]'))]
+        .sort((a, b) => a.localeCompare(b))
+      return ids
+    } catch {
+      return []
+    }
+  })().finally(() => {
+    INFLIGHT_MODELS.delete(dedupeKey)
+  })
+
+  INFLIGHT_MODELS.set(dedupeKey, p)
+  return p
 }
 
 /**

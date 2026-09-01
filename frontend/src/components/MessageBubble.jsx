@@ -258,21 +258,26 @@ const MessageBubble = React.memo(function MessageBubble({
 }) {
    const [copied, setCopied] = useState(false)
    const [showExportMenu, setShowExportMenu] = useState(false)
+   const [showExportMenuBottom, setShowExportMenuBottom] = useState(false)
    // Default EXPANDED: collapsing by default hid whole answers behind "Show more".
    const [isExpanded, setIsExpanded] = useState(true)
    const exportMenuRef = useRef(null)
+   const exportMenuBottomRef = useRef(null)
 
   // Close export dropdown when clicking outside it
   useEffect(() => {
-    if (!showExportMenu) return
+    if (!showExportMenu && !showExportMenuBottom) return
     const handler = (e) => {
       if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
         setShowExportMenu(false)
       }
+      if (exportMenuBottomRef.current && !exportMenuBottomRef.current.contains(e.target)) {
+        setShowExportMenuBottom(false)
+      }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [showExportMenu])
+  }, [showExportMenu, showExportMenuBottom])
 
   const copy = useCallback(async () => {
     try {
@@ -317,11 +322,20 @@ const MessageBubble = React.memo(function MessageBubble({
     }
   }, [msg.content])
 
+
   // Failed turns are rendered with actionable diagnosis, resolution recommendations, and copy tools
   if (msg.error) {
     const diagnosis = diagnoseError(msg.error)
     return (
       <div className="message assistant message-failed" role="alert">
+        {/* If the model produced partial output before stopping, show it above
+            the error card so the user doesn't lose what was already generated. */}
+        {msg.content && msg.content.trim() && (
+          <div className="message-partial-content">
+            <div className="message-partial-label">⚡ Partial response (stopped early):</div>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+          </div>
+        )}
         <div className="message-error-card">
           <div className="message-error-header">
             <div className="message-error-title-wrap">
@@ -367,7 +381,7 @@ const MessageBubble = React.memo(function MessageBubble({
               </button>
             )}
 
-            {(diagnosis.actionType === 'autopick' || diagnosis.type === 'quota' || diagnosis.type === 'model_not_found') && onAutoPick && (
+            {(diagnosis.actionType === 'autopick' || diagnosis.type === 'quota' || diagnosis.type === 'model_not_found' || diagnosis.type === 'stream_stall') && onAutoPick && (
               <button type="button" className="error-btn-secondary" onClick={() => onAutoPick(msg.provider)}>
                 <Zap size={13} /> {diagnosis.actionLabel || 'Auto-Pick Model'}
               </button>
@@ -384,6 +398,7 @@ const MessageBubble = React.memo(function MessageBubble({
       </div>
     )
   }
+
 
   return (
     <div className={`message ${msg.role}`}>
@@ -631,6 +646,104 @@ const MessageBubble = React.memo(function MessageBubble({
           {msg.tokSec ? <span>⚡ {Number(msg.tokSec).toFixed(1)} tok/s</span> : null}
           {msg.ttfbMs ? <span>⏱️ TTFB {Math.round(msg.ttfbMs)}ms</span> : null}
           {msg.tokens ? <span>📊 {msg.tokens} tokens</span> : null}
+        </div>
+      )}
+
+      {msg.role === 'assistant' && (
+        <div className="message-bottom-actions">
+          <button
+            type="button"
+            className="bottom-action-btn"
+            onClick={copy}
+            title="Copy response"
+            aria-label="Copy response"
+          >
+            {copied ? <Check size={14} style={{ color: 'var(--accent, #10b981)' }} /> : <Copy size={14} />}
+          </button>
+          <button
+            type="button"
+            className="bottom-action-btn"
+            onClick={() => onTTS?.(answer || msg.content)}
+            title="Read aloud"
+            aria-label="Read aloud"
+          >
+            <Volume2 size={14} />
+          </button>
+          <div ref={exportMenuBottomRef} style={{ position: 'relative', display: 'inline-flex' }}>
+            <button
+              type="button"
+              className="bottom-action-btn"
+              onClick={() => setShowExportMenuBottom(v => !v)}
+              title="Download response"
+              aria-label="Download response"
+              aria-haspopup="true"
+              aria-expanded={showExportMenuBottom}
+            >
+              <Download size={14} />
+            </button>
+            {showExportMenuBottom && (
+              <div
+                className="export-dropdown export-dropdown-bottom"
+                role="menu"
+                style={{
+                  position: 'absolute',
+                  bottom: 'calc(100% + 6px)',
+                  left: 0,
+                  zIndex: 100,
+                  background: 'var(--bg-secondary, #1e1e2e)',
+                  border: '1px solid var(--border-color, rgba(255,255,255,0.12))',
+                  borderRadius: 8,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                  padding: 4,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  minWidth: 155,
+                }}
+              >
+                {[
+                  { fmt: 'doc', label: 'Word Document (.doc)', icon: <FileText size={12} />, title: 'document' },
+                  { fmt: 'ppt', label: 'PowerPoint (.ppt)', icon: <FileText size={12} />, title: 'presentation' },
+                  { fmt: 'csv', label: 'CSV Spreadsheet (.csv)', icon: <FileText size={12} />, title: 'data' },
+                  { fmt: 'pdf', label: 'PDF (.pdf)', icon: <FileDown size={12} />, title: 'document' },
+                  { fmt: 'md', label: 'Markdown (.md)', icon: <Download size={12} />, title: 'document' },
+                ].map(({ fmt, label, icon, title }) => (
+                  <button
+                    key={fmt}
+                    type="button"
+                    role="menuitem"
+                    className="dropdown-item"
+                    onClick={() => { triggerDownload(msg.content, fmt, title); setShowExportMenuBottom(false) }}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-primary, #ddd)', padding: '6px 10px', fontSize: 12, textAlign: 'left', cursor: 'pointer', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    {icon} {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {onContinue && (
+            <button
+              type="button"
+              className="bottom-action-btn"
+              onClick={onContinue}
+              title="Continue generating response"
+              aria-label="Continue response"
+            >
+              <Play size={14} />
+            </button>
+          )}
+          {(onRegenerate || onRetry) && (
+            <button
+              type="button"
+              className="bottom-action-btn"
+              onClick={onRegenerate || onRetry}
+              title="Regenerate response"
+              aria-label="Regenerate response"
+            >
+              <RefreshCw size={14} />
+            </button>
+          )}
         </div>
       )}
     </div>

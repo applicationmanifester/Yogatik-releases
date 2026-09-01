@@ -126,6 +126,22 @@ export function diagnoseError(error) {
     }
   }
 
+
+  // Stream stall: the provider connected and began streaming but then froze
+  // mid-response. Distinct from "failed to reach the provider" (network error)
+  // — the key here is that tokens were already flowing, so internet is fine.
+  if (lower.includes('stream stalled') || lower.includes('no tokens received') ||
+      /stalled.*provider|provider.*stalled|stream.*timeout/i.test(msg)) {
+    return {
+      type: 'stream_stall',
+      category: 'Model Stalled',
+      title: 'The Model Stopped Responding Mid-Stream',
+      suggestion: 'The provider sent some tokens then stopped. This usually means the model is overloaded or the response was very long. Try regenerating, or switch to a faster/smaller model.',
+      actionType: 'autopick',
+      actionLabel: 'Auto-Pick Faster Model',
+    }
+  }
+
   if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('offline') || lower.includes('timeout') || lower.includes('abort') || lower.includes('connection refused') || lower.includes('err_connection')) {
     return {
       type: 'network',
@@ -136,6 +152,7 @@ export function diagnoseError(error) {
       actionLabel: 'Retry',
     }
   }
+
 
   if (lower.includes('webgpu') || lower.includes('gpu') || lower.includes('vram') || lower.includes('device lost')) {
     return {

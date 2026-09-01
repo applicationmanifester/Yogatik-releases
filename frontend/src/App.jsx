@@ -2688,10 +2688,20 @@ export default function App() {
           setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
           setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
           setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+          // Preserve any partial content the model streamed before the error —
+          // especially important on iOS where background throttling can kill a
+          // stream after several paragraphs of real output. Losing all of that
+          // is far worse than showing a partial answer with an error notice.
+          const partialContent = content.trim()
           setConversations(prev => {
             const next = prev.map(c =>
               c.clientId === targetClientId
-                ? { ...c, id: convId, messages: [...(c.messages || []), { role: 'assistant', error: String(err), content: '' }] }
+                ? { ...c, id: convId, messages: [...(c.messages || []), {
+                    role: 'assistant',
+                    error: String(err),
+                    // Keep partial content so the user can see what was generated
+                    content: partialContent,
+                  }] }
                 : c
             )
             conversationsRef.current = next
