@@ -141,7 +141,8 @@ jobs:
             Desktop builds for Windows, macOS and Linux — download under Assets.
 
             * **Windows** — `Yogatik-Setup.exe`
-            * **macOS** — `Yogatik.dmg` (universal: Apple Silicon + Intel)
+            * **macOS (Apple Silicon M1/M2/M3)** — `Yogatik-arm64.dmg` or `Yogatik-arm64.zip`
+            * **macOS (Intel)** — `Yogatik-x64.dmg` or `Yogatik-x64.zip`
             * **Linux** — `Yogatik.AppImage` or `Yogatik.deb`
 
             These builds are unsigned. macOS will need right-click → Open the

@@ -1,7 +1,7 @@
 {
   "name": "yogatik",
   "private": true,
-  "version": "4.1.1",
+  "version": "4.1.2",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -132,25 +132,19 @@
     },
     "mac": {
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "universal"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "universal"
-          ]
-        }
+        "dmg",
+        "zip"
+      ],
+      "arch": [
+        "x64",
+        "arm64"
       ],
       "category": "public.app-category.productivity",
       "icon": "electron/icon.png",
       "darkModeSupport": true,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "artifactName": "Yogatik.${ext}"
+      "artifactName": "Yogatik-${arch}.${ext}"
     }
   },
   "repository": {
