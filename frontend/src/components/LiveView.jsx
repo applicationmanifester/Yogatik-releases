@@ -599,7 +599,7 @@ export function LiveView({
         micSwitchable={engine === 'gemini'}
       />
 
-      {/* Awareness badges */}
+      {/* Awareness badges — provider/model only; vision status is in the HUD overlay */}
       <div className="live-badges">
         {availableModels && availableModels.length > 0 ? (
           <select
@@ -628,9 +628,6 @@ export function LiveView({
             {availableModels.map(m => (
               <option key={m} value={m} style={{ background: '#1c1e22', color: '#fff' }}>
                 {activeProvider.provider} · {m.split('/').pop()}
-                {modelCanSeeMap[m] && <span className="badge-icon" title="Vision"> 👁</span>}
-                {toolCapableModels.includes(m) && <span className="badge-icon" title="Tools"> 🔧</span>}
-                {m === (activeProvider.model || model) && <span className="check"> ✓</span>}
               </option>
             ))}
           </select>
@@ -640,24 +637,6 @@ export function LiveView({
             {activeProvider.model ? ` · ${activeProvider.model.split('/').pop().slice(0, 20)}` : ''}
           </span>
         )}
-        {liveVoice === 'loading' && (
-          <span className="live-badge awareness voice-loading">
-            <Loader2 size={12} className="spin" /> Neural voice loading…
-          </span>
-        )}
-        {liveVoice !== 'system' && liveVoice !== 'loading' && (
-          <span className="live-badge awareness" title="On-device neural voice">
-            <Volume2 size={12} /> Neural voice
-          </span>
-        )}
-        <span className={`live-badge awareness ${(camOn || screenOn) ? 'watching' : 'audio-only'}`}>
-          {(camOn || screenOn) ? (
-            <><Eye size={12} /> {visionMode === 'always' ? 'Watching' : 'Can see'}{modelCanSee ? '' : ' (on-device)'}</>
-          ) : (
-            <><EyeOff size={12} /> Audio only</>
-          )}
-          {frameSent && (camOn || screenOn) && <span className="frame-dot" />}
-        </span>
         {screenOn && <span className="live-badge screen-badge"><Monitor size={12} /> Screen</span>}
       </div>
 

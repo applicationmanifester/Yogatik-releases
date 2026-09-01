@@ -24,6 +24,7 @@ import { ArtifactCanvas } from './components/ArtifactCanvas'
 import { Modal } from './components/Modal'
 import { TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 import { ModelPicker } from './components/ModelPicker'
+import { ProviderPicker } from './components/ProviderPicker'
 import { StylePicker } from './components/StylePicker'
 import { runWorkflow } from './workflows'
 import { FloatingCompanion } from './components/FloatingCompanion'
@@ -1106,12 +1107,28 @@ export default function App() {
   }, [])
   /** One updater for every small preference the Personalise panel owns. */
   const updatePref = useCallback((key, value) => {
+    if (typeof key === 'object' && key !== null) {
+      const entries = Object.entries(key)
+      setPrefsState(p => {
+        const next = { ...p, ...key }
+        for (const [k] of entries) {
+          if (typeof k === 'string' && k.endsWith('_override')) {
+            setLocaleOverrides(overridesFromPrefs(next))
+            applyDocumentLocale()
+            break
+          }
+        }
+        return next
+      })
+      for (const [k, v] of entries) {
+        setPref(k, v).catch(() => {})
+      }
+      return
+    }
+
     setPrefsState(p => {
       const next = { ...p, [key]: value }
-      // The locale layer is read SYNCHRONOUSLY while a system prompt is built,
-      // so its overrides are pushed here rather than read from the database on
-      // demand — otherwise a changed region would not reach the next turn.
-      if (key.endsWith('_override')) {
+      if (typeof key === 'string' && key.endsWith('_override')) {
         setLocaleOverrides(overridesFromPrefs(next))
         applyDocumentLocale()
       }
@@ -3802,7 +3819,7 @@ export default function App() {
                         <input
                           type="checkbox"
                           checked={Boolean(prefs.cloudSync)}
-                          onChange={e => updatePref({ cloudSync: e.target.checked })}
+                          onChange={e => updatePref('cloudSync', e.target.checked)}
                           style={{ accentColor: 'var(--accent, #ff6b35)' }}
                         />
                         <span>Enable encrypted API key cloud backup</span>
@@ -4084,58 +4101,22 @@ export default function App() {
             <ChevronDown size={13} style={{ transform: 'rotate(-90deg)', opacity: 0.5 }} />
           </button>
 
-          {/* Providers & Keys: button + inline active-provider selector */}
-          <div className="sidebar-providers-widget">
-            <button
-              type="button"
-              className="sidebar-providers-btn"
-              onClick={() => navigateDashboard('providers')}
-              title="Manage AI Providers, API Keys & Models (/app/providers)"
-              aria-label="Providers & Keys"
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Key size={13} style={{ color: 'var(--accent, #ff6b35)' }} />
-                <span style={{ fontWeight: 600, fontSize: '12px' }}>Providers &amp; Keys</span>
-              </div>
-              <span className="sidebar-providers-status-chip">
-                {Object.values(models).filter(m => m.available).length} ready
-              </span>
-            </button>
-            {/* Inline provider selector — shows all ready/configured providers */}
-            {Object.keys(models).length > 0 && (
-              <div className="sidebar-provider-select-row">
-                <span
-                  className={`conn-dot-inline conn-${providerStatus[provider]?.state === 'failed' ? 'failed' : (providerStatus[provider]?.state === 'connected' || models[provider]?.available ? 'connected' : 'unknown')}`}
-                  style={{ flexShrink: 0 }}
-                />
-                <select
-                  className="sidebar-provider-select"
-                  value={provider || ''}
-                  onChange={e => { const pid = e.target.value; if (pid) setProvider(pid) }}
-                  title="Switch active AI provider"
-                  aria-label="Active provider"
-                  onClick={e => e.stopPropagation()}
-                >
-                  {Object.entries(models)
-                    .sort(([pidA, defA], [pidB, defB]) => {
-                      const readyA = defA.available || pidA === 'local' || defA.is_ollama
-                      const readyB = defB.available || pidB === 'local' || defB.is_ollama
-                      if (readyA !== readyB) return readyA ? -1 : 1
-                      return (defA.name || pidA).localeCompare(defB.name || pidB)
-                    })
-                    .map(([pid, def]) => {
-                      const isReady = def.available || pid === 'local' || def.is_ollama
-                      return (
-                        <option key={pid} value={pid}>
-                          {isReady ? '● ' : '○ '}{def.name || pid}{isReady ? ' (ready)' : ''}
-                        </option>
-                      )
-                    })
-                  }
-                </select>
-              </div>
-            )}
-          </div>
+          {/* Providers & Keys: navigation button only — provider selection is in the chat toolbar */}
+          <button
+            type="button"
+            className="sidebar-providers-btn"
+            onClick={() => navigateDashboard('providers')}
+            title="Manage AI Providers, API Keys & Models (/app/providers)"
+            aria-label="Providers & Keys"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Key size={13} style={{ color: 'var(--accent, #ff6b35)' }} />
+              <span style={{ fontWeight: 600, fontSize: '12px' }}>Providers &amp; Keys</span>
+            </div>
+            <span className="sidebar-providers-status-chip">
+              {Object.values(models).filter(m => m.available).length} ready
+            </span>
+          </button>
 
           {user ? (
             <div className="user-info">
@@ -4742,26 +4723,25 @@ export default function App() {
             )}
           </div>
           <div className="upload-area">
+            {/* Active AI Provider Switcher Dropdown */}
+            <ProviderPicker
+              providers={models}
+              activeProvider={conv?.provider || provider}
+              providerStatus={providerStatus}
+              onChange={(pid) => setProvider(pid)}
+              onManageProviders={() => navigateDashboard('providers')}
+            />
+
             {/* Which model answers is a per-message decision, so it belongs next
                 to the message — not buried in the settings drawer. */}
             <ModelPicker
               compact
-              prefix={models[conv?.provider || provider]?.name || (conv?.provider || provider)}
               models={models[conv?.provider || provider]?.models || []}
               value={conv?.model !== undefined ? conv.model : model}
               measured={measuredModels}
               formatLatency={formatLatency}
               disabled={!models[conv?.provider || provider]?.available}
               onChange={(m) => chooseModel(m, conv?.provider || provider)} />
-            <button
-              type="button"
-              className="btn-providers-quick"
-              onClick={() => navigateDashboard('providers')}
-              title="Manage AI Providers & Keys (/app/providers)"
-              aria-label="Manage Providers"
-            >
-              <Key size={11} style={{ color: 'var(--accent, #ff6b35)' }} /> Providers
-            </button>
             <label className="upload-btn">
               <Upload size={12} /> Upload
               <input type="file" hidden accept="image/*,.pdf,.txt,.md,.csv,.json,.log,.html,.xml,.rtf" onChange={handleUpload} />

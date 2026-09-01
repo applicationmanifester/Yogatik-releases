@@ -26,107 +26,10 @@ export function LiveHudOverlay({
       pointerEvents: 'none',
       display: 'flex',
       flexDirection: 'column',
-      justifyContent: 'space-between',
+      justifyContent: 'flex-end',
       padding: '20px',
       zIndex: 10,
     }}>
-      {/* Top HUD Status */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '6px 14px',
-          borderRadius: '999px',
-          background: 'rgba(0, 0, 0, 0.55)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(255, 255, 255, 0.15)',
-          color: '#fff',
-          fontSize: '12px',
-          fontWeight: 600,
-        }}>
-          <span style={{
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            backgroundColor: isAnalyzing ? '#f59e0b' : '#10b981',
-            boxShadow: `0 0 10px ${isAnalyzing ? '#f59e0b' : '#10b981'}`,
-          }} />
-          <span>{isAnalyzing ? 'Analyzing live frame…' : 'AI Vision HUD Active'}</span>
-        </div>
-      </div>
-
-      {/* Center Reticle / Scanning Crosshairs */}
-      <div style={{
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: 'min(280px, 70vw)',
-        height: 'min(280px, 70vw)',
-        border: '2px dashed rgba(59, 130, 246, 0.5)',
-        borderRadius: '24px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: '0 0 30px rgba(59, 130, 246, 0.15)',
-      }}>
-        <div style={{
-          position: 'absolute',
-          top: '-10px',
-          left: '-10px',
-          width: '24px',
-          height: '24px',
-          borderTop: '3px solid #3b82f6',
-          borderLeft: '3px solid #3b82f6',
-          borderTopLeftRadius: '12px',
-        }} />
-        <div style={{
-          position: 'absolute',
-          top: '-10px',
-          right: '-10px',
-          width: '24px',
-          height: '24px',
-          borderTop: '3px solid #3b82f6',
-          borderRight: '3px solid #3b82f6',
-          borderTopRightRadius: '12px',
-        }} />
-        <div style={{
-          position: 'absolute',
-          bottom: '-10px',
-          left: '-10px',
-          width: '24px',
-          height: '24px',
-          borderBottom: '3px solid #3b82f6',
-          borderLeft: '3px solid #3b82f6',
-          borderBottomLeftRadius: '12px',
-        }} />
-        <div style={{
-          position: 'absolute',
-          bottom: '-10px',
-          right: '-10px',
-          width: '24px',
-          height: '24px',
-          borderBottom: '3px solid #3b82f6',
-          borderRight: '3px solid #3b82f6',
-          borderBottomRightRadius: '12px',
-        }} />
-
-        {/* Laser scan line animation */}
-        <div style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          height: '2px',
-          background: 'linear-gradient(90deg, transparent, #3b82f6, transparent)',
-          boxShadow: '0 0 12px #3b82f6',
-          animation: 'scanLaser 2.5s infinite ease-in-out',
-        }} />
-      </div>
 
       {/* Bottom Mode Toolbar.
           Positioned by CSS class, not by this flex column: the overlay is
