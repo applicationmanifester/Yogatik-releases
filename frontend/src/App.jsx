@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, FolderPlus, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, FolderPlus, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { setUserQuestionHandler } from './tools/askUser'
@@ -100,6 +100,7 @@ const AppOverviewModal = safeLazy(() => import('./components/AppOverviewModal').
 const McpModal = safeLazy(() => import('./components/McpModal').then(m => ({ default: m.McpModal })))
 const DownloadModal = safeLazy(() => import('./components/DownloadModal').then(m => ({ default: m.DownloadModal })))
 const DiagnosticsModal = safeLazy(() => import('./components/DiagnosticsModal').then(m => ({ default: m.DiagnosticsModal })))
+const BillingPanel = safeLazy(() => import('./components/BillingPanel'))
 const DomainHubModal = safeLazy(() => import('./components/DomainHubModal').then(m => ({ default: m.DomainHubModal })))
 const WhatsNewModal = safeLazy(() => import('./components/WhatsNewModal').then(m => ({ default: m.WhatsNewModal })))
 const ShareSheet = safeLazy(() => import('./components/ShareSheet').then(m => ({ default: m.ShareSheet })))
@@ -493,6 +494,7 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [settingsModalTab, setSettingsModalTab] = useState('providers')
   const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false)
+  const [showBilling, setShowBilling] = useState(false)
   const [showDomainHub, setShowDomainHub] = useState(false)
   const [showOverviewModal, setShowOverviewModal] = useState(false)
   const [showMcpModal, setShowMcpModal] = useState(false)
@@ -672,7 +674,7 @@ export default function App() {
     showPalette || showProviderModal || showAuthModal || showDataDashboard ||
     showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact ||
     showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor ||
-    showWorkspace || showTour
+    showWorkspace || showTour || showBilling
   )
 
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
@@ -750,7 +752,7 @@ export default function App() {
     showDemoModal || showDiagnosticsModal || confirmModal || projectNameModal ||
     restoreModal || showDownloadModal || errorModalMsg || arena ||
     showScheduler || showSubAgents || showAutoSkills || showFileEditor || showWhatsNew ||
-    showTour || showUpgrade
+    showTour || showUpgrade || showBilling
   )
   const isAnyModalOpenRef = useRef(isAnyModalOpen)
   isAnyModalOpenRef.current = isAnyModalOpen
@@ -3198,6 +3200,7 @@ export default function App() {
       { id: 'download-pwa', group: 'View', label: 'Install / download desktop app (PWA)', run: () => setShowDownloadModal(true) },
       { id: 'new-persona', group: 'Personas', label: 'Create new custom persona...', run: () => setShowPersonaModal(true) },
       { id: 'diagnostics', group: 'Settings', label: 'Error Findings & Diagnostics Inspector', hint: 'Inspect Logs', run: () => setShowDiagnosticsModal(true) },
+      { id: 'billing', group: 'Settings', label: 'Billing — plan and payment history', hint: 'View invoices', run: () => setShowBilling(true) },
     ]
 
     for (const [id, p] of Object.entries(models)) {
@@ -3925,6 +3928,26 @@ export default function App() {
               On-device ring buffer of runtime failures, provider errors, and system health report.
             </span>
           </div>
+
+          {user && (
+            <div className="billing-row" style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                  <DollarSign size={12} style={{ color: 'var(--accent)' }} /> Billing
+                </label>
+                <button
+                  className="small-btn info-btn"
+                  style={{ padding: '2px 6px', fontSize: 10, height: 'auto', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 3, cursor: 'pointer', color: 'var(--text-color, inherit)' }}
+                  onClick={() => setShowBilling(true)}
+                >
+                  View history
+                </button>
+              </div>
+              <span className="backup-note">
+                Current plan and every charge, with a link to each provider's own receipt.
+              </span>
+            </div>
+          )}
 
           {docs.length > 0 && (
             <div className="doc-list">
@@ -5129,6 +5152,15 @@ export default function App() {
         onShowToast={showToast}
       />}
       {showDiagnosticsModal && <DiagnosticsModal onClose={() => setShowDiagnosticsModal(false)} />}
+
+      {showBilling && (
+        <React.Suspense fallback={null}>
+          <BillingPanel
+            onClose={() => setShowBilling(false)}
+            onUpgrade={() => { setShowBilling(false); setShowUpgrade(true) }}
+          />
+        </React.Suspense>
+      )}
       {showShortcutsModal && <ShortcutsModal onClose={() => setShowShortcutsModal(false)} />}
       {showDataDashboard && <DataDashboard onClose={() => setShowDataDashboard(false)} onExport={() => { downloadBackup().catch(() => {}); showToast('Backup exported') }} />}
 

@@ -287,6 +287,8 @@
             return fail('Could not start the subscription: ' + ((out.b && out.b.detail) || out.b.error || 'unknown error'))
           }
           return script('https://checkout.razorpay.com/v1/checkout.js').then(function () {
+            var cleanPhone = (userPhone || '').replace(/\D/g, '').slice(-10)
+            var formattedPhone = cleanPhone ? ('+91' + cleanPhone) : ''
             var rzp = new window.Razorpay({
               key: out.b.keyId,
               subscription_id: out.b.subscriptionId,
@@ -294,7 +296,7 @@
               description: sku.label,
               prefill: {
                 email: userEmail || '',
-                contact: userPhone || '',
+                contact: formattedPhone || userPhone || '',
               },
               handler: function (resp) {
                 // Verify the signature server-side before telling the user

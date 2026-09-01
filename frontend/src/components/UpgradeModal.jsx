@@ -24,6 +24,9 @@ import {
 export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked, onSignIn }) {
   const [region, setRegion] = useState(() => suggestedRegion())
   const [cycle, setCycle] = useState('yearly')   // annual leads: see the fee note in entitlement.js
+  const [phone, setPhone] = useState(() => {
+    try { return localStorage.getItem('yogatik_phone') || '' } catch { return '' }
+  })
   const [busy, setBusy] = useState(false)
   const [waiting, setWaiting] = useState(false)
   const [err, setErr] = useState(null)
@@ -72,7 +75,7 @@ export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked, 
           return
         }
         const userEmail = auth?.currentUser?.email || ''
-        const userPhone = auth?.currentUser?.phoneNumber || ''
+        const userPhone = (phone || auth?.currentUser?.phoneNumber || '').replace(/\D/g, '').slice(-10)
         const fragParams = new URLSearchParams({ t })
         if (userEmail) fragParams.set('email', userEmail)
         if (userPhone) fragParams.set('phone', userPhone)
@@ -115,11 +118,6 @@ export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked, 
             browser and screen tools are locked.
           </div>
         )}
-        {/* On the web nothing is locked, so the pitch is what you GAIN. Saying
-            "unlock file access" here would be a lie: a web page cannot have
-            arbitrary filesystem access however much anyone pays. What the
-            purchase really does is attach Pro to the ACCOUNT — which removes
-            ads here and unlocks the desktop app when they install it. */}
         {ent.surface === 'web' && (
           <div className="up-banner">
             <Sparkles size={14} />
@@ -160,6 +158,29 @@ export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked, 
             </button>
           ))}
         </div>
+
+        {region === 'in' && uid && (
+          <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <label style={{ fontSize: '12px', opacity: 0.8, textAlign: 'left' }}>
+              Mobile Number (optional — automatically skips Razorpay contact prompt):
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, padding: '7px 10px', borderRadius: '8px', border: '1px solid var(--border-color, rgba(255,255,255,0.12))', opacity: 0.9 }}>+91</span>
+              <input
+                type="tel"
+                placeholder="10-digit mobile number"
+                value={phone}
+                maxLength={10}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 10)
+                  setPhone(val)
+                  try { localStorage.setItem('yogatik_phone', val) } catch {}
+                }}
+                style={{ flex: 1, padding: '7px 10px', fontSize: '13px', borderRadius: '8px', border: '1px solid var(--border-color, rgba(255,255,255,0.12))', background: 'transparent', color: 'inherit' }}
+              />
+            </div>
+          </div>
+        )}
 
         <p className="up-note">{plan.note}</p>
 
