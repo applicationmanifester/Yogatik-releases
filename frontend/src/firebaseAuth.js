@@ -148,6 +148,15 @@ export async function signInWithGoogle() {
       throw new Error(res?.error || 'Desktop Google Sign-In was cancelled or failed.')
     }
     const f = await fb()
+    const idToken = res.idToken || res.user?.idToken
+    if (idToken && f.GoogleAuthProvider?.credential && f.signInWithCredential) {
+      try {
+        const cred = f.GoogleAuthProvider.credential(idToken)
+        await f.signInWithCredential(f.auth, cred)
+      } catch (authErr) {
+        console.warn('Desktop Firebase auth sign-in notice:', authErr?.message)
+      }
+    }
     const user = {
       uid: res.user.uid,
       displayName: res.user.displayName,

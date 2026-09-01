@@ -147,7 +147,10 @@ export async function addRoot() {
 }
 export async function listRoots() {
   if (!isDesktop()) return []
-  try { return (await invoke('roots_list')) || [] }
+  try {
+    const list = await invoke('roots_list')
+    return Array.isArray(list) ? list.filter(r => r && (r.path || r.label)) : []
+  }
   catch {
     try {
       const one = asRoot(await invoke('fs_granted_root'), 'default')

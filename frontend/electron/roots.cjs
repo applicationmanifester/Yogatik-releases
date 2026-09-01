@@ -93,7 +93,14 @@ function listFor(ctx) {
   const source = key && Array.isArray(state.bindings[key])
     ? 'chat'
     : (ctx?.projectId != null && Array.isArray(state.bindings[`project:${ctx.projectId}`]) ? 'project' : 'default')
-  return ids.map((id, i) => ({ id, path: state.roots[id].path, label: state.roots[id].label, primary: i === 0, source }))
+  return ids
+    .map((id, i) => {
+      const root = state.roots && state.roots[id]
+      if (!root) return null
+      const label = root.label || (root.path ? path.basename(root.path) : 'Folder')
+      return { id, path: root.path, label, primary: i === 0, source }
+    })
+    .filter(Boolean)
 }
 
 function registerRootsIpc(opts = {}) {

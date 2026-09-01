@@ -4307,18 +4307,18 @@ export default function App() {
               <Activity size={17} />
             </button>
             {isDesktop() && (
-              <>
               <div ref={rootsWrapRef} className="desktop-folder-indicator" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginRight: 8, color: 'var(--text-secondary)' }}>
                 <Folder size={15} />
                 <button
-                  className="small-btn"
+                  type="button"
+                  className="small-btn roots-trigger"
                   style={{ padding: '2px 8px', fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   onClick={() => setRootsOpen(o => !o)}
-                  title={chatRoots.length ? chatRoots.map(r => r.path).join('\n') : 'No working folder for this chat'}
+                  title={chatRoots && chatRoots.length ? chatRoots.map(r => r?.path || '').filter(Boolean).join('\n') : 'No working folder for this chat'}
                 >
-                  {chatRoots.length === 0
+                  {(!chatRoots || chatRoots.length === 0 || !chatRoots[0])
                     ? 'No folder'
-                    : `${chatRoots[0].label}${chatRoots.length > 1 ? ` +${chatRoots.length - 1}` : ''}`}
+                    : `${chatRoots[0]?.label || chatRoots[0]?.path || 'Folder'}${chatRoots.length > 1 ? ` +${chatRoots.length - 1}` : ''}`}
                 </button>
                 {rootsOpen && (
                   <div className="roots-popover" role="dialog" aria-label="Working folders for this chat">
@@ -4329,24 +4329,23 @@ export default function App() {
                         <X size={14} />
                       </button>
                     </div>
-                    {chatRoots.length === 0 && <div className="roots-empty">No folder yet.</div>}
-                    {chatRoots.map(r => (
-                      <div key={r.id} className="roots-row">
+                    {(!chatRoots || chatRoots.length === 0) && <div className="roots-empty">No folder yet.</div>}
+                    {(chatRoots || []).filter(Boolean).map(r => (
+                      <div key={r.id || r.path} className="roots-row">
                         <span className="roots-path" title={r.path}>{r.path}</span>
                         {r.primary
                           ? <span className="roots-badge">primary</span>
                           : <button className="small-btn" onClick={() => handleMakePrimary(r.id)}>Make primary</button>}
-                        <button className="icon-btn" aria-label={`Remove ${r.label}`} onClick={() => handleRemoveFolder(r.id)}><Trash2 size={12} /></button>
+                        <button className="icon-btn" aria-label={`Remove ${r.label || r.path || 'folder'}`} onClick={() => handleRemoveFolder(r.id)}><Trash2 size={12} /></button>
                       </div>
                     ))}
-                    {chatRoots.length > 0 && chatRoots[0].source !== 'chat' && (
+                    {chatRoots && chatRoots.length > 0 && chatRoots[0]?.source && chatRoots[0].source !== 'chat' && (
                       <div className="roots-inherited">Inherited from {chatRoots[0].source}. Changing them here affects only this chat.</div>
                     )}
                     <button className="small-btn" onClick={handleAddFolder}>Add folder…</button>
                   </div>
                 )}
               </div>
-              </>
             )}
             <ActiveTimerIndicator onShowToast={showToast} />
             <div className="header-btn-group" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: 'var(--bg-secondary, rgba(255,255,255,0.03))', padding: '2px 4px', borderRadius: 8, border: '1px solid var(--border-color, rgba(255,255,255,0.06))' }}>

@@ -42,7 +42,16 @@ function accountSecret(uid) {
 }
 
 async function vaultSecret() {
-  const user = await db.getSetting('user')
+  let user = await db.getSetting('user')
+  if (!user && typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem('yogatik_user') || localStorage.getItem('yogatik.desktop_user')
+      if (raw) {
+        user = JSON.parse(raw)
+        if (user) await db.setSetting('user', user)
+      }
+    } catch {}
+  }
   return accountSecret(user?.uid)
 }
 
@@ -69,7 +78,14 @@ export async function pushCloudKeys() {
   if (!secret) return { pushed: 0 }
   await loadCustomProviders()
   let pushed = 0
-  for (const id of Object.keys(getLLMProviders())) {
+  const allSettings = await db.getAllSettings().catch(() => ({}))
+  const apiKeyEntries = Object.entries(allSettings || {}).filter(([k]) => typeof k === 'string' && k.startsWith('apikey_'))
+  const providerIds = new Set([
+    ...Object.keys(getLLMProviders()),
+    ...apiKeyEntries.map(([k]) => k.replace(/^apikey_/, ''))
+  ])
+
+  for (const id of providerIds) {
     const key = await db.getSetting(`apikey_${id}`)
     if (!key) continue
     try {
