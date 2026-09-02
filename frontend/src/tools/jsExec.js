@@ -55,8 +55,8 @@ export const jsExecTool = {
     if (isDesktop()) {
       try {
         const wrapped = `(async () => {\n${code}\n})().then(v => { if (v !== undefined) console.log(typeof v === 'object' ? JSON.stringify(v, null, 2) : v); }).catch(e => { console.error(e && e.stack || e); process.exit(1); })`
-        const base64Code = typeof Buffer !== 'undefined'
-          ? Buffer.from(wrapped, 'utf8').toString('base64')
+        const base64Code = typeof globalThis.Buffer !== 'undefined'
+          ? globalThis.Buffer.from(wrapped, 'utf8').toString('base64')
           : btoa(unescape(encodeURIComponent(wrapped)))
         const res = await terminalRunTool.execute({ command: `node -e "eval(Buffer.from('${base64Code}','base64').toString('utf8'))"`, timeout_ms })
         if (res.exit_code === 0 || res.exitCode === 0) {

@@ -108,9 +108,25 @@ export async function autoStartOllama() {
     const status = await ollamaStatus()
     if (!status.installed) return status          // not installed — no-op
     if (!status.running) {
-      // Fire-and-forget: start in background, don't block the boot path
-      startOllamaDaemon().then(r => {
-        if (!r.ok) console.warn('[ollama] auto-start failed:', r.error)
+      // Fire-and-forget: start in background, don't block the boot path.
+      //
+      // The renderer's own first getModels() call (App's mount effect) races
+      // this — `ollama serve` plus the HTTP probe routinely takes several
+      // seconds — and almost always loses, so the model list App fetched at
+      // boot is the STALE pre-start one (running:false, models:[]). Nothing
+      // used to re-fetch afterwards: if the active provider was already
+      // 'ollama' (the desktop default), the effect that refetches on
+      // provider CHANGE never re-fired, so a perfectly healthy daemon with
+      // models pulled stayed reported as empty for the rest of the session.
+      // Once the daemon is actually up, re-probe it and broadcast a
+      // readiness event so any listener (App's refreshModels) can pick up
+      // the real list without the user switching providers or reloading.
+      startOllamaDaemon().then(async (r) => {
+        if (!r.ok) { console.warn('[ollama] auto-start failed:', r.error); return }
+        const fresh = await ollamaStatus().catch(() => null)
+        if (fresh && typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('yogatik:ollama-ready', { detail: fresh }))
+        }
       }).catch(() => {})
     }
     return status

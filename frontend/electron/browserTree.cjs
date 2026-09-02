@@ -226,10 +226,58 @@ function elementRefExpression(index) {
 })()`
 }
 
+// What an address bar has to decide that a `navigate` tool call never does:
+// the model always sends a real URL, but a human types "openai gpt-5" as
+// often as a domain. A bare host (has a dot, or is localhost/an IP, and has
+// no whitespace) is treated as an address; anything else becomes a search —
+// DuckDuckGo, matching the app's existing keyless/no-tracking default engine
+// for web_search rather than introducing a second search provider.
+function normalizeAddressInput(input) {
+  const raw = String(input == null ? '' : input).trim()
+  if (!raw) return ''
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return raw
+  const noSpace = !/\s/.test(raw)
+  const looksLikeHost = noSpace && (
+    /^localhost(:\d+)?(\/.*)?$/i.test(raw)
+    || /^\d{1,3}(\.\d{1,3}){3}(:\d+)?(\/.*)?$/.test(raw)
+    || /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(:\d+)?(\/.*)?$/i.test(raw)
+  )
+  if (looksLikeHost) return `https://${raw}`
+  return `https://duckduckgo.com/?q=${encodeURIComponent(raw)}`
+}
+
+// Chrome's own zoom levels, not a raw +/-10%: 100%→110% reads as a step,
+// 100%→108% (10% of 0.8 rounding differently each press) does not, and a
+// free-running multiply/divide never lands back on exactly 1.0 after a few
+// presses (float drift), so "reset" would stop meaning reset.
+const ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
+
+function nearestZoomIndex(factor) {
+  let best = 0
+  let bestDist = Infinity
+  for (let i = 0; i < ZOOM_LEVELS.length; i++) {
+    const d = Math.abs(ZOOM_LEVELS[i] - factor)
+    if (d < bestDist) { bestDist = d; best = i }
+  }
+  return best
+}
+
+// Pure so the stepping table is unit-testable without a real webContents.
+// `direction`: 'in' | 'out' | 'reset'.
+function stepZoom(currentFactor, direction) {
+  const current = Number(currentFactor) || 1
+  if (direction === 'reset') return 1
+  const idx = nearestZoomIndex(current)
+  if (direction === 'in') return ZOOM_LEVELS[Math.min(ZOOM_LEVELS.length - 1, idx + 1)]
+  if (direction === 'out') return ZOOM_LEVELS[Math.max(0, idx - 1)]
+  return current
+}
+
 module.exports = {
   MAX_TEXT, MAX_NODES, MAX_INDENT, INTERACTIVE_ROLES,
   walkerSource, refResolverSource, elementRefExpression,
   truncateText, isInteractive, nodeLabel,
   simplify, assignRefs, parseRef, isStaleRef,
-  formatTree, buildTree,
+  formatTree, buildTree, normalizeAddressInput,
+  ZOOM_LEVELS, stepZoom,
 }

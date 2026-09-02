@@ -1,280 +1,176 @@
-# Yogatik 3.10.2 — release summary
+# Yogatik 4.2.0 — pending release summary
 
-**Date:** 2026-08-18
-**Version:** 3.9.3 → **3.10.2** (minor: new capability, not just fixes)
-**Range:** `17242f1..HEAD` · 32 commits · 42 files · +5336 / −260
-**Tests:** 1189 passing (92 files) · lint 0 errors
-**Status:** pushed · **web deployed and verified live** · tagged `v3.10.2`
-
----
-
-## Headline: the desktop app can now use a real browser
-
-Yogatik could *fetch* web pages but could not *use* one — no logging in, no
-clicking, no filling forms, no seeing what a page rendered after its JavaScript
-ran.
-
-That is a hard wall in the browser build, not an oversight. Driving an external
-site from inside a page means iframing it, and cross-origin iframes are refused
-by `X-Frame-Options`/`frame-ancestors` on most real sites and are opaque to the
-parent even when allowed. There is no web API to screenshot another origin or
-click inside it.
-
-Electron's `WebContentsView` is a real top-level browsing context, so the desktop
-app can. One tool, `browser_control`, drives real tabs the user can watch — in a
-dedicated window **or** docked in-app.
-
-### Design decisions worth remembering
-
-**Refs, not pixels.** `read` returns the page as a tree where every interactive
-element carries a `[ref_N]` handle. The model names *what* it wants; the code
-computes *where*. A coordinate miss is silent — it clicks the wrong thing and the
-agent proceeds as if it worked.
-
-**Stale refs fail loudly.** Refs are epoch-tagged; the epoch bumps on navigation
-and on every read. A superseded ref returns `{stale: true}` and is **never**
-downgraded to a coordinate click.
-
-**Refs are numbered before truncation**, so a ref printed in the visible slice
-still resolves to the element the page registered.
-
-**The ref map lives in the page.** `window.__yogatikRefs__` holds live element
-references; main stores only the epoch and re-measures at action time. An element
-that moved but still exists is still clicked correctly.
-
-**One set of views, two surfaces.** `setMode` re-parents; it never rebuilds, so
-tabs, cookies, history and refs survive a switch.
-
-**Sessions die with the chat** — an authenticated tab must not follow the user
-into an unrelated conversation.
-
-### Two crashes caught by real-Electron verification
-
-Neither was reachable by unit tests, because vitest runs under jsdom.
-
-1. **A native, uncatchable crash.** `setMode` destroyed the `BrowserWindow` while
-   its `WebContentsView`s were alive; closing one afterwards killed the process —
-   not a JS throw, so no `try/catch` would have helped. Both `setMode` and the
-   last-tab path now **hide** the window; `destroySession` is the only place it is
-   destroyed, and it closes every view first.
-2. **A paint race.** `capturePage` failed with `UnknownVizError` on a cold
-   capture. `screenshot` now shows the surface, waits, and retries once.
-
-The throwaway harness that found them is now in the repo as `npm run test:browser`
-(28 checks) — it asserts a click by ref *actually fires the page's handler*, typed
-text lands in the real input, and a stale ref is refused.
+**Date:** 2026-09-02
+**Version:** 4.1.4 (last tag) → **4.2.0** (pending — not yet committed or tagged)
+**Range:** working tree vs `v4.1.4` (0 commits ahead — everything below is uncommitted)
+**Diff:** 32 files touched, +1,917 / −5,029 (line-ending noise excluded — the raw `git diff`
+reports 101 files / +17,701 / −20,813, almost all of it CRLF↔LF churn on files nobody edited;
+`--ignore-space-at-eol -w` is what the numbers above use) · 4 new untracked files
+**Status:** **pending** — nothing in this range is committed, tagged, or deployed yet
 
 ---
 
-## Agent reliability
+## Two independent threads of work sit in this range
 
-**Empty replies (`"The model returned an empty response"`).** The tool loop had a
-guard for the cap-hit case but none for "loop ended with nothing visible", so a
-model that fell silent after tool results ended the turn blank and threw the
-tool's work away. It now asks once for a plain-prose answer, then surfaces the
-gathered tool results rather than a blank bubble. The retry shares the cap-hit
-path's forced pass, so a model that only ever emits tool calls still costs at most
-initial + 8 rounds + 1.
+Everything below was already in the working tree, uncommitted, before this pass started —
+`version.js` already carries a written 4.2.0 changelog entry, so most of it is a prior session's
+finished work that was never committed. This pass added the browser-chrome/Reflex-Prefetch half
+and wrote this summary; it did not touch the account/auth/perf half beyond reading and verifying
+it against the diff.
 
-**"I have no shell/terminal access."** The assistant refused real work on the
-desktop build while holding `terminal_run`, `proc_start`, `fs_*`,
-`browser_control` and `computer_control`. It was not malfunctioning: the system
-prompt opened with *"access to powerful browser-native tools"* on every surface,
-and `agent.js` never consulted `isDesktop`. It believed what it was told.
-`buildSystemPrompt` now states the runtime — desktop says it has a real shell,
-filesystem and browser and must never claim otherwise; web says desktop-only
-tools will refuse, so say so plainly.
-
-**Tool selection.** `code_execute` never said what it *cannot* do, so the model
-reached for the Pyodide sandbox when it needed the real machine. It now names
-`terminal_run` / `proc_start` / `fs_read` instead. `terminal_run` never mentioned
-that it waits and times out at 30s — which is why `npm run dev` under it looked
-broken rather than simply being the wrong tool.
-
-**`browser_autopilot` was overclaiming.** It describes itself as navigating pages
-"like Strawberry Browser" but is `proxyFetch` plus regex tag-stripping — a
-`web_extract` duplicate that cannot run JavaScript, log in, or click. Left alone
-the model would keep choosing the fake browser over the real one. Description
-corrected; not deleted, since the web build still needs static extraction.
-
-**Repeated tool calls.** Seen twice in the field: `video_render` called ten
-times in one turn, `web_search` nine times with identical arguments. The round
-cap bounded the damage but nothing stopped the repetition itself, so a failing
-tool was retried until the budget ran out. Calls are now keyed by name plus
-arguments (key order normalised), and a repeat is answered from the first
-call's result with a note telling the model to use it, change the arguments
-materially, or answer. This matters most for the failing case — re-running a
-call that just failed cannot produce a different answer.
-
-**Static extraction gave up on renderable pages.** Asked to read a JavaScript
-SPA, the assistant reported the content unreadable and stopped. Correct about
-`web_extract`, which only ever sees static HTML — but a dead end, because on
-desktop `browser_control` renders that page fine. The empty-result branch now
-carries the next step in the *result* (the trick `youtube`'s `transcript_note`
-already uses), and names `browser_control` only when the bridge is actually
-present, so the web build is never promised a tool that will refuse.
-
-**Video renders that produced nothing.** `video_render` was called ten times in
-one turn with steadily worse arguments — `elements[]`, then `[]`, then `[{}]` —
-before telling the user to run ffmpeg locally. A scene with no `type` defaulted to
-an empty "text" scene: it drew nothing, reported success, and taught a guessing
-model nothing. `normalizeSpec` now rejects a scene carrying neither a type nor any
-content, names the invented field back, and shows a worked example.
+1. **Desktop account linking, startup performance, and a payment-flow crash** — pre-existing in
+   the working tree, documented in `version.js`'s own in-app changelog.
+2. **Browser real chrome + Reflex Prefetch** — this pass's own work (already logged in `CLAUDE.md`
+   under today's date, in full detail).
 
 ---
 
-## New: live reasoning + actions panel
+## 1. Desktop account linking was broken at the token level
 
-The data already existed — the per-message *"Steps, thoughts & actions taken"*
-disclosure and the `<think>` panel — but only *after* the turn, collapsed, one
-message at a time. There is now a docked panel (header **Activity** icon) showing
-tools as they start with running timers and results, and reasoning as it streams.
+**The bug, in one sentence:** the desktop app's native Google sign-in returned a Firebase-minted
+ID token, but the renderer's own separate Firebase SDK instance needs Google's own OAuth token to
+authenticate itself — `GoogleAuthProvider.credential()` silently rejects the wrong kind, so
+`f.auth.currentUser` was never actually set on desktop, and every Firestore read/write (API key
+sync, chat/doc vault sync) went out unauthenticated and was silently refused by the security rules.
 
-`activityStream.js` is an imperative DOM-free pub/sub. It is deliberately **not**
-React state in App: routing streaming tokens through App state re-renders the
-whole shell every frame, which is the bug `StreamingMessage.jsx` exists to avoid.
-Notifications coalesce to one animation frame — pinned by a test asserting three
-publishes yield one notification.
+- `auth-desktop.html` now also captures Google's own token via
+  `GoogleAuthProvider.credentialFromResult(result)` (`googleIdToken`), separate from the
+  Firebase-minted `idToken` the licence server verifies — two different tokens for two different
+  jobs, no longer conflated.
+- `firebaseAuth.js` gained `ensureFirebaseAuth()`, called once before any Firestore read/write: if
+  `f.auth.currentUser` is still null after a relaunch (the desktop native bridge restores the
+  cached profile from `localStorage`, but never re-initializes the Firebase SDK's own session), it
+  signs the renderer's Firebase instance in with the cached `googleIdToken`. Non-fatal on failure —
+  Firestore rejects the request exactly as before, never worse.
+- `main.cjs` passes `googleIdToken` through its native-OAuth IPC response; `entitlement.js`'s
+  licence refresh now asks `getIdToken({ forceRefresh: false })` for a live token instead of
+  resending the one captured at sign-in.
+- **A second, related bug:** `App.jsx`'s window-focus entitlement recheck was passing
+  `user?.idToken` explicitly — a snapshot from the moment of sign-in. Firebase ID tokens expire in
+  about an hour, so any focus check after that sent an already-expired token, the licence server
+  401'd it every time, and the local licence cache eventually aged out with nothing to renew it —
+  which is what a signed-in, actually-paying desktop customer would see as "Trial ended." Removed
+  the explicit token so `refreshEntitlement`'s own `getIdToken()` fallback fetches a current one.
+- `AccountPage.jsx`'s locked-state copy said "Your trial has ended" for every lock reason,
+  including ones that mean the opposite of what they say to a Pro customer (a refresh that never
+  reached the server, a signature it couldn't verify, a token for the wrong account). It now names
+  the real reason: no licence yet, wrong account, clock rollback, awaiting renewal, or an honest
+  fallback for anything else.
 
-Extracting the shared `splitReasoning` into `reasoning.js` exposed a real bug: an
-**unclosed `<think>` was discarded** rather than captured, so reasoning stayed
-invisible until `</think>` arrived. Now captured as it streams, which also
-improves the existing inline Thinking panel.
+**Not independently re-verified this pass** — this sandbox cannot open a real Electron window or
+complete a Google OAuth popup, so the fix was checked by reading the code and the comments left
+alongside it (which name the exact failure precisely), not by driving a real sign-in. Worth a
+manual desktop sign-in test — on a fresh profile and on a relaunch — before this ships.
 
-The inline disclosure is untouched, so nothing regresses when the panel is shut.
+## Startup got faster; two smaller fixes came with it
+
+- `main.jsx` now kicks off `warmToolRegistry()` (the ~195-tool registry, already lazy-loaded per
+  `agent.js`'s own dynamic import) on `requestIdleCallback` right after first paint instead of
+  leaving it to load cold on the user's first real message. Combined with extracting App.jsx's
+  pure helpers (`formatLatency`, `getStatusIcon`, `formatDirectTimeAnswer`, `WINDOW_STEP`,
+  `SUGGESTIONS`) into a new `appHelpers.jsx` module, the initial bundle is reported at **1.79MB →
+  1.18MB (587KB → 386KB gzipped), about a 34% cut**.
+- The `?paid=1` payment-success return path called `setSystemMsg(...)`, a function that no longer
+  exists on this branch of App — a `ReferenceError` right after a customer's card was charged,
+  which throws inside a render path and blanks the whole app behind the error boundary. Both call
+  sites now use the existing toast system (`showToast`).
+- `subAgentRunner.cjs`'s Python RPC bridge had two real bugs: `pythonProc.stdout.on('data', ...)`
+  treated every OS buffer flush as a complete JSON line, so a response split across two `data`
+  events was silently discarded as a parse error; and the ready-callback stored the spawned
+  sub-agent under the *raw* `agentId` parameter while every lookup (`subAgents.has`, the duplicate
+  check, external callers) uses the *sanitized* `id` from `assertAgentId()` — a spawn could
+  "succeed" and then be unfindable. Fixed with a line-buffering accumulator and by keying the
+  registry consistently on `id`; timeouts now also kill the stuck process instead of leaving it
+  running past its own caller giving up.
+- `jsExec.js`'s desktop path checked `typeof Buffer !== 'undefined'` — changed to
+  `typeof globalThis.Buffer`, an explicit lookup rather than a bare identifier reference in a
+  browser-hosted module.
+- `frontend/public/platforms.html`: the macOS and Linux download buttons switched from a
+  "Build coming soon" placeholder to real links (`Yogatik-arm64.dmg` / `Yogatik-x64.dmg` for
+  Apple Silicon and Intel separately, `Yogatik.AppImage` / `Yogatik.deb` for Linux) — the CI
+  release matrix now actually publishes those artifacts.
+- Housekeeping: `pnpm-workspace.yaml` and `pnpm.workspace.yaml` (a dead pnpm-monorepo scaffold —
+  this repo uses npm workspaces) removed from the repo root; `package.json`/`package-lock.json`
+  bumped toward 4.2.0; `electron` pinned to an exact `43.5.0` instead of a `^43.3.0` range.
 
 ---
 
-## UI and infrastructure
+## 2. Browser real chrome + a view-leak fix, and Reflex Prefetch
 
-**Sign In was invisible.** Not hidden — *clipped*. `.sidebar` is
-`overflow: hidden`, and `.settings.open` held a fixed `58vh` via a `flex-shrink:0`
-rule meant for the closed toggle. On a short window that plus the fixed chrome
-exceeded the sidebar, `.sidebar-scroll` collapsed to 0, and the footer's last
-child fell outside the hidden overflow with no scrollbar to reach it. `58vh` is
-now a cap rather than a floor. Measured: the button sat 44px below the edge at
-560px height; it now ends 18px above it and still fits at 460px.
+Both are logged in full in `CLAUDE.md` under **2026-09-02** — the summary here is intentionally
+short; read those two entries for the design reasoning.
 
-**The activity panel covered the chat it described.** At 42% wide and
-`position: absolute` it sat on top of the conversation, so reading the answer
-while watching the tools was impossible — the whole point of having both. It is
-now a flex sibling of `.chat-area` rather than an overlay, at a 300px rail, so
-the chat narrows instead of being hidden. Measured at 1280px: panel 538px →
-300px, overlap gone, sidebar + chat + panel now sum exactly to the viewport.
-Below 768px it reverts to a full-width overlay.
+**Browser: real chrome (address bar, zoom, find, downloads) + a view-leak fix.** The desktop
+in-app browser (`browser_control`) had no human-facing chrome at all — no address bar, no
+back/forward/reload, no manual new tab — in either window mode or the docked panel. Added both,
+plus deepened the agent-facing tool: `zoom_in`/`zoom_out`/`zoom_reset`, `find_text` (real
+`webContents.findInPage`), `list_downloads`, and a genuinely new capability, `wait_for_download` —
+click a download link as normal, then poll until it completes and get back its real local
+`savePath`, which `fs_read` can then open. Also fixed three real reliability bugs found in the
+same pass: a `WebContentsView` orphaned (never `removeChildView`'d) on a renderer crash, a dead
+session field write on reload that happened to look load-bearing, and no session cleanup when a
+conversation was deleted rather than switched away from.
 
-**`/platforms` downloaded the installer before anyone asked.** Opening the page
-fetched a 114MB `.exe` on its own, 800ms after load, with no click — a drive-by
-download the visitor never consented to, and one browsers and AV treat as
-hostile. It also repeated: the once-per-browser guard was *cleared by clicking
-the download button*, so anyone who downloaded deliberately got another
-automatic copy on every later visit. Removed entirely; the buttons now need a
-real click.
-
-**Auto-update never worked in production.** `electron-updater` was a
-`devDependency`, and electron-builder never packages those — so
-`require('electron-updater')` threw in every shipped build and the guard in
-`updater.cjs` swallowed it silently. Verified by parsing the built `app.asar`
-before and after. **3.10.0 was the first published build whose updater is
-actually packaged**, so users on 3.9.x must install manually — their copy cannot
-fetch anything. Auto-update works from 3.10.0 onward, which includes this
-release.
-
-**CI's `e2e` job had failed on every run since it was added.** It installed a
-Playwright browser then ran `npm run e2e` — a script that did not exist, alongside
-no `@playwright/test`, no config and no specs. Now filled in: four smoke tests
-against the **production bundle**, covering what the jsdom suite structurally
-cannot (a broken build output, a 404ing chunk, a browser-only crash). Console
-assertions filter the noise a keyless CI browser always emits so it does not
-become a flake generator.
-
-**Folders popover could not be dismissed** — a `role="dialog"` with no close
-button, no Escape and no outside-click. All three added, listeners bound only
-while open.
-
-Also: `Use on phone or tablet` → `Use web app on mobile/tab`; the browser test
-harness is excluded from the installer.
+**Reflex Prefetch.** A small, deliberately conservative whitelist of side-effect-free tools
+(unit/expression math, an explicitly-named place's weather, a known city's clock, a plainly-worded
+translation) is pattern-matched from the raw user message and started running in the *background*
+before the model has replied — in parallel with its first inference call, not instead of it. If
+the model's real tool call ends up matching, the round loop reuses the already-in-flight result
+instead of paying for it twice; a mismatch just means the speculative promise is never consulted.
+Grew out of a user request to "invent" instant-decision/quantum-style agent behavior — declined
+the literal framing (no quantum hardware exists, faking one would be dishonest) and built the
+honest version instead, on top of this codebase's own existing `seenCalls`/`callSignature`
+per-turn cache and `prioritizeToolSchemas`' non-LLM keyword scoring.
 
 ---
 
 ## Verification
 
-| Check | Result |
-|---|---|
-| `npm test` | **1189 passed / 92 files** |
-| `npm run lint` | **0 errors** (88 pre-existing warnings) |
-| `npm run e2e` | 4/4 against the production bundle |
-| `npm run test:browser` | 28/28 in a real Electron app |
-| Web + Electron renderer builds | ✅ |
-| Installer | signed, blockmap + `latest.yml` (CI rebuilds at 3.10.2) |
-| Live web app | serving the built bundle; fixes confirmed by fetching it |
+| Check | Result | Scope |
+|---|---|---|
+| `agent.test.js` + `agentReflex.test.js` | **83 passed** | Reflex Prefetch + agent loop, this pass |
+| `browserControl.test.js` + `browserTree.test.js` | passing (part of the 83 above's neighbors) | Browser tool + pure detectors |
+| `buildGuards.test.js` (reachability) | **15 passed** | Confirms `agentReflex.js` is wired into `main.jsx`'s real entry graph, not a dead file |
+| `npx eslint@9 src/` | **0 errors** (238 pre-existing warnings, unchanged) | Whole `frontend/src` tree |
+| `npx vite build` | **succeeded** — real production bundle, no new warnings | Whole app |
+| Full `npm test` (~1150+ tests) | **not completed this pass** | This sandbox's ~178s per-call cap cannot run the whole suite in one pass — same constraint recorded throughout `CLAUDE.md`'s history |
+| Desktop auth fix (Google sign-in, Firestore sync) | **not independently re-verified this pass** | No Electron/OAuth available in this sandbox — checked by reading the diff and its own inline reasoning only |
 
 ---
 
-## Shipped
+## Status
 
-**Web app is live.** Deployed after the lint/test gates, serving the bundle built
-from this work. Verified by fetching the live files rather than trusting the
-deploy output: the duplicate-call breaker, the runtime block, the `web_extract`
-escalation and the corrected tool descriptions are all present, and
-`startWinDownload` on `/platforms` went **3 → 0** — the drive-by download is gone
-from production.
-
-Hosting only, deliberately: `deploy.bat` also pushes `firestore:rules`, but no
-security rules changed here and publishing them is a separate, riskier action.
-
-**Tagged `v3.10.2`.** An earlier `v3.10.1` tag was refused by CI because the
-branch built `3.10.0` — the version guard doing exactly its job, since an
-installer labelled one version while reporting another would hand the updater the
-wrong number. Rather than force it through, `package.json` and the tag were made
-to agree at 3.10.2. CI builds and publishes into `Yogatik-releases` from there.
+**Nothing in this range is committed.** `HEAD` is still `v4.1.4`; every file above is a working-tree
+change. `package.json` / `frontend/package.json` already read `4.2.0` and `version.js` already
+carries the 4.2.0 changelog entry, but no commit, tag, or deploy has happened for it.
 
 ---
 
 ## Open items
 
-**1. ~~Watch the CI release run.~~ Done.** `v3.10.2` published to
-`Yogatik-releases` with 11 assets — Windows, macOS and Linux all built, and the
-published `latest.yml` reports 3.10.2. The macOS/Linux jobs that failed on the
-earlier attempt were failing only on the version guard.
+**1. `frontend/electron/edition.json` is toggled to `{"edition": "studio", "productName": "Yogatik
+Studio"}`**, differing from the tracked `"store"` / `"Yogatik"` value. This looks like a local
+build-target toggle left dirty rather than an intended release change — worth checking before
+committing, since it changes what a desktop build reports itself as.
 
-**2. 3.9.x users must install manually.** Their copy carries the updater that was
-never packaged, so it cannot fetch this release. 3.10.0 users auto-update to
-3.10.2 normally.
+**2. The desktop account-linking fix needs a real sign-in test** — fresh profile and a relaunch —
+before shipping; this sandbox cannot exercise Electron's native OAuth popup or a real Firestore
+round trip.
 
-**3. The local installer is stale** (built at 3.10.0). CI produces the real
-release artefacts — do not distribute the local `.exe`.
+**3. Full test suite hasn't been re-run in one pass since v4.1.4.** Verification this round was
+scoped to the files each change touched (the same practice `CLAUDE.md` documents throughout its
+history), not an end-to-end run.
 
-**4. Desktop UI not driven by hand.** The browser panel's occlusion behaviour and
-the renamed footer link were verified by measurement and by reading source, not by
-using the packaged app. Worth a pass.
-
-**5. Two bridges are still dead**, as `CLAUDE.md` records:
-`__YOGATIK_CLIPBOARD__.onSelectionHotkey` — the global Ctrl+Alt+C hotkey fires and
-main relays it, but nothing in the renderer listens — and
-`__YOGATIK_DND__.getPathForFile`, so a file dropped on the desktop window still
-yields an opaque blob. Both are features users cannot reach today.
+**4. Nothing is tagged.** Once the two items above are checked, the natural next step is committing,
+bumping the tag to `v4.2.0`, and running the release build/deploy steps `CLAUDE.md`'s own "Run"
+section documents.
 
 ---
 
-## Recommended next
+## Design docs / further reading
 
-From reviewing an external feature analysis: roughly 60% of its "future roadmap"
-already ships (computer use, cron, command palette, local FS sync, share target,
-memory dashboard, workflows, WebLLM, forkable plugin bundles). The genuinely
-missing, highest-value item is **pre-flight token estimation with hard budget
-caps** — the usage meter is post-hoc and estimated at ~4 chars/token, so BYOK
-users discover cost only after spending it. Self-contained, no backend.
-
-Two suggestions should be actively **rejected**: a user PIN for local key storage
-(already considered and rejected — *"a passphrase nobody remembers protects a key
-nobody can use"*; desktop already uses the OS keychain), and a community registry
-of executable JS/Python tools (breaks `plugins.js`'s central property that no
-arbitrary code runs, in an app holding users' API keys).
-
----
-
-## Design docs
-
-- `docs/superpowers/specs/2026-08-18-desktop-browser-control-design.md`
-- `docs/superpowers/plans/2026-08-18-desktop-browser-control.md`
+- `CLAUDE.md` → **"Reflex Prefetch — speculative tool execution ahead of the model's own decision
+  (2026-09-02)"**
+- `CLAUDE.md` → **"Browser: real chrome (address bar, zoom, find, downloads) + a view-leak fix
+  (2026-09-02)"**
+- `frontend/src/version.js` → the in-app 4.2.0 changelog entry (`APP_RELEASES[0]`)

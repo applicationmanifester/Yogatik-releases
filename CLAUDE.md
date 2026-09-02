@@ -1,5 +1,176 @@
 # Yogatik — Project Knowledge
 
+## Reflex Prefetch — speculative tool execution ahead of the model's own decision (2026-09-02)
+- THE ASK, verbatim, after a detour: "invent something that make an ai work unimaginable good
+  things and does tasks" plus "faster agent decisions" and "deeper agent/tool merging", specifically
+  requested as a REFRAME of an earlier, literal ask to build "quantum AI" into the agent loop. That
+  was declined outright — no quantum hardware exists here, faking one in JS and calling it quantum
+  would be a lie, and this file's own history is full of rejecting exactly this shape of hollow
+  addition (see every "SCOPE DECISION" entry above that turned down a bolt-on with no real
+  substance behind it). What shipped instead is honest, measurable, and grounded in machinery this
+  codebase already had working: agent.js's own `seenCalls`/`callSignature` per-turn call cache, and
+  tools/index.js's `prioritizeToolSchemas` fast non-LLM keyword scoring. Reflex Prefetch is the same
+  idea — cheap, deterministic pattern-matching doing part of the model's job faster than the model
+  can — taken one step further: for a SMALL, deliberately conservative whitelist of side-effect-free
+  tools, run the call in the background before the model has even replied.
+- THE MECHANISM: `agentReflex.js` (NEW, PURE — same split as browserTree.cjs/rootsCore.cjs, so it is
+  testable without Electron or jsdom) exports `detectReflexCandidate(userMessage)`, which returns
+  `{name, args}` or null. Five detectors, each either fully confident or silent — never a guess:
+  `unit_convert` ("5 km to miles" — a value/unit/unit triple, checked against a small alias table),
+  `calculator` ("what is 12*(7+3)" — an explicit trigger word plus a captured expression restricted
+  to digits/operators/the calculator tool's own whitelisted function names, so a false positive
+  costs nothing: the real tool would refuse it the same way), `weather` (ONLY with an explicitly
+  named place — "weather in Tokyo", never bare "weather" or "weather here", because that resolves to
+  device GPS in the real tool and firing it speculatively would pop a geolocation permission prompt
+  before the model had even been asked, which is the one kind of surprise this feature exists to
+  never cause), `timezone` (a small explicit city→IANA map; an unmapped city yields nothing, never a
+  guessed zone), and `translate` (the literal "translate X to <known language>" phrasing only —
+  "how do you say..." is deliberately left to the model). REFLEX_WHITELIST is exported and asserted
+  by a test to exclude web_search/social_search (which already have their own pre-emptive fast path
+  a few lines below in agent.js) and anything with a real side effect (fs_*, terminal_*,
+  browser_control, memory writes) — the whole design depends on every whitelisted tool being
+  harmless to run for nothing.
+- WIRING (agent.js): right after `seenCalls` is declared — before the pre-emptive social/web-search
+  block and well before the model's own first `processStream()` call — `detectReflexCandidate` runs
+  against the raw message and, on a hit, `executeTool` is called immediately WITHOUT awaiting it; the
+  resulting promise (wrapped in a `.catch` so a failure can never become an unhandled rejection) is
+  stashed in a new `reflexCache` Map keyed through the EXACT SAME `callSignature(name, args)` the
+  round loop already uses to dedupe a repeated call. Firing it this early, and not awaiting it
+  inline, is what makes the overlap real: the JS engine reaches the tool's own first `await`
+  (typically a `fetch`) and moves on, so the speculative call's network/compute genuinely runs
+  concurrently with the pre-emptive search block's own awaited calls and then the model's first
+  inference round, not sequentially before them.
+- THE ROUND LOOP CONSUMES IT AT ONE LINE. The existing per-call block already computed `sig =
+  callSignature(tc.name, args)` and ran it past `gateAllows` before executing. The only change is the
+  final execution step: `reflexCache.has(sig) ? await reflexCache.get(sig) : await executeTool(...)`.
+  Everything else — the gate check, the `seenCalls` bookkeeping, the error handling — runs exactly as
+  before and in the exact same order. This is deliberate: speculation is only ever a shortcut for the
+  network/compute a real call would have paid for anyway, never a bypass of the permission rail or
+  the repeat-call guard. A model that asks for something DIFFERENT from what was speculated (a
+  different city, different units, anything) gets its own normal `executeTool` call — the mismatched
+  speculative promise is just never consulted and its result is thrown away, exactly as
+  advertised: one wasted cheap call, never a wrong answer.
+- THE GATE IS A HARD OFF-SWITCH, NOT A RACE. Reflex Prefetch is skipped entirely — no candidate is
+  even detected — whenever `window.__YOGATIK_ACTION_GATE__` is installed (the companion/autopilot
+  window; see the existing `gateAllows` doc comment in agent.js: "every tool call is checked before
+  it runs, which is what makes autopilot's rail real rather than advisory"). Running a speculative
+  call ahead of that rail, even a side-effect-free one, would mean the rail sees a call it did not
+  itself approve before the model ever asked for it — not worth the harmlessness this has everywhere
+  else. Also skipped when `toolsEnabled` is false, for a local/on-device provider (tools are already
+  force-disabled there per this file's own v3.2 entry), or when the candidate tool is in the raw
+  `disabledTools` list (checked loosely against the RAW list rather than the skill/agent-scoped
+  `effectiveDisabled`, which is resolved later in the function — the only possible cost of that
+  looseness is one wasted, never-consulted fetch, never a wrong answer, so it is not worth reordering
+  the function to compute the narrower list earlier).
+- VERIFICATION: `agentReflex.test.js` (NEW, 15 tests) — every detector's positive and negative cases,
+  including the specific "must never fire" cases that matter most (weather with no explicit place,
+  an unmapped city/language, ordinary prose containing a number). `agent.test.js` gained a new
+  "Reflex Prefetch" describe block (7 tests) that asserts the OBSERVABLE consequence through
+  `executeTool`'s call count rather than reaching into the private cache: a matching real call
+  executes the tool exactly once (not twice), a non-matching message fires no speculative call at
+  all, the gate reduces the total to ZERO rather than one-slipped-through-anyway (the test that
+  actually catches a gate bypass, not just a declined call), and toolsEnabled/local-provider/
+  disabledTools each independently suppress it. All 72 pre-existing agent.test.js cases still pass
+  unmodified — most of them use `userMessage: 'hi'`, which no detector matches, so the feature is a
+  true no-op for every scenario that does not explicitly exercise it. `npx eslint@9 src/` is clean
+  (0 errors) across the whole tree, unchanged from baseline. A REAL `npx vite build` succeeded in
+  this sandbox this time (prior entries in this file note the Windows-native-rollup-binary gap that
+  usually blocks this here — it did not block it this pass), producing the full production bundle
+  with no new warnings. `buildGuards.test.js`'s reachability guard (which esbuild-bundles the real
+  `main.jsx` entry graph and fails on anything unreachable) passes, confirming agentReflex.js is
+  actually wired in rather than a dead file sitting next to agent.js.
+
+## Browser: real chrome (address bar, zoom, find, downloads) + a view-leak fix (2026-09-02)
+- SCOPE: "improve the browser" broke into three approved parts — reliability audit of the
+  existing implementation, real human-facing chrome (it had none — no address bar, no
+  back/forward/reload, no manual new-tab), and deepened agent-facing capabilities. All three
+  landed; no fourth thing was added.
+- RELIABILITY AUDIT found and fixed three real bugs in browserControl.cjs, none previously caught
+  because nothing exercises a crashed renderer or a deleted-mid-session conversation in this
+  sandbox (same class of gap as every other "cannot run Electron here" entry in this file):
+  - `render-process-gone` deleted the crashed tab from `s.tabs` BEFORE calling `showActive(s)`.
+    `showActive` only ever attaches/removes views for tabIds still present in the map, so the
+    crashed tab's `WebContentsView` was never `removeChildView`'d — permanently orphaned, attached
+    to a live host, for the rest of the session. Same class of failure `setMode`'s own comment
+    already warns about for a destroyed BrowserWindow. Fixed by mirroring `closeTab`'s order:
+    detach the view, THEN delete from the map.
+  - `browser:reload` wrote `s.epoch = (s.epoch || 0) + 1` — a SESSION field nothing else in the
+    file ever read. Refs are validated against `t.refEpoch` (a per-TAB field, bumped for real by
+    the existing `did-start-navigation` listener), so the "refs_invalidated: true" the handler
+    returned was true only by accident of that listener already having fired, not because of
+    anything this line did. Replaced with an explicit `t.refEpoch++` so invalidation does not
+    depend on event-ordering luck.
+  - Every browser session (a real Chromium `WebContentsView`, plus a hidden `BrowserWindow` in
+    window mode) was destroyed on a chat switch (an existing, correct effect in App.jsx) but NEVER
+    on conversation delete via any path that does not itself change the active chat first. Wired
+    `deleteConversation()` in api.js to call the SAME `browser:close` bridge the manual close
+    button already used — idempotent (a session that never existed, or was already closed, is a
+    no-op), so this is pure defense-in-depth against the ordering-dependent case.
+- CHROME: window mode (`browserWindow.html`, a real dedicated `BrowserWindow`) and panel mode
+  (`BrowserPanel.jsx`, docked in the main renderer) each independently gained: back/forward/
+  reload, an address bar (typed text is either treated as a URL or sent to DuckDuckGo as a search
+  — `normalizeAddressInput`, pure, in browserTree.cjs so it's unit-tested without Electron), a
+  manual new-tab button, zoom in/out/reset (`stepZoom`, also pure — steps through Chrome's own
+  zoom TABLE rather than a raw ±10%, because a free-running multiply/divide never lands back on
+  exactly 1.0 after a few presses), find-in-page (a real `webContents.findInPage`/`found-in-page`
+  round trip, not a fake), and a downloads dropdown (progress, cancel, open, show-in-folder).
+- WHY TWO SEPARATE TOOLBARS, NOT ONE SHARED COMPONENT: window mode's chrome is a STATIC HTML
+  document living in ITS OWN `BrowserWindow`'s webContents (`browserWindow.html` +
+  `browserWindowPreload.cjs`), driven by main pushing state in via `executeJavaScript` and pulling
+  actions out via one `ipcRenderer.send('browser:tab-action', ...)` channel — there is no React
+  there at all. Panel mode's chrome IS React, living in the app's OWN renderer, talking to main via
+  the full `__YOGATIK_BROWSER__` invoke bridge. Sharing one implementation would mean either
+  shipping React into the plain chrome window or driving the panel through the fire-and-forget
+  tab-action channel — both worse than the two small, independently-testable UIs that exist now.
+- A WebContentsView COMPOSITES ABOVE the window's own DOM at a FIXED y-offset main computes once
+  (`TAB_BAR_H`), so window-mode chrome cannot just grow a new row for the find bar the way a normal
+  web page would — a grown/shrunk chrome height would either get covered by the content view or
+  leave a gap under it, and main has no way to learn the new height back from the page. Find is
+  therefore an INLINE swap within the toolbar's own fixed-height row (hide the address bar, show
+  find controls, in the same 36px) rather than a second row — `TAB_BAR_H` never has to change.
+  Panel mode has no such constraint (its find bar is a real DOM sibling) and uses a normal extra row.
+- PANEL MODE'S CHROME HAS NO EQUIVALENT of window mode's `executeJavaScript` push, because it IS
+  the main renderer, not a page main can push a script into — so `syncTabBar(s)`'s panel branch
+  sends a real `browser:nav-state` IPC event instead (mirroring the existing `__YOGATIK_MENU__` and
+  companion `onSelection` push pattern), and a new `browser:get-nav-state` handler seeds the panel
+  once on mount rather than leaving it blank until the next push.
+- DOWNLOADS ARE SESSION-WIDE, ATTRIBUTED PER-TAB. Every `WebContentsView` shares Electron's
+  default session (no `partition` was ever set, deliberately — the agent browser needs the same
+  cookies/logins as the rest of the app), so `session.defaultSession`'s `will-download` fires from
+  ONE place for every tab across every conversation. The event's third argument (the initiating
+  webContents) is the only way to attribute a download back to a session/tab; `findTabOwner` walks
+  every session's tab map to match it. The live `DownloadItem` (needed for `cancel()`) is kept in a
+  SEPARATE map from the JSON-serialisable record that crosses IPC — putting it on the record itself
+  would either throw on `JSON.stringify` or serialise garbage.
+- AGENT CAPABILITIES: `zoom_in`/`zoom_out`/`zoom_reset` (action name doubles as the direction, same
+  pattern `back`/`forward` already used — no separate direction parameter for the model to get
+  wrong), `find_text` (call again with the same text to advance — `findNext:true` on every call,
+  including the first, since a different search string starts fresh anyway), and the actual new
+  capability: `wait_for_download` — click a download link/button as normal, then this polls
+  (`b.downloads`) until a matching download (optional `text` filename filter) reaches `completed`
+  and returns its real local `savePath`, which `fs_read` can then open. This is a genuinely new
+  workflow ("download this report and summarise it") that was flatly impossible before — there was
+  no way for the agent to ever learn where a download landed, or whether it had finished.
+  `list_downloads` lists what a session has downloaded so far. All four are entitlement-classified
+  under the same `CAP.BROWSER` tier as every other browser channel — an unclassified channel fails
+  CLOSED (`entitlement.test.js` would fail the moment one was added and forgotten).
+- VERIFICATION: `npm run lint` clean (0 errors) across the whole `src/` tree, not just touched
+  files. Both a web build (`vite build`) and the desktop build variant (`--base=./`) succeed. Every
+  edited `.cjs` parse-checked with `node --check`. New pure-function tests for
+  `normalizeAddressInput`/`stepZoom` in browserTree.test.js (39 total). browserActions.test.js's
+  mutation-verified schema/switch/preload-drift guard (34 tests) and entitlement.test.js's
+  unclassified-channel guard (20 tests) both still pass with every new action/channel added — the
+  guards did their job rather than needing to be loosened. New tests added directly for
+  `wait_for_download`'s polling/timeout/cancelled-state behaviour (fake timers, not a real 400ms×N
+  wait) in browserControl.test.js. smoke.test.jsx (mounts the whole app) and the
+  conversation/db-adjacent suites (dbContract, convGroups, chatExport) pass, covering the
+  `deleteConversation` change. The full ~1150-test suite could not be run in one pass in this
+  sandbox (the same fixed per-invocation jsdom overhead noted elsewhere in this file), so
+  verification was scoped to every file touched plus its adjacent/dependent suites, not eyeballed.
+  NOT verified: actual rendered pixels in either chrome (this sandbox cannot open Electron or a
+  real browser) — a first look after deploy is still worth taking, same caveat as every UI change
+  in this file that predates a working screenshot tool here.
+
 ## Diagnostics + Billing titles went dark-on-dark in light theme (2026-09-01) — styles.css
 - FIELD REPORT (screenshot): both panels' title bars were nearly illegible — text the same
   colour as its own background. Body content below the header read fine.

@@ -63,6 +63,7 @@ import { APP_VERSION, hasSeenCurrentVersion } from './version'
 import { AdSenseBanner } from './components/AdSenseBanner'
 import { safeLazy } from './utils/safeLazy'
 import { prewarmToolsFromInput } from './tools/toolPrewarm'
+import { formatLatency, getStatusIcon, formatDirectTimeAnswer, WINDOW_STEP, SUGGESTIONS } from './appHelpers'
 
 // Code-split heavy modals and auxiliary views on demand with auto-retry and cache-bust on new deploys
 const ArtifactPanel = safeLazy(() => import('./components/ArtifactPanel').then(m => ({ default: m.ArtifactPanel })))
@@ -122,83 +123,6 @@ const StarterCards = safeLazy(() => import('./components/StarterCards').then(m =
 const CitationGraphModal = safeLazy(() => import('./components/CitationGraphModal').then(m => ({ default: m.CitationGraphModal })))
 const EvalDashboard = safeLazy(() => import('./components/EvalDashboard').then(m => ({ default: m.EvalDashboard })))
 
-
-// Messages rendered at once; older turns load on demand.
-const WINDOW_STEP = 40
-
-/** 329189ms is unreadable; 5m 29s is not. */
-function formatLatency(ms) {
-  if (ms == null || isNaN(ms)) return ''
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
-  const m = Math.floor(ms / 60000)
-  const s = Math.round((ms % 60000) / 1000)
-  return `${m}m ${s}s`
-}
-
-function getStatusIcon(text = '') {
-  const t = text.toLowerCase()
-  if (t.includes('search') || t.includes('web') || t.includes('fetching')) return <Globe size={13} style={{ color: '#38bdf8' }} />
-  if (t.includes('code') || t.includes('file') || t.includes('read') || t.includes('write')) return <FileCode size={13} style={{ color: '#a855f7' }} />
-  if (t.includes('think') || t.includes('reason') || t.includes('analyz')) return <Brain size={13} style={{ color: '#ec4899' }} />
-  if (t.includes('running') || t.includes('execut') || t.includes('tool')) return <Wrench size={13} style={{ color: '#f59e0b' }} />
-  if (t.includes('verif') || t.includes('test') || t.includes('audit')) return <ShieldCheck size={13} style={{ color: '#10b981' }} />
-  if (t.includes('enhanc')) return <Wand2 size={13} style={{ color: '#ff6b35' }} />
-  return <Sparkles size={13} style={{ color: 'var(--accent-color, #ff6b35)' }} />
-}
-
-
-const SUGGESTIONS = [
-  {
-    category: 'Live Research',
-    label: "Search today's top AI & tech breakthroughs",
-    prompt: "Search the web for today's top artificial intelligence and tech news highlights with key takeaways.",
-  },
-  {
-    category: 'Productivity',
-    label: "Draft a polite follow-up email on project status",
-    prompt: "Draft a concise, professional follow-up email asking for an update on a pending project review.",
-  },
-  {
-    category: 'Code Assistant',
-    label: "Debug and optimize a slow query or code snippet",
-    prompt: "Review my code, identify performance bottlenecks, and suggest clean, efficient optimizations.",
-  },
-  {
-    category: 'Creative Gen',
-    label: "Generate a cozy cyberpunk coffee shop image",
-    prompt: "Generate an image of a cozy cyberpunk coffee shop in Tokyo on a rainy evening with warm neon glow.",
-  },
-  {
-    category: 'Learning',
-    label: "Explain complex concepts with everyday analogies",
-    prompt: "Explain how neural networks and large language models work using a simple, relatable everyday analogy.",
-  },
-  {
-    category: 'Daily Planning',
-    label: "Create a 5-day quick meal prep & grocery list",
-    prompt: "Create a balanced 5-day dinner meal plan under 30 minutes with an organized grocery shopping list.",
-  },
-]
-
-
-function formatDirectTimeAnswer() {
-  const locale = navigator.language || 'en-US'
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time'
-  const now = new Date()
-  const date = new Intl.DateTimeFormat(locale, {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  }).format(now)
-  const time = new Intl.DateTimeFormat(locale, {
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(now)
-  return `${date} at ${time} (${tz})`
-}
 
 // ─── Main App ───
 export default function App() {
@@ -1403,6 +1327,22 @@ export default function App() {
     refreshModels()
   }, [provider])
 
+  // Ollama's daemon can take several seconds to come up after autoStartOllama
+  // fires at boot (see ollama.js) — the app's own first model fetch races it
+  // and usually loses. If the active provider was already 'ollama' (the
+  // desktop default), the effect above never refires because `provider`
+  // never changes, so the stale empty model list stuck around for the whole
+  // session. This picks up the readiness event ollama.js broadcasts once the
+  // daemon has actually answered, and re-fetches for real.
+  useEffect(() => {
+    const onOllamaReady = () => {
+      refreshModels()
+      getAllProviderStatus().then(setProviderStatus).catch(() => {})
+    }
+    window.addEventListener('yogatik:ollama-ready', onOllamaReady)
+    return () => window.removeEventListener('yogatik:ollama-ready', onOllamaReady)
+  }, [])
+
   // Cheap: cached probe result, else the name heuristic. Tells the user BEFORE
   // they send whether the image goes to the model or gets read on-device.
   useEffect(() => {
@@ -1533,7 +1473,7 @@ export default function App() {
       // Clean the URL immediately — don't re-poll on a hard refresh.
       try { history.replaceState(null, '', location.pathname) } catch {}
       // Show an interim toast
-      setSystemMsg('🎉 Payment received! Activating Pro — this takes a few seconds…')
+      showToast('🎉 Payment received! Activating Pro — this takes a few seconds…')
       const doPoll = async () => {
         try {
           const me = await getMe()
@@ -1547,7 +1487,7 @@ export default function App() {
             intervalMs: 3000,
             onUnlocked: (st) => {
               setEnt(st)
-              setSystemMsg('✅ You\'re now on Yogatik Pro! Enjoy unlimited access.')
+              showToast('✅ You\'re now on Yogatik Pro! Enjoy unlimited access.')
               stopPoll?.()
             },
           })
@@ -1848,7 +1788,14 @@ export default function App() {
   useEffect(() => {
     if (!user) return undefined
     const recheck = () => {
-      refreshEntitlement({ idToken: user?.idToken || null, uid: user?.uid || user?.id || null })
+      // No explicit idToken here on purpose: `user.idToken` is a snapshot from
+      // the moment of sign-in and Firebase ID tokens expire in ~1 hour, so any
+      // focus event after that sent an already-expired token and the licence
+      // server 401'd it every time — refreshEntitlement's own fallback
+      // (getIdToken()) fetches a CURRENT token from the live Firebase session
+      // instead. uid is still worth passing: it costs nothing and lets main
+      // notice an account switch even if the token fetch itself fails.
+      refreshEntitlement({ uid: user?.uid || user?.id || null })
         .then(setEnt).catch(() => {})
     }
     recheck()
@@ -2294,10 +2241,22 @@ export default function App() {
 
   const retestProvider = async (pid) => {
     setSavingApiKey(pid)
-    await testProvider(pid, model || undefined).catch(() => {})
+    // The Test button now lives on every provider row, not just the one the
+    // user is actively editing — so it must test THAT provider's own
+    // selected model, never the globally active `model` state. Passing the
+    // active model through for a row that isn't the active provider used to
+    // silently test, e.g., an NVIDIA model id against DeepSeek's endpoint.
+    const modelForTest = pid === (conv?.provider || provider) ? (model || undefined) : undefined
+    await testProvider(pid, modelForTest).catch(() => {})
     setProviderStatus(await getAllProviderStatus())
     setSavingApiKey(null)
     refreshModels()
+  }
+
+  const handlePickProviderModel = async (pid, val) => {
+    await setActiveModel(pid, val)
+    if (pid === (conv?.provider || provider)) setModel(val)
+    setProviderStatus(await getAllProviderStatus())
   }
 
   const handleRemoveProvider = async (pid) => {
@@ -3734,13 +3693,28 @@ export default function App() {
                       const hasKey = Boolean(def.available) || isKeyless
                       const isEditing = editingProvider === pid
                       const isSaving = savingApiKey === pid
+                      // Live per-provider connection state from the last real test
+                      // (testProvider → status_<id>::<model> in db), NOT just whether
+                      // a key is present — a saved key can still be invalid, rate
+                      // limited, or pointed at a daemon that isn't running, and none
+                      // of that used to be visible anywhere on this page.
+                      const st = providerStatus[pid]
+                      const dotClass = st?.state === 'failed' ? 'conn-failed'
+                        : (st?.state === 'connected' || hasKey) ? 'conn-connected'
+                        : def.unavailable_reason ? 'conn-failed' : 'conn-unknown'
+                      const rowError = (st?.state === 'failed' && st.error) || def.unavailable_reason || null
+                      const modelList = def.models || []
+                      const selectedModel = st?.selected || def.default_model || modelList[0] || ''
                       return (
                         <div key={pid} className={`provider-row-card${isAct ? ' active' : ''}`}>
                           <div className="provider-row-head">
                             <div className="provider-card-title">
-                              <span className={`conn-dot-inline ${hasKey ? 'conn-connected' : def.unavailable_reason ? 'conn-failed' : 'conn-unknown'}`} />
+                              <span className={`conn-dot-inline ${dotClass}`} title={st?.state || (hasKey ? 'connected' : 'unknown')} />
                               <strong>{def.name || pid}</strong>
                               {isAct && <span className="provider-active-badge">Active</span>}
+                              {st?.state === 'connected' && st.latencyMs != null && (
+                                <span className="provider-latency-badge" title="Last test latency">{st.latencyMs}ms</span>
+                              )}
                             </div>
                             <div className="provider-row-actions">
                               {!isKeyless && def.key_url && (
@@ -3758,6 +3732,14 @@ export default function App() {
                                   {isEditing ? 'Cancel' : (hasKey ? 'Edit' : 'Add key')}
                                 </button>
                               )}
+                              {/* Test used to be nested inside the (rarely open) key-edit
+                                  row and hidden entirely for keyless providers — so
+                                  Ollama, the one provider whose reachability actually
+                                  varies turn to turn, had no way to re-check or refresh
+                                  its model list from this page at all. */}
+                              <button type="button" className="ws-ghost-btn xs" disabled={isSaving} onClick={() => retestProvider(pid)}>
+                                {isSaving ? 'Testing…' : 'Test'}
+                              </button>
                               {!isKeyless && hasKey && (
                                 <button type="button" className="ws-ghost-btn xs danger" onClick={() => forgetKey(pid)}>
                                   Remove
@@ -3770,8 +3752,10 @@ export default function App() {
                               )}
                             </div>
                           </div>
-                          {def.unavailable_reason && (
-                            <p className="dash-page-hint" style={{ margin: '6px 0 0' }}>{def.unavailable_reason}</p>
+                          {rowError && (
+                            <p className="provider-error-banner">
+                              <AlertTriangle size={12} /> {rowError}
+                            </p>
                           )}
                           {!isKeyless && (isEditing || !hasKey) && (
                             <div className="provider-key-row">
@@ -3785,12 +3769,25 @@ export default function App() {
                               <button type="button" className="ws-primary-btn xs" disabled={isSaving} onClick={() => handleAddApiKey(pid)}>
                                 {isSaving ? 'Saving…' : 'Save'}
                               </button>
-                              {hasKey && (
-                                <button type="button" className="ws-ghost-btn xs" disabled={isSaving} onClick={() => retestProvider(pid)}>
-                                  Test
-                                </button>
-                              )}
                             </div>
+                          )}
+                          {modelList.length > 0 ? (
+                            <div className="provider-model-row">
+                              <label htmlFor={`pm-${pid}`}>Model</label>
+                              <select
+                                id={`pm-${pid}`}
+                                className="style-select"
+                                value={selectedModel}
+                                onChange={e => handlePickProviderModel(pid, e.target.value)}
+                              >
+                                {modelList.map(m => <option key={m} value={m}>{m}</option>)}
+                              </select>
+                              <span className="provider-model-count">{modelList.length} model{modelList.length === 1 ? '' : 's'}</span>
+                            </div>
+                          ) : (hasKey || isKeyless) && !rowError && (
+                            <p className="dash-page-hint" style={{ margin: '6px 0 0' }}>
+                              No models discovered yet{isKeyless ? ' — press Test to refresh.' : '.'}
+                            </p>
                           )}
                         </div>
                       )

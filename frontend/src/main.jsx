@@ -21,6 +21,14 @@ installShellGuard()
 // Auto-start Ollama daemon in the background (desktop-only; web no-op).
 autoStartOllama().catch(() => {})
 
+// The tool registry (~195 tools) now loads as its own async chunk instead of
+// blocking the initial bundle (see agent.js: toolRegistry()/warmToolRegistry).
+// Kick it off once the page has painted, idle, so it's already resolved by
+// the time a real chat turn needs it instead of adding latency to that turn.
+const warmTools = () => import('./agent').then(m => m.warmToolRegistry?.()).catch(() => {})
+if ('requestIdleCallback' in window) requestIdleCallback(warmTools, { timeout: 4000 })
+else setTimeout(warmTools, 2000)
+
 // Filter out third-party browser extension message channel warnings
 window.addEventListener('unhandledrejection', (event) => {
   if (

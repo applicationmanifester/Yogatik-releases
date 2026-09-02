@@ -888,6 +888,17 @@ export async function branchConversation(sourceId, index) {
 }
 
 export async function deleteConversation(id) {
+  // Each chat that ever opened the browser panel gets its own
+  // WebContentsView (and, in window mode, a hidden BrowserWindow) in the
+  // main process, keyed by conversationId — see browserControl.cjs. Nothing
+  // destroyed that session when its chat went away: closing the panel only
+  // detaches/hides it (by design, so the tabs are still there if the user
+  // reopens the chat), and there was no hook anywhere that fired on delete.
+  // A real Chromium renderer process per deleted chat, accumulating for the
+  // life of the app, is a leak worth closing here rather than in every UI
+  // call site that can delete a conversation.
+  const b = typeof window !== 'undefined' && window.__YOGATIK_BROWSER__
+  if (b?.close) { try { b.close({ conversationId: id }) } catch { /* desktop only; safe to ignore */ } }
   return db.deleteConversation(id)
 }
 

@@ -41,6 +41,8 @@ export const VALID_ACTIONS = [
   'wait_for', 'fill_form', 'evaluate', 'extract_text',
   'diagnose', 'console', 'run_script', 'assert', 'audit_a11y',
   'upload_file', 'network',
+  'zoom_in', 'zoom_out', 'zoom_reset', 'find_text',
+  'wait_for_download', 'list_downloads',
 ]
 
 /**
@@ -73,6 +75,12 @@ export const ACTION_ALIASES = {
   a11y: 'audit_a11y', accessibility: 'audit_a11y', wcag: 'audit_a11y', audit: 'audit_a11y',
   upload: 'upload_file', set_input_files: 'upload_file', attach_file: 'upload_file', choose_file: 'upload_file',
   network_requests: 'network', requests: 'network', network_log: 'network', network_inspect: 'network',
+  zoomin: 'zoom_in', increase_zoom: 'zoom_in',
+  zoomout: 'zoom_out', decrease_zoom: 'zoom_out',
+  reset_zoom: 'zoom_reset', zoom_100: 'zoom_reset',
+  find: 'find_text', search_page: 'find_text', find_in_page: 'find_text', find_on_page: 'find_text',
+  downloads: 'list_downloads', list_download: 'list_downloads',
+  wait_download: 'wait_for_download', download: 'wait_for_download', wait_for_downloads: 'wait_for_download',
 }
 
 // `callerCtx` is the chat that issued the call, threaded from executeTool. It
@@ -107,6 +115,9 @@ export const browserControlTool = {
         'Use "audit_a11y" for full automated WCAG 2.2 accessibility audits. ' +
         'Use "upload_file" to put real files into an <input type=file> — read the page first, pass its ref and an array of absolute file paths (use file_dialog to get real paths from the user). ' +
         'Use "network" to see the requests/responses the page has made (status, method, url) — useful for checking whether an API call actually succeeded. ' +
+        'Use "zoom_in"/"zoom_out"/"zoom_reset" to change page zoom (useful before a screenshot of dense text). ' +
+        'Use "find_text" (with `text`) to search the page for a string and get a match count back — call it again with the same text to advance to the next match, without scrolling or re-reading the tree. ' +
+        'To download a file: click the download link/button as normal, then call "wait_for_download" (optionally with `text` as a filename substring to match, if more than one download might be in flight) — it waits for the download to finish and returns its local file path, which fs_read can then open. "list_downloads" lists what has been downloaded in this browsing session. ' +
         'ALWAYS call action "read" before clicking: it returns the page as a tree where every clickable element has a [ref_N] handle. ' +
         'Then click or type using that ref — do not guess x/y coordinates unless the target is a canvas or custom widget with no ref. ' +
         'Refs go stale when the page changes; if you get a stale-ref error, call "read" again. ' +
@@ -123,6 +134,8 @@ export const browserControlTool = {
               'wait_for', 'fill_form', 'evaluate', 'extract_text',
               'diagnose', 'console', 'run_script', 'assert', 'audit_a11y',
               'upload_file', 'network',
+              'zoom_in', 'zoom_out', 'zoom_reset', 'find_text',
+              'wait_for_download', 'list_downloads',
             ],
             description: 'What to do.',
           },
@@ -130,9 +143,16 @@ export const browserControlTool = {
           ref: { type: 'string', description: 'Element handle from a previous read, e.g. "ref_3_12". Preferred over x/y.' },
           x: { type: 'number', description: 'Fallback X coordinate, only when no ref exists (canvas/custom widgets).' },
           y: { type: 'number', description: 'Fallback Y coordinate, only when no ref exists.' },
-          text: { type: 'string', description: 'Text to type for action "type".' },
+          text: {
+            type: 'string',
+            description: 'Text to type for action "type". Also: the search string for "find_text", or an optional filename substring filter for "wait_for_download".',
+          },
           value: { type: 'string', description: 'Option to choose for action "select" — matches the option\'s value, its visible label, or its index.' },
-          submit: { type: 'boolean', description: 'Press Enter after typing. Confirm with the user first — this submits.' },
+          submit: { type: 'boolean', description: 'Press Enter after typing. This is blocked until confirmed=true after the user explicitly approves the submission.' },
+          confirmed: {
+            type: 'boolean',
+            description: 'Set true only after the user explicitly approves a submission or pressing Enter on a form. Filling fields is safe without it; submission is not.',
+          },
           clear: {
             type: 'boolean',
             description: 'For action "type": replace the field\'s current contents instead of appending. '
@@ -165,7 +185,7 @@ export const browserControlTool = {
           },
           timeout: {
             type: 'number',
-            description: 'Timeout in milliseconds for wait_for or assert (default 10000).',
+            description: 'Timeout in milliseconds for wait_for, assert, or wait_for_download (default 10000; wait_for_download default 30000).',
           },
           fields: {
             type: 'object',
@@ -187,7 +207,7 @@ export const browserControlTool = {
           },
           limit: {
             type: 'number',
-            description: 'For action "network": how many recent requests to return (default 50, max 200).',
+            description: 'For action "network": how many recent requests to return (default 50, max 200). For "list_downloads": how many recent downloads to return.',
           },
         },
         required: ['action'],
@@ -195,7 +215,7 @@ export const browserControlTool = {
     },
   },
 
-  async execute({ action: rawAction, url, ref, x, y, text, submit, clear, keys, amount, tabId, display, selector, type, expected, target, timeout, fields, expression, steps, value, files, limit, _depth = 0 } = {}, opts = {}) {
+  async execute({ action: rawAction, url, ref, x, y, text, submit, confirmed = false, clear, keys, amount, tabId, display, selector, type, expected, target, timeout, fields, expression, steps, value, files, limit, _depth = 0 } = {}, opts = {}) {
     const b = bridge()
     if (!b) return DESKTOP_ONLY
     const base = await ctx(display, opts?.ctx)
@@ -254,6 +274,13 @@ export const browserControlTool = {
           return { tool: 'browser_control', action, ...(await b.hover({ ...base, tabId, ref, x, y })) }
         case 'type':
           if (typeof text !== 'string') return { success: false, error: 'text is required to type' }
+          if (submit && !confirmed) {
+            return {
+              success: false,
+              requires_confirmation: true,
+              error: 'Typing is ready, but pressing Enter can submit this form. Ask the user for confirmation, then retry with confirmed:true.',
+            }
+          }
           // `clear` defaults to true when a field is named by ref, because
           // "type X into ref_4" means fill that field — and appending to
           // whatever was already there produced values like
@@ -289,6 +316,13 @@ export const browserControlTool = {
           return { tool: 'browser_control', action, ...(await b.network({ ...base, tabId, limit })) }
         case 'key':
           if (!keys) return { success: false, error: 'keys is required' }
+          if (/^(enter|return)$/i.test(String(keys).trim()) && !confirmed) {
+            return {
+              success: false,
+              requires_confirmation: true,
+              error: 'Enter may submit the focused form. Ask the user for confirmation, then retry with confirmed:true.',
+            }
+          }
           return { tool: 'browser_control', action, ...(await b.key({ ...base, tabId, keys })) }
         case 'scroll':
           return { tool: 'browser_control', action, ...(await b.scroll({ ...base, tabId, ref, amount })) }
@@ -346,7 +380,14 @@ export const browserControlTool = {
             const step = scriptSteps[i]
             // opts carries the calling chat's ctx; a nested step that dropped it
             // would fall back to the ambient chat mid-script.
-            const stepRes = await browserControlTool.execute({ ...step, display: display || base.display, _depth: _depth + 1 }, opts)
+            const stepRes = await browserControlTool.execute({
+              ...step,
+              display: display || base.display,
+              // A confirmed outer pipeline carries the user's explicit
+              // approval into its submit step, unless that step says otherwise.
+              confirmed: step.confirmed ?? confirmed,
+              _depth: _depth + 1,
+            }, opts)
             stepResults.push({ step: i + 1, action: step.action, ...stepRes })
             if (stepRes.success === false) {
               return {
@@ -459,6 +500,67 @@ export const browserControlTool = {
             }
           } catch (e) {
             return { success: false, error: `extract_text failed: ${e?.message || e}` }
+          }
+        }
+        case 'zoom_in':
+        case 'zoom_out':
+        case 'zoom_reset': {
+          // The action name doubles as the direction — same pattern as
+          // 'back'/'forward' above (b.history({direction: action})), rather
+          // than a single 'zoom' action with a direction param the model
+          // would have to get right on top of picking the action.
+          if (!b.zoom) return { success: false, error: 'zoom is not supported by this browser bridge version' }
+          const direction = action === 'zoom_in' ? 'in' : action === 'zoom_out' ? 'out' : 'reset'
+          return { tool: 'browser_control', action, ...(await b.zoom({ ...base, tabId, direction })) }
+        }
+        case 'find_text': {
+          if (!b.find) return { success: false, error: 'find is not supported by this browser bridge version' }
+          if (!text || !text.trim()) return { success: false, error: 'text is required for find_text' }
+          // findNext:true on every call (including the first): a search for a
+          // DIFFERENT string than the page's current find session starts a
+          // fresh search anyway, and it is what lets calling find_text again
+          // with the SAME text advance to the next match without a separate
+          // "next" action or param the model would have to remember to set.
+          return { tool: 'browser_control', action, ...(await b.find({ ...base, tabId, text, forward: true, findNext: true })) }
+        }
+        case 'list_downloads':
+          if (!b.downloads) return { success: false, error: 'downloads are not supported by this browser bridge version' }
+          return { tool: 'browser_control', action, ...(await b.downloads({ ...base, limit })) }
+        case 'wait_for_download': {
+          if (!b.downloads) return { success: false, error: 'downloads are not supported by this browser bridge version' }
+          const waitTimeout = Math.min(Math.max(1000, timeout || 30000), 120000)
+          const started = Date.now()
+          const filter = String(text || '').trim().toLowerCase()
+          const matches = (d) => !filter || (d.filename || '').toLowerCase().includes(filter)
+          let sawAny = false
+          while (Date.now() - started < waitTimeout) {
+            const res = await b.downloads({ ...base, limit: 20 })
+            // The bridge lists newest-first, so [0] of the filtered set is the
+            // download this call almost certainly means.
+            const d = (res?.downloads || []).filter(matches)[0]
+            if (d) {
+              sawAny = true
+              if (d.state === 'completed') {
+                return {
+                  tool: 'browser_control', action, success: true,
+                  filename: d.filename, savePath: d.savePath, bytes: d.receivedBytes, state: d.state,
+                  note: 'Use fs_read with this savePath to open the downloaded file.',
+                }
+              }
+              if (d.state === 'cancelled' || d.state === 'interrupted') {
+                return { success: false, error: `Download ${d.state}: ${d.filename}`, filename: d.filename, state: d.state }
+              }
+              // 'progressing' — keep polling.
+            }
+            await new Promise(r => setTimeout(r, 400))
+          }
+          return {
+            success: false,
+            error: sawAny
+              ? `The download did not finish within ${waitTimeout}ms.`
+              : (filter
+                ? `No download matching "${text}" was seen. Make sure the click that starts the download already happened.`
+                : 'No download was seen. Make sure the click that starts the download already happened.'),
           }
         }
         default:

@@ -929,3 +929,70 @@ describe('action gate', () => {
     expect(seen.args).toMatchObject({ path: 'a.txt' })
   })
 })
+
+describe('Reflex Prefetch (agentReflex.js) — background speculative execution', () => {
+  // A small whitelist of side-effect-free tools is pattern-matched from the
+  // raw message and started in the background before the model is even
+  // asked. When the model's real call matches, the round loop should reuse
+  // that in-flight result rather than pay for a second execution — these
+  // tests assert the OBSERVABLE consequence (executeTool call counts), not
+  // the internal cache, since the cache itself is private to runAgent.
+  afterEach(() => { delete window.__YOGATIK_ACTION_GATE__ })
+  const callsTo = (name) => executeTool.mock.calls.filter((c) => c[0] === name)
+
+  it("runs the matching tool only once when the model's real call matches the speculation", async () => {
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'weather', parsedArgs: { location: 'Tokyo' } }] },
+      { tokens: ['Sunny in Tokyo.'] },
+    ])
+    await runAgent({ ...base, userMessage: 'weather in Tokyo', onDone: vi.fn() })
+    expect(callsTo('weather')).toHaveLength(1)
+  })
+
+  it('fires no speculative call at all for an ordinary message that matches nothing', async () => {
+    scriptRounds([{ tokens: ['hi there'] }])
+    await runAgent({ ...base, userMessage: 'tell me a joke', onDone: vi.fn() })
+    expect(executeTool).not.toHaveBeenCalled()
+  })
+
+  it('is skipped entirely when a companion/autopilot action gate is installed', async () => {
+    window.__YOGATIK_ACTION_GATE__ = async () => ({ allowed: false, reason: 'Declined.' })
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'weather', parsedArgs: { location: 'Tokyo' } }] },
+      { tokens: ['ok'] },
+    ])
+    await runAgent({ ...base, userMessage: 'weather in Tokyo', onDone: vi.fn() })
+    // The gate declined the model's real call. If the prefetch had bypassed
+    // the gate to run ahead of it, one execution would have slipped through
+    // regardless — zero total is the only outcome that proves it did not.
+    expect(callsTo('weather')).toHaveLength(0)
+  })
+
+  it('does not fire when tools are disabled for the turn', async () => {
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, userMessage: 'weather in Tokyo', toolsEnabled: false, onDone: vi.fn() })
+    expect(callsTo('weather')).toHaveLength(0)
+  })
+
+  it('does not fire for a local/on-device provider', async () => {
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, provider: 'local', userMessage: 'weather in Tokyo', onDone: vi.fn() })
+    expect(callsTo('weather')).toHaveLength(0)
+  })
+
+  it('does not fire when the candidate tool is in disabledTools', async () => {
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, userMessage: 'weather in Tokyo', disabledTools: ['weather'], onDone: vi.fn() })
+    expect(callsTo('weather')).toHaveLength(0)
+  })
+
+  it('a mismatched real call still runs normally — the discarded speculative one never interferes', async () => {
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'weather', parsedArgs: { location: 'Paris' } }] },
+      { tokens: ['ok'] },
+    ])
+    await runAgent({ ...base, userMessage: 'weather in Tokyo', onDone: vi.fn() })
+    const paris = callsTo('weather').filter((c) => c[1]?.location === 'Paris')
+    expect(paris).toHaveLength(1)
+  })
+})

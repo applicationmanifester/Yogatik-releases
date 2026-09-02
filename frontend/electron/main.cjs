@@ -617,7 +617,7 @@ if (!gotLock) {
                     mainWindow.focus()
                   }
                 } catch {}
-                resolve({ success: true, user: parsed, idToken: parsed.idToken })
+                resolve({ success: true, user: parsed, idToken: parsed.idToken, googleIdToken: parsed.googleIdToken || null })
                 return
               }
             }

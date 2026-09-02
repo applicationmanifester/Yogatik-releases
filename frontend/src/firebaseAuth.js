@@ -72,8 +72,15 @@ export async function getIdToken({ forceRefresh = false } = {}) {
   try {
     const f = await fb()
     const user = f.auth?.currentUser
-    if (!user?.getIdToken) return null
-    return await user.getIdToken(forceRefresh)
+    if (user?.getIdToken) return await user.getIdToken(forceRefresh)
+    // Electron's native OAuth flow returns the token to the renderer. Keep a
+    // fallback copy so a relaunch can restore Firebase Auth before Firestore
+    // key sync or licence refresh. Firebase tokens are still short-lived; a
+    // subsequent native sign-in replaces this value.
+    if (!forceRefresh && typeof window !== 'undefined') {
+      return _desktopUser?.idToken || null
+    }
+    return null
   } catch {
     // Signed out, offline, or Firebase unavailable — all of which mean "no
     // token", not "crash the caller".
@@ -140,6 +147,58 @@ function getActiveAuthUser(f) {
   return f?.auth?.currentUser || _desktopUser || null
 }
 
+/**
+ * Ensure f.auth.currentUser is set before Firestore reads/writes.
+ *
+ * Problem: Firestore security rules are `request.auth.uid == userId`. When the
+ * desktop app re-launches, `_desktopUser` is restored from localStorage but
+ * `f.auth.currentUser` is null — Firebase SDK was never initialised in this
+ * process. Every Firestore read/write therefore goes out WITHOUT an auth token
+ * and the server rejects it with a permissions error: API keys can never be
+ * pulled however many times the user clicks "Sync", and keys saved on the web
+ * never arrive on the desktop.
+ *
+ * Fix: ask the desktop native bridge for a fresh Google ID token and call
+ * signInWithCredential so Firebase is authenticated in this renderer process.
+ * On web this is a no-op — the SDK handles its own auth persistence.
+ *
+ * Called once before any Firestore read/write; safe to call multiple times
+ * (subsequent calls are cheap because currentUser is already set).
+ */
+async function ensureFirebaseAuth(f) {
+  if (!f) return
+  // Already authenticated — nothing to do.
+  if (f.auth?.currentUser) return
+  // Not a desktop build — web handles its own Firebase Auth persistence.
+  if (typeof window === 'undefined' || !window.__YOGATIK_DESKTOP__) return
+  // No cached desktop user — truly signed-out, nothing to restore.
+  if (!_desktopUser?.uid) return
+
+  try {
+    // GoogleAuthProvider.credential() needs GOOGLE's own OAuth id_token
+    // (iss: accounts.google.com), not the Firebase-minted one auth-desktop.html
+    // also carries for the licence server — the two are not interchangeable and
+    // Firebase rejects the wrong kind. That was cached alongside the profile at
+    // sign-in (setDesktopUser), which is the only place this process can get one
+    // without popping a browser window: window.__YOGATIK_DESKTOP__ has no
+    // silent-refresh channel (loginWithGoogle always opens shell.openExternal),
+    // so "try to silently re-auth" is not actually silent and must not run as a
+    // side effect of an ordinary key-sync or licence call.
+    const googleIdToken = _desktopUser?.googleIdToken || null
+    if (googleIdToken && f.GoogleAuthProvider?.credential && f.signInWithCredential) {
+      const cred = f.GoogleAuthProvider.credential(googleIdToken)
+      await f.signInWithCredential(f.auth, cred)
+    }
+  } catch (err) {
+    // Non-fatal: stay unauthenticated. Firestore will reject the request,
+    // but that is the same result as before this fix — we never make things
+    // worse by attempting and failing. Once this succeeds, though, Firebase's
+    // own SDK persists the session (IndexedDB) and silently refreshes it from
+    // then on — this function only has to win once per sign-in.
+    console.warn('[firebaseAuth] ensureFirebaseAuth failed:', err?.message)
+  }
+}
+
 export async function signInWithGoogle() {
   // ─── Electron Desktop Native OAuth Bridge ─────────────────────────────────
   if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.loginWithGoogle) {
@@ -148,10 +207,19 @@ export async function signInWithGoogle() {
       throw new Error(res?.error || 'Desktop Google Sign-In was cancelled or failed.')
     }
     const f = await fb()
+    // Two different tokens, two different jobs — do not swap them:
+    //  - idToken (Firebase-minted, from user.getIdToken() in auth-desktop.html)
+    //    is what the licence server verifies with admin.auth().verifyIdToken().
+    //  - googleIdToken (Google-minted, from credentialFromResult()) is what
+    //    THIS renderer's own separate Firebase SDK instance needs to sign
+    //    itself in via signInWithCredential — GoogleAuthProvider.credential()
+    //    only accepts a Google-issued token and silently fails on a Firebase
+    //    one, which is why f.auth.currentUser was never getting set here.
     const idToken = res.idToken || res.user?.idToken
-    if (idToken && f.GoogleAuthProvider?.credential && f.signInWithCredential) {
+    const googleIdToken = res.googleIdToken || res.user?.googleIdToken || null
+    if (googleIdToken && f.GoogleAuthProvider?.credential && f.signInWithCredential) {
       try {
-        const cred = f.GoogleAuthProvider.credential(idToken)
+        const cred = f.GoogleAuthProvider.credential(googleIdToken)
         await f.signInWithCredential(f.auth, cred)
       } catch (authErr) {
         console.warn('Desktop Firebase auth sign-in notice:', authErr?.message)
@@ -163,8 +231,22 @@ export async function signInWithGoogle() {
       email: res.user.email,
       photoURL: res.user.photoURL,
     }
-    setDesktopUser(user)
-    return await saveProfile(f, user)
+    // Keep both tokens with the cached desktop identity: idToken for an
+    // immediate licence refresh, googleIdToken so ensureFirebaseAuth() can
+    // re-establish f.auth.currentUser after a relaunch without popping a
+    // browser window.
+    setDesktopUser({ ...user, idToken: idToken || null, googleIdToken })
+    const profile = await saveProfile(f, user)
+    // ── KEY FIX: surface the idToken so the caller can hand it to the licence
+    // server immediately. `saveProfile` returns profileOf(user) which is only
+    // { uid, displayName, email, photoURL } — idToken is stripped. App.jsx then
+    // calls refreshEntitlement({ idToken: userData?.idToken }) and gets undefined,
+    // so main's store.idToken stays null and refresh() bails: no user is ever
+    // licensed however much they pay. Return idToken alongside the profile.
+    // entitlement.js also calls getIdToken() as a fallback, but that requires
+    // f.auth.currentUser to be set — which only works if signInWithCredential
+    // above succeeded. Passing it here makes the happy path work regardless.
+    return { ...profile, idToken: idToken || null }
   }
 
   // ─── Standard Web Browser OAuth Flow ──────────────────────────────────────
@@ -238,6 +320,8 @@ export async function saveUserApiKey(provider, apiKey, secret) {
   if (!secret) return { synced: false, reason: 'no-secret' }
   try {
     const f = await fb()
+    // Re-authenticate Firebase if needed (desktop relaunch loses f.auth.currentUser).
+    await ensureFirebaseAuth(f)
     const user = getActiveAuthUser(f)
     if (!user) return { synced: false, reason: 'signed-out' }
     const sealed = await encryptSecret(apiKey, secret)
@@ -258,6 +342,9 @@ export async function getUserApiKeys(...secrets) {
   const candidates = secrets.flat().filter(Boolean)
   try {
     const f = await fb()
+    // Re-authenticate Firebase if needed so Firestore auth rules pass.
+    // On desktop, f.auth.currentUser is null after a relaunch until this runs.
+    await ensureFirebaseAuth(f)
     const user = getActiveAuthUser(f)
     if (!user || !candidates.length) return {}
     const snap = await f.getDoc(f.doc(f.db, 'users', user.uid))
@@ -287,6 +374,12 @@ const VAULT_CHUNK = 700_000
 export async function saveVault(cipher, meta = {}) {
   try {
     const f = await fb()
+    // Same fix as saveUserApiKey/getUserApiKeys: on desktop, getActiveAuthUser
+    // falls back to the cached profile even when f.auth.currentUser is null, so
+    // this used to look "signed in" and then send an UNAUTHENTICATED write that
+    // Firestore rules silently reject — chat/doc cloud sync did nothing, with
+    // no error anywhere to explain it.
+    await ensureFirebaseAuth(f)
     const user = getActiveAuthUser(f)
     if (!user) return { synced: false, reason: 'signed-out' }
     const col = f.collection(f.db, 'users', user.uid, 'vault')
@@ -309,6 +402,7 @@ export async function saveVault(cipher, meta = {}) {
 export async function loadVault() {
   try {
     const f = await fb()
+    await ensureFirebaseAuth(f)
     const user = getActiveAuthUser(f)
     if (!user) return null
     const snap = await f.getDocs(f.query(f.collection(f.db, 'users', user.uid, 'vault'), f.orderBy('i')))
@@ -324,6 +418,7 @@ export async function loadVault() {
 export async function getVaultMeta() {
   try {
     const f = await fb()
+    await ensureFirebaseAuth(f)
     const user = getActiveAuthUser(f)
     if (!user) return null
     const snap = await f.getDoc(f.doc(f.db, 'users', user.uid))
@@ -337,6 +432,7 @@ export async function getVaultMeta() {
 export async function purgePlaintextKeys() {
   try {
     const f = await fb()
+    await ensureFirebaseAuth(f)
     const user = getActiveAuthUser(f)
     if (!user) return 0
     const ref = f.doc(f.db, 'users', user.uid)

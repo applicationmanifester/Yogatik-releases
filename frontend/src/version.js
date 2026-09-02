@@ -3,16 +3,96 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '4.1.0'
+export const APP_VERSION = '4.3.1'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 4.1 — Pro Payment Protection, Multi-Platform Builds & Cloud Hosting'
+export const APP_CODENAME = 'Yogatik 4.3.1 — Interactive Browser Automation, Agent Reflex & Desktop Sync'
 
 export const APP_RELEASES = [
   {
-    version: '4.1.0',
-    title: 'Yogatik 4.1: Pro Payment Versioning, Cross-Platform Desktop Matrix & Unified Clean Provider Hub',
+    version: '4.3.1',
+    title: 'Yogatik 4.3.1: Interactive Browser Automation, Agent Reflex Loop & Cross-Platform Desktop Sync',
     date: 'September 2, 2026',
     isLatest: true,
+    highlights: [
+      'Interactive Browser Automation: Full IPC-driven browser control with accessibility tree parsing, interactive element targeting, and visual viewport highlight overlay',
+      'Autonomous Agent Reflex Loop: Added reflective self-evaluation heuristics to detect repetitive tool calls, inspect progress, and trigger corrective reasoning mid-turn',
+      'Cross-Platform Desktop & Web Parity: Synchronized version 4.3.1 across web app, Windows installer (NSIS), macOS DMG, and Linux AppImage/Deb packages',
+      'Hardened Native IPC Lifecycle: Safe window messaging across Electron main and renderer processes eliminating destroyed-window exceptions',
+      'Optimized App State & Rendering: Clean separation of UI state helpers and reactive sub-agent pipelines for smooth chat execution',
+    ],
+    sections: [
+      {
+        category: '🌐 Browser Automation & Tools',
+        items: [
+          {
+            title: 'Interactive DOM & Accessibility Tree',
+            description: 'Agent directly queries and interacts with live browser tabs using semantic DOM trees and scoped ref keys.',
+          },
+          {
+            title: 'Live Viewport Highlighting',
+            description: 'Visual overlay displays targeted interactive elements in real-time during autonomous navigation.',
+          },
+        ],
+      },
+      {
+        category: '🧠 Agent Intelligence & Reflex',
+        items: [
+          {
+            title: 'Reflective Self-Evaluation',
+            description: 'Integrated reflex heuristics detect stagnation, repetitive errors, and automatically guide the agent toward alternate strategies.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '4.2.0',
+    title: 'Yogatik 4.2: Desktop Account Linking Fix, Faster Startup, Cleaner Codebase',
+    date: 'September 2, 2026',
+    isLatest: false,
+    highlights: [
+      'Fixed: desktop sign-in was authenticating to the CLOUD FUNCTION correctly but never actually authenticating its own local Firestore session — a credential-type mismatch (Firebase ID token fed to an API expecting Google\'s own OAuth token) meant every Firestore call from the desktop app went out unauthenticated and was silently rejected',
+      'Fixed: API key / chat cloud sync between web and desktop for the same signed-in account — was a direct consequence of the auth bug above',
+      'Fixed: desktop showing "Trial ended" / an upgrade prompt for accounts that are Pro on the web — the desktop\'s licence refresh was resending an already-expired sign-in token on every window-focus check instead of fetching a current one, and eventually the local licence cache aged out with nothing to renew it',
+      'The "Trial ended" account screen now names the real reason (no licence yet, wrong account, clock rollback, awaiting renewal, etc.) instead of one label for every locked state',
+      'Initial app bundle cut ~34% (1.79MB → 1.18MB, 587KB → 386KB gzipped) by loading the ~195-tool registry as its own background chunk instead of blocking first paint',
+      'Fixed a crash on the payment-success return path (`?paid=1`) that could blank the whole app right after a customer paid',
+      'Housekeeping: removed a dead pnpm monorepo scaffold left in the repo root; corrected stale docs that still described a second (Tauri) desktop shell — that shell was already retired',
+    ],
+    sections: [
+      {
+        category: '🔐 Account & Sync',
+        items: [
+          {
+            title: 'Desktop Firestore authentication fixed',
+            description: 'The desktop app now correctly authenticates its own local Firebase session on sign-in, instead of silently failing and sending every key/chat sync request unauthenticated.',
+          },
+          {
+            title: 'Licence refresh uses a live token',
+            description: 'Window-focus and background entitlement checks now fetch a current sign-in token instead of resending the one captured at sign-in, which expires within the hour.',
+          },
+          {
+            title: 'Accurate locked-state messaging',
+            description: 'The account page names the real reason a device is locked (no licence yet, wrong account, clock rollback, awaiting renewal) instead of always saying "trial ended".',
+          },
+        ],
+      },
+      {
+        category: '⚡ Performance',
+        items: [
+          {
+            title: 'Tool registry loads in the background',
+            description: 'The ~195-tool registry now ships as its own chunk fetched right after first paint instead of blocking the initial page load — the main bundle is about a third smaller.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '4.1.5',
+    title: 'Yogatik 4.1: Pro Payment Versioning, Cross-Platform Desktop Matrix & Unified Clean Provider Hub',
+    date: 'September 2, 2026',
+    isLatest: false,
     highlights: [
       'Pro Payment Versioning: File-system access restrictions and pro entitlements tied directly to live Paddle/Razorpay subscription verification',
       'Cross-Platform Git Builds: Complete multi-platform build matrices configured for Windows (.exe / NSIS), macOS (.dmg / universal), and Linux (.AppImage / .deb)',

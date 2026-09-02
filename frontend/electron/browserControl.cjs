@@ -12,13 +12,19 @@
 // Sessions are keyed by conversationId: a logged-in tab must not follow the user
 // into an unrelated chat.
 
-const { BrowserWindow, WebContentsView, ipcMain } = require('electron')
+const { BrowserWindow, WebContentsView, ipcMain, session: electronSession, shell } = require('electron')
 const path = require('path')
+const { safeSend } = require('./safeWindow.cjs')
 const {
   buildTree, walkerSource, refResolverSource, elementRefExpression, parseRef, isStaleRef,
+  normalizeAddressInput, stepZoom,
 } = require('./browserTree.cjs')
 
-const TAB_BAR_H = 40
+// Window-mode chrome height: the toolbar (back/forward/reload/address bar)
+// plus the tab strip beneath it, both 36px in browserWindow.html's own CSS.
+// Must stay in lockstep with that file — it is what tells the content view
+// where the chrome actually ends and the page begins.
+const TAB_BAR_H = 72
 const LOAD_TIMEOUT = 30_000
 
 const sessions = new Map() // conversationId -> session
@@ -92,7 +98,19 @@ function createWindowSurface(s) {
     },
   })
   s.win.loadFile(path.join(__dirname, 'browserWindow.html'))
-  s.win.webContents.on('did-finish-load', () => syncTabBar(s))
+  s.win.webContents.on('did-finish-load', () => {
+    syncTabBar(s)
+    // Individual downloads are pushed one-at-a-time as they progress
+    // (broadcastDownload) — a window that opens (or reopens) AFTER some of
+    // that already happened needs the backlog seeded once, or its list stays
+    // empty until the next byte arrives on an in-flight download.
+    const { downloads: existing } = listDownloads(s.key === '__default__' ? null : s.key, {})
+    for (const rec of existing) {
+      s.win.webContents
+        .executeJavaScript(`window.__setDownload && window.__setDownload(${JSON.stringify(rec)})`)
+        .catch(() => {})
+    }
+  })
   s.win.on('resize', () => layout(s))
   // The user closing the browser ends the session; the next call opens a fresh one.
   s.win.on('closed', () => { s.win = null; destroySession(s.key) })
@@ -133,13 +151,48 @@ function showActive(s) {
   syncTabBar(s)
 }
 
+// The toolbar (address bar + back/forward/reload) needs the ACTIVE tab's own
+// nav state, not just the tab strip — without it the address bar could only
+// ever show what was last typed, never what a click on the page navigated
+// to, and back/forward would have no way to grey out.
+function navSnapshot(s) {
+  const t = activeTab(s)
+  return {
+    conversationId: s.key === '__default__' ? null : s.key,
+    tabs: listTabs(s),
+    activeTabId: s.activeTabId,
+    url: t ? safe(() => t.view.webContents.getURL(), '') : '',
+    canGoBack: t ? safe(() => t.view.webContents.navigationHistory.canGoBack(), false) : false,
+    canGoForward: t ? safe(() => t.view.webContents.navigationHistory.canGoForward(), false) : false,
+    loading: t ? safe(() => t.view.webContents.isLoading(), false) : false,
+    zoomPercent: t ? Math.round(safe(() => t.view.webContents.getZoomFactor(), 1) * 100) : 100,
+  }
+}
+
+// Pushes current chrome state to whichever surface owns it. Window mode has
+// its own dedicated chrome document (browserWindow.html) and is pushed via
+// executeJavaScript; panel mode's chrome is the React panel living in the
+// MAIN window's renderer, which has no equivalent inbound call — it is
+// pushed a plain IPC event instead, mirroring the __YOGATIK_MENU__ push
+// pattern rather than making the panel poll.
 function syncTabBar(s) {
-  if (s.mode !== 'window' || !s.win || s.win.isDestroyed()) return
-  const payload = JSON.stringify(listTabs(s))
-  const active = JSON.stringify(s.activeTabId)
-  s.win.webContents
-    .executeJavaScript(`window.__setTabs && window.__setTabs(${payload}, ${active})`)
-    .catch(() => {})
+  if (s.mode === 'window') {
+    if (!s.win || s.win.isDestroyed()) return
+    const snap = navSnapshot(s)
+    const payload = JSON.stringify(snap.tabs)
+    const active = JSON.stringify(snap.activeTabId)
+    const navPayload = JSON.stringify({
+      url: snap.url, canGoBack: snap.canGoBack, canGoForward: snap.canGoForward,
+      loading: snap.loading, zoomPercent: snap.zoomPercent,
+    })
+    s.win.webContents
+      .executeJavaScript(`window.__setTabs && window.__setTabs(${payload}, ${active}, ${navPayload})`)
+      .catch(() => {})
+    return
+  }
+  if (s.mode === 'panel') {
+    safeSend(mainWindowGetter(), 'browser:nav-state', navSnapshot(s))
+  }
 }
 
 // Re-parent, never rebuild: tabs, cookies and refs survive a mode switch.
@@ -197,7 +250,16 @@ function createTab(s, url) {
       tab.network = []
       tab.pendingRequests.clear()
     }
+    // The address bar should track the location the instant a navigation
+    // starts (loading state, and the URL for a redirect chain), not only
+    // once the page finishes — a slow page left the toolbar showing the
+    // PREVIOUS url/spinner state for however long it took to load.
+    syncTabBar(s)
   })
+  // pushState/replaceState/hash changes never fire did-start-navigation or
+  // did-finish-load at all (there is no real navigation), so an SPA route
+  // change left the address bar showing the URL the tab was created with.
+  wc.on('did-navigate-in-page', () => syncTabBar(s))
 
   const LEVELS = ['debug', 'info', 'warning', 'error']
   const pushLog = (entry) => {
@@ -236,6 +298,21 @@ function createTab(s, url) {
   })
   wc.on('page-title-updated', () => syncTabBar(s))
   wc.on('did-finish-load', () => syncTabBar(s))
+  // Ctrl/Cmd+F inside the PAGE never reaches our chrome — the WebContentsView
+  // is its own top-level browsing context, so a keypress there is consumed
+  // by whatever the page itself does with it (usually nothing). before-input
+  // fires on the tab's webContents BEFORE the page sees the key, which is the
+  // only way to intercept it and open OUR find bar instead of a dead shortcut.
+  wc.on('before-input-event', (event, input) => {
+    const mod = process.platform === 'darwin' ? input.meta : input.control
+    if (!mod || input.alt || input.type !== 'keyDown' || String(input.key || '').toLowerCase() !== 'f') return
+    event.preventDefault()
+    if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
+      s.win.webContents.executeJavaScript('window.__openFind && window.__openFind()').catch(() => {})
+    } else {
+      safeSend(mainWindowGetter(), 'browser:open-find', { conversationId: s.key === '__default__' ? null : s.key })
+    }
+  })
   // Pop-ups become real tabs instead of vanishing.
   wc.setWindowOpenHandler(({ url: target }) => {
     if (/^https?:/.test(target)) {
@@ -246,6 +323,17 @@ function createTab(s, url) {
     return { action: 'deny' }
   })
   wc.on('render-process-gone', () => {
+    // Mirror closeTab's cleanup order: detach the view from its host BEFORE
+    // dropping it from s.tabs. showActive() only ever removes/attaches views
+    // for tabIds still present in the map, so deleting first (as this used to)
+    // left a crashed tab's WebContentsView permanently attached to
+    // h.contentView.children with no code path left to ever remove it — an
+    // orphaned, unusable view leaked for the life of the session.
+    const t = s.tabs.get(tabId)
+    const h = host(s)
+    if (t && h && !h.isDestroyed() && h.contentView.children.includes(t.view)) {
+      safe(() => h.contentView.removeChildView(t.view))
+    }
     s.tabs.delete(tabId)
     if (s.activeTabId === tabId) s.activeTabId = [...s.tabs.keys()][0] || null
     showActive(s)
@@ -634,6 +722,198 @@ async function handleStorage(s, { tabId, type = 'local' } = {}) {
   }
 }
 
+// ── Zoom ──────────────────────────────────────────────────────────────────
+
+function zoomTab(s, { tabId, direction } = {}) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  if (!['in', 'out', 'reset'].includes(direction)) return { success: false, error: 'direction must be "in", "out" or "reset"' }
+  const wc = t.view.webContents
+  const next = stepZoom(safe(() => wc.getZoomFactor(), 1), direction)
+  wc.setZoomFactor(next)
+  syncTabBar(s)
+  return { success: true, zoomFactor: next, zoomPercent: Math.round(next * 100) }
+}
+
+// ── Find in page ──────────────────────────────────────────────────────────
+//
+// webContents.findInPage() does not return a promise — results arrive later
+// as a 'found-in-page' event, keyed by the request id it hands back
+// synchronously. That id is not useful to a caller waiting for a RESULT, so
+// this waits for the next finalUpdate instead and resolves with the count —
+// the shape an address-bar-style find UI actually needs (X of Y matches).
+
+async function findInPage(s, { tabId, text, forward = true, findNext = false } = {}) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  const wc = t.view.webContents
+  const query = String(text || '')
+  if (!query.trim()) {
+    wc.stopFindInPage('clearSelection')
+    return { success: true, stopped: true }
+  }
+  return new Promise((resolve) => {
+    let settled = false
+    const done = (payload) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      wc.removeListener('found-in-page', onFound)
+      resolve(payload)
+    }
+    const onFound = (_e, result) => {
+      // Chrome fires several partial updates while a page is still being
+      // searched (async, off the main thread) before the final tally — only
+      // the LAST one is the count a UI should actually display.
+      if (!result.finalUpdate) return
+      done({ success: true, matches: result.matches, activeMatchOrdinal: result.activeMatchOrdinal })
+    }
+    wc.on('found-in-page', onFound)
+    // A page findInPage() never completing (rare, but possible on a huge or
+    // still-loading document) must not hang the IPC call forever.
+    const timer = setTimeout(() => done({ success: true, matches: 0, activeMatchOrdinal: 0, timeout: true }), 5000)
+    try {
+      wc.findInPage(query, { forward: !!forward, findNext: !!findNext, matchCase: false })
+    } catch (err) {
+      done({ success: false, error: err?.message || String(err) })
+    }
+  })
+}
+
+function stopFindInPage(s, { tabId, action = 'clearSelection' } = {}) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  t.view.webContents.stopFindInPage(action === 'keepSelection' ? 'keepSelection' : 'clearSelection')
+  return { success: true }
+}
+
+// ── Downloads ─────────────────────────────────────────────────────────────
+//
+// Every WebContentsView created above shares Electron's default session (no
+// `partition` was ever set — deliberately, so the agent browser sees the
+// same cookies/logins as the rest of the app), which means 'will-download'
+// fires from ONE place for every tab across every conversation. The event's
+// third argument is the initiating webContents, which is the only way to
+// attribute a download back to the tab/session that triggered it.
+
+const DOWNLOAD_CAP = 200
+const downloads = new Map() // id -> record (JSON-serialisable, crosses IPC)
+const downloadItems = new Map() // id -> live DownloadItem (main-process only, for cancel)
+let downloadSeq = 0
+let downloadsWired = false
+
+function findTabOwner(wc) {
+  for (const s of sessions.values()) {
+    for (const [tabId, t] of s.tabs) {
+      if (t.view.webContents === wc) return { sessionKey: s.key, tabId }
+    }
+  }
+  return null
+}
+
+function pruneDownloads() {
+  if (downloads.size <= DOWNLOAD_CAP) return
+  // Never evict something still in flight — only completed/cancelled/failed
+  // entries are eligible, oldest first.
+  const evictable = [...downloads.values()]
+    .filter(d => d.state !== 'progressing')
+    .sort((a, b) => a.startedAt - b.startedAt)
+  for (const d of evictable) {
+    if (downloads.size <= DOWNLOAD_CAP) break
+    downloads.delete(d.id)
+    downloadItems.delete(d.id)
+  }
+}
+
+function broadcastDownload(rec) {
+  const s = rec.sessionKey ? sessions.get(rec.sessionKey) : null
+  if (s?.mode === 'window' && s.win && !s.win.isDestroyed()) {
+    safe(() => s.win.webContents.executeJavaScript(`window.__setDownload && window.__setDownload(${JSON.stringify(rec)})`).catch(() => {}))
+  }
+  safeSend(mainWindowGetter(), 'browser:download', rec)
+}
+
+function wireDownloads() {
+  if (downloadsWired) return
+  downloadsWired = true
+  electronSession.defaultSession.on('will-download', (_event, item, wc) => {
+    const owner = findTabOwner(wc)
+    const id = `dl-${++downloadSeq}`
+    const rec = {
+      id,
+      filename: item.getFilename(),
+      url: item.getURL(),
+      state: 'progressing',
+      receivedBytes: 0,
+      totalBytes: item.getTotalBytes(),
+      savePath: null,
+      startedAt: Date.now(),
+      tabId: owner?.tabId || null,
+      sessionKey: owner?.sessionKey || null,
+    }
+    downloads.set(id, rec)
+    downloadItems.set(id, item)
+    pruneDownloads()
+    const push = () => {
+      rec.receivedBytes = safe(() => item.getReceivedBytes(), rec.receivedBytes)
+      rec.savePath = safe(() => item.getSavePath(), rec.savePath)
+      broadcastDownload(rec)
+    }
+    item.on('updated', (_e2, state) => { rec.state = state; push() })
+    item.once('done', (_e2, state) => {
+      rec.state = state
+      push()
+      // The item is only needed for cancel(), which is meaningless once done.
+      downloadItems.delete(id)
+    })
+    push()
+  })
+}
+
+// Scoped by conversationId key directly (not a session object) so a
+// conversation whose browser was never opened — no session, nothing to be
+// "unscoped" about — correctly reports zero downloads rather than every
+// download from every other conversation.
+function listDownloads(conversationKey, { limit } = {}) {
+  const n = Math.min(Math.max(1, Number(limit) || 50), DOWNLOAD_CAP)
+  const key = conversationKey || '__default__'
+  const scoped = [...downloads.values()]
+    .filter(d => d.sessionKey === key)
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .slice(0, n)
+  return { success: true, downloads: scoped }
+}
+
+function findDownload(id) {
+  return downloads.get(id) || null
+}
+
+// Shared by the panel's invoke-based bridge and the window-mode toolbar's
+// fire-and-forget tab-action channel, so the two surfaces cannot drift on
+// what "cancel"/"open"/"show" actually do.
+function cancelDownloadById(id) {
+  const d = findDownload(id)
+  if (!d) return { success: false, error: 'No such download' }
+  const item = downloadItems.get(id)
+  if (!item) return { success: false, error: 'Download already finished' }
+  try { item.cancel() } catch (err) { return { success: false, error: err?.message || String(err) } }
+  return { success: true }
+}
+
+function openDownloadById(id) {
+  const d = findDownload(id)
+  if (!d || !d.savePath) return { success: false, error: 'No such download' }
+  shell.openPath(d.savePath)
+  return { success: true }
+}
+
+function showDownloadById(id) {
+  const d = findDownload(id)
+  if (!d || !d.savePath) return { success: false, error: 'No such download' }
+  shell.showItemInFolder(d.savePath)
+  return { success: true }
+}
+
 // ── CDP: file upload + network inspection ───────────────────────────────
 //
 // Electron's own Chromium already speaks CDP (webContents.debugger) — this is
@@ -777,6 +1057,10 @@ async function readNetwork(s, { tabId, limit } = {}) {
 
 function registerBrowserControl(getMainWindow) {
   mainWindowGetter = typeof getMainWindow === 'function' ? getMainWindow : () => null
+  // Session-wide, wired once regardless of how many conversations' browser
+  // sessions come and go — 'will-download' fires on the shared default
+  // session, not per-tab.
+  wireDownloads()
 
   // conversationId is supplied by the renderer as an opaque key, exactly like the
   // workspace-roots ctx. It names a session, never a filesystem path.
@@ -803,6 +1087,14 @@ function registerBrowserControl(getMainWindow) {
   ipcMain.handle('browser:pdf', (_e, p = {}) => printToPDF(S(p), p))
   ipcMain.handle('browser:cookies', (_e, p = {}) => handleCookies(S(p), p))
   ipcMain.handle('browser:storage', (_e, p = {}) => handleStorage(S(p), p))
+  ipcMain.handle('browser:zoom', (_e, p = {}) => zoomTab(S(p), p))
+  ipcMain.handle('browser:find', (_e, p = {}) => findInPage(S(p), p))
+  ipcMain.handle('browser:find-stop', (_e, p = {}) => stopFindInPage(S(p), p))
+
+  ipcMain.handle('browser:downloads', (_e, p = {}) => listDownloads(p.conversationId, p))
+  ipcMain.handle('browser:cancel-download', (_e, p = {}) => cancelDownloadById(p?.id))
+  ipcMain.handle('browser:open-download', (_e, p = {}) => openDownloadById(p?.id))
+  ipcMain.handle('browser:show-download', (_e, p = {}) => showDownloadById(p?.id))
 
   ipcMain.handle('browser:assert', async (_e, p = {}) => {
     const s = S(p)
@@ -1015,6 +1307,13 @@ function registerBrowserControl(getMainWindow) {
   ipcMain.handle('browser:list-tabs', (_e, p = {}) => {
     const s = getSession(p.conversationId)
     return { success: true, tabs: s ? listTabs(s) : [], mode: s ? s.mode : null }
+  })
+
+  // One-shot pull, for the panel toolbar to seed its address bar / back-forward
+  // state on mount rather than sitting blank until the next push event.
+  ipcMain.handle('browser:get-nav-state', (_e, p = {}) => {
+    const s = getSession(p.conversationId)
+    return { success: true, ...(s ? navSnapshot(s) : { tabs: [], activeTabId: null, url: '', canGoBack: false, canGoForward: false, loading: false }) }
   })
 
   ipcMain.handle('browser:select-tab', (_e, p = {}) => {
@@ -1282,11 +1581,15 @@ function registerBrowserControl(getMainWindow) {
     // reloadIgnoringCache: the reason a human reloads a page an agent is
     // driving is almost always that it is showing something stale.
     t.view.webContents.reloadIgnoringCache()
-    // Refs are page-scoped and every one of them is invalidated by a reload.
-    // Not bumping the epoch here would let a ref from before the reload resolve
-    // to whatever now sits at that index — a click on the wrong element, which
-    // looks exactly like success.
-    s.epoch = (s.epoch || 0) + 1
+    // Refs are page-scoped, keyed off t.refEpoch (see did-start-navigation
+    // above, which bumps it on every main-frame nav) — NOT a session-level
+    // field. This used to write `s.epoch`, a field nothing ever read (refs
+    // are validated against t.refEpoch via isStaleRef in browserTree.cjs), so
+    // the "refs_invalidated" claim below was true only by accident of the
+    // navigation listener also firing, not because of anything this handler
+    // did. Bumped explicitly here too so invalidation does not depend solely
+    // on that event having already fired by the time this resolves.
+    t.refEpoch++
     return { success: true, url: safe(() => t.view.webContents.getURL(), ''), refs_invalidated: true }
   })
 
@@ -1342,12 +1645,79 @@ function registerBrowserControl(getMainWindow) {
     return { success: true }
   })
 
-  // Clicks on the window-mode tab strip.
-  ipcMain.on('browser:tab-action', (e, { action, tabId } = {}) => {
+  // Clicks and typing in the window-mode toolbar/tab strip. This is real
+  // browser chrome now (address bar, back/forward/reload, a manual + button)
+  // and not just the tab strip the channel name still describes — kept as
+  // one channel rather than one per button, matching the tab strip's own
+  // shape, since every action here resolves against the SAME "which session
+  // owns this window" lookup.
+  ipcMain.on('browser:tab-action', (e, { action, tabId, arg } = {}) => {
     const s = [...sessions.values()].find(x => x.win && x.win.webContents === e.sender)
     if (!s) return
-    if (action === 'close') closeTab(s, tabId)
-    if (action === 'select' && s.tabs.has(tabId)) { s.activeTabId = tabId; showActive(s) }
+    const t = activeTab(s)
+    switch (action) {
+      case 'close':
+        if (typeof tabId === 'string') closeTab(s, tabId)
+        break
+      case 'select':
+        if (typeof tabId === 'string' && s.tabs.has(tabId)) { s.activeTabId = tabId; showActive(s) }
+        break
+      case 'new-tab': {
+        const id = createTab(s, null)
+        s.activeTabId = id
+        showActive(s)
+        break
+      }
+      case 'back':
+        if (t?.view.webContents.navigationHistory.canGoBack()) t.view.webContents.navigationHistory.goBack()
+        break
+      case 'forward':
+        if (t?.view.webContents.navigationHistory.canGoForward()) t.view.webContents.navigationHistory.goForward()
+        break
+      case 'reload':
+        if (t) { t.view.webContents.reloadIgnoringCache(); t.refEpoch++ }
+        break
+      case 'navigate': {
+        const url = normalizeAddressInput(arg)
+        if (url) {
+          if (!s.tabs.size) { const id = createTab(s, url); s.activeTabId = id; showActive(s) }
+          else navigate(s, s.activeTabId, url)
+        }
+        break
+      }
+      case 'zoom':
+        // zoomTab() already calls syncTabBar(), which pushes the new
+        // zoomPercent back into the toolbar — no separate response needed.
+        zoomTab(s, { direction: arg })
+        break
+      case 'find': {
+        // findInPage() is async (the result arrives via a later
+        // 'found-in-page' event, not a return value) — push the count back
+        // once it resolves rather than blocking this fire-and-forget channel.
+        const payload = arg && typeof arg === 'object' ? arg : {}
+        findInPage(s, payload).then((res) => {
+          if (!s.win || s.win.isDestroyed()) return
+          s.win.webContents
+            .executeJavaScript(`window.__setFindResult && window.__setFindResult(${JSON.stringify(res)})`)
+            .catch(() => {})
+        }).catch(() => {})
+        break
+      }
+      case 'find-stop':
+        stopFindInPage(s, {})
+        break
+      case 'cancel-download':
+        if (typeof arg === 'string') cancelDownloadById(arg)
+        break
+      case 'open-download':
+        if (typeof arg === 'string') openDownloadById(arg)
+        break
+      case 'show-download':
+        if (typeof arg === 'string') showDownloadById(arg)
+        break
+      default:
+        break
+    }
   })
 }
 
@@ -1355,5 +1725,6 @@ module.exports = {
   sessions, getSession, ensureSession, listTabs, setMode, showActive, layout,
   createTab, navigate, closeTab, destroySession, destroyAllSessions,
   tabFor, activeTab, readPage, click, typeText, pressKey, scroll, screenshot,
+  zoomTab, findInPage, stopFindInPage, listDownloads, navSnapshot,
   registerBrowserControl,
 }

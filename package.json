@@ -1,6 +1,6 @@
 {
   "name": "yogatik",
-  "version": "4.1.0",
+  "version": "4.3.1",
   "private": true,
   "description": "Yogatik Studio — Standalone Unrestricted AI Agentic Assistant & Desktop Environment. The application lives in frontend/ — see CLAUDE.md.",
   "workspaces": [

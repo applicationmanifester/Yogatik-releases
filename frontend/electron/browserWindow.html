@@ -3,8 +3,61 @@
 <title>Yogatik Browser</title>
 <style>
   :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
   body { margin: 0; font: 13px system-ui, sans-serif; background: #0a0e14; color: #e6e6e6; }
-  #bar { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 8px;
+
+  #toolbar { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px;
+             background: #0d1117; border-bottom: 1px solid #1c222e; position: relative; }
+  .nav-btn { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+             border-radius: 6px; background: none; border: 0; color: #b7c0cf; cursor: pointer; font-size: 14px; }
+  .nav-btn:hover:not(:disabled) { background: #1a1f29; color: #fff; }
+  .nav-btn:disabled { color: #3d4757; cursor: default; }
+  .nav-btn.loading { color: #6b8afd; }
+  #addr-form { flex: 1 1 auto; display: flex; min-width: 0; }
+  #addr { flex: 1 1 auto; min-width: 0; background: #161b23; border: 1px solid #232936; border-radius: 7px;
+          color: #e6e6e6; padding: 5px 10px; font: 12px ui-monospace, monospace; outline: none; }
+  #addr:focus { border-color: #3d4757; background: #1a1f29; }
+  #zoom-pct { flex: 0 0 auto; background: none; border: 0; color: #b7c0cf; font-size: 11px; min-width: 32px;
+              border-radius: 6px; cursor: pointer; padding: 4px 2px; }
+  #zoom-pct:hover { background: #1a1f29; color: #fff; }
+  #new-tab-btn { flex: 0 0 auto; }
+  .dl-wrap { position: relative; flex: 0 0 auto; }
+  .dl-badge { position: absolute; top: 0; right: 0; min-width: 13px; height: 13px; padding: 0 3px;
+              border-radius: 999px; background: #ff6b35; color: #fff; font-size: 9px; line-height: 13px; text-align: center; }
+  .dl-menu { position: absolute; top: 100%; right: 0; margin-top: 4px; width: 260px; max-height: 320px;
+             overflow-y: auto; background: #11151c; border: 1px solid #232936; border-radius: 8px;
+             box-shadow: 0 8px 24px rgba(0,0,0,.45); z-index: 20; padding: 4px; }
+  .dl-empty { padding: 12px 8px; font-size: 12px; color: #8b93a3; text-align: center; }
+  .dl-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; }
+  .dl-row:hover { background: #1a1f29; }
+  .dl-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .dl-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dl-meta { font-size: 10px; color: #8b93a3; }
+  .dl-actions { display: flex; gap: 2px; flex: 0 0 auto; }
+  .dl-actions button { background: none; border: 0; color: #8b93a3; cursor: pointer; padding: 4px; border-radius: 4px; font-size: 12px; }
+  .dl-actions button:hover { color: #fff; background: #232936; }
+
+  /* Find lives INSIDE the toolbar's own row (swapped in place of the address
+     bar + secondary buttons) rather than as an extra row — the tab's
+     WebContentsView composites ABOVE this window's own DOM at a FIXED y
+     offset main computes once (TAB_BAR_H), so a row that grows/shrinks the
+     page's layout would either get covered by the content view or leave a
+     gap under it. Keeping total chrome height constant sidesteps that
+     entirely instead of needing main and this page to renegotiate bounds
+     every time find opens or closes. */
+  #find-group { display: none; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
+  #toolbar.finding #find-group { display: flex; }
+  #toolbar.finding #addr-form,
+  #toolbar.finding #zoom-out-btn, #toolbar.finding #zoom-pct, #toolbar.finding #zoom-in-btn,
+  #toolbar.finding #find-btn, #toolbar.finding .dl-wrap, #toolbar.finding #new-tab-btn { display: none; }
+  #find-input { flex: 1 1 auto; min-width: 0; background: #161b23; border: 1px solid #232936; border-radius: 7px;
+                color: #e6e6e6; padding: 5px 10px; font-size: 12px; outline: none; }
+  #find-input:focus { border-color: #3d4757; }
+  #find-count { font-size: 11px; color: #8b93a3; min-width: 34px; text-align: center; flex: 0 0 auto; }
+  #find-group button { background: none; border: 0; color: #8b93a3; cursor: pointer; padding: 3px 6px; border-radius: 4px; font-size: 13px; flex: 0 0 auto; }
+  #find-group button:hover { color: #fff; background: #1a1f29; }
+
+  #bar { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px;
          background: #11151c; border-bottom: 1px solid #232936; overflow-x: auto; }
   .tab { display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 5px 10px;
          border-radius: 8px; background: #1a1f29; cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
@@ -14,13 +67,160 @@
   .tab button:hover { color: #fff; }
   #hint { margin-left: auto; color: #6b7280; font-size: 11px; padding-right: 4px; flex: 0 0 auto; }
 </style>
+<div id="toolbar">
+  <button class="nav-btn" id="back-btn" title="Back">&#8592;</button>
+  <button class="nav-btn" id="fwd-btn" title="Forward">&#8594;</button>
+  <button class="nav-btn" id="reload-btn" title="Reload">&#8635;</button>
+  <form id="addr-form"><input id="addr" placeholder="Search or enter address" autocomplete="off" spellcheck="false"></form>
+  <button class="nav-btn" id="zoom-out-btn" title="Zoom out">&#8722;</button>
+  <button id="zoom-pct" title="Reset zoom">100%</button>
+  <button class="nav-btn" id="zoom-in-btn" title="Zoom in">+</button>
+  <button class="nav-btn" id="find-btn" title="Find in page (Ctrl+F)">&#128269;</button>
+  <div class="dl-wrap" id="dl-wrap">
+    <button class="nav-btn" id="dl-btn" title="Downloads">&#8595;<span class="dl-badge" id="dl-badge" hidden>0</span></button>
+    <div class="dl-menu" id="dl-menu" hidden></div>
+  </div>
+  <button class="nav-btn" id="new-tab-btn" title="New tab">+</button>
+  <div id="find-group">
+    <input id="find-input" placeholder="Find in page" autocomplete="off" spellcheck="false">
+    <span id="find-count"></span>
+    <button id="find-prev" title="Previous match">&#8593;</button>
+    <button id="find-next" title="Next match">&#8595;</button>
+    <button id="find-close" title="Close find">&#215;</button>
+  </div>
+</div>
 <div id="bar"><span id="hint">Yogatik is browsing</span></div>
 <script>
   const bar = document.getElementById('bar')
   const hint = document.getElementById('hint')
+  const addr = document.getElementById('addr')
+  const backBtn = document.getElementById('back-btn')
+  const fwdBtn = document.getElementById('fwd-btn')
+  const reloadBtn = document.getElementById('reload-btn')
+  const zoomPct = document.getElementById('zoom-pct')
+  const toolbar = document.getElementById('toolbar')
+  const findInput = document.getElementById('find-input')
+  const findCount = document.getElementById('find-count')
+  const dlWrap = document.getElementById('dl-wrap')
+  const dlBadge = document.getElementById('dl-badge')
+  const dlMenu = document.getElementById('dl-menu')
+
+  const act = (action, value) => window.__tabAction && window.__tabAction(action, value)
+
+  document.getElementById('addr-form').addEventListener('submit', (e) => {
+    e.preventDefault()
+    if (addr.value.trim()) act('navigate', addr.value)
+    addr.blur()
+  })
+  backBtn.onclick = () => act('back')
+  fwdBtn.onclick = () => act('forward')
+  reloadBtn.onclick = () => act('reload')
+  document.getElementById('new-tab-btn').onclick = () => act('new-tab')
+  document.getElementById('zoom-out-btn').onclick = () => act('zoom', 'out')
+  document.getElementById('zoom-in-btn').onclick = () => act('zoom', 'in')
+  zoomPct.onclick = () => act('zoom', 'reset')
+
+  // ── Find bar (inline within the toolbar row — see #find-group's CSS
+  // comment for why this must never grow the chrome's total height) ──
+  const openFind = () => { toolbar.classList.add('finding'); findInput.focus(); findInput.select() }
+  const closeFind = () => { toolbar.classList.remove('finding'); act('find-stop'); findInput.value = ''; findCount.textContent = '' }
+  window.__openFind = openFind
+  document.getElementById('find-btn').onclick = () => (toolbar.classList.contains('finding') ? closeFind() : openFind())
+  document.getElementById('find-close').onclick = closeFind
+  document.getElementById('find-prev').onclick = () => findInput.value.trim() && act('find', { text: findInput.value, forward: false, findNext: true })
+  document.getElementById('find-next').onclick = () => findInput.value.trim() && act('find', { text: findInput.value, forward: true, findNext: true })
+  findInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closeFind(); return }
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (findInput.value.trim()) act('find', { text: findInput.value, forward: !e.shiftKey, findNext: true })
+  })
+  // Called from main once a find-in-page request resolves.
+  window.__setFindResult = (res) => {
+    if (!res) return
+    findCount.textContent = findInput.value.trim() ? `${res.activeMatchOrdinal || 0}/${res.matches || 0}` : ''
+  }
+
+  // ── Downloads ──
+  const downloadsById = new Map()
+  const fmtBytes = (n) => {
+    if (!Number.isFinite(n) || n < 0) return ''
+    if (n < 1024) return n + ' B'
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB'
+    return (n / (1024 * 1024)).toFixed(1) + ' MB'
+  }
+  const renderDownloads = () => {
+    const list = [...downloadsById.values()].sort((a, b) => b.startedAt - a.startedAt)
+    const inProgress = list.filter((d) => d.state === 'progressing').length
+    dlBadge.hidden = list.length === 0
+    dlBadge.textContent = inProgress || list.length
+    dlMenu.textContent = ''
+    if (list.length === 0) {
+      const empty = document.createElement('div')
+      empty.className = 'dl-empty'
+      empty.textContent = 'No downloads yet'
+      dlMenu.appendChild(empty)
+      return
+    }
+    for (const d of list) {
+      const row = document.createElement('div')
+      row.className = 'dl-row'
+      const info = document.createElement('div')
+      info.className = 'dl-info'
+      const name = document.createElement('span')
+      name.className = 'dl-name'
+      name.textContent = d.filename || ''
+      name.title = d.filename || ''
+      const meta = document.createElement('span')
+      meta.className = 'dl-meta'
+      if (d.state === 'progressing') {
+        const pct = d.totalBytes > 0 ? Math.round((d.receivedBytes / d.totalBytes) * 100) + '% · ' : ''
+        meta.textContent = pct + fmtBytes(d.receivedBytes)
+      } else {
+        meta.textContent = d.state
+      }
+      info.appendChild(name)
+      info.appendChild(meta)
+      row.appendChild(info)
+      const actions = document.createElement('div')
+      actions.className = 'dl-actions'
+      if (d.state === 'progressing') {
+        const cancel = document.createElement('button')
+        cancel.textContent = '×'
+        cancel.title = 'Cancel'
+        cancel.onclick = () => act('cancel-download', d.id)
+        actions.appendChild(cancel)
+      } else if (d.state === 'completed') {
+        const open = document.createElement('button')
+        open.textContent = '↗'
+        open.title = 'Open'
+        open.onclick = () => act('open-download', d.id)
+        const show = document.createElement('button')
+        show.textContent = '\u{1F4C1}'
+        show.title = 'Show in folder'
+        show.onclick = () => act('show-download', d.id)
+        actions.appendChild(open)
+        actions.appendChild(show)
+      }
+      row.appendChild(actions)
+      dlMenu.appendChild(row)
+    }
+  }
+  // Called from main per download event (create/progress/done) — an upsert
+  // by id, not a full-list replace, since downloads arrive one at a time.
+  window.__setDownload = (rec) => { if (rec && rec.id) { downloadsById.set(rec.id, rec); renderDownloads() } }
+  document.getElementById('dl-btn').onclick = () => { dlMenu.hidden = !dlMenu.hidden }
+  document.addEventListener('mousedown', (e) => { if (!dlWrap.contains(e.target)) dlMenu.hidden = true })
+  renderDownloads()
+
   // Called from main via executeJavaScript. Text is set with textContent, never
-  // innerHTML — page titles are attacker-controlled strings.
-  window.__setTabs = (tabs, activeId) => {
+  // innerHTML — page titles and URLs are attacker-controlled strings.
+  //
+  // `nav` (added alongside the tab strip payload) carries the ACTIVE tab's
+  // url/back/forward/zoom/loading state — without it the toolbar could only
+  // ever show whatever was last set locally, never where a click on the page
+  // (or a keyboard zoom shortcut) actually changed things.
+  window.__setTabs = (tabs, activeId, nav) => {
     for (const el of [...bar.querySelectorAll('.tab')]) el.remove()
     for (const t of tabs) {
       const el = document.createElement('div')
@@ -31,10 +231,26 @@
       const x = document.createElement('button')
       x.textContent = '×'
       x.title = 'Close tab'
-      x.onclick = (e) => { e.stopPropagation(); window.__tabAction && window.__tabAction('close', t.tabId) }
+      x.onclick = (e) => { e.stopPropagation(); act('close', t.tabId) }
       el.appendChild(x)
-      el.onclick = () => window.__tabAction && window.__tabAction('select', t.tabId)
+      el.onclick = () => act('select', t.tabId)
       bar.insertBefore(el, hint)
+    }
+
+    if (nav) {
+      // Never stomp what the user is actively typing — a sync mid-keystroke
+      // (the active tab reloading, or another tab's title changing) would
+      // otherwise overwrite their half-typed address.
+      if (document.activeElement !== addr) addr.value = nav.url || ''
+      backBtn.disabled = !nav.canGoBack
+      fwdBtn.disabled = !nav.canGoForward
+      reloadBtn.classList.toggle('loading', !!nav.loading)
+      zoomPct.textContent = (nav.zoomPercent ?? 100) + '%'
+    } else {
+      backBtn.disabled = true
+      fwdBtn.disabled = true
+      reloadBtn.classList.remove('loading')
+      zoomPct.textContent = '100%'
     }
   }
 </script>

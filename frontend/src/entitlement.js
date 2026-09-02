@@ -305,7 +305,7 @@ export async function refreshEntitlement({ idToken = null, uid = null } = {}) {
   if (!token) {
     try {
       const { getIdToken } = await import('./firebaseAuth')
-      token = await getIdToken()
+      token = await getIdToken({ forceRefresh: false })
     } catch { token = null }
   }
   try { return apply(await b.refresh({ idToken: token, uid })) } catch { return entitlement() }

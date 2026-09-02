@@ -265,6 +265,37 @@ contextBridge.exposeInMainWorld('__YOGATIK_BROWSER__', {
   setBounds: (p) => ipcRenderer.invoke('browser:set-bounds', p || {}),
   setDetached: (p) => ipcRenderer.invoke('browser:set-detached', p || {}),
   close: (p) => ipcRenderer.invoke('browser:close', p || {}),
+  // Panel-mode chrome (the React toolbar, not a dedicated window) has no
+  // equivalent of window mode's executeJavaScript push, so it gets a real
+  // IPC event instead — getNavState seeds it on mount, onNavState keeps it
+  // live. Same shape as __YOGATIK_MENU__'s on(cb)/unsubscribe pattern.
+  getNavState: (p) => ipcRenderer.invoke('browser:get-nav-state', p || {}),
+  onNavState: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('browser:nav-state', handler)
+    return () => ipcRenderer.removeListener('browser:nav-state', handler)
+  },
+  zoom: (p) => ipcRenderer.invoke('browser:zoom', p || {}),
+  find: (p) => ipcRenderer.invoke('browser:find', p || {}),
+  findStop: (p) => ipcRenderer.invoke('browser:find-stop', p || {}),
+  // Ctrl/Cmd+F pressed INSIDE a page never reaches the panel (a WebContentsView
+  // is its own top-level browsing context) — main intercepts it and pushes
+  // this event so the panel opens ITS find bar instead of the shortcut doing
+  // nothing.
+  onOpenFind: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('browser:open-find', handler)
+    return () => ipcRenderer.removeListener('browser:open-find', handler)
+  },
+  downloads: (p) => ipcRenderer.invoke('browser:downloads', p || {}),
+  cancelDownload: (p) => ipcRenderer.invoke('browser:cancel-download', p || {}),
+  openDownload: (p) => ipcRenderer.invoke('browser:open-download', p || {}),
+  showDownload: (p) => ipcRenderer.invoke('browser:show-download', p || {}),
+  onDownload: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
+    ipcRenderer.on('browser:download', handler)
+    return () => ipcRenderer.removeListener('browser:download', handler)
+  },
 })
 
 // The floating companion window (always-on-top mini assistant).

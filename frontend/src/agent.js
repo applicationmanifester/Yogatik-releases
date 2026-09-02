@@ -10,7 +10,21 @@ import { visibleAnswer as sharedVisibleAnswer } from './reasoning'
 // JSON — a whole file's contents plus internal bookkeeping — which is barely
 // better than the blank bubble it replaced.
 import { summariseToolResults } from './toolSummary'
-import { getToolSchemas, prioritizeToolSchemas, executeTool } from './tools/index'
+// The tool registry (~195 tools, ~1.8MB of implementation code) is loaded
+// through ONE cached dynamic import rather than a static one. Every real
+// use here is already inside the async agent loop, so this costs nothing at
+// call time — but it moves the whole registry out of the app's initial,
+// render-blocking bundle into its own chunk (same technique already used for
+// vendor-prism/CodeMirror in this codebase). warmToolRegistry() lets the app
+// start fetching that chunk right after first paint so it is ready before
+// the user's first message needs it.
+let _toolRegistry = null
+export function warmToolRegistry() {
+  return (_toolRegistry ||= import('./tools/index'))
+}
+async function toolRegistry() {
+  return _toolRegistry ||= import('./tools/index')
+}
 import { isDesktop, DESKTOP_ONLY_TOOLS } from './tools/localFs'
 import { enrichToolError } from './tools/toolReflection'
 import { compactToolResult } from './tools/toolCompactor'
@@ -39,6 +53,7 @@ import { compactHistory, getModelContextLimits } from './compaction'
 import { getTodos } from './tools/todo'
 // Synchronous by design: buildSystemPrompt runs mid-turn and cannot await.
 import { isLocked as isEntitlementLocked, entitlement as entitlementSnapshot } from './entitlement'
+import { detectReflexCandidate } from './agentReflex'
 
 /** Durable memories the user asked to keep, injected so the model recalls them
  *  without needing a memory tool call (like ChatGPT/Claude memory). */
@@ -457,6 +472,7 @@ export async function runAgent({
   initialToolMode = null, onToolModeChange = null, agentOverride = null, onSafety = null,
 }) {
   const executionCtx = { conversationId: conversationId || null, projectId: projectId || null }
+  const { getToolSchemas, prioritizeToolSchemas, executeTool } = await toolRegistry()
   // On-device safety screen (crisis + professional-boundary). Pure, zero-latency,
   // offline. Feeds the system prompt and surfaces a resource card to the UI.
   let safetyDirective = ''
@@ -726,6 +742,39 @@ export async function runAgent({
   // Every distinct tool call made this turn, keyed by name + arguments, so an
   // identical one is answered from here instead of being run again.
   const seenCalls = new Map()
+
+  // Reflex Prefetch (agentReflex.js) — a small, deliberately conservative
+  // whitelist of side-effect-free tools (unit/expression math, an explicitly
+  // named place's weather, a known city's clock, a plainly-worded
+  // translation) is pattern-matched against the raw message and, on a
+  // full-confidence match, started in the BACKGROUND right now — in parallel
+  // with the pre-emptive search block just below and the model's own first
+  // inference call further down, not instead of either. Keyed through the
+  // exact same callSignature() the round loop already uses to dedupe a
+  // repeated call, so "the model's real decision matches the speculation" is
+  // a byte-for-byte comparison, never a guess about intent — a mismatch just
+  // means the promise below is never awaited by anyone and its result is
+  // thrown away. Skipped entirely when a companion/autopilot action gate is
+  // installed: that rail must see zero calls it did not itself approve, so a
+  // prefetch that could ever need gating before the model has even been
+  // asked is not worth the harmlessness it has everywhere else.
+  const reflexCache = new Map()
+  if (toolsEnabled && !isLocalProvider &&
+    typeof window !== 'undefined' && typeof window.__YOGATIK_ACTION_GATE__ !== 'function') {
+    const candidate = detectReflexCandidate(userMessage)
+    // The active skill/agent's tool allowlist (effectiveDisabled) is resolved
+    // further below; checking the raw disabledTools here is deliberately
+    // looser — every whitelisted tool is side-effect-free by construction, so
+    // the only possible cost of missing a narrower scope is one wasted,
+    // never-consulted fetch, never a wrong answer.
+    if (candidate && !disabledTools.includes(candidate.name)) {
+      const sig = callSignature(candidate.name, candidate.args)
+      reflexCache.set(sig, executeTool(candidate.name, candidate.args, {
+        signal,
+        ...(executionCtx.conversationId || executionCtx.projectId ? { ctx: executionCtx } : {}),
+      }).catch((e) => ({ error: e?.message || String(e) })))
+    }
+  }
 
   if (webAvailable && userMessage) {
     if (isSocialQuery(userMessage)) {
@@ -1123,10 +1172,18 @@ export async function runAgent({
               seenCalls.set(sig, blocked)
               return blocked
             }
-            const result = await executeTool(tc.name, args, {
-              signal,
-              ...(executionCtx.conversationId || executionCtx.projectId ? { ctx: executionCtx } : {})
-            })
+            // The model's real decision matches what Reflex Prefetch started
+            // speculatively before the model was even asked (see above) —
+            // await the in-flight (or by now settled) result instead of
+            // paying for a second, redundant execution. The gate already ran
+            // just above: speculation shortcuts the network/compute, never
+            // the permission rail.
+            const result = reflexCache.has(sig)
+              ? await reflexCache.get(sig)
+              : await executeTool(tc.name, args, {
+                signal,
+                ...(executionCtx.conversationId || executionCtx.projectId ? { ctx: executionCtx } : {})
+              })
             seenCalls.set(sig, result)
             return result
           } catch (e) {

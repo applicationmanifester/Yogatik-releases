@@ -187,26 +187,56 @@ function spawnSubAgent(agentId, config) {
     let pythonReady = false
     const pendingPythonRequests = new Map()
     let pythonRequestId = 0
+    let stdoutBuffer = ''
+    let startupSettled = false
+    let checkReady = null
+
+    const finishStartup = (error = null) => {
+      if (startupSettled) return
+      startupSettled = true
+      clearTimeout(readyTimeout)
+      if (checkReady) clearInterval(checkReady)
+      if (error) reject(error)
+    }
+
+    const settlePending = (error) => {
+      for (const [, pending] of pendingPythonRequests) {
+        clearTimeout(pending.timer)
+        pending.reject(error)
+      }
+      pendingPythonRequests.clear()
+    }
+
+    const handlePythonLine = (line) => {
+      if (!line) return
+      try {
+        const response = JSON.parse(line)
+        if (response.ready) {
+          pythonReady = true
+          return
+        }
+        const { id: requestId, ...result } = response
+        const pending = pendingPythonRequests.get(requestId)
+        if (pending) {
+          pendingPythonRequests.delete(requestId)
+          clearTimeout(pending.timer)
+          pending.resolve(result)
+        }
+      } catch (e) {
+        console.error('[SubAgent] Python RPC parse error:', e, line)
+      }
+    }
     
     pythonProc.stdout.on('data', (data) => {
-      const lines = data.toString().trim().split('\n')
-      for (const line of lines) {
-        if (!line) continue
-        try {
-          const response = JSON.parse(line)
-          if (response.ready) {
-            pythonReady = true
-            continue
-          }
-          const { id, ...result } = response
-          const pending = pendingPythonRequests.get(id)
-          if (pending) {
-            pendingPythonRequests.delete(id)
-            pending.resolve(result)
-          }
-        } catch (e) {
-          console.error('[SubAgent] Python RPC parse error:', e, line)
-        }
+      // A stdio `data` event is not a message boundary. Keep the unfinished
+      // tail so a large JSON response split across two OS buffers is not
+      // discarded as malformed RPC.
+      stdoutBuffer += data.toString('utf8')
+      let newline
+      while ((newline = stdoutBuffer.indexOf('\n')) !== -1) {
+        const line = stdoutBuffer.slice(0, newline).trim()
+        stdoutBuffer = stdoutBuffer.slice(newline + 1)
+        handlePythonLine(line)
       }
     })
     
@@ -216,31 +246,44 @@ function spawnSubAgent(agentId, config) {
     
     pythonProc.on('error', (err) => {
       console.error('[SubAgent] Python process error:', err)
-      if (!pythonReady) reject(new Error(`Unable to start Python (${pythonExecutable}): ${err.message}`))
+      if (!pythonReady) finishStartup(new Error(`Unable to start Python (${pythonExecutable}): ${err.message}`))
+      settlePending(new Error(`Python worker error: ${err.message}`))
     })
     
     pythonProc.on('exit', (code) => {
       console.log('[SubAgent] Python process exited:', code)
-      if (!pythonReady) reject(new Error(`Python worker exited before it was ready (exit code ${code}).`))
-      // Reject all pending requests
-      for (const [, pending] of pendingPythonRequests) {
-        pending.reject(new Error('Python process exited'))
+      if (!pythonReady) finishStartup(new Error(`Python worker exited before it was ready (exit code ${code}).`))
+      const active = subAgents.get(id)
+      if (active) {
+        active.status = 'error'
+        active.lastError = `Python worker exited (code ${code}).`
       }
-      pendingPythonRequests.clear()
+      settlePending(new Error('Python worker exited'))
     })
     
     // Python RPC client
     const requestPython = (action, payload = {}, timeout = 60000) => new Promise((resolve, reject) => {
         if (!pythonReady) return reject(new Error('Python RPC not ready'))
         const id = ++pythonRequestId
-        pendingPythonRequests.set(id, { resolve, reject })
-        pythonProc.stdin.write(JSON.stringify({ id, action, ...payload }) + '\n')
-        setTimeout(() => {
+        const timer = setTimeout(() => {
           if (pendingPythonRequests.has(id)) {
             pendingPythonRequests.delete(id)
+            // Python executes requests serially. Leaving a timed-out process
+            // alive means a later request could run after its caller gave up,
+            // against stale assumptions. Terminate it and make the failure
+            // visible; the user can start a clean worker.
+            try { pythonProc.kill() } catch { /* already stopped */ }
             reject(new Error(`Python ${action} timeout`))
           }
         }, timeout)
+        pendingPythonRequests.set(id, { resolve, reject, timer })
+        try {
+          pythonProc.stdin.write(JSON.stringify({ id, action, ...payload }) + '\n')
+        } catch (error) {
+          pendingPythonRequests.delete(id)
+          clearTimeout(timer)
+          reject(error)
+        }
       })
 
     const pythonRpc = {
@@ -255,13 +298,12 @@ function spawnSubAgent(agentId, config) {
     
     // Wait for Python to be ready
     const readyTimeout = setTimeout(() => {
-      reject(new Error('Python RPC server failed to start'))
+      finishStartup(new Error(`Python RPC server failed to start. Install Python 3 or set YOGATIK_PYTHON to its executable.`))
     }, 10000)
     
-    const checkReady = setInterval(() => {
+    checkReady = setInterval(() => {
       if (pythonReady) {
-        clearInterval(checkReady)
-        clearTimeout(readyTimeout)
+        finishStartup()
         
         // Create sub-agent object
         const subAgent = {
@@ -276,7 +318,7 @@ function spawnSubAgent(agentId, config) {
           messageCount: 0
         }
         
-        subAgents.set(agentId, subAgent)
+        subAgents.set(id, subAgent)
         resolve(subAgent)
       }
     }, 100)

@@ -9,6 +9,25 @@ const PLAN_COPY = {
   anonymous: { label: 'Free', tone: 'free' },
 }
 
+// `locked` used to show "Trial ended" for EVERY lock reason — including a
+// refresh that never reached the licence server, a signature it couldn't
+// verify, or a token issued to a different account. Those read to the user
+// exactly like "you paid nothing and your 30 days are up", which is the one
+// explanation that is usually wrong when the account is actually Pro on
+// another surface. Name the real reason instead of guessing at it.
+const LOCKED_REASON_COPY = {
+  'trial-ended': 'Your 30-day trial has ended.',
+  'expired': 'Your subscription period has ended and the last renewal check did not go through.',
+  'no-license': "This device hasn't received a licence from your account yet — try Sync Now, or sign out and back in.",
+  'wrong-account': 'The licence on this device belongs to a different account than the one signed in.',
+  'clock-rollback': "This device's clock looks like it moved backwards — the licence check refuses to trust that.",
+  'awaiting-renewal': 'Your renewal is still processing — this should clear on its own shortly.',
+}
+function lockedDetail(ent) {
+  return LOCKED_REASON_COPY[ent?.reason] ||
+    "This device couldn't confirm your subscription — sign out and back in, or contact support if this account is Pro elsewhere."
+}
+
 /**
  * Account didn't have a page of its own — sign-in state, the plan you're on,
  * and which surface (web/desktop) you're looking at were each readable from
@@ -67,7 +86,7 @@ export function AccountPage({ user, ent, isDesktopBuild, isPersonal, onSignIn, o
         <p className="account-plan-detail">
           {isPro && 'Full access on web and desktop — file, shell, browser and screen tools unlocked, no ads.'}
           {isTrial && `${ent.daysLeft} ${ent.daysLeft === 1 ? 'day' : 'days'} left in your trial. Chat and every browser-based tool work regardless of what happens after.`}
-          {isLocked && 'Your trial has ended. Chat and every browser-based tool still work — file, shell, browser and screen tools are locked until you upgrade.'}
+          {isLocked && `${lockedDetail(ent)} Chat and every browser-based tool still work — file, shell, browser and screen tools are locked until this is resolved.`}
           {!isPro && !isTrial && !isLocked && (ent?.surface === 'web'
             ? 'Free, ad-supported. Upgrading removes ads here and unlocks the full desktop app on this account.'
             : 'Free tier.')}

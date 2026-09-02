@@ -155,6 +155,16 @@
         const result = await auth.signInWithPopup(provider);
         const user = result.user;
         const idToken = await user.getIdToken();
+        // Firebase's OWN id token (above) is what the licence server verifies
+        // with admin.auth().verifyIdToken() — correct for that use.
+        // But the desktop app ALSO needs to sign its own, separate Firebase SDK
+        // instance in (for Firestore key/chat sync): GoogleAuthProvider.credential()
+        // requires the ORIGINAL Google-issued id_token (iss: accounts.google.com),
+        // not a Firebase-minted one (iss: securetoken.google.com/<project>) — the
+        // two are not interchangeable, and Firebase silently rejects the wrong
+        // kind. credentialFromResult() recovers Google's own token from the
+        // popup result so the desktop side can actually authenticate with it.
+        const googleCred = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
 
         const payload = {
           uid: user.uid,
@@ -162,6 +172,7 @@
           email: user.email,
           photoURL: user.photoURL,
           idToken: idToken,
+          googleIdToken: googleCred?.idToken || null,
         };
 
         btnText.textContent = 'Transferring to Desktop…';

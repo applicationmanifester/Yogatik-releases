@@ -4,6 +4,7 @@ import {
   simplify, assignRefs, parseRef, isStaleRef,
   formatTree, buildTree,
   walkerSource, refResolverSource, elementRefExpression,
+  normalizeAddressInput, stepZoom, ZOOM_LEVELS,
 } from '../../electron/browserTree.cjs'
 
 describe('browserTree — node classification', () => {
@@ -203,5 +204,70 @@ describe('browserTree — injected sources', () => {
 
   it('elementRefExpression coerces its index rather than interpolating it', () => {
     expect(elementRefExpression('1); alert(1); //')).toContain('[0]')
+  })
+})
+
+describe('browserTree — normalizeAddressInput (address bar)', () => {
+  it('passes a full URL through unchanged', () => {
+    expect(normalizeAddressInput('https://example.com/path?q=1')).toBe('https://example.com/path?q=1')
+    expect(normalizeAddressInput('http://example.com')).toBe('http://example.com')
+  })
+
+  it('adds https:// to a bare domain', () => {
+    expect(normalizeAddressInput('example.com')).toBe('https://example.com')
+    expect(normalizeAddressInput('docs.example.com/guide')).toBe('https://docs.example.com/guide')
+  })
+
+  it('adds https:// to localhost and raw IPs, dev-server ports included', () => {
+    expect(normalizeAddressInput('localhost:5173')).toBe('https://localhost:5173')
+    expect(normalizeAddressInput('127.0.0.1:8080/app')).toBe('https://127.0.0.1:8080/app')
+  })
+
+  it('treats anything with whitespace, or no dot, as a search query', () => {
+    expect(normalizeAddressInput('openai gpt-5')).toBe('https://duckduckgo.com/?q=openai%20gpt-5')
+    expect(normalizeAddressInput('weather')).toBe('https://duckduckgo.com/?q=weather')
+  })
+
+  it('is total: empty/whitespace input never throws or half-builds a URL', () => {
+    expect(normalizeAddressInput('')).toBe('')
+    expect(normalizeAddressInput('   ')).toBe('')
+    expect(normalizeAddressInput(null)).toBe('')
+    expect(normalizeAddressInput(undefined)).toBe('')
+  })
+
+  it('leaves an already-schemed non-http URL (e.g. a custom protocol) alone', () => {
+    expect(normalizeAddressInput('file:///tmp/x.html')).toBe('file:///tmp/x.html')
+  })
+})
+
+describe('browserTree — stepZoom (zoom controls)', () => {
+  it('steps to the next level up or down the table, not a raw percentage', () => {
+    expect(stepZoom(1, 'in')).toBe(1.1)
+    expect(stepZoom(1, 'out')).toBe(0.9)
+  })
+
+  it('clamps at the ends of the table instead of going out of range', () => {
+    expect(stepZoom(ZOOM_LEVELS[ZOOM_LEVELS.length - 1], 'in')).toBe(ZOOM_LEVELS[ZOOM_LEVELS.length - 1])
+    expect(stepZoom(ZOOM_LEVELS[0], 'out')).toBe(ZOOM_LEVELS[0])
+  })
+
+  it('reset always returns exactly 1, regardless of current zoom', () => {
+    expect(stepZoom(2.5, 'reset')).toBe(1)
+    expect(stepZoom(0.33, 'reset')).toBe(1)
+  })
+
+  it('snaps an off-table factor to its nearest level before stepping', () => {
+    // 1.05 is equidistant from 1 and 1.1 — ties resolve to the lower/earlier
+    // level (never skip a level on a tie), so "in" lands on 1.1, not 1.25.
+    expect(stepZoom(1.05, 'in')).toBe(1.1)
+    // Unambiguous case: 1.02 is nearer 1 than 1.1, so "in" is just one real step.
+    expect(stepZoom(1.02, 'in')).toBe(1.1)
+  })
+
+  it('repeated resets never drift off exactly 1.0 (float-safety)', () => {
+    let z = 1
+    for (let i = 0; i < 5; i++) z = stepZoom(z, 'in')
+    z = stepZoom(z, 'reset')
+    expect(z).toBe(1)
   })
 })
