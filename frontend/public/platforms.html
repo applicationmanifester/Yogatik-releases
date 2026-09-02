@@ -178,6 +178,68 @@
         </div>
       </div>
 
+      <!-- What's New & Updates Card -->
+      <div class="whats-new-container" style="max-width:800px;margin:32px auto 0;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:26px 22px;box-shadow:0 8px 30px rgba(0,0,0,.15);transition:border-color .2s ease">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px;font-size:18px;font-weight:800">
+            <span style="font-size:22px">🎁</span> What's New &amp; Updates
+          </div>
+        </div>
+
+        <div style="background:linear-gradient(135deg, rgba(255, 107, 53, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%);border:1px solid rgba(255, 107, 53, 0.25);border-radius:14px;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+          <div style="display:flex;align-items:center;gap:14px">
+            <img src="/icon-192.svg" alt="" style="width:42px;height:42px;border-radius:10px;flex-shrink:0" />
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <h3 style="margin:0;font-size:18px;font-weight:800;color:var(--text)">
+                  Yogatik <span id="wn-release-tag">Release</span>
+                </h3>
+                <span style="background:var(--brand);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.04em">
+                  Latest Release
+                </span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:4px;font-size:12px;color:var(--muted);flex-wrap:wrap">
+                <span id="wn-release-date">📅 September 2, 2026</span>
+                <span>•</span>
+                <span id="wn-release-codename">🏷️ Interactive Browser Automation, Agent Reflex &amp; Desktop Sync</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h4 style="font-size:15.5px;font-weight:700;margin-bottom:14px;color:var(--text);line-height:1.4">
+          Interactive Browser Automation, Agent Reflex Loop &amp; Cross-Platform Desktop Sync
+        </h4>
+
+        <div style="background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:18px">
+          <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:var(--brand2);margin-bottom:12px">
+            <span>🔥</span> Release Highlights
+          </div>
+          <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px">
+            <li style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text);line-height:1.5">
+              <span style="color:var(--brand);font-weight:bold;margin-top:1px">•</span>
+              <div><strong>Interactive Browser Automation:</strong> Full IPC-driven browser control with accessibility tree parsing, interactive element targeting, and visual viewport highlight overlay</div>
+            </li>
+            <li style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text);line-height:1.5">
+              <span style="color:var(--brand);font-weight:bold;margin-top:1px">•</span>
+              <div><strong>Autonomous Agent Reflex Loop:</strong> Added reflective self-evaluation heuristics to detect repetitive tool calls, inspect progress, and trigger corrective reasoning mid-turn</div>
+            </li>
+            <li style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text);line-height:1.5">
+              <span style="color:var(--brand);font-weight:bold;margin-top:1px">•</span>
+              <div><strong>Cross-Platform Desktop &amp; Web Parity:</strong> Synchronized release across web app, Windows installer (NSIS), macOS DMG, and Linux AppImage/Deb packages</div>
+            </li>
+            <li style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text);line-height:1.5">
+              <span style="color:var(--brand);font-weight:bold;margin-top:1px">•</span>
+              <div><strong>Hardened Native IPC Lifecycle:</strong> Safe window messaging across Electron main and renderer processes eliminating destroyed-window exceptions</div>
+            </li>
+            <li style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text);line-height:1.5">
+              <span style="color:var(--brand);font-weight:bold;margin-top:1px">•</span>
+              <div><strong>Optimized App State &amp; Rendering:</strong> Clean separation of UI state helpers and reactive sub-agent pipelines for smooth chat execution</div>
+            </li>
+          </ul>
+        </div>
+      </div>
+
       <p class="note" style="text-align:center;max-width:640px;margin:22px auto 0">
         On a phone or tablet? There is no desktop app for mobile — open
         <a href="/" style="color:inherit">the web app</a> and use
@@ -348,6 +410,16 @@
             }
             meta.innerHTML = bits.join(' ');
             meta.hidden = false;
+          }
+
+          var wnTag = document.getElementById('wn-release-tag');
+          if (wnTag && rel.tag_name) wnTag.textContent = rel.tag_name;
+          var wnDate = document.getElementById('wn-release-date');
+          if (wnDate && rel.published_at) {
+            var d = new Date(rel.published_at);
+            if (!isNaN(d)) {
+              wnDate.textContent = '📅 ' + d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+            }
           }
 
           Object.keys(WANT).forEach(function (id) {
