@@ -186,7 +186,7 @@
           </div>
         </div>
 
-        <div style="background:linear-gradient(135deg, rgba(255, 107, 53, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%);border:1px solid rgba(255, 107, 53, 0.25);border-radius:14px;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+        <div style="background:linear-gradient(135deg, rgba(255, 107, 53, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%);border:1px solid rgba(255, 107, 53, 0.25);border-radius:14px;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:18px">
           <div style="display:flex;align-items:center;gap:14px">
             <img src="/icon-192.svg" alt="" style="width:42px;height:42px;border-radius:10px;flex-shrink:0" />
             <div>
@@ -194,49 +194,34 @@
                 <h3 style="margin:0;font-size:18px;font-weight:800;color:var(--text)">
                   Yogatik <span id="wn-release-tag">Release</span>
                 </h3>
-                <span style="background:var(--brand);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.04em">
+                <span id="wn-release-badge" style="background:var(--brand);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.04em">
                   Latest Release
                 </span>
               </div>
               <div style="display:flex;align-items:center;gap:10px;margin-top:4px;font-size:12px;color:var(--muted);flex-wrap:wrap">
-                <span id="wn-release-date">📅 September 2, 2026</span>
+                <span id="wn-release-date">📅 Latest Update</span>
                 <span>•</span>
-                <span id="wn-release-codename">🏷️ Interactive Browser Automation, Agent Reflex &amp; Desktop Sync</span>
+                <span id="wn-release-codename">🏷️ Release Codename</span>
               </div>
             </div>
           </div>
+
+          <!-- Version Selector Dropdown -->
+          <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+            <label for="wn-version-select" style="font-size:12px;color:var(--muted);font-weight:600">Version:</label>
+            <select id="wn-version-select" aria-label="Select App Version" style="background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:600;cursor:pointer;outline:none"></select>
+          </div>
         </div>
 
-        <h4 style="font-size:15.5px;font-weight:700;margin-bottom:14px;color:var(--text);line-height:1.4">
-          Interactive Browser Automation, Agent Reflex Loop &amp; Cross-Platform Desktop Sync
+        <h4 id="wn-release-title" style="font-size:15.5px;font-weight:700;margin-bottom:14px;color:var(--text);line-height:1.4">
+          Release Overview
         </h4>
 
         <div style="background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:18px">
           <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:var(--brand2);margin-bottom:12px">
             <span>🔥</span> Release Highlights
           </div>
-          <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px">
-            <li style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text);line-height:1.5">
-              <span style="color:var(--brand);font-weight:bold;margin-top:1px">•</span>
-              <div><strong>Interactive Browser Automation:</strong> Full IPC-driven browser control with accessibility tree parsing, interactive element targeting, and visual viewport highlight overlay</div>
-            </li>
-            <li style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text);line-height:1.5">
-              <span style="color:var(--brand);font-weight:bold;margin-top:1px">•</span>
-              <div><strong>Autonomous Agent Reflex Loop:</strong> Added reflective self-evaluation heuristics to detect repetitive tool calls, inspect progress, and trigger corrective reasoning mid-turn</div>
-            </li>
-            <li style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text);line-height:1.5">
-              <span style="color:var(--brand);font-weight:bold;margin-top:1px">•</span>
-              <div><strong>Cross-Platform Desktop &amp; Web Parity:</strong> Synchronized release across web app, Windows installer (NSIS), macOS DMG, and Linux AppImage/Deb packages</div>
-            </li>
-            <li style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text);line-height:1.5">
-              <span style="color:var(--brand);font-weight:bold;margin-top:1px">•</span>
-              <div><strong>Hardened Native IPC Lifecycle:</strong> Safe window messaging across Electron main and renderer processes eliminating destroyed-window exceptions</div>
-            </li>
-            <li style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text);line-height:1.5">
-              <span style="color:var(--brand);font-weight:bold;margin-top:1px">•</span>
-              <div><strong>Optimized App State &amp; Rendering:</strong> Clean separation of UI state helpers and reactive sub-agent pipelines for smooth chat execution</div>
-            </li>
-          </ul>
+          <ul id="wn-highlights" style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px"></ul>
         </div>
       </div>
 
@@ -412,16 +397,6 @@
             meta.hidden = false;
           }
 
-          var wnTag = document.getElementById('wn-release-tag');
-          if (wnTag && rel.tag_name) wnTag.textContent = rel.tag_name;
-          var wnDate = document.getElementById('wn-release-date');
-          if (wnDate && rel.published_at) {
-            var d = new Date(rel.published_at);
-            if (!isNaN(d)) {
-              wnDate.textContent = '📅 ' + d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-            }
-          }
-
           Object.keys(WANT).forEach(function (id) {
             var el = document.getElementById(id);
             if (!el) return;
@@ -459,6 +434,118 @@
           // is known to exist), mac and Linux pending. The page degrades to the
           // truth instead of promising a download it cannot confirm.
         });
+    })();
+
+    // What's New & Updates registry (5 latest releases) with interactive version selector
+    (function () {
+      var RELEASES = [
+        {
+          version: '4.3.1',
+          title: 'Yogatik 4.3.1: Interactive Browser Automation, Agent Reflex Loop & Cross-Platform Desktop Sync',
+          date: 'September 2, 2026',
+          codename: 'Interactive Browser Automation, Agent Reflex & Desktop Sync',
+          isLatest: true,
+          highlights: [
+            ['Interactive Browser Automation', 'Full IPC-driven browser control with accessibility tree parsing, interactive element targeting, and visual viewport highlight overlay.'],
+            ['Autonomous Agent Reflex Loop', 'Added reflective self-evaluation heuristics to detect repetitive tool calls, inspect progress, and trigger corrective reasoning mid-turn.'],
+            ['Cross-Platform Desktop & Web Parity', 'Synchronized release across web app, Windows installer (NSIS), macOS DMG, and Linux AppImage/Deb packages.'],
+            ['Hardened Native IPC Lifecycle', 'Safe window messaging across Electron main and renderer processes eliminating destroyed-window exceptions.'],
+            ['Optimized App State & Rendering', 'Clean separation of UI state helpers and reactive sub-agent pipelines for smooth chat execution.']
+          ]
+        },
+        {
+          version: '4.2.0',
+          title: 'Yogatik 4.2: Desktop Account Linking Fix, Faster Startup, Cleaner Codebase',
+          date: 'September 2, 2026',
+          codename: 'Desktop Account Linking Fix & Faster Startup',
+          isLatest: false,
+          highlights: [
+            ['Desktop Firestore Auth Fixed', 'The desktop app now correctly authenticates its own local Firebase session on sign-in, enabling instant sync.'],
+            ['Live Token Refresh', 'Window-focus and background entitlement checks now fetch a current token instead of resending expired sign-in credentials.'],
+            ['Accurate Locked-State Messaging', 'The account page names the real reason a device is locked instead of always reporting trial ended.'],
+            ['Background Tool Registry Loading', 'Tool registry loads as a background chunk right after first paint, slashing initial bundle size by ~34%.'],
+            ['Clean Codebase & Monorepo Cleanup', 'Removed unused scaffolding and dead dependencies for improved build reliability.']
+          ]
+        },
+        {
+          version: '4.1.5',
+          title: 'Yogatik 4.1: Pro Payment Versioning, Cross-Platform Desktop Matrix & Unified Clean Provider Hub',
+          date: 'September 2, 2026',
+          codename: 'Pro Payment Versioning & Cross-Platform Matrix',
+          isLatest: false,
+          highlights: [
+            ['Pro Payment Verification', 'File-system access and pro entitlements verified directly against live Paddle/Razorpay subscription states.'],
+            ['Cross-Platform Matrix', 'Automated GitHub release builds producing Windows NSIS installers, macOS DMGs, and Linux AppImages.'],
+            ['Clean AI Provider Hub', 'Neutral provider directory with auto-loading models across custom API endpoints, Ollama, and WebLLMs.'],
+            ['Sanitized TTS Read Aloud', 'Model thinking scratchpads, tool execution traces, and raw code blocks are automatically filtered from speech.'],
+            ['Universal Theme Sync', 'Zero-flash light/dark theme persistence across all application surfaces and palettes.']
+          ]
+        },
+        {
+          version: '4.0.0',
+          title: 'Yogatik 4.0: Dedicated Full-Page Dashboard, Live Paddle Billing, Left Sidebar Overhaul & Theme Sync',
+          date: 'September 1, 2026',
+          codename: 'Dedicated Full-Page Dashboard & Theme Sync',
+          isLatest: false,
+          highlights: [
+            ['Dedicated Full-Page Dashboard', 'Transformed settings and tools into a spacious, full-viewport dashboard experience with dedicated deep links.'],
+            ['Clean Minimalist Sidebar', 'Streamlined conversation history view with date groupings and quick search.'],
+            ['Live Paddle & Razorpay Billing', 'Live subscription checkout with automated Secret Manager webhook signature verification.'],
+            ['Theme Synchronization', 'Complete contrast and theme overhaul across Universal Search Command Palette and all modal surfaces.'],
+            ['Local AI Daemon Suite', 'Native ComfyUI daemon lifecycle, Windows Ollama binary resolution, and layered Live Voice & Vision HUD.']
+          ]
+        },
+        {
+          version: '3.22.4',
+          title: 'Yogatik Ultra: ComfyUI Local Daemon, Deep Links, Layered Live HUD & Windows Ollama Path Resolution',
+          date: 'September 1, 2026',
+          codename: 'ComfyUI Local Daemon & Layered Live HUD',
+          isLatest: false,
+          highlights: [
+            ['Native ComfyUI Daemon Support', 'Automatic detection, probing, and background launching of local ComfyUI instances on port 8188.'],
+            ['Windows Ollama Path Resolution', 'Accurate binary resolution via homedir with HTTP streaming fallback for seamless model discovery.'],
+            ['Layered Live HUD Overlay', 'Re-architected Live call HUD into non-colliding bands with safe-area spacing and bottom settings sheet.'],
+            ['Deep Linking & CSP Whitelisting', 'Added yogatik:// deep link support and updated CSP connect-src with explicit local loopback daemon ports.'],
+            ['On-Device Image Segmentation', 'Added segment tool for instant background removal, object isolation, and cutout operations.']
+          ]
+        }
+      ];
+
+      function renderRelease(idx) {
+        var r = RELEASES[idx] || RELEASES[0];
+        var tagEl = document.getElementById('wn-release-tag');
+        var badgeEl = document.getElementById('wn-release-badge');
+        var dateEl = document.getElementById('wn-release-date');
+        var codeEl = document.getElementById('wn-release-codename');
+        var titleEl = document.getElementById('wn-release-title');
+        var listEl = document.getElementById('wn-highlights');
+
+        if (tagEl) tagEl.textContent = 'v' + r.version;
+        if (badgeEl) badgeEl.style.display = r.isLatest ? 'inline-block' : 'none';
+        if (dateEl) dateEl.textContent = '📅 ' + r.date;
+        if (codeEl) codeEl.textContent = '🏷️ ' + r.codename;
+        if (titleEl) titleEl.textContent = r.title;
+
+        if (listEl) {
+          listEl.innerHTML = r.highlights.map(function (h) {
+            return '<li style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text);line-height:1.5">' +
+              '<span style="color:var(--brand);font-weight:bold;margin-top:1px">•</span>' +
+              '<div><strong>' + h[0] + ':</strong> ' + h[1] + '</div>' +
+              '</li>';
+          }).join('');
+        }
+      }
+
+      var sel = document.getElementById('wn-version-select');
+      if (sel) {
+        sel.innerHTML = RELEASES.map(function (r, i) {
+          return '<option value="' + i + '">v' + r.version + (r.isLatest ? ' (Current)' : '') + '</option>';
+        }).join('');
+        sel.onchange = function () {
+          renderRelease(parseInt(sel.value, 10) || 0);
+        };
+      }
+      renderRelease(0);
     })();
 
     // No automatic download. Fetching a 114MB executable because someone
