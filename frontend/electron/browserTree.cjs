@@ -92,7 +92,12 @@ function buildTree(rawNodes, { epoch = 0, maxNodes = MAX_NODES } = {}) {
   if (truncated) {
     text += `\n… truncated: showing ${maxNodes} of ${withRefs.length} nodes`
   }
-  return { text, truncated, interactiveCount, nodeCount: withRefs.length }
+  // `nodes` carries every kept node (not just the printed slice — refs are
+  // assigned before truncation, so a kept-but-unprinted ref still needs a
+  // descriptor). This is what makes adaptive relocation possible: the caller
+  // can remember what a ref's element LOOKED LIKE (role/name/text) and later
+  // recognise it again even after the exact DOM node is gone.
+  return { text, truncated, interactiveCount, nodeCount: withRefs.length, nodes: withRefs }
 }
 
 // The ref → element mapping lives IN THE PAGE (window.__yogatikRefs__), not in
@@ -226,6 +231,184 @@ function elementRefExpression(index) {
 })()`
 }
 
+// ── Adaptive relocation (Scrapling-style similarity matching) ──────────────
+//
+// A ref can go dead two ways: the epoch moved on (a fresh `read`), or the
+// exact DOM node the walker saw got swapped for an equivalent one by the
+// page's own re-render — an SPA replacing a row's button with a new element
+// that looks and behaves identically is not "the page changed", it is normal
+// framework behaviour, and refusing every time makes the tool feel broken on
+// exactly the pages it most needs to work on. Scrapling's answer to a broken
+// locator is to relocate the same logical element by structural similarity
+// rather than only failing; this ports that idea onto this ref system.
+//
+// The trade a wrong relocation makes is worse than the refusal it replaces —
+// acting on a look-alike element (the "Delete" button on the row above, say)
+// looks EXACTLY like success. So matching here is deliberately conservative:
+// no name/text signal at all refuses outright (role+tag alone is "any
+// button", which is not an identity), and a low or ambiguous score (a
+// runner-up too close to the winner) refuses too. This only fires on a
+// confident, unambiguous match — see findRelocationMatch.
+
+function normalizeForMatch(s) {
+  return (typeof s === 'string' ? s : '').toLowerCase().trim().replace(/\s+/g, ' ')
+}
+
+// Token-set (Jaccard) similarity: forgiving of word order and minor
+// punctuation drift, unlike a strict substring or edit-distance check —
+// "Add to cart (2)" and "Add to cart (3)" should still read as the same
+// button. Two elements that both carry no text are NOT a match here (the
+// caller for that case never scores this at all — see findRelocationMatch's
+// name/text guard); the only exact-equal-empty case that reaches this
+// function is empty-empty, in which it correctly plays no role.
+function textSimilarity(a, b) {
+  const na = normalizeForMatch(a)
+  const nb = normalizeForMatch(b)
+  if (na === nb) return na ? 1 : 0
+  if (!na || !nb) return 0
+  const ta = new Set(na.split(' ').filter(Boolean))
+  const tb = new Set(nb.split(' ').filter(Boolean))
+  let inter = 0
+  for (const tok of ta) if (tb.has(tok)) inter++
+  const union = ta.size + tb.size - inter
+  return union > 0 ? inter / union : 0
+}
+
+const RELOCATE_WEIGHTS = { role: 0.25, identity: 0.60, tag: 0.15 }
+
+function candidateScore(target, candidate) {
+  if (!target || !candidate) return 0
+  const roleScore = target.role && candidate.role ? (target.role === candidate.role ? 1 : 0) : 0
+  const nameScore = textSimilarity(target.name, candidate.name)
+  const textScore = textSimilarity(target.text, candidate.text)
+  // Most elements carry ONLY a name (aria-label/placeholder) or ONLY visible
+  // text, not both — averaging the two in would halve the score of the
+  // common case for no reason. `identity` takes whichever signal is present
+  // and matches, so a text-only "Delete" button scores exactly as well on
+  // that axis as a name-only one does.
+  const identityScore = Math.max(nameScore, textScore)
+  // An unknown tag on either side is neutral (0.5) rather than a penalty — it
+  // must not sink an otherwise strong role+identity match just because one
+  // side of the comparison did not carry a tag.
+  const tagScore = target.tag && candidate.tag ? (target.tag === candidate.tag ? 1 : 0) : 0.5
+  return roleScore * RELOCATE_WEIGHTS.role
+    + identityScore * RELOCATE_WEIGHTS.identity
+    + tagScore * RELOCATE_WEIGHTS.tag
+}
+
+const RELOCATE_MIN_SCORE = 0.72
+const RELOCATE_MIN_MARGIN = 0.15
+
+// Returns the index into `candidates` of the confident, unambiguous best
+// match, or null. Never guesses: an element with neither a name nor text has
+// nothing to relocate BY (role+tag alone matches "any button"); a top score
+// below the floor, or one a runner-up nearly ties, both refuse rather than
+// pick a coin-flip winner.
+function findRelocationMatch(target, candidates) {
+  if (!target || !Array.isArray(candidates) || !candidates.length) return null
+  if (!normalizeForMatch(target.name) && !normalizeForMatch(target.text)) return null
+
+  let bestIdx = -1
+  let bestScore = -Infinity
+  let secondScore = -Infinity
+  candidates.forEach((c, i) => {
+    const score = candidateScore(target, c)
+    if (score > bestScore) {
+      secondScore = bestScore
+      bestScore = score
+      bestIdx = i
+    } else if (score > secondScore) {
+      secondScore = score
+    }
+  })
+  if (bestIdx < 0) return null
+  if (bestScore < RELOCATE_MIN_SCORE) return null
+  if (secondScore > -Infinity && (bestScore - secondScore) < RELOCATE_MIN_MARGIN) return null
+  return bestIdx
+}
+
+// A dedicated, READ-ONLY scan of the page's current interactive elements for
+// relocation candidates. Deliberately does NOT touch window.__yogatikRefs__ —
+// that array is the live mapping every OTHER outstanding ref from this epoch
+// still resolves through, and rebuilding it as a side effect of relocating
+// ONE stale ref would silently shift what an untouched ref_N now points at.
+// Candidates live in their own scratch array instead, only ever read by
+// relocateResolverSource right after this runs.
+function relocateScanSource() {
+  return `(() => {
+  const INTERACTIVE_SEL = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[role=switch],[contenteditable=true],[onclick],[tabindex]:not([tabindex="-1"])';
+  const roleOf = (el) => {
+    const explicit = el.getAttribute && el.getAttribute('role');
+    if (explicit) return explicit;
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'a') return el.hasAttribute('href') ? 'link' : 'generic';
+    if (tag === 'button' || tag === 'summary') return 'button';
+    if (tag === 'select') return 'combobox';
+    if (tag === 'textarea') return 'textbox';
+    if (tag === 'img') return 'img';
+    if (tag === 'input') {
+      const t = (el.type || 'text').toLowerCase();
+      if (t === 'checkbox') return 'checkbox';
+      if (t === 'radio') return 'radio';
+      if (t === 'submit' || t === 'button' || t === 'reset') return 'button';
+      if (t === 'search') return 'searchbox';
+      if (t === 'hidden') return 'hidden';
+      return 'textbox';
+    }
+    return 'generic';
+  };
+  const nameOf = (el) => {
+    const aria = el.getAttribute && el.getAttribute('aria-label');
+    if (aria) return aria.trim();
+    const labelledby = el.getAttribute && el.getAttribute('aria-labelledby');
+    if (labelledby) {
+      const t = document.getElementById(labelledby);
+      if (t && t.innerText) return t.innerText.trim();
+    }
+    if (el.tagName === 'IMG') return (el.alt || '').trim();
+    if (el.tagName === 'INPUT') {
+      return (el.getAttribute('aria-label') || el.placeholder || el.value || el.name || '').trim();
+    }
+    const title = el.getAttribute && el.getAttribute('title');
+    if (title) return title.trim();
+    return '';
+  };
+  const isVisible = (el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    const s = window.getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0';
+  };
+  const els = Array.from(document.querySelectorAll(INTERACTIVE_SEL)).filter(isVisible).slice(0, 800);
+  window.__yogatikRelocateScan__ = els;
+  return els.map((el) => {
+    let own = '';
+    for (const c of el.childNodes) { if (c.nodeType === 3) own += c.nodeValue; }
+    own = own.replace(/\\s+/g, ' ').trim();
+    return { role: roleOf(el), name: nameOf(el), text: own, tag: el.tagName.toLowerCase() };
+  });
+})()`
+}
+
+// Resolves a chosen relocation-candidate index to a fresh viewport point, the
+// same shape refResolverSource returns — the caller cannot tell, and does not
+// need to tell, a relocated point from a directly-resolved one except by the
+// `relocated` flag it adds itself.
+function relocateResolverSource(index) {
+  return `(() => {
+  const el = (window.__yogatikRelocateScan__ || [])[${Number(index) || 0}];
+  if (!el || !el.isConnected) return null;
+  el.scrollIntoView({ block: 'center', inline: 'center' });
+  const r = el.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return null;
+  return {
+    x: Math.round(r.left + r.width / 2),
+    y: Math.round(r.top + r.height / 2),
+    tag: el.tagName.toLowerCase(),
+  };
+})()`
+}
+
 // What an address bar has to decide that a `navigate` tool call never does:
 // the model always sends a real URL, but a human types "openai gpt-5" as
 // often as a domain. A bare host (has a dot, or is localhost/an IP, and has
@@ -280,4 +463,7 @@ module.exports = {
   simplify, assignRefs, parseRef, isStaleRef,
   formatTree, buildTree, normalizeAddressInput,
   ZOOM_LEVELS, stepZoom,
+  textSimilarity, candidateScore, findRelocationMatch,
+  relocateScanSource, relocateResolverSource,
+  RELOCATE_MIN_SCORE, RELOCATE_MIN_MARGIN,
 }

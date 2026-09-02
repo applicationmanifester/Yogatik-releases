@@ -71,6 +71,7 @@ export const getFirebase = fb
 export async function getIdToken({ forceRefresh = false } = {}) {
   try {
     const f = await fb()
+    await ensureFirebaseAuth(f)
     const user = f.auth?.currentUser
     if (user?.getIdToken) return await user.getIdToken(forceRefresh)
     // Electron's native OAuth flow returns the token to the renderer. Keep a
@@ -165,7 +166,7 @@ function getActiveAuthUser(f) {
  * Called once before any Firestore read/write; safe to call multiple times
  * (subsequent calls are cheap because currentUser is already set).
  */
-async function ensureFirebaseAuth(f) {
+export async function ensureFirebaseAuth(f) {
   if (!f) return
   // Already authenticated — nothing to do.
   if (f.auth?.currentUser) return

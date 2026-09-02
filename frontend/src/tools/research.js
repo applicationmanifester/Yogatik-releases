@@ -314,7 +314,8 @@ export const researchTool = {
     description:
       'Research a topic on the live web: runs a search, then reads the top result pages in parallel and returns their extracted text with source URLs, publication dates and authors. ' +
       'Use this for anything requiring current information (news, prices, releases, events, documentation) instead of answering from memory. ' +
-      'Prefer this over calling web_search and web_extract separately.',
+      'Prefer this over calling web_search and web_extract separately. ' +
+      'Each returned page carries an "n" index — use that number for inline citations, and treat a claim as established only once at least two of the returned pages independently agree on it; a single source is a lead worth flagging as unconfirmed, not a fact.',
     parameters: {
       type: 'object',
       properties: {

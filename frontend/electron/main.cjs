@@ -53,6 +53,7 @@ const { registerFsWatcherIpc, stopAllFsWatchers } = require('./fsWatcher.cjs')
 const { registerMcpStdioClientIpc, stopAllMcpStdioClients } = require('./mcpStdioClient.cjs')
 const { registerOllamaIpc, destroyOllamaDaemon } = require('./ollamaDaemon.cjs')
 const { loadConfig: loadComfyConfig, registerComfyIpc, destroyComfyDaemon } = require('./comfyDaemon.cjs')
+const { registerCastIpc, destroyCastControl } = require('./castControl.cjs')
 const windowState = require('./windowState.cjs')
 
 const isDev = !app.isPackaged
@@ -328,6 +329,10 @@ if (!gotLock) {
       // submit/poll/fetch generation jobs — no terminal needed.
       loadComfyConfig(app.getPath('userData'))
       registerComfyIpc(getWindow)
+      // Cast Yogatik's own generated media to a UPnP/DLNA TV on the LAN —
+      // SSDP discovery + a tiny local file server + SOAP, no external app,
+      // no ffmpeg (see castCore.cjs for why neither is needed here).
+      registerCastIpc()
     })
 
     // Start the local search sidecar WITHOUT awaiting it.
@@ -738,6 +743,7 @@ if (!gotLock) {
     destroyCompanion()     // and the floating companion
     destroyOllamaDaemon()  // kill any managed Ollama daemon + in-progress pulls
     destroyComfyDaemon()   // kill any managed ComfyUI process
+    destroyCastControl()   // stop the cast file server and clear discovered devices
     if (searchSidecar) {
       searchSidecar.kill()
     }

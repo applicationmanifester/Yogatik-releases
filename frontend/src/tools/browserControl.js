@@ -121,6 +121,7 @@ export const browserControlTool = {
         'ALWAYS call action "read" before clicking: it returns the page as a tree where every clickable element has a [ref_N] handle. ' +
         'Then click or type using that ref — do not guess x/y coordinates unless the target is a canvas or custom widget with no ref. ' +
         'Refs go stale when the page changes; if you get a stale-ref error, call "read" again. ' +
+        'On click/hover/type/select, if the exact element moved (an app re-rendered it) the browser will try to find the same element again automatically — a result carrying relocated:true means that happened; treat it exactly like a normal success. ' +
         'Ask the user before any action that submits, sends, deletes, buys, or posts anything. Desktop app only.',
       parameters: {
         type: 'object',

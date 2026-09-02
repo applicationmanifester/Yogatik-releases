@@ -205,6 +205,14 @@ const CHANNELS = {
   // finding out whether ComfyUI is installed, pointing at a folder, and
   // starting it are not the paid part; actually generating is (above).
   'comfy:status': F, 'comfy:set-root': F, 'comfy:start': F,
+  // Casting: finding devices on the LAN and reading playback state are
+  // read-only (same split as comfy:status above); actually driving a
+  // device — pushing media to it, transport control, volume — is CONTROL,
+  // the same tier as computer_control and browser_control, because that is
+  // exactly what it is: acting on another device rather than this one.
+  'cast:discover': F, 'cast:list-devices': F, 'cast:status': F,
+  'cast:cast': P(CAP.CONTROL), 'cast:pause': P(CAP.CONTROL), 'cast:resume': P(CAP.CONTROL),
+  'cast:stop': P(CAP.CONTROL), 'cast:set-volume': P(CAP.CONTROL),
 
   /* ── free ALWAYS — gating these breaks something the user owns ─────── */
   // THE TRAP. db.js transparently seals apikey_* values through safeStorage

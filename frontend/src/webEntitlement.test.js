@@ -24,6 +24,7 @@ const DAY = 24 * 60 * 60 * 1000
 const account = { data: null, user: { uid: 'u1' } }
 
 vi.mock('./firebaseAuth', () => ({
+  ensureFirebaseAuth: async () => {},
   getFirebase: async () => ({
     auth: { get currentUser() { return account.user } },
     db: {},

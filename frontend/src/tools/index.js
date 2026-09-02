@@ -53,6 +53,7 @@ import { webAutomationTool } from './webAutomation'
 import { seeTool } from './see'
 import { videoRenderTool } from './videoRender'
 import { localImageGenTool, localVideoGenTool } from './localGen'
+import { castToTvTool } from './tvCast'
 import {
   diagramRenderTool, codeFormatTool, textAnalyticsTool, dataStatsTool,
   keywordExtractTool, entityExtractTool, queryRefineTool,
@@ -146,7 +147,7 @@ import {
   nobelPrizeTool, issLocationTool, tvShowTool, triviaQuizTool, postalLookupTool,
   nasaApodTool, itunesSearchTool, artInstituteTool, solarTimesTool,
   dnsLookupTool, activitySuggestTool, jokesTool, animalFactsTool,
-  mealRecipeTool, cocktailRecipeTool, federalRegisterTool, waybackArchiveTool,
+  cocktailRecipeTool, federalRegisterTool, waybackArchiveTool,
   userProfileGenTool, nasaAsteroidsTool, bibleScriptureTool, wikimediaFeedTool,
 } from './openApis'
 import {
@@ -289,6 +290,8 @@ const ALL_TOOLS = {
   // Local on-device generation via a user-installed ComfyUI. Desktop only.
   local_image_generate: localImageGenTool,
   local_video_generate: localVideoGenTool,
+  // Cast this app's own generated media to a TV over UPnP/DLNA. Desktop only.
+  cast_to_tv: castToTvTool,
   diagram_render: diagramRenderTool,
   code_format: codeFormatTool,
   text_analytics: textAnalyticsTool,
@@ -403,7 +406,6 @@ const ALL_TOOLS = {
   activity_suggest: activitySuggestTool,
   jokes: jokesTool,
   animal_facts: animalFactsTool,
-  meal_recipe: mealRecipeTool,
   cocktail_recipe: cocktailRecipeTool,
   federal_register: federalRegisterTool,
   wayback_archive: waybackArchiveTool,
@@ -767,6 +769,13 @@ export const TOOL_ALIASES = {
   animate_image: 'local_video_generate',
   image_to_video: 'local_video_generate',
   img2vid: 'local_video_generate',
+  cast: 'cast_to_tv',
+  cast_media: 'cast_to_tv',
+  throw_to_tv: 'cast_to_tv',
+  screen_cast: 'cast_to_tv',
+  dlna_cast: 'cast_to_tv',
+  chromecast: 'cast_to_tv',
+  play_on_tv: 'cast_to_tv',
   draw_chart: 'chart',
   generate_chart: 'chart',
   plot_chart: 'chart',
@@ -1158,6 +1167,9 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   }
   if (/\b(sticker|icon|emoji|badge)\b/i.test(text)) {
     scores['sticker_generate'] = 200
+  }
+  if (/\b(cast|chromecast|dlna|upnp|smart tv|on (the |my )?tv|play (it |this |that )?on (the |my )?tv)\b/i.test(text)) {
+    scores['cast_to_tv'] = 200
   }
   if (/\b(qr|qr code|barcode)\b/i.test(text)) {
     scores['qr_generate'] = 200

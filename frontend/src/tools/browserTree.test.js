@@ -5,6 +5,9 @@ import {
   formatTree, buildTree,
   walkerSource, refResolverSource, elementRefExpression,
   normalizeAddressInput, stepZoom, ZOOM_LEVELS,
+  textSimilarity, candidateScore, findRelocationMatch,
+  relocateScanSource, relocateResolverSource,
+  RELOCATE_MIN_SCORE, RELOCATE_MIN_MARGIN,
 } from '../../electron/browserTree.cjs'
 
 describe('browserTree — node classification', () => {
@@ -153,6 +156,148 @@ describe('browserTree — buildTree', () => {
     expect(out.interactiveCount).toBe(0)
     expect(out.truncated).toBe(false)
     expect(typeof out.text).toBe('string')
+  })
+
+  it('returns every kept node (with refs), not just the printed slice — relocation needs descriptors even for truncated-out refs', () => {
+    const out = buildTree(raw(20), { epoch: 1, maxNodes: 3 })
+    expect(out.nodes).toHaveLength(20)
+    expect(out.nodes.every(n => n.ref)).toBe(true)
+    expect(out.nodes[19].ref).toBe('ref_1_19')
+  })
+})
+
+describe('browserTree — adaptive relocation (Scrapling-style similarity match)', () => {
+  describe('textSimilarity', () => {
+    it('is 1 for an exact match, case/whitespace-insensitive', () => {
+      expect(textSimilarity('Add to cart', 'add to cart')).toBe(1)
+      expect(textSimilarity('  Add   to cart ', 'add to cart')).toBe(1)
+    })
+
+    it('is 0 when either side is empty', () => {
+      expect(textSimilarity('', 'Add to cart')).toBe(0)
+      expect(textSimilarity('Add to cart', '')).toBe(0)
+      expect(textSimilarity('', '')).toBe(0)
+    })
+
+    it('scores partial word overlap between 0 and 1', () => {
+      const s = textSimilarity('Add to cart (2)', 'Add to cart (3)')
+      expect(s).toBeGreaterThan(0.5)
+      expect(s).toBeLessThan(1)
+    })
+
+    it('scores unrelated text near 0', () => {
+      expect(textSimilarity('Add to cart', 'Sign out')).toBe(0)
+    })
+  })
+
+  describe('candidateScore', () => {
+    it('scores an identical role+name+tag as (near) perfect', () => {
+      const target = { role: 'button', name: 'Delete', text: 'Delete', tag: 'button' }
+      const candidate = { role: 'button', name: 'Delete', text: 'Delete', tag: 'button' }
+      expect(candidateScore(target, candidate)).toBeCloseTo(1, 5)
+    })
+
+    it('does not let a missing tag on one side sink an otherwise strong match', () => {
+      const target = { role: 'button', name: 'Delete', text: 'Delete', tag: 'button' }
+      const candidate = { role: 'button', name: 'Delete', text: 'Delete', tag: '' }
+      // role(0.25) + identity(0.60) + neutral tag(0.5*0.15=0.075) = 0.925 —
+      // still comfortably above the relocation confidence floor.
+      expect(candidateScore(target, candidate)).toBeCloseTo(0.925, 5)
+      expect(candidateScore(target, candidate)).toBeGreaterThan(RELOCATE_MIN_SCORE)
+    })
+
+    it('scores a role mismatch below the relocation confidence floor even with an identical name', () => {
+      const target = { role: 'button', name: 'Delete', text: '', tag: 'button' }
+      const candidate = { role: 'link', name: 'Delete', text: '', tag: 'a' }
+      expect(candidateScore(target, candidate)).toBeLessThan(RELOCATE_MIN_SCORE)
+    })
+
+    it('takes whichever of name/text is the stronger signal, rather than averaging in the side that is empty', () => {
+      // Text-only identity (common: a plain button with no aria-label) scores
+      // the SAME on that axis as a name-only one does, once role+tag agree.
+      const byText = candidateScore(
+        { role: 'button', name: '', text: 'Delete', tag: 'button' },
+        { role: 'button', name: '', text: 'Delete', tag: 'button' },
+      )
+      const byName = candidateScore(
+        { role: 'button', name: 'Delete', text: '', tag: 'button' },
+        { role: 'button', name: 'Delete', text: '', tag: 'button' },
+      )
+      expect(byText).toBeCloseTo(byName, 5)
+      expect(byText).toBeCloseTo(1, 5)
+    })
+  })
+
+  describe('findRelocationMatch', () => {
+    it('relocates a row button re-rendered by the page into a new DOM node', () => {
+      const target = { role: 'button', name: '', text: 'Delete row 3', tag: 'button' }
+      const candidates = [
+        { role: 'button', name: '', text: 'Delete row 1', tag: 'button' },
+        { role: 'button', name: '', text: 'Delete row 3', tag: 'button' },
+        { role: 'button', name: '', text: 'Delete row 5', tag: 'button' },
+      ]
+      expect(findRelocationMatch(target, candidates)).toBe(1)
+    })
+
+    it('refuses when the element carried neither a name nor text — role+tag alone is not an identity', () => {
+      const target = { role: 'button', name: '', text: '', tag: 'button' }
+      const candidates = [{ role: 'button', name: '', text: '', tag: 'button' }]
+      expect(findRelocationMatch(target, candidates)).toBeNull()
+    })
+
+    it('refuses an ambiguous match — a runner-up too close to the winner', () => {
+      const target = { role: 'button', name: '', text: 'Delete', tag: 'button' }
+      const candidates = [
+        { role: 'button', name: '', text: 'Delete', tag: 'button' },
+        { role: 'button', name: '', text: 'Delete', tag: 'button' },
+      ]
+      // Two identical candidates score identically — margin is exactly 0,
+      // well under RELOCATE_MIN_MARGIN — so a confident pick between them
+      // would be a coin flip on which row gets deleted. Refuse instead.
+      expect(candidateScore(target, candidates[0])).toBeCloseTo(candidateScore(target, candidates[1]), 5)
+      expect(RELOCATE_MIN_MARGIN).toBeGreaterThan(0)
+      expect(findRelocationMatch(target, candidates)).toBeNull()
+    })
+
+    it('refuses a low-confidence top score rather than picking the least-bad option', () => {
+      const target = { role: 'button', name: 'Delete', text: '', tag: 'button' }
+      const candidates = [{ role: 'link', name: 'Sign out', text: '', tag: 'a' }]
+      expect(findRelocationMatch(target, candidates)).toBeNull()
+    })
+
+    it('is total: no target, no candidates, or an empty list all refuse rather than throw', () => {
+      expect(findRelocationMatch(null, [{ role: 'button', name: 'X' }])).toBeNull()
+      expect(findRelocationMatch({ role: 'button', name: 'X' }, null)).toBeNull()
+      expect(findRelocationMatch({ role: 'button', name: 'X' }, [])).toBeNull()
+    })
+
+    it('picks the single confident match by name when text differs slightly', () => {
+      const target = { role: 'button', name: 'Add to cart', text: '', tag: 'button' }
+      const candidates = [
+        { role: 'button', name: 'Remove from cart', text: '', tag: 'button' },
+        { role: 'button', name: 'Add to cart', text: '', tag: 'button' },
+      ]
+      expect(findRelocationMatch(target, candidates)).toBe(1)
+    })
+  })
+
+  describe('relocateScanSource / relocateResolverSource (injected scripts)', () => {
+    it('scan is a self-contained expression that scopes candidates to its own scratch array', () => {
+      const src = relocateScanSource()
+      expect(typeof src).toBe('string')
+      expect(src.trim().startsWith('(')).toBe(true)
+      expect(src).toContain('__yogatikRelocateScan__')
+      // Must never rebuild the live ref registry — that would silently shift
+      // what an untouched ref_N from this epoch now resolves to.
+      expect(src).not.toContain('__yogatikRefs__')
+    })
+
+    it('resolver references the scratch registry by index and coerces it', () => {
+      const src = relocateResolverSource(3)
+      expect(src).toContain('__yogatikRelocateScan__')
+      expect(src).toContain('[3]')
+      expect(relocateResolverSource('1); alert(1); //')).toContain('[0]')
+    })
   })
 })
 

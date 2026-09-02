@@ -17,7 +17,6 @@ import {
   activitySuggestTool,
   jokesTool,
   animalFactsTool,
-  mealRecipeTool,
   cocktailRecipeTool,
   federalRegisterTool,
   waybackArchiveTool,
@@ -445,32 +444,6 @@ describe('Open Public APIs Tools', () => {
     })
   })
 
-  describe('meal_recipe', () => {
-    it('searches recipes with ingredients and instructions', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          meals: [{
-            strMeal: 'Lasagna',
-            strCategory: 'Pasta',
-            strArea: 'Italian',
-            strInstructions: 'Bake at 375F.',
-            strIngredient1: 'Pasta sheets',
-            strMeasure1: '1 pack',
-            strIngredient2: 'Tomato sauce',
-            strMeasure2: '2 cups',
-          }],
-        }),
-      })
-
-      const res = await mealRecipeTool.execute({ query: 'lasagna' })
-      expect(res.success).toBe(true)
-      expect(res.count).toBe(1)
-      expect(res.recipes[0].meal).toBe('Lasagna')
-      expect(res.recipes[0].cuisine).toBe('Italian')
-      expect(res.recipes[0].ingredients).toContain('1 pack Pasta sheets')
-    })
-  })
 
   describe('cocktail_recipe', () => {
     it('searches cocktail & mocktail recipes', async () => {

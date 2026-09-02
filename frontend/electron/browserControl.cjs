@@ -18,6 +18,7 @@ const { safeSend } = require('./safeWindow.cjs')
 const {
   buildTree, walkerSource, refResolverSource, elementRefExpression, parseRef, isStaleRef,
   normalizeAddressInput, stepZoom,
+  findRelocationMatch, relocateScanSource, relocateResolverSource,
 } = require('./browserTree.cjs')
 
 // Window-mode chrome height: the toolbar (back/forward/reload/address bar)
@@ -427,6 +428,15 @@ async function readPage(s, tabId) {
   try {
     const raw = await t.view.webContents.executeJavaScript(walkerSource(epoch), true)
     const tree = buildTree(raw.nodes, { epoch })
+    // Remembered so a ref from THIS epoch that later resolves to nothing (an
+    // SPA re-render swapped its DOM node for an equivalent one, without a
+    // navigation and without the model calling read again) can be relocated
+    // by structural similarity instead of only refused — see tryRelocate.
+    // Keyed by ref string; overwritten whole on every read, so a ref from a
+    // superseded epoch never finds a stale descriptor to match against.
+    t.refDescriptors = new Map(
+      tree.nodes.filter(n => n.ref).map(n => [n.ref, { role: n.role, name: n.name, text: n.text }])
+    )
     return {
       success: true,
       url: raw.url,
@@ -440,9 +450,36 @@ async function readPage(s, tabId) {
   }
 }
 
+// Adaptive relocation (Scrapling-style): before refusing a ref whose exact DOM
+// node is gone, try to find the SAME logical element again by matching what it
+// looked like (role/name/text) against a fresh scan of the page's current
+// interactive elements. Only ever returns a point when findRelocationMatch is
+// confident and unambiguous — see browserTree.cjs for why a wrong relocation
+// is worse than the refusal it replaces, and why the scan never touches
+// window.__yogatikRefs__ (the live mapping every other outstanding ref from
+// this epoch still resolves through).
+async function tryRelocate(t, ref) {
+  const target = t.refDescriptors && t.refDescriptors.get(ref)
+  if (!target) return null
+  try {
+    const candidates = await t.view.webContents.executeJavaScript(relocateScanSource(), true)
+    if (!Array.isArray(candidates) || !candidates.length) return null
+    const idx = findRelocationMatch(target, candidates)
+    if (idx == null) return null
+    const p = await t.view.webContents.executeJavaScript(relocateResolverSource(idx), true)
+    if (!p) return null
+    return { ...p, relocated: true }
+  } catch {
+    return null
+  }
+}
+
 // A ref resolves to a point measured NOW. A stale ref is refused outright — it
 // must never fall back to a coordinate, because clicking the wrong element looks
-// exactly like success.
+// exactly like success. Relocation is the one exception, and it is not a
+// fallback to "whatever is at that index now": it re-identifies the SAME
+// element by what it looked like, and refuses just as hard when it cannot be
+// sure — see tryRelocate.
 async function pointFor(t, ref) {
   if (isStaleRef(ref, t.refEpoch)) {
     return { error: 'stale ref — the page changed; call read again', stale: true }
@@ -450,8 +487,13 @@ async function pointFor(t, ref) {
   const { index } = parseRef(ref)
   try {
     const p = await t.view.webContents.executeJavaScript(refResolverSource(index), true)
-    if (!p) return { error: 'stale ref — element is gone; call read again', stale: true }
-    return p
+    if (p) return p
+    // Same epoch, but the exact element the walker saw is gone — most often
+    // an SPA re-render swapped it for an equivalent one. Try to relocate it
+    // before reporting stale.
+    const relocated = await tryRelocate(t, ref)
+    if (relocated) return relocated
+    return { error: 'stale ref — element is gone; call read again', stale: true }
   } catch (e) {
     return { error: e.message }
   }
@@ -472,16 +514,22 @@ async function click(s, { tabId, ref, x, y, button = 'left', double = false } = 
   const base = { x: pt.x, y: pt.y, button, clickCount: double ? 2 : 1 }
   wc.sendInputEvent({ ...base, type: 'mouseDown' })
   wc.sendInputEvent({ ...base, type: 'mouseUp' })
-  return { success: true, clicked: { x: pt.x, y: pt.y }, ref: ref || null }
+  // `relocated` tells the model (and the tool-result the user sees) that this
+  // click landed on the same logical element found again after its exact DOM
+  // node was gone — never left silent, the same discipline the prompt-
+  // injection guard and every other "say what happened" fix in this app follows.
+  return { success: true, clicked: { x: pt.x, y: pt.y }, ref: ref || null, relocated: !!pt.relocated }
 }
 
 async function typeText(s, { tabId, ref, text, submit = false, clear = false } = {}) {
   const t = tabFor(s, tabId)
   if (!t) return { success: false, error: 'No such tab' }
   if (typeof text !== 'string') return { success: false, error: 'text is required' }
+  let relocated = false
   if (ref) {
     const r = await click(s, { tabId, ref })
     if (!r.success) return r
+    relocated = !!r.relocated
   }
   const wc = t.view.webContents
 
@@ -510,7 +558,7 @@ async function typeText(s, { tabId, ref, text, submit = false, clear = false } =
     wc.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
     wc.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
   }
-  return { success: true, typed: text.length, cleared: !!clear, submitted: !!submit }
+  return { success: true, typed: text.length, cleared: !!clear, submitted: !!submit, relocated }
 }
 
 /**
@@ -524,22 +572,14 @@ async function typeText(s, { tabId, ref, text, submit = false, clear = false } =
  * Matching is by value, then exact label, then case-insensitive label, then
  * index — the model rarely knows which of those it has.
  */
-async function selectOption(s, { tabId, ref, selector, value } = {}) {
-  const t = tabFor(s, tabId)
-  if (!t) return { success: false, error: 'No such tab' }
-  if (value == null) return { success: false, error: 'value is required' }
-
-  const cssSelector = selector || ''
-  // A stale ref is refused, never degraded to "whatever is at that index now" —
-  // silently changing the wrong dropdown looks exactly like success.
-  if (ref && !cssSelector && isStaleRef(ref, t.refEpoch)) {
-    return { success: false, stale: true, error: `${ref} is from an earlier version of this page. Call read again.` }
-  }
-
-  try {
-    const out = await t.view.webContents.executeJavaScript(`(() => {
-      const wanted = ${JSON.stringify(String(value))}
-      const el = ${cssSelector ? `document.querySelector(${JSON.stringify(cssSelector)})` : `(window.__yogatikRefs__ && window.__yogatikRefs__[${JSON.stringify(ref || '')}]) || null`}
+// Shared by both attempts below — the direct lookup and, if that fails, the
+// relocated one — so the "match wanted against value/label/index, then set
+// + dispatch input/change" logic exists in exactly one place rather than two
+// copies that could drift.
+function selectApplyScript(elExpr, wanted) {
+  return `(() => {
+      const wanted = ${JSON.stringify(String(wanted))}
+      const el = ${elExpr}
       if (!el) return { ok: false, error: 'Element not found' }
       if (el.tagName !== 'SELECT') return { ok: false, error: 'Not a <select> element: ' + el.tagName + '. Use type or click instead.' }
       const opts = Array.from(el.options)
@@ -554,9 +594,53 @@ async function selectOption(s, { tabId, ref, selector, value } = {}) {
       el.dispatchEvent(new Event('input', { bubbles: true }))
       el.dispatchEvent(new Event('change', { bubbles: true }))
       return { ok: true, selected: { value: opts[idx].value, label: (opts[idx].label || opts[idx].text || '').trim(), index: idx } }
-    })()`, false)
-    if (!out?.ok) return { success: false, error: out?.error || 'select failed', options: out?.options }
-    return { success: true, ...out.selected }
+    })()`
+}
+
+async function selectOption(s, { tabId, ref, selector, value } = {}) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  if (value == null) return { success: false, error: 'value is required' }
+
+  const cssSelector = selector || ''
+  // A stale ref is refused, never degraded to "whatever is at that index now" —
+  // silently changing the wrong dropdown looks exactly like success.
+  if (ref && !cssSelector && isStaleRef(ref, t.refEpoch)) {
+    return { success: false, stale: true, error: `${ref} is from an earlier version of this page. Call read again.` }
+  }
+
+  // Index into window.__yogatikRefs__ by the parsed NUMBER, never the ref
+  // STRING — an array has no property literally named "ref_5_3", so indexing
+  // by the string always misses and every by-ref select reported "Element
+  // not found" even when the ref was perfectly live.
+  const parsed = ref ? parseRef(ref) : null
+  const directExpr = cssSelector
+    ? `document.querySelector(${JSON.stringify(cssSelector)})`
+    : `(window.__yogatikRefs__ && window.__yogatikRefs__[${Number(parsed?.index) || 0}]) || null`
+
+  try {
+    const out = await t.view.webContents.executeJavaScript(selectApplyScript(directExpr, value), false)
+    if (out?.ok) return { success: true, ...out.selected }
+
+    // Same-epoch relocation, same rule as click/hover/scroll: only when the
+    // direct element genuinely was not found (not on a real mismatch like
+    // "not a <select>" or "no matching option", which relocating cannot fix
+    // and would only make more confusing), only for a ref (a selector already
+    // re-queries the live DOM every time, so it cannot go stale this way),
+    // and only on a confident, unambiguous match.
+    if (out?.error === 'Element not found' && ref && !cssSelector) {
+      const target = t.refDescriptors && t.refDescriptors.get(ref)
+      if (target) {
+        const candidates = await t.view.webContents.executeJavaScript(relocateScanSource(), true).catch(() => null)
+        const idx = Array.isArray(candidates) ? findRelocationMatch(target, candidates) : null
+        if (idx != null) {
+          const relocExpr = `(window.__yogatikRelocateScan__ && window.__yogatikRelocateScan__[${idx}]) || null`
+          const out2 = await t.view.webContents.executeJavaScript(selectApplyScript(relocExpr, value), false)
+          if (out2?.ok) return { success: true, ...out2.selected, relocated: true }
+        }
+      }
+    }
+    return { success: false, error: out?.error || 'select failed', options: out?.options }
   } catch (err) {
     return { success: false, error: err?.message || String(err) }
   }
@@ -596,7 +680,7 @@ async function scroll(s, { tabId, ref, amount = -400 } = {}) {
   t.view.webContents.sendInputEvent({
     type: 'mouseWheel', x: pt.x, y: pt.y, deltaX: 0, deltaY: amount, canScroll: true,
   })
-  return { success: true, scrolled: amount }
+  return { success: true, scrolled: amount, relocated: !!pt.relocated }
 }
 
 // capturePage fails with UnknownVizError when the view has not been composited
@@ -660,7 +744,7 @@ async function hover(s, { tabId, ref, x, y } = {}) {
   const pt = await resolveTarget(t, { ref, x, y })
   if (pt.error) return { success: false, error: pt.error, stale: !!pt.stale }
   t.view.webContents.sendInputEvent({ type: 'mouseMove', x: pt.x, y: pt.y })
-  return { success: true, hovered: { x: pt.x, y: pt.y }, ref: ref || null }
+  return { success: true, hovered: { x: pt.x, y: pt.y }, ref: ref || null, relocated: !!pt.relocated }
 }
 
 async function printToPDF(s, { tabId, landscape = false } = {}) {

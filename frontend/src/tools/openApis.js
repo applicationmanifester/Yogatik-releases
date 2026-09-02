@@ -848,65 +848,6 @@ export const animalFactsTool = {
   },
 }
 
-// ─── 18. TheMealDB Culinary Recipes & Cooking ───────────────────────────────
-export const mealRecipeTool = {
-  schema: {
-    description:
-      'Search culinary recipes, ingredients with measurements, cuisine origin, and step-by-step cooking instructions from TheMealDB. ' +
-      'Use when asked for recipes, cooking instructions, meal ideas, ingredient lists, or dinner recipes.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Meal name, dish, or main ingredient (e.g. "pasta", "chicken curry", "lasagna", "tacos")' },
-        random: { type: 'boolean', description: 'If true, fetch a random featured recipe' },
-      },
-      required: [],
-    },
-  },
-  async execute({ query = '', random = false } = {}) {
-    try {
-      const url = random || !query.trim()
-        ? 'https://www.themealdb.com/api/json/v1/1/random.php'
-        : `https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(query.trim())}`
-      const d = await json(url)
-      const meals = d.meals || []
-      if (meals.length === 0) return { success: false, error: `No recipes found for "${query}"` }
-
-      const extractIngredients = (m) => {
-        const list = []
-        for (let i = 1; i <= 20; i++) {
-          const ing = m[`strIngredient${i}`]
-          const measure = m[`strMeasure${i}`]
-          if (ing && ing.trim()) {
-            list.push(`${measure ? measure.trim() + ' ' : ''}${ing.trim()}`)
-          }
-        }
-        return list
-      }
-
-      const results = meals.slice(0, 3).map(m => ({
-        meal: m.strMeal,
-        category: m.strCategory,
-        cuisine: m.strArea,
-        instructions: m.strInstructions,
-        ingredients: extractIngredients(m),
-        tags: m.strTags ? m.strTags.split(',').map(t => t.trim()) : [],
-        youtube_tutorial: m.strYoutube || undefined,
-        thumbnail: m.strMealThumb,
-      }))
-
-      return {
-        success: true,
-        tool: 'meal_recipe',
-        query: query || 'featured',
-        count: results.length,
-        recipes: results,
-      }
-    } catch (e) {
-      return { success: false, error: e.message }
-    }
-  },
-}
 
 // ─── 19. TheCocktailDB Drinks & Mocktails ───────────────────────────────────
 export const cocktailRecipeTool = {

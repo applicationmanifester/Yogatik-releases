@@ -414,6 +414,22 @@ contextBridge.exposeInMainWorld('__YOGATIK_COMFY__', {
   },
 })
 
+// Cast Yogatik's own generated media to a UPnP/DLNA TV on the LAN. No
+// external app and no ffmpeg — see castCore.cjs for why neither is needed.
+contextBridge.exposeInMainWorld('__YOGATIK_CAST__', {
+  /** Sends one SSDP search and waits ~2.5s. { success, devices: [{id,friendlyName,modelName,canVolume}] } */
+  discover: (args) => ipcRenderer.invoke('cast:discover', args || {}),
+  /** Devices already found by the last discover — no new network round-trip. */
+  listDevices: () => ipcRenderer.invoke('cast:list-devices'),
+  /** { deviceId, bytesBase64? | filePath?, filename, mime?, title? } → { success, device, url } */
+  cast: (args) => ipcRenderer.invoke('cast:cast', args || {}),
+  pause: (args) => ipcRenderer.invoke('cast:pause', args || {}),
+  resume: (args) => ipcRenderer.invoke('cast:resume', args || {}),
+  stop: (args) => ipcRenderer.invoke('cast:stop', args || {}),
+  setVolume: (args) => ipcRenderer.invoke('cast:set-volume', args || {}),
+  status: (args) => ipcRenderer.invoke('cast:status', args || {}),
+})
+
 // Scheduler/Cron Daemon bridge
 contextBridge.exposeInMainWorld('__YOGATIK_SCHEDULER__', {
   // Job management

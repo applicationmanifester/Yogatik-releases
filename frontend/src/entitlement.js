@@ -182,10 +182,13 @@ function apply(res) {
  * server is right — this only decides what the page shows.
  */
 export async function loadWebEntitlement() {
-  if (isDesktopBuild() || isUnrestrictedEdition()) return entitlement()
+  if (isUnrestrictedEdition()) return entitlement()
   try {
-    const { getFirebase } = await import('./firebaseAuth')
-    const f = await getFirebase()
+    const authModule = await import('./firebaseAuth')
+    const f = await authModule.getFirebase()
+    if (typeof authModule.ensureFirebaseAuth === 'function') {
+      try { await authModule.ensureFirebaseAuth(f) } catch {}
+    }
     let user = f.auth?.currentUser
     if (!user && f.auth && typeof f.onAuthStateChanged === 'function') {
       // If auth hasn't finished reading indexedDB yet, wait for session resolution
@@ -250,7 +253,16 @@ function applyWeb({ state, endsAt = 0, reason = '' }) {
 export async function loadEntitlement() {
   const b = bridge()
   if (!b) return loadWebEntitlement()
-  try { return apply(await b.get()) } catch { return entitlement() }
+  try {
+    const res = apply(await b.get())
+    if (res.state === 'locked' || res.state === 'anonymous' || res.state === 'free') {
+      const webRes = await loadWebEntitlement()
+      if (webRes.state === 'pro' || webRes.state === 'trial') return webRes
+    }
+    return res
+  } catch {
+    return loadWebEntitlement()
+  }
 }
 
 /**
@@ -308,7 +320,16 @@ export async function refreshEntitlement({ idToken = null, uid = null } = {}) {
       token = await getIdToken({ forceRefresh: false })
     } catch { token = null }
   }
-  try { return apply(await b.refresh({ idToken: token, uid })) } catch { return entitlement() }
+  try {
+    const res = apply(await b.refresh({ idToken: token, uid }))
+    if (res.state === 'locked' || res.state === 'anonymous' || res.state === 'free') {
+      const webRes = await loadWebEntitlement()
+      if (webRes.state === 'pro' || webRes.state === 'trial') return webRes
+    }
+    return res
+  } catch {
+    return loadWebEntitlement()
+  }
 }
 
 export async function signOutEntitlement() {

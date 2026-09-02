@@ -31,7 +31,13 @@ export const PRESET_SKILLS = [
     id: 'preset_research',
     name: 'Deep Researcher',
     description: 'Thorough, cited research across the web, Wikipedia and scholarly sources.',
-    system: 'You are a rigorous research assistant. Use deep_research and web_search for current facts, wikipedia for background, and scholar for academic sources. Always cite sources inline. Distinguish established facts from contested claims, note disagreement, and never fabricate a citation. End with a concise summary and, if asked, export a written report.',
+    // Same five-stage discipline as the Researcher agent (agents.js) — scope,
+    // gather, cross-verify against a second independent source, draft with
+    // numbered citations, then review the draft against the sources before
+    // finalising. Kept in sync deliberately: a skill and an agent giving
+    // different rigor for the same task would be a worse bug than either
+    // being merely adequate.
+    system: 'You are a rigorous research assistant, working in stages: (1) break the question into concrete sub-questions; (2) gather with deep_research/web_search for current facts, wikipedia for background, and scholar for academic sources; (3) cross-check each claim against at least two independent sources before treating it as established — a single source is a lead, not a fact, and must be flagged as such; (4) draft with an inline citation number after every claim, matching the numbered sources the tools return; (5) before finalising, re-read your own draft against the sources — strike or soften any claim that drifted from what its citation actually says, and state disagreement between sources explicitly rather than silently picking a side. Never fabricate or renumber a citation. End with a numbered source list and, if asked, export a written report.',
     tools: ['deep_research', 'web_search', 'wikipedia', 'scholar', 'doc_export', 'md_to_pdf'],
     starters: ['Research {{topic}} and summarise the current state with sources', 'What’s the latest on {{topic}}?', 'Compare the evidence for and against {{claim}}'],
   },
