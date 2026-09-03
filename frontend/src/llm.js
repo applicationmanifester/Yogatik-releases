@@ -175,6 +175,13 @@ export function registerCustomProviders(custom) { _customProviders = custom || {
 export function getProviders() { return { ...PROVIDERS, ..._customProviders } }
 export function getProviderModels(providerId) { return getProviders()[providerId]?.models || [] }
 export function getDefaultModel(providerId) { return getProviders()[providerId]?.default || '' }
+// The RAW built-in table, bypassing custom_providers overrides. Saving a
+// provider via Quick Add (addProvider in api.js) can reuse a built-in id
+// (e.g. 'nvidia') and thereby SHADOW its curated `preferred` model list —
+// getProviders()[id] would then return the custom override, which has none.
+// This is the one place that still gets the original curated list so it can
+// be carried forward into the saved custom record instead of being lost.
+export function getBuiltinProvider(id) { return PROVIDERS[id] || null }
 
 export function normalizeModelName(m) {
   if (!m) return ''

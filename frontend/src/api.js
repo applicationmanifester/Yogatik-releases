@@ -5,7 +5,7 @@
  */
 
 import * as db from './db'
-import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels, queryProviderModels, chatComplete, proxyAvailable, normalizeModelName } from './llm'
+import { getProviders as getLLMProviders, getBuiltinProvider, registerCustomProviders, fetchLiveModels, queryProviderModels, chatComplete, proxyAvailable, normalizeModelName } from './llm'
 import { isDesktop, DESKTOP_ONLY_TOOLS } from './tools/localFs'
 import { getScoped, setScoped } from './chatScope'
 import { chunkText } from './retrieval'
@@ -1220,6 +1220,17 @@ export async function addProvider(data) {
   let liveModels = Array.isArray(data.models) && data.models.length > 0 ? data.models.map(normalizeModelName).filter(Boolean) : []
   let defaultModel = data.default_model ? normalizeModelName(data.default_model) : (liveModels[0] || '')
 
+  // Quick Add can reuse a built-in id (e.g. 'nvidia'), which SHADOWS the
+  // built-in entry once saved as a custom_providers override — getProviders()
+  // then returns this custom record instead. Read the curated list from the
+  // raw built-in table (not the possibly-already-shadowed merged one) so it
+  // survives being carried into the saved record below, and every future
+  // testProvider()/getModels() call for this id keeps a known-good model to
+  // fall back to instead of an arbitrary, possibly-dead, one.
+  const preferredList = Array.isArray(data.preferred) && data.preferred.length
+    ? data.preferred
+    : (getBuiltinProvider(id)?.preferred || [])
+
   // If user provided a key or it's a new provider endpoint, validate and discover live models
   if (data.base_url && data.api_key && !liveModels.length) {
     const probeProv = {
@@ -1235,14 +1246,12 @@ export async function addProvider(data) {
     }
     if (modelRes.models?.length) {
       liveModels = modelRes.models
-      // For a known template (e.g. added via Quick Add), prefer a curated
-      // known-good model over the raw alphabetically-first live one — the
-      // same reasoning testProvider's own no-model fallback uses. This
-      // config is never ping-tested here (only /models is queried), so
-      // picking a bad default silently ships a provider that "saved OK" but
-      // fails the moment the user actually sends a message with it.
-      const known = getLLMProviders()[id]
-      const preferredHit = (known?.preferred || []).find(m => liveModels.includes(m))
+      // Prefer a curated known-good model over the raw alphabetically-first
+      // live one — the same reasoning testProvider's own no-model fallback
+      // uses. This config is never ping-tested here (only /models is
+      // queried), so picking a bad default silently ships a provider that
+      // "saved OK" but fails the moment the user actually sends a message.
+      const preferredHit = preferredList.find(m => liveModels.includes(m))
       defaultModel = defaultModel || preferredHit || modelRes.defaultModel || liveModels[0]
     }
   }
@@ -1259,6 +1268,7 @@ export async function addProvider(data) {
       default: defaultModel,
       needsProxy,
       isAnthropic,
+      ...(preferredList.length ? { preferred: preferredList } : {}),
     }
     await db.setSetting('custom_providers', custom)
     registerCustomProviders(custom)

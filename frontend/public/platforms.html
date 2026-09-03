@@ -440,11 +440,39 @@
     (function () {
       var RELEASES = [
         {
+          version: '5.2.0',
+          title: 'Yogatik 5.2.0: Dynamic Model Discovery, Provider CORS Bypass & Resilient Web Tools',
+          date: 'September 4, 2026',
+          codename: 'Dynamic Model Discovery & Resilient Web Tools',
+          isLatest: true,
+          highlights: [
+            ['Dynamic Model Discovery', 'Directly queries and live-validates available models from upstream providers (NVIDIA NIM, Anthropic, OpenAI, custom endpoints) without hardcoded models.'],
+            ['Provider CORS Bypass', 'High-speed edge proxy routing with X-Target-URL for NVIDIA NIM, Anthropic, and custom endpoints eliminating CORS preflight errors in browser.'],
+            ['Instant Bot-Free Web Search', 'Official DuckDuckGo Instant Answer JSON API integration for high-speed search without anti-bot blocks or 500 relay failures.'],
+            ['Statically Bundled Tools', 'Built-in MCP connector registry bundling to eliminate dynamic chunk 404 network fetch errors during conversation turns.'],
+            ['Continuous Desktop Releases', 'Streamlined GitHub Actions build and release pipeline with unmetered public mirror release publishing.']
+          ]
+        },
+        {
+          version: '5.1.0',
+          title: 'Yogatik 5.1.0: MCP Auto-Connect, Relevance-Ranked Web Reading & On-Device AI Setup',
+          date: 'September 3, 2026',
+          codename: 'MCP Auto-Connect & On-Device AI Setup',
+          isLatest: false,
+          highlights: [
+            ['MCP Auto-Connect', 'A connector you already configured but left disabled reconnects on its own the moment a request needs it.'],
+            ['MCP Suggestions', 'Honest suggestions for unconfigured connectors like GitHub, Stripe, and Cloudflare instead of doing nothing.'],
+            ['Smarter Web Reading', 'Target long pages for passages that answer your question instead of blind truncation.'],
+            ['File Skimming', 'fs_skim tool lets the agent view function and class signatures before deciding to read entire files.'],
+            ['On-Device AI Setup Fixed', 'WebLLM and Chrome AI show real consent screens with download progress.']
+          ]
+        },
+        {
           version: '4.3.2',
           title: 'Yogatik 4.3.2: Desktop Pro Entitlement Sync, Version Dropdown & Clean Tool Registry',
           date: 'September 2, 2026',
           codename: 'Desktop Pro Sync, Version Dropdown & Clean Tool Registry',
-          isLatest: true,
+          isLatest: false,
           highlights: [
             ['Desktop Pro Account Sync', 'Fixed Firebase auth state preservation on desktop so Pro subscriptions and 30-day trials sync immediately between web and desktop.'],
             ['Interactive Version Dropdown', 'Added version selector dropdown to the What’s New showcase with instantaneous switching across recent releases.'],

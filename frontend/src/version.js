@@ -3,16 +3,66 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '5.1.0'
+export const APP_VERSION = '5.2.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 5.1.0 — MCP Auto-Connect, Smarter Web Reading & On-Device AI Setup'
+export const APP_CODENAME = 'Yogatik 5.2.0 — Dynamic Model Discovery, Provider CORS Bypass & Resilient Web Tools'
 
 export const APP_RELEASES = [
+  {
+    version: '5.2.0',
+    title: 'Yogatik 5.2.0: Dynamic Model Discovery, Provider CORS Bypass & Resilient Web Tools',
+    date: 'September 4, 2026',
+    isLatest: true,
+    highlights: [
+      'Dynamic Model Discovery: Directly queries and live-validates available models from upstream providers (NVIDIA NIM, Anthropic, OpenAI, custom endpoints) with zero hardcoded presets',
+      'Provider CORS Bypass: High-speed edge proxy routing with X-Target-URL for NVIDIA NIM, Anthropic, and custom endpoints eliminating CORS preflight errors in browser',
+      'Instant Bot-Free Web Search: Official DuckDuckGo Instant Answer API integration for high-speed search without anti-bot blocks or 500 relay failures',
+      'Statically Bundled Tools: Built-in MCP registry bundling to eliminate dynamic chunk 404 network fetch errors during conversation turns',
+      'Desktop Packaging Pipeline: Resilient GitHub Actions multi-platform workflow with continue-on-error artifact uploads and unmetered Releases publishing',
+    ],
+    sections: [
+      {
+        category: '🤖 AI Models & Provider Connectivity',
+        items: [
+          {
+            title: 'Live dynamic model fetching',
+            description: 'Providers now dynamically query /v1/models directly using your API key. No outdated preset lists or inaccessible model IDs.',
+          },
+          {
+            title: 'Zero-CORS edge proxy routing',
+            description: 'Requests to NVIDIA NIM, Anthropic, and custom LLM providers route through a high-performance Cloudflare Worker proxy with target URL forwarding.',
+          },
+        ],
+      },
+      {
+        category: '🔍 Web Search & Resilience',
+        items: [
+          {
+            title: 'DuckDuckGo Instant Answer API',
+            description: 'Switched from fragile HTML scraping to official Instant Answer JSON API for instant, bot-block-free search queries.',
+          },
+          {
+            title: 'Static tool bundling',
+            description: 'Eliminated runtime dynamic imports for MCP connector resolution to ensure uninterrupted agent execution.',
+          },
+        ],
+      },
+      {
+        category: '💻 Cross-Platform Desktop Builds',
+        items: [
+          {
+            title: 'Unmetered release uploads',
+            description: 'Desktop CI builds bypass temporary GitHub Actions artifact quotas and publish directly to public mirror Releases.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '5.1.0',
     title: 'Yogatik 5.1.0: MCP Auto-Connect, Relevance-Ranked Web Reading & On-Device AI Setup',
     date: 'September 3, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'MCP Auto-Connect: a connector you already configured but left disabled reconnects on its own the moment a request needs it — no re-adding it by hand',
       'MCP Suggestions: when a request could use a connector you have not set up yet (GitHub, Stripe, Cloudflare, and more), Yogatik tells you so instead of quietly doing nothing',
