@@ -10,130 +10,11 @@ const PROVIDERS = {
   nvidia: {
     name: 'NVIDIA',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
-    models: [
-      // Chat / Instruct models
-      'meta/llama-3.3-70b-instruct',
-      'meta/llama-3.1-70b-instruct',
-      'meta/llama-3.1-8b-instruct',
-      'meta/llama-3.2-3b-instruct',
-      'meta/llama-3.2-1b-instruct',
-      'meta/llama-3.2-11b-vision-instruct',
-      'meta/llama-3.2-90b-vision-instruct',
-      'meta/codellama-70b',
-      'meta/llama2-70b',
-      'nvidia/llama-3.1-nemotron-70b-instruct',
-      'nvidia/llama-3.1-nemotron-51b-instruct',
-      'nvidia/llama-3.1-nemotron-ultra-253b-v1',
-      'nvidia/llama-3.3-nemotron-super-49b-v1',
-      'nvidia/llama-3.3-nemotron-super-49b-v1.5',
-      'nvidia/llama-3.1-nemotron-nano-8b-v1',
-      'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
-      'nvidia/nvidia-nemotron-nano-9b-v2',
-      'nvidia/nemotron-nano-12b-v2-vl',
-      'nvidia/nemotron-3-nano-30b-a3b',
-      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
-      'nvidia/nemotron-3-super-120b-a12b',
-      'nvidia/nemotron-3-ultra-550b-a55b',
-      'nvidia/nemotron-4-340b-instruct',
-      'nvidia/nemotron-mini-4b-instruct',
-      'nvidia/cosmos-reason2-8b',
-      'nvidia/mistral-nemo-minitron-8b-8k-instruct',
-      'nvidia/ising-calibration-1.5-31b',
-      'nvidia/riva-translate-4b-instruct-v2',
-      'nvidia/riva-translate-4b-instruct-v1.1',
-      'nvidia/riva-translate-4b-instruct',
-      'mistralai/mistral-large',
-      'mistralai/mistral-large-2-instruct',
-      'mistralai/mistral-nemotron',
-      'mistralai/mistral-7b-instruct-v0.3',
-      'mistralai/codestral-22b-instruct-v0.1',
-      'mistralai/mixtral-8x22b-v0.1',
-      'nv-mistralai/mistral-nemo-12b-instruct',
-      'deepseek-ai/deepseek-coder-6.7b-instruct',
-      'google/gemma-4-31b-it',
-      'google/gemma-3-12b-it',
-      'google/gemma-3-4b-it',
-      'google/gemma-2b',
-      'google/codegemma-1.1-7b',
-      'google/codegemma-7b',
-      'google/diffusiongemma-26b-a4b-it',
-      'google/recurrentgemma-2b',
-      'microsoft/phi-3-vision-128k-instruct',
-      'microsoft/phi-3.5-moe-instruct',
-      'ibm/granite-3.0-8b-instruct',
-      'ibm/granite-3.0-3b-a800m-instruct',
-      'ibm/granite-34b-code-instruct',
-      'ibm/granite-8b-code-instruct',
-      'ai21labs/jamba-1.5-large-instruct',
-      '01-ai/yi-large',
-      'aisingapore/sea-lion-7b-instruct',
-      'databricks/dbrx-instruct',
-      'writer/palmyra-creative-122b',
-      'writer/palmyra-fin-70b-32k',
-      'writer/palmyra-med-70b',
-      'writer/palmyra-med-70b-32k',
-      'openai/gpt-oss-120b',
-      'openai/gpt-oss-20b',
-      'moonshotai/kimi-k2.6',
-      'stepfun-ai/step-3.7-flash',
-      'minimaxai/minimax-m3',
-      'z-ai/glm-5.2',
-      'poolside/laguna-xs-2.1',
-      'thinkingmachines/inkling',
-      'zyphra/zamba2-7b-instruct',
-      'nvidia/llama3-chatqa-1.5-70b',
-      'bigcode/starcoder2-15b',
-      // Qwen LLM, Coder, Vision-Language & Reasoning Series
-      'qwen/qwen-2.5-72b-instruct',
-      'qwen/qwen-2.5-coder-32b-instruct',
-      'qwen/qwen-2.5-coder-7b-instruct',
-      'qwen/qwen-2.5-vl-72b-instruct',
-      'qwen/qwen-2.5-vl-7b-instruct',
-      'qwen/qwen2-vl-72b-instruct',
-      'qwen/qwen2-vl-7b-instruct',
-      'qwen/qwq-32b-preview',
-      'qwen/qwen-vl-max',
-      // Image Generation & Vision Diffusion Models
-      'black-forest-labs/flux.1-schnell',
-      'black-forest-labs/flux.1-dev',
-      'stabilityai/stable-diffusion-3-medium',
-      'stabilityai/sdxl-turbo',
-      // Embedding / Safety / Special (available but not typical chat)
-      'nvidia/nv-embed-v1',
-      'nvidia/nv-embedqa-e5-v5',
-      'nvidia/nv-embedqa-mistral-7b-v2',
-      'nvidia/nv-embedcode-7b-v1',
-      'nvidia/embed-qa-4',
-      'nvidia/nemotron-3-embed-1b',
-      'nvidia/llama-nemotron-embed-1b-v2',
-      'nvidia/llama-nemotron-embed-vl-1b-v2',
-      'nvidia/llama-3.2-nv-embedqa-1b-v1',
-      'nvidia/llama-3.2-nemoretriever-1b-vlm-embed-v1',
-      'nvidia/nvclip',
-      'nvidia/neva-22b',
-      'nvidia/vila',
-      'nvidia/nemotron-4-340b-reward',
-      'nvidia/nemotron-3.5-content-safety',
-      'nvidia/llama-3.1-nemoguard-8b-content-safety',
-      'nvidia/llama-3.1-nemoguard-8b-topic-control',
-      'nvidia/llama-3.1-nemotron-safety-guard-8b-v3',
-      'meta/llama-guard-4-12b',
-      'nvidia/ai-synthetic-video-detector',
-      'nvidia/nemoretriever-parse',
-      'nvidia/nemotron-parse',
-      'google/deplot',
-      'microsoft/kosmos-2',
-      'adept/fuyu-8b',
-      'snowflake/arctic-embed-l',
-      'baai/bge-m3',
-    ],
-    default: 'meta/llama-3.3-70b-instruct',
-    // Curated known-good, tool-capable free models, best-first. Auto-pick probes
-    // these before anything else (intersected with the live catalog, so a
-    // withdrawn name is simply skipped) — a fresh key never lands on a weak 4B.
+    models: [],
+    default: '',
     preferred: [
-      'meta/llama-3.1-8b-instruct',
       'meta/llama-3.3-70b-instruct',
+      'meta/llama-3.1-8b-instruct',
       'openai/gpt-oss-20b',
       'nvidia/nemotron-3-nano-30b-a3b',
       'nvidia/llama-3.3-nemotron-super-49b-v1.5',
@@ -214,6 +95,18 @@ const PROVIDERS = {
     baseUrl: 'https://openrouter.ai/api/v1',
     models: [],
     default: '',
+    // Unlike every other provider here, OpenRouter had no curated list at
+    // all — with `default` empty, testProvider's no-model fallback picks the
+    // ALPHABETICALLY-FIRST of OpenRouter's 100+ live models (many paid-only,
+    // deprecated, or moderation/embedding models), so a fresh key's very
+    // first ping could land on a dead one. Free-tier-first, known-reliable.
+    preferred: [
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemma-3-27b-it:free',
+      'deepseek/deepseek-chat:free',
+      'openai/gpt-4o-mini',
+      'anthropic/claude-3-5-haiku',
+    ],
     keyUrl: 'https://openrouter.ai/keys',
   },
   openai: {
@@ -227,13 +120,8 @@ const PROVIDERS = {
   anthropic: {
     name: 'Anthropic (Claude)',
     baseUrl: 'https://api.anthropic.com/v1',
-    models: [
-      'claude-3-7-sonnet-20250219',
-      'claude-3-5-sonnet-20241022',
-      'claude-3-5-haiku-20241022',
-      'claude-3-opus-20240229',
-    ],
-    default: 'claude-3-5-sonnet-20241022',
+    models: [],
+    default: '',
     preferred: ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
     keyUrl: 'https://console.anthropic.com/settings/api-keys',
     isAnthropic: true,
@@ -366,9 +254,17 @@ async function smartFetch(url, rawOptions, prov, timeoutMs) {
 
   const endpoint = getProxyEndpoint()
 
-  // Providers known to block browser CORS directly (like NVIDIA NIM) go through proxy
-  if (prov?.needsProxy) {
-    if (!endpoint) throw new Error('This provider requires the proxy, which is not configured.')
+  // Providers known to block browser CORS directly (like NVIDIA NIM and Anthropic) must go through proxy
+  const requiresProxy = Boolean(
+    prov?.needsProxy ||
+    prov?.isAnthropic ||
+    isNvidiaHost(url) ||
+    (typeof url === 'string' && (url.includes('integrate.api.nvidia.com') || url.includes('api.anthropic.com'))) ||
+    (prov?.baseUrl && (prov.baseUrl.includes('integrate.api.nvidia.com') || prov.baseUrl.includes('api.anthropic.com')))
+  )
+
+  if (requiresProxy) {
+    if (!endpoint) throw new Error('This provider requires the CORS proxy, which is not configured.')
     return fetch(endpoint, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
   }
 
@@ -808,25 +704,36 @@ export async function fetchLiveModels(providerId, apiKey) {
   const p = (async () => {
     try {
       const headers = {}
-      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
-      if (providerId === 'openrouter') {
+      if (prov.isAnthropic) {
+        if (apiKey) headers['x-api-key'] = apiKey
+        headers['anthropic-version'] = '2023-06-01'
+        headers['anthropic-dangerous-direct-browser-access'] = 'true'
+      } else if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`
+      }
+      if (providerId === 'openrouter' || prov.baseUrl?.includes('openrouter')) {
         headers['HTTP-Referer'] = 'https://yogatik.app'
         headers['X-Title'] = 'Yogatik'
       }
 
       // Use a short timeout for local daemons — fail fast if Ollama isn't running
-      const timeoutMs = isKeyless ? 4000 : 15000
+      const timeoutMs = isKeyless ? 4000 : 20000
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), timeoutMs)
 
-      const targetUrl = `${prov.baseUrl}/models`
+      const targetUrl = `${prov.baseUrl.replace(/\/+$/, '')}/models`
       let resp
       try {
         resp = await smartFetch(targetUrl, { method: 'GET', headers, signal: controller.signal }, prov)
       } finally {
         clearTimeout(timer)
       }
-      if (!resp.ok) return []
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '')
+        const msg = parseProviderError(resp.status, errText)
+        console.warn(`[fetchLiveModels] ${providerId} returned ${resp.status}:`, msg)
+        return []
+      }
 
       const contentType = resp.headers.get('content-type') || ''
       if (!contentType.includes('application/json')) return []
@@ -836,7 +743,8 @@ export async function fetchLiveModels(providerId, apiKey) {
       const ids = [...new Set(modelList.map(m => normalizeModelName(m)).filter(id => id && id.length > 0 && id !== '[object Object]'))]
         .sort((a, b) => a.localeCompare(b))
       return ids
-    } catch {
+    } catch (err) {
+      console.warn(`[fetchLiveModels] ${providerId} error:`, err?.message)
       return []
     }
   })().finally(() => {
@@ -845,6 +753,65 @@ export async function fetchLiveModels(providerId, apiKey) {
 
   INFLIGHT_MODELS.set(dedupeKey, p)
   return p
+}
+
+/**
+ * Query provider's /models endpoint with explicit error reporting.
+ * Useful for validating an API key and fetching models when saving a provider.
+ */
+export async function queryProviderModels(providerId, apiKey, customProv = null) {
+  const prov = customProv || getProviders()[providerId]
+  if (!prov) return { success: false, error: 'Provider configuration not found.' }
+  const isKeyless = prov.noKey || prov.isOllama || prov.isLocal
+  if (!isKeyless && !apiKey) return { success: false, error: 'Please enter an API key.' }
+
+  try {
+    const headers = {}
+    if (prov.isAnthropic) {
+      if (apiKey) headers['x-api-key'] = apiKey
+      headers['anthropic-version'] = '2023-06-01'
+      headers['anthropic-dangerous-direct-browser-access'] = 'true'
+    } else if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`
+    }
+    if (providerId === 'openrouter' || prov.name?.toLowerCase().includes('openrouter') || prov.baseUrl?.includes('openrouter')) {
+      headers['HTTP-Referer'] = 'https://yogatik.app'
+      headers['X-Title'] = 'Yogatik'
+    }
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), isKeyless ? 5000 : 20000)
+    const targetUrl = `${prov.baseUrl.replace(/\/+$/, '')}/models`
+
+    let resp
+    try {
+      resp = await smartFetch(targetUrl, { method: 'GET', headers, signal: controller.signal }, prov)
+    } finally {
+      clearTimeout(timer)
+    }
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '')
+      const msg = parseProviderError(resp.status, errText)
+      return { success: false, error: msg || `Provider returned status ${resp.status}` }
+    }
+
+    const data = await resp.json().catch(() => null)
+    if (!data) return { success: false, error: 'Invalid response from provider (expected JSON).' }
+
+    const modelList = data.data || data.models || []
+    const ids = [...new Set(modelList.map(m => normalizeModelName(m)).filter(id => id && id.length > 0 && id !== '[object Object]'))]
+      .sort((a, b) => a.localeCompare(b))
+
+    if (!ids.length) {
+      return { success: false, error: 'Provider connected but returned 0 models.' }
+    }
+
+    return { success: true, models: ids, defaultModel: ids[0] }
+  } catch (err) {
+    const msg = err?.name === 'AbortError' ? 'Connection timed out while fetching models.' : (err?.message || 'Network error')
+    return { success: false, error: msg }
+  }
 }
 
 /**

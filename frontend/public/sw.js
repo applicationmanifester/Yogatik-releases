@@ -1,7 +1,7 @@
 // Bumped on release: activate() deletes every cache whose name differs, which
 // is what evicts the previous build's precached shell. Leaving it unchanged
 // across a deploy lets an old index.html linger for returning visitors.
-const CACHE_NAME = 'yogatik-v4';
+const CACHE_NAME = 'yogatik-v5';
 // Eviction is scoped to caches WE own. The Cache API is shared across the whole
 // origin, so third parties keep their weights here too: WebLLM in webllm/model,
 // webllm/wasm and webllm/config, Transformers.js (MiniLM, SmolVLM, Whisper,
@@ -84,6 +84,12 @@ self.addEventListener('fetch', (e) => {
       const network = fetch(req)
         .then(resp => {
           if (resp.ok) {
+            // Guard against SPA rewrite rules returning HTML for missing script chunks
+            const ct = resp.headers.get('content-type') || '';
+            const isScript = url.pathname.endsWith('.js') || url.pathname.endsWith('.mjs') || url.pathname.endsWith('.wasm');
+            if (isScript && ct.includes('text/html')) {
+              return new Response('Asset Not Found', { status: 404, statusText: 'Not Found' });
+            }
             const clone = resp.clone();
             caches.open(CACHE_NAME).then(c => c.put(req, clone)).catch(() => {});
           }

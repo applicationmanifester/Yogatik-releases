@@ -48,10 +48,20 @@ function runSw(existingCacheNames, fetchImpl) {
     match: async () => undefined,
   }
 
+  // Must be a real constructor: the script/HTML guard below does
+  // `new Response(body, init)`, not just `Response.error()`.
+  function FakeResponse(body, init) {
+    this.body = body
+    this.status = init?.status
+    this.statusText = init?.statusText
+    this.ok = (init?.status ?? 200) < 400
+  }
+  FakeResponse.error = () => ({})
+
   new Function('self', 'caches', 'fetch', 'Response', src)(
     self, caches,
     fetchImpl || (async () => ({ ok: true, clone: () => ({}) })),
-    { error: () => ({}) },
+    FakeResponse,
   )
 
   return { listeners, deleted, put }
@@ -65,16 +75,19 @@ async function activate(existing) {
   return deleted
 }
 
+const currentCacheMatch = SW_SRC.match(/const CACHE_NAME = ['"]([^'"]+)['"]/)
+const currentCache = currentCacheMatch ? currentCacheMatch[1] : 'yogatik-v5'
+
 describe('service worker cache eviction', () => {
   it('deletes its own superseded caches', async () => {
-    const deleted = await activate(['yogatik-v3', 'yogatik-v4'])
-    expect(deleted).toContain('yogatik-v3')
-    expect(deleted).not.toContain('yogatik-v4')
+    const deleted = await activate(['yogatik-v1', currentCache])
+    expect(deleted).toContain('yogatik-v1')
+    expect(deleted).not.toContain(currentCache)
   })
 
   it('never deletes WebLLM model weights', async () => {
     const deleted = await activate([
-      'yogatik-v4', 'webllm/model', 'webllm/wasm', 'webllm/config',
+      currentCache, 'webllm/model', 'webllm/wasm', 'webllm/config',
     ])
     expect(deleted).not.toContain('webllm/model')
     expect(deleted).not.toContain('webllm/wasm')
@@ -82,14 +95,14 @@ describe('service worker cache eviction', () => {
   })
 
   it('never deletes the Transformers.js cache', async () => {
-    const deleted = await activate(['yogatik-v4', 'transformers-cache'])
+    const deleted = await activate([currentCache, 'transformers-cache'])
     expect(deleted).not.toContain('transformers-cache')
   })
 
   it('does not cache a failed navigation as the app shell', async () => {
     // Caching a 503 under /index.html poisons the offline fallback: every later
     // offline navigation serves the error page instead of the app.
-    const { listeners, put } = runSw(['yogatik-v4'], async () => ({ ok: false, status: 503, clone: () => ({}) }))
+    const { listeners, put } = runSw([currentCache], async () => ({ ok: false, status: 503, clone: () => ({}) }))
     let responded
     await listeners.fetch({
       request: { method: 'GET', url: 'https://yogatik.web.app/', mode: 'navigate', headers: { get: () => null } },
@@ -101,7 +114,7 @@ describe('service worker cache eviction', () => {
   })
 
   it('caches a good navigation as the app shell', async () => {
-    const { listeners, put } = runSw(['yogatik-v4'], async () => ({ ok: true, status: 200, clone: () => ({}) }))
+    const { listeners, put } = runSw([currentCache], async () => ({ ok: true, status: 200, clone: () => ({}) }))
     let responded
     await listeners.fetch({
       request: { method: 'GET', url: 'https://yogatik.web.app/', mode: 'navigate', headers: { get: () => null } },
@@ -112,9 +125,44 @@ describe('service worker cache eviction', () => {
     expect(put).toEqual(['/index.html'])
   })
 
+  it('refuses to cache HTML served for a missing script chunk', async () => {
+    // Firebase Hosting's SPA rewrite serves index.html (200, text/html) for any
+    // path it doesn't recognise — including a hashed chunk a deploy removed.
+    // Caching that under the chunk's own cache key would make every later
+    // dynamic import() of it "succeed" with an HTML document instead of JS.
+    const { listeners, put } = runSw([currentCache], async () => ({
+      ok: true, status: 200,
+      headers: { get: (h) => (h.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null) },
+      clone: () => ({}),
+    }))
+    let responded
+    await listeners.fetch({
+      request: { method: 'GET', url: 'https://yogatik.web.app/assets/index-abc123.js', mode: 'no-cors', headers: { get: () => null } },
+      respondWith: (p) => { responded = p },
+    })
+    const resp = await responded
+    expect(resp.status).toBe(404)
+    expect(put).toEqual([])
+  })
+
+  it('still caches a real script response normally', async () => {
+    const { listeners, put } = runSw([currentCache], async () => ({
+      ok: true, status: 200,
+      headers: { get: (h) => (h.toLowerCase() === 'content-type' ? 'application/javascript' : null) },
+      clone: () => ({}),
+    }))
+    let responded
+    await listeners.fetch({
+      request: { method: 'GET', url: 'https://yogatik.web.app/assets/index-abc123.js', mode: 'no-cors', headers: { get: () => null } },
+      respondWith: (p) => { responded = p },
+    })
+    await responded
+    expect(put).toEqual(['https://yogatik.web.app/assets/index-abc123.js'])
+  })
+
   it('leaves every third-party cache alone while still evicting its own', async () => {
     const deleted = await activate([
-      'yogatik-v1', 'yogatik-v4', 'webllm/model', 'transformers-cache', 'some-other-app',
+      'yogatik-v1', currentCache, 'webllm/model', 'transformers-cache', 'some-other-app',
     ])
     expect(deleted).toEqual(['yogatik-v1'])
   })

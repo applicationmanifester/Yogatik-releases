@@ -54,6 +54,8 @@ import { getTodos } from './tools/todo'
 // Synchronous by design: buildSystemPrompt runs mid-turn and cannot await.
 import { isLocked as isEntitlementLocked, entitlement as entitlementSnapshot } from './entitlement'
 import { detectReflexCandidate } from './agentReflex'
+import { detectMcpNeed } from './mcpRegistry'
+import * as mcpMod from './mcp'
 
 /** Durable memories the user asked to keep, injected so the model recalls them
  *  without needing a memory tool call (like ChatGPT/Claude memory). */
@@ -608,7 +610,6 @@ export async function runAgent({
   // this app already applies to downloads (ComfyUI/WebLLM/chromeai).
   let mcpBlock = ''
   try {
-    const [{ detectMcpNeed }, mcpMod] = await Promise.all([import('./mcpRegistry'), import('./mcp')])
     const configuredServers = await mcpMod.getMcpServers()
     const need = detectMcpNeed(typeof userMessage === 'string' ? userMessage : '', configuredServers)
     if (need.toEnable.length > 0) {

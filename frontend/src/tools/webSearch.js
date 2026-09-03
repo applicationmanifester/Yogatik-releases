@@ -316,14 +316,52 @@ function mergeResults(lists, count) {
 async function duckDuckGoSearch(query, count) {
   try {
     const cleanQ = sanitizeSearchQuery(query)
-    // DuckDuckGo's regional bias comes from `kl` (e.g. uk-en, de-de, in-en).
-    // Without it every query is answered as though the user were in the US,
-    // which for anything local — shops, services, laws, sport — is simply the
-    // wrong set of results.
+    // 1. First attempt: Official DuckDuckGo Instant Answer JSON API (fast, reliable, no bot walls)
+    try {
+      const apiUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQ)}&format=json&no_html=1&skip_disambig=0`
+      const data = await proxyJson(apiUrl)
+      const results = []
+      if (data) {
+        if (data.AbstractText && data.AbstractURL) {
+          results.push({
+            title: data.Heading || cleanQ,
+            url: data.AbstractURL,
+            snippet: data.AbstractText,
+            engine: 'duckduckgo',
+          })
+        }
+        const extractTopics = (topics) => {
+          if (!Array.isArray(topics)) return
+          for (const t of topics) {
+            if (t.Topics) extractTopics(t.Topics)
+            else if (t.FirstURL && (t.Text || t.Result)) {
+              const raw = t.Text || t.Result || ''
+              results.push({
+                title: raw.split(' - ')[0].replace(/<[^>]+>/g, '').trim() || cleanQ,
+                url: t.FirstURL,
+                snippet: raw.replace(/<[^>]+>/g, '').trim(),
+                engine: 'duckduckgo',
+              })
+            }
+          }
+        }
+        if (data.RelatedTopics) extractTopics(data.RelatedTopics)
+        if (data.Results) extractTopics(data.Results)
+      }
+      if (results.length > 0) {
+        return results.slice(0, count)
+      }
+    } catch {
+      // API fallback, continue to scrape attempts if needed
+    }
+
+    // 2. Secondary fallback: HTML endpoints with polite timeout
     const L = localeSnapshot()
     const kl = L.region ? `&kl=${encodeURIComponent(`${L.region.toLowerCase()}-${String(L.locale).split('-')[0].toLowerCase()}`)}` : ''
     const html = await proxyText(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(cleanQ)}${kl}`)
       .catch(() => proxyText(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(cleanQ)}${kl}`))
+      .catch(() => '')
+    if (!html) return []
     const doc = new DOMParser().parseFromString(html, 'text/html')
     const rows = [...doc.querySelectorAll('a.result__url, a.result-link, a.result__a')]
     const snippets = [...doc.querySelectorAll('.result__snippet, td.result-snippet')]

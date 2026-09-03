@@ -18,7 +18,6 @@ import { getProxyEndpoint } from '../llm.js'
 
 const PUBLIC_RELAYS = [
   'https://api.allorigins.win/raw?url=',
-  'https://corsproxy.io/?url=',
   'https://api.codetabs.com/v1/proxy?quest=',
 ]
 
@@ -140,13 +139,24 @@ export async function proxyFetch(url, { credentials = false, ...init } = {}) {
     if (!usable(relay)) continue
     try {
       const target = relay.includes('?') ? relay + encodeURIComponent(url) : relay + url
-      const resp = await fetch(target, { ...init, signal })
+      const relayController = new AbortController()
+      const relayTimer = setTimeout(() => relayController.abort(), 8000)
+      const fetchSignal = signal
+        ? (AbortSignal.any ? AbortSignal.any([signal, relayController.signal]) : signal)
+        : relayController.signal
+
+      let resp
+      try {
+        resp = await fetch(target, { ...init, signal: fetchSignal })
+      } finally {
+        clearTimeout(relayTimer)
+      }
       if (resp.ok) return resp
       penalise(relay, resp.status === 429 ? QUOTA_COOLDOWN_MS
         : resp.status === 403 ? COOLDOWN_MS : 5_000)
       lastError = new Error(`${new URL(relay).hostname} returned ${resp.status}`)
     } catch (err) {
-      if (err?.name === 'AbortError') throw err
+      if (signal?.aborted) throw err
       penalise(relay)
       lastError = err
     }

@@ -5,7 +5,7 @@
  */
 
 import * as db from './db'
-import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels, chatComplete, proxyAvailable, normalizeModelName } from './llm'
+import { getProviders as getLLMProviders, registerCustomProviders, fetchLiveModels, queryProviderModels, chatComplete, proxyAvailable, normalizeModelName } from './llm'
 import { isDesktop, DESKTOP_ONLY_TOOLS } from './tools/localFs'
 import { getScoped, setScoped } from './chatScope'
 import { chunkText } from './retrieval'
@@ -1095,18 +1095,10 @@ async function cachedModels(id, key, fallback, allSettings = null) {
     // Stale cache — use it immediately and revalidate in background
     refresh()
     baseList = cache.list
-  } else if (isKeyless) {
-    // Keyless providers (Ollama): always do a live fetch — no fallback static list
-    const fetched = await refresh()
-    baseList = fetched?.length ? fetched : []
-  } else if (fallback?.length) {
-    // If fallback built-in models exist, return immediately and fetch live models in background
-    refresh()
-    baseList = fallback
   } else {
-    // Only block if we have no models whatsoever
+    // No models yet: fetch live models from provider
     const fetched = await refresh()
-    baseList = fetched?.length ? fetched : (cache?.list?.length ? cache.list : fallback)
+    baseList = fetched?.length ? fetched : (cache?.list?.length ? cache.list : (fallback || []))
   }
   if (Array.isArray(customAdded) && customAdded.length > 0) {
     return [...new Set([...customAdded.map(normalizeModelName).filter(Boolean), ...(baseList || [])])]
@@ -1182,8 +1174,20 @@ export async function getModels() {
       const cached = await cachedModels(id, key, liveModels, allSettings)
       liveModels = (Array.isArray(cached) ? cached : []).map(normalizeModelName).filter(Boolean)
     }
+    // Every built-in provider now ships with `default: ''` (models are
+    // discovered live), so `def` is normally empty. Falling straight to
+    // `liveModels[0]` here would hand every caller of getModels() — the model
+    // dropdown, provider-switch auto-select, the picker's initial pick — the
+    // ALPHABETICALLY-FIRST live model, which on a big/messy catalog (NVIDIA,
+    // OpenRouter) is routinely retired, embedding-only, or paid-only. Those
+    // callers all check `default_model` BEFORE `preferred[0]` (App.jsx), so a
+    // non-empty-but-bad default_model here means their own preferred-list
+    // fallback never gets a chance to run. Prefer a curated known-good model
+    // the provider still actually serves — same rule testProvider/addProvider
+    // apply when picking a model to ping-test.
     const def = normalizeModelName(p.default)
-    const default_model = (liveModels.includes(def) ? def : liveModels[0]) || def || ''
+    const preferredHit = (p.preferred || []).find(m => liveModels.includes(m))
+    const default_model = (liveModels.includes(def) ? def : (preferredHit || liveModels[0])) || def || ''
     const available = p.isOllama ? liveModels.length > 0 : hasKey
     result[id] = {
       name: p.name, type: 'openai_compatible',
@@ -1208,26 +1212,70 @@ export async function getProviders() {
 }
 
 export async function addProvider(data) {
-  const id = data.provider_id || data.id
+  const id = (data.provider_id || data.id || '').toLowerCase().replace(/[^a-z0-9-_]/g, '-')
+  if (!id) return { success: false, error: 'Invalid provider ID' }
+
+  const needsProxy = Boolean(data.needsProxy || (data.base_url && (data.base_url.includes('integrate.api.nvidia.com') || data.base_url.includes('api.anthropic.com'))))
+  const isAnthropic = Boolean(data.isAnthropic || (data.base_url && data.base_url.includes('api.anthropic.com')))
+  let liveModels = Array.isArray(data.models) && data.models.length > 0 ? data.models.map(normalizeModelName).filter(Boolean) : []
+  let defaultModel = data.default_model ? normalizeModelName(data.default_model) : (liveModels[0] || '')
+
+  // If user provided a key or it's a new provider endpoint, validate and discover live models
+  if (data.base_url && data.api_key && !liveModels.length) {
+    const probeProv = {
+      name: data.name || id,
+      baseUrl: data.base_url,
+      needsProxy,
+      isAnthropic,
+      noKey: false,
+    }
+    const modelRes = await queryProviderModels(id, data.api_key, probeProv)
+    if (!modelRes.success) {
+      return { success: false, error: `Could not connect to ${data.name || id}: ${modelRes.error}` }
+    }
+    if (modelRes.models?.length) {
+      liveModels = modelRes.models
+      // For a known template (e.g. added via Quick Add), prefer a curated
+      // known-good model over the raw alphabetically-first live one — the
+      // same reasoning testProvider's own no-model fallback uses. This
+      // config is never ping-tested here (only /models is queried), so
+      // picking a bad default silently ships a provider that "saved OK" but
+      // fails the moment the user actually sends a message with it.
+      const known = getLLMProviders()[id]
+      const preferredHit = (known?.preferred || []).find(m => liveModels.includes(m))
+      defaultModel = defaultModel || preferredHit || modelRes.defaultModel || liveModels[0]
+    }
+  }
+
   if (data.api_key) await db.setSetting(`apikey_${id}`, data.api_key)
-  // If it has a base_url, it's a custom provider — save config
+
+  // If it has a base_url, it's a custom or templated provider — save config
   if (data.base_url) {
     const custom = await db.getSetting('custom_providers', {})
     custom[id] = {
       name: data.name || id,
       baseUrl: data.base_url,
-      models: data.models || [],
-      default: data.default_model || data.models?.[0] || '',
+      models: liveModels,
+      default: defaultModel,
+      needsProxy,
+      isAnthropic,
     }
     await db.setSetting('custom_providers', custom)
     registerCustomProviders(custom)
   }
-  return { success: true }
+
+  if (liveModels.length) {
+    await db.setSetting(`models_${id}`, { ts: Date.now(), list: liveModels })
+    if (defaultModel) await db.setSetting(`model_${id}`, defaultModel)
+  }
+
+  return { success: true, models: liveModels }
 }
 
 export async function forgetApiKey(providerId) {
   await db.setSetting(`apikey_${providerId}`, null)
   await db.setSetting(`synced_${providerId}`, null)
+  await db.setSetting(`status_${providerId}::default`, null)
 }
 
 export async function removeProvider(id) {
@@ -1257,7 +1305,25 @@ export async function testProvider(id, modelOverride) {
   const apiKey = await db.getSetting(`apikey_${id}`)
   await loadCustomProviders()
   const p = getLLMProviders()[id]
-  const model = modelOverride || await db.getSetting(`model_${id}`) || p?.default || p?.models?.[0]
+
+  let model = modelOverride || await db.getSetting(`model_${id}`) || p?.default || p?.models?.[0]
+  if (!model && (apiKey || p?.noKey || p?.publicModels)) {
+    // If no model is recorded, discover live models from provider. Providers
+    // like NVIDIA return 80+ models sorted alphabetically — many retired,
+    // embedding-only, or safety-guard models that fail a plain chat ping.
+    // Prefer a curated known-good model (same list autoPickModel probes
+    // first) that the provider still actually serves; only fall back to the
+    // raw alphabetically-first entry when none of the curated ones are live.
+    // Without this, a fresh key's FIRST-EVER test could land on a dead model,
+    // fail, and (see handleAddApiKey) look like the key itself was rejected.
+    const live = await fetchLiveModels(id, apiKey).catch(() => [])
+    if (live.length) {
+      const preferredHit = (p?.preferred || []).find(m => live.includes(m))
+      model = preferredHit || live[0]
+      await db.setSetting(`models_${id}`, { ts: Date.now(), list: live })
+      await db.setSetting(`model_${id}`, model)
+    }
+  }
 
   const remember = async (res) => {
     await db.setSetting(statusKey(id, model), { ...res, model, at: Date.now() })
@@ -1316,13 +1382,18 @@ export async function testProvider(id, modelOverride) {
     })
   } catch (e) {
     // A retired model must not linger in the picker or stay selected.
-    if (isRetiredModelError(e.message)) await pruneRetiredModel(id, model)
+    const isRetired = isRetiredModelError(e.message)
+    if (isRetired) await pruneRetiredModel(id, model)
     const errStr = typeof e?.message === 'string' ? e.message : String(e || '')
     const isTransient = /\b(503|502|504|520|522|524)\b|Service Unavailable|Internal server error/i.test(errStr)
     const fallbackModel = (p?.default && p.default !== model) ? p.default : (p?.preferred?.[0] && p.preferred[0] !== model ? p.preferred[0] : null)
 
-    // If the selected model returned 503 or failed, probe the provider's default reliable model
-    if (isTransient && fallbackModel) {
+    // If the selected model returned 503, or turned out to be retired/dead
+    // (the exact failure this function's own no-model fallback above can hit
+    // on a provider whose catalog includes withdrawn models), probe the
+    // provider's known-good default before giving up — a single bad model
+    // pick must not read as "this key does not work".
+    if ((isTransient || isRetired) && fallbackModel) {
       try {
         const fallbackOut = await chatComplete({
           provider: id, apiKey, model: fallbackModel,
@@ -1332,12 +1403,23 @@ export async function testProvider(id, modelOverride) {
           timeoutMs: TEST_TIMEOUT,
           retries: 0,
         })
+        // `remember` records under statusKey(id, model) and stamps res.model
+        // from this closure's `model` var — reassign it to the fallback BEFORE
+        // calling remember, or the status entry (and the reason below) would
+        // still point at the dead model even though the fallback is what
+        // actually answered. Also persist it as the provider's chosen model so
+        // the next real chat — and not just this one-off ping — uses it too.
+        const failedModel = model
+        model = fallbackModel
+        await db.setSetting(`model_${id}`, fallbackModel)
         return remember({
           success: true,
           status: 'ok',
           model: fallbackModel,
           latencyMs: Math.round(performance.now() - started),
-          response: `Connected (${model} is busy/503; ${fallbackModel} is ready)`,
+          response: isRetired
+            ? `Connected (${failedModel} was retired by the provider; ${fallbackModel} is ready)`
+            : `Connected (${failedModel} is busy/503; ${fallbackModel} is ready)`,
         })
       } catch {}
     }

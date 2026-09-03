@@ -40,8 +40,7 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 // Automatically recover when Vite detects a new deployment with updated chunk hashes
-window.addEventListener('vite:preloadError', (event) => {
-  event?.preventDefault?.()
+function handleChunkReload() {
   const storageKey = 'yogatik_last_preload_reload'
   const lastReload = parseInt(sessionStorage.getItem(storageKey) || '0', 10)
   const now = Date.now()
@@ -54,6 +53,22 @@ window.addEventListener('vite:preloadError', (event) => {
     } else {
       window.location.reload()
     }
+  }
+}
+
+window.addEventListener('vite:preloadError', (event) => {
+  event?.preventDefault?.()
+  handleChunkReload()
+})
+
+window.addEventListener('error', (event) => {
+  const msg = event?.message || ''
+  if (
+    msg.includes('Failed to load module script') ||
+    msg.includes('Strict MIME type checking is enforced') ||
+    msg.includes('error loading dynamically imported module')
+  ) {
+    handleChunkReload()
   }
 })
 

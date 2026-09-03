@@ -2239,13 +2239,39 @@ export default function App() {
       setProviderStatus(await getAllProviderStatus())
       refreshKeys()
       if (testRes.success) {
-        refreshModels()
+        await refreshModels()
         setApiKeyInput(prev => ({ ...prev, [pid]: '' }))
-        // The user has no way to know which of 79 models is usable — measure
-        // and choose for them, unless they already picked one.
+        // If no model is selected, auto pick or select first model
         if (!(await getActiveModel(pid))) await handleAutoPick(pid)
       } else {
-        setErrorModalMsg(`Could not connect to ${models[pid]?.name || pid}:\n\n${testRes.error}`)
+        // The key itself may be perfectly valid — testProvider only pinged ONE
+        // model, and a provider with a large/messy catalog (NVIDIA's 80+) can
+        // hand a fresh key a retired or otherwise dead model as its first
+        // guess. Before concluding the KEY doesn't work, give autoPickModel a
+        // real chance: it probes several known-good candidates in parallel
+        // and only fails if none of them answer either. Call the api.js
+        // function directly (not handleAutoPick) — that one swallows its own
+        // errors into a toast/modal and never reports success back to a
+        // caller, which would make this recovery attempt look like it always
+        // failed even when it picked a working model.
+        let recovered = null
+        try { recovered = await autoPickModel(pid, { onProgress: setAutoPickMsg }) } catch { /* handled below */ }
+        setAutoPickMsg('')
+        if (recovered?.model) {
+          setModel(recovered.model)
+          setProviderStatus(await getAllProviderStatus())
+          setMeasuredModels(await getMeasuredModels(pid))
+          await refreshModels()
+          setApiKeyInput(prev => ({ ...prev, [pid]: '' }))
+          showToast(`Selected ${recovered.model} (${formatLatency(recovered.latencyMs)})`)
+        } else {
+          // Wiping the key here would mean a single bad model pick costs the
+          // user their key and forces re-pasting it. Leave it saved — the
+          // Remove button is right there if it truly is invalid — and let
+          // them see the real error and try Test again or pick a model.
+          refreshKeys()
+          setErrorModalMsg(`Could not connect to ${models[pid]?.name || pid}:\n\n${testRes.error || 'Connection failed'}\n\nThe key was kept — check it, or pick a different model and try Test again.`)
+        }
       }
     } catch (err) {
       setSavingApiKey(null)
