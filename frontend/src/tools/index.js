@@ -64,6 +64,7 @@ import { askUserTool, setUserQuestionHandler } from './askUser'
 import { fsPatchTool } from './fsPatch'
 import { codeOutlineTool } from './codeOutline'
 import { fsOutlineTool, fsSmartReadTool } from './fsSmartRead'
+import { fsSkimTool } from './fsSkim'
 import { pushAmbientSignal, popAmbientSignal } from './http'
 import { repairToolArguments } from './schemaRepair'
 import { validateToolSafety } from './toolGuard'
@@ -72,7 +73,8 @@ import {
   isDesktop, fsAddFolderTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
   fsFindFilesTool, fsDeleteTool, fsMkdirTool, fsMoveTool, fsBatchReadTool, fsFileTreeTool,
   fsReplaceContentTool, fsMultiReplaceTool, fsFileInfoTool, fsBatchWriteTool, fsCopyTool,
-  fsUndoTool, fsGitTool, getWorkspaceCtx, withWorkspaceContext,
+  fsUndoTool, fsGitTool, fsCodebaseMapTool, getWorkspaceCtx, withWorkspaceContext,
+  DESKTOP_ONLY_TOOLS as REAL_DESKTOP_ONLY_TOOLS,
 } from './localFs'
 import { requestPermission } from '../permissions'
 import { terminalRunTool } from './terminalRun'
@@ -323,6 +325,7 @@ const ALL_TOOLS = {
   code_outline: codeOutlineTool,
   fs_outline: fsOutlineTool,
   fs_smart_read: fsSmartReadTool,
+  fs_skim: fsSkimTool,
   segment: segmentTool,
   fs_file_info: fsFileInfoTool,
   fs_copy: fsCopyTool,
@@ -335,6 +338,7 @@ const ALL_TOOLS = {
   fs_move: fsMoveTool,
   fs_batch_read: fsBatchReadTool,
   fs_file_tree: fsFileTreeTool,
+  fs_codebase_map: fsCodebaseMapTool,
   fs_undo: fsUndoTool,
   fs_git: fsGitTool,
   terminal_run: terminalRunTool,
@@ -547,9 +551,19 @@ export const TOOL_ALIASES = {
   glob_files: 'fs_find_files',
   fs_glob: 'fs_find_files',
   locate_file: 'fs_find_files',
+  codebase_map: 'fs_codebase_map',
+  repo_map: 'fs_codebase_map',
+  map_codebase: 'fs_codebase_map',
+  understand_codebase: 'fs_codebase_map',
+  explore_codebase: 'fs_codebase_map',
   read_file: 'fs_read',
   smart_read: 'fs_smart_read',
   file_outline: 'fs_outline',
+  skim_file: 'fs_skim',
+  skim: 'fs_skim',
+  file_skeleton: 'fs_skim',
+  read_skeleton: 'fs_skim',
+  outline_body: 'fs_skim',
   // `segment` is what a model reaches for by many names. None of these shadow
   // a registered tool — `crop` and `cutout` in particular are not tools.
   segment_object: 'segment', cutout: 'segment', remove_background: 'segment',
@@ -1002,16 +1016,14 @@ function toFunctionSchema(name, tool = {}) {
   }
 }
 
-export const DESKTOP_ONLY_TOOLS = new Set([
-  'fs_add_folder', 'fs_list', 'fs_read', 'fs_write', 'fs_edit', 'fs_replace_content',
-  'fs_multi_replace', 'fs_patch', 'code_outline', 'fs_outline', 'fs_smart_read',
-  'fs_file_info', 'fs_copy', 'fs_batch_write', 'fs_search', 'fs_find_files',
-  'fs_delete', 'fs_mkdir', 'fs_move', 'fs_batch_read', 'fs_file_tree', 'fs_undo', 'fs_git',
-  'terminal_run', 'clipboard_access', 'watch_folder', 'system_state', 'process_manager',
-  'file_dialog', 'git_status', 'git_log', 'git_diff', 'proc_start', 'proc_output',
-  'proc_stop', 'proc_list', 'watch', 'computer_control', 'screen_inspect', 'desktop_action',
-  'local_image_generate', 'local_video_generate', 'aider_copilot',
-])
+// This USED TO BE a second, hand-maintained literal copy of the set below —
+// nothing here ever imported it (agent.js and api.js both correctly import
+// the real one from ./localFs), so it was pure drift-in-waiting: the exact
+// "two copies, only one wired" class this codebase has hit before (the
+// relay list in youtube.js, the two usage meters, the two toast systems).
+// Re-exporting the real set is what makes that structurally impossible now —
+// there is only one list to add a new desktop-only tool to.
+export const DESKTOP_ONLY_TOOLS = REAL_DESKTOP_ONLY_TOOLS
 
 export function getToolSchemas(disabled = []) {
   const off = new Set(disabled)
@@ -1057,6 +1069,7 @@ export const MAX_TOOLS_PER_REQUEST = 96
  */
 const CORE_TOOL_SCORES = {
   fs_read: 40, fs_write: 40, fs_edit: 40, fs_list: 40, fs_search: 38, fs_find_files: 38,
+  fs_codebase_map: 36,
   terminal_run: 40, proc_start: 30, browser_control: 38, computer_control: 30,
   spawn_agents: 34, memory: 34, doc_search: 34, web_search: 38, web_extract: 38, deep_research: 35, code_execute: 34,
   js_execute: 34, clipboard_access: 28, file_dialog: 28,
@@ -1323,6 +1336,22 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   if (/\b(find files|find file|locate file|glob|where is|search files by name|fs_find_files)\b/i.test(text)) {
     scores['fs_find_files'] = 210
     scores['fs_search'] = 190
+  }
+  // "Learn/understand/explain this codebase" is exactly the instant-whole-repo
+  // question the map exists for — score it above fs_find_files/fs_search so a
+  // weaker model reaches for the one-call map before starting a blind crawl.
+  if (/\b(codebase|repo(sitory)?|project)\b.{0,25}\b(understand|learn|explain|overview|summarize|summarise|structure|map|walkthrough|onboard)\b|\b(understand|learn|explain|map|walk me through)\b.{0,25}\b(codebase|repo(sitory)?|project|folder)\b/i.test(text)) {
+    scores['fs_codebase_map'] = 215
+    scores['fs_file_tree'] = 150
+  }
+  // Same idea one level down: "understand/skim/what does THIS FILE do" is the
+  // one-file version of the codebase-map question — fs_skim's whole point is
+  // seeing a file's shape before a full fs_read, so it should outrank a blind
+  // full read the moment the phrasing suggests the model does not yet know
+  // which part of the file it needs.
+  if (/\b(skim|scan)\b.{0,20}\bfile\b|\bwhat('s| is| does)\b.{0,25}\bfile\b.{0,15}\b(do|contain|look like)\b|\b(understand|shape|structure|outline|overview)\b.{0,20}\bfile\b|\bfile\b.{0,20}\b(structure|shape|outline)\b/i.test(text)) {
+    scores['fs_skim'] = 190
+    scores['fs_outline'] = 170
   }
   if (/\b(terminal_exec|run terminal|terminal command|execute shell|run command|powershell|bash)\b/i.test(text)) {
     scores['terminal_run'] = 200

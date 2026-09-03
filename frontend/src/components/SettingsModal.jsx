@@ -7,6 +7,9 @@ import {
 } from 'lucide-react'
 import { Modal } from './Modal'
 import { ModelPicker } from './ModelPicker'
+import { LocalModelPanel } from './LocalModelPanel'
+import { ChromeAIPanel } from './ChromeAIPanel'
+import { DEFAULT_LOCAL_MODEL } from '../localLLM'
 import { FEATURES, resolveFeatures, FEATURE_DEFAULTS } from '../features'
 import { VOICE_LABELS, DEFAULT_VOICE } from '../video/speech'
 import { getModels, saveProviderApiKey, removeProvider, testProvider,
@@ -137,6 +140,15 @@ export function SettingsModal({
   const [refreshingOllama, setRefreshingOllama] = useState(false)
   // { [modelName]: { percent: number, status: string, pulling: bool } }
   const [pullState, setPullState] = useState({})
+  // The WebLLM model picked inside the `local` provider's OWN card, before
+  // that provider is even active. It must be separate from the app-wide
+  // `activeModel`: chooseModel(m, pid) calls setModel(cleanModel) UNCONDITIONALLY
+  // regardless of pid, so wiring this card's <select> straight to onSelectModel
+  // while some other provider (e.g. nvidia) is still active would silently
+  // overwrite the ACTIVE conversation's model with a WebLLM model id it cannot
+  // use. This card stays purely local until the model actually finishes
+  // loading (LocalModelPanel's onReady) or the user hits Select.
+  const [localModelChoice, setLocalModelChoice] = useState(DEFAULT_LOCAL_MODEL)
   // Voice Preview
   const [previewingVoice, setPreviewingVoice] = useState(false)
   const [elevenLabsKey, setElevenLabsKey] = useState('')
@@ -677,6 +689,40 @@ export function SettingsModal({
                             )
                           })()}
 
+                        </div>
+                      )}
+
+                      {/* On-device providers (WebLLM `local`, Chrome's `chromeai`): neither
+                          needs a key, so the API-key box above is correctly skipped for both
+                          (isLocal:true) — but nothing used to fill the gap that left, which is
+                          how picking one from the quick-switch dropdown could silently start a
+                          multi-hundred-MB download with zero consent UI in front of it. Each
+                          provider's own consent-first panel goes here instead; a "Select"
+                          button still lets the user activate it once they are ready, same as
+                          every other card. */}
+                      {prov.isLocal && !prov.is_ollama && (
+                        <div className="provider-key-box" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {prov.isChromeAI ? (
+                            <ChromeAIPanel onReady={() => onSelectProvider?.(id)} />
+                          ) : (
+                            <LocalModelPanel
+                              model={isCur ? (activeModel || DEFAULT_LOCAL_MODEL) : localModelChoice}
+                              onModelChange={(m) => (isCur ? onSelectModel?.(m, id) : setLocalModelChoice(m))}
+                              onReady={(readyModel) => { onSelectProvider?.(id); onSelectModel?.(readyModel, id) }}
+                            />
+                          )}
+                          {!isCur && (
+                            <button
+                              className="settings-btn ghost sm"
+                              style={{ alignSelf: 'flex-start' }}
+                              onClick={() => {
+                                onSelectProvider?.(id)
+                                if (!prov.isChromeAI) onSelectModel?.(localModelChoice, id)
+                              }}
+                            >
+                              Select
+                            </button>
+                          )}
                         </div>
                       )}
 

@@ -54,3 +54,40 @@ describe('web_extract on a JavaScript-only page', () => {
     expect(res.next_step).toBeUndefined()
   })
 })
+
+describe('web_extract with `focus` — relevance compression instead of blind head-truncation', () => {
+  // Padded well past both the 8000-char default max_chars AND the 900-char
+  // chunk size, with the relevant sentence buried near the END — a plain
+  // head-truncation at max_chars would never reach it.
+  const NOISE = 'This paragraph is filler unrelated to anything in particular. '.repeat(400)
+  const ANSWER = 'The refund policy allows a full refund within thirty days of purchase, no questions asked. '.repeat(10)
+  const LONG_PAGE = `<html><head><title>Terms</title></head><body><article>${NOISE}${ANSWER}</article></body></html>`
+
+  it('is unaffected when no focus is given — identical to the pre-existing behavior', async () => {
+    proxyText.mockResolvedValue(LONG_PAGE)
+    const res = await webExtractTool.execute({ url: 'https://example.com/terms', max_chars: 2000 })
+    expect(res.success).toBe(true)
+    expect(res.compression).toBeUndefined()
+    expect(res.text.length).toBeLessThanOrEqual(2000)
+  })
+
+  it('returns the buried relevant passage instead of the first max_chars characters', async () => {
+    proxyText.mockResolvedValue(LONG_PAGE)
+    const res = await webExtractTool.execute({
+      url: 'https://example.com/terms', max_chars: 2000, focus: 'refund policy thirty days',
+    })
+    expect(res.success).toBe(true)
+    expect(res.compression?.matched).toBe(true)
+    expect(res.text).toMatch(/refund/i)
+    expect(res.truncated).toBe(true)
+  })
+
+  it('is honest when the focus does not appear on the page at all', async () => {
+    proxyText.mockResolvedValue(LONG_PAGE)
+    const res = await webExtractTool.execute({
+      url: 'https://example.com/terms', max_chars: 500, focus: 'quantum entanglement neutrino oscillation',
+    })
+    expect(res.success).toBe(true)
+    expect(res.compression?.matched).toBe(false)
+  })
+})

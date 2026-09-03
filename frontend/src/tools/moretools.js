@@ -8,7 +8,7 @@
  *   country_info         REST Countries (restcountries.com) keyless, CORS
  */
 
-import { proxyJson } from './http'
+import { proxyJson } from './http.js'
 
 // ─── UUID / IDs (pure client) ────────────────────────────────────────────────
 export const uuidTool = {

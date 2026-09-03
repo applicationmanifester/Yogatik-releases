@@ -1144,7 +1144,12 @@ export async function getModels() {
     const hasKey = !!key || !!p.noKey
     let liveModels = (p.models || []).map(normalizeModelName).filter(Boolean)
     let ollamaReason = null
-    if (p.isLocal && !p.isOllama) {
+    if (p.isChromeAI) {
+      // No fetch, no cache: it is either the one model Chrome ships or it
+      // is not there at all — reachability is reported by testProvider(),
+      // not by a model list.
+      liveModels = ['gemini-nano']
+    } else if (p.isLocal && !p.isOllama) {
       const { LOCAL_MODELS } = await import('./localLLM')
       liveModels = Object.keys(LOCAL_MODELS)
     } else if (p.isOllama && desktop) {
@@ -1261,6 +1266,27 @@ export async function testProvider(id, modelOverride) {
 
   if (!apiKey && !p?.noKey) return remember({ success: false, error: 'No API key set' })
   if (!p) return { success: false, error: 'Provider not found' }
+
+  if (p.isChromeAI) {
+    // Unlike WebLLM (a pure download, always "ready" once fetched), Chrome's
+    // built-in model can genuinely be absent — different Chrome version,
+    // non-Chromium browser, or the desktop app's bundled Electron Chromium,
+    // which typically has no on-device-model component at all. Claiming
+    // "ready" unconditionally here would be exactly the kind of capability
+    // lie this codebase's own house rule (a download is a decision, not an
+    // assumption) exists to prevent.
+    const { getChromeAIAvailability } = await import('./chromeAI')
+    const avail = await getChromeAIAvailability()
+    return remember({
+      success: avail.available,
+      status: avail.available ? 'ok' : 'error',
+      model,
+      response: avail.available
+        ? (avail.state === 'available' ? "Chrome's on-device model is ready" : avail.reason)
+        : undefined,
+      error: avail.available ? undefined : avail.reason,
+    })
+  }
 
   if (p.isLocal) {
     return remember({

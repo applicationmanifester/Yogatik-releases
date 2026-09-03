@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Files, GitBranch, Search, PanelLeftClose, Sparkles, Lock } from 'lucide-react'
+import { Files, GitBranch, Search, PanelLeftClose, Sparkles, Lock, Map as MapIcon } from 'lucide-react'
 import ExplorerPanel from './ExplorerPanel'
 import ChangesPanel from './ChangesPanel'
 import CodeEditorPane from './CodeEditorPane'
 import WorkspaceSearch from './WorkspaceSearch'
+import CodebaseMapPanel from './CodebaseMapPanel'
 import { useWorkspaceTree } from '../workspace/useWorkspaceTree'
 import { loadCodeMirror } from '../workspace/codemirror'
 import { addRoot, isDesktop } from '../tools/localFs'
@@ -49,6 +50,7 @@ const VIEWS = [
   { id: 'explorer', label: 'Explorer', Icon: Files },
   { id: 'search', label: 'Search', Icon: Search },
   { id: 'scm', label: 'Source Control', Icon: GitBranch },
+  { id: 'map', label: 'Codebase Map', Icon: MapIcon },
 ]
 
 export function WorkspacePanel({ open, onClose, conversationId, dark = true }) {
@@ -205,6 +207,9 @@ export function WorkspacePanel({ open, onClose, conversationId, dark = true }) {
           )}
           {view === 'scm' && (
             <ChangesPanel tab={changesTab} onTab={setChangesTab} root={primaryRoot?.path} />
+          )}
+          {view === 'map' && (
+            <CodebaseMapPanel root={primaryRoot?.path} />
           )}
         </div>
 

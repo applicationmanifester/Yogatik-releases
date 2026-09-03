@@ -4,97 +4,16 @@ import {
   Key, TerminalSquare, Search, Play, Activity, Power, Database, FolderGit2, Cpu, Globe, Brain, HelpCircle
 } from 'lucide-react'
 import { getMcpServers, setMcpServers, refreshMcpTools, pingMcpServer, testMcpTool, getMcpSchemas } from '../mcp'
+// Single source of truth for the curated preset list — also read by
+// mcpRegistry.js's detectMcpNeed() for auto-reconnect/suggestion. Keeping one
+// copy here (this codebase has shipped a second, drifted copy of a list one
+// too many times already — the youtube.js relay list, the old context-limits
+// table) is the whole reason this import exists instead of a local literal.
+import { KNOWN_MCP_SERVERS } from '../mcpRegistry'
 
 const hasStdio = typeof window !== 'undefined' && !!window.__YOGATIK_MCP_STDIO__
 
-const POPULAR_MCP_PRESETS = [
-  {
-    id: 'github_copilot',
-    name: 'GitHub Copilot MCP',
-    url: 'https://api.githubcopilot.com/mcp/',
-    desc: 'Search repos, inspect code, read issues / PRs. Requires a GitHub token.',
-    badge: 'Git & Code',
-    transport: 'http',
-    needsToken: true,
-  },
-  {
-    id: 'stripe',
-    name: 'Stripe MCP',
-    url: 'https://mcp.stripe.com/',
-    desc: 'Payments, customers, invoices, and subscriptions via the Stripe API.',
-    badge: 'Payments',
-    transport: 'http',
-    needsToken: true,
-  },
-  {
-    id: 'brave_search',
-    name: 'Brave Search MCP',
-    url: 'https://api.search.brave.com/mcp',
-    desc: 'Privacy-preserving real-time web & news search. Requires Brave API key.',
-    badge: 'Search API',
-    transport: 'http',
-    needsToken: true,
-  },
-  {
-    id: 'cloudflare',
-    name: 'Cloudflare MCP',
-    url: 'https://mcp.cloudflare.com/',
-    desc: 'Manage Workers, KV, D1 databases, and Cloudflare services.',
-    badge: 'Cloud',
-    transport: 'http',
-    needsToken: true,
-  },
-  {
-    id: 'local_desktop',
-    name: 'Local Desktop MCP Bridge',
-    url: 'http://localhost:3001/mcp',
-    desc: 'Connect to your local workstation filesystem & terminal (run locally).',
-    badge: 'Local Machine',
-    transport: 'http',
-    needsToken: false,
-  },
-  // Stdio Local Presets (Desktop)
-  {
-    id: 'sqlite_mcp',
-    name: 'SQLite MCP (Local)',
-    desc: 'Query and manage local SQLite databases with schema inspection.',
-    badge: 'Database',
-    transport: 'stdio',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-sqlite', '--db-path', './workspace.db'],
-    desktopOnly: true,
-  },
-  {
-    id: 'postgres_mcp',
-    name: 'PostgreSQL MCP (Local)',
-    desc: 'Read schemas, inspect tables, and execute SQL queries.',
-    badge: 'PostgreSQL',
-    transport: 'stdio',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-postgres', 'postgresql://localhost/mydb'],
-    desktopOnly: true,
-  },
-  {
-    id: 'git_mcp',
-    name: 'Git MCP (Local)',
-    desc: 'Inspect git commits, history, diffs, branches, and repository state.',
-    badge: 'Git',
-    transport: 'stdio',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-git'],
-    desktopOnly: true,
-  },
-  {
-    id: 'memory_mcp',
-    name: 'Memory Graph MCP (Local)',
-    desc: 'Persistent graph-based knowledge memory across conversations.',
-    badge: 'Memory',
-    transport: 'stdio',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-memory'],
-    desktopOnly: true,
-  },
-]
+const POPULAR_MCP_PRESETS = KNOWN_MCP_SERVERS
 
 /** Manage remote & local MCP servers: add, connect, test tools, inspect schemas. */
 export function McpServers() {

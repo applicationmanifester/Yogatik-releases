@@ -27,6 +27,7 @@ const { registerSubAgentIPC } = require('./subAgentRunner.cjs')
 const { registerKeychain } = require('./keychain.cjs')
 const { registerClipboard, stopPolling } = require('./clipboardManager.cjs')
 const { registerWatcher, stopAllWatchers } = require('./watcher.cjs')
+const { registerCodebaseMap } = require('./codebaseMap.cjs')
 const { registerPower } = require('./power.cjs')
 const { registerDialogs } = require('./dialogs.cjs')
 const { registerProcesses } = require('./processes.cjs')
@@ -303,6 +304,10 @@ if (!gotLock) {
       // which is the only thing that makes discard/reset recoverable at all.
       registerGitIpc({ rootPathsFor, snapshot: fsSnapshot })
       registerFsWatcherIpc({ rootPathsFor })
+      // Not on the first-paint path (unlike roots/journal/fsBridge above): a
+      // map is built lazily on the model's first codebase_map call, never on
+      // window boot.
+      registerCodebaseMap()
       registerMcpStdioClientIpc()
       registerNotifications(getWindow)
       registerSchedulerIPC({ getWindow })

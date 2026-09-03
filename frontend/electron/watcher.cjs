@@ -21,6 +21,15 @@ const path = require('path')
 const { rootPathsFor } = require('./roots.cjs')
 const { invalidate } = require('./fsIndex.cjs')
 const { safeSend, alive } = require('./safeWindow.cjs')
+// Same optional-require as fsBridge.cjs — an external edit (the user's own
+// editor, a build step, a git checkout) is exactly the case a codebase map
+// cache must not survive, and this watcher is the only place that sees it.
+// invalidateAndRewarm (not the plain invalidate fsBridge uses) also schedules
+// a debounced background rebuild for any root-set that was already mapped —
+// an EXTERNAL change has nobody about to ask for a fresh map next, unlike an
+// agent-driven edit, so keeping it warm here is the one place it pays off.
+let codebaseMapInvalidate = null
+try { codebaseMapInvalidate = require('./codebaseMap.cjs').invalidateAndRewarm } catch { /* optional */ }
 const getGrantedRoot = (ctx) => rootPathsFor(ctx)[0] || null
 
 const watchers = new Map() // id -> { fsw, relPath, recursive }
@@ -108,6 +117,7 @@ function registerWatcher(getWindow) {
       // here. Scoping it is what stops one .git write from discarding the
       // listing of the folder the user is looking at.
       try { invalidate(changedAbs) } catch { /* cache only */ }
+      try { codebaseMapInvalidate?.(changedAbs) } catch { /* cache only */ }
 
       const kind = classify(rel)
       if (!kind) return

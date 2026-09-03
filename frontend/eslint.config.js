@@ -27,4 +27,19 @@ export default [
       'no-unused-vars': ['warn', { args: 'none', varsIgnorePattern: '^React$', ignoreRestSiblings: true }],
     },
   },
+  {
+    // Test files run under Vitest/Node, not a browser — a handful (e.g.
+    // ollamaDaemon.test.js spinning up a real local HTTP server,
+    // castCore.test.js encoding a Buffer) legitimately use `process`/
+    // `Buffer`/etc. The browser-only globals above make that a `no-undef`
+    // error, which is real (npm run lint genuinely fails on it) even though
+    // it's a config gap, not a bug in the test. Flat config MERGES
+    // `languageOptions.globals` across matching blocks, so this only ADDS
+    // Node globals for test files — real app source under src/ still gets
+    // caught if it accidentally reaches for a Node-only global by mistake.
+    files: ['**/*.test.{js,jsx}', '**/test-setup.js'],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
 ]

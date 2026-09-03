@@ -246,6 +246,7 @@ function parseTransportInfoResponse(xml) {
 
 function parseVolumeResponse(xml) {
   const raw = tagContent(xml, 'CurrentVolume')
+  if (!raw || !raw.trim()) return null
   const n = Number(raw)
   return Number.isFinite(n) ? n : null
 }

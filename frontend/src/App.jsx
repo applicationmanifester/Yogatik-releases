@@ -75,7 +75,13 @@ const AuthModal = safeLazy(() => import('./components/AuthModal').then(m => ({ d
 const ProviderModal = safeLazy(() => import('./components/ProviderModal').then(m => ({ default: m.ProviderModal })))
 const SettingsModal = safeLazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })))
 const TermsModal = safeLazy(() => import('./components/TermsModal').then(m => ({ default: m.TermsModal })))
-const LocalModelPanel = safeLazy(() => import('./components/LocalModelPanel').then(m => ({ default: m.LocalModelPanel })))
+// LocalModelPanel is no longer lazy-loaded from here: it sat imported and
+// COMPLETELY UNREFERENCED (not even a JSX usage anywhere in this file) —
+// the exact "written, reached by nothing" class this codebase keeps hitting,
+// except here it also meant picking WebLLM's `local` provider from the quick
+// switcher activated a 350MB-1.7GB download with zero consent UI in front of
+// it. SettingsModal now imports the real component directly and renders it
+// in the provider's own card.
 const CommandPalette = safeLazy(() => import('./components/CommandPalette').then(m => ({ default: m.CommandPalette })))
 const ArenaView = safeLazy(() => import('./components/ArenaView').then(m => ({ default: m.ArenaView })))
 const LiveView = safeLazy(() => import('./components/LiveView').then(m => ({ default: m.LiveView })))
@@ -375,15 +381,42 @@ export default function App() {
 
   /**
    * Zero-key start. Someone who has never seen an API key should be able to
-   * type a question and get an answer, so with no key and a GPU we pull the
-   * smallest on-device model and load it. It only ever runs when the user has
-   * nothing else: any stored key, or any provider they picked themselves, wins.
+   * type a question and get an answer. Preferred order: Chrome's built-in
+   * Gemini Nano when it is ALREADY ready on this device (zero bytes fetched
+   * by this app), else WebGPU + the smallest WebLLM pull. It only ever runs
+   * when the user has nothing else: any stored key, or any provider they
+   * picked themselves, wins over both.
    */
   useEffect(() => {
     let cancelled = false
     const run = async () => {
       if (await getStoredProvider()) return
       if (await hasAnyProviderKey()) return
+
+      // Chrome's built-in Gemini Nano beats the WebLLM pull outright when
+      // it is ALREADY on the device (state 'available') — zero bytes this
+      // app fetches, so there is no reason to prefer a 350MB+ download over
+      // it. Deliberately checked for 'available' only, never 'downloadable':
+      // silently kicking off Chrome's own background model download for an
+      // anonymous first-time visitor is the exact "download as a fallback,
+      // not a decision" mistake this codebase avoids everywhere else (see
+      // the ComfyUI/local-generation notes) — a user who wants it can still
+      // pick "Chrome built-in AI" from the provider list and trigger that
+      // download themselves, same as the WebLLM download button does.
+      try {
+        const { getChromeAIAvailability } = await import('./chromeAI')
+        const chromeAvail = await getChromeAIAvailability()
+        if (cancelled) return
+        if (chromeAvail?.state === 'available') {
+          setProviderState('chromeai')
+          setModel('gemini-nano')
+          await Promise.all([setActiveProvider('chromeai'), setActiveModel('chromeai', 'gemini-nano')]).catch(() => {})
+          refreshModels()
+          return
+        }
+      } catch { /* Prompt API absent here — fall through to WebLLM */ }
+      if (cancelled) return
+
       const gpu = await webGpuDetails()
       if (cancelled || !gpu?.available) return
 

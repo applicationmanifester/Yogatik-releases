@@ -258,6 +258,7 @@ export async function loadEntitlement() {
     if (res.state === 'locked' || res.state === 'anonymous' || res.state === 'free') {
       const webRes = await loadWebEntitlement()
       if (webRes.state === 'pro' || webRes.state === 'trial') return webRes
+      return apply(res)
     }
     return res
   } catch {

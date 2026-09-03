@@ -3,16 +3,66 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '4.3.2'
+export const APP_VERSION = '5.1.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 4.3.2 — Desktop Pro Sync, Version Dropdown & Clean Tool Registry'
+export const APP_CODENAME = 'Yogatik 5.1.0 — MCP Auto-Connect, Smarter Web Reading & On-Device AI Setup'
 
 export const APP_RELEASES = [
+  {
+    version: '5.1.0',
+    title: 'Yogatik 5.1.0: MCP Auto-Connect, Relevance-Ranked Web Reading & On-Device AI Setup',
+    date: 'September 3, 2026',
+    isLatest: true,
+    highlights: [
+      'MCP Auto-Connect: a connector you already configured but left disabled reconnects on its own the moment a request needs it — no re-adding it by hand',
+      'MCP Suggestions: when a request could use a connector you have not set up yet (GitHub, Stripe, Cloudflare, and more), Yogatik tells you so instead of quietly doing nothing',
+      'Smarter Web Reading: web_extract can now target a long page for the passages that actually answer your question instead of just the first few thousand characters',
+      'File Skimming: a new fs_skim tool lets the agent see a source file’s shape — every function and class signature — before deciding whether to read the whole thing',
+      'On-Device AI Setup Fixed: picking WebLLM or Chrome’s built-in AI now shows a real consent screen with download progress, instead of silently starting a multi-hundred-MB download',
+    ],
+    sections: [
+      {
+        category: '🔌 MCP Connectors',
+        items: [
+          {
+            title: 'Automatic reconnect for configured servers',
+            description: 'A connector you already added but disabled is flipped back on and reconnected for the turn that needs it — never for one you have not configured, since that would need a credential Yogatik does not have.',
+          },
+          {
+            title: 'Honest suggestions, never a silent connection',
+            description: 'An unconfigured but relevant connector is named in plain language, with what it needs to set up — Yogatik never claims to be using something it is not actually connected to.',
+          },
+        ],
+      },
+      {
+        category: '📄 Reading Files & the Web',
+        items: [
+          {
+            title: 'Relevance-ranked page excerpts',
+            description: 'Give web_extract a focus and it ranks a long page’s passages instead of blindly truncating — the answer buried at the bottom of an article is no longer missed.',
+          },
+          {
+            title: 'fs_skim file skeletons',
+            description: 'See a file’s functions, classes, and structure with long bodies collapsed to a line count — a fast way to decide what is worth a full read.',
+          },
+        ],
+      },
+      {
+        category: '🖥️ On-Device AI',
+        items: [
+          {
+            title: 'Real consent before any download',
+            description: 'WebLLM and Chrome’s built-in AI now show model size, a download button, and live progress — nothing downloads until you choose to.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '4.3.2',
     title: 'Yogatik 4.3.2: Desktop Pro Entitlement Sync, Version Dropdown & Clean Tool Registry',
     date: 'September 2, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Desktop Pro Account Sync: Fixed Firebase auth state preservation on desktop so Pro subscriptions and 30-day trials sync immediately between web and desktop',
       'Interactive Version Dropdown: Added version selector dropdown to the What’s New showcase with instantaneous switching across recent releases',

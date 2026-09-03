@@ -3,7 +3,6 @@ import { Sliders, Volume2, Play, Square, LayoutGrid, RotateCcw, Globe } from 'lu
 import { Modal } from './Modal'
 import { localeSnapshot } from '../locale'
 import { FEATURES, resolveFeatures, FEATURE_DEFAULTS } from '../features'
-import { ComfyPanel } from './ComfyPanel'
 import { VOICE_LABELS, DEFAULT_VOICE } from '../video/speech'
 import { requestTTS, stopTTS } from '../api'
 
@@ -351,8 +350,11 @@ export function PersonalisePanel({ prefs, onChange, onClose, embedded = false })
       </section>
 
       {/* MCP Servers and Plugins are their own DashboardShell pages now
-          (see the rail) — no longer duplicated inline here. */}
-      <ComfyPanel />
+          (see the rail) — no longer duplicated inline here. ComfyPanel
+          (local ComfyUI generation setup) was removed from here on request —
+          see buildGuards.test.js's allowlist for where the still-working
+          component and the local_image_generate/local_video_generate tools
+          it configures now stand. */}
     </Modal>
   )
 }

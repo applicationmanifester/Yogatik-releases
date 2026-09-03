@@ -1,7 +1,7 @@
 {
   "name": "yogatik",
   "private": true,
-  "version": "4.3.2",
+  "version": "5.1.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -26,8 +26,12 @@
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
     "test:companion": "electron electron/browserHarness/companion.cjs",
-    "postinstall": "electron-builder install-app-deps",
+    "mcp:server": "node mcp-server/server.mjs",
+    "postinstall": "electron-builder install-app-deps && node ./scripts/ensure-native-deps.mjs",
     "rebuild:pty": "electron-rebuild -f -w node-pty"
+  },
+  "bin": {
+    "yogatik-mcp": "mcp-server/server.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

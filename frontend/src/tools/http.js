@@ -14,7 +14,7 @@
  * every single call.
  */
 
-import { getProxyEndpoint } from '../llm'
+import { getProxyEndpoint } from '../llm.js'
 
 const PUBLIC_RELAYS = [
   'https://api.allorigins.win/raw?url=',

@@ -84,6 +84,16 @@ describe('reachability', () => {
       // delete it and its CSS — it is listed here so that choice stays visible
       // instead of looking like a feature nobody can reach.
       path.join('components', 'LivePill.jsx'),
+      // ComfyPanel.jsx: removed from PersonalisePanel on request (it read as
+      // depending on an "external API" — it does not, ComfyUI is a local
+      // server on the user's own machine, but the confusion is the point:
+      // an optional local-generation SETUP card in Personalise is not worth
+      // that misreading). The component itself still works and is kept,
+      // unrendered, the same way AdModal.jsx sits here — comfy.js and
+      // tools/localGen.js's local_image_generate/local_video_generate tools
+      // are unaffected and still configure themselves via comfyStatus() if
+      // ComfyUI is already running on its default port.
+      path.join('components', 'ComfyPanel.jsx'),
     ])
     // ArtifactCanvas.jsx and LiveHudOverlay.jsx were listed here too. Both are
     // imported (App.jsx and LiveView.jsx respectively), so allowlisting them
@@ -191,6 +201,7 @@ describe('reachability', () => {
       // BUILT, NEVER WIRED, and worth a decision:
       'src/tools/stagehandHealing.js',      // self-healing selector fallback — the browser tool refuses a stale ref outright instead
       'src/components/LivePill.jsx',        // an alternative Live HUD, 112 lines + 13 CSS rules; UNTRACKED, so deleting it is unrecoverable
+      'src/components/ComfyPanel.jsx',      // removed from PersonalisePanel on request; comfy.js + local_image_generate/local_video_generate still work unattended
     ])
 
     expect(dead.filter(f => !allowed.has(f)).sort()).toEqual([])

@@ -1,5 +1,37 @@
 # Changelog
 
+## v3.13 — Emergency Hotfix (2026-09-02)
+- Test entry to verify changelog updates work
+
+## v3.13 — Zero-key Chrome AI, MCP Server, Stability & Security Fixes (2026-09-02)
+
+### AI Provider Enhancements
+- **Zero-key Chrome AI provider** — Added support for Chrome's built-in Gemini Nano via Prompt API as a zero-download, zero-account local AI provider
+- **Streaming & tool calling** — Implemented proper session management and tool calling for Chrome AI provider
+- **Zero-key boot** — App now tries Chrome AI first on startup when no keys are stored
+
+### MCP & Integration
+- **Standalone MCP server** — Created `frontend/mcp-server/server.mjs` exposing Yogatik tools over stdio for MCP clients
+- **MCP client improvements** — Enhanced MCP connectivity (referenced in other entries)
+
+### Stability & Bug Fixes
+- **Workspace context fix** — Resolved issue where tools would operate in wrong chat's folder during concurrent chats
+- **File cache scoping** — Fixed fsCache.js to be scoped per-workspace instead of path-only
+- **Dark-on-dark titles** — Fixed Diagnostics and Billing panel title visibility in light theme
+- **Reasoning-only reply recovery** — Added one retry chance when model returns only reasoning tags
+- **No-undef crashes** - Fixed four ReferenceError crashes (askInCall, speed×2, browserSurface)
+- **Payment flow blockers** - Resolved four issues preventing payments in shipped builds
+
+### Security & Reliability
+- **Guardrails output protection** — Added canary leak detection to catch prompt injection attempts
+- **RAG regression evaluation** — Added automated retrieval accuracy testing to prevent regressions
+- **Native deps self-heal** — Fixed recurring Windows-native-rollup-binary verification gap
+
+### Desktop Enhancements
+- **Real Chrome browser control** — Integrated full Chrome UI (address bar, zoom, etc.) into browser control
+- **View-leak fix** — Patched browser view-leak issue alongside Chrome UI integration
+
+
 ## v3.12 — Phase 1/2: adaptation, experiments, transparency, onboarding (2026-08-16)
 
 Implements the remaining code-able roadmap items (Phase 1 personalization + the
@@ -38,7 +70,6 @@ hosting) remain documented, not stubbed.
   ships enabled.
 
 
-
 ## v3.11.2 — Crisis card + proactive check-ins (2026-08-16)
 
 Wires the v3.11 safety + memory backends into the chat UI.
@@ -60,7 +91,6 @@ Wires the v3.11 safety + memory backends into the chat UI.
 
 ### Tests
 - `proactive.test.js` (4). All pass under Node; touched files parse. ~363 total.
-
 
 
 ## v3.11.1 — Memory persistence + observability (2026-08-16)
@@ -117,7 +147,6 @@ items (interviews B4/B7, hiring, A/B backend) remain as documented, not code.
 - `companion.test.js` (18) across safety, memory4, telemetry, evalHarness.
   All pass under Node; all touched files parse. +18 → ~359 total.
 
-
 ## v3.10 — Security, performance, sync & a11y batch (2026-08-16)
 
 Implements all nine enhancements from FEATURE_ANALYSIS_AND_ROADMAP.md.
@@ -158,7 +187,6 @@ Implements all nine enhancements from FEATURE_ANALYSIS_AND_ROADMAP.md.
 ### Tests
 - `syncMerge.test.js` (6), `enhancements.test.js` (13 across sanitize/backup/analytics/
   consent), plus existing `toolStatus.test.js` (7). All pass under Node; +19 → 341 total.
-
 
 ## v3.9 — Core UX & Stability: tool status + standardised errors (2026-08-16)
 

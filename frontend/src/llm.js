@@ -151,6 +151,23 @@ const PROVIDERS = {
     isLocal: true,
     noKey: true,
   },
+  chromeai: {
+    // Chrome's built-in Gemini Nano (Prompt API). Unlike `local` (WebLLM,
+    // 350MB-1.7GB the app fetches), this ships with/is fetched once by
+    // Chrome itself — zero download this app is responsible for. See
+    // chromeAI.js for the full reasoning. isLocal:true deliberately reuses
+    // every place api.js already special-cases on-device providers (keyless,
+    // forced prompted-mode tool calling, excluded from the fallback chain).
+    name: 'Chrome built-in AI (Gemini Nano)',
+    baseUrl: '',
+    models: ['gemini-nano'],
+    default: 'gemini-nano',
+    keyUrl: '',
+    isLocal: true,
+    isChromeAI: true,
+    noKey: true,
+    offlineReady: true,
+  },
   ollama: {
     name: 'Ollama (local)',
     // OpenAI-compatible endpoint of a locally-running Ollama daemon.
@@ -294,7 +311,14 @@ export function normalizeModelName(m) {
  */
 // Cloudflare Worker URL (VITE_LLM_PROXY_BASE). Empty → same-origin /api/llm-proxy,
 // which the Vite plugin serves in dev.
-const PROXY_BASE = (import.meta.env.VITE_LLM_PROXY_BASE || '').replace(/\/+$/, '')
+// Guarded (not a bare `import.meta.env.X`): this file is also imported by the
+// standalone MCP server (mcp-server/server.mjs) under plain Node, where
+// import.meta.env does not exist at all — an unguarded read threw before
+// this module could finish loading, taking every tool that transitively
+// imports it (moretools' thesaurus/country_info via tools/http.js) down
+// with it. Same guard style already used a few lines up for the Ollama
+// baseUrl.
+const PROXY_BASE = ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_LLM_PROXY_BASE) || '').replace(/\/+$/, '')
 const isLocalhost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
 
 /** Extract clean, human-readable message from JSON API errors */
@@ -441,6 +465,13 @@ export async function streamChat({
   if (provider === 'local') {
     const { streamLocal } = await import('./localLLM')
     return streamLocal({ model: cleanModel, messages, temperature, tools, signal, onToken, onToolCall, onDone, onError, onStatus })
+  }
+
+  // Chrome's built-in Gemini Nano — also never touches the network or a key,
+  // and unlike `local` costs this app zero download bytes.
+  if (provider === 'chromeai') {
+    const { streamChromeAI } = await import('./chromeAI')
+    return streamChromeAI({ model: cleanModel, messages, temperature, tools, signal, onToken, onToolCall, onDone, onError, onStatus })
   }
 
   const headers = { 'Content-Type': 'application/json' }

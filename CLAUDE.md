@@ -1,5 +1,747 @@
 # Yogatik — Project Knowledge
 
+## v5.1.0 — this session had REAL shell access, and it caught two real bugs (2026-09-03)
+- Different from every "no shell access — hand-traced, not executed" note elsewhere in this
+  file: this session's sandbox had a real Linux shell with the project folder mounted, Node
+  22.23.2/npm 10.9.8, and the existing `node_modules` already installed. Actually running things
+  found two real bugs a careful reading missed — the exact risk every prior "verified by hand,
+  not executed" disclaimer exists to flag.
+- BUG 1 — `frontend/src/mcpRegistry.js` (added this session, see the entry below) had
+  `fs_*/terminal_run` inside a `/** ... */` block comment. `*/` is a comment terminator
+  regardless of what precedes it, so the comment closed mid-sentence at that `*/` and every line
+  after it — including a `*/` meant to close the SAME comment eleven lines later — was parsed as
+  real JavaScript. `npm run lint` reported it as `Parsing error: Unexpected token *` at the first
+  line that couldn't parse as a statement. Fixed by spelling it out as `fs_read/fs_write/terminal_run`
+  instead of the glob-style form. The lesson: never write a bare `*/`-shaped substring (a glob
+  pattern, a path with a trailing wildcard) inside a `/** */` comment — `//` line comments are
+  immune to this (confirmed: an identical `fs_*/terminal_run` a few lines later, inside a `//`
+  comment, parses fine) but a block comment is not.
+- BUG 2 (pre-existing, not from this session) — `frontend/eslint.config.js`'s only rule block
+  matches `**/*.{js,jsx}` and sets `globals: { ...globals.browser, ...globals.es2021, ... }` —
+  browser-only, no Node globals at all. Correct for the actual app (browser-native by design, so
+  a real accidental `process`/`Buffer` reference in `src/` SHOULD be an error), wrong for test
+  files that legitimately run under Vitest/Node — `ollamaDaemon.test.js` (spins up a real local
+  HTTP server) and `castCore.test.js` (encodes a `Buffer`) both failed `no-undef` on `process`/
+  `Buffer`, which are real Node globals, not typos. This is exactly the kind of gap that only
+  `npm run lint` actually running would surface — and per this file's own history, that has not
+  reliably happened for a long time. Fixed with a second config block scoped to
+  `**/*.test.{js,jsx}` adding `globals.node` — ESLint flat config MERGES `languageOptions.globals`
+  across matching blocks, so this only ADDS Node globals for test files; real `src/` app code
+  reaching for a Node-only global by mistake is still caught.
+- VERIFIED FOR REAL, not hand-traced: `npm run lint` — 0 errors (238 pre-existing `no-unused-vars`
+  warnings untouched, out of scope). `node ./scripts/run-vitest.mjs --run src/mcpRegistry.test.js
+  src/agent.test.js` — 2 files, 95/95 tests passed, confirming the MCP auto-connect feature (the
+  entry below) actually works, not just reads correctly. The FULL suite (1150+ tests) could not
+  be run in one pass here either — same fixed per-file jsdom/environment overhead (~55s) this
+  file has flagged before, multiplied across hundreds of files exceeds this session's per-call
+  time budget — so only the directly-relevant files were run to completion. `npm run build` — a
+  real production build, 2617 modules transformed, full `dist/` written, exit 0. The build was
+  first blocked by an EPERM on `unlink`ing a pre-existing `dist/ads.txt` — a cross-OS mount quirk
+  of this sandbox (files written by an earlier Windows-side process can't be unlinked from the
+  Linux side, though `mv`/rename works fine), not a real bug; worked around by renaming the whole
+  stale `dist/` out of the way first. That renamed folder (`frontend/dist_stale_<timestamp>/`) is
+  left behind, harmless, and safe to delete from Windows (where the same restriction doesn't
+  apply) whenever convenient.
+- VERSION: bumped 4.3.2 -> 5.1.0 via `npm version 5.1.0 --no-git-tag-version` in both the repo
+  root and `frontend/`, which keeps `package.json` and `package-lock.json` in sync in one step
+  (confirmed: `packages[""].version` in both lockfiles reads 5.1.0). No git commit/tag was made —
+  a stale `.git/index.lock` in this same mounted folder cannot be removed for the identical
+  cross-OS-mount reason (`rm`/`unlink` refused, "Operation not permitted"), so any `git add`/
+  `git commit` in this sandbox would fail. That's a sandbox limitation, not a repo problem —
+  committing the version bump (and the ~150 other files already modified, uncommitted, ahead of
+  this session, per `git status`) needs to happen from wherever `git` is not fighting this mount.
+- BUG 3 (found when the user asked why the live site didn't show it — pointing out the actual
+  gap, not assuming a deploy had happened): `package.json`'s version is COSMETIC. The version
+  badge in the sidebar/What's New modal reads `APP_VERSION` in `frontend/src/version.js`, a
+  hand-maintained string with no link to `package.json` at all. Bumping the package version alone
+  would have shipped a real 5.1.0 build that still displayed "4.3.2" everywhere in the UI. Fixed by
+  setting `APP_VERSION = '5.1.0'`, adding a new `APP_RELEASES[0]` entry (`isLatest:true`, the
+  4.3.2 entry's `isLatest` flipped to `false` — `version.test.js` pins both of those invariants),
+  and rebuilding — confirmed the new codename string is actually present in the built JS
+  (`grep -l "5.1.0 — MCP Auto-Connect" dist/assets/*.js` found it), not just in source.
+- NOT DONE, and deliberately not attempted: the actual `firebase deploy`. This sandbox has no
+  `firebase` CLI installed and, more to the point, no authenticated session for this Firebase
+  project — deploying is an action that changes what real users see at https://yogatik.web.app/,
+  and doing it from here would mean either fabricating credentials (not possible) or guessing at
+  someone else's auth state (not acceptable). `firebase.json`'s `hosting.public` already points at
+  `frontend/dist`, which now holds a verified, real, version-5.1.0 build ready to go. The one
+  remaining step, to run from a machine with the Firebase CLI already logged in (per this file's
+  own `deploy.bat`): `firebase deploy --only hosting,firestore:rules` from the repo root — lint,
+  test, and build have already passed for real this session, so `deploy.bat`'s first three steps
+  are redundant work at that point, not a risk.
+
+## "Automatically connect to available MCP servers based on need" (2026-09-03) — mcpRegistry.js (new)
+- THE ASK, verbatim: "can you make ai to automatically connect to available mcp from different
+  apps that use needs." Read literally against the code that already existed, half of this was
+  already true and half was structurally impossible to build honestly. Read App.jsx first:
+  `useEffect(() => { import('./mcp').then(m => m.refreshMcpTools()).catch(() => {}) }, [])` already
+  connects to EVERY configured, enabled server at boot — "automatic" already covers anything the
+  user has configured. `mcp_search_tools`' own fallback text says exactly where the real gap is:
+  "No MCP servers are configured. Add connectors in Settings -> MCP Connectors." Nothing ever
+  looked at what a message actually NEEDS and acted on it — not by reconnecting something the user
+  had, and not by telling them a relevant connector exists at all.
+- TWO GENUINELY DIFFERENT OUTCOMES, not one blanket "auto-connect", because they carry different
+  risk — the same distinction this file's own ComfyUI/WebLLM/chromeai entries already draw between
+  a probe and a download:
+  - A server the user already configured and merely left DISABLED needs no new credential to come
+    back. Flipping `enabled` back to `true` and calling the existing `refreshMcpTools()` is honestly
+    automatic — nothing is being decided on the user's behalf that they had not already decided once.
+  - A server the user has NEVER configured almost always needs a token, an OAuth sign-in, or a
+    locally-running process this app cannot supply. Silently "connecting" one would either fail
+    outright or — worse, for a no-auth entry — connect to nothing real and look like it worked.
+    These are only ever SUGGESTED to the model via the system prompt, with an explicit instruction
+    never to claim one is already connected. Same "a new external connection is a decision, not a
+    side effect" rule this codebase already applies to downloads.
+- `mcpRegistry.js` (NEW, pure — no `require`/import of `mcp.js`'s DB-backed functions, so
+  `detectMcpNeed` itself is unit-testable with plain arrays) exports `KNOWN_MCP_SERVERS` and
+  `detectMcpNeed(text, configuredServers)` -> `{toEnable, suggestions}`.
+  - `KNOWN_MCP_SERVERS` is the SAME nine-entry curated list `McpServers.jsx`'s preset picker already
+    showed — MOVED here, not copied a second time (this file has hit the "two copies, only one
+    wired" bug too many times: the youtube.js relay list, the old context-limits table, the three
+    separate symbol-extraction regex engines flagged below). `McpServers.jsx` now does
+    `import { KNOWN_MCP_SERVERS } from '../mcpRegistry'; const POPULAR_MCP_PRESETS = KNOWN_MCP_SERVERS`.
+  - Three presets — `local_desktop`, `git_mcp`, `memory_mcp` — carry a DELIBERATE empty `keywords`
+    list. All three duplicate a capability this app already has natively (fs_*/terminal_run,
+    git_status/git_diff/git_run, and memory4.js's own four-store memory). Auto-suggesting an
+    external server for something already built in would be actively confusing, so these three stay
+    listed and addable by hand but are never keyword-detected — checked by a dedicated test.
+  - Notion and Linear's OFFICIAL remote MCP servers were investigated (WebSearch, this session) and
+    deliberately EXCLUDED, not merely forgotten: both are confirmed at `https://mcp.notion.com/mcp`
+    and `https://mcp.linear.app/mcp` respectively, and both require a full OAuth 2.1 sign-in
+    (dynamic client registration + browser consent) — but `mcp.js`'s `buildServerHeaders` only ever
+    sends a static `Authorization: Bearer <token>` header. Listing them as one-click "paste a token"
+    presets would silently fail against their real endpoints, which is worse than not listing them.
+    A real OAuth-capable MCP client is a separate, larger feature, not attempted here.
+  - `detectMcpNeed`: for `toEnable`, a DISABLED configured server matches via its OWN preset's
+    `keywords` when it is one of the nine known ones (including a deliberate empty list — a known
+    preset's policy always wins, it is never overridden by guessing from its name), or via
+    `keywordsFromName()` when it is a custom/private server the user typed themselves (e.g. "Company
+    Jira") — short (<4 char) tokens and connector-ish stopwords (`mcp`, `server`, `local`, `api`…)
+    are dropped from the name-derived guess, or "reconnect automatically" would mean "reconnect on
+    almost every message." Every keyword matches as a whole word/phrase (`[^a-z0-9]word[^a-z0-9]`
+    padding), never a bare substring — "git" must not fire on "digit", "form" must not fire on
+    "format". For `suggestions`, a KNOWN server already present by id OR by matching url is excluded
+    even if it is disabled/renamed by the user — it is not unconfigured, so nothing to suggest.
+- WIRED INTO `agent.js`, right before `systemBase` is assembled (same spot and same discipline as
+  the existing `capabilityMode` block — a dynamic import wrapped in try/catch, advisory, never
+  allowed to fail a turn). On a `toEnable` hit: flips those servers' `enabled` back to `true` via
+  the real `setMcpServers`, calls the real `refreshMcpTools()` BEFORE the round loop's
+  `getToolSchemas()` call so the reconnected server's tools are actually available to the model
+  THIS turn (not the next one), fires `onStatus` with a human-readable "Reconnected MCP server(s):
+  …" line, and appends an `MCP AUTO-RECONNECTED: …` note into the system prompt so the model knows
+  why a tool it did not have a moment ago is now there. On a `suggestions` hit: appends an
+  `MCP CONNECTOR(S) NOT YET SET UP: …` note listing name, whether a token is needed, and the
+  one-line description, with an explicit instruction never to claim one is already connected and to
+  point the user at Settings -> MCP Connectors. Both blocks are skipped entirely for an ordinary
+  message matching nothing — the common case pays one extra `getMcpServers()` IndexedDB read per
+  turn (same cost class as `capabilityMode`'s own per-turn probe) and nothing else.
+- SCOPE DECISION: an actual OAuth 2.1 client for MCP (needed for Notion/Linear/Linear-shaped
+  official servers) was considered and deferred, named explicitly rather than silently dropped —
+  it is a materially larger feature (redirect handling, token refresh, secure token storage
+  alongside the existing `apikey_*` keychain sealing) than this pass, and shipping a registry entry
+  that cannot actually authenticate would be a worse outcome than not listing it.
+- VERIFICATION NOTE: no shell access this session — `npm test` was not run. `mcpRegistry.test.js`
+  (NEW, 13 assertions) is fully pure and was hand-traced line by line against the actual
+  `keywordHits`/`keywordsFromName`/`detectMcpNeed` bodies — including the whole-word-boundary case
+  (a custom server named "Form MCP" must not fire on "please **format** this" — "form" is a
+  substring of "format", not the same word) and the deliberate-empty-keyword-list case for
+  `git_mcp`/`memory_mcp`/`local_desktop`. `agent.test.js` gained a new describe block (4 cases)
+  mocking only the DB-backed half (`./mcp`'s `getMcpServers`/`setMcpServers`/`refreshMcpTools`) while
+  leaving the real `mcpRegistry.js` in place, so these prove the WIRING specifically: a disabled,
+  matching server is actually flipped back on and reconnected before the first `streamChat` call, an
+  unconfigured known server is only ever mentioned in the prompt and never connected to, an ordinary
+  message touches none of this machinery, and a thrown `getMcpServers()` never fails the turn.
+  Existing `agent.test.js`/`system prompt` tests were re-traced by hand to confirm none of their
+  fixed messages ("hi", "weather in Tokyo", "what is this?", "hello", …) collide with any of the
+  nine presets' keywords, since a wrongly-triggered match would have silently broken an unrelated,
+  pre-existing test rather than this new one. Every URL cited above (`mcp.notion.com/mcp`,
+  `mcp.linear.app/mcp`) was checked with a live web search this session, not assumed from training
+  data — Linear in particular had just moved off `/sse` onto `/mcp`, confirming that even a
+  correctly-remembered endpoint needs checking rather than trusted from memory. Run `npm test` to
+  confirm all of this for real.
+
+## "Access files with less effort" — relevance-compressed web_extract + fs_skim (2026-09-03)
+- THE ASK, roughly: "invent new technology to access files local or internet... compression
+  methods... make AI access them with less effort." Read literally that invites inventing a
+  buzzword; read for the real problem, it decomposes into something concrete and buildable: an
+  LLM's cost for reading a file or a web page is TOKENS, not bytes, so "compression" here can only
+  mean raising the ratio of USEFUL content to total content the model has to read — never a
+  gzip-style trick, since the model reads decompressed text either way. Two real levers exist for
+  that: pick the passages that are actually relevant instead of the first N characters (the web
+  side), and show a file's SHAPE with implementation detail folded away until it is asked for (the
+  local side). Both reuse engines this codebase already has instead of inventing new algorithms.
+- WEB SIDE — `web_extract` gained an optional `focus` parameter (tools/webExtract.js). Without it,
+  behavior is byte-for-byte unchanged (targetChars extraction + a blind head slice, exactly as
+  before — zero risk to the existing 4 tests). WITH one: `extractReadable` is asked for the WHOLE
+  article (up to a new `EXTRACT_FULL_CAP` of 60,000 chars, not just `max_chars`), the result is
+  chunked and BM25-ranked against `focus` via retrieval.js's OWN engine — literally the same
+  `chunkText`/`buildIndex`/`search` doc_search and local_vault_search already run, so there is no
+  new ranking algorithm to get subtly wrong — and only the top-ranked chunks, re-sorted back into
+  ORIGINAL page order (so the excerpt still reads top-to-bottom, not shuffled by score), are
+  returned. The reason this matters: a long page's relevant section is routinely NOT in its first
+  8000 characters — a cookie notice, an ad-supported intro, a wall of navigation — and this app's
+  own CSP/ad-slot history is full of exactly that kind of front-loaded noise on real sites. New
+  `compressToRelevantPassages(text, focus, budgetChars)` is exported and pure (no fetch, no DOM),
+  and is HONEST about its limits: when the focus terms do not appear on the page at all, it reports
+  `matched:false` and falls back to the same blind head-slice rather than silently pretending a
+  relevant answer was found. `words` is recomputed against what is actually RETURNED once
+  compression runs — reporting the full page's word count next to a much shorter compressed
+  excerpt would read as a contradiction.
+- LOCAL SIDE — `fs_skim` (NEW tool, tools/fsSkim.js) + `codeSkeleton.js` (NEW, pure). Give a
+  brace-delimited source file's SHAPE — every function/method/class SIGNATURE, every top-level
+  statement, every class/interface's member list — while collapsing long function/control bodies
+  and large literal blobs (a `CONFIG = {...400 lines...}` table, exactly the shape this codebase's
+  own PRESET_AGENTS/LOCAL_MODELS/TOOL_ALIASES constants take) to a one-line "N lines collapsed"
+  note. The point: fs_read pays for a file's full bytes even when the agent only wants to know
+  whether a file is worth reading in full yet. Line-based brace-depth counting, not a real parser —
+  the same "best-effort, not a full parser" discipline codebaseMapCore.cjs's symbol extraction
+  already uses — with strings/template-literals/comments MASKED before counting braces (quote
+  state threaded ACROSS lines, specifically for multi-line template literals) so a stray `{`/`}`
+  inside one can never desync the depth counter; the fail-safe when something can't be matched is
+  to leave that region uncollapsed, never to fabricate or mis-close a block. A container whose
+  MEMBERS matter individually (`class|interface|namespace|enum|module|struct|impl|trait`) is walked
+  INTO rather than collapsed wholesale, so a class's own shape survives and only an individual
+  long method's body disappears.
+- SCOPE DECISION, found while building this: `fs_outline`/`fs_smart_read` (tools/fsSmartRead.js)
+  and `code_outline` (tools/codeOutline.js) already exist and are ALREADY three separate,
+  hand-maintained symbol-extraction regex engines for the same handful of languages — the "two
+  copies, only one wired" shape this file has hit before (the youtube.js relay list, the two toast
+  systems), except here all three are actually registered and reachable, so it is duplication
+  rather than dead code. `fs_skim` does NOT become a fourth: it solves a genuinely different
+  problem (the file's actual FLOW with bodies collapsed inline, not a bare symbol list, and not a
+  targeted read of one already-known symbol) and composes the real `fs_read` tool rather than
+  re-implementing a read path. Consolidating the three existing extractors into one shared engine
+  is real, worthwhile cleanup — but touches three already-shipped, already-tested tools with no
+  shell access this session to verify a refactor against, so it is flagged here rather than done:
+  a future pass should fold `extractSymbolsFromCode`/`extractFileSymbols` into one module that both
+  `fs_outline` and `code_outline` import, the same choke-point discipline `DESKTOP_ONLY_TOOLS`
+  itself just went through a few entries above.
+- `fs_skim` is registered, aliased (`skim_file`/`skim`/`file_skeleton`/`read_skeleton`/
+  `outline_body`), added to `DESKTOP_ONLY_TOOLS` (it composes fs_read, which is desktop-only, and
+  is meaningless without it), and given a keyword-boost block in `prioritizeToolSchemas` mirroring
+  `fs_codebase_map`'s own — "skim/scan/understand/shape/structure/outline" near "file" outranks a
+  blind full read the moment the phrasing suggests the model does not yet know which part it needs.
+- VERIFICATION NOTE: no shell access this session — `npm test` was not run. `codeSkeleton.test.js`
+  (NEW) hand-traces every case against the actual algorithm before asserting it: a long function
+  body collapsing while keeping its signature and closing brace, a short body left byte-identical
+  (collapsing 2 lines would add noise, not save any), recursion into a `class` correctly leaving
+  the class shell and a short method untouched while collapsing only a long method's body, a brace
+  hidden inside a string AND inside a `//` comment on the SAME file provably not desyncing the
+  depth counter (reasoned through: if masking had failed, the scan would run off the end of the
+  file and safely DECLINE to collapse rather than corrupt anything — so a successful collapse in
+  that specific test is itself the proof masking worked), and a top-level object-literal constant
+  collapsing the same as a function body. `fsSkim.test.js` (NEW) mocks `fsReadTool.execute` at the
+  module boundary and covers the unsupported-language fallback, a binary-file decline, a
+  truncated-read decline, a real skeletonized read, and a custom `collapse_threshold`.
+  `webExtractCompression.test.js` (NEW) exercises `compressToRelevantPassages` directly against a
+  synthetic four-topic article (padding two "pricing" sections around irrelevant filler) — kept
+  passages answer the focus and exclude the filler, original page ORDER is restored across
+  non-adjacent kept chunks with a "…skipped…" marker between them, a focus term absent from the
+  page reports `matched:false` rather than silently head-slicing, and a page too short to chunk
+  never expands past its budget. `webExtract.test.js` gained three integration cases against the
+  real `execute()` path (mocking only `proxyText`, same as its existing tests): no-focus behavior
+  is provably unchanged, a focus buried past the character budget is correctly surfaced, and an
+  absent focus term is reported honestly. `toolRegistry.test.js` gained the same
+  registration/alias/desktop-only assertions the `fs_codebase_map` entry above already established
+  a pattern for. Every regex and every hand-traced line count was checked character-by-character
+  against the actual file content after editing, not assumed to match. Run `npm test` to confirm
+  all of this for real.
+
+## Picking an on-device provider triggered a real download with NOTHING in front of it (2026-09-03) — SettingsModal.jsx, ChromeAIPanel.jsx (new)
+- FIELD REPORT, found while building the deferred "Chrome AI download/progress UI" from the
+  chromeai entry below: opening Settings and looking at the WebLLM `local` card or the new
+  `chromeai` card showed a name, a Ready/Key Needed badge — and an EMPTY BODY. No API-key box
+  (correct, neither needs one), but also no download button, no GPU/availability status, no model
+  picker, nothing. `ProviderPicker.jsx`'s quick-switch dropdown (the header/composer control most
+  people would actually use to change provider) is worse: `pick(pid)` calls `onChange?.(pid)`
+  directly with zero gating, so picking either card there activates it immediately. The FIRST
+  sign of anything happening was the chat's own small `onStatus` line appearing mid-turn, after
+  the fetch had already started — for `local` that is a 350MB-1.7GB WebLLM download; for
+  `chromeai` it is Chrome's own undisclosed-size Gemini Nano weights. This is exactly the
+  "a download is a decision, not a fallback" rule this codebase enforces everywhere else
+  (ComfyUI, the zero-key WebLLM/chromeai auto-boot paths, local video/image generation) — quietly
+  skipped on the one path most people actually take to switch providers by hand.
+- ROOT CAUSE: `components/LocalModelPanel.jsx` — the REAL consent-first download UI, complete and
+  tested (GPU probe, size disclosure, live progress bar, delete-cache) — was imported exactly
+  once, as a `safeLazy` const in App.jsx, and used by NOTHING. Not text-mentioned-in-a-comment
+  unreachable (the class buildGuards' reachability rewrite already catches by bundling the real
+  import graph); this is the ONE CLASS THAT GUARD CANNOT SEE: a component that IS a real import
+  specifier — so it counts as "reachable" — and is simply never given a `<LocalModelPanel .../>`
+  JSX call anywhere. Confirmed by grepping the whole render tree, not by reading the mount list.
+  Same "written, reached by nothing" shape as StreamingMessage-behind-a-comment and Tour-behind-a-
+  button-label, in a spot the existing guard structurally cannot detect. `SettingsModal.jsx`'s
+  provider grid has exactly three body branches — a key-input box (`!prov.isLocal && !prov.isOllama`),
+  an Ollama daemon/model manager (`prov.is_ollama`) — and NO third branch for `prov.isLocal`, so
+  every on-device provider fell straight through to an empty card body.
+- FIX: `SettingsModal.jsx` gained the missing third branch, `prov.isLocal && !prov.is_ollama`,
+  rendering `LocalModelPanel` (now imported directly, for real) for WebLLM and the NEW
+  `components/ChromeAIPanel.jsx` for `chromeai` (`prov.isChromeAI ? <ChromeAIPanel/> : <LocalModelPanel/>`),
+  each inside the same `.provider-key-box` shell the other branches already use so no new CSS was
+  needed — `LocalModelPanel`'s own `.local-*` classes were already fully styled and simply unused.
+  `ChromeAIPanel` mirrors `LocalModelPanel`'s shape for the Prompt API: probes
+  `getChromeAIAvailability()` on mount (a probe, never a download — same discipline
+  `LocalModelPanel`'s own GPU check follows), and on `unsupported`/`unavailable`/`error` shows the
+  real reason rather than a blank card; on `available` shows a ready badge with an explicit "Yogatik
+  fetched nothing to get here" note (the whole point of this provider existing separately from
+  `local`); on `downloadable` shows the consent card (one-time, Chrome-managed, nothing sent
+  anywhere) with a Download button. Clicking it calls the new `triggerChromeAIDownload(onProgress)`
+  export in `chromeAI.js` — creates a Prompt API session purely to make Chrome fetch and report
+  progress on the weights, then destroys that session immediately (the next real chat turn still
+  creates its own fresh session, per `streamChromeAI`'s existing per-call design) — and re-probes
+  availability afterward rather than assuming success, then fires `onReady`. Unlike WebLLM there is
+  no "delete files" affordance: Chrome owns that cache, not this app.
+- App.jsx's dead `const LocalModelPanel = safeLazy(...)` was deleted rather than left pointing at
+  a component two other files now import directly — the exact "two ways to load the same thing,
+  only one wired" class this file has hit before (the youtube.js relay list, the two toast
+  systems), just caught before it could drift a second time.
+- A NOT-OBVIOUS TRAP AVOIDED WHILE WIRING THIS: the model `<select>` inside a provider's own card
+  needs SOME state to be a controlled component, and the tempting wire is
+  `onModelChange={(m) => onSelectModel?.(m, id)}` — mirroring the settings modal's OWN active-model
+  dropdown a few hundred lines below, which does exactly that. It is wrong here specifically:
+  `chooseModel(m, pid)` (App.jsx) calls `setModel(cleanModel)` UNCONDITIONALLY regardless of `pid`,
+  because every other caller of it only ever passes the CURRENTLY active provider's id. Wiring a
+  not-yet-selected card's dropdown straight to it would silently overwrite the ACTIVE
+  conversation's model with a WebLLM model id while some unrelated provider (say, nvidia) stayed
+  active — a real conversation-corrupting bug, not a cosmetic one. Fixed with a small
+  `localModelChoice` piece of state scoped to the card itself: the dropdown stays purely local
+  until the model actually finishes loading (`onReady`) or the user explicitly clicks Select, at
+  which point both `onSelectProvider` and `onSelectModel` fire together. `isCur` (already computed
+  per-card) is what lets the SAME card behave as a live-editing control once it truly is the
+  active provider, without a second component.
+- VERIFICATION NOTE: no shell access this session — `npm test` was not run. `ChromeAIPanel.test.jsx`
+  (NEW) is a real `@testing-library/react` render test — the Prompt API is mocked at the
+  `../chromeAI` module boundary, not reimplemented — covering the unsupported/unavailable-with-
+  reason case, the already-available case (asserting no download button is offered when nothing
+  needs fetching), a full downloadable→click→progress→re-probe→onReady round trip, and a failed
+  download surfacing its error instead of silently sitting on the consent card. `SettingsModal.jsx`
+  itself was NOT given a full render test: it pulls in roughly twenty modules (api, ollama,
+  elevenLabs, errorLog, version, features…) that a from-scratch mock set risks getting subtly wrong
+  with no way to execute and correct it this session — the same reasoning `browserActions.test.js`
+  and `schemaContract.test.js` already use for a component/tool this hard to fully mock. Instead
+  `SettingsModal.test.jsx` (NEW) reads the real source and asserts the wiring text-for-text: both
+  panels are imported from the real files (not reimplemented inline), the on-device branch
+  condition and the ChromeAI-vs-WebLLM split are both present and in the right order, the
+  pre-existing key-box guard still excludes `isLocal` (so a provider can never get both an unusable
+  key input and the new panel), the `localModelChoice` guard against the active-model corruption
+  above is present verbatim, and `App.jsx` no longer declares the dead lazy import. This is a
+  source-text check, not a DOM assertion — real value, but a different and weaker kind of proof
+  than the ChromeAIPanel render test, and worth eventually upgrading to a real render test once a
+  session with shell access can iterate on the mock set. Every regex was checked character-by-
+  character against the actual file content after editing, not assumed to match. Run `npm test`
+  to confirm all of this for real.
+
+## Instant whole-codebase awareness — fs_codebase_map (2026-09-03) — electron/codebaseMap*.cjs
+- THE ASK: "how can I make the AI model learn about the files, codebase in a folder (even
+  though it's huge) entirely in an instant." Read literally that's impossible — every provider
+  has a real token ceiling (compaction.js already budgets against it), so no model can hold a
+  huge repo's actual CONTENT in context at once, however fast the app gets. What's genuinely
+  achievable, and what aider/similar tools already prove out, is a REPO MAP: a compact index of
+  every file's top-level exported symbols (not the content), small enough to return from ONE
+  call, so the model learns the whole SHAPE of a codebase instantly and reads full files with
+  fs_read only for the two or three that actually matter — instead of blind fs_search rounds,
+  which is genuinely what it did before this (fs_find_files/fs_list are just names; fs_search is
+  keyword grep; nothing summarized what a file actually EXPORTS).
+- codebaseMapCore.cjs is PURE (no `require('electron')`, same split as fsIndex.cjs/rootsCore.cjs)
+  — regex-based symbol extraction, deliberately "best-effort, not a full parser" (same discipline
+  as this file's own gitignore-glob translation and git-porcelain parsing): JS/TS/JSX/TSX/Vue/
+  Svelte (export function/const/class/interface/type/enum, default exports named or anonymous,
+  `export { a, b as c }` resolved to the ALIAS since that's the name a consumer actually imports,
+  CommonJS `module.exports.x =`/`exports.x =`/`module.exports = {...}` destructuring), Python
+  (module-level def/class only — anchored at column 0 so an indented method is never mistaken for
+  a top-level export, the exact anchoring discipline that also keeps a match inside a function
+  BODY that merely looks like `export const x` from being counted), Go (capitalised identifiers,
+  which IS Go's export mechanism), Rust (`pub` items). Every other language is still LISTED (never
+  silently dropped) with no extracted symbols rather than a wrong guess from a pattern that
+  doesn't fit that language's real rules.
+- codebaseMap.cjs is the Electron wrapper: walks via the EXISTING fsIndex.scanRoot (already
+  iterative/yielding/gitignore-aware — reused, not reimplemented), reads each file capped at 60KB
+  (most real source files are nowhere near that; a file that is isn't silently read past it), and
+  caches per bound-root-set for 2 minutes (longer than fsIndex's own 5s TTL, since building a map
+  is far more expensive than a plain listing — it reads CONTENT).
+- CACHE INVALIDATION reuses the exact choke points fsIndex.invalidate already had: fsBridge.cjs's
+  `snapshot()` (every agent-driven write/edit/move/delete already calls this) and watcher.cjs's
+  `emit()` (every externally-detected change — the user's own editor, a git checkout) each now
+  also call codebaseMap.invalidate() one line below the fsIndex call they already made. Both
+  requires are wrapped in try/catch-on-require (codebaseMap.cjs is registered separately in
+  main.cjs, and a circular require at module-load time was not worth risking for a cache
+  invalidation that is allowed to no-op if the module happens to not be loaded yet).
+- CAUGHT BEFORE SHIPPING: a chat can hold SEVERAL bound folders, and two of them can each have a
+  file at the exact same relative path (a monorepo's `frontend/src/index.js` and
+  `backend/src/index.js` both walk down to `src/index.js` once each root is stripped). The first
+  version keyed an absolute-path lookup map by the DISPLAYED path alone — which does not just look
+  confusing, it is a real correctness bug: the second root's entry silently overwrites the first's
+  in that map, so both occurrences of the shared relative path resolve to the SAME (second) root's
+  file, and the first root's version of that file is never actually read at all, with nothing
+  anywhere saying so. Fixed by giving every root a unique label (its own folder basename, deduped
+  with a numeric suffix only in the rare case two bound roots share one) and prefixing displayed
+  paths with it whenever more than one root is actually being walked — the collision is removed at
+  the source instead of trying to disambiguate an already-collided string. A `path`-narrowed call
+  always resolves to exactly one root and never gets a label prefix cluttering otherwise-plain
+  paths. Found by tracing the multi-root case by hand while writing the test for it, not by
+  running anything — worth flagging because it would have shipped silently wrong otherwise, one
+  root's map simply missing from the model's view with no error anywhere.
+- BUDGETING mirrors projectInstructions.js's own budgetText philosophy: capped at 600 files (max
+  4000) and 80,000 chars by default, and every elision SAYS what it dropped — "N more files not
+  shown… call again with a narrower `path`" — rather than truncating silently. A `path` parameter
+  lets the model re-scope to one subtree of a too-big repo, which is the map's own recovery path
+  when a monorepo genuinely doesn't fit one call's budget.
+- WIRED AS A TOOL, NOT INJECTED INTO EVERY SYSTEM PROMPT: `fs_codebase_map` (aliases codebase_map/
+  repo_map/map_codebase/understand_codebase/explore_codebase) is model-invoked on demand, same as
+  every other capability in this app (doc_search, fs_find_files) — blanket-injecting a repo map
+  into every turn would bloat even a one-line chit-chat message in an unrelated conversation with
+  the same folder open. A CORE_TOOL_SCORES floor (36) keeps it from being crowded out of the
+  96-tool cap on a follow-up turn, and a keyword boost (215, above fs_find_files) fires on
+  "understand/explain/map/summarize this codebase/repo/project" phrasing so a weaker model reaches
+  for the one-call map before starting a blind fs_search crawl — which is the exact behavior this
+  was built to replace.
+- Electron only — there is no Tauri command behind this yet (same class of gap as computer_control/
+  watch_folder/clipboard_access/screen_inspect, all Electron-exclusive already). No special-case
+  message was added for that: like every other Electron-only tool here, it fails through `guard`'s
+  existing generic catch on Tauri rather than getting a bespoke "not available" branch — consistent
+  with how this codebase already treats that gap everywhere else, not a new inconsistency.
+- ALSO FIXED WHILE HERE: `tools/index.js` had its OWN second, hand-maintained literal copy of
+  `DESKTOP_ONLY_TOOLS` — nothing ever imported it (agent.js and api.js both correctly import the
+  real one from `./localFs`), so it was pure drift-in-waiting, the identical "two copies, only one
+  wired" class this file has hit before (the relay list in youtube.js, the two usage meters, the
+  two toast systems). It now re-exports the real set instead of maintaining a second list, so
+  there is structurally only one place to add a new desktop-only tool to.
+- THE HUMAN-FACING HALF, added the same day once the tool side proved out: a finished capability
+  nothing renders is precisely the "StreamingMessage behind a comment, Tour behind a button label,
+  five whole panels never wired into the palette" class this file has hit repeatedly — a map only
+  the agent could see was the same gap in a new place. `components/CodebaseMapPanel.jsx` is a
+  fourth workspace-dock view (`WorkspacePanel.jsx`'s `VIEWS`, alongside Explorer/Search/Source
+  Control) showing the SAME map the model gets — same cache, so opening it right after the agent
+  already asked is instant. It auto-loads once from cache on mount but never force-builds: opening
+  the tab is the same class of deliberate ask as the model's own first call, not a reason to spend
+  disk/CPU on a folder nobody has asked about yet. `wsCodebaseMap()` in tools/localFs.js is the
+  direct (non-`guard`/`ok`-shaped) call the panel uses, mirroring `wsList`/`wsSearch`'s existing
+  convention of throwing raw rather than returning a prose-shaped tool result.
+- KEEPING IT WARM, the other half of "instant": a map was only ever built lazily, on whichever call
+  happened to ask first — fine for the agent (it can wait a few seconds once), worse for a human
+  clicking the new tab expecting the same instant feel the tool already has on a second call.
+  Two additions, both conservative on purpose (never spend cycles on a folder nobody has shown
+  interest in):
+  - `fsAddFolderTool` now fires `invoke('fs_codebase_map', ...)` the instant a grant succeeds —
+    NEVER awaited (a slow build must not delay handing the grant back) and NEVER let to fail the
+    grant (a Tauri "unknown command" rejection, since there is no command there yet, is swallowed).
+    Grant is the single strongest signal a map is about to be asked for — the tool's own
+    description already tells the model to call it FIRST on a new codebase.
+  - `codebaseMap.cjs` gained `invalidateAndRewarm`, used ONLY by watcher.cjs (fsBridge.cjs keeps
+    calling the plain `invalidate` — an AGENT-driven edit has the agent itself right there to ask
+    for a fresh map on its own schedule; paying to rebuild speculatively after every write it makes
+    would just be doing that work twice). An EXTERNAL change — the user's own editor, a checkout —
+    has nobody about to follow up, so this drops the stale entry immediately (a caller must never
+    see old content) and schedules a rebuild 4 seconds later, debounced per root-set. Critically:
+    only a root-set that WAS ALREADY CACHED gets rescheduled — a folder that has never been mapped
+    stays never-built, which is the same "a download is a decision, not a fallback" discipline this
+    codebase already applies to local models and ComfyUI, applied here to background CPU/disk
+    instead of a network fetch.
+  - The build logic itself was extracted into one shared `buildAndCache(roots, subPath, maxFiles)`
+    so the IPC handler and the background rewarm path are provably running the identical code, not
+    two copies that could drift the way the youtube.js relay list once did.
+- VERIFICATION NOTE: no shell access this session — `npm test` was not run. codebaseMapCore.test.js
+  (24 assertions) exercises every extractor against real syntax shapes including the two cases that
+  matter most (an export-shaped line that is actually indented inside a function body is correctly
+  ignored; the CJS `module.exports = {...}` destructure resolves to the right-hand KEYS, not the
+  local variable names) via injected fake I/O, no real disk needed. codebaseMap.test.js drives the
+  REAL IPC handler against REAL temp directories through the REAL roots registry (same
+  Module._load-patches-electron harness electronFsBridge.test.js established) and is what caught
+  the multi-root collision bug above — it specifically constructs two roots that each have a file
+  at `src/a.js` with different content and asserts BOTH show up correctly, which is the one
+  assertion that would have failed against the pre-fix version. Also covers caching (a second call
+  is marked `cached:true` with identical output), plain invalidation, `path` narrowing, and now
+  `invalidateAndRewarm` under `vi.useFakeTimers`: a change outside every cached root-set schedules
+  nothing, and a change inside one drops the stale entry AT ONCE (never served) then rebuilds after
+  `vi.advanceTimersByTimeAsync(4100)` — the one test in this batch most worth confirming for real
+  first, since mixing fake timers with the REAL async fs reads inside the rebuild is the least
+  battle-tested combination here. localFsEnhanced.test.js gained two cases for the grant-time
+  pre-warm: the IPC call fires without being awaited, and a failing one never fails the grant.
+  toolRegistry.test.js gained assertions that the tool and all five aliases are really registered —
+  the existing "no alias shadows a registered tool" sweep already covers the new aliases with no
+  changes needed there. Every trace was done by hand, char-by-char through the regex engine's
+  actual matching behavior where the logic was non-obvious (documented inline in the test
+  comments) — not assumed to be correct. Run `npm test` to confirm all of this for real.
+
+## The model denied having folder access right after successfully using it (2026-09-02) — agent.js
+- FIELD REPORT (screenshot): "Thinking & actions" showed 4 completed, successful actions —
+  fs_read, fs_read, fs_search, fs_search — and the REASONING panel contained real, verbatim
+  content read back out of this repo's own CLAUDE.md. The model's actual final reply then told
+  the user it had no folder access and asked them to grant one, paste the file, or share a URL.
+  The tool trace and the final answer flatly contradicted each other in the same turn.
+- ROOT CAUSE IS NOT WIRING. Read the whole round loop end to end: tool results are pushed into
+  `messages` unconditionally, in both native mode (`role:'tool'`) and prompted mode (replayed as
+  `role:'user'`), before the follow-up `processStream()` call — there is no branch that drops,
+  skips, or fails to attach them, and no forced-final/stall-recovery path was involved here
+  (those exist for an EMPTY reply, not a confidently wrong one). The evidence was genuinely in
+  context. This is a MODEL REFLEX: "I don't have access to your files" is a disclaimer many
+  instruct-tuned models emit near-unconditionally on file-related phrasing, and a `role:'tool'`
+  message sitting a few turns back does not reliably outweigh that trained prior — especially on
+  a free-tier model (nvidia/nemotron-3-super-120b-a12b here) several rounds into a turn, where
+  attention has drifted off the actual evidence. Same failure SHAPE as the canary-leak guard
+  below: a fact that is true in context is not automatically a fact the model ACTS on, unless it
+  is restated where the model is about to look.
+- FIX: `FILE_ACCESS_TOOLS` (matches the `fs_`/`git_` prefixes plus terminal_run/terminal_exec/
+  proc_start/proc_output/file_dialog by exact name — a prefix match because new fs_* handlers
+  are added often enough that a fixed list would drift, same reasoning FS_COMMANDS already
+  applies). Every round, if any such tool call succeeded (not errored, not gate-blocked, no
+  explicit `success:false`), a short `role:'user'` reminder is appended right after that round's
+  tool-result messages: "the tool result(s) above are real — you already have working folder
+  access for this chat and just used it successfully. Do NOT tell the user you lack file,
+  folder, or codebase access... Answer using the actual content returned above." It is restated
+  EVERY remaining round the turn holds, not just once, on purpose — recency beats a buried
+  system-prompt mention, and a later round's own tool call (even an unrelated one, like weather)
+  is exactly where attention could drift again.
+- WHY A NEW USER-ROLE MESSAGE RATHER THAN EDITING THE EXISTING ONES: keeps the fix to one
+  isolated append at one seam (right after both the native and prompted message-push blocks),
+  independent of `toolMode`, `compactToolResult`'s truncation, and `guardExternal`'s sanitizing —
+  none of which needed to change and none of which were the bug. NOTE (not fixed here, flagged
+  for a future pass): this pushes a second consecutive `role:'user'` message onto `messages` in
+  the same shape the existing frames-injection block already does a few lines below it — fine for
+  every OpenAI-style provider this app targets, but Anthropic's Messages API constructs its own
+  `anthropicMessages` array with no consecutive-same-role merge step, which is a pre-existing gap
+  this entry did not introduce and did not fix.
+- VERIFICATION NOTE: no shell access this session — `npm test` was not run. Reasoned through the
+  round loop line by line instead, and 4 new vitest cases were added to agent.test.js's existing
+  `streamChat`-mock harness (same `scriptRounds` pattern already used by the neighbouring "empty
+  final answer" block): a successful fs_read triggers the reminder on the very next `streamChat`
+  call; an unrelated tool (weather) does not; a FAILED fs_read does not; and the reminder is
+  still present in a THIRD round after an unrelated tool ran in between. Traced each assertion
+  by hand against `enrichToolError`'s actual behavior (confirmed it preserves `result.error`
+  through its spread) rather than assuming it. Not executed — run `npm test` to confirm.
+
+## Desktop reported a running Ollama daemon as having no models (2026-09-02) — electron/ollamaDaemon.cjs
+- FIELD REPORT: Ollama confirmed running outside Yogatik with models already pulled (`ollama list`
+  worked in a terminal), but the desktop app's model picker showed the provider with an empty list —
+  not "not installed", not "not running", just empty, which is the one combination the existing
+  `ollamaReason` messaging in api.js has no explanation for.
+- ROOT CAUSE: `ollama:status`/`ollama:list` picked CLI-vs-HTTP based on whether the `ollama` BINARY
+  was found, never on whether that choice actually PRODUCED anything. `bin ? listLocalModels(bin) :
+  listModelsHttp()` — if `findOllamaBin()` succeeds but `listLocalModels()`'s `ollama list` text
+  parsing yields nothing (a locale/column-format difference, a permissions hiccup, a Windows Store
+  build's CLI behaving slightly differently, anything that makes `exec` error or produce output the
+  `\s{2,}` column split does not expect), the function silently resolves `[]` and NOTHING falls back
+  to the HTTP endpoint — even though this file's own comments already say "the HTTP endpoint is the
+  fact that matters; the binary is only needed for list and pull." The comment described the right
+  philosophy; the code did not follow it all the way through.
+- FIX: new `listModels(bin)` tries the CLI first when a binary exists (matches `ollama list`'s own
+  formatting), and falls back to `listModelsHttp()` whenever the CLI path yields an EMPTY array —
+  not just when no binary was found at all. Both `ollama:status` and `ollama:list` now go through
+  this one function instead of duplicating the same broken either/or.
+- ALSO HARDENED, same root cause one level down: `listModelsHttp()` built `{name: m.name, ...}` off
+  Ollama's `/api/tags` response trusting `name` alone. Different Ollama versions have used `name`
+  and `model` for the same field; reading only one is exactly the `is_dir`/`isDir` class of drift
+  this file has hit before, except here a missing field does not throw — `normalizeModelName` in
+  api.js has no `model` field to fall back to once the main process already discarded it during
+  reshaping, so the entry silently becomes `''` and gets filtered out by `.filter(Boolean)` one layer
+  up, with nothing anywhere saying why. Now reads `m.name || m.model || ''` and drops only an entry
+  that truly has neither, rather than ever emitting a blank row.
+- VERIFICATION NOTE: no shell access this session — `npm test` was not run. `ollamaDaemon.test.js`
+  (NEW, 4 cases) drives the REAL exported functions (`listModelsHttp`, `listLocalModels`,
+  `listModels`) through the same `Module._load('electron')` stubbing trick electronFsBridge.test.js
+  already established, against a real local HTTP server standing in for the daemon's `/api/tags` —
+  not reimplemented or mocked at the fetch level. One case deliberately proves its own premise first
+  (`listLocalModels(process.execPath)` really does yield `[]`, since `node list` is not a real
+  subcommand) before asserting the fallback fires from it. A fourth test that tried to monkey-patch
+  `child_process.exec` to prove the CLI-succeeds/HTTP-never-called path was written and then DELETED
+  after re-reading it: ollamaDaemon.cjs destructures `const { exec } = require('child_process')` at
+  require time, so reassigning the property on the module's exports afterward would never reach that
+  already-captured local binding — the test would have silently exercised the real system `exec`
+  instead of the fake one and could have failed outright. Shipping a test that does not test what it
+  claims is worse than shipping fewer tests, so it was cut rather than fixed with a bigger refactor
+  (dependency-injecting `exec`) that was out of scope for this fix.
+
+## ComfyPanel removed from Personalise (2026-09-02) — components/PersonalisePanel.jsx
+- Requested removal of the "Local generation (ComfyUI)" card from Personalise, flagged as
+  depending on an "external API." It does not — ComfyUI is a local server on the user's own
+  machine, same trust level as the Ollama card beside it — but a settings card whose copy reads
+  that way to a user is a real UX defect regardless of the technical accuracy, so it comes out.
+- `<ComfyPanel />` and its import were removed from PersonalisePanel.jsx. The component itself
+  (components/ComfyPanel.jsx) is UNCHANGED and still fully functional — this session had no shell
+  access to delete the file, and even with one, deleting a working component to fix a copy/
+  placement complaint would be the wrong fix anyway. It is allowlisted in both of
+  buildGuards.test.js's reachability checks (the same way AdModal.jsx sits there, deliberately
+  unrendered rather than deleted) so the guard does not fail on the now-real orphan.
+- NOT touched: comfy.js (still imported by tools/localGen.js) and the local_image_generate/
+  local_video_generate agent tools, which auto-detect an already-running ComfyUI instance via
+  comfyStatus() regardless of whether this settings card ever existed — removing the setup UI
+  does not remove the capability, only the one way to point Yogatik at a non-default ComfyUI
+  folder or start it from inside the app. The "Local ComfyUI instance" info card on the Providers
+  & Keys dashboard page (App.jsx, next to the Ollama one) is a SEPARATE, purely informational
+  block and was left alone — it was not what was shown or asked about.
+- VERIFICATION NOTE: no shell access this session either — not run, not `node --check`'d. The
+  edit is a straight removal of one import line and one JSX line, verified by re-reading the
+  diff rather than executing anything.
+
+## Zero-key Chrome AI provider, a standalone MCP server, and a native-deps self-heal (2026-09-02)
+- THE ASK: a CEO-framed strategic review of where this app goes next, then "implement all that can
+  make yogatik a superpower ai ui and that runs independently" — explicitly corrected mid-session
+  from a smallest-slice-of-three approach to full, real implementations of all three. What shipped:
+  (1) a genuinely zero-download local AI provider riding Chrome's built-in Gemini Nano, wired into
+  every place the app already special-cases an on-device provider; (2) a standalone Node MCP server
+  exposing a real, hand-verified slice of Yogatik's own tools over stdio, so Claude Code/Cursor/
+  Claude Desktop/any MCP client can call into Yogatik without Yogatik running at all; (3) a fix for
+  the actual root cause behind this file's own repeated "Windows-native-rollup-binary" verification
+  gap, not another workaround for its absence.
+- SANDBOX CONSTRAINT, STATED UP FRONT: this pass had no shell access at all (bash was denied for
+  this session), so nothing here was run — not `npm test`, not `npm run lint`, not `npm run build`,
+  not even `node file.mjs` to sanity-check syntax. Every file was written by careful reading of the
+  real, existing source (llm.js, api.js, App.jsx, tools/*.js, vitest.config.js, ci.yml) rather than
+  guessed at, and every new test file follows this codebase's own conventions closely enough that
+  `npm test` should pin all of it the moment it runs somewhere with a shell — but unlike most other
+  entries in this file, there is no "verified by standalone Node reproduction" fallback here either.
+  Treat this entry as unusually in need of a real first run.
+
+### 1. chromeai provider — llm.js, chromeAI.js (NEW), api.js, App.jsx
+- WHY A SEPARATE PROVIDER FROM `local`: WebLLM (`local`) is real on-device inference but costs this
+  app a 350MB-1.7GB download the FIRST time. Chrome's Prompt API (Gemini Nano) ships with — or is
+  fetched once by — Chrome itself, entirely outside this app's control, so the "no account, no key"
+  experience can be instant with zero bytes this app is responsible for. That is a different enough
+  value proposition (and a different enough risk profile: Chrome's on-device model can simply not be
+  there, e.g. inside the desktop app's bundled Electron Chromium, which normally lacks Google's
+  on-device-model component) that folding it into `local` as a mode flag would have blurred both.
+- chromeAI.js probes BOTH Prompt API shapes that have existed while the spec stabilised — the
+  current `self.LanguageModel` global and the earlier `self.ai.languageModel` namespace — and never
+  assumes either is final, the same defensive stance this file already takes for Electron's
+  console-message signature change. `getChromeAIAvailability()` mirrors `webGpuDetails()`'s shape
+  exactly: a state (`available`/`downloadable`/`downloading`/`unavailable`/`unsupported`/`error`)
+  plus an actionable reason on every "no" — a blind false tells the user nothing they can act on.
+- `state === 'downloadable'` is reported as `available:true` (a caller that means to use the model
+  can proceed and will see Chrome's own one-time download), but the App.jsx zero-key auto-boot path
+  checks for `state === 'available'` SPECIFICALLY, never `downloadable` — silently kicking off
+  Chrome's own background model download for an anonymous first-time visitor would be exactly the
+  "a download is a fallback, not a decision" mistake this codebase already avoids for ComfyUI and
+  local generation elsewhere. A user who wants the download can still pick "Chrome built-in AI" from
+  the provider list and trigger it themselves, same as the existing WebLLM download button.
+- STREAMING DESIGN: a Prompt API session IS its own conversation memory, but this app's OWN
+  conversation state (edits, branches, regenerate, the sliding-window trim already applied before
+  `messages` ever reaches a provider) can diverge from whatever a long-lived cached session
+  remembers. So `streamChromeAI` creates a FRESH session every call and replays the real `messages`
+  array as plain (non-streamed) `.prompt()` calls up to the last turn, then streams only the final
+  turn — slower than reusing one session across a whole chat, but a silently wrong answer after an
+  edit is worse than a few extra replay calls against an already-bounded history. Streamed chunks
+  are normalised to deltas (`piece.startsWith(prev) ? piece.slice(prev.length) : piece`) because
+  some Prompt API implementations yield the FULL text so far on every tick rather than an
+  incremental delta — the exact double-print bug class the SSE reasoning-tag handling in llm.js
+  already guards against for hosted providers.
+- TOOL CALLING: nothing here special-cases it. `isLocal:true` on the provider def means api.js
+  already forces `initialToolMode: 'prompted'` for it (same code path as WebLLM), so tool calls go
+  through the shared text-JSON protocol in promptedTools.js — a tiny on-device model calling tools
+  unreliably through that path is the same known WebLLM trade-off, not a new decision.
+- REUSING `isLocal:true` (plus a new `isChromeAI:true` to disambiguate the two model-list branches)
+  was deliberate: api.js's `getFallbackChain`, `getActiveProvider`'s permanent local-exclusion, the
+  keyless checks in `streamMessage`, and the desktop-hides-non-Ollama-local filter in `getModels()`
+  all already generalise on `p.isLocal` rather than hardcoding `pid === 'local'` — so chromeai
+  inherits every one of those for free and correctly (including being honestly hidden on desktop,
+  where Electron's bundled Chromium will not have the Prompt API anyway). The ONLY two spots that
+  needed a real edit were the `getModels()` branch that imports WebLLM's `LOCAL_MODELS` (chromeai
+  has exactly one model, not a user choice, so it short-circuits before that import) and
+  `testProvider()`, which previously reported `p.isLocal` as unconditionally "ready" — correct for a
+  pure download, false for a capability that can genuinely be absent, so chromeai gets its own
+  honest branch that actually calls `getChromeAIAvailability()`.
+- App.jsx's zero-key boot effect now tries chromeai FIRST (instant, zero download) and only falls
+  through to the existing WebGPU/WebLLM pull when Chrome's on-device model is not already sitting
+  there ready. Order preserved: any stored provider or any key still wins over both, unchanged.
+- NOT built in this pass, deliberately scoped out: a dedicated download/progress panel for chromeai
+  the way LocalModelPanel exists for WebLLM. The automatic zero-key path only ever engages when the
+  model is ALREADY `available` (no download to show), and a manual pick from the provider list will
+  show download progress via the normal chat status line (`onStatus`) even without dedicated UI —
+  functional, not polished. A real follow-up, not a silent gap.
+
+### 2. Standalone MCP server — frontend/mcp-server/server.mjs (NEW), package.json
+- THE ASK, read literally: "runs independently." The most direct reading that's actually buildable
+  in one pass is Yogatik running as an MCP SERVER — a plain Node process that speaks nothing but the
+  protocol, needs no Electron, no browser, no running Yogatik instance, and that any MCP client can
+  point at (`node frontend/mcp-server/server.mjs`, or `claude mcp add`). This is the mirror image of
+  what mcp.js/electron/mcpStdio.cjs already do (Yogatik as an MCP CLIENT, connecting OUT); this file
+  makes Yogatik reachable as a SERVER other agents connect IN to.
+- HAND-ROLLED JSON-RPC, NOT THE OFFICIAL SDK — a deliberate, sandbox-forced choice, not a shortcut
+  taken for its own sake: adding `@modelcontextprotocol/sdk` as a dependency needs `npm install` to
+  fetch it, and this session had no shell to run that (or anything else) at all. MCP over stdio is
+  newline-delimited JSON-RPC 2.0 on stdin/stdout — a genuinely implementable protocol without an
+  SDK — so `server.mjs` implements `initialize`, `tools/list`, `tools/call`, and `ping` directly, and
+  answers a request for anything else with a real `-32601 Method not found` rather than pretending.
+  A NOTIFICATION (`notifications/initialized`, no `id`) is never answered, per spec. Swapping this
+  for the official SDK later is a real, scoped follow-up once someone can actually run `npm install`
+  against it — this is a correct MVP of the protocol, not a permanent architectural choice.
+- WHICH TOOLS, AND WHY ONLY THESE: every tool exposed is IMPORTED DIRECTLY from the real
+  `frontend/src/tools/*.js` source — never reimplemented or copied — so this server can never drift
+  from what the app itself does (the exact discipline this file already enforces for the youtube
+  relay list and the tool-result-contract fields). The set is deliberately narrow: calculator,
+  unit_convert, hash, regex, data_convert, diff, uuid, password_generate, number_base, cron_next,
+  timezone, thesaurus, country_info — everything either pure arithmetic/text or one of two keyless,
+  CORS-friendly public APIs (Datamuse, REST Countries). Nothing needing a provider API key, a
+  browser (DOM/canvas/WebGPU), Electron, or this app's own IndexedDB/settings/working folders is
+  exposed — fs_*/terminal_run/browser_control/computer_control/memory/scheduler/web_search all need
+  Yogatik ACTUALLY RUNNING (a granted folder, a live proxy-relay-health cache, a real IndexedDB),
+  which contradicts the entire point of a process that runs on its own. `finance_analytics` was
+  considered and DEFERRED, not silently dropped: its import chain pulls in five more sibling pure
+  modules (finance.js → options/portfolio/indicators/backtest), and verifying every one of THEIR
+  imports is Node-ESM-safe with no way to actually run Node in this session was not something to
+  guess at — a concrete, scoped follow-up, the same shape as this file's own `rizerphe/
+  local-llm-function-calling... DEFERRED` decision elsewhere.
+- THE ONE REAL BUG THIS SURFACED: `tools/http.js` and `tools/moretools.js` both imported a sibling
+  module with NO file extension (`from '../llm'`, `from './http'`) — which Vite's bundler resolves
+  fine but Node's own ESM loader refuses outright ("Cannot find module") — and `llm.js` read
+  `import.meta.env.VITE_LLM_PROXY_BASE` with no guard, which THROWS immediately under plain Node
+  (`import.meta.env` does not exist there at all), one line ollama's own baseUrl construction a few
+  lines below already guards against the same way. All three are one-line fixes (`'../llm'` →
+  `'../llm.js'`, `'./http'` → `'./http.js'`, and the same `typeof import.meta !== 'undefined'` guard
+  ollama's baseUrl already uses) and are 100% Vite-compatible — Vite resolves an explicit `.js`
+  extension identically to an extensionless one, so nothing changes for the browser build. This is
+  what actually unlocked uuid/password_generate/number_base/cron_next/timezone/thesaurus/
+  country_info for the MCP server without copying a single line of their logic.
+- STDIO DISCIPLINE: `send()` is the ONLY thing in this file allowed to write to stdout — every
+  diagnostic goes to stderr, because one stray log line on stdout corrupts the JSON-RPC stream for
+  every message after it, permanently, with no error the client can recover from. The `isMain` guard
+  (`process.argv[1] === fileURLToPath(import.meta.url)`) means importing this module for a test never
+  starts reading stdin — required for mcpServer.test.js to import `handleRequest`/`TOOLS` without
+  hanging the test runner waiting on a stream nobody writes to.
+- `package.json` gained `"mcp:server"` (run it) and a `"bin"` entry (`yogatik-mcp`) for anyone who
+  wants to reference it by name from another tool's MCP config instead of a full path.
+
+### 3. Native-deps self-heal — scripts/ensure-native-deps.mjs (NEW), package.json postinstall
+- THE ROOT CAUSE, named explicitly instead of worked around again: every "Windows-native-rollup-
+  binary gap" note elsewhere in this file (a dozen-plus of them) describes the SAME well-known npm
+  bug (npm/cli#4828) — rollup and esbuild ship their native binary as a per-PLATFORM optional
+  dependency, and when a package-lock.json resolved on one OS/arch/libc is later installed against
+  (or node_modules is copied onto) a different one, npm's own optional-dependency resolution can
+  silently install the wrong platform's binary or none at all. `npm ci`/`npm install` still reports
+  success; the failure only appears later, opaquely, the first time Vite/Vitest actually loads the
+  native module. Every prior entry in this file worked AROUND this by hand-reproducing the logic in
+  a standalone Node script instead of running the real test suite — correct triage each time, but
+  never a fix for why the suite couldn't run in the first place.
+- `ensure-native-deps.mjs` runs as part of `postinstall`, right after the real install. It computes
+  the exact rollup/esbuild native package this platform needs (`@rollup/rollup-<platform>-<arch>
+  [-gnu|-musl]`, `@esbuild/<platform>-<arch>`), checks whether it is actually `require.resolve`-able,
+  and if not, fetches exactly that one package via `npm install --no-save` at the SAME version
+  already pinned for rollup/esbuild themselves (read at runtime via `require.resolve('rollup/
+  package.json')`, so it can never drift from a future dependency bump). It only ever ADDS the
+  missing package — never removes or touches anything else — so re-running it on an already-healthy
+  install is a fast, silent no-op.
+- MUST NEVER FAIL THE INSTALL OVER THIS: the entire script body runs inside one try/catch that only
+  warns and explains the manual fix (delete node_modules + package-lock.json, reinstall fresh) — a
+  postinstall script that can throw and take `npm install` down with it would be strictly worse than
+  the gap it exists to close, the same "a guardrail that can fail a reply is a worse failure mode
+  than what it defends against" principle the canary-leak guardrail in agent.js is built on.
+  `execFileSync` deliberately uses `npm.cmd` on win32 (`execFileSync('npm', …)` fails outright on
+  Windows — npm there is a `.cmd`/`.ps1` shim, not a directly-executable file, the same platform trap
+  this whole script exists to route around one layer up).
+- NOT touched: `ci.yml`. Its `verify`/`e2e` jobs already run on `ubuntu-latest` with a fresh
+  `npm ci || npm install` — postinstall (and therefore this script) already fires automatically
+  there with zero extra wiring, and this bug bites hardest on a node_modules that was RESOLVED
+  elsewhere and copied or reused (this coding sandbox's own recurring situation, per every prior
+  entry), not a clean CI checkout. Adding a redundant explicit CI step would be exactly the
+  "no duplicate/low-value" clutter this project's own conventions warn against.
+- VERIFICATION NOTE (repeated from the top of this entry, because it matters most here): none of
+  this — the provider routing, the MCP server's protocol replies, the native-deps script's platform
+  map — was executed even once. `chromeAI.test.js` (12 cases: both Prompt API shapes, every
+  availability state, streaming/delta-normalisation/turn-replay/abort behaviour) and
+  `mcpServer.test.js` (11 cases: initialize/tools-list/tools-call/unknown-tool/unknown-method/
+  notification handling, plus every exposed tool run end to end through the real handler) were
+  written to this codebase's own conventions specifically so `npm test` pins all of it — but unlike
+  every other entry in this file, there is no standalone-Node-reproduction fallback backing that up.
+  Run `npm test`, `npm run lint`, and `npm run build` for real before trusting this further.
+
 ## Reflex Prefetch — speculative tool execution ahead of the model's own decision (2026-09-02)
 - THE ASK, verbatim, after a detour: "invent something that make an ai work unimaginable good
   things and does tasks" plus "faster agent decisions" and "deeper agent/tool merging", specifically

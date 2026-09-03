@@ -394,6 +394,20 @@ function pruneOldImages(messages) {
 const SOURCE_TOOLS = new Set(['deep_research', 'web_search', 'web_extract', 'link_preview'])
 
 /**
+ * Tools whose SUCCESS is itself proof the model already has file/folder/shell
+ * access this turn — see the `hadFileAccessThisTurn` note near its
+ * declaration. Matched by prefix for the fs_* / git_* families (new handlers
+ * are added to both often enough that a fixed list would drift, the same
+ * reasoning FS_COMMANDS/CORE_TOOL_SCORES already apply elsewhere) plus the
+ * handful of exact names that read files without an fs_ prefix.
+ */
+const FILE_ACCESS_PREFIXES = ['fs_', 'git_']
+const FILE_ACCESS_EXACT = new Set(['terminal_run', 'terminal_exec', 'proc_start', 'proc_output', 'file_dialog'])
+const FILE_ACCESS_TOOLS = {
+  has: (name) => FILE_ACCESS_EXACT.has(name) || FILE_ACCESS_PREFIXES.some(p => String(name || '').startsWith(p)),
+}
+
+/**
  * Tools whose output is written by SOMEBODY ELSE.
  *
  * A tool result is re-fed to the model as message content, so text fetched off
@@ -584,10 +598,39 @@ export async function runAgent({
     capabilityMode = await capabilityPromptBlock()
   } catch { /* the mode is advisory; never fail a turn over it */ }
 
+  // MCP: connect automatically where that is honest, suggest where it is not.
+  // A server the user already configured and merely left disabled needs no
+  // new credential to come back — reconnecting it for a turn that clearly
+  // needs it is genuinely automatic. A server the user has never configured
+  // almost always needs a token/OAuth/local process only the user can supply,
+  // so it is only ever named to the model as something worth mentioning —
+  // same "a new external connection is a decision, not a side effect" rule
+  // this app already applies to downloads (ComfyUI/WebLLM/chromeai).
+  let mcpBlock = ''
+  try {
+    const [{ detectMcpNeed }, mcpMod] = await Promise.all([import('./mcpRegistry'), import('./mcp')])
+    const configuredServers = await mcpMod.getMcpServers()
+    const need = detectMcpNeed(typeof userMessage === 'string' ? userMessage : '', configuredServers)
+    if (need.toEnable.length > 0) {
+      const ids = new Set(need.toEnable.map(s => s.id))
+      const next = configuredServers.map(s => (ids.has(s.id) ? { ...s, enabled: true } : s))
+      await mcpMod.setMcpServers(next)
+      await mcpMod.refreshMcpTools()
+      const names = need.toEnable.map(s => s.name).join(', ')
+      onStatus?.(`Reconnected MCP server${need.toEnable.length > 1 ? 's' : ''}: ${names}`)
+      mcpBlock += `\n\nMCP AUTO-RECONNECTED: ${names} — already configured for this app and re-enabled because this request seems to need it. Its tools are available to you this turn like any other tool.`
+    }
+    if (need.suggestions.length > 0) {
+      mcpBlock += '\n\nMCP CONNECTOR(S) NOT YET SET UP that may help with this request:\n' +
+        need.suggestions.map(s => `- ${s.name}${s.needsToken ? ' (needs an API token/key)' : ''} — ${s.desc}`).join('\n') +
+        '\nYou do NOT have access to these yet — never claim to have used one. If it would genuinely help, mention it to the user in plain language and say it can be added under Settings -> MCP Connectors.'
+    }
+  } catch { /* MCP auto-connect/suggest is advisory; never fail a turn over it */ }
+
   const systemBase = (isLocalProvider
     ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock())
     : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock())
-  ) + safetyDirective + canaryDirective
+  ) + mcpBlock + safetyDirective + canaryDirective
 
   const limits = getModelContextLimits(provider, model)
   const hBudget = isLocalProvider ? Math.min(LOCAL_HISTORY_BUDGET, limits.budget) : limits.budget
@@ -742,6 +785,19 @@ export async function runAgent({
   // Every distinct tool call made this turn, keyed by name + arguments, so an
   // identical one is answered from here instead of being run again.
   const seenCalls = new Map()
+  // FIELD REPORT (2026-09-02): fs_read/fs_search succeeded (visible in the
+  // trace, real repo content came back) and the model's FINAL reply still
+  // told the user it had no folder access and asked them to grant one or
+  // paste the file. Nothing in the tool pipeline was dropping the results —
+  // this is a model reflex: "I don't have access to your files" is a stock
+  // disclaimer many instruct-tuned models emit on file-related questions
+  // regardless of what is actually sitting in their own context, especially
+  // once a few rounds have passed and a weaker/free-tier model's attention
+  // drifts off the tool messages toward that trained prior. The fix is the
+  // same shape as the canary directive below: state the fact explicitly,
+  // right next to the evidence, every round it is true, rather than trusting
+  // the model to weigh a `role:'tool'` message correctly on its own.
+  let hadFileAccessThisTurn = false
 
   // Reflex Prefetch (agentReflex.js) — a small, deliberately conservative
   // whitelist of side-effect-free tools (unit/expression math, an explicitly
@@ -1202,6 +1258,14 @@ export async function runAgent({
         const step = [...traceRef].reverse().find(s => s.tool === tc.name && s.status === 'running')
         if (step) step.status = result?.error ? 'error' : 'done'
 
+        // Real evidence the model already has file/folder/shell access THIS
+        // turn — a successful, unblocked read/search/listing/shell command.
+        // See the note by `hadFileAccessThisTurn`'s declaration for why this
+        // is tracked at all.
+        if (FILE_ACCESS_TOOLS.has(tc.name) && !result?.error && !result?.blocked && result?.success !== false) {
+          hadFileAccessThisTurn = true
+        }
+
         if (executionCtx.conversationId && result?.error) {
           logAgentTrace({
             conversationId: executionCtx.conversationId,
@@ -1240,6 +1304,20 @@ export async function runAgent({
         messages.push({
           role: 'user',
           content: untrusted ? guardExternal(untrusted.name, formatted) : formatted,
+        })
+      }
+
+      // Restate the fact right next to the freshest evidence, every round it
+      // holds — recency beats a model's trained "I can't access your files"
+      // reflex far more reliably than a single mention buried earlier in the
+      // system prompt. Cheap (one short line) and bounded by maxRounds.
+      if (hadFileAccessThisTurn) {
+        messages.push({
+          role: 'user',
+          content: 'Reminder: the tool result(s) above are real — you already have working ' +
+            "folder access for this chat and just used it successfully. Do NOT tell the user " +
+            'you lack file, folder, or codebase access, and do NOT ask them to grant access, ' +
+            'paste file contents, or share a URL. Answer using the actual content returned above.',
         })
       }
 

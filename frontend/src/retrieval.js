@@ -61,10 +61,10 @@ export function chunkText(text, { size = 1200, overlap = 200 } = {}) {
   const chunks = []
   let buf = ''
 
-  const flush = () => {
+  const flush = (clearOverlap = false) => {
     if (!buf.trim()) return
     chunks.push(buf.trim())
-    if (overlap <= 0) { buf = ''; return }
+    if (overlap <= 0 || clearOverlap) { buf = ''; return }
     // Carry over trailing context, but snap to a word boundary — slicing blind
     // leaves chunks starting mid-word ("ays and costs...").
     let tail = buf.slice(-overlap)
@@ -74,16 +74,18 @@ export function chunkText(text, { size = 1200, overlap = 200 } = {}) {
 
   for (const para of paras) {
     if (para.length > size) {
+      if (buf.trim()) flush(true)
       for (const sentence of para.match(/[^.!?]+[.!?]*\s*/g) || [para]) {
         if (buf.length + sentence.length > size) flush()
         buf += sentence
       }
+      if (buf.trim()) flush(true)
     } else {
       if (buf.length + para.length > size) flush()
       buf += (buf ? '\n\n' : '') + para
     }
   }
-  flush()
+  flush(true)
   return chunks.filter(c => c.length > 40)
 }
 

@@ -119,8 +119,12 @@ export const castToTvTool = {
         }
         case 'cast': {
           if (!args.device_id) return fail('device_id is required — call discover first.')
+          // resolveMediaArgs always includes `title` itself (falling back to
+          // args.title or a sensible default per source), so it is not also
+          // passed here — that would just be silently overwritten by the
+          // spread below, which is confusing to read even though harmless.
           const media = await resolveMediaArgs(args)
-          const res = await b.cast({ deviceId: args.device_id, title: args.title, ...media })
+          const res = await b.cast({ deviceId: args.device_id, ...media })
           if (!res?.success) return fail(res?.error || 'cast failed')
           return { success: true, device: res.device, casting: true }
         }

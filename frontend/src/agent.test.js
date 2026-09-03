@@ -10,10 +10,20 @@ vi.mock('./tools/index', () => ({
 vi.mock('./vision/source', () => ({
   describeWithoutModel: vi.fn(async () => ({ via: 'ocr', text: 'INVOICE TOTAL 42.00' })),
 }))
+// mcpRegistry.js is left REAL here — its own detectMcpNeed logic is pinned by
+// mcpRegistry.test.js. Only the data layer (what servers exist, and the
+// side-effecting reconnect calls) is mocked, so these tests prove the WIRING:
+// that agent.js actually calls detectMcpNeed and acts on what it returns.
+vi.mock('./mcp', () => ({
+  getMcpServers: vi.fn(async () => []),
+  setMcpServers: vi.fn(async () => {}),
+  refreshMcpTools: vi.fn(async () => []),
+}))
 
 const { streamChat } = await import('./llm')
 const { getToolSchemas, executeTool } = await import('./tools/index')
 const { describeWithoutModel } = await import('./vision/source')
+const { getMcpServers, setMcpServers, refreshMcpTools } = await import('./mcp')
 const { runAgent } = await import('./agent')
 
 /** Queue a scripted response per LLM round. */
@@ -34,6 +44,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   getToolSchemas.mockReturnValue([])
   executeTool.mockResolvedValue({ ok: true })
+  getMcpServers.mockResolvedValue([])
+  setMcpServers.mockResolvedValue(undefined)
+  refreshMcpTools.mockResolvedValue([])
 })
 
 describe('plain answers', () => {
@@ -710,6 +723,65 @@ describe('empty final answer', () => {
   })
 })
 
+describe('file-access reflex reminder (agent.js FILE_ACCESS_TOOLS)', () => {
+  // FIELD REPORT (2026-09-02): fs_read/fs_search succeeded — real repo content
+  // came back, visible in the trace — and the model's final answer still told
+  // the user it had no folder access and asked them to grant one or paste the
+  // file. Nothing in the tool pipeline was dropping the results; this is a
+  // model reflex ("I don't have access to your files" as a stock disclaimer)
+  // that a plain role:'tool' message does not reliably override. Fixed by
+  // restating the fact in a `role:'user'` reminder right after the evidence,
+  // every round it holds.
+  it('reminds the model it already has access after a successful fs_ tool call', async () => {
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'fs_read', parsedArgs: { path: 'CLAUDE.md' } }] },
+      { tokens: ['Here is what the file says.'] },
+    ])
+    await runAgent({ ...base, onDone: vi.fn() })
+
+    const second = streamChat.mock.calls[1][0]
+    expect(second.messages.some(m =>
+      m.role === 'user' && /already have working folder access/i.test(m.content) &&
+      /do not tell the user you lack/i.test(m.content),
+    )).toBe(true)
+  })
+
+  it('does not inject the reminder for tools unrelated to file/folder access', async () => {
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'weather', parsedArgs: {} }] },
+      { tokens: ['It is sunny.'] },
+    ])
+    await runAgent({ ...base, onDone: vi.fn() })
+
+    const second = streamChat.mock.calls[1][0]
+    expect(second.messages.some(m => /already have working folder access/i.test(m.content || ''))).toBe(false)
+  })
+
+  it('does not inject the reminder when the fs_ call itself failed', async () => {
+    executeTool.mockResolvedValueOnce({ error: 'No working folder for this chat.' })
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'fs_read', parsedArgs: { path: 'x' } }] },
+      { tokens: ['I need a folder granted first.'] },
+    ])
+    await runAgent({ ...base, onDone: vi.fn() })
+
+    const second = streamChat.mock.calls[1][0]
+    expect(second.messages.some(m => /already have working folder access/i.test(m.content || ''))).toBe(false)
+  })
+
+  it('keeps restating the reminder in a later round once access was proven', async () => {
+    scriptRounds([
+      { toolCalls: [{ id: '1', name: 'fs_read', parsedArgs: {} }] },
+      { toolCalls: [{ id: '2', name: 'weather', parsedArgs: {} }] }, // unrelated 2nd-round tool
+      { tokens: ['Done.'] },
+    ])
+    await runAgent({ ...base, onDone: vi.fn() })
+
+    const third = streamChat.mock.calls[2][0]
+    expect(third.messages.some(m => /already have working folder access/i.test(m.content || ''))).toBe(true)
+  })
+})
+
 describe('runtime platform awareness', () => {
   // The model used to be told it had "browser-native tools" and nothing else,
   // so on the desktop build it confidently refused real work: "I cannot run a
@@ -994,5 +1066,65 @@ describe('Reflex Prefetch (agentReflex.js) — background speculative execution'
     await runAgent({ ...base, userMessage: 'weather in Tokyo', onDone: vi.fn() })
     const paris = callsTo('weather').filter((c) => c[1]?.location === 'Paris')
     expect(paris).toHaveLength(1)
+  })
+})
+
+describe('MCP auto-reconnect / suggestion (mcpRegistry.js wired into the system prompt)', () => {
+  // detectMcpNeed's own logic is pinned by mcpRegistry.test.js. These assert
+  // the WIRING: that a matching, already-configured-but-disabled server is
+  // genuinely reconnected (no credential needed, so this is safe to do on its
+  // own), that an unconfigured known server is only ever MENTIONED to the
+  // model — never silently connected — and that an ordinary turn touches
+  // none of this machinery at all.
+  const systemPromptOf = () => streamChat.mock.calls[0][0].messages[0].content
+
+  it('reconnects a configured-but-disabled server whose keyword matches, before the first model call', async () => {
+    getMcpServers.mockResolvedValue([
+      { id: 'stripe', name: 'Stripe MCP', url: 'https://mcp.stripe.com/', enabled: false },
+    ])
+    scriptRounds([{ tokens: ['ok'] }])
+    const onStatus = vi.fn()
+    await runAgent({ ...base, userMessage: 'check our stripe invoices', onStatus, onDone: vi.fn() })
+
+    expect(setMcpServers).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 'stripe', enabled: true }),
+    ])
+    expect(refreshMcpTools).toHaveBeenCalledTimes(1)
+    expect(onStatus.mock.calls.map(c => c[0]).some(m => m.includes('Stripe MCP'))).toBe(true)
+    expect(systemPromptOf()).toContain('MCP AUTO-RECONNECTED')
+    expect(systemPromptOf()).toContain('Stripe MCP')
+  })
+
+  it('only mentions a known-but-unconfigured server — never connects to it', async () => {
+    getMcpServers.mockResolvedValue([])
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, userMessage: 'open a pull request on github for this fix', onDone: vi.fn() })
+
+    expect(setMcpServers).not.toHaveBeenCalled()
+    expect(refreshMcpTools).not.toHaveBeenCalled()
+    expect(systemPromptOf()).toContain('MCP CONNECTOR(S) NOT YET SET UP')
+    expect(systemPromptOf()).toContain('GitHub Copilot MCP')
+  })
+
+  it('touches none of this for an ordinary message that matches no known server', async () => {
+    getMcpServers.mockResolvedValue([
+      { id: 'stripe', name: 'Stripe MCP', url: 'https://mcp.stripe.com/', enabled: false },
+    ])
+    scriptRounds([{ tokens: ['ok'] }])
+    await runAgent({ ...base, userMessage: 'write me a short poem about autumn', onDone: vi.fn() })
+
+    expect(setMcpServers).not.toHaveBeenCalled()
+    expect(refreshMcpTools).not.toHaveBeenCalled()
+    expect(systemPromptOf()).not.toContain('MCP AUTO-RECONNECTED')
+    expect(systemPromptOf()).not.toContain('MCP CONNECTOR(S) NOT YET SET UP')
+  })
+
+  it('never fails the turn when the MCP data layer throws', async () => {
+    getMcpServers.mockRejectedValue(new Error('IndexedDB unavailable'))
+    scriptRounds([{ tokens: ['still works'] }])
+    const onDone = vi.fn()
+    await runAgent({ ...base, userMessage: 'check our stripe invoices', onDone })
+
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ content: 'still works' }))
   })
 })

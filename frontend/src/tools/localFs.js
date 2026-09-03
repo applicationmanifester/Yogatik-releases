@@ -26,8 +26,8 @@ export function isDesktop() {
 
 export const DESKTOP_ONLY_TOOLS = new Set([
   'fs_add_folder', 'fs_list', 'fs_read', 'fs_write', 'fs_edit', 'fs_replace_content',
-  'fs_multi_replace', 'fs_patch', 'code_outline', 'fs_outline', 'fs_smart_read',
-  'fs_file_info', 'fs_copy', 'fs_batch_write', 'fs_search', 'fs_find_files',
+  'fs_multi_replace', 'fs_patch', 'code_outline', 'fs_outline', 'fs_smart_read', 'fs_skim',
+  'fs_file_info', 'fs_copy', 'fs_batch_write', 'fs_search', 'fs_find_files', 'fs_codebase_map',
   'fs_delete', 'fs_mkdir', 'fs_move', 'fs_batch_read', 'fs_file_tree', 'fs_undo', 'fs_git',
   'terminal_run', 'clipboard_access', 'watch_folder', 'system_state', 'process_manager',
   'file_dialog', 'git_status', 'git_log', 'git_diff', 'proc_start', 'proc_output',
@@ -264,6 +264,17 @@ export async function wsFindFiles(pattern, { extension = '', maxDepth = 12, limi
   return invoke('fs_find_files', { pattern, extension: extension || undefined, maxDepth, limit, includeIgnored })
 }
 
+/**
+ * The same map fs_codebase_map hands the model, called directly for the UI
+ * (raw shape, throws on failure — like every other ws* helper here — rather
+ * than the tool's prose-shaped {success,error} contract). Backed by the same
+ * cache, so opening this panel right after the agent already asked for a map
+ * is instant.
+ */
+export async function wsCodebaseMap({ path = '', maxFiles, forceRefresh = false } = {}) {
+  return invoke('fs_codebase_map', { path: path || undefined, maxFiles: maxFiles || undefined, forceRefresh: !!forceRefresh })
+}
+
 /** Undo-journal diff for one entry: what the agent overwrote, and with what. */
 export async function journalDiff(id) {
   if (!isDesktop()) return { success: false, error: 'Desktop app only.' }
@@ -364,12 +375,20 @@ export const fsAddFolderTool = {
       'asks to work somewhere new. Reads and writes are confined to this chat’s folders. Desktop app only.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
-  async execute() {
+  async execute(_args = {}, opts = {}) {
     if (!isDesktop()) return DESKTOP_ONLY
     try {
       const root = await addRoot()
       if (!root) return { success: false, error: 'User cancelled the folder picker.' }
       const p = typeof root === 'string' ? root : root.path
+      // Fire-and-forget: a grant is the single strongest signal that a
+      // codebase_map call is coming next (it is the tool's own first line of
+      // advice — "call this FIRST on a new codebase"), so start building it
+      // now rather than waiting to be asked. Never awaited: a slow build must
+      // not delay handing the grant back to the user, and a Tauri "unknown
+      // command" rejection (no fs_codebase_map there yet) is swallowed rather
+      // than surfacing as a spurious failure on an otherwise-successful grant.
+      invoke('fs_codebase_map', {}, opts?.ctx).catch(() => {})
       return ok({ tool: 'fs_add_folder', root: p, message: `Added working folder ${p}` })
     } catch (e) { return fail(e) }
   },
@@ -561,6 +580,62 @@ export const fsFileTreeTool = {
         includeIgnored: !!include_ignored,
       }, opts?.ctx)
       return ok({ tool: 'fs_file_tree', path: path || '.', tree })
+    })
+  },
+}
+
+/**
+ * The "instant whole-codebase awareness" tool. No model can hold a huge repo
+ * in its context window at once — every provider has a real token ceiling —
+ * so this does not return file CONTENT. It returns a compact map of every
+ * source file's top-level exported symbols (functions, classes, components),
+ * built once per folder and cached (electron/codebaseMap.cjs, invalidated on
+ * every write/edit and every external change the watcher sees). One call
+ * gives the model the whole SHAPE of a codebase; it still reads full files
+ * with fs_read only for the two or three that actually matter to the
+ * question, instead of blind fs_search rounds. Electron only — there is no
+ * Tauri command behind this yet, so it fails like any other Electron-only
+ * tool on that shell (see `guard`).
+ */
+export const fsCodebaseMapTool = {
+  schema: {
+    name: 'fs_codebase_map',
+    description:
+      'Get an instant map of this workspace: every source file with its top-level exported ' +
+      'functions/classes/components, in one call — not file contents. Call this FIRST on a new ' +
+      'or unfamiliar codebase, or when asked to explain/understand/summarize a project, before ' +
+      'reaching for fs_search/fs_read file by file. Covers JS/TS/JSX/TSX/Vue/Svelte, Python, Go, ' +
+      'Rust fully; other languages are listed by path with no extracted symbols. Cached — a ' +
+      'second call is near-instant unless files changed. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Optional: map only this subfolder instead of the whole workspace (use when a full map was truncated, or the repo is a monorepo and only one package matters).' },
+        max_files: { type: 'number', description: 'Cap on files read and parsed (default 600, max 4000).' },
+        force_refresh: { type: 'boolean', description: 'Rebuild even if a cached map exists (default false — the cache is already invalidated automatically on every write).' },
+      },
+      required: [],
+    },
+  },
+  async execute({ path = '', max_files, force_refresh = false } = {}, opts = {}) {
+    return guard(async () => {
+      const res = await invoke('fs_codebase_map', {
+        path: path || undefined,
+        maxFiles: max_files || undefined,
+        forceRefresh: !!force_refresh,
+      }, opts?.ctx)
+      return ok({
+        tool: 'fs_codebase_map',
+        path: path || '.',
+        map: res.text,
+        total_source_files: res.totalSourceFiles,
+        mapped_files: res.mappedFiles,
+        truncated: !!res.partial,
+        cached: !!res.cached,
+        note: res.partial
+          ? 'The map was truncated (too many files for one call) — see the note at the end of `map` for how to see the rest.'
+          : undefined,
+      })
     })
   },
 }

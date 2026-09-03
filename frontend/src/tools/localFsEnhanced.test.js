@@ -6,6 +6,7 @@ import {
   fsBatchWriteTool,
   fsFindFilesTool,
   fsSearchTool,
+  fsAddFolderTool,
   stripAnsi,
 } from './localFs'
 import { terminalRunTool } from './terminalRun'
@@ -101,5 +102,34 @@ describe('bridge wiring', () => {
     expect(res.stdout).toBe('ok')
     // Non-interactive flags must reach the shell or a prompt hangs it.
     expect(exec.mock.calls[0][1].env).toMatchObject({ CI: 'true', GIT_TERMINAL_PROMPT: '0' })
+  })
+
+  it('fs_add_folder pre-warms the codebase map — the tool tells the model to call it FIRST', async () => {
+    let resolveMap
+    const mapPromise = new Promise((r) => { resolveMap = r })
+    const invoke = vi.fn(async (cmd) => {
+      if (cmd === 'roots_add') return { path: '/root', label: 'root' }
+      if (cmd === 'fs_codebase_map') { await mapPromise; return { text: '' } }
+      throw new Error(`unexpected command: ${cmd}`)
+    })
+    window.__TAURI__ = { core: { invoke } }
+    const res = await fsAddFolderTool.execute()
+    expect(res.success).toBe(true)
+    expect(res.root).toBe('/root')
+    // The grant already returned — the pre-warm was never awaited.
+    expect(invoke).toHaveBeenCalledWith('fs_codebase_map', expect.any(Object))
+    resolveMap() // let the pending call settle so it cannot leak into another test
+  })
+
+  it('a pre-warm that fails (Tauri has no fs_codebase_map yet) never fails the grant', async () => {
+    const invoke = vi.fn(async (cmd) => {
+      if (cmd === 'roots_add') return { path: '/root', label: 'root' }
+      if (cmd === 'fs_codebase_map') throw new Error('Unknown command: fs_codebase_map')
+      throw new Error(`unexpected command: ${cmd}`)
+    })
+    window.__TAURI__ = { core: { invoke } }
+    const res = await fsAddFolderTool.execute()
+    expect(res.success).toBe(true)
+    expect(res.root).toBe('/root')
   })
 })

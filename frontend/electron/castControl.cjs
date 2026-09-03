@@ -161,7 +161,13 @@ function ensureServer() {
   if (_server) return _server
   const dir = servedDir()
   _server = http.createServer((req, res) => {
-    const reqPath = decodeURIComponent((req.url || '').split('?')[0])
+    // decodeURIComponent throws on a malformed %-sequence, and this handler
+    // is reachable by anything on the same LAN, not just the TV — an
+    // uncaught throw here would take the WHOLE Electron main process down,
+    // the same "one bad regex freezes the app" class of risk safeRegex.cjs
+    // exists to prevent elsewhere in this app. Never let a request crash it.
+    let reqPath
+    try { reqPath = decodeURIComponent((req.url || '').split('?')[0]) } catch { reqPath = '' }
     const name = reqPath.replace(/^\/+/, '')
     if (!isSafeServedName(name)) { res.writeHead(400); res.end('bad request'); return }
     const full = path.join(dir, name)

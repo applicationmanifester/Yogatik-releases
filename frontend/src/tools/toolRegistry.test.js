@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import ALL_TOOLS, { TOOL_ALIASES, MAX_TOOLS_PER_REQUEST } from './index'
+import ALL_TOOLS, { TOOL_ALIASES, MAX_TOOLS_PER_REQUEST, DESKTOP_ONLY_TOOLS } from './index'
 
 /**
  * This test used to assert the OLD behaviour — that spawnSubagentTool ran its
@@ -42,5 +42,37 @@ describe('spawn_subagent retirement', () => {
     // mean anything.
     expect(Number.isFinite(MAX_TOOLS_PER_REQUEST)).toBe(true)
     expect(MAX_TOOLS_PER_REQUEST).toBeLessThanOrEqual(128)
+  })
+})
+
+describe('fs_codebase_map registration', () => {
+  it('is a real registered tool with a schema and an execute function', () => {
+    expect(ALL_TOOLS.fs_codebase_map).toBeTruthy()
+    expect(typeof ALL_TOOLS.fs_codebase_map.execute).toBe('function')
+    expect(ALL_TOOLS.fs_codebase_map.schema?.description).toMatch(/map/i)
+  })
+
+  it('every documented alias resolves to the real tool', () => {
+    for (const alias of ['codebase_map', 'repo_map', 'map_codebase', 'understand_codebase', 'explore_codebase']) {
+      expect(TOOL_ALIASES[alias]).toBe('fs_codebase_map')
+    }
+  })
+})
+
+describe('fs_skim registration', () => {
+  it('is a real registered tool with a schema and an execute function', () => {
+    expect(ALL_TOOLS.fs_skim).toBeTruthy()
+    expect(typeof ALL_TOOLS.fs_skim.execute).toBe('function')
+    expect(ALL_TOOLS.fs_skim.schema?.description).toMatch(/shape/i)
+  })
+
+  it('every documented alias resolves to the real tool', () => {
+    for (const alias of ['skim_file', 'skim', 'file_skeleton', 'read_skeleton', 'outline_body']) {
+      expect(TOOL_ALIASES[alias]).toBe('fs_skim')
+    }
+  })
+
+  it('is excluded from the web build, same as every other fs_* tool', () => {
+    expect(DESKTOP_ONLY_TOOLS.has('fs_skim')).toBe(true)
   })
 })

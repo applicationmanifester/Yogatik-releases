@@ -16,6 +16,11 @@ const {
 } = require('./fsCore.cjs')
 const { getIndex, scanRoot, listDir, invalidate } = require('./fsIndex.cjs')
 const { globToRegExp } = require('./safeRegex.cjs')
+// Lazy + best-effort: codebaseMap.cjs is optional (registered separately in
+// main.cjs), and a circular require at module-load time is not worth risking
+// for a cache invalidation that is allowed to no-op if the module is absent.
+let codebaseMapInvalidate = null
+try { codebaseMapInvalidate = require('./codebaseMap.cjs').invalidate } catch { /* optional */ }
 
 let journal = null
 /** main.cjs supplies the store path (userData); absent = journalling disabled. */
@@ -33,6 +38,10 @@ function snapshot(ctx, op, target) {
   // Scoped to the path we just touched: a write to one file must not throw
   // away the listing of every other open folder.
   try { invalidate(target || null) } catch { /* cache only */ }
+  // A file the agent just wrote/edited/moved must not be served from a stale
+  // symbol map either — same reasoning, same scoping (path-only, never a
+  // blanket clear), one line down from the fsIndex call it mirrors.
+  try { codebaseMapInvalidate?.(target || null) } catch { /* cache only */ }
 }
 
 /** Cap a single file's size for text search — 2 MB of one line is not source. */
@@ -368,6 +377,7 @@ function registerFsBridge() {
   ipcMain.handle('fs_mkdir', async (_e, { ctx, path: rel }) => {
     await fs.promises.mkdir(resolvePath(ctx, rel), { recursive: true })
     invalidate()
+    try { codebaseMapInvalidate?.() } catch { /* cache only */ }
     return null
   })
 

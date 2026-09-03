@@ -115,10 +115,12 @@ function listModelsHttp(host = '127.0.0.1', port = 11434, timeoutMs = 4000) {
         try {
           const parsed = JSON.parse(body)
           resolve((parsed?.models || []).map(m => ({
-            name: m.name,
+            // `name` and `model` have both been used by different Ollama
+            // versions for the same tag — never trust one alone.
+            name: m.name || m.model || '',
             size: m.size ? `${(m.size / 1e9).toFixed(1)} GB` : '',
             modified: m.modified_at || '',
-          })))
+          })).filter(m => m.name))
         } catch { resolve([]) }
       })
     })
@@ -126,6 +128,28 @@ function listModelsHttp(host = '127.0.0.1', port = 11434, timeoutMs = 4000) {
     req.setTimeout(timeoutMs, () => { req.destroy(); resolve([]) })
     req.end()
   })
+}
+
+/**
+ * The best available model list for a daemon already confirmed RUNNING.
+ *
+ * The CLI is tried first when a binary was found (it matches `ollama list`'s
+ * own formatting exactly), but the daemon's HTTP endpoint is the actual
+ * source of truth — if a found binary produces NOTHING, that is far more
+ * likely to be a CLI-parsing quirk (a locale/output-format difference, a
+ * permissions issue, a Windows Store build's `list` subcommand behaving
+ * differently) than a daemon that is running but genuinely has zero models.
+ * Reporting "no models" in that case is indistinguishable from a real empty
+ * install, and is exactly the "daemon running, app shows nothing" complaint
+ * this function exists to stop — so an empty CLI result falls back to the
+ * HTTP endpoint rather than being trusted as final.
+ */
+async function listModels(bin) {
+  if (bin) {
+    const viaCli = await listLocalModels(bin)
+    if (viaCli.length) return { models: viaCli, viaHttp: false }
+  }
+  return { models: await listModelsHttp(), viaHttp: true }
 }
 
 /** Wait until the daemon HTTP endpoint is up, with a deadline. */
@@ -314,10 +338,8 @@ function registerOllamaIpc(getWindow) {
     const bin = await findOllamaBin()
     if (!bin && !running) return { installed: false, running: false, models: [], bin: null }
 
-    const models = running
-      ? (bin ? await listLocalModels(bin) : await listModelsHttp())
-      : []
-    return { installed: true, running, models, bin, viaHttp: !bin }
+    const { models, viaHttp } = running ? await listModels(bin) : { models: [], viaHttp: false }
+    return { installed: true, running, models, bin, viaHttp }
   })
 
   /**
@@ -339,8 +361,10 @@ function registerOllamaIpc(getWindow) {
     if (!running) return []
     const bin = await findOllamaBin()
     // Same reasoning as ollama:status — a running daemon can list its models
-    // over HTTP whether or not this process can find the CLI.
-    return bin ? listLocalModels(bin) : listModelsHttp()
+    // over HTTP whether or not this process can find the CLI, and a found
+    // CLI that yields nothing falls back to HTTP rather than being trusted.
+    const { models } = await listModels(bin)
+    return models
   })
 
   /**
@@ -395,4 +419,10 @@ function destroyOllamaDaemon() {
   }
 }
 
-module.exports = { registerOllamaIpc, destroyOllamaDaemon }
+module.exports = {
+  registerOllamaIpc, destroyOllamaDaemon,
+  // Exported for ollamaDaemon.test.js only — the model-listing fallback
+  // logic is worth pinning directly rather than only through the full IPC
+  // round trip.
+  listModelsHttp, listLocalModels, listModels,
+}

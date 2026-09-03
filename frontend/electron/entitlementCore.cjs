@@ -76,7 +76,7 @@ const CHANNELS = {
   fs_edit: P(CAP.FILES), fs_search: P(CAP.FILES), fs_find_files: P(CAP.FILES),
   fs_delete: P(CAP.FILES), fs_mkdir: P(CAP.FILES), fs_move: P(CAP.FILES),
   fs_batch_read: P(CAP.FILES), fs_file_tree: P(CAP.FILES), fs_multi_edit: P(CAP.FILES),
-  fs_stat: P(CAP.FILES), fs_copy: P(CAP.FILES),
+  fs_stat: P(CAP.FILES), fs_copy: P(CAP.FILES), fs_codebase_map: P(CAP.FILES),
   // Granting a working folder is the door itself.
   roots_add: P(CAP.FILES), roots_list: P(CAP.FILES), roots_remove: P(CAP.FILES),
   roots_set_primary: P(CAP.FILES), roots_rebind: P(CAP.FILES), roots_unbind: P(CAP.FILES),
