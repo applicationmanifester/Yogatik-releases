@@ -321,24 +321,13 @@ contextBridge.exposeInMainWorld('__YOGATIK_PROCESS__', {
   kill: (pid) => ipcRenderer.invoke('process:kill', pid),
 })
 
-// Interactive PTY terminal (no-op unless node-pty is installed).
-contextBridge.exposeInMainWorld('__YOGATIK_PTY__', {
-  available: () => ipcRenderer.invoke('pty:available'),
-  spawn: (opts) => ipcRenderer.invoke('pty:spawn', opts || {}),
-  write: (id, data) => ipcRenderer.invoke('pty:write', { id, data }),
-  resize: (id, cols, rows) => ipcRenderer.invoke('pty:resize', { id, cols, rows }),
-  kill: (id) => ipcRenderer.invoke('pty:kill', id),
-  onData: (cb) => {
-    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
-    ipcRenderer.on('pty:data', handler)
-    return () => ipcRenderer.removeListener('pty:data', handler)
-  },
-  onExit: (cb) => {
-    const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
-    ipcRenderer.on('pty:exit', handler)
-    return () => ipcRenderer.removeListener('pty:exit', handler)
-  },
-})
+// NOTE: the old __YOGATIK_PTY__ bridge (pty:available/spawn/write/resize/kill)
+// was removed here 2026-08-25 when the interactive PTY moved into
+// terminalSession.cjs as "tier 2" — main.cjs no longer registers those pty:*
+// handlers (see electron/pty.cjs, kept only as a retired stub). A bridge
+// whose handlers do not exist answers every call with "No handler
+// registered", so it must not be re-added; use __YOGATIK_TERMINAL__'s
+// ptyWrite/ptyResize/ptyKill (terminal:pty-*) instead.
 
 // Local (stdio) MCP servers — spawn & talk to local MCP servers the browser
 // can't reach. mcp.js routes transport:'stdio' entries through this.

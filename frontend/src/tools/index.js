@@ -149,9 +149,12 @@ import {
   nobelPrizeTool, issLocationTool, tvShowTool, triviaQuizTool, postalLookupTool,
   nasaApodTool, itunesSearchTool, artInstituteTool, solarTimesTool,
   dnsLookupTool, activitySuggestTool, jokesTool, animalFactsTool,
-  cocktailRecipeTool, federalRegisterTool, waybackArchiveTool,
+  cocktailRecipeTool, federalRegisterTool,
   userProfileGenTool, nasaAsteroidsTool, bibleScriptureTool, wikimediaFeedTool,
+  // waybackArchiveTool retired 2026-09-04 — a duplicate of knowledge.js's
+  // archiveTool (same job, same endpoint). See archive.js note below.
 } from './openApis'
+import { sportsTool, animeTool } from './sportsAnime'
 import {
   executeScreenInspect,
   executeDesktopAction,
@@ -412,11 +415,13 @@ const ALL_TOOLS = {
   animal_facts: animalFactsTool,
   cocktail_recipe: cocktailRecipeTool,
   federal_register: federalRegisterTool,
-  wayback_archive: waybackArchiveTool,
   user_profile_gen: userProfileGenTool,
   nasa_asteroids: nasaAsteroidsTool,
   bible_scripture: bibleScriptureTool,
   wikimedia_feed: wikimediaFeedTool,
+  // Sports scores/schedules + anime/manga lookup — keyless, CORS-verified.
+  sports_scores: sportsTool,
+  anime_lookup: animeTool,
   document_generator: documentGeneratorTool,
   crew_orchestrator: crewOrchestratorTool,
   deepsec: deepsecTool,
@@ -934,9 +939,12 @@ export const TOOL_ALIASES = {
   executive_order: 'federal_register',
   executive_orders: 'federal_register',
   federal_rules: 'federal_register',
-  wayback: 'wayback_archive',
-  wayback_machine: 'wayback_archive',
-  archive_url: 'wayback_archive',
+  // waybackArchiveTool was a duplicate of this same 'archive' tool (both hit
+  // archive.org/wayback/available) — retired 2026-09-04, aliases point here now.
+  wayback: 'archive',
+  wayback_archive: 'archive',
+  wayback_machine: 'archive',
+  archive_url: 'archive',
   random_user: 'user_profile_gen',
   mock_user: 'user_profile_gen',
   generate_persona: 'user_profile_gen',
@@ -1272,7 +1280,7 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
     scores['federal_register'] = 200
   }
   if (/\b(wayback|wayback machine|archive\.org|snapshot|archived page|old website|web history)\b/i.test(text)) {
-    scores['wayback_archive'] = 200
+    scores['archive'] = 200
   }
   if (/\b(random user|mock profile|fake persona|test user|user generator|persona)\b/i.test(text)) {
     scores['user_profile_gen'] = 200
@@ -1285,6 +1293,12 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   }
   if (/\b(on this day|today in history|historical event|history today|wikipedia featured)\b/i.test(text)) {
     scores['wikimedia_feed'] = 200
+  }
+  if (/\b(score|scores|fixture|fixtures|standings|league table|match result|final score|who won|game schedule|kickoff)\b/i.test(text)) {
+    scores['sports_scores'] = 200
+  }
+  if (/\b(anime|manga|myanimelist|mal|shounen|seinen|isekai|manhwa)\b/i.test(text)) {
+    scores['anime_lookup'] = 200
   }
   if (/\b(document|word doc|docx|presentation|slide deck|slides|invoice|billing receipt|certificate|award cert|spreadsheet|doc generator)\b/i.test(text)) {
     scores['document_generator'] = 200

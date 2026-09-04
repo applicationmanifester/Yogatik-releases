@@ -959,57 +959,14 @@ export const federalRegisterTool = {
   },
 }
 
-// ─── 21. Internet Archive Wayback Machine Snapshot Availability ────────────
-export const waybackArchiveTool = {
-  schema: {
-    description:
-      'Check if a website, article, or URL has historical snapshots archived on the Internet Archive Wayback Machine. ' +
-      'Returns the archived snapshot URL, timestamp, and status. ' +
-      'Use when checking archived versions of web pages, retrieving dead link backups, or researching web history.',
-    parameters: {
-      type: 'object',
-      properties: {
-        url: { type: 'string', description: 'The web page URL to check (e.g. "https://www.apple.com", "nytimes.com")' },
-        timestamp: { type: 'string', description: 'Optional target date timestamp in YYYYMMDD format (e.g. "20150101")' },
-      },
-      required: ['url'],
-    },
-  },
-  async execute({ url, timestamp } = {}) {
-    if (!url) return { success: false, error: 'url is required' }
-    try {
-      let target = url.trim()
-      if (!target.startsWith('http://') && !target.startsWith('https://')) target = `https://${target}`
-      let apiUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(target)}`
-      if (timestamp) apiUrl += `&timestamp=${encodeURIComponent(timestamp.trim())}`
-
-      const d = await json(apiUrl)
-      const closest = d.archived_snapshots?.closest
-
-      if (!closest || !closest.available) {
-        return {
-          success: true,
-          tool: 'wayback_archive',
-          url: target,
-          archived: false,
-          message: 'No archived snapshot found on the Wayback Machine.',
-        }
-      }
-
-      return {
-        success: true,
-        tool: 'wayback_archive',
-        url: target,
-        archived: true,
-        snapshot_url: closest.url,
-        snapshot_timestamp: closest.timestamp,
-        status: closest.status,
-      }
-    } catch (e) {
-      return { success: false, error: e.message }
-    }
-  },
-}
+// ─── 21. (retired) Wayback Machine lookup ───────────────────────────────────
+// waybackArchiveTool used to live here — deleted 2026-09-04. It duplicated
+// knowledge.js's archiveTool (same archive.org/wayback/available endpoint,
+// near-identical output shape): two tools with overlapping descriptions were
+// both reaching the model on every "check the wayback machine" turn, exactly
+// the "watch tool alias shadow" bug this codebase has hit before. See
+// archiveTool in knowledge.js — it now accepts `timestamp` as an alias for
+// `date`, and every wayback/wayback_machine/archive_url alias points there.
 
 // ─── 22. Random Realistic Persona / Mock User Profile Generator ─────────────
 export const userProfileGenTool = {

@@ -904,6 +904,19 @@ export async function runAgent({
   let toolMode = toolsEnabled ? (initialToolMode || 'native') : 'off'
   let tools = toolMode === 'native' ? schemas : null
 
+  // A model can start ALREADY in prompted mode via initialToolMode (every
+  // isLocal provider — chromeai, WebLLM `local` — forces this from api.js
+  // before the first call, never by demoting mid-loop). enablePromptedTools()
+  // below is what writes the tool list into messages[0], but it was only ever
+  // called from a later DEMOTION (a native model rejecting a native tools
+  // array). A model that starts prompted never went through that path, so
+  // messages[0] stayed plain systemBase with no tool block at all — the model
+  // had zero information that any tool existed, which reads as "cannot access
+  // tools" rather than the documented "calls them unreliably" trade-off.
+  if (toolMode === 'prompted' && schemas?.length) {
+    messages[0] = { role: 'system', content: systemBase + buildToolPrompt(schemas) }
+  }
+
   /** Switch to the text protocol and re-run the round. */
   const enablePromptedTools = () => {
     toolMode = 'prompted'

@@ -285,6 +285,12 @@ export const hackerNewsTool = {
 }
 
 // ─── Archived pages ──────────────────────────────────────────────────────────
+// This is the ONE wayback-machine tool. A second copy (openApis.js's
+// waybackArchiveTool, same archive.org endpoint, near-identical output) was
+// retired 2026-09-04 — two near-duplicate schemas competing for the model's
+// attention is the exact "watch tool alias shadow" bug class this codebase
+// keeps hitting. `timestamp` is accepted as an alias for `date` so nothing
+// that used to call the retired tool's param name breaks.
 export const archiveTool = {
   schema: {
     description:
@@ -295,11 +301,13 @@ export const archiveTool = {
       properties: {
         url: { type: 'string', description: 'The page to look up' },
         date: { type: 'string', description: 'Target date as YYYYMMDD (default: most recent)' },
+        timestamp: { type: 'string', description: 'Alias for date (YYYYMMDD).' },
       },
       required: ['url'],
     },
   },
-  async execute({ url, date }) {
+  async execute({ url, date, timestamp }) {
+    date = date || timestamp
     try {
       const q = `https://archive.org/wayback/available?url=${encodeURIComponent(url)}${date ? `&timestamp=${date}` : ''}`
       const data = await json(q).catch(err => {

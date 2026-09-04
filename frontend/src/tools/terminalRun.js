@@ -22,16 +22,31 @@ const NON_INTERACTIVE_ENV = {
 
 import { parseTerminalDiagnostics } from './terminalDiagnostics'
 
+// Command shapes that almost always start a PERSISTENT process — a dev
+// server, a watch-mode build, a REPL-style long-running daemon — rather than
+// something that exits on its own. Calling this tool on one of them is a real,
+// observed failure mode: the command works fine (the server starts, the port
+// is live), but terminal_run still WAITS for it to exit, so both the agent
+// and the user sit blocked for the full timeout with nothing to show for it.
+// This is deliberately a heuristic that only SHORTENS the default timeout
+// (see waitMs below), never a refusal — a one-shot script that happens to be
+// named "dev" or "start" still runs and finishes exactly as before; only a
+// command that genuinely never exits gets killed sooner, with a clearer
+// reason, instead of after the full 5-minute default.
+export const LONG_RUNNING_RE = /\b(npm|yarn|pnpm|bun)\s+(run\s+)?(dev|start|serve|watch)\b|\bvite\b(?!\s+build)|\bnext\s+dev\b|\bnodemon\b|\bwebpack(-dev-server)?\s+serve\b|\bng\s+serve\b|\bflask\s+run\b|\brails\s+s(erver)?\b|\bpython3?\s+-m\s+http\.server\b|\bhttp-server\b|\blive-server\b|\bwrangler\s+dev\b|\bfirebase\s+(serve|emulators:start)\b|\buvicorn\b.*--reload\b|\bgunicorn\b(?!.*--daemon)/i
+
 export const terminalRunTool = {
   schema: {
     description:
       'Execute a terminal CLI command in this chat’s primary working folder. ' +
       'Use to run tests (npm test), build projects, check git status, or execute scripts. ' +
       'Returns stdout, stderr, exit code, and structured compiler/test diagnostics. ' +
-      'It WAITS for the command to finish and times out (default 30s), so it is the wrong tool ' +
+      'It WAITS for the command to finish (default timeout 5 minutes), so it is the wrong tool ' +
       'for anything long-running: use proc_start for dev servers, watch-mode tests and streaming ' +
-      'builds. Needs a working folder granted for this chat — if none is bound, ask the user to ' +
-      'add one instead of concluding you cannot run commands. Desktop app only.',
+      'builds — a command like "npm run dev" that starts a server and never exits will simply be ' +
+      'killed once the timeout is reached, wasting the wait. Needs a working folder granted for ' +
+      'this chat — if none is bound, ask the user to add one instead of concluding you cannot run ' +
+      'commands. Desktop app only.',
     parameters: {
       type: 'object',
       properties: {
@@ -61,7 +76,16 @@ export const terminalRunTool = {
       return { success: false, error: 'Terminal bridge is unavailable in this environment.' }
     }
 
-    const waitMs = Number(timeout) || 300000
+    // An explicit timeout from the model always wins — it may deliberately
+    // want to wait longer (or, after being told about the shorter default
+    // below, shorter still). Only when NOTHING was specified do we shorten
+    // the wait for a command shape that looks like it starts a server rather
+    // than exiting on its own — the whole point being a fast, actionable
+    // answer instead of a 5-minute block for a result that was foretold by
+    // the command itself.
+    const explicitTimeout = Number(timeout) || 0
+    const looksPersistent = !explicitTimeout && LONG_RUNNING_RE.test(command)
+    const waitMs = explicitTimeout || (looksPersistent ? 12000 : 300000)
     const startedAt = Date.now()
     try {
       const res = await bridge.exec(command, {
@@ -77,11 +101,34 @@ export const terminalRunTool = {
         ctx: getWorkspaceCtx(opts?.ctx),
         env: { ...NON_INTERACTIVE_ENV, ...(env && typeof env === 'object' ? env : {}) },
       })
-      // exitCode -1 means the command never STARTED (no working folder bound, bad
-      // cwd, spawn error). That is a real tool failure and needs an `error` field —
-      // without one the log only ever said "terminal_run: Unknown error".
+      // A PRE-FLIGHT failure (no working folder bound, bad cwd, spawn error) —
+      // the command never ran at all. The bridge's `terminal:exec` handler
+      // reports this via `error`, with exitCode left `null`, NOT `-1` (that
+      // was true of an older, since-replaced implementation; this comment
+      // used to describe exitCode -1 as "never started", which stopped being
+      // accurate the moment terminal:exec was rewritten to delegate to the
+      // shared runBlock — checking exitCode alone would let a genuine
+      // pre-flight failure like "No working folder for this chat" fall
+      // through to the generic success branch below and get silently
+      // reported as an empty-output SUCCESS). Check the real signal instead.
+      if (res?.error) {
+        return { success: false, error: res.error }
+      }
+      // exitCode -1 (with no `error`) means the opposite of "never started":
+      // the command WAS running, got force-killed after the timeout, and
+      // still had not confirmed it actually exited within the extra grace
+      // period — a real possibility especially on Windows, where the kill is
+      // itself a fire-and-forget spawn. Reporting this as "could not be
+      // started" would be flatly false, and dangerous for a persistent
+      // process (a dev server, a stray build) that might still be running.
       if (res?.exitCode === -1) {
-        return { success: false, error: res.stderr || 'The command could not be started.' }
+        return {
+          success: false,
+          error: `The command was force-killed after ${waitMs}ms but did not confirm it exited — ` +
+            'it may have been a persistent process (a server, watcher, or similar) that is still ' +
+            'running. Use proc_start for anything long-running instead, so it can be stopped cleanly.',
+          killed: true,
+        }
       }
       // A non-zero exit is a RESULT, not a tool failure: the card should show the
       // real stdout/stderr instead of an error card with nothing in it.
@@ -100,7 +147,14 @@ export const terminalRunTool = {
         diagnostics: diagnostics.length ? diagnostics : undefined,
         durationMs: Date.now() - startedAt,
         killed: res?.killed || false,
-        ...(res?.killed ? { note: `Timed out after ${waitMs}ms and was killed. Use proc_start for long-running commands.` } : {}),
+        ...(res?.killed ? {
+          note: looksPersistent
+            ? `Killed after ${waitMs}ms — this command looks like it starts a persistent process ` +
+              '(a dev server, watch-mode build, or similar) rather than exiting on its own. Use ' +
+              'proc_start to run it in the background, then proc_output to read its output as it ' +
+              'starts up (e.g. to confirm the port it is listening on).'
+            : `Timed out after ${waitMs}ms and was killed. Use proc_start for long-running commands.`,
+        } : {}),
       }
     } catch (e) {
       return { success: false, error: e?.message || String(e) }

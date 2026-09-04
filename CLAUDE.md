@@ -1,5 +1,380 @@
 # Yogatik — Project Knowledge
 
+## "Add a Live voice dropdown, curated male/female, matching text output" — already shipped, verified not re-built (2026-09-04)
+- ASKED FOR: a dropdown to pick the AI's voice in Live, spoken audio that matches the displayed
+  text, and a curated male/female voice set that reads as normal/neutral rather than emotionally
+  intimate or robotic. Traced the whole path before writing anything, per this file's own
+  "grep the writer before trusting the reader" rule — all three were already built, by the
+  2026-08-30 "why can't the AI see me" session (`components/LiveSettings.jsx`'s Voice group) and
+  the earlier `video/speech.js` narrator work. Nothing was added; this entry exists so a future
+  session does not re-implement it from scratch believing the request was new.
+  - THE DROPDOWN: `LiveSettings.jsx` (opened via the gear icon in `.live-controls`, `Settings2`)
+    has a Voice group — an engine toggle (Neural/System) plus a `<select>` populated from a local
+    `GENDER = {female:[...], male:[...]}` map, labelled via `VOICE_LABELS`. Wired end to end:
+    `LiveView.jsx`'s `onVoice`/`onVoiceEngine` call `sessionRef.current?.setVoice`/`setVoiceEngine`
+    and only move the UI control once the session actually accepted the change.
+  - MATCHING TEXT OUTPUT: already guaranteed by construction, not something that could drift.
+    `live/cascade.js`'s `flushSentences` slices spoken clauses straight out of `buffer` — the SAME
+    accumulating string the caller renders as captions/transcript from — via one choke point,
+    `speak(text)`. There is no second copy of the reply text anywhere in the path a caption and the
+    TTS call could disagree on.
+  - CURATED VOICES, ALREADY NOT EMOTIONAL: `video/speech.js`'s `VOICES`/`VOICE_LABELS` deliberately
+    expose 6 of Kokoro-82M's 28 built-in voices ("a useful spread rather than all 28") — 3 female
+    (Heart/warm, Nova/bright, Emma/British), 3 male (Michael/calm, Puck/lively, George/British) —
+    with plain, unromantic descriptors (warm/bright/steady/calm/lively), not the character-styled
+    or whispery ones Kokoro also ships. The System-engine fallback (`live/voice.js`'s
+    `SYSTEM_HINT`) maps each of those SAME six ids to an OS-voice regex hint (Zira/Aria, David/Guy,
+    Hazel/Sonia, George/Ryan) rather than exposing every raw OS voice, so a user never lands on an
+    OS's more theatrical/character voices either. Selecting a voice calls `speaker.configure()`
+    on the live shared `Speaker`, which updates the SAME object mid-call rather than recreating it
+    — the fix a prior "male/female change never took effect" bug in this exact file required.
+  - GEMINI IS THE ONE HONEST EXCEPTION, not a gap: Gemini's realtime engine fixes its voice in the
+    session's own setup message and has no live "change voice" wire command, so `setVoice`/
+    `setVoiceEngine` there return `{success:false, error}` and `LiveView.jsx` surfaces that error
+    and does NOT move the picker — a silently-ignored selection would be worse than an honest
+    refusal (same "say what it cannot do" discipline as the ComfyUI SVD/checkpoint split and
+    `computer_control`'s schema elsewhere in this file).
+- VERIFIED FOR REAL, not just read: `node ./scripts/run-vitest.mjs --run src/live/voice.test.js
+  src/live/cascade.test.js` — 24/24 pass, covering `configure()` actually changing voice/engine on
+  a live speaker and the clause-splitting/speak-choke-point behaviour the caption-match claim
+  depends on. Confirmed `.ls-select`/`.style-select` (the dropdown's actual CSS classes) are real,
+  styled rules in `styles.css`, not dead class names. No code was changed — there was nothing to
+  fix, and adding a second voice picker or a second curated list would be exactly the "two copies,
+  only one wired" class of bug this file already warns against repeatedly.
+
+## chromeai could never see a single tool — every isLocal provider was affected (2026-09-04) — agent.js, chromeAI.js
+- FIELD REPORT (screenshot): Chrome built-in AI stuck on "Thinking & formulating response…" for
+  an ordinary question, and separately reported as unable to use Yogatik's own tools at all. Read
+  as two symptoms; only one was a real bug, and it was worse than "unreliable."
+- REAL BUG, not the documented "a tiny on-device model calls tools unreliably through the prompted
+  text-JSON protocol" trade-off this file already accepted for chromeai/WebLLM: `enablePromptedTools()`
+  — the function that writes `buildToolPrompt(schemas)` (the actual tool list + calling format) into
+  `messages[0]` — was reachable from exactly two places, both a MID-LOOP DEMOTION (`demoteToPrompted()`,
+  fired only when a NATIVE-mode model accepts a tools array and then rejects it). Every `isLocal`
+  provider (chromeai, WebLLM `local`) sets `initialToolMode: 'prompted'` in api.js and therefore
+  starts the turn ALREADY in prompted mode — it never demotes, so it never called
+  `enablePromptedTools()`, so `messages[0]` stayed the plain `systemBase` with NO tool block at all.
+  The model was not "bad at calling tools" — it had never been told a single tool existed. This is
+  exactly the field report: "cannot access Yogatik's own tools" was literally true, for every local
+  provider, since the day prompted-mode-from-start shipped.
+  - Existing test `'starts in prompted mode when the model is already known to need it'` asserted
+    only `tools: null` and a single `streamChat` call — it PASSED against the broken code, because
+    nothing checked that `messages[0]` actually named a tool. Same shape as every other "test
+    encoded the bug" entry in this file: a green suite proved the request was shaped right, not that
+    the model could see anything. Extended it to assert `messages[0].content` contains the real tool
+    description; reverting the fix and re-running that one test fails it — confirmed non-vacuous.
+  - Fix: right after `toolMode`/`tools` are set, if `toolMode === 'prompted'` (whether from
+    `initialToolMode` or a later demotion — the condition does not care which) and there are schemas
+    to describe, `messages[0]` is built with `systemBase + buildToolPrompt(schemas)` immediately.
+    `enablePromptedTools()` still runs the SAME line on a later demotion (now redundant but harmless
+    — it re-assigns the identical content) so nothing about the native→prompted mid-loop path changed.
+- THE "TOO SLOW" HALF is a real UX gap, not a bug that can be fixed without a real browser to
+  measure: `streamChromeAI` (chromeAI.js) creates a fresh Prompt API session every call and replays
+  every prior turn as a full, NON-STREAMED `.prompt()` call before streaming only the final turn — a
+  deliberate, already-documented tradeoff for correctness after an edit/branch. The replay loop fired
+  no `onStatus` at all, so a multi-round tool-calling conversation (which, once the tool-visibility
+  bug above is fixed, chromeai can actually attempt) silently replays a GROWING history on every
+  round with nothing on screen — the exact shape of "stuck on Thinking" in the screenshot. Added an
+  `onStatus` heartbeat per replayed turn ("Replaying conversation on-device (i/N)…") and one more the
+  instant real generation starts ("Generating on-device…") — cheap, and turns a silent multi-second
+  stall into a status line that keeps moving. This does NOT make Gemini Nano faster; a small
+  on-device model generating a real reply is still slow relative to a hosted API, and that part
+  cannot be verified further in this sandbox (no WebGPU/Chrome AI runtime here to measure against).
+- VERIFIED FOR REAL: `npx eslint@9` on both touched files — 0 errors (4 pre-existing unrelated
+  unused-var warnings in agent.js, confirmed none are new).
+  `node ./scripts/run-vitest.mjs --run src/agent.test.js src/chromeAI.test.js` — 92/92 pass. The new
+  assertion was proven non-vacuous by reverting the fix and re-running just that test: it fails
+  (`messages[0].content` no longer contains `web_search(query: string)`), then passes again once the
+  fix is restored. A REAL `npx vite build` succeeded, exit 0, full `dist/` written (stale `dist/`
+  moved aside first, per this file's standing cross-OS-mount workaround). No new test file was
+  needed for chromeAI.js's `onStatus` heartbeat — it is presentation-only (a status string), and the
+  actual behavioural fix lives entirely in agent.js, already covered above.
+
+## Live object-detection overlay (2026-09-04) — components/LiveView.jsx, features.js
+- Asked directly: object detection in the live feed/video. The model already existed and was
+  already wired for a ONE-SHOT use (vision/detect.js's DETR pipeline, consumed inside
+  describeWithoutModel's fused fallback narration) but nothing drew boxes continuously over the
+  live camera/screen preview — the "what's actually in front of me, updating as I move the
+  camera" HUD experience people mean by "object detection in the live feed" did not exist.
+- DELIBERATELY NOT routed through `sessionRef.current?.watch()` (what Auto-Scan and "always"
+  vision mode use) — that path sends a frame to the MODEL as a real conversation turn, costing a
+  round trip and tokens every time it fires. This is a local HUD: it reads the SAME shared
+  camera/screen source (`getSharedVisualSource()`, the one-camera rule vision/source.js already
+  enforces) on its own 1.2s interval, runs DETR locally, and the boxes never leave the browser or
+  touch the model/agent loop at all.
+- Reuses the EXISTING aHash change-gate for free: `src.grab(false, {maxEdge:480, quality:0.6})`
+  returns null when the scene has not visibly changed since the last grab (video.js's own gate,
+  already shared by every other consumer of this source), so DETR is simply not run on a static
+  scene — the same "the cheapest frame is the one you never send" discipline the capture-pipeline
+  entry above already documents, applied here to local inference instead of a model turn.
+- Consent: reuses the SAME `localVision` toggle the VLM/CLIP/segmentation downloads already
+  answer to (App.jsx's `setDetectorConsent(features.localVision)`), not a second consent prompt —
+  asking twice for the same "let this app download on-device models" decision trains people to
+  click through both, per this file's own established rule. A new, SEPARATE feature switch
+  (`liveObjectDetection`, default OFF) exists only to gate whether the continuous detection LOOP
+  runs at all, since unlike a one-shot describe call this is ongoing inference for as long as a
+  call lasts — a real, standing cost that must be its own explicit ask. Turning the Live control-
+  bar button on without also having turned on "On-device vision" in Personalise fails honestly:
+  `detectObjects` throws its existing "needs a one-time 40MB download... turn on On-device vision"
+  message, caught here, surfaced in the button's own tooltip, and the toggle switches itself back
+  off rather than retrying forever against a model that will never load.
+- Boxes are positioned with manually-flipped x (`(1 - xmax) * 100%`) rather than mirroring the
+  whole overlay layer with `scaleX(-1)` to match `.live-self`'s own CSS mirror: video.js's
+  `grab()` draws the RAW, unmirrored camera pixels (`ctx.drawImage(video, ...)` before any CSS
+  transform), so the coordinates DETR returns are unmirrored too, while `.live-self` is mirrored
+  for the user's own reflection-familiar self-view. Mirroring the layer would have also mirrored
+  the label TEXT, needing a second undo-transform on every label; flipping the one coordinate
+  avoids that entirely.
+- Stale boxes never linger: the effect clears `detections` the instant the toggle goes off, the
+  camera/screen turns off, or the call state leaves `'live'` — a HUD claiming an object is still
+  in frame after the camera has moved or been switched off is worse than showing nothing.
+- `ScanEye` (lucide-react) is the toggle icon, next to Auto-Scan's `Scan` — the two are visually
+  related (both are "look at the feed periodically") but functionally distinct (one feeds the
+  model, one draws locally), so they get separate, adjacent buttons rather than being folded into
+  one control with two meanings.
+- VERIFIED FOR REAL: `npx eslint@9` on every touched file — 0 errors (existing unrelated
+  unused-var warnings elsewhere in LiveView.jsx, confirmed pre-existing, none new).
+  `node ./scripts/run-vitest.mjs --run src/buildGuards.test.js src/vision/source.test.js` —
+  12/12 pass; buildGuards' real esbuild reachability check confirms the new `detectObjects`/
+  `getSharedVisualSource` imports resolve and the file is actually wired into the bundle, not a
+  dead import. A REAL `npx vite build` succeeded, exit 0, full `dist/` written (stale `dist/`
+  moved aside first, per this file's standing cross-OS-mount workaround). No dedicated test file
+  exists for vision/detect.js (true before this change too — it is a thin wrapper around a
+  Transformers.js pipeline that needs a real model download to exercise meaningfully) and none was
+  added here; the logic this session actually wrote (coordinate flip, gate reuse, consent-failure
+  handling, stale-box clearing) is straightforward JSX/effect wiring checked by re-reading the
+  diff and by the reachability build passing, not by a new unit test — a future session with a
+  way to mock the DETR pipeline output could add one.
+
+## Rest of the Live pipeline ask — chat-response toggle confirmed, latency/compression scoped out (2026-09-04)
+- Closing out the three remaining pieces of "improve live user voice process, fast ai agent
+  responses, ai voice output/respones (enable/disable), ai chat response (enable/disable),
+  video/image capture process... compression" after the voice-output-mute entry above.
+- "ai chat response (enable/disable)" — ALREADY BUILT, just confirming rather than duplicating:
+  `features.liveCaptions` (default on) + the in-call gear (LiveSettings.jsx's Captions row,
+  `onCaptions`) toggles `showCaptions` in LiveView.jsx, which gates the on-screen caption block
+  AND the saved transcript boundary. That is the real "does the AI's text reply show" switch —
+  a second one would be the two-toast-systems class of duplication this file already warns
+  against. Not renamed or re-surfaced; it already lives where a user would look (the gear icon
+  next to mic/speaker mute).
+- "fast ai agent responses" — NOT touched further this pass, and said explicitly why rather than
+  guessed at: this session's sandbox has no WebGPU, no real microphone/speaker, and no way to load
+  the actual Live UI in a browser, so any latency claim here ("this shaves N ms off the round
+  trip") could not be MEASURED, only asserted — exactly the standard `agentPool`'s Reflex Prefetch
+  and round-robin fairness entries above were held to. The two real levers already exist and were
+  built in prior sessions with real measurement: Reflex Prefetch (speculative tool execution ahead
+  of the model's own decision) and agentPool's fair round-robin scheduling. A further pass needs a
+  session that can actually run the Live call end-to-end and profile it, not another guess.
+- "video/image capture process... compression" — AUDITED, not changed: live/video.js already does
+  everything the ask describes — aHash change-gating (skip a frame that looks the same as the
+  last one, ~260 tokens saved per skipped frame), capped edge size (MAX_EDGE 768, "MEDIA_RESOLUTION
+  _MEDIUM gets nothing from more" — already measured and stated in the file's own comment), JPEG
+  quality tuned per capture profile (0.7 scenes / 0.92 text, from vision/source.js's captureProfile),
+  and optional centre-crop. There is no further compression lever to pull without either lowering
+  quality below what OCR/text-reading needs (already tuned, per the vision/source.js history entry
+  above: "768@0.7 cannot read a serial number") or adding a real encoder this app does not have
+  (frames are JPEG stills over a data channel, not a video stream — there is no motion-compensation
+  codec to apply here). Nothing changed; flagging so a future session does not re-investigate this
+  same ground from scratch.
+- VERIFICATION: this entry is documentation/confirmation only — no code changed, so no new test/
+  lint/build run was needed. The `features.liveCaptions` wiring was confirmed by direct grep
+  against LiveView.jsx/LiveSettings.jsx/features.js, not assumed.
+
+## AI voice output mute (2026-09-04) — live/cascade.js, live/audio.js, live/session.js, LiveView.jsx
+- Asked to improve the Live pipeline broadly (voice process, agent latency, voice/chat
+  enable-disable, capture efficiency). Started with the concrete, scoped half: "ai voice
+  output/respones (enable/disable)". Mic mute already existed (`setMuted`/`toggleMute`); output
+  mute did not — the smoking gun was `Volume2` imported in LiveView.jsx and never used anywhere,
+  which is exactly the eslint no-unused-vars signal this file's own history says to trust.
+- Reply text/captions are UNCHANGED by this — muting only stops the reply from being SPOKEN.
+  cascade.js's `speak(text)` is the one choke point every clause passes through (called from
+  flushSentences), so `speakerMuted` gates there: muted, it returns before touching the
+  synthesiser — no TTS request, no audio, no latency spent either way. `spokenAloud` is
+  deliberately NOT updated on a muted call — nothing is about to play, so the echo guard has
+  nothing to filter.
+- Gemini's realtime engine (live/session.js + live/audio.js) has no "stop sending audio" wire
+  message — it's a receive-only WSS — so muting there is a GAIN NODE flip in `createPlayer`
+  (`gain.gain.value = v ? 0 : 1`): instant, silent, reversible with no reconnect. Incoming audio
+  keeps scheduling and playing through `push`, just inaudible. Both engines expose the same
+  shape (`setSpeakerMuted`/`getSpeakerMuted` or `isSpeakerMuted`) on purpose, matching this
+  file's own convention of LiveView calling through `sessionRef.current` with no engine branch
+  wherever the API shapes already match.
+- LiveView.jsx: `speakerMuted` joined the `uiState` object (destructured alongside `muted`), a
+  `toggleSpeaker` handler mirrors `toggleMute`, and a new speaker-mute button
+  (Volume2/VolumeX icons) sits between the mic-mute and screen-share buttons in `.live-controls`.
+- VERIFIED FOR REAL: `npx eslint@9` on all four touched files — 0 errors (Volume2 no longer
+  flagged unused). `node ./scripts/run-vitest.mjs --run src/live/cascade.test.js
+  src/buildGuards.test.js` — 20/20 pass (cascade.test.js only covers cascade's pure exported
+  helpers — `createCascadeSession` is a stateful closure with no existing mock harness for
+  Web Speech/`createSpeaker`, so the new mute logic living inside that closure has no NEW direct
+  test; same trade-off this file's own SettingsModal.test.jsx entry already made once — logic
+  correctness over a from-scratch mock set with no way to iterate on it this session). A REAL
+  `npx vite build` succeeded, exit 0, full `dist/` written (stale `dist/` moved aside first, the
+  same recurring cross-OS-mount workaround this file already documents).
+- STILL OPEN from the same broader ask: "fast ai agent responses" (agent-loop/tool-round
+  latency — not investigated this pass), "ai chat response (enable/disable)" (the existing
+  `features.liveCaptions`/`showCaptions` toggle already controls whether replies render as
+  captions at all — worth confirming/surfacing that as the answer, not yet done), and
+  "video/image capture process ... compression" (Live's frame pipeline in live/video.js —
+  captureProfile, aHash gating, JPEG quality — not yet audited for further gains).
+
+## Live HUD shortcut bar removed + a real dead PTY bridge found (2026-09-04)
+- Asked directly (with a screenshot): remove Identify Pill / Scan Barcode / Enhance Macro
+  from Live, and remove "the rectangular bar in middle of the screen" — read together, both
+  point at the same thing: `LiveHudOverlay`'s standing button row. Each button captured the
+  camera frame and sent a canned instruction to the model ("Identify this pill...") the
+  INSTANT it was tapped, regardless of whether the user had actually asked for that job —
+  the opposite of what was wanted: these jobs should run only on an explicit user command,
+  spoken or typed, never from a button pre-empting the decision.
+  - `LiveView.jsx` no longer imports or renders `LiveHudOverlay`; the three
+    `onIdentifyPill`/`onScanBarcode`/`onEnhanceMacro` handlers (each just a
+    `sessionRef.current?.sendText?.(...)` canned string) are gone. Nothing is lost: Live
+    already attaches vision every turn (`visualParts`/`describeIfVisual` in live/cascade.js),
+    so saying "identify this pill" out loud reaches the model exactly the same way, just
+    because the user asked rather than because a button did.
+  - `LiveHudOverlay.jsx` is RETIRED to a stub (same pattern as TerminalPanel.jsx) rather than
+    deleted — this sandbox cannot unlink files on this mount (confirmed again this session,
+    see below) — and both buildGuards.test.js reachability allowlists were updated with a
+    reason. The stale comment there claiming "ArtifactCanvas.jsx and LiveHudOverlay.jsx...
+    are imported" is now only true for ArtifactCanvas.
+- WHILE AUDITING desktop wiring for this: `electron/preload.cjs` still exposed a
+  `window.__YOGATIK_PTY__` bridge (`pty:available/spawn/write/resize/kill`) — despite this
+  file's OWN "Shared terminal" entry (2026-08-25) stating flatly "the `__YOGATIK_PTY__`
+  bridge is gone from preload." It was not. `main.cjs` correctly stopped registering those
+  `pty:*` handlers (superseded by terminalSession.cjs's tier-2 PTY), so the bridge was live,
+  reachable, and would have answered every call with "No handler registered" — exactly the
+  shipped-dead class this file keeps hitting (fs_find_files, the retired watcher import).
+  Found by diffing every `ipcRenderer.invoke('...')` call in preload.cjs against every real
+  `ipcMain.handle` across `electron/*.cjs`; nothing in `src/` ever called it, so this was
+  latent, not user-visible, but real. Removed the dead block from preload.cjs; use
+  `__YOGATIK_TERMINAL__`'s `ptyWrite`/`ptyResize`/`ptyKill` (`terminal:pty-*`) instead — that
+  is the one that has always worked.
+- SANDBOX NOTE, reconfirmed: this session's mount allows writing and truncating a file but
+  refuses `unlink` even after `chmod 777`, even on a file created and owned by this same
+  session (not just a Windows-authored one, which is the case this file previously
+  documented). A throwaway `__deltest_probe.jsx` created to test this is left in
+  `src/components/` as a harmless, documented, allowlisted stub — delete it from Windows
+  whenever convenient; the file's own header says so.
+- VERIFIED FOR REAL: `node ./scripts/run-vitest.mjs --run src/buildGuards.test.js` — all 4
+  cases pass (both reachability allowlists resolve cleanly in each direction). `npx eslint@9`
+  on every touched file — 0 errors (5 pre-existing unused-var warnings in LiveView.jsx,
+  confirmed none are new). `node --check electron/preload.cjs` — parses. A REAL
+  `npx vite build` succeeded, exit 0, full `dist/` written (had to `mv` the stale `dist/`
+  out of the way first — the same cross-OS-mount EPERM-on-unlink this file already
+  documents for that exact file, `dist/ads.txt`). `src/smoke.test.jsx` (mounts the whole
+  app) passes.
+
+## Three scraping tools fabricated results — reliability audit (2026-09-04)
+- Asked for a broad reliability audit (agent/tool + live/companion + desktop + UI, "audit + propose
+  new capabilities"). This session covered the agent/tool half only — see "NOT DONE" below for the
+  rest, deliberately not attempted rather than rushed.
+- Sweeping `tools/` for the recurring "field report" bug classes (duplicate coverage, dead-but-
+  registered code, dishonest results) turned up three real, serious bugs in tools that had NEVER
+  been flagged before: `scrapling.js`, `lightpanda.js`, `firecrawl.js` — all three "inspired by"
+  real scraping projects (Scrapling, lightpanda-io/browser, Firecrawl), all three keyword-boosted
+  to 220 in `prioritizeToolSchemas`, so the model reaches for them readily.
+  - `lightpanda.js`'s `cdp_info` action returned a FABRICATED live-connection report —
+    `memoryPerTab: '~15 MB'`, `cdpEndpoint: 'ws://127.0.0.1:9222/devtools/browser'`, a Docker image
+    name — none of which exist anywhere in this app. Nothing here spawns a process or opens a CDP
+    socket; it is a plain fetch + regex HTML-to-Markdown converter. `lightpanda.test.js` had ENCODED
+    this as correct (`expect(cdpRes.memoryPerTab).toContain('16x')`) — same class as the TerminalPanel
+    PTY mock and the `agentPool` Infinity assertion this file has hit before: the test proved the bug
+    was intentional, not caught it. Action removed; the honest CDP-backed browser in this app is
+    `browser_control` (a real Electron WebContentsView), and the tool's description now says so.
+  - `scrapling.js` returned `anti_bot_bypassed: true` on EVERY successful fetch, whether or not a
+    challenge was ever detected — i.e. it claimed a bypass for pages that were never blocked in the
+    first place. Worse: when a REAL Cloudflare/Datadome/PerimeterX challenge WAS detected, on desktop
+    it returned `success: true` with `stealth_escalation: 'Browser Engine Active'` and "Scrapling
+    engine activated real browser session" — while just re-running `extractReadable()` on the SAME
+    blocked challenge-page HTML it had already flagged as not-real-content. No browser session was
+    ever opened. A model (and then a user) would have been told a bypass succeeded that never
+    happened. Both claims are gone; a challenge is now reported as `success: false`, honestly, with a
+    pointer to the one thing that actually CAN pass a JS challenge — `browser_control` (desktop-only,
+    a real Chromium process) — never claimed as already done.
+  - All three (`scrapling.js`, `lightpanda.js`, `firecrawl.js`) fetched an ARBITRARY, user-supplied
+    URL via a bare `fetch()`, bypassing `tools/http.js`'s `proxyFetch`/`proxyText` — the shared
+    CORS-fallback layer this file has required since the youtube.js "second copy of the relay list"
+    entry: "Tools must go through tools/http.js, never their own." Unlike the raw-fetch calls in
+    `weather.js`/`sportsAnime.js`/`agentReach.js`/`repoFinder.js` (each hitting ONE fixed, individually
+    CORS-verified host — a legitimate, already-established pattern in this codebase), these three
+    accept ANY url the model passes, which cannot be assumed to send CORS headers. On the web build a
+    bare fetch to a non-CORS host just fails outright with no fallback; `firecrawl`'s `crawl` action in
+    particular would have silently failed every single page of a crawl. Routed through `proxyText` now,
+    which also means `scrapling`'s dead `STEALTH_HEADERS` constant (declared, never passed to
+    anything) is now actually sent, via `proxyText`'s `opts.headers` passthrough — the one real thing
+    a header set can do (it still cannot solve a JS challenge; nothing here runs the challenge's own
+    JS, and the tool no longer claims otherwise).
+  - `lightpanda.js`'s `eval_js` ran model-supplied code through a bare `new Function(...)` with a
+    `with (context)` wrapper — no sandbox, no timeout, full access to whatever scope the tool executes
+    in (the app's own renderer). This app already solved this correctly twice (`js_execute`'s Web
+    Worker sandbox, `code_execute`'s Pyodide sandbox); this was a THIRD, unsandboxed reimplementation
+    of the same capability, and the one real code-execution security gap found this session. `eval_js`
+    now delegates to `jsExecTool` instead — same result, and a genuinely new agent-facing capability
+    (JS execution) is not what changed here, just which sandbox runs it.
+- VERIFIED FOR REAL, not hand-traced: real vitest runs against all three touched test files (21 cases;
+  `lightpanda.test.js` and `scrapling.test.js` rewritten to assert the HONEST behaviour instead of the
+  fabricated one — including a case that specifically pins `cdp_info` no longer existing, and a case
+  proving `eval_js` no longer works via a bare unsandboxed path in a jsdom test environment that has
+  neither Worker nor a desktop bridge, which the OLD `new Function` implementation would have quietly
+  passed). `schemaContract.test.js` and `toolRegistry.test.js` re-run, both still pass — no alias now
+  points at a removed action, no schema drift. `npx eslint@9` on every touched file: 0 errors (one
+  PRE-EXISTING `no-unused-vars` warning in scrapling.js, confirmed not introduced by this session's
+  edit — the `adaptive` local in `generateScraplingScript` was already computed and unused before any
+  of this). A REAL `npx vite build` succeeded, exit 0, full `dist/` written — the one pre-existing
+  chunk-size advisory is unrelated to this change.
+- NOT DONE this session, deliberately deferred rather than rushed: the Live/Companion/voice, Desktop
+  capabilities, and UI/UX polish passes the user also asked for. This one finding (three tools
+  fabricating results) was serious enough, and the fix touched enough files, to be worth landing and
+  verifying on its own rather than splitting attention across four large areas in one pass. A future
+  session should pick up the remaining three areas fresh.
+
+## Sports + anime tools, and a real duplicate-tool bug found while adding them (2026-09-04)
+- Asked to mine github.com/public-apis/public-apis for gaps. It is a README list, nothing
+  importable. Cross-checked its categories against the existing ~230-tool registry first (the
+  "merge with existing similar code" discipline this file already enforces) and found Books
+  (booksTool, Open Library) and Currency (currencyTool, Frankfurter/ECB) already fully wired —
+  no work needed there. Sports and Anime had nothing.
+- New `tools/sportsAnime.js`: `sports_scores` (TheSportsDB — search_team/next_events/
+  last_events/events_day/table) and `anime_lookup` (Jikan/MyAnimeList — anime+manga search,
+  falls back to top-ranked when no query given). Both CORS-verified LIVE before being added
+  (curl with an Origin header — a bare curl without one can under-report CORS support, since a
+  Cloudflare-fronted host can reply conditionally on Vary:Origin, which is exactly what
+  Frankfurter did when re-checked). TheSportsDB's only free path is its own documented shared
+  TEST key "3" (real per-app keys need a Patreon sub since 2023) — noted in the file as
+  genuinely rate-limited across every app using it, not just this one. Jikan's /anime search
+  endpoint returned a live 504 from its own MAL-proxying during verification while /top/anime
+  and a by-id lookup both returned 200 moments later — documented as upstream flakiness (same
+  class as this file's Stooq bot-check and YouTube datacenter-IP notes), not papered over with a
+  blind retry; the tool surfaces the real error.
+- CAUGHT WHILE WIRING THESE IN: openApis.js's `waybackArchiveTool` and knowledge.js's
+  `archiveTool` were two separate tools doing the exact same job — same archive.org/wayback/
+  available endpoint, near-identical output — both registered, both reaching the model on every
+  "check the wayback machine" turn as competing schemas. Same class as the `watch` tool-vs-alias
+  collision this file already documents. Only `wayback_archive` had a keyword-boost score (200);
+  `archive` had none, so the newer duplicate was actually winning the ranking despite being the
+  redundant one. Retired `waybackArchiveTool` (its file section now just explains why it is
+  gone, rather than a silently vanished export), moved the keyword boost onto `archive`,
+  repointed every alias (wayback/wayback_machine/archive_url/wayback_archive) at `archive`, and
+  gave `archiveTool` a `timestamp` param alias so nothing that used the retired tool's argument
+  name breaks. `agents.js`'s Civic & Regulatory Intelligence preset listed `wayback_archive` (an
+  alias, not a real tool name post-retirement) in its `tools:` array — fixed to the canonical
+  `archive`, the same "presets must use canonical names" rule this file's terminal_exec entry
+  already established.
+- Both new tools get a keyword-boost block in `prioritizeToolSchemas` (scores/standings/fixture
+  wording → sports_scores; anime/manga/MAL wording → anime_lookup), same mechanism every other
+  keyless tool in this batch uses.
+- VERIFIED FOR REAL, not hand-traced: `npm run lint` — 0 errors across every touched file (one
+  pre-existing unused-import warning in openApis.test.js, not introduced here). New tests —
+  `sportsAnime.test.js` (14 cases: every action, missing-arg refusals, real response-shape
+  mapping, honest empty-result reporting, a real fetch failure surfaced not swallowed) and
+  `knowledge.test.js` (4 cases, new file — archiveTool had no dedicated test file before this;
+  covers the snapshot-found/not-found paths, the new `timestamp` alias, and the existing 429
+  friendly-message path) — all pass. `schemaContract.test.js` (the no-raw-TypeError-on-missing-
+  args sweep across every registered tool), `openApis.test.js` (its waybackArchiveTool block
+  removed, 28 remaining cases still pass), `agents.test.js` and `toolRegistry.test.js` all still
+  pass after the alias/preset fixes. A REAL `npx vite build` succeeded, exit 0, full `dist/`
+  written — the one pre-existing chunk-size advisory is unrelated to this change.
+
 ## v5.1.0 — this session had REAL shell access, and it caught two real bugs (2026-09-03)
 - Different from every "no shell access — hand-traced, not executed" note elsewhere in this
   file: this session's sandbox had a real Linux shell with the project folder mounted, Node

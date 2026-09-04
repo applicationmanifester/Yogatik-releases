@@ -1,10 +1,33 @@
 /**
- * Lightpanda: Ultra-Fast Headless Browser for AI Agents & RAG
- * 
- * Inspired by Lightpanda (github.com/lightpanda-io/browser).
- * Built with Zig + V8 architecture principles for 16x lower memory usage,
- * sub-100ms startup, instant HTML-to-Markdown RAG extraction, and CDP automation.
+ * Lightpanda: HTML-to-Markdown extraction, named after (not built on)
+ * lightpanda-io/browser.
+ *
+ * FIXED 2026-09-04: this file used to CLAIM to be a real CDP-connected
+ * headless browser process — `cdp_info` returned a fabricated memory figure,
+ * a fake `cdpEndpoint: 'ws://127.0.0.1:9222/...'`, and a Docker image name,
+ * none of which exist anywhere in this app. Nothing here spawns a process,
+ * opens a CDP socket, or runs Zig/V8 — it is a plain fetch + regex-based
+ * HTML-to-Markdown converter, same tier as webExtract.js. A model that
+ * called cdp_info and believed it, then tried to dial that websocket,
+ * would fail against a number this file invented. Fixed to say so plainly.
+ * The real CDP-backed browser in this app is browser_control (Electron
+ * WebContentsView) — this tool points to it rather than pretending to be it.
+ *
+ * Also fixed: fetchMarkdown used a bare `fetch()`, bypassing tools/http.js's
+ * proxyFetch/proxyText — the shared CORS-fallback layer every other web tool
+ * in this codebase goes through (see the youtube.js "second copy of the
+ * relay list" gotcha). A raw fetch to a non-CORS host just fails on the web
+ * build. Routed through proxyText now.
+ *
+ * Also fixed: eval_js ran model-supplied code through a bare `new Function`
+ * with no sandbox, no timeout, and full access to whatever scope this tool
+ * executes in (the app's own renderer) — a real code-execution surface this
+ * app already solved correctly elsewhere (js_execute's Web Worker sandbox,
+ * code_execute's Pyodide sandbox). Delegates to jsExecTool now instead of
+ * re-implementing an unsandboxed eval.
  */
+import { proxyText } from './http'
+import { jsExecTool } from './jsExec'
 
 /**
  * Converts raw HTML into clean, semantic LLM Markdown
@@ -132,82 +155,45 @@ export function extractInteractiveElements(html = '') {
 }
 
 /**
- * Execute JS snippet inside a lightweight sandbox
+ * Fetch webpage and return LLM-ready markdown. Static HTML only — same limit
+ * as webExtract.js, stated so the caller does not assume more than a plain
+ * fetch can deliver (a client-rendered SPA comes back near-empty).
  */
-export function evalJS(code = '', context = {}) {
+export async function fetchMarkdown(url = '') {
   try {
-    const fn = new Function('context', `
-      with (context) {
-        return (${code});
-      }
-    `)
-    const result = fn(context)
-    return {
-      success: true,
-      result,
-      type: typeof result,
-    }
-  } catch (err) {
-    return {
-      success: false,
-      error: err.message,
-    }
-  }
-}
-
-/**
- * Fetch webpage and return LLM-ready markdown
- */
-export async function fetchMarkdown(url = '', options = {}) {
-  try {
-    const resp = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Lightpanda/0.2 (Zig; V8; AI-Agent)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-      ...options,
-    })
-
-    if (!resp.ok) {
-      return {
-        success: false,
-        status: resp.status,
-        error: `HTTP ${resp.status}: ${resp.statusText}`,
-      }
+    const html = await proxyText(url)
+    if (!html || typeof html !== 'string') {
+      return { success: false, url, error: `Failed to fetch HTML from ${url}` }
     }
 
-    const html = await resp.text()
     const parsed = htmlToMarkdown(html)
     const interactive = extractInteractiveElements(html)
 
     return {
       success: true,
       url,
-      engine: 'Lightpanda (Zig+V8)',
       title: parsed.title,
       contentLength: parsed.length,
       markdown: parsed.markdown,
       interactiveElements: interactive.elements,
+      note: 'Static HTML fetch — a JavaScript-rendered page will come back near-empty. For that, use browser_control (desktop app), which renders in a real browser.',
     }
   } catch (err) {
-    return {
-      success: false,
-      error: err.message,
-    }
+    return { success: false, url, error: err.message }
   }
 }
 
 export const lightpandaTool = {
   schema: {
     name: 'lightpanda',
-    description: 'Lightpanda ultra-fast headless browser and RAG scraper (inspired by lightpanda-io/browser). Built with Zig + V8 for 16x lower memory and sub-100ms startup. Fetches client-rendered web pages, extracts semantic Markdown, and exposes interactive DOM selectors for AI agents.',
+    description: 'Fetches a static web page and converts it to clean Markdown, extracting interactive elements (links/buttons/inputs) as a bonus. Does NOT render JavaScript and is not a real browser process — for a JS-rendered page or real interaction, use browser_control (desktop app) instead. eval_js runs code in the same sandboxed worker as js_execute.',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['fetch_markdown', 'eval_js', 'extract_dom', 'cdp_info'],
-          description: 'Headless browser action to perform.',
+          enum: ['fetch_markdown', 'eval_js', 'extract_dom'],
+          description: 'Action to perform.',
         },
         url: {
           type: 'string',
@@ -241,7 +227,9 @@ export const lightpandaTool = {
         if (!script) {
           return { success: false, error: 'Please provide a "script" to evaluate.' }
         }
-        return evalJS(script)
+        // Delegates to the real sandbox (Web Worker / Node on desktop) rather
+        // than re-implementing an unsandboxed eval — see file header.
+        return await jsExecTool.execute({ code: script })
       }
 
       case 'extract_dom': {
@@ -264,23 +252,10 @@ export const lightpandaTool = {
         return { success: false, error: 'Please provide either a "url" or raw "html".' }
       }
 
-      case 'cdp_info': {
-        return {
-          success: true,
-          action: 'cdp_info',
-          engine: 'Lightpanda Browser (Zig + V8)',
-          memoryPerTab: '~15 MB (16x lower than Chrome)',
-          startupLatency: '< 100ms',
-          protocols: ['Chrome DevTools Protocol (CDP)', 'Playwright', 'Puppeteer'],
-          dockerImage: 'lightpanda/browser:nightly',
-          cdpEndpoint: 'ws://127.0.0.1:9222/devtools/browser',
-        }
-      }
-
       default:
         return {
           success: false,
-          error: `Unknown action "${action}". Valid actions: fetch_markdown, eval_js, extract_dom, cdp_info.`,
+          error: `Unknown action "${action}". Valid actions: fetch_markdown, eval_js, extract_dom.`,
         }
     }
   },

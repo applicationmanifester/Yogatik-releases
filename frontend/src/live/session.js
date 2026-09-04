@@ -370,6 +370,14 @@ You can see them through their camera and hear them through their microphone. Be
     },
     setMuted: (v) => { mic?.setMuted(v); emit({ type: 'muted', value: v }) },
     isMuted: () => !!mic?.isMuted(),
+    /**
+     * AI VOICE OUTPUT, separate from `setMuted` (the mic). Gemini's realtime
+     * socket has no "stop sending audio" message — it is receive-only from
+     * this side — so this mutes at the player's gain node (see audio.js):
+     * instant, silent, and the socket/turn keeps running untouched.
+     */
+    setSpeakerMuted: (v) => { player?.setMuted(v); emit({ type: 'speaker-muted', value: !!v }) },
+    isSpeakerMuted: () => !!player?.isMuted(),
     get cameraOn() { return !!cam },
     get screenOn() { return !!screen },
   }

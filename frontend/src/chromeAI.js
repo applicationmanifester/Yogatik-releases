@@ -205,11 +205,22 @@ export async function streamChromeAI({ model, messages, temperature = 0.7, tools
     // Replay every turn but the last as plain (non-streamed) prompts so the
     // fresh session's memory matches this app's real history, then stream
     // only the current, final turn.
-    for (let i = 0; i < turns.length - 1; i++) {
+    //
+    // Each of these is a full, non-streamed on-device generation — for a
+    // growing tool-calling conversation (a few rounds in, replaying the tool
+    // results too) this can be the slowest part of the call and it produces
+    // NOTHING visible until it finishes, which is exactly what made a real
+    // reply look permanently stuck on "Thinking…": onToken/onStatus only
+    // fired once generation of the FINAL turn began. A per-turn heartbeat
+    // here is cheap and turns a silent multi-second stall into a status line
+    // that keeps moving.
+    const replayCount = turns.length - 1
+    for (let i = 0; i < replayCount; i++) {
       if (signal?.aborted) break
       const t = turns[i]
       const text = textOf(t.content)
       if (!text) continue
+      onStatus?.(`Replaying conversation on-device (${i + 1}/${replayCount})…`)
       // The Prompt API has no "assistant turn" injection primitive on a
       // plain session — tag it so the replayed transcript still reads as a
       // conversation rather than a wall of unattributed user turns.
@@ -218,6 +229,7 @@ export async function streamChromeAI({ model, messages, temperature = 0.7, tools
     }
     if (signal?.aborted) { onDone?.(); return }
 
+    onStatus?.('Generating on-device…')
     const lastText = textOf(turns[turns.length - 1].content)
     const stream = session.promptStreaming(lastText, signal ? { signal } : undefined)
     let prev = ''

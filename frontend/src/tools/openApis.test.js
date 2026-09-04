@@ -19,7 +19,6 @@ import {
   animalFactsTool,
   cocktailRecipeTool,
   federalRegisterTool,
-  waybackArchiveTool,
   userProfileGenTool,
   nasaAsteroidsTool,
   bibleScriptureTool,
@@ -494,29 +493,9 @@ describe('Open Public APIs Tools', () => {
     })
   })
 
-  describe('wayback_archive', () => {
-    it('checks historical snapshot availability on Internet Archive', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          archived_snapshots: {
-            closest: {
-              available: true,
-              url: 'http://web.archive.org/web/20240101/https://example.com',
-              timestamp: '20240101120000',
-              status: '200',
-            },
-          },
-        }),
-      })
-
-      const res = await waybackArchiveTool.execute({ url: 'example.com' })
-      expect(res.success).toBe(true)
-      expect(res.archived).toBe(true)
-      expect(res.snapshot_url).toContain('web.archive.org')
-      expect(res.snapshot_timestamp).toBe('20240101120000')
-    })
-  })
+  // wayback_archive's coverage moved to knowledge.test.js — waybackArchiveTool
+  // was retired as a duplicate of knowledge.js's archiveTool (see index.js and
+  // openApis.js notes, 2026-09-04).
 
   describe('user_profile_gen', () => {
     it('generates realistic mock user personas', async () => {

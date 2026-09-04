@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   extractPageLinks,
   firecrawlTool,
+  scrapePage,
 } from './firecrawl'
 
 describe('Firecrawl Deep Crawler & Clean Markdown Extractor', () => {
@@ -35,5 +36,33 @@ describe('Firecrawl Deep Crawler & Clean Markdown Extractor', () => {
     expect(res.totalLinks).toBe(2)
     expect(res.links).toContain('https://mysite.org/features')
     expect(res.links).toContain('https://mysite.org/pricing')
+  })
+
+  // scrapePage used to call a bare `fetch()`, bypassing tools/http.js's
+  // proxyFetch/proxyText — the shared CORS-fallback layer. Fixed 2026-09-04;
+  // these confirm it now goes through the same real fetch path as every
+  // other web tool (mocking global.fetch, which proxyFetch itself calls).
+  describe('scrapePage — routed through the real proxy layer', () => {
+    const originalFetch = global.fetch
+    afterEach(() => { global.fetch = originalFetch; vi.unstubAllGlobals() })
+
+    it('fetches a page and converts it to Markdown', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () => '<title>Docs</title><h1>Welcome</h1><a href="/next">Next</a>',
+      })
+      const res = await scrapePage('https://example.com')
+      expect(res.success).toBe(true)
+      expect(res.title).toBe('Docs')
+      expect(res.markdown).toContain('Welcome')
+      expect(global.fetch).toHaveBeenCalled()
+    })
+
+    it('reports a real fetch failure honestly rather than throwing', async () => {
+      global.fetch = vi.fn().mockRejectedValue(new Error('network disabled in test'))
+      const res = await scrapePage('https://example.com')
+      expect(res.success).toBe(false)
+      expect(res.error).toBeTruthy()
+    })
   })
 })

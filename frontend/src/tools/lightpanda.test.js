@@ -1,12 +1,15 @@
-import { describe, it, expect } from 'vitest'
-import {
-  htmlToMarkdown,
-  extractInteractiveElements,
-  evalJS,
-  lightpandaTool,
-} from './lightpanda'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { htmlToMarkdown, extractInteractiveElements, fetchMarkdown, lightpandaTool } from './lightpanda'
 
-describe('Lightpanda Ultra-Fast Headless Browser Suite', () => {
+// This suite used to encode the exact bug it should have caught: it asserted
+// cdp_info's fabricated `memoryPerTab`/`cdpEndpoint`/dockerImage as if they
+// were real — proof this app was actually connected to a Zig+V8 CDP browser
+// process it never spawned. Fixed 2026-09-04 (see lightpanda.js's header):
+// cdp_info is gone, fetchMarkdown goes through the real proxy layer instead
+// of a bare fetch, and eval_js delegates to jsExecTool's real sandbox
+// instead of an unsandboxed `new Function`. This file now tests the honest
+// behaviour, not the fabricated one.
+describe('lightpanda: HTML-to-Markdown + interactive-element extraction', () => {
   it('converts raw HTML into clean semantic Markdown without script clutter', () => {
     const rawHtml = `
       <!DOCTYPE html>
@@ -56,30 +59,60 @@ describe('Lightpanda Ultra-Fast Headless Browser Suite', () => {
     expect(res.elements.some(e => e.type === 'button' && e.text === 'Get Started')).toBe(true)
   })
 
-  it('safely evaluates JavaScript expressions in sandbox context', () => {
-    const res = evalJS('Math.pow(2, 10) + 24')
-    expect(res.success).toBe(true)
-    expect(res.result).toBe(1048)
+  describe('fetchMarkdown / fetch_markdown — routed through the real proxy layer', () => {
+    const originalFetch = global.fetch
+    afterEach(() => { global.fetch = originalFetch; vi.unstubAllGlobals() })
+
+    it('fetches through proxyText (not a bare fetch) and reports the static-HTML limit', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () => '<title>Example</title><h1>Hi</h1>',
+      })
+      const res = await fetchMarkdown('https://example.com')
+      expect(res.success).toBe(true)
+      expect(res.title).toBe('Example')
+      expect(res.note).toMatch(/JavaScript-rendered page/)
+      expect(global.fetch).toHaveBeenCalled()
+    })
+
+    it('reports a failed fetch honestly rather than throwing', async () => {
+      global.fetch = vi.fn().mockRejectedValue(new Error('network disabled in test'))
+      const res = await fetchMarkdown('https://example.com')
+      expect(res.success).toBe(false)
+      expect(res.error).toBeTruthy()
+    })
   })
 
-  it('lightpandaTool executes eval_js, extract_dom, and cdp_info actions', async () => {
-    const cdpRes = await lightpandaTool.execute({ action: 'cdp_info' })
-    expect(cdpRes.success).toBe(true)
-    expect(cdpRes.engine).toContain('Lightpanda')
-    expect(cdpRes.memoryPerTab).toContain('16x')
+  it('cdp_info no longer exists — the tool never claims a real CDP browser process', async () => {
+    const res = await lightpandaTool.execute({ action: 'cdp_info' })
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/Unknown action/)
+  })
 
+  it('extract_dom works directly on supplied HTML', async () => {
     const domRes = await lightpandaTool.execute({
       action: 'extract_dom',
       html: '<a href="/dashboard">Dashboard</a><button>Execute</button>',
     })
     expect(domRes.success).toBe(true)
     expect(domRes.totalInteractive).toBe(2)
+  })
 
+  it('eval_js delegates to the real sandboxed runner (jsExecTool), not an unsandboxed eval', async () => {
+    // jsdom has neither Worker nor a desktop bridge, so the real jsExecTool
+    // honestly declines here — which is itself proof this is no longer the
+    // old bare `new Function` path (that ran fine with no sandbox at all).
     const evalRes = await lightpandaTool.execute({
       action: 'eval_js',
       script: '[1, 2, 3, 4].map(x => x * 2)',
     })
-    expect(evalRes.success).toBe(true)
-    expect(evalRes.result).toEqual([2, 4, 6, 8])
+    expect(evalRes.success).toBe(false)
+    expect(evalRes.error).toMatch(/Web Workers|Desktop app/)
+  })
+
+  it('eval_js with no script names the missing argument', async () => {
+    const res = await lightpandaTool.execute({ action: 'eval_js' })
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/script/)
   })
 })

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   calculateTextSimilarity,
   calculateSetSimilarity,
@@ -109,5 +109,45 @@ describe('Scrapling Adaptive Engine & Similarity', () => {
     expect(data.title).toBe('Breaking Technology News')
     expect(data.description).toBe('AI agents transform browser automation and web extraction.')
     expect(data.tags).toEqual(['AI', 'Scraping', 'Automation'])
+  })
+})
+
+// The tool used to always set `anti_bot_bypassed: true` on any successful
+// fetch (whether or not a challenge was ever detected), and — when a
+// challenge WAS detected — returned success:true with a fabricated
+// "Scrapling engine activated real browser session" note while just
+// re-reading the same blocked HTML. Fixed 2026-09-04; these pin the honest
+// replacement (see scrapling.js's header for the full story).
+describe('scraplingTool.execute — honest about what a bare fetch can and cannot do', () => {
+  const originalFetch = global.fetch
+  afterEach(() => { global.fetch = originalFetch; vi.unstubAllGlobals() })
+
+  it('a normal page never claims anti_bot_bypassed (nothing was ever bypassed)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => '<title>Fine</title><body><p>Nothing blocked here.</p></body>',
+    })
+    const res = await scraplingTool.execute({ url: 'https://example.com' })
+    expect(res.success).toBe(true)
+    expect(res.anti_bot_bypassed).toBeUndefined()
+  })
+
+  it('a real Cloudflare challenge is reported as blocked, not silently "bypassed"', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => '<title>Just a moment...</title><div class="cf-turnstile"></div>',
+    })
+    const res = await scraplingTool.execute({ url: 'https://example.com' })
+    expect(res.success).toBe(false)
+    expect(res.anti_bot_detected).toBe('Cloudflare Turnstile')
+    expect(res.stealth_escalation).toBeUndefined()
+    expect(res.error).toMatch(/cannot pass a JS challenge|no way around this/)
+  })
+
+  it('sends the stealth headers through the real proxy layer when stealth is on', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '<title>Hi</title>' })
+    await scraplingTool.execute({ url: 'https://example.com', stealth: true })
+    const [, init] = global.fetch.mock.calls[0]
+    expect(init.headers['User-Agent']).toMatch(/Chrome/)
   })
 })

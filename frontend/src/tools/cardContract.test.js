@@ -142,11 +142,26 @@ describe('terminal_run card contract', () => {
   })
 
   it('a command that never started carries an `error` — never "Unknown error"', async () => {
-    withBridge({ success: false, exitCode: -1, stdout: '', stderr: 'No working folder for this chat.', killed: false })
+    // The real terminal:exec handler (electron/main.cjs, delegating to the
+    // shared runBlock) reports a pre-flight failure via `error`, with
+    // exitCode left null — NOT via stderr with exitCode -1. That was true of
+    // an older implementation this mock used to match; -1 now means the
+    // OPPOSITE (a command that DID run and was force-killed but never
+    // confirmed dead — see the next describe block).
+    withBridge({ success: false, exitCode: null, stdout: '', stderr: '', error: 'No working folder for this chat.', killed: false })
     const { terminalRunTool } = await import('./terminalRun')
     const r = await terminalRunTool.execute({ command: 'ls' })
     expect(r.success).toBe(false)
     expect(r.error).toMatch(/working folder/i)
+  })
+
+  it('exitCode -1 means force-killed-but-unconfirmed, not "never started"', async () => {
+    withBridge({ success: false, exitCode: -1, stdout: 'partial output', stderr: '', killed: true })
+    const { terminalRunTool } = await import('./terminalRun')
+    const r = await terminalRunTool.execute({ command: 'some-stubborn-command' })
+    expect(r.success).toBe(false)
+    expect(r.error).not.toMatch(/could not be started/i)
+    expect(r.error).toMatch(/force-killed/i)
   })
 
   it('explains a timeout instead of reporting an empty result', async () => {

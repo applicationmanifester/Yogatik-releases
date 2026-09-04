@@ -95,11 +95,11 @@ describe('reachability', () => {
       // ComfyUI is already running on its default port.
       path.join('components', 'ComfyPanel.jsx'),
     ])
-    // ArtifactCanvas.jsx and LiveHudOverlay.jsx were listed here too. Both are
-    // imported (App.jsx and LiveView.jsx respectively), so allowlisting them
-    // did nothing except widen the hole this guard exists to close: an entry
-    // for a reachable component silences the guard for that name forever, and
-    // the next time someone stops rendering it nothing says so.
+    // ArtifactCanvas.jsx was listed here too. It is imported (App.jsx), so
+    // allowlisting it did nothing except widen the hole this guard exists to
+    // close: an entry for a reachable component silences the guard for that
+    // name forever, and the next time someone stops rendering it nothing
+    // says so.
     expect(orphans.filter(f => !allowed.has(f))).toEqual([])
   }, 30000)
 

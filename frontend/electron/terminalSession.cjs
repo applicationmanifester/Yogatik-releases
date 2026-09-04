@@ -29,6 +29,7 @@ const { spawn } = require('child_process')
 const core = require('./terminalCore.cjs')
 const { rootPathsFor, resolvePath } = require('./roots.cjs')
 const { safeSend } = require('./safeWindow.cjs')
+const { killTree } = require('./procKill.cjs')
 
 const sessions = new Map()   // chatId -> session
 const live = new Map()       // blockId -> { child, chatId, timer, backstop, finish }
@@ -84,25 +85,7 @@ function flushOutput(blockId) {
   if (p.text) send('terminal:output', { chatId: p.chatId, blockId, chunk: p.text })
 }
 
-/* ── killing a tree, not a shell ─────────────────────────────────────────── */
-
-/**
- * `child.kill()` signals the SHELL only. On Windows, killing cmd.exe does not
- * touch its children; on POSIX, SIGTERM to sh does not reach a grandchild. The
- * survivor keeps the inherited stdio pipes open and node's `close` never fires
- * — MEASURED as terminal_run sitting at "working… 726s" against a documented
- * 30-second timeout.
- */
-function killTree(child) {
-  if (!child?.pid) return
-  try {
-    if (process.platform === 'win32') {
-      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
-    } else {
-      process.kill(-child.pid, 'SIGKILL')   // negative pid = the process GROUP
-    }
-  } catch { try { child.kill('SIGKILL') } catch { /* already gone */ } }
-}
+/* ── killing a tree, not a shell — see procKill.cjs, shared with proc_stop ── */
 
 /* ── tier 1: run one command as a block ─────────────────────────────────── */
 

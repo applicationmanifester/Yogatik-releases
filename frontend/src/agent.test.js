@@ -460,13 +460,14 @@ describe('prompted tool calling (models without native tools)', () => {
     expect(last[last.length - 1].content).toContain('TOOL_RESULTS')
   })
 
-  it('starts in prompted mode when the model is already known to need it', async () => {
+  it('starts in prompted mode when the model is already known to need it, and actually describes the tools (field report: chromeai reported it "cannot access Yogatik\'s own tools" — enablePromptedTools(), which writes the tool list into messages[0], was only ever called from a MID-LOOP demotion; a model that starts in prompted mode via initialToolMode — every isLocal provider, chromeai and WebLLM local included — skipped it entirely and got a system prompt with zero tools named)', async () => {
     getToolSchemas.mockReturnValue(schema)
     scriptRounds([{ tokens: ['hello'] }])
     await runAgent({ ...base, initialToolMode: 'prompted' })
 
     expect(streamChat).toHaveBeenCalledTimes(1)   // no wasted rejected request
     expect(streamChat.mock.calls[0][0].tools).toBeNull()
+    expect(streamChat.mock.calls[0][0].messages[0].content).toContain('web_search(query: string)')
   })
 
   it('prose in prompted mode still reaches the user', async () => {

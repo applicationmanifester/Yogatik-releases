@@ -2,18 +2,18 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import {
   Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Wrench,
   AlertTriangle, Monitor, MonitorOff, MessageSquare, Eye, EyeOff,
-  Aperture, Volume2, Scan,
+  Aperture, Volume2, VolumeX, Scan, ScanEye,
   RefreshCw, SwitchCamera, Settings2,
 } from 'lucide-react'
 import { runAgent } from '../agent'
 import { createLiveSession } from '../live/session'
 import { createCascadeSession } from '../live/cascade'
 import { formatLiveSessionRecap } from '../live/sessionHandoff'
-import { captureProfile, describeWithoutModel } from '../vision/source'
+import { captureProfile, describeWithoutModel, getSharedVisualSource } from '../vision/source'
+import { detectObjects } from '../vision/detect'
 import { buzz } from '../features'
 import { VisionModal } from './VisionModal'
 import { LiveTranscriptPanel } from './LiveTranscriptPanel'
-import { LiveHudOverlay } from './LiveHudOverlay'
 import { LiveDevicePicker } from './LiveDevicePicker'
 import { LiveSettings } from './LiveSettings'
 import { enumerate, canFlipCamera } from '../live/devices'
@@ -38,6 +38,10 @@ export function LiveView({
     state: 'connecting',
     error: '',
     muted: false,
+    // AI voice OUTPUT, separate from `muted` (the mic). Previously there was
+    // no way to turn the assistant's speaking off without also turning off
+    // listening.
+    speakerMuted: false,
     camOn: true,
     screenOn: false,
     // 'auto' = look when asked / on scene change; 'always' = watch every turn
@@ -70,6 +74,14 @@ export function LiveView({
     via: '',
     autoScan: features.autoScan === true,
     retakeFlash: false,
+    // Local, on-screen HUD only — boxes are drawn client-side from the SAME
+    // shared camera/screen source everything else here already reads, never
+    // turned into a turn or sent to the model. Off by default: it is a real
+    // on-device model (DETR, ~40MB) plus continuous inference for as long as
+    // it runs, so it must be an explicit ask, not a standing cost.
+    objectDetect: features.liveObjectDetection === true,
+    detections: [],
+    detectError: '',
   })
 
   // Which camera/mic the call is actually using, and whether a front/back
@@ -94,14 +106,14 @@ export function LiveView({
 
   // Destructure for convenience in render
   const {
-    state, error, muted, camOn, screenOn, visionMode, speaking, thinking, tool,
+    state, error, muted, speakerMuted, camOn, screenOn, visionMode, speaking, thinking, tool,
     lines, transcript, showTranscript, copiedIdx, frameSent, liveVoice,
     activeProvider, connectionState, userLevel, assistantLevel, breathingPhase,
   } = uiState
 
   const {
     visionOpen, visionImage, visionText, visionLoading, visionQ, visionVia,
-    autoScan, retakeFlash,
+    autoScan, retakeFlash, objectDetect, detections, detectError,
   } = visionState
 
   const setState = (updater) => setUiState(prev => ({
@@ -326,11 +338,67 @@ export function LiveView({
     return () => { if (timer) clearInterval(timer) }
   }, [visionState.autoScan, camOn, screenOn, state])
 
+  /**
+   * Live object-detection overlay. Deliberately separate from Auto-Scan and
+   * from `sessionRef.current?.watch()`: those feed a frame to the MODEL as a
+   * conversation turn, which costs a round trip and tokens every time. This
+   * is a local HUD — it reads the SAME shared camera/screen source (one
+   * camera, one consumer set, per vision/source.js's own rule) but the boxes
+   * never leave the browser.
+   *
+   * `src.grab(false, ...)` reuses the aHash change-gate video.js already has:
+   * a still scene returns null and DETR is simply not run that tick, which is
+   * the same "compression" discipline the capture pipeline already applies
+   * everywhere else (see the video/image capture note above) — the cheapest
+   * frame is the one you never send to the model.
+   */
+  useEffect(() => {
+    if (!objectDetect || !(camOn || screenOn) || state !== 'live') {
+      // Never leave a stale box on screen describing a frame that is no
+      // longer being shown (camera off, screen share ended, toggle turned
+      // off) — a HUD that lies about what is currently in frame is worse
+      // than no HUD.
+      setVision(v => (v.detections.length ? { detections: [] } : v))
+      return
+    }
+    let cancelled = false
+    let inFlight = false
+    const tick = async () => {
+      if (cancelled || inFlight) return
+      const src = getSharedVisualSource()
+      if (!src || src.stopped) return
+      const frame = src.grab(false, { maxEdge: 480, quality: 0.6 })
+      if (!frame) return
+      inFlight = true
+      try {
+        const objects = await detectObjects(`data:image/jpeg;base64,${frame}`, { threshold: 0.6 })
+        if (!cancelled) setVision({ detections: objects, detectError: '' })
+      } catch (err) {
+        // Most likely: the user turned this on without also turning on
+        // "On-device vision" (the shared download consent — see App.jsx).
+        // Say why and turn the toggle back off rather than retrying forever
+        // against a model that will never load.
+        if (!cancelled) setVision({ objectDetect: false, detections: [], detectError: err?.message || String(err) })
+      } finally {
+        inFlight = false
+      }
+    }
+    const timer = setInterval(tick, 1200)
+    tick()
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [objectDetect, camOn, screenOn, state])
+
   const toggleMute = () => {
     const v = !muted
     setState({ muted: v })
     sessionRef.current?.setMuted(v)
     // Haptic on mobile
+    buzz(features, 30)
+  }
+  const toggleSpeaker = () => {
+    const v = !speakerMuted
+    setState({ speakerMuted: v })
+    sessionRef.current?.setSpeakerMuted?.(v)
     buzz(features, 30)
   }
   const toggleCam = async () => {
@@ -538,23 +606,47 @@ export function LiveView({
   return (
     <div className="live-view" role="dialog" aria-modal="true" aria-label="Live conversation">
       <video ref={videoRef} className={`live-self ${camOn ? '' : 'off'}`} autoPlay playsInline muted />
-      {camOn && (
-        <LiveHudOverlay
-          isAnalyzing={thinking || speaking}
-          onIdentifyPill={() => {
-            buzz()
-            sessionRef.current?.sendText?.('Identify this pill in the camera frame: check its imprint code, shape, color, and drug facts.')
-          }}
-          onScanBarcode={() => {
-            buzz()
-            sessionRef.current?.sendText?.('Scan the barcode/packaging in the camera frame and look up the product information.')
-          }}
-          onEnhanceMacro={() => {
-            buzz()
-            sessionRef.current?.sendText?.('Inspect the fine macro details and text in the center of the camera frame.')
-          }}
-        />
+      {/* Object-detection boxes, drawn purely client-side over the self-view.
+          `.live-self` is CSS-mirrored (scaleX(-1)) but the captured frame is
+          NOT — video.js draws the raw, unmirrored pixels — so x is flipped
+          here (1 - xmax) rather than mirroring the whole layer, which would
+          also mirror the label text and need a second undo-transform on it. */}
+      {objectDetect && detections.length > 0 && (
+        <div className="live-detect-layer" aria-hidden="true">
+          {detections.map((d, i) => {
+            const b = d.box || {}
+            const xmin = Math.max(0, Math.min(1, b.xmin ?? 0))
+            const xmax = Math.max(0, Math.min(1, b.xmax ?? 0))
+            const ymin = Math.max(0, Math.min(1, b.ymin ?? 0))
+            const ymax = Math.max(0, Math.min(1, b.ymax ?? 0))
+            return (
+              <div
+                key={i}
+                className="live-detect-box"
+                style={{
+                  left: `${(1 - xmax) * 100}%`,
+                  top: `${ymin * 100}%`,
+                  width: `${Math.max(0, xmax - xmin) * 100}%`,
+                  height: `${Math.max(0, ymax - ymin) * 100}%`,
+                }}
+              >
+                <span className="live-detect-label">
+                  {d.label}{d.score ? ` ${Math.round(d.score * 100)}%` : ''}
+                </span>
+              </div>
+            )
+          })}
+        </div>
       )}
+      {/* The Identify Pill / Scan Barcode / Enhance Macro shortcut bar (LiveHudOverlay)
+          was removed 2026-09-04: it pre-empted the model by capturing the frame and
+          acting the instant the button was tapped, whether or not the user had asked
+          for that specific job. Saying "identify this pill" (or scan/enhance) out loud
+          or in the composer reaches the model through the normal turn — vision is
+          already attached per-turn (visualParts/describeIfVisual above) — so nothing
+          is lost, it just now requires an actual user command instead of a standing
+          button guessing what they want. See buildGuards.test.js's orphan allowlist
+          for LiveHudOverlay.jsx. */}
 
       <LiveSettings
         open={showSettings}
@@ -737,6 +829,14 @@ export function LiveView({
           {muted ? <MicOff size={22} /> : <Mic size={22} />}
         </button>
         <button
+          className={`live-btn ${speakerMuted ? 'off' : ''}`}
+          onClick={toggleSpeaker}
+          aria-label={speakerMuted ? 'Turn on AI voice' : 'Turn off AI voice (text/captions only)'}
+          title={speakerMuted ? 'AI voice output is off — turn it back on' : 'Mute AI voice output (keeps replying in text)'}
+        >
+          {speakerMuted ? <VolumeX size={22} /> : <Volume2 size={22} />}
+        </button>
+        <button
           className={`live-btn ${screenOn ? 'active-screen' : ''}`}
           onClick={toggleScreen}
           aria-label={screenOn ? 'Stop screen sharing' : 'Share screen'}
@@ -805,6 +905,17 @@ export function LiveView({
           title={autoScan ? 'Auto-Scan Active (Snapshots every 10s)' : 'Enable Auto-Scan (Snapshots every 10s)'}
         >
           <Scan size={20} />
+        </button>
+        <button
+          className={`live-btn ${objectDetect ? 'active-autoscan' : 'off'}`}
+          onClick={() => setVision({ objectDetect: !objectDetect, detectError: '' })}
+          disabled={!camOn && !screenOn}
+          aria-label={objectDetect ? 'Turn off object detection' : 'Turn on object detection'}
+          title={detectError
+            ? `Object detection: ${detectError}`
+            : (objectDetect ? 'Object detection on — boxes shown on-device, never sent to the model' : 'Draw boxes around what the camera sees, on-device')}
+        >
+          <ScanEye size={20} />
         </button>
         <button
           className={`live-btn transcript-toggle ${showTranscript ? 'active-transcript' : ''}`}

@@ -156,6 +156,16 @@ export function createPlayer({ onLevel, onSpeakingChange } = {}) {
       nextAt = 0
       setSpeaking(false)
     },
+    /**
+     * AI voice output on/off. The realtime server keeps streaming audio
+     * either way (this is a receive-only WSS — there is no "stop sending"
+     * message to send it), so this mutes at the GAIN node rather than
+     * dropping the connection: silent, instant, and reversible without a
+     * reconnect. Queued/incoming chunks still schedule and play through
+     * `push`, they are just inaudible while muted.
+     */
+    setMuted(v) { gain.gain.value = v ? 0 : 1 },
+    isMuted: () => gain.gain.value === 0,
     resume: () => ctx.resume(),
     async close() {
       this.flush()

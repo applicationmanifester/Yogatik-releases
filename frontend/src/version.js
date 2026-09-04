@@ -3,16 +3,88 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '5.2.0'
+export const APP_VERSION = '6.1.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 5.2.0 — Dynamic Model Discovery, Provider CORS Bypass & Resilient Web Tools'
+export const APP_CODENAME = 'Yogatik 6.1.0 — Real-Time Live Vision HUD, AI Voice Mute, Chrome AI Tools & Process Tree Management'
 
 export const APP_RELEASES = [
+  {
+    version: '6.1.0',
+    title: 'Yogatik 6.1.0: Real-Time Live Vision HUD, AI Voice Mute, Chrome AI Tools & Process Tree Management',
+    date: 'September 4, 2026',
+    isLatest: true,
+    highlights: [
+      'Live Feed Object Detection Overlay: Client-side continuous DETR object detection with smart mirror coordinate mapping and aHash change-gated visual processing',
+      'AI Voice Output Mute: Dedicated speaker audio toggle in Live call controls with cascade choke-point gating and zero-latency gain-node muting',
+      'Chrome Built-in AI (Gemini Nano) Tool Calling: Fixed prompted-mode tool injection on turn start and added interactive replay status heartbeats',
+      'Honest Web Scraping & Proxy Routing: Eliminated fabricated bypass and browser claims in Scrapling and Lightpanda; routed all URL fetches through resilient proxy layer',
+      'Sports Scores & Anime Lookup: Added keyless TheSportsDB live sports tracking and Jikan/MyAnimeList search; unified Wayback Machine archive tools',
+      'Process Tree Kill & Terminal Server Safety: Robust taskkill/SIGKILL tree termination preventing port binding leaks on stopped dev servers',
+    ],
+    sections: [
+      {
+        category: '🎙️ Live Audio & Vision HUD',
+        items: [
+          {
+            title: 'Real-time on-device object detection overlay',
+            description: 'Local DETR pipeline continuously identifies scene objects in live camera feeds with mirrored coordinate correction and zero server token costs.',
+          },
+          {
+            title: 'AI voice output mute control',
+            description: 'Instant speaker toggle in Live call controls silences spoken output at the synthesizer choke point without interrupting captions or session state.',
+          },
+        ],
+      },
+      {
+        category: '🤖 AI Models & Provider Connectivity',
+        items: [
+          {
+            title: 'Chrome AI & on-device model tool access',
+            description: 'Fixed prompted tool definition delivery for isLocal providers so Gemini Nano and WebLLM models can access and invoke Yogatik tools on turn 1.',
+          },
+          {
+            title: 'On-device replay progress heartbeats',
+            description: 'Detailed live status updates during conversation history playback eliminate perceived application freezes during on-device model turns.',
+          },
+        ],
+      },
+      {
+        category: '🔍 Web Intelligence & Public Tools',
+        items: [
+          {
+            title: 'Sports scores, schedules & standings',
+            description: 'Added keyless TheSportsDB integration for real-time fixtures, live scores, and league tables across football, basketball, and more.',
+          },
+          {
+            title: 'Anime & manga database lookup',
+            description: 'Integrated Jikan API for anime/manga search, top-ranked titles, synopsis, and character details directly from MyAnimeList.',
+          },
+          {
+            title: 'Resilient web scraping & unified Wayback archive',
+            description: 'Replaced unhandled fetch calls with proxyText CORS routing, removed fabricated claims in Scrapling/Lightpanda, and sandboxed JS evaluation.',
+          },
+        ],
+      },
+      {
+        category: '💻 Desktop Terminal & Process Engine',
+        items: [
+          {
+            title: 'Full process tree termination',
+            description: 'Shared procKill architecture reliably terminates dev servers and background process trees across Windows and POSIX without leaking port bindings.',
+          },
+          {
+            title: 'Terminal long-running process protection',
+            description: 'Automatic detection of persistent dev servers in terminal_run avoids 5-minute timeout hangs and guides the agent to proc_start.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '5.2.0',
     title: 'Yogatik 5.2.0: Dynamic Model Discovery, Provider CORS Bypass & Resilient Web Tools',
     date: 'September 4, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Dynamic Model Discovery: Directly queries and live-validates available models from upstream providers (NVIDIA NIM, Anthropic, OpenAI, custom endpoints) with zero hardcoded presets',
       'Provider CORS Bypass: High-speed edge proxy routing with X-Target-URL for NVIDIA NIM, Anthropic, and custom endpoints eliminating CORS preflight errors in browser',

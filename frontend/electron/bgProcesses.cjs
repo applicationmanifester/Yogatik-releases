@@ -10,13 +10,15 @@ const fs = require('fs')
 const { spawn } = require('child_process')
 const { createRingBuffer, createRegistry } = require('./procCore.cjs')
 const { parseHooksFile, matchHooks, hooksEnabledFor } = require('./hooksCore.cjs')
+const { killTree } = require('./procKill.cjs')
 
 const registry = createRegistry({ maxPerChat: 8 })
 let seq = 0
 
+const IS_WIN = process.platform === 'win32'
+
 function shellFor(command) {
-  const isWin = process.platform === 'win32'
-  return isWin
+  return IS_WIN
     ? { cmd: 'cmd.exe', args: ['/d', '/s', '/c', command] }
     : { cmd: '/bin/sh', args: ['-c', command] }
 }
@@ -33,7 +35,15 @@ function startProcess({ chatId, command, cwd }) {
 
   let child
   try {
-    child = spawn(cmd, args, { cwd, windowsHide: true, env: { ...process.env } })
+    child = spawn(cmd, args, {
+      cwd, windowsHide: true, env: { ...process.env },
+      // POSIX: its own process GROUP, so proc_stop (and killAllBgProcesses on
+      // quit) can kill the whole tree rather than just this shell — without
+      // it there is no group for `process.kill(-pid, ...)` in procKill.cjs to
+      // target at all, and a dev server spawned through the shell survives
+      // "stopping" it, still bound to its port.
+      detached: !IS_WIN,
+    })
   } catch (e) {
     return { success: false, error: e.message }
   }
@@ -69,7 +79,11 @@ function readProcess(id, cursor) {
 function stopProcess(id) {
   const p = registry.get(id)
   if (!p) return { success: false, error: 'No such process.' }
-  try { p.child.kill() } catch { /* already dead */ }
+  // killTree, not p.child.kill() — the process is spawned through a shell
+  // (cmd.exe /c or sh -c), and a plain kill only signals that shell. The real
+  // command (a dev server, a watcher) is a CHILD of it and survives, still
+  // holding its port, while proc_stop reports success.
+  killTree(p.child)
   p.running = false
   registry.remove(id)
   return { success: true, id }
@@ -83,8 +97,11 @@ function listProcesses(chatId) {
 }
 
 function killAllBgProcesses() {
+  // Same reasoning as stopProcess: a plain kill() on quit leaves every
+  // proc_start'd dev server / watcher running as an orphan, still bound to
+  // its port, after the Yogatik window itself is gone.
   for (const p of registry.all()) {
-    try { p.child.kill() } catch { /* ignore */ }
+    try { killTree(p.child) } catch { /* ignore */ }
   }
 }
 
@@ -108,12 +125,16 @@ function runHooks({ trustState, rootPath, event, toolName, payload }) {
   for (const h of hooks) {
     const { cmd, args } = shellFor(h.command)
     try {
-      const child = spawn(cmd, args, { cwd: rootPath, windowsHide: true, env: { ...process.env } })
+      const child = spawn(cmd, args, { cwd: rootPath, windowsHide: true, env: { ...process.env }, detached: !IS_WIN })
       try {
         child.stdin?.write(JSON.stringify({ event, tool: toolName, payload }))
         child.stdin?.end()
       } catch { /* hook may not read stdin */ }
-      const timer = setTimeout(() => { try { child.kill() } catch { /* ignore */ } }, h.timeout)
+      // killTree: a hook that shells out to its own long-running command (a
+      // watcher, a linter daemon) must not survive its own timeout the same
+      // way a stray dev server could survive proc_stop.
+      const timer = setTimeout(() => killTree(child), h.timeout)
+      timer.unref?.()
       child.on('close', () => clearTimeout(timer))
       started.push(h.command)
     } catch { /* a broken hook must not break the turn */ }

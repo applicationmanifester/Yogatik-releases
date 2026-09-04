@@ -3211,6 +3211,22 @@ html, body {
   opacity: .55; transition: opacity .4s ease;
 }
 .live-self.off { opacity: 0; }
+.live-detect-layer {
+  position: absolute; inset: 0; z-index: 3; pointer-events: none;
+}
+.live-detect-box {
+  position: absolute;
+  border: 2px solid rgba(110, 231, 183, .85);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
+  transition: left .15s ease, top .15s ease, width .15s ease, height .15s ease;
+}
+.live-detect-label {
+  position: absolute; top: -20px; left: -2px;
+  background: rgba(6, 20, 16, .85); color: #6ee7b7;
+  font-size: 11px; font-weight: 600; line-height: 1.6;
+  padding: 1px 6px; border-radius: 3px; white-space: nowrap;
+}
 .live-view::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse at center, transparent 20%, rgba(5,7,12,.75) 70%, rgba(5,7,12,.95) 100%);

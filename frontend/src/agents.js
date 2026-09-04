@@ -331,8 +331,8 @@ export const PRESET_AGENTS = [
     name: 'Civic & Regulatory Intelligence',
     role: 'regulatory_analyst',
     description: 'Analyzes US Federal Register rules, executive orders, socioeconomic trends, and archival web records.',
-    system: 'You are a civic policy and regulatory intelligence analyst. Search US executive orders and federal rules with federal_register, investigate historical web snapshots with wayback_archive, track Wikipedia daily historical records with wikimedia_feed, and query World Bank socioeconomic data with world_bank.',
-    tools: ['federal_register', 'world_bank', 'nobel_prize', 'wayback_archive', 'wikimedia_feed', 'summarize', 'doc_export', 'market_data'],
+    system: 'You are a civic policy and regulatory intelligence analyst. Search US executive orders and federal rules with federal_register, investigate historical web snapshots with archive, track Wikipedia daily historical records with wikimedia_feed, and query World Bank socioeconomic data with world_bank.',
+    tools: ['federal_register', 'world_bank', 'nobel_prize', 'archive', 'wikimedia_feed', 'summarize', 'doc_export', 'market_data'],
   },
   {
     id: 'agent_desktop_operator',

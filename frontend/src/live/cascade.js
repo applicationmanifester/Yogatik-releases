@@ -294,6 +294,14 @@ export function createCascadeSession({
   let screen = null
   let closed = false
   let muted = false
+  // AI VOICE OUTPUT, separate from `muted` (which gates the MIC). Nothing in
+  // this file could turn the assistant's speaking off without also turning
+  // off listening — a user who wants to read captions in a quiet room, or
+  // who is on a slow/expensive TTS path and just wants text, had no control
+  // for it (the composer's Volume2 icon was imported and never wired to
+  // anything). `speak()` is the one choke point every spoken clause already
+  // passes through, so muting output costs nothing extra to synthesize.
+  let speakerMuted = false
   let speaking = false
   let thinking = false
   let abort = null
@@ -320,6 +328,13 @@ export function createCascadeSession({
 
   const speak = (text) => {
     if (!text.trim()) return
+    // AI voice output is off: the reply still streams as text/captions (the
+    // caller renders those from the same content independently of this
+    // function), it just never reaches the synthesiser — no TTS request, no
+    // audio, no latency spent on either. spokenAloud is intentionally NOT
+    // updated here: nothing is about to play, so there is nothing for the
+    // echo guard to filter.
+    if (speakerMuted) return
     // Recorded before playback: the echo guard needs to know what the room is
     // about to hear, not what it finished hearing.
     spokenAloud = `${spokenAloud} ${text}`.slice(-400)
@@ -909,6 +924,20 @@ export function createCascadeSession({
 
     /** Change recognition + speaking language mid-call (BCP-47, e.g. es-ES). */
     setLang: (l) => { if (l) { lang = l; speaker.configure({ lang }); if (recog) { try { recog.lang = lang } catch { /* mid-restart */ } } } },
+    /**
+     * Turn the AI's spoken VOICE on/off, independent of the mic (`setMuted`).
+     * Muting output cancels whatever is playing right now (a reply already
+     * mid-sentence does not keep talking after the button is pressed) but
+     * never touches the turn itself — the model keeps answering, keeps using
+     * tools, and the text/caption stream is untouched; only the trip through
+     * the synthesiser stops.
+     */
+    setSpeakerMuted: (v) => {
+      speakerMuted = !!v
+      if (speakerMuted && speaking) { speaker.cancel().catch(() => {}) }
+      emit({ type: 'speaker-muted', value: speakerMuted })
+    },
+    getSpeakerMuted: () => speakerMuted,
     /** Current frame for the vision panel — never opens a second camera. */
     grabFrame: (profile) => (screen || cam)?.grab(true, profile) || null,
 

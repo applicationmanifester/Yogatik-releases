@@ -1405,7 +1405,7 @@ export async function testProvider(id, modelOverride) {
     // pick must not read as "this key does not work".
     if ((isTransient || isRetired) && fallbackModel) {
       try {
-        const fallbackOut = await chatComplete({
+        await chatComplete({
           provider: id, apiKey, model: fallbackModel,
           messages: [{ role: 'user', content: 'ping' }],
           temperature: 0,

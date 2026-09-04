@@ -1,12 +1,20 @@
 /**
  * Firecrawl: Deep Web Crawler & Clean Markdown Extractor for LLM RAG
- * 
- * Inspired by mendableai/firecrawl (github.com/mendableai/firecrawl).
- * Recursively crawls websites, maps sitemaps, converts subpages to clean Markdown,
- * extracts metadata, and exports structured RAG datasets for AI agents.
+ *
+ * Named after (not built on) mendableai/firecrawl. Recursively crawls
+ * websites, maps sitemaps, converts subpages to clean Markdown.
+ *
+ * FIXED 2026-09-04: scrapePage used a bare `fetch()`, bypassing tools/http.js's
+ * proxyFetch/proxyText — the shared CORS-fallback layer every other web tool
+ * goes through (the youtube.js "second copy of the relay list" gotcha; see
+ * lightpanda.js's matching fix, made the same day). A raw fetch to a
+ * non-CORS host just fails on the web build; every page of a crawl would
+ * silently come back as a failure with no explanation. Routed through
+ * proxyText now, same as scrapePage's sibling tools.
  */
 
 import { htmlToMarkdown } from './lightpanda'
+import { proxyText } from './http'
 
 /**
  * Simulates deep website crawling and link graph mapping
@@ -42,20 +50,11 @@ export function extractPageLinks(html = '', baseUrl = '') {
  */
 export async function scrapePage(url = '') {
   try {
-    const resp = await fetch(url, {
-      headers: { 'User-Agent': 'YogatikFirecrawl/1.0 (LLM-Ready RAG Extractor)' },
-    })
-
-    if (!resp.ok) {
-      return {
-        success: false,
-        url,
-        status: resp.status,
-        error: `HTTP ${resp.status}`,
-      }
+    const html = await proxyText(url)
+    if (!html || typeof html !== 'string') {
+      return { success: false, url, error: `Failed to fetch HTML from ${url}` }
     }
 
-    const html = await resp.text()
     const parsed = htmlToMarkdown(html)
     const links = extractPageLinks(html, url)
 
@@ -117,7 +116,7 @@ export async function crawlWebsite(startUrl = '', maxPages = 5) {
 export const firecrawlTool = {
   schema: {
     name: 'firecrawl',
-    description: 'Firecrawl deep web crawler and RAG Markdown dataset engine (inspired by mendableai/firecrawl). Recursively crawls websites, generates sitemaps, converts subpages to clean LLM-ready Markdown, and extracts structured data.',
+    description: 'Recursively crawls a website (following same-origin links, depth-bounded by max_pages) and converts each page to clean Markdown. Static HTML only, like web_extract — a JavaScript-rendered site will crawl mostly empty pages; for that, drive browser_control (desktop app) page by page instead.',
     parameters: {
       type: 'object',
       properties: {

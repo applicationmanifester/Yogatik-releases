@@ -64,6 +64,14 @@ export const FEATURES = {
     hint: 'Subtitles over the call',
     default: true,
   },
+  liveObjectDetection: {
+    label: 'Object detection overlay',
+    // Purely a local, on-screen HUD — boxes are drawn client-side and never
+    // sent to the model or turned into a turn, so it costs nothing beyond the
+    // one-time download and the local inference itself.
+    hint: 'Draws boxes around what the camera sees during a call, on-device. Downloads ~40MB once',
+    default: false,
+  },
   localVision: {
     label: 'On-device vision',
     hint: 'Lets images work without a vision provider. Downloads ~230MB once',

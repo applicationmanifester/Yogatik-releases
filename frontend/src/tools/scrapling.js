@@ -1,11 +1,31 @@
 /**
- * Scrapling: Next-Gen Adaptive & Undetectable Web Scraping Engine
- * 
- * Standalone, zero-external-dependency JavaScript implementation of Scrapling's core concepts:
- * 1. Adaptive Element Tracking (Self-Healing Selectors using DOM structural fingerprints & semantic similarity)
- * 2. Progressive Stealth Fetching (Fast HTTP -> Anti-Bot/Cloudflare detection -> Browser escalation)
- * 3. Resilient Structured Extraction (Tables, items, lists, metadata, and auto-cleaned articles)
- * 4. Standalone Python Script Generator for external automation
+ * Scrapling: Adaptive Web Scraping (self-healing selectors + structured
+ * extraction), named after (not built on) the Scrapling Python project.
+ *
+ * FIXED 2026-09-04: the tool used to always set `anti_bot_bypassed: true`
+ * on a successful fetch — even when detectAntiBotChallenge never fired,
+ * i.e. nothing was ever bypassed, there was simply nothing to bypass. Worse,
+ * when a challenge WAS detected on desktop, it returned success:true with
+ * `stealth_escalation: 'Browser Engine Active'` and a note claiming
+ * "Scrapling engine activated real browser session" — while actually just
+ * re-running extractReadable() on the SAME blocked challenge-page HTML it
+ * had already flagged as not-real-content. No browser session was ever
+ * opened; the model would have reported a bypass that never happened. Both
+ * claims are gone — a challenge is now reported as blocked, honestly, with
+ * a pointer to the real desktop-only bypass (browser_control, which renders
+ * in an actual Chromium process and can pass what only a real browser can).
+ * A bare fetch, here or anywhere else in this app, cannot solve a Cloudflare
+ * JS challenge — there is no JS engine running the challenge script.
+ *
+ * Also fixed: STEALTH_HEADERS was declared and never used — the "stealth
+ * fetching" the description promised sent the browser's default fetch
+ * headers, nothing else. It is passed through proxyFetch now, which is the
+ * one real thing a header set can do (it cannot solve a JS challenge, but
+ * it is no longer dead code pretending to be active).
+ *
+ * Kept, because they are real and useful on their own: the self-healing
+ * selector matcher (DOM fingerprint + similarity scoring) and structured
+ * extraction — neither claims a capability beyond what the code does.
  */
 
 import { proxyText } from './http'
@@ -355,7 +375,7 @@ if __name__ == "__main__":
  */
 export const scraplingTool = {
   schema: {
-    description: 'Ultra-fast, adaptive, and stealthy web scraping engine (inspired by Scrapling). Self-heals element selectors if DOM/classes change, detects and bypasses anti-bot/Cloudflare challenges, and extracts structured tables, articles, and JSON data. Supports auto-extraction, CSS/XPath extraction, and standalone script generation.',
+    description: 'Fetches a page and extracts structured data via CSS selectors, self-healing them if the DOM changes (class/structure drift). Detects — but cannot bypass — Cloudflare/Datadome/PerimeterX-style JS challenges (that needs a real browser: browser_control, desktop app). Also does auto/markdown extraction and standalone Python-script generation for external use.',
     parameters: {
       type: 'object',
       properties: {
@@ -414,8 +434,9 @@ export const scraplingTool = {
     }
 
     try {
-      // Step 1: Progressive Stealth Fetch
-      const html = await proxyText(cleanUrl)
+      // Step 1: fetch, with stealth-ish headers (this is a plain fetch —
+      // better headers, not a real browser; see file header).
+      const html = await proxyText(cleanUrl, { headers: stealth ? STEALTH_HEADERS : undefined })
       if (!html || typeof html !== 'string') {
         return { success: false, error: `Failed to fetch HTML from ${cleanUrl}`, url: cleanUrl }
       }
@@ -425,24 +446,16 @@ export const scraplingTool = {
       const isDesktopApp = typeof window !== 'undefined' && Boolean(window.__YOGATIK_BROWSER__ || window.electronAPI)
 
       if (antiBot.blocked) {
-        if (isDesktopApp) {
-          // In Desktop App, suggest or escalate to browser_control
-          return {
-            success: true,
-            tool: 'scrapling_scrape',
-            url: cleanUrl,
-            anti_bot_detected: antiBot.reason,
-            stealth_escalation: 'Browser Engine Active',
-            note: `Target is protected by ${antiBot.reason}. Scrapling engine activated real browser session.`,
-            readable: extractReadable(html, { maxChars: Math.min(max_chars, 20000) }),
-          }
-        } else {
-          return {
-            success: false,
-            url: cleanUrl,
-            anti_bot_detected: antiBot.reason,
-            error: `Target is protected by ${antiBot.reason}. In web mode, try Desktop app or a direct API endpoint.`,
-          }
+        // Honest, in both cases: a bare fetch cannot run the challenge's own
+        // JS, so nothing here can pass it — only a real rendering engine can
+        // (browser_control, desktop-only, a real Chromium process).
+        return {
+          success: false,
+          url: cleanUrl,
+          anti_bot_detected: antiBot.reason,
+          error: isDesktopApp
+            ? `Target is protected by ${antiBot.reason}. This tool cannot pass a JS challenge — call browser_control to navigate there in a real browser instead.`
+            : `Target is protected by ${antiBot.reason}. In web mode there is no way around this; the desktop app's browser_control tool can render the page in a real browser.`,
         }
       }
 
@@ -479,7 +492,6 @@ export const scraplingTool = {
         code_blocks: readable.code_blocks || undefined,
         images: readable.images || undefined,
         links: readable.links || undefined,
-        anti_bot_bypassed: true,
       }
     } catch (err) {
       return {
