@@ -36,6 +36,14 @@ export function LiveTranscriptPanel({
           </div>
         )}
         {transcript.map((item, i) => {
+          if (item.type === 'status') {
+            return (
+              <div key={i} className="live-transcript-tool" style={{ color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.25)', background: 'rgba(56, 189, 248, 0.06)' }}>
+                <span>⚡ {item.text}</span>
+                <time>{formatTime(item.time)}</time>
+              </div>
+            )
+          }
           if (item.type === 'tool') {
             return (
               <div key={i} className="live-transcript-tool">
@@ -74,6 +82,16 @@ export function LiveTranscriptPanel({
                   {copiedIdx === i ? <Check size={12} /> : <Copy size={12} />}
                 </button>
               </div>
+              {item.reasoning && (
+                <details className="reasoning-bubble" style={{ margin: '6px 0 8px 0', fontSize: '11px', background: 'rgba(30, 41, 59, 0.6)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(148, 163, 184, 0.15)' }}>
+                  <summary className="reasoning-summary" style={{ cursor: 'pointer', color: '#93c5fd', fontWeight: 600, userSelect: 'none' }}>
+                    🧠 Thinking & Reasoning Process
+                  </summary>
+                  <div className="reasoning-body" style={{ marginTop: '6px', whiteSpace: 'pre-wrap', opacity: 0.85, fontFamily: 'monospace', lineHeight: '1.4' }}>
+                    {item.reasoning}
+                  </div>
+                </details>
+              )}
               <p>{item.text}</p>
             </div>
           )

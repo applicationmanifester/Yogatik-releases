@@ -53,6 +53,9 @@ export function LiveView({
     speaking: false,
     thinking: false,
     tool: null,
+    liveStatusText: '',
+    reasoningText: '',
+    showReasoning: false,
     lines: [],
     transcript: [],    // full history
     showTranscript: false,
@@ -119,6 +122,7 @@ export function LiveView({
   // Destructure for convenience in render
   const {
     state, error, muted, speakerMuted, camOn, screenOn, visionMode, speaking, thinking, tool,
+    liveStatusText, reasoningText, showReasoning,
     lines, transcript, showTranscript, copiedIdx, frameSent, liveVoice,
     activeProvider, connectionState, userLevel, assistantLevel, breathingPhase,
   } = uiState
@@ -176,7 +180,17 @@ export function LiveView({
       const lines = [...prev.lines]
       const last = lines[lines.length - 1]
       if (last && last.role === role && !newTurn) {
-        lines[lines.length - 1] = { role, text: last.text + text }
+        if (role === 'user') {
+          const cleanText = text.trim()
+          const cleanLast = last.text.trim()
+          if (cleanLast.toLowerCase() === cleanText.toLowerCase() || cleanLast.toLowerCase().includes(cleanText.toLowerCase())) {
+            lines[lines.length - 1] = { role, text: cleanText.length > cleanLast.length ? text : last.text }
+          } else {
+            lines[lines.length - 1] = { role, text: `${last.text} ${text}`.trim() }
+          }
+        } else {
+          lines[lines.length - 1] = { role, text: last.text + text }
+        }
       } else {
         lines.push({ role, text })
       }
@@ -187,7 +201,17 @@ export function LiveView({
       const transcript = [...prev.transcript]
       const last = transcript[transcript.length - 1]
       if (last && last.role === role && last.type === 'message' && !newTurn) {
-        transcript[transcript.length - 1] = { ...last, text: last.text + text, time: Date.now(), streaming: true }
+        if (role === 'user') {
+          const cleanText = text.trim()
+          const cleanLast = last.text.trim()
+          if (cleanLast.toLowerCase() === cleanText.toLowerCase() || cleanLast.toLowerCase().includes(cleanText.toLowerCase())) {
+            transcript[transcript.length - 1] = { ...last, text: cleanText.length > cleanLast.length ? text : last.text, time: Date.now(), streaming: false }
+          } else {
+            transcript[transcript.length - 1] = { ...last, text: `${last.text} ${text}`.trim(), time: Date.now(), streaming: false }
+          }
+        } else {
+          transcript[transcript.length - 1] = { ...last, text: last.text + text, time: Date.now(), streaming: true }
+        }
       } else {
         transcript.push({ role, text, type: 'message', time: Date.now(), streaming: true })
       }
@@ -295,7 +319,35 @@ export function LiveView({
             else setState({ assistantLevel: e.value })
             break
           case 'speaking': setState({ speaking: e.value }); break
-          case 'thinking': setState({ thinking: e.value }); break
+          case 'thinking':
+            setState(prev => ({
+              ...prev,
+              thinking: e.value,
+              // When thinking stops, keep reasoningText for user review
+            }))
+            break
+          case 'status':
+            setState(prev => ({
+              ...prev,
+              liveStatusText: e.text,
+              transcript: [...prev.transcript, { type: 'status', text: e.text, time: Date.now() }],
+            }))
+            break
+          case 'reasoning':
+            setState(prev => {
+              const full = e.text || (prev.reasoningText + (e.delta || ''))
+              const transcript = [...prev.transcript]
+              const last = transcript[transcript.length - 1]
+              if (last && last.role === 'assistant' && last.type === 'message') {
+                transcript[transcript.length - 1] = { ...last, reasoning: full }
+              }
+              return {
+                ...prev,
+                reasoningText: full,
+                transcript,
+              }
+            })
+            break
           case 'transcript': pushDelta(e.role, e.text); break
           case 'tools':
             // Use functional form so we always append to the *current* transcript,
@@ -886,10 +938,49 @@ export function LiveView({
         {thinking && (
           <div className="live-status thinking-status">
             <span className="thinking-dots"><span /><span /><span /></span>
-            Thinking…
+            Thinking & Reasoning…
           </div>
         )}
-        {tool && <div className="live-status"><Wrench size={14} /> {tool}</div>}
+        {tool && <div className="live-status"><Wrench size={14} /> Calling {tool}…</div>}
+        {liveStatusText && (
+          <div className="live-status action-status">
+            <Loader2 size={14} className="spin" /> {liveStatusText}
+          </div>
+        )}
+
+        {reasoningText && (
+          <div
+            className="live-reasoning-chip"
+            style={{
+              maxWidth: '90vw',
+              width: '420px',
+              margin: '8px auto 0',
+              background: 'rgba(15, 23, 42, 0.85)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(148, 163, 184, 0.25)',
+              borderRadius: '12px',
+              padding: '8px 12px',
+              textAlign: 'left',
+              color: '#cbd5e1',
+              fontSize: '12px',
+              maxHeight: showReasoning ? '180px' : '48px',
+              overflowY: 'auto',
+              transition: 'all 0.2s ease',
+              cursor: 'pointer',
+              zIndex: 10,
+            }}
+            onClick={() => setState(prev => ({ ...prev, showReasoning: !prev.showReasoning }))}
+            title="Click to toggle AI reasoning scratchpad"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', fontWeight: 600, color: '#93c5fd' }}>
+              <span>🧠 AI Reasoning {thinking ? '(In Progress…)' : ''}</span>
+              <span style={{ fontSize: '10px', opacity: 0.7 }}>{showReasoning ? '▲ Collapse' : '▼ View full'}</span>
+            </div>
+            <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '11px', opacity: 0.9 }}>
+              {showReasoning ? reasoningText : (reasoningText.slice(-120) + '…')}
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Soundwave / Audio Bar Visualizer - Dual mode for user/assistant */}
         <div className={`live-soundwave ${speaking || assistantLevel > 0.02 ? 'active assistant' : ''} ${!speaking && userLevel > 0.02 ? 'active user' : ''}`}>

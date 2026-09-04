@@ -624,6 +624,7 @@ export function createCascadeSession({
     let produced = false
     let accumulatedContent = ''
     let emittedAnswerLength = 0
+    let emittedReasoningLength = 0
 
     // Instant Semantic Reflex Intercept (LSRI): Sub-10ms response for conversational courtesies
     if (!parts) {
@@ -670,11 +671,23 @@ export function createCascadeSession({
           const isStillThinking = /<think(?:\s[^>]*)?>/i.test(accumulatedContent) && !/<\/think>/i.test(accumulatedContent)
           if (isStillThinking) {
             if (!thinking) { thinking = true; emit({ type: 'thinking', value: true }) }
+            const thinkMatch = accumulatedContent.match(/<think(?:\s[^>]*)?>([\s\S]*)$/i)
+            if (thinkMatch) {
+              const fullReasoning = thinkMatch[1]
+              if (fullReasoning.length > emittedReasoningLength) {
+                const delta = fullReasoning.slice(emittedReasoningLength)
+                emittedReasoningLength = fullReasoning.length
+                emit({ type: 'reasoning', text: fullReasoning, delta })
+              }
+            }
             return
           }
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
 
-          const { answer } = splitReasoning(accumulatedContent)
+          const { reasoning, answer } = splitReasoning(accumulatedContent)
+          if (reasoning) {
+            emit({ type: 'reasoning', text: reasoning })
+          }
           if (answer.length > emittedAnswerLength) {
             const newChunk = answer.slice(emittedAnswerLength)
             emittedAnswerLength = answer.length
@@ -713,7 +726,8 @@ export function createCascadeSession({
         },
         onToolResult: (name, result) => emit({ type: 'toolResult', name, result }),
         onDone: ({ content: full }) => {
-          const { answer } = splitReasoning(full || accumulatedContent)
+          const { reasoning, answer } = splitReasoning(full || accumulatedContent)
+          if (reasoning) emit({ type: 'reasoning', text: reasoning })
           if (answer.length > emittedAnswerLength) {
             const finalChunk = answer.slice(emittedAnswerLength)
             emittedAnswerLength = answer.length
@@ -744,7 +758,10 @@ export function createCascadeSession({
         RECOVERABLE.test(failure) && nextProvider()) {
       return respondTo(userText, retry + 1)
     }
+    const friendlyError = `I was unable to complete the response using ${active.provider || 'the model'}: ${failure}. Please check your API key in Settings or switch to Gemini or Groq.`
+    emit({ type: 'transcript', role: 'assistant', text: friendlyError })
     emit({ type: 'warning', message: failure })
+    speak(friendlyError)
   }
 
   // ─── Input: continuous recognition ───
