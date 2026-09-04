@@ -15,7 +15,6 @@ jobs:
   build:
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         include:
           - os: windows-latest
@@ -46,7 +45,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm install
+        run: npm install --no-audit --no-fund
 
       - name: Build desktop app
         working-directory: frontend
@@ -59,7 +58,7 @@ jobs:
         continue-on-error: true
         with:
           name: yogatik-${{ matrix.name }}
-          retention-days: 1
+          retention-days: 7
           if-no-files-found: warn
           path: |
             frontend/release-electron/*.exe
