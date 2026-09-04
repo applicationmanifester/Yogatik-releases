@@ -8675,17 +8675,12 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
      reticle / orb   the middle of the frame, which the captions now clear
 */
 .live-captions {
-  /* Was 132px, which put the text inside the HUD reticle and on top of the
-     orb. It now sits above the chip row. */
   bottom: calc(160px + env(safe-area-inset-bottom));
-  /* A scrim, because white text over a bright frame is unreadable and a
-     text-shadow alone does not carry it. */
-  background: linear-gradient(to top, rgba(0, 0, 0, .55), rgba(0, 0, 0, 0));
-  padding: 26px 14px 10px;
-  border-radius: 14px;
-  /* Three lines maximum; older ones scroll away rather than growing upward
-     into the reticle. */
+  background: transparent !important;
+  padding: 0;
+  border-radius: 0;
   max-height: 30dvh; overflow: hidden;
+  pointer-events: none;
 }
 .live-caption { overflow-wrap: anywhere; }
 /* The live line is the one being spoken. The others are context, not equals. */

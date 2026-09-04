@@ -855,14 +855,16 @@ export function LiveView({
         </div>
       )}
 
-      {/* Live captions */}
-      {showCaptions && <div className="live-captions" aria-live="polite">
-        {lines.map((l, i) => (
-          <p key={i} className={`live-caption ${l.role}`}>
-            <span>{l.text}</span>
-          </p>
-        ))}
-      </div>}
+      {/* Live captions — only render when there is text to show, never an empty dark box */}
+      {showCaptions && lines.length > 0 && (
+        <div className="live-captions" aria-live="polite">
+          {lines.map((l, i) => (
+            <p key={i} className={`live-caption ${l.role}`}>
+              <span>{l.text}</span>
+            </p>
+          ))}
+        </div>
+      )}
 
       {/* Controls */}
       <div className="live-controls">
