@@ -383,17 +383,17 @@ export function createCascadeSession({
     }
 
     // Early start optimization: Sub-Sentence Phonic Micro-Bursting
-    // If opening phrase has no punctuation yet but has reached 3 words, dispatch the first 2 words
-    // at word boundary so the user hears voice output within ~100-150ms.
+    // If opening phrase has no punctuation yet but has reached 2 words, dispatch at word boundary
+    // so the user hears voice output within ~80-120ms.
     if (firstChunk && rest.trim()) {
       const words = rest.trim().split(/\s+/)
-      if (words.length >= 3) {
+      if (words.length >= 2 && rest.trim().length >= 6) {
         let count = 0
         let cutIdx = -1
         for (let i = 0; i < rest.length; i++) {
           if (/\s/.test(rest[i]) && (i === 0 || !/\s/.test(rest[i - 1]))) {
             count++
-            if (count === 2) {
+            if (count >= 1 && (count === 2 || words.length === 2)) {
               cutIdx = i + 1
               break
             }

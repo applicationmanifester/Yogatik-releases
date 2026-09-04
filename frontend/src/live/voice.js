@@ -83,11 +83,17 @@ export function createSpeaker({
       .catch(() => { onEngine('system'); return false })   // stay robotic, stay working
   }
 
-  // Pre-warm the browser's speech synthesis engine and voice catalog immediately
+  // Pre-warm the browser's speech synthesis engine, voice catalog, and OS audio thread
   if (typeof window !== 'undefined' && window.speechSynthesis) {
     try {
       window.speechSynthesis.getVoices()
       if (window.speechSynthesis.paused) window.speechSynthesis.resume()
+      // Pre-warm audio thread in browser runtime only (disabled in Vitest unit test environment)
+      if (typeof SpeechSynthesisUtterance !== 'undefined' && (typeof process === 'undefined' || !process.env?.VITEST)) {
+        const silent = new SpeechSynthesisUtterance(' ')
+        silent.volume = 0.001
+        window.speechSynthesis.speak(silent)
+      }
     } catch { /* ignore */ }
   }
 

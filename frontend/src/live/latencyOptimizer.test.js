@@ -33,6 +33,17 @@ describe('reflexEngine', () => {
 
     const pingAnswer = matchReflex("are you online")
     expect(pingAnswer).toMatch(/online|ready/i)
+
+    // Math calculation reflex tests (<1ms)
+    expect(matchReflex("what is 25 times 4?")).toBe("25 times 4 is 100.")
+    expect(matchReflex("15 plus 28")).toBe("15 plus 28 is 43.")
+    expect(matchReflex("100 divided by 4")).toBe("100 divided by 4 is 25.")
+    expect(matchReflex("50 minus 18")).toBe("50 minus 18 is 32.")
+
+    // Unit conversion reflex tests (<1ms)
+    expect(matchReflex("convert 100 celsius to fahrenheit")).toBe("100 degrees Celsius is 212 degrees Fahrenheit.")
+    expect(matchReflex("convert 32 fahrenheit to celsius")).toBe("32 degrees Fahrenheit is 0 degrees Celsius.")
+    expect(matchReflex("how many miles in 10 kilometers")).toMatch(/10 kilometers is approximately 6.21 miles/)
   })
 
   it('returns null for non-reflex questions so full agent runs', () => {

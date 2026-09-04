@@ -86,6 +86,59 @@ const STATUS_RESPONSES = [
   "Online and ready. Network, voice synthesis, and vision pipelines are active.",
 ]
 
+function evaluateSimpleMath(text = '') {
+  const match = text.match(/^(?:what(?:'s|\s+is)\s+)?(\d+(?:\.\d+)?)\s*([\+\-\*\/xX]|times|plus|minus|divided by)\s*(\d+(?:\.\d+)?)\??$/i)
+  if (!match) return null
+  const a = parseFloat(match[1])
+  const op = match[2].toLowerCase()
+  const b = parseFloat(match[3])
+  if (isNaN(a) || isNaN(b)) return null
+  let res, opWord
+  if (op === '+' || op === 'plus') { res = a + b; opWord = 'plus' }
+  else if (op === '-' || op === 'minus') { res = a - b; opWord = 'minus' }
+  else if (op === '*' || op === 'x' || op === 'times') { res = a * b; opWord = 'times' }
+  else if (op === '/' || op === 'divided by') {
+    if (b === 0) return "Numbers cannot be divided by zero."
+    res = Math.round((a / b) * 1000) / 1000
+    opWord = 'divided by'
+  }
+  if (res === undefined) return null
+  const cleanRes = Number.isInteger(res) ? res : res.toFixed(2).replace(/\.?0+$/, '')
+  return `${a} ${opWord} ${b} is ${cleanRes}.`
+}
+
+function evaluateUnitConversion(text = '') {
+  // Temperature: celsius to fahrenheit
+  const cToF = text.match(/^(?:convert\s+)?(-?\d+(?:\.\d+)?)\s*(?:degrees?\s+)?celsius\s+(?:in|to)\s+fahrenheit\??$/i)
+  if (cToF) {
+    const c = parseFloat(cToF[1])
+    const f = Math.round((c * 9 / 5 + 32) * 10) / 10
+    return `${c} degrees Celsius is ${f} degrees Fahrenheit.`
+  }
+  // Temperature: fahrenheit to celsius
+  const fToC = text.match(/^(?:convert\s+)?(-?\d+(?:\.\d+)?)\s*(?:degrees?\s+)?fahrenheit\s+(?:in|to)\s+celsius\??$/i)
+  if (fToC) {
+    const f = parseFloat(fToC[1])
+    const c = Math.round(((f - 32) * 5 / 9) * 10) / 10
+    return `${f} degrees Fahrenheit is ${c} degrees Celsius.`
+  }
+  // Distance: km to miles
+  const kmToMi = text.match(/^(?:convert\s+|how\s+many\s+miles\s+(?:is|in)\s+)?(\d+(?:\.\d+)?)\s*(?:km|kilometers?)(?:\s+(?:in|to)\s+miles)?\??$/i)
+  if (kmToMi && !text.includes('per hour')) {
+    const km = parseFloat(kmToMi[1])
+    const mi = Math.round((km * 0.621371) * 100) / 100
+    return `${km} kilometers is approximately ${mi} miles.`
+  }
+  // Distance: miles to km
+  const miToKm = text.match(/^(?:convert\s+|how\s+many\s+kilometers\s+(?:is|in)\s+)?(\d+(?:\.\d+)?)\s*miles(?:\s+(?:in|to)\s+(?:km|kilometers?))?\??$/i)
+  if (miToKm && !text.includes('per hour')) {
+    const mi = parseFloat(miToKm[1])
+    const km = Math.round((mi * 1.60934) * 100) / 100
+    return `${mi} miles is approximately ${km} kilometers.`
+  }
+  return null
+}
+
 /**
  * Checks if an utterance matches a known high-frequency reflex intent.
  * @param {string} text - User prompt
@@ -94,6 +147,12 @@ const STATUS_RESPONSES = [
 export function matchReflex(text = '') {
   const t = String(text || '').trim().toLowerCase()
   if (!t || t.length > 70) return null
+
+  // Instant mathematical calculations and unit conversions
+  const mathRes = evaluateSimpleMath(t)
+  if (mathRes) return mathRes
+  const convRes = evaluateUnitConversion(t)
+  if (convRes) return convRes
 
   // Dynamic real-time queries evaluated on-device
   if (TIME_QUERY.test(t)) return getFormattedTime()
