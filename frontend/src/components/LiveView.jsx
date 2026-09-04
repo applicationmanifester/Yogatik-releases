@@ -19,6 +19,7 @@ import { LiveSettings } from './LiveSettings'
 import { enumerate, canFlipCamera } from '../live/devices'
 import * as liveMetrics from '../live/metrics'
 import { db } from '../db'
+import { preconnectProvider } from '../live/latencyOptimizer'
 
 /**
  * Full-screen face-to-face call with:
@@ -135,6 +136,20 @@ export function LiveView({
     ...prev,
     ...(typeof updater === 'function' ? updater(prev) : updater)
   }))
+
+  useEffect(() => {
+    const PROVIDER_ORIGINS = {
+      groq: 'https://api.groq.com',
+      gemini: 'https://generativelanguage.googleapis.com',
+      openai: 'https://api.openai.com',
+      openrouter: 'https://openrouter.ai',
+      nvidia: 'https://integrate.api.nvidia.com',
+    }
+    if (PROVIDER_ORIGINS[provider]) preconnectProvider(PROVIDER_ORIGINS[provider])
+    for (const fb of (fallbacks || [])) {
+      if (fb?.provider && PROVIDER_ORIGINS[fb.provider]) preconnectProvider(PROVIDER_ORIGINS[fb.provider])
+    }
+  }, [provider, fallbacks])
 
   /**
    * Transcript deltas arrive fragmented; merge into the current speaker's line.

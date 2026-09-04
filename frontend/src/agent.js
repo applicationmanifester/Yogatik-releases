@@ -704,7 +704,13 @@ export async function runAgent({
     const timeStr = formatTime(now, L.locale, { timeZone: L.timeZone || undefined, cycle: L.hourCycle })
     const dateStr = formatDate(now, L.locale, { timeZone: L.timeZone || undefined })
     const tzStr = L.timeZone || 'local time'
-    messages[0].content += `\n\n[System Time Info]: Current Local Time is ${timeStr} on ${dateStr} (${tzStr}). Ground your answer in this exact timestamp.`
+    // Inject into the user turn rather than mutating messages[0] so the system prompt remains invariant for KV-cache hits
+    const lastMsg = messages[messages.length - 1]
+    if (lastMsg && typeof lastMsg.content === 'string') {
+      lastMsg.content += `\n\n[System Time Info]: Current Local Time is ${timeStr} on ${dateStr} (${tzStr}). Ground your answer in this exact timestamp.`
+    } else {
+      messages[0].content += `\n\n[System Time Info]: Current Local Time is ${timeStr} on ${dateStr} (${tzStr}). Ground your answer in this exact timestamp.`
+    }
   }
 
   // Pre-fetch YouTube transcript/details when a URL is present so every provider

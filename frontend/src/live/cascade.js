@@ -76,6 +76,8 @@ import {
   setSharedVisualSource, clearSharedVisualSource,
   isVisualQuestion, needsMotion, captureProfile, describeWithoutModel,
 } from '../vision/source'
+import { preconnectProvider } from './latencyOptimizer'
+import { matchReflex, streamReflex } from './reflexEngine'
 
 const SENTENCE = /([.!?…]+["')\]]*\s+|\n{2,})/
 // The first thing said should leave the mouth as early as possible; a clause is
@@ -253,6 +255,18 @@ export function createCascadeSession({
   const chain = [active, ...fallbacks]
   let chainIndex = 0
 
+  const PROVIDER_ORIGINS = {
+    groq: 'https://api.groq.com',
+    gemini: 'https://generativelanguage.googleapis.com',
+    openai: 'https://api.openai.com',
+    openrouter: 'https://openrouter.ai',
+    nvidia: 'https://integrate.api.nvidia.com',
+  }
+  if (PROVIDER_ORIGINS[provider]) preconnectProvider(PROVIDER_ORIGINS[provider])
+  for (const fb of fallbacks) {
+    if (fb?.provider && PROVIDER_ORIGINS[fb.provider]) preconnectProvider(PROVIDER_ORIGINS[fb.provider])
+  }
+
   let recog = null
   let networkFails = 0
   let localRecognizer = null
@@ -364,17 +378,18 @@ export function createCascadeSession({
       firstChunk = false
     }
 
-    // Early start optimization: if opening phrase has no punctuation yet but has reached
-    // 5 words, dispatch the first 4 words at word boundary so the user hears voice output instantly.
+    // Early start optimization: Sub-Sentence Phonic Micro-Bursting
+    // If opening phrase has no punctuation yet but has reached 3 words, dispatch the first 2 words
+    // at word boundary so the user hears voice output within ~100-150ms.
     if (firstChunk && rest.trim()) {
       const words = rest.trim().split(/\s+/)
-      if (words.length >= 5) {
+      if (words.length >= 3) {
         let count = 0
         let cutIdx = -1
         for (let i = 0; i < rest.length; i++) {
           if (/\s/.test(rest[i]) && (i === 0 || !/\s/.test(rest[i - 1]))) {
             count++
-            if (count === 4) {
+            if (count === 2) {
               cutIdx = i + 1
               break
             }
@@ -609,6 +624,35 @@ export function createCascadeSession({
     let produced = false
     let accumulatedContent = ''
     let emittedAnswerLength = 0
+
+    // Instant Semantic Reflex Intercept (LSRI): Sub-10ms response for conversational courtesies
+    if (!parts) {
+      const reflex = matchReflex(userText)
+      if (reflex) {
+        thinking = false
+        emit({ type: 'thinking', value: false })
+        await streamReflex(reflex, {
+          signal: controller.signal,
+          onToken: (t) => {
+            produced = true
+            buffer += t
+            emit({ type: 'transcript', role: 'assistant', text: t })
+            flushSentences()
+            metrics.markFirstWord()
+          },
+          onDone: ({ content: full }) => {
+            if (full?.trim()) {
+              history.push({ role: 'assistant', content: full.trim() })
+              lastReply = full.trim()
+            }
+            flushSentences(true)
+            metrics.markTurnEnd()
+            abort = null
+          },
+        })
+        return
+      }
+    }
 
     await new Promise((resolve) => {
       runAgent({
