@@ -61,6 +61,31 @@ function pickRandom(list) {
   return list[Math.floor(Math.random() * list.length)]
 }
 
+const TIME_QUERY = /^(?:what(?:'s|\s+is)\s+(?:the\s+)?(?:current\s+)?time(?:\s+now)?|what\s+time\s+is\s+it|tell\s+me\s+the\s+time|current\s+time)\b[.!?, ]*$/i
+const DATE_QUERY = /^(?:what(?:'s|\s+is)\s+(?:the\s+)?(?:today(?:'s)?\s+)?date|what\s+date\s+is\s+it|what\s+day\s+is\s+(?:it\s+)?today|today(?:'s)?\s+date)\b[.!?, ]*$/i
+const CAPABILITIES = /^(?:what\s+can\s+you\s+do|what\s+are\s+your\s+capabilities|how\s+can\s+you\s+help\s+me)\b[.!?, ]*$/i
+const STATUS_PING = /^(?:ping|status\s+check|system\s+status|are\s+you\s+online)\b[.!?, ]*$/i
+
+function getFormattedTime() {
+  const d = new Date()
+  return `It's currently ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
+}
+
+function getFormattedDate() {
+  const d = new Date()
+  return `Today is ${d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
+}
+
+const CAPABILITY_RESPONSES = [
+  "I can chat with you live, research the web, inspect your camera or shared screen, run code, and generate creative content.",
+  "I can research real-time facts, analyze what you show me on camera or screen, write and execute code, and assist you hands-free.",
+]
+
+const STATUS_RESPONSES = [
+  "All systems are online, connected, and operating at peak performance.",
+  "Online and ready. Network, voice synthesis, and vision pipelines are active.",
+]
+
 /**
  * Checks if an utterance matches a known high-frequency reflex intent.
  * @param {string} text - User prompt
@@ -68,7 +93,13 @@ function pickRandom(list) {
  */
 export function matchReflex(text = '') {
   const t = String(text || '').trim().toLowerCase()
-  if (!t || t.length > 60) return null
+  if (!t || t.length > 70) return null
+
+  // Dynamic real-time queries evaluated on-device
+  if (TIME_QUERY.test(t)) return getFormattedTime()
+  if (DATE_QUERY.test(t)) return getFormattedDate()
+  if (CAPABILITIES.test(t)) return pickRandom(CAPABILITY_RESPONSES)
+  if (STATUS_PING.test(t)) return pickRandom(STATUS_RESPONSES)
 
   if (GREETINGS.test(t)) return pickRandom(GREETING_RESPONSES)
   if (HOW_ARE_YOU.test(t)) return pickRandom(HOW_ARE_YOU_RESPONSES)

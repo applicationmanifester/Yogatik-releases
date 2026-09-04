@@ -424,12 +424,13 @@ export const webSearchTool = {
       if (firstVal) rawQuery = firstVal
     }
     const query = sanitizeSearchQuery(typeof rawQuery === 'string' ? rawQuery.trim() : String(rawQuery || '').trim())
-    const { count = 5, recency = 'any', site, engines = 'all' } = (typeof args === 'object' && args !== null) ? args : {}
+    const { count = 5, recency = 'any', site, engines = 'all', fast = false } = (typeof args === 'object' && args !== null) ? args : {}
     const n = Math.min(Math.max(1, count | 0), MAX_RESULTS)
     if (!query) return { error: 'Empty query' }
 
-    // Instant Cache Hit check (0ms latency for repeated queries)
-    const cacheKey = `${query.toLowerCase()}_${n}_${recency}_${site || ''}_${engines}`
+    // Instant Cache Hit check (0ms latency for repeated or speculatively pre-fetched queries)
+    const normKey = query.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+    const cacheKey = `${normKey}_${recency}_${site || ''}`
     const cached = SEARCH_CACHE.get(cacheKey)
     if (cached && (Date.now() - cached.ts) < SEARCH_CACHE_TTL) {
       return { ...cached.data, cached: true }
@@ -440,44 +441,47 @@ export const webSearchTool = {
     const intent = detectSearchIntent(query)
 
     const tasks = []
+    const defaultTimeout = fast ? 1200 : 2500
     if (braveKey) {
-      tasks.push(withFastTimeout(braveSearch(site ? `${query} site:${site}` : query, braveKey, n, recency), 2500))
+      tasks.push(withFastTimeout(braveSearch(site ? `${query} site:${site}` : query, braveKey, n, recency), defaultTimeout))
     }
-    tasks.push(withFastTimeout(duckDuckGoSearch(ddgQuery(query, recency, site), n), 2500))
+    tasks.push(withFastTimeout(duckDuckGoSearch(ddgQuery(query, recency, site), n), defaultTimeout))
     if (wide) {
       // Smart engine routing based on detected intent
       if (intent === 'code' || intent === 'howto') {
-        tasks.push(withFastTimeout(githubSearch(query, 3), 2000))
-        tasks.push(withFastTimeout(stackOverflowSearch(query, 3), 2000))
-        tasks.push(withFastTimeout(wikipediaSearch(query, 2), 1500))
+        tasks.push(withFastTimeout(githubSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(stackOverflowSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), fast ? 900 : 1500))
       } else if (intent === 'academic') {
-        tasks.push(withFastTimeout(arxivSearch(query, 3), 2000))
-        tasks.push(withFastTimeout(crossrefSearch(query, 3), 2000))
-        tasks.push(withFastTimeout(semanticScholarSearch(query, 3), 2000))
-        tasks.push(withFastTimeout(wikipediaSearch(query, 2), 1500))
+        tasks.push(withFastTimeout(arxivSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(crossrefSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(semanticScholarSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), fast ? 900 : 1500))
       } else if (intent === 'news') {
-        tasks.push(withFastTimeout(googleNewsSearch(query, 4), 2200))
-        tasks.push(withFastTimeout(redditSearch(query, 2), 2000))
-        tasks.push(withFastTimeout(wikipediaSearch(query, 2), 1500))
+        tasks.push(withFastTimeout(googleNewsSearch(query, 4), fast ? 1100 : 2200))
+        if (!fast) tasks.push(withFastTimeout(redditSearch(query, 2), 2000))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), fast ? 900 : 1500))
       } else if (intent === 'community') {
-        tasks.push(withFastTimeout(redditSearch(query, 3), 2000))
-        tasks.push(withFastTimeout(stackOverflowSearch(query, 2), 2000))
-        tasks.push(withFastTimeout(googleNewsSearch(query, 2), 2200))
-        tasks.push(withFastTimeout(wikipediaSearch(query, 2), 1500))
+        tasks.push(withFastTimeout(redditSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(stackOverflowSearch(query, 2), defaultTimeout))
+        tasks.push(withFastTimeout(googleNewsSearch(query, 2), fast ? 1100 : 2200))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), fast ? 900 : 1500))
       } else {
         // General: wide net across all general web search engines
-        tasks.push(withFastTimeout(googleNewsSearch(query, 3), 2200))
-        tasks.push(withFastTimeout(wikipediaSearch(query, 2), 1500))
-        tasks.push(withFastTimeout(marginaliaSearch(query, 3), 2000))
-        tasks.push(withFastTimeout(githubSearch(query, 2), 2000))
-        if (/\b(paper|arxiv|study|research|algorithm|theorem|science|physics|academic|scholar)\b/i.test(query)) {
-          tasks.push(withFastTimeout(semanticScholarSearch(query, 2), 2000))
-          tasks.push(withFastTimeout(arxivSearch(query, 2), 2000))
-          tasks.push(withFastTimeout(crossrefSearch(query, 2), 2000))
-        }
-        if (/\b(review|opinion|problem|issue|reddit|forum|fix|discussion)\b/i.test(query)) {
-          tasks.push(withFastTimeout(redditSearch(query, 2), 2000))
-          tasks.push(withFastTimeout(stackOverflowSearch(query, 2), 2000))
+        tasks.push(withFastTimeout(googleNewsSearch(query, 3), fast ? 1100 : 2200))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), fast ? 900 : 1500))
+        if (!fast) {
+          tasks.push(withFastTimeout(marginaliaSearch(query, 3), 2000))
+          tasks.push(withFastTimeout(githubSearch(query, 2), 2000))
+          if (/\b(paper|arxiv|study|research|algorithm|theorem|science|physics|academic|scholar)\b/i.test(query)) {
+            tasks.push(withFastTimeout(semanticScholarSearch(query, 2), 2000))
+            tasks.push(withFastTimeout(arxivSearch(query, 2), 2000))
+            tasks.push(withFastTimeout(crossrefSearch(query, 2), 2000))
+          }
+          if (/\b(review|opinion|problem|issue|reddit|forum|fix|discussion)\b/i.test(query)) {
+            tasks.push(withFastTimeout(redditSearch(query, 2), 2000))
+            tasks.push(withFastTimeout(stackOverflowSearch(query, 2), 2000))
+          }
         }
       }
     }
@@ -497,8 +501,8 @@ export const webSearchTool = {
           resolve()
         }
 
-        // Hard cap at 1800ms, but early exit when top engines respond
-        const timer = setTimeout(finish, 1800)
+        // Hard cap at 900ms for fast/live mode, 1800ms for normal mode
+        const timer = setTimeout(finish, fast ? 900 : 1800)
 
         tasks.forEach(async (taskPromise) => {
           try {
@@ -508,6 +512,12 @@ export const webSearchTool = {
             }
           } catch {}
           completed++
+
+          // In fast mode, a single solid engine response with >= 2 results can exit immediately
+          if (fast && lists.length >= 1 && lists[0].length >= 2) {
+            finish()
+            return
+          }
 
           // Early exit if we have >= n results from >= 2 engines, or all done
           if (lists.length >= 2) {

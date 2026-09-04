@@ -65,7 +65,7 @@
  * @param {Function} o.onEvent     (CascadeEvent) => void
  */
 
-import { runAgent } from '../agent'
+import { runAgent, isRealtimeOrSearchQuery } from '../agent'
 import { splitReasoning } from '../reasoning'
 import { createCamera, createScreenCapture, switchCamera as switchCameraTrack } from './video'
 import { pickFiller } from './fillers'
@@ -78,6 +78,7 @@ import {
 } from '../vision/source'
 import { preconnectProvider } from './latencyOptimizer'
 import { matchReflex, streamReflex } from './reflexEngine'
+import { webSearchTool } from '../tools/webSearch'
 
 const SENTENCE = /([.!?…]+["')\]]*\s+|\n{2,})/
 // The first thing said should leave the mouth as early as possible; a clause is
@@ -89,7 +90,7 @@ export function speechRecognitionAvailable() {
     !!(window.SpeechRecognition || window.webkitSpeechRecognition)
 }
 
-const MAX_HISTORY_TURNS = 20   // Keep context tight for fast providers
+const MAX_HISTORY_TURNS = 6   // Ultra-lean context window for sub-second TTFT in live voice
 const MIN_BARGE_CHARS = 6      // Shorter than this is usually echo or a cough
 const ECHO_TAIL_MS = 800      // Keep filtering echo this long after speech ends
 
@@ -869,6 +870,14 @@ export function createCascadeSession({
       if (interim.trim()) {
         pendingInterim = interim.trim()
         clearEndpoint()
+
+        // Speculative Parallel Pre-Search (SPPS):
+        // If the interim utterance signals search/news with >= 3 words, pre-fetch search
+        // results speculatively in the background so results are cached before speech ends.
+        if (isRealtimeOrSearchQuery(pendingInterim) && pendingInterim.split(/\s+/).length >= 3) {
+          webSearchTool.execute({ query: pendingInterim, count: 4, fast: true }).catch(() => {})
+        }
+
         // Adaptive: a complete-sounding phrase commits sooner than a fragment.
         endpointTimer = setTimeout(() => {
           const text = pendingInterim

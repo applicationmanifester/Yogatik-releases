@@ -21,6 +21,20 @@ describe('reflexEngine', () => {
     expect(matchReflex('thank you so much')).toBeTruthy()
   })
 
+  it('evaluates dynamic real-time time and date queries locally in milliseconds', () => {
+    const timeAnswer = matchReflex('what time is it?')
+    expect(timeAnswer).toMatch(/It's currently/i)
+
+    const dateAnswer = matchReflex("what is today's date?")
+    expect(dateAnswer).toMatch(/Today is/i)
+
+    const capsAnswer = matchReflex("what can you do?")
+    expect(capsAnswer).toMatch(/I can/i)
+
+    const pingAnswer = matchReflex("are you online")
+    expect(pingAnswer).toMatch(/online|ready/i)
+  })
+
   it('returns null for non-reflex questions so full agent runs', () => {
     expect(matchReflex('what is the capital of France?')).toBeNull()
     expect(matchReflex('write a python script to parse csv')).toBeNull()
