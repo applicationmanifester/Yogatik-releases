@@ -1208,6 +1208,11 @@ export default function App() {
       setErrorModalMsg('Live needs a model to talk to.\n\nAdd a key for any provider in Settings, or add a Gemini key for the realtime engine (lowest latency, true interruption). Free Gemini keys: aistudio.google.com/apikey')
       return
     }
+    if (typeof window !== 'undefined' && window.location.pathname !== '/live') {
+      try {
+        window.history.pushState({ live: true }, '', '/live')
+      } catch {}
+    }
     setLiveConfig({ ...cfg, persona: getSystemPrompt() })
   }, [getSystemPrompt])
 
@@ -1345,7 +1350,21 @@ export default function App() {
     }
     window.addEventListener('keydown', handleGlobalShortcuts)
     return () => window.removeEventListener('keydown', handleGlobalShortcuts)
-  }, [liveConfig])
+  }, [liveConfig, startLive])
+
+  // URL routing synchronization for /live page
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = (window.location.pathname || '').toLowerCase().replace(/\/+$/, '')
+      if (path === '/live') {
+        if (!liveConfig) startLive()
+      } else {
+        if (liveConfig) setLiveConfig(null)
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [liveConfig, startLive])
 
 
 
@@ -1491,9 +1510,8 @@ export default function App() {
       setTimeout(() => textareaRef.current?.focus(), 0)
     }
     if (params.get('intent') === 'research' && !shared) setInput('Research ')
-    // Live is a standalone mode: launched from a PWA shortcut it opens the
-    // call directly, without needing a conversation or a chat provider.
-    if (params.get('live')) startLive()
+    // Live is a standalone mode: launched from a PWA shortcut or /live route
+    if (params.get('live') || rawPath === '/live') startLive()
     // Deep link from the marketing pages (/platforms, /pricing) straight to the
     // paywall. One upgrade surface and one sign-in surface: the static pages
     // describe the plans and hand off here, rather than growing a second
@@ -1530,7 +1548,7 @@ export default function App() {
       doPoll()
     }
 
-    if (shared || params.get('new') || params.get('intent') || params.get('live') || params.get('upgrade') || params.get('signin')) {
+    if (shared || params.get('new') || params.get('intent') || (params.get('live') && rawPath !== '/live') || params.get('upgrade') || params.get('signin')) {
       history.replaceState(null, '', location.pathname)   // don't re-fire on reload
     }
     // Note: Speech Recognition is initialised on-demand in toggleVoiceInput;
@@ -5190,11 +5208,25 @@ export default function App() {
           features={features}
           onTranscript={saveLiveTurn}
           availableModels={models[liveConfig.provider]?.models || []}
+          allProviders={models}
           onModelChange={async (newModel) => {
             chooseModel(newModel, liveConfig.provider)
             const status = await getVisionStatus(liveConfig.provider, newModel).catch(() => ({ cached: false, guessed: false }))
             const visionCapable = status.cached ?? status.guessed
             setLiveConfig(prev => prev ? { ...prev, model: newModel, modelCanSee: visionCapable } : null)
+          }}
+          onProviderChange={async (newProvider, newModel) => {
+            chooseModel(newModel, newProvider)
+            const status = await getVisionStatus(newProvider, newModel).catch(() => ({ cached: false, guessed: false }))
+            const visionCapable = status.cached ?? status.guessed
+            const key = keyInfo[newProvider]?.key || ''
+            setLiveConfig(prev => prev ? {
+              ...prev,
+              provider: newProvider,
+              model: newModel,
+              apiKey: key,
+              modelCanSee: visionCapable
+            } : null)
           }}
           onEnd={(handoff) => {
             if (handoff?.recapMarkdown && handoff?.transcripts?.length > 0) {
@@ -5205,6 +5237,11 @@ export default function App() {
                   { role: 'assistant', content: handoff.recapMarkdown, id: `live_recap_${Date.now()}` }
                 ]
               } : c))
+            }
+            if (typeof window !== 'undefined' && window.location.pathname === '/live') {
+              try {
+                window.history.pushState(null, '', '/')
+              } catch {}
             }
             setLiveConfig(null)
           }}

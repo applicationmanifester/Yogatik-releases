@@ -683,24 +683,33 @@ export function createCascadeSession({
     }
 
     await new Promise((resolve) => {
+      // 12s live response watchdog: If provider hangs with 0 tokens, failover to next provider
+      let liveTurnTimer = setTimeout(() => {
+        if (!produced && thinking && !controller.signal.aborted) {
+          controller.abort(new Error(`Timeout: ${active.provider || 'model'} did not respond within 12s`))
+        }
+      }, 12000)
+
       runAgent({
         provider: active.provider, apiKey: active.apiKey, model: active.model,
         history: history.slice(0, -1),
         userMessage: content,
         toolsEnabled: true, webEnabled: true, disabledTools,
-        maxTokens: 140,
+        maxTokens: 500,
         modelCanSee: active.modelCanSee ?? modelCanSee,
         persona: `${persona ? persona + '\n\n' : ''}CRITICAL LIVE VOICE DIRECTIVES:
 1. Provide quick, precise, accurate, reliable, and brief info. NEVER elongate, lecture, or ramble.
-2. Limit spoken replies strictly to 1 to 2 short, crisp sentences (under 30 words total).
-3. Deliver the direct answer immediately with zero filler, throat-clearing, or restating the question.
-4. If reporting web search, news, or factual info, state ONLY the single top headline or key fact, and offer to give more details if requested.
-5. Absolute rule: No markdown, no bullet points, no numbered lists, no headings, no bolding, no emojis, no asterisks, no quotes.
-6. You have full tools (image/video gen, file export, code execution, web search). The result appears directly on their screen, so state what was found or completed in one short sentence. Never read long code, data, or search excerpts aloud.\n\n${(active.modelCanSee ?? modelCanSee)
+2. Answer directly in plain conversational English. Do NOT output internal scratch-work, monologue, or <think> tags.
+3. Limit spoken replies strictly to 1 to 2 short, crisp sentences (under 30 words total).
+4. Deliver the direct answer immediately with zero filler, throat-clearing, or restating the question.
+5. If reporting web search, news, or factual info, state ONLY the single top headline or key fact, and offer to give more details if requested.
+6. Absolute rule: No markdown, no bullet points, no numbered lists, no headings, no bolding, no emojis, no asterisks, no quotes.
+7. You have full tools (image/video gen, file export, code execution, web search). The result appears directly on their screen, so state what was found or completed in one short sentence. Never read long code, data, or search excerpts aloud.\n\n${(active.modelCanSee ?? modelCanSee)
           ? 'You can SEE through the user\'s camera or shared screen: image frames are attached to the conversation when they ask about what is in view. Describe what you actually see.'
           : 'You CANNOT see images directly. When the user asks about their camera or screen, a text description of the current view is inserted automatically as "[Live view (described on-device): …]". Rely ONLY on that description. Never invent, request, or fetch image URLs (e.g. do not make up links like example.com/photo.jpg); if no description was provided, say you could not see it and offer to look again.'}`,
         signal: controller.signal,
         onToken: (t) => {
+          if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
           accumulatedContent += t
           const isStillThinking = /<think(?:\s[^>]*)?>/i.test(accumulatedContent) && !/<\/think>/i.test(accumulatedContent)
           if (isStillThinking) {
@@ -734,6 +743,7 @@ export function createCascadeSession({
         },
         onStatus: (s) => emit({ type: 'status', text: s }),
         onToolStart: (name) => {
+          if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
           emit({ type: 'tools', names: [name] })
           // Say something while the tool runs. A web search is 3-4 seconds
           // whatever the model does, and in a SPOKEN conversation that silence
@@ -760,22 +770,30 @@ export function createCascadeSession({
         },
         onToolResult: (name, result) => emit({ type: 'toolResult', name, result }),
         onDone: ({ content: full }) => {
+          if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
           const { reasoning, answer } = splitReasoning(full || accumulatedContent)
           if (reasoning) emit({ type: 'reasoning', text: reasoning })
-          if (answer.length > emittedAnswerLength) {
-            const finalChunk = answer.slice(emittedAnswerLength)
-            emittedAnswerLength = answer.length
+          let effectiveAnswer = answer?.trim() || ''
+          // If the model produced only reasoning (e.g. cut off inside <think> or ended thought without answer):
+          if (!effectiveAnswer && reasoning?.trim()) {
+            const lines = reasoning.trim().split(/(?<=[.?!])\s+/).filter(l => l.trim().length > 3)
+            effectiveAnswer = lines[lines.length - 1] || reasoning.slice(-120).trim()
+          }
+          if (effectiveAnswer && effectiveAnswer.length > emittedAnswerLength) {
+            const finalChunk = effectiveAnswer.slice(emittedAnswerLength)
+            emittedAnswerLength = effectiveAnswer.length
             buffer += finalChunk
             emit({ type: 'transcript', role: 'assistant', text: finalChunk })
           }
           flushSentences(true)
           metrics.markTurnEnd()
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
-          if (answer?.trim()) { history.push({ role: 'assistant', content: answer.trim() }); lastReply = answer.trim() }
+          if (effectiveAnswer) { history.push({ role: 'assistant', content: effectiveAnswer }); lastReply = effectiveAnswer }
           abort = null
           resolve()
         },
         onError: (e) => {
+          if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
           failure = e?.message || String(e)
           abort = null

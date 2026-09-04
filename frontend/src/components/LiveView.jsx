@@ -3,7 +3,7 @@ import {
   Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Wrench,
   AlertTriangle, Monitor, MonitorOff, MessageSquare, Eye, EyeOff,
   Aperture, Volume2, VolumeX, Scan, ScanEye,
-  RefreshCw, SwitchCamera, Settings2, Camera,
+  RefreshCw, SwitchCamera, Settings2, Camera, Search,
 } from 'lucide-react'
 import { runAgent } from '../agent'
 import { createLiveSession } from '../live/session'
@@ -16,6 +16,7 @@ import { VisionModal } from './VisionModal'
 import { LiveTranscriptPanel } from './LiveTranscriptPanel'
 import { LiveDevicePicker } from './LiveDevicePicker'
 import { LiveSettings } from './LiveSettings'
+import { LiveModelSearchModal } from './LiveModelSearchModal'
 import { enumerate, canFlipCamera } from '../live/devices'
 import * as liveMetrics from '../live/metrics'
 import { db } from '../db'
@@ -34,7 +35,9 @@ export function LiveView({
   engine = 'gemini', provider, apiKey, model, voice, voiceEngine, fallbacks,
   persona, disabledTools, modelCanSee, onEnd, onTranscript, features = {},
   availableModels = [], onModelChange,
+  allProviders = {}, onProviderChange,
 }) {
+  const [showModelSearch, setShowModelSearch] = useState(false)
   // Consolidated UI state to reduce re-renders
   const [uiState, setUiState] = useState({
     state: 'connecting',
@@ -254,7 +257,38 @@ export function LiveView({
     }))
     sessionRef.current?.setModel?.(newModel, modelCanSee)
     onModelChange?.(newModel)
-  }, [modelCanSee, onModelChange])
+    showHudNotice(`Model: ${newModel.split('/').pop().slice(0, 24)}`)
+  }, [modelCanSee, onModelChange, showHudNotice])
+
+  const handleProviderSelect = useCallback((newProvider) => {
+    if (!newProvider || newProvider === (activeProvider.provider || provider)) return
+    const provModels = allProviders[newProvider]?.models || []
+    const newModel = provModels[0] || ''
+    setState(prev => ({
+      ...prev,
+      activeProvider: { provider: newProvider, model: newModel }
+    }))
+    sessionRef.current?.setProvider?.(newProvider, undefined, newModel, modelCanSee)
+    onProviderChange?.(newProvider, newModel)
+    showHudNotice(`Provider: ${allProviders[newProvider]?.name || newProvider}`)
+  }, [activeProvider.provider, provider, allProviders, modelCanSee, onProviderChange, showHudNotice])
+
+  const handlePickModelFromSearch = useCallback((targetProvider, targetModel) => {
+    if (!targetModel) return
+    const isDiffProv = targetProvider && targetProvider !== (activeProvider.provider || provider)
+    setState(prev => ({
+      ...prev,
+      activeProvider: { provider: targetProvider || activeProvider.provider || provider, model: targetModel }
+    }))
+    if (isDiffProv) {
+      sessionRef.current?.setProvider?.(targetProvider, undefined, targetModel, modelCanSee)
+      onProviderChange?.(targetProvider, targetModel)
+    } else {
+      sessionRef.current?.setModel?.(targetModel, modelCanSee)
+      onModelChange?.(targetModel)
+    }
+    showHudNotice(`Model: ${targetModel.split('/').pop().slice(0, 24)}`)
+  }, [activeProvider.provider, provider, modelCanSee, onProviderChange, onModelChange, showHudNotice])
 
   // Dynamically sync model prop changes without tearing down the live call
   useEffect(() => {
@@ -875,39 +909,100 @@ export function LiveView({
 
       {/* Awareness badges — provider/model only; vision status is in the HUD overlay */}
       <div className="live-badges">
-        {availableModels && availableModels.length > 0 ? (
+        {allProviders && Object.keys(allProviders).length > 0 ? (
           <select
-            value={activeProvider.model || model}
-            onChange={e => handleModelChange(e.target.value)}
-            className="live-badge provider select-badge"
+            value={activeProvider.provider || provider}
+            onChange={e => handleProviderSelect(e.target.value)}
+            className="live-badge provider-select-badge"
             style={{
-              background: 'rgba(255,255,255,0.08)',
-              color: '#fff',
-              border: '1px solid rgba(255,255,255,0.15)',
+              background: 'rgba(15, 23, 42, 0.85)',
+              color: '#38bdf8',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
               borderRadius: '12px',
               padding: '2px 8px',
               fontSize: '11px',
+              fontWeight: 600,
               outline: 'none',
               cursor: 'pointer',
               fontFamily: 'inherit',
-              maxHeight: '22px',
+              maxHeight: '24px',
               display: 'flex',
-              alignItems: 'center'
+              alignItems: 'center',
             }}
-            title="Change active model"
+            title="Switch AI Provider"
           >
-            {availableModels.map(m => (
-              <option key={m} value={m} style={{ background: '#1c1e22', color: '#fff' }}>
-                {activeProvider.provider} · {m.split('/').pop()}
+            {Object.entries(allProviders).map(([pId, pData]) => (
+              <option key={pId} value={pId} style={{ background: '#0f172a', color: '#f8fafc' }}>
+                {pData?.name || pId}
               </option>
             ))}
           </select>
         ) : (
           <span className="live-badge provider">
-            {activeProvider.provider}
-            {activeProvider.model ? ` · ${activeProvider.model.split('/').pop().slice(0, 20)}` : ''}
+            {activeProvider.provider || provider}
           </span>
         )}
+
+        <select
+          value={activeProvider.model || model}
+          onChange={e => {
+            if (e.target.value === '__SEARCH__') {
+              setShowModelSearch(true)
+            } else {
+              handleModelChange(e.target.value)
+            }
+          }}
+          className="live-badge model-select-badge"
+          style={{
+            background: 'rgba(255,255,255,0.08)',
+            color: '#fff',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: '12px',
+            padding: '2px 8px',
+            fontSize: '11px',
+            outline: 'none',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            maxHeight: '24px',
+            maxWidth: '180px',
+            display: 'flex',
+            alignItems: 'center',
+            textOverflow: 'ellipsis',
+          }}
+          title="Change active model or search"
+        >
+          <option value="__SEARCH__" style={{ background: '#0f172a', color: '#38bdf8', fontWeight: 600 }}>
+            🔍 Search all models…
+          </option>
+          {((allProviders && allProviders[activeProvider.provider || provider]?.models) || availableModels || []).map(m => (
+            <option key={m} value={m} style={{ background: '#1c1e22', color: '#fff' }}>
+              {m.split('/').pop()}
+            </option>
+          ))}
+        </select>
+
+        <button
+          type="button"
+          onClick={() => setShowModelSearch(true)}
+          className="live-badge search-badge"
+          style={{
+            background: 'rgba(56, 189, 248, 0.12)',
+            color: '#38bdf8',
+            border: '1px solid rgba(56, 189, 248, 0.3)',
+            borderRadius: '12px',
+            padding: '2px 8px',
+            fontSize: '11px',
+            fontWeight: 500,
+            cursor: 'pointer',
+            maxHeight: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+          }}
+          title="Search all AI models across all providers"
+        >
+          <Search size={11} /> Search Model
+        </button>
         {screenOn && <span className="live-badge screen-badge"><Monitor size={12} /> Screen</span>}
         {visionMode === 'always' && (
           <span className="live-badge watching-badge" title="AI inspects camera feed on every turn">
@@ -1218,6 +1313,16 @@ export function LiveView({
         onCopyText={copyText}
         copiedIdx={copiedIdx}
         features={features}
+      />
+
+      {/* Dedicated Search AI Model Modal */}
+      <LiveModelSearchModal
+        open={showModelSearch}
+        onClose={() => setShowModelSearch(false)}
+        allProviders={allProviders}
+        activeProvider={activeProvider.provider || provider}
+        activeModel={activeProvider.model || model}
+        onSelectModel={handlePickModelFromSearch}
       />
     </div>
   )
