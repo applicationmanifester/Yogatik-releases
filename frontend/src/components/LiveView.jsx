@@ -288,12 +288,21 @@ export function LiveView({
     sessionRef.current = session
     session.start().catch((err) => {
       if (cancelled) return
-      setState({
-        error: err?.name === 'NotAllowedError'
-          ? 'Microphone and camera access were blocked. Allow them in your browser, then try again.'
-          : err?.message || String(err),
-        state: 'error',
-      })
+      let msg
+      switch (err?.name) {
+        case 'NotAllowedError':
+          msg = 'Microphone and camera access were blocked. Allow them in your browser, then try again.'
+          break
+        case 'NotFoundError':
+          msg = 'No microphone found. Plug in a microphone or headset and try again.'
+          break
+        case 'OverconstrainedError':
+          msg = 'The previously selected microphone is no longer available. Unplug and replug it, or choose a different one in your system settings.'
+          break
+        default:
+          msg = err?.message || String(err)
+      }
+      setState({ error: msg, state: 'error' })
     })
 
     return () => {

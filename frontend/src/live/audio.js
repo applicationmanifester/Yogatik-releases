@@ -64,7 +64,7 @@ export async function createMicCapture(onChunk, { deviceId = '' } = {}) {
   } catch (err) {
     // A remembered microphone that has been unplugged fails the whole call.
     // Fall back to the system default rather than refusing to start.
-    if (deviceId && err?.name === 'OverconstrainedError') {
+    if (deviceId && (err?.name === 'OverconstrainedError' || err?.name === 'NotFoundError')) {
       stream = await navigator.mediaDevices.getUserMedia(audioConstraints({}))
     } else throw err
   }

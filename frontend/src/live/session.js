@@ -208,7 +208,11 @@ You can see them through their camera and hear them through their microphone. Be
     mic = await createMicCapture((b64) => send(audioChunk(b64)), { deviceId: loadPreferredDevices().micId })
     emit({ type: 'mic', stream: mic.stream })
 
-    if (camera) await enableCamera(true)
+    if (camera) {
+      try { await enableCamera(true) } catch (camErr) {
+        console.warn('Live: camera unavailable, starting audio-only', camErr)
+      }
+    }
     open()
   }
 

@@ -120,11 +120,11 @@ export async function createCamera({ facingMode = 'user', deviceId = '', exact =
   try {
     return attach(await navigator.mediaDevices.getUserMedia(constraints))
   } catch (err) {
-    // OverconstrainedError: the remembered camera is gone (unplugged webcam,
+    // OverconstrainedError or NotFoundError: the remembered camera is gone (unplugged webcam,
     // a phone that reports different ids after an OS update). Falling back to
     // "any camera" is far better than a call that cannot start — but only when
     // the caller did not INSIST on this exact device.
-    if (!exact && (deviceId || facingMode) && err?.name === 'OverconstrainedError') {
+    if (!exact && (deviceId || facingMode) && (err?.name === 'OverconstrainedError' || err?.name === 'NotFoundError')) {
       return attach(await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,

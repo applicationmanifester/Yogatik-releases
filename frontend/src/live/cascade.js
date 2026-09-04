@@ -807,14 +807,22 @@ export function createCascadeSession({
   async function start() {
     if (!speechRecognitionAvailable()) {
       startLocalRecognition()
-      if (camera) await enableCamera(true)
+      if (camera) {
+        try { await enableCamera(true) } catch (camErr) {
+          console.warn('Live: camera unavailable, starting audio-only', camErr)
+        }
+      }
       document.addEventListener('visibilitychange', onVisibility)
       emit({ type: 'ready' })
       return
     }
     // Warm the voice list; on Chrome the first getVoices() is empty.
     try { speechSynthesis.getVoices() } catch { /* no synthesiser */ }
-    if (camera) await enableCamera(true)
+    if (camera) {
+      try { await enableCamera(true) } catch (camErr) {
+        console.warn('Live: camera unavailable, starting audio-only', camErr)
+      }
+    }
     startRecognition()
     document.addEventListener('visibilitychange', onVisibility)
     emit({ type: 'ready' })
