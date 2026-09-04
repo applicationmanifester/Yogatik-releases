@@ -128,22 +128,22 @@ export function LiveSettings({
           <div className="ldp-group-title"><Volume2 size={13} /> Voice</div>
           <div className="ls-seg" role="group" aria-label="Voice engine">
             <button
-              className={`ls-seg-btn${voiceEngine !== 'system' ? ' active' : ''}`}
+              className={`ls-seg-btn${voiceEngine === 'system' ? ' active' : ''}`}
+              onClick={() => onVoiceEngine?.('system')}
+            >
+              ⚡ System (Instant)
+            </button>
+            <button
+              className={`ls-seg-btn${voiceEngine === 'neural' ? ' active' : ''}`}
               onClick={() => onVoiceEngine?.('neural')}
             >
               <Sparkles size={12} /> Neural
             </button>
-            <button
-              className={`ls-seg-btn${voiceEngine === 'system' ? ' active' : ''}`}
-              onClick={() => onVoiceEngine?.('system')}
-            >
-              System
-            </button>
           </div>
           <p className="ldp-empty">
             {voiceEngine === 'system'
-              ? 'Your browser\'s built-in voice. Instant, and robotic.'
-              : 'Runs on your device. Warmer, and about 90MB the first time.'}
+              ? '⚡ Built-in browser speech. Ultra-fast (<50ms), zero lag.'
+              : '🧠 On-device neural voice. Natural human tone, requires local compute.'}
           </p>
 
           {voices.length > 0 && (

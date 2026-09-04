@@ -137,9 +137,9 @@ export function endpointDelay(text = '') {
   // Semantic continuation gating: If user paused on a connective word, give them more time
   if (CONTINUATION_CONNECTORS.test(t)) return 650
   const words = t ? t.split(/\s+/).length : 0
-  if (words >= 8) return 300
-  if (words >= 4) return 450
-  return 600
+  if (words >= 8) return 260
+  if (words >= 4) return 360
+  return 480
 }
 
 // ─── Hands-free voice commands ─────────────────────────────────────────────
@@ -363,6 +363,31 @@ export function createCascadeSession({
       rest = rest.slice(end)
       firstChunk = false
     }
+
+    // Early start optimization: if opening phrase has no punctuation yet but has reached
+    // 5 words, dispatch the first 4 words at word boundary so the user hears voice output instantly.
+    if (firstChunk && rest.trim()) {
+      const words = rest.trim().split(/\s+/)
+      if (words.length >= 5) {
+        let count = 0
+        let cutIdx = -1
+        for (let i = 0; i < rest.length; i++) {
+          if (/\s/.test(rest[i]) && (i === 0 || !/\s/.test(rest[i - 1]))) {
+            count++
+            if (count === 4) {
+              cutIdx = i + 1
+              break
+            }
+          }
+        }
+        if (cutIdx > 0) {
+          const chunk = rest.slice(0, cutIdx)
+          speak(chunk)
+          spoken += chunk
+          firstChunk = false
+        }
+      }
+    }
   }
 
   /** Barge-in, done by hand: kill the voice and abandon the generation. */
@@ -568,18 +593,16 @@ export function createCascadeSession({
       content = [{ type: 'text', text: userText }, ...parts]
       emit({ type: 'looked', frames: parts.length })
     } else {
-      // Non-vision model + shared camera/screen: give it eyes on-device.
-      //
-      // This is AWAITED BEFORE the model is called, and on a text-only model
-      // it means Tesseract plus a small VLM — seconds of silence before the
-      // model has even seen the question, which is the single longest dead air
-      // in the whole turn. The work cannot be made shorter here, but it can
-      // stop sounding like a hang: say "let me take a closer look" first, the
-      // way a person does while they lean in.
-      const line = pickFiller(['identify'], { announced: filler.announced, last: filler.last })
-      if (line) { filler.announced = true; filler.last = line; speak(line) }
-      const seen = await describeIfVisual(userText)
-      if (seen) content = `${userText}\n\n[Live view (described on-device): ${seen}]`
+      // Non-vision model + shared camera/screen: give it eyes on-device ONLY when
+      // the question is actually visual or visionMode is 'always'.
+      const src = screen || cam
+      const needsLocalVision = !modelCanSee && src && visionMode !== 'off' && (visionMode === 'always' || isVisualQuestion(userText) || watched)
+      if (needsLocalVision) {
+        const line = pickFiller(['identify'], { announced: filler.announced, last: filler.last })
+        if (line) { filler.announced = true; filler.last = line; speak(line) }
+        const seen = await describeIfVisual(userText)
+        if (seen) content = `${userText}\n\n[Live view (described on-device): ${seen}]`
+      }
     }
 
     let failure = null

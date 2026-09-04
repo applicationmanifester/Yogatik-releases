@@ -18,6 +18,7 @@ import { LiveDevicePicker } from './LiveDevicePicker'
 import { LiveSettings } from './LiveSettings'
 import { enumerate, canFlipCamera } from '../live/devices'
 import * as liveMetrics from '../live/metrics'
+import { db } from '../db'
 
 /**
  * Full-screen face-to-face call with:
@@ -104,7 +105,7 @@ export function LiveView({
   // Personalise panel still owns the persisted default.
   const [liveRate, setLiveRate] = useState(1)
   const [liveVoiceId, setLiveVoiceId] = useState(voice || '')
-  const [liveEngine, setLiveEngine] = useState(voiceEngine || 'neural')
+  const [liveEngine, setLiveEngine] = useState(voiceEngine || 'system')
   const [showCaptions, setShowCaptions] = useState(features.liveCaptions !== false)
   const [hasFlip, setHasFlip] = useState(false)
 
@@ -741,7 +742,10 @@ export function LiveView({
           // did not happen.
           const r = sessionRef.current?.setVoiceEngine?.(e)
           if (r?.success === false) setState({ error: r.error })
-          else setLiveEngine(e)
+          else {
+            setLiveEngine(e)
+            db.getSetting('chat_prefs', {}).then(p => db.setSetting('chat_prefs', { ...p, live_voice_engine: e })).catch(() => {})
+          }
         }}
         voice={liveVoiceId}
         onVoice={(v) => {

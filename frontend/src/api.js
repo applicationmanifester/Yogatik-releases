@@ -660,9 +660,8 @@ export async function getLiveConfig() {
     // Distinct from `live_voice`: that one holds a Gemini voice name, and the
     // two namespaces do not overlap.
     voice: prefs.live_voice_local || DEFAULT_VOICE,
-    // Neural (Kokoro, on-device) by default — the system voice is robotic and
-    // people hang up on it. Explicit opt-out for slow devices / tight data.
-    voiceEngine: prefs.live_voice_engine === 'system' ? 'system' : 'neural',
+    // Default to 'system' for ultra-low latency (<50ms) speech start
+    voiceEngine: prefs.live_voice_engine === 'neural' ? 'neural' : 'system',
     fallbacks,
     modelCanSee: (await getCachedVision(provider, model)) ?? looksVisionCapable(model),
     disabledTools,
@@ -2095,7 +2094,7 @@ export async function requestTTS(text, { onEnd } = {}) {
 
   const prefs = await db.getSetting('chat_prefs', {})
   const speaker = getSharedSpeaker({
-    engine: prefs.live_voice_engine === 'system' ? 'system' : 'neural',
+    engine: prefs.live_voice_engine === 'neural' ? 'neural' : 'system',
     voice: prefs.live_voice_local || DEFAULT_VOICE,
     onEnd: () => onEnd?.(),
   })
