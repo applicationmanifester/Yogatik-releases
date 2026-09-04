@@ -9,11 +9,13 @@ const COMMON_ALIASES = {
   code: ['script', 'source', 'snippet', 'code_snippet', 'program', 'source_code'],
   url: ['link', 'href', 'target_url', 'uri', 'address', 'page_url', 'endpoint'],
   text: ['content', 'message', 'data_string', 'input_text', 'prompt_text'],
-  path: ['file_path', 'filepath', 'filename', 'target_path', 'file_name', 'file', 'target'],
+  path: ['file_path', 'filepath', 'filename', 'target_path', 'file_name', 'file', 'target', 'target_file', 'TargetFile'],
   limit: ['max', 'max_results', 'count', 'size', 'top_k', 'num_results'],
   tasks: ['subtasks', 'sub_tasks', 'task_list', 'delegations'],
   target: ['to', 'dest', 'destination', 'target_lang', 'target_language'],
   prompt: ['instruction', 'input_prompt', 'description_prompt'],
+  old_string: ['oldString', 'old', 'old_str', 'oldStr', 'find', 'search', 'original', 'TargetContent', 'targetContent', 'target_content', 'before', 'from'],
+  new_string: ['newString', 'new', 'new_str', 'newStr', 'replace', 'replacement', 'new_text', 'newText', 'content', 'ReplacementContent', 'replacementContent', 'replacement_content', 'after', 'to'],
 }
 
 /**
@@ -124,9 +126,13 @@ export function repairToolArguments(toolName, rawArgs, schema = null) {
     }
   }
 
-  if (tName === 'fs_read' || tName === 'fs_list' || tName === 'fs_file_tree' || tName === 'fs_file_info') {
+  if (tName === 'fs_list' || tName === 'fs_file_tree') {
     if (!args.path && !args.filePath && !args.filename) {
       args.path = args.target || args.dir || './'
+    }
+  } else if (tName === 'fs_read' || tName === 'fs_file_info') {
+    if (!args.path && !args.filePath && !args.filename) {
+      args.path = args.target || args.file || ''
     }
   }
 

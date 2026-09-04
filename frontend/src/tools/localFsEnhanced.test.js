@@ -162,4 +162,27 @@ describe('bridge wiring', () => {
     expect(listRes.success).toBe(true)
     expect(invoke).toHaveBeenCalledWith('fs_list', expect.objectContaining({ path: 'src' }))
   })
+
+  it('fs_read intercepts tool names passed as path to prevent hallucination loops', async () => {
+    const { fsReadTool } = await import('./localFs')
+    const res = await fsReadTool.execute({ path: 'fs_read' })
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/is a tool name, not a file/i)
+  })
+
+  it('fs_edit recognizes camelCase oldString and newString aliases', async () => {
+    const invoke = vi.fn(async (cmd, args) => {
+      if (cmd === 'fs_edit') return { replaced: 1, hash: 'h1' }
+      return {}
+    })
+    window.__TAURI__ = { core: { invoke } }
+    const { fsEditTool } = await import('./localFs')
+    const res = await fsEditTool.execute({ path: 'test.js', oldString: 'hello', newString: 'world' })
+    expect(res.success).toBe(true)
+    expect(invoke).toHaveBeenCalledWith('fs_edit', expect.objectContaining({
+      path: 'test.js',
+      oldString: 'hello',
+      newString: 'world',
+    }))
+  })
 })

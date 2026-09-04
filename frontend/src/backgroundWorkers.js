@@ -24,6 +24,7 @@ class BackgroundWorkerManager {
   constructor() {
     this.activeWorkers = new Map()
     this.listeners = new Set()
+    this._saveQueue = Promise.resolve()
   }
 
   async getAllTasks() {
@@ -35,30 +36,33 @@ class BackgroundWorkerManager {
   }
 
   async saveTask(task) {
-    const tasks = await this.getAllTasks()
-    const idx = tasks.findIndex((t) => t.id === task.id)
-    let updated
-    if (idx >= 0) {
-      updated = [...tasks]
-      updated[idx] = { ...tasks[idx], ...task, lastUpdated: Date.now() }
-    } else {
-      updated = [
-        {
-          ...task,
-          createdAt: Date.now(),
-          lastUpdated: Date.now(),
-          status: task.status || TASK_STATUS.QUEUED,
-          progress: task.progress || 0,
-        },
-        ...tasks,
-      ]
-    }
-    memoryTasks = updated
-    try {
-      await setSetting(BACKGROUND_TASKS_KEY, updated)
-    } catch {}
-    this.notifyListeners(updated)
-    return task
+    this._saveQueue = this._saveQueue.then(async () => {
+      const tasks = await this.getAllTasks()
+      const idx = tasks.findIndex((t) => t.id === task.id)
+      let updated
+      if (idx >= 0) {
+        updated = [...tasks]
+        updated[idx] = { ...tasks[idx], ...task, lastUpdated: Date.now() }
+      } else {
+        updated = [
+          {
+            ...task,
+            createdAt: Date.now(),
+            lastUpdated: Date.now(),
+            status: task.status || TASK_STATUS.QUEUED,
+            progress: task.progress || 0,
+          },
+          ...tasks,
+        ]
+      }
+      memoryTasks = updated
+      try {
+        await setSetting(BACKGROUND_TASKS_KEY, updated)
+      } catch {}
+      this.notifyListeners(updated)
+      return updated[idx >= 0 ? idx : 0]
+    })
+    return this._saveQueue
   }
 
   async spawnTask({
@@ -89,17 +93,22 @@ class BackgroundWorkerManager {
 
       Promise.resolve()
         .then(async () => {
+          let progressPromise = Promise.resolve()
           const result = await executorFn(payload, {
             signal: abortController.signal,
-            onProgress: async (p, log) => {
-              const current = (await this.getAllTasks()).find((t) => t.id === taskId)
-              if (current && current.status === TASK_STATUS.RUNNING) {
-                const logs = log ? [...(current.logs || []), `[${new Date().toLocaleTimeString()}] ${log}`] : current.logs
-                await this.saveTask({ id: taskId, progress: Math.min(99, p), logs })
-              }
+            onProgress: (p, log) => {
+              progressPromise = progressPromise.then(async () => {
+                const current = (await this.getAllTasks()).find((t) => t.id === taskId)
+                if (current && current.status === TASK_STATUS.RUNNING) {
+                  const logs = log ? [...(current.logs || []), `[${new Date().toLocaleTimeString()}] ${log}`] : current.logs
+                  await this.saveTask({ id: taskId, progress: Math.min(99, p), logs })
+                }
+              })
+              return progressPromise
             },
           })
 
+          await progressPromise
           await this.saveTask({
             id: taskId,
             status: TASK_STATUS.COMPLETED,

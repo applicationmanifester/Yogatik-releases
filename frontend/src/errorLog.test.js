@@ -118,6 +118,7 @@ describe('tool-argument errors are not provider failures', () => {
     'Provide a job title or role to search for.',
     'url is required to navigate',
     'Invalid argument: depth must be a number',
+    'old_string and new_string are required (e.g. { path: "src/file.js", old_string: "...", new_string: "..." })',
   ]
 
   for (const msg of cases) {

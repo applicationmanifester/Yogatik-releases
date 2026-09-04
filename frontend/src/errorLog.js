@@ -105,7 +105,7 @@ export function diagnoseError(error) {
   }
 
   // File edit / patch mismatches: when an agent passes an old_string that doesn't match
-  if (/old_string not found|old_string is not unique|target string not found|replacement failed|old_string/i.test(msg)) {
+  if (/old_string not found|old_string is not unique|target string not found|replacement failed/i.test(msg)) {
     const isUnique = /not unique/i.test(msg)
     return {
       type: 'fs_edit_mismatch',
@@ -209,7 +209,8 @@ export function diagnoseError(error) {
   }
 
   if (
-    /\b[a-z_]+ is required\b/i.test(msg) ||
+    /\b(?:[a-z_]+(?:\s+and\s+[a-z_]+)*)\s+(?:is|are)\s+required\b/i.test(msg) ||
+    /\b(?:is|are)\s+required\b/i.test(msg) ||
     /missing required (parameter|argument|field)/i.test(msg) ||
     /\brequired to \w+/i.test(msg) ||
     /invalid argument/i.test(msg) ||

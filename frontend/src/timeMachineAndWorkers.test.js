@@ -69,10 +69,14 @@ describe('Background Worker Pool & Task Delegation', () => {
     expect(task.id).toBeDefined()
     expect(task.status).toBe(TASK_STATUS.RUNNING)
 
-    // Wait for execution promise
-    await new Promise((r) => setTimeout(r, 50))
-    const tasks = await backgroundWorkers.getAllTasks()
-    const found = tasks.find((t) => t.id === task.id)
+    // Wait for background execution to settle
+    let found
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 50))
+      const tasks = await backgroundWorkers.getAllTasks()
+      found = tasks.find((t) => t.id === task.id)
+      if (found?.status === TASK_STATUS.COMPLETED) break
+    }
     expect(found.status).toBe(TASK_STATUS.COMPLETED)
     expect(found.result).toEqual({ vulnerabilitiesFound: 0 })
   })

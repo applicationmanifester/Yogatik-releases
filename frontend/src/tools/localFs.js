@@ -469,6 +469,10 @@ export const fsReadTool = {
   async execute(args = {}, opts = {}) {
     const path = args.path || args.file || args.filepath || args.target || args.target_file || args.TargetFile || args.filename
     if (!path) return fail('path is required (e.g. { path: "src/file.js" })')
+    const cleanPath = String(path).trim()
+    if (DESKTOP_ONLY_TOOLS.has(cleanPath.toLowerCase())) {
+      return fail(`Invalid path "${cleanPath}". "${cleanPath}" is a tool name, not a file path. Specify the actual file path you want to read (e.g. { path: "src/index.js" }).`)
+    }
     return guard(async () => {
       // Robust offset and line range parameter extraction across all model conventions
       const rawStart = args.start_line ?? args.offset ?? args.line_start ?? args.startLine ?? args.offset_lines ?? args.from_line ?? args.StartLine
@@ -782,8 +786,8 @@ export const fsEditTool = {
   },
   async execute(args = {}, opts = {}) {
     const path = args.path || args.file || args.filepath || args.target_file || args.TargetFile || args.filename
-    const old_string = args.old_string ?? args.old ?? args.old_str ?? args.find ?? args.target ?? args.old_text ?? args.search ?? args.original ?? args.TargetContent ?? args.target_content ?? args.before
-    const new_string = args.new_string ?? args.new ?? args.new_str ?? args.replace ?? args.replacement ?? args.new_text ?? args.content ?? args.ReplacementContent ?? args.replacement_content ?? args.after
+    const old_string = args.old_string ?? args.oldString ?? args.old ?? args.old_str ?? args.oldStr ?? args.find ?? args.target ?? args.old_text ?? args.oldText ?? args.search ?? args.original ?? args.TargetContent ?? args.targetContent ?? args.target_content ?? args.before ?? args.from
+    const new_string = args.new_string ?? args.newString ?? args.new ?? args.new_str ?? args.newStr ?? args.replace ?? args.replacement ?? args.new_text ?? args.newText ?? args.content ?? args.ReplacementContent ?? args.replacementContent ?? args.replacement_content ?? args.after ?? args.to
     const replace_all = args.replace_all ?? args.replaceAll ?? args.all ?? args.AllowMultiple ?? args.allow_multiple ?? false
     const expected_hash = args.expected_hash ?? args.hash ?? args.expectedHash
     const start_line = args.start_line ?? args.StartLine ?? args.startLine ?? 0
