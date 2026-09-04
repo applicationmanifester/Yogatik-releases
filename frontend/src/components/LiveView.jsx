@@ -182,6 +182,12 @@ export function LiveView({
     activeProvider, connectionState, userLevel, assistantLevel, breathingPhase,
   } = uiState
 
+  const curProvider = activeProvider?.provider || provider || 'gemini'
+  const isCurProviderReady = isProviderReady(curProvider, allProviders?.[curProvider])
+  const currentModels = (allProviders[curProvider]?.models && allProviders[curProvider].models.length > 0)
+    ? allProviders[curProvider].models
+    : (availableModels || [])
+
   const {
     visionOpen, visionImage, visionText, visionLoading, visionQ, visionVia,
     autoScan, retakeFlash, objectDetect, detections, detectError,

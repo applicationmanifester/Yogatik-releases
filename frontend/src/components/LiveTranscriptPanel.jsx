@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Wrench, Copy, Check, Zap, Brain, Clock, Activity, Search, Globe, Cpu, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { ChevronRight, Wrench, Copy, Check, Zap, Brain, Clock, Activity, Search, Cpu, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import { ToolResultCard } from './ToolResultCard'
 
 /**

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Search, X, Check, Sparkles, Eye, Zap, Brain, ChevronRight } from 'lucide-react'
 
 export function LiveModelSearchModal({
