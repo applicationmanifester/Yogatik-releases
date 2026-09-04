@@ -4,6 +4,7 @@ import {
   AlertTriangle, Monitor, MonitorOff, MessageSquare, Eye, EyeOff,
   Aperture, Volume2, VolumeX, Scan, ScanEye,
   RefreshCw, SwitchCamera, Settings2, Camera, Search,
+  ChevronDown, Check,
 } from 'lucide-react'
 import { runAgent } from '../agent'
 import { createLiveSession } from '../live/session'
@@ -22,6 +23,27 @@ import * as liveMetrics from '../live/metrics'
 import { db } from '../db'
 import { preconnectProvider } from '../live/latencyOptimizer'
 
+/** Ticking elapsed timer for the Activity HUD — shows how long the AI has been thinking */
+function ActivityTimer({ startTime }) {
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    if (!startTime) return
+    const id = setInterval(() => setElapsed(Date.now() - startTime), 100)
+    return () => clearInterval(id)
+  }, [startTime])
+  return (
+    <span style={{
+      fontVariantNumeric: 'tabular-nums',
+      fontSize: '12px',
+      opacity: 0.85,
+      marginLeft: 4,
+      color: '#60a5fa',
+    }}>
+      ({(elapsed / 1000).toFixed(1)}s)
+    </span>
+  )
+}
+
 /**
  * Full-screen face-to-face call with:
  * - Multi-ring animated orb that reacts to audio levels
@@ -29,15 +51,45 @@ import { preconnectProvider } from '../live/latencyOptimizer'
  * - Slide-out transcript sidebar with full conversation history
  * - Visual awareness indicators (provider, model, watching status)
  * - Thinking state shimmer between user speech and first token
+ * - Activity HUD showing real-time AI status (thinking timer, tool usage)
  * - Mobile-optimized layout
  */
 export function LiveView({
   engine = 'gemini', provider, apiKey, model, voice, voiceEngine, fallbacks,
   persona, disabledTools, modelCanSee, onEnd, onTranscript, features = {},
   availableModels = [], onModelChange,
-  allProviders = {}, onProviderChange,
+  allProviders = {}, onProviderChange, keyInfo = {},
 }) {
   const [showModelSearch, setShowModelSearch] = useState(false)
+  const [providerDropdownOpen, setProviderDropdownOpen] = useState(false)
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false)
+  const providerDropdownRef = useRef(null)
+  const modelDropdownRef = useRef(null)
+
+  useEffect(() => {
+    if (!providerDropdownOpen && !modelDropdownOpen) return
+    const handleClickOutside = (e) => {
+      if (providerDropdownRef.current && !providerDropdownRef.current.contains(e.target)) {
+        setProviderDropdownOpen(false)
+      }
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target)) {
+        setModelDropdownOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', handleClickOutside)
+    return () => document.removeEventListener('pointerdown', handleClickOutside)
+  }, [providerDropdownOpen, modelDropdownOpen])
+
+  const isProviderReady = useCallback((pId, pData) => {
+    if (!pId) return false
+    if (pData?.available === true) return true
+    if (keyInfo?.[pId]?.configured === true) return true
+    if (keyInfo?.[pId]?.key && String(keyInfo[pId].key).trim().length > 0) return true
+    if (pData?.isOllama && (pData?.models || []).length > 0) return true
+    if (pData?.noKey) return true
+    return false
+  }, [keyInfo])
+
   // Consolidated UI state to reduce re-renders
   const [uiState, setUiState] = useState({
     state: 'connecting',
@@ -378,7 +430,11 @@ export function LiveView({
             setState(prev => ({
               ...prev,
               thinking: e.value,
-              ...(e.value ? { reasoningText: '', liveStatusText: 'Thinking & formulating response…' } : {}),
+              thinkingStartTime: e.value ? (e.startTime || Date.now()) : null,
+              ...(e.value
+                ? { reasoningText: '', liveStatusText: '🧠 Thinking & formulating response…' }
+                : { liveStatusText: e.elapsedMs ? `⚡ Response ready (${(e.elapsedMs / 1000).toFixed(1)}s)` : prev.liveStatusText }
+              ),
             }))
             break
           case 'status':
@@ -909,77 +965,338 @@ export function LiveView({
 
       {/* Awareness badges — provider/model only; vision status is in the HUD overlay */}
       <div className="live-badges">
+        {/* Custom Glassmorphism Provider Dropdown */}
         {allProviders && Object.keys(allProviders).length > 0 ? (
-          <select
-            value={activeProvider.provider || provider}
-            onChange={e => handleProviderSelect(e.target.value)}
-            className="live-badge provider-select-badge"
-            style={{
-              background: 'rgba(15, 23, 42, 0.85)',
-              color: '#38bdf8',
-              border: '1px solid rgba(56, 189, 248, 0.3)',
-              borderRadius: '12px',
-              padding: '2px 8px',
-              fontSize: '11px',
-              fontWeight: 600,
-              outline: 'none',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              maxHeight: '24px',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-            title="Switch AI Provider"
-          >
-            {Object.entries(allProviders).map(([pId, pData]) => (
-              <option key={pId} value={pId} style={{ background: '#0f172a', color: '#f8fafc' }}>
-                {pData?.name || pId}
-              </option>
-            ))}
-          </select>
+          <div ref={providerDropdownRef} style={{ position: 'relative', display: 'inline-block' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setProviderDropdownOpen(v => !v)
+                setModelDropdownOpen(false)
+              }}
+              className="live-badge provider-custom-btn"
+              style={{
+                background: 'rgba(15, 23, 42, 0.45)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                color: '#38bdf8',
+                border: providerDropdownOpen
+                  ? '1px solid rgba(56, 189, 248, 0.6)'
+                  : '1px solid rgba(56, 189, 248, 0.25)',
+                borderRadius: '12px',
+                padding: '3px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                height: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+                transition: 'all 0.15s ease',
+              }}
+              title="Switch AI Provider"
+            >
+              {/* Glowing Green Dot if current provider is ready */}
+              <span
+                style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  backgroundColor: isCurProviderReady ? '#22c55e' : 'rgba(148, 163, 184, 0.4)',
+                  boxShadow: isCurProviderReady ? '0 0 8px #22c55e, 0 0 2px #4ade80' : 'none',
+                  display: 'inline-block',
+                  flexShrink: 0,
+                }}
+                title={isCurProviderReady ? 'API Key updated & ready' : 'Needs API Key'}
+              />
+              <span>{allProviders[curProvider]?.name || curProvider}</span>
+              <ChevronDown
+                size={11}
+                style={{
+                  opacity: 0.7,
+                  transform: providerDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.15s ease',
+                }}
+              />
+            </button>
+
+            {/* Transparent Frosted Glass Dropdown Panel */}
+            {providerDropdownOpen && (
+              <div
+                className="live-custom-dropdown-panel"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  minWidth: '230px',
+                  maxWidth: '300px',
+                  maxHeight: '340px',
+                  overflowY: 'auto',
+                  background: 'rgba(10, 16, 30, 0.68)',
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                  border: '1px solid rgba(255, 255, 255, 0.14)',
+                  borderRadius: '14px',
+                  boxShadow: '0 16px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.12)',
+                  padding: '5px',
+                  zIndex: 9999,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                  animation: 'liveFadeIn 0.12s ease-out',
+                }}
+              >
+                <div
+                  style={{
+                    padding: '6px 10px 4px',
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: 'rgba(148, 163, 184, 0.7)',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                    marginBottom: '2px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <span>Select Provider</span>
+                  <span style={{ fontSize: '9px', color: '#22c55e', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e' }} /> Ready
+                  </span>
+                </div>
+
+                {Object.entries(allProviders).map(([pId, pData]) => {
+                  const isReady = isProviderReady(pId, pData)
+                  const isSelected = pId === curProvider
+                  return (
+                    <button
+                      key={pId}
+                      type="button"
+                      onClick={() => {
+                        handleProviderSelect(pId)
+                        setProviderDropdownOpen(false)
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        padding: '7px 10px',
+                        borderRadius: '8px',
+                        background: isSelected ? 'rgba(56, 189, 248, 0.18)' : 'transparent',
+                        border: isSelected ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid transparent',
+                        color: isSelected ? '#38bdf8' : '#f1f5f9',
+                        fontSize: '12px',
+                        fontWeight: isSelected ? 600 : 400,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.1s ease',
+                      }}
+                      onMouseEnter={e => {
+                        if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
+                      }}
+                      onMouseLeave={e => {
+                        if (!isSelected) e.currentTarget.style.background = 'transparent'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                        {/* Glowing green dot for providers who have API key updated and ready */}
+                        <span
+                          style={{
+                            width: '7px',
+                            height: '7px',
+                            borderRadius: '50%',
+                            backgroundColor: isReady ? '#22c55e' : 'rgba(148, 163, 184, 0.3)',
+                            boxShadow: isReady ? '0 0 8px #22c55e, 0 0 2px #4ade80' : 'none',
+                            flexShrink: 0,
+                            display: 'inline-block',
+                          }}
+                          title={isReady ? 'API Key updated & ready' : 'Needs API Key'}
+                        />
+                        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                          {pData?.name || pId}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {!isReady && (
+                          <span style={{ fontSize: '9px', color: '#94a3b8', opacity: 0.65 }}>
+                            no key
+                          </span>
+                        )}
+                        {isSelected && <Check size={12} style={{ color: '#38bdf8', flexShrink: 0 }} />}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         ) : (
           <span className="live-badge provider">
-            {activeProvider.provider || provider}
+            {curProvider}
           </span>
         )}
 
-        <select
-          value={activeProvider.model || model}
-          onChange={e => {
-            if (e.target.value === '__SEARCH__') {
-              setShowModelSearch(true)
-            } else {
-              handleModelChange(e.target.value)
-            }
-          }}
-          className="live-badge model-select-badge"
-          style={{
-            background: 'rgba(255,255,255,0.08)',
-            color: '#fff',
-            border: '1px solid rgba(255,255,255,0.15)',
-            borderRadius: '12px',
-            padding: '2px 8px',
-            fontSize: '11px',
-            outline: 'none',
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            maxHeight: '24px',
-            maxWidth: '180px',
-            display: 'flex',
-            alignItems: 'center',
-            textOverflow: 'ellipsis',
-          }}
-          title="Change active model or search"
-        >
-          <option value="__SEARCH__" style={{ background: '#0f172a', color: '#38bdf8', fontWeight: 600 }}>
-            🔍 Search all models…
-          </option>
-          {((allProviders && allProviders[activeProvider.provider || provider]?.models) || availableModels || []).map(m => (
-            <option key={m} value={m} style={{ background: '#1c1e22', color: '#fff' }}>
-              {m.split('/').pop()}
-            </option>
-          ))}
-        </select>
+        {/* Custom Glassmorphism Model Dropdown */}
+        <div ref={modelDropdownRef} style={{ position: 'relative', display: 'inline-block' }}>
+          <button
+            type="button"
+            onClick={() => {
+              setModelDropdownOpen(v => !v)
+              setProviderDropdownOpen(false)
+            }}
+            className="live-badge model-custom-btn"
+            style={{
+              background: 'rgba(15, 23, 42, 0.45)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              color: '#f1f5f9',
+              border: modelDropdownOpen
+                ? '1px solid rgba(255, 255, 255, 0.35)'
+                : '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '12px',
+              padding: '3px 10px',
+              fontSize: '11px',
+              cursor: 'pointer',
+              height: '24px',
+              maxWidth: '220px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+              transition: 'all 0.15s ease',
+            }}
+            title="Change active model or search"
+          >
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {(activeProvider.model || model || '').split('/').pop()}
+            </span>
+            <ChevronDown
+              size={11}
+              style={{
+                opacity: 0.7,
+                transform: modelDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.15s ease',
+                flexShrink: 0,
+              }}
+            />
+          </button>
+
+          {/* Transparent Frosted Glass Dropdown Panel */}
+          {modelDropdownOpen && (
+            <div
+              className="live-custom-dropdown-panel"
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 6px)',
+                left: 0,
+                minWidth: '240px',
+                maxWidth: '320px',
+                maxHeight: '340px',
+                overflowY: 'auto',
+                background: 'rgba(10, 16, 30, 0.68)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255, 255, 255, 0.14)',
+                borderRadius: '14px',
+                boxShadow: '0 16px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.12)',
+                padding: '5px',
+                zIndex: 9999,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px',
+                animation: 'liveFadeIn 0.12s ease-out',
+              }}
+            >
+              {/* Search all models button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setModelDropdownOpen(false)
+                  setShowModelSearch(true)
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  background: 'rgba(56, 189, 248, 0.15)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  color: '#38bdf8',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  marginBottom: '4px',
+                  transition: 'all 0.1s ease',
+                }}
+              >
+                <Search size={13} style={{ flexShrink: 0 }} />
+                <span>🔍 Search all models…</span>
+              </button>
+
+              <div
+                style={{
+                  padding: '4px 10px 2px',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  color: 'rgba(148, 163, 184, 0.7)',
+                }}
+              >
+                {allProviders[curProvider]?.name || curProvider} Models
+              </div>
+
+              {currentModels.map(m => {
+                const isSelected = (activeProvider.model || model) === m
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      handleModelChange(m)
+                      setModelDropdownOpen(false)
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: '8px',
+                      background: isSelected ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
+                      border: isSelected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent',
+                      color: isSelected ? '#fff' : '#cbd5e1',
+                      fontSize: '12px',
+                      fontWeight: isSelected ? 600 : 400,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.1s ease',
+                    }}
+                    onMouseEnter={e => {
+                      if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'
+                    }}
+                    onMouseLeave={e => {
+                      if (!isSelected) e.currentTarget.style.background = 'transparent'
+                    }}
+                  >
+                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      {m.split('/').pop()}
+                    </span>
+                    {isSelected && <Check size={12} style={{ color: '#38bdf8', flexShrink: 0 }} />}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
 
         <button
           type="button"
@@ -1066,15 +1383,55 @@ export function LiveView({
           </div>
         )}
         {thinking && (
-          <div className="live-status thinking-status">
+          <div className="live-status thinking-status" style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(96, 165, 250, 0.35)',
+            borderRadius: '12px',
+            padding: '8px 16px',
+            color: '#93c5fd',
+            fontSize: '13px',
+            fontWeight: 500,
+          }}>
             <span className="thinking-dots"><span /><span /><span /></span>
-            Thinking & Reasoning…
+            🧠 Thinking
+            {uiState.thinkingStartTime && (
+              <ActivityTimer startTime={uiState.thinkingStartTime} />
+            )}
           </div>
         )}
-        {tool && <div className="live-status"><Wrench size={14} /> Calling {tool}…</div>}
-        {liveStatusText && (
-          <div className="live-status action-status">
-            <Loader2 size={14} className="spin" /> {liveStatusText}
+        {tool && (
+          <div className="live-status" style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(129, 140, 248, 0.4)',
+            borderRadius: '12px',
+            padding: '8px 16px',
+            color: '#c7d2fe',
+            fontSize: '13px',
+            fontWeight: 500,
+          }}>
+            <Wrench size={14} style={{ animation: 'spin 2s linear infinite' }} />
+            🔧 Using: <strong style={{ color: '#e0e7ff' }}>{tool}</strong>
+          </div>
+        )}
+        {liveStatusText && !thinking && !tool && (
+          <div className="live-status action-status" style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(56, 189, 248, 0.3)',
+            borderRadius: '12px',
+            padding: '7px 14px',
+            color: '#7dd3fc',
+            fontSize: '12px',
+            fontWeight: 500,
+            maxWidth: '90vw',
+          }}>
+            <Loader2 size={13} className="spin" />
+            {liveStatusText}
           </div>
         )}
 
@@ -1285,11 +1642,14 @@ export function LiveView({
         transcript={transcript}
         activeTool={tool}
         isThinking={thinking}
+        thinkingStartTime={uiState.thinkingStartTime}
         liveStatusText={liveStatusText}
         onCopy={copyText}
         copiedIdx={copiedIdx}
         formatTime={formatTime}
         features={features}
+        activeProvider={activeProvider.provider || provider}
+        activeModel={activeProvider.model || model}
       />
 
       {/* Vision Modal - using extracted component */}
@@ -1320,6 +1680,7 @@ export function LiveView({
         open={showModelSearch}
         onClose={() => setShowModelSearch(false)}
         allProviders={allProviders}
+        keyInfo={keyInfo}
         activeProvider={activeProvider.provider || provider}
         activeModel={activeProvider.model || model}
         onSelectModel={handlePickModelFromSearch}

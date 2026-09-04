@@ -80,6 +80,48 @@ import { preconnectProvider } from './latencyOptimizer'
 import { matchReflex, streamReflex } from './reflexEngine'
 import { webSearchTool } from '../tools/webSearch'
 
+// ─── Adaptive Tool Gating (ATG) ────────────────────────────────────────────
+// The #1 latency killer in Live mode: sending 18+ tool schemas (~32k tokens)
+// with EVERY utterance forces providers to evaluate all tools before emitting
+// the first token — 3-8 seconds of silence for "hi" or "how are you". ATG
+// classifies the utterance BEFORE calling runAgent: simple conversational
+// turns skip tools entirely (200-400ms TTFT), while action-requiring queries
+// get the full tool suite.
+//
+// FALSE NEGATIVE (misses a tool need) → model answers without tools but can
+// say "I'll need to search for that" and the next turn will have tools.
+// FALSE POSITIVE (sends tools unnecessarily) → same latency as before, no harm.
+// The bias is toward SPEED: default is no-tools unless keywords are detected.
+
+const TOOL_KEYWORDS = /\b(search|find|look up|browse|google|weather|forecast|temperature|image|photo|picture|generate|create|make|build|draw|paint|design|code|run|execute|script|program|file|document|write|read|save|download|export|pdf|ppt|powerpoint|presentation|slides?|spreadsheet|csv|excel|word doc|video|audio|music|song|record|translate|convert|calculate|compute|solve|chart|graph|diagram|plot|map|directions|navigate|stock|price|crypto|bitcoin|news|latest|recent|trending|today|current|score|match|game|schedule|flight|booking|hotel|restaurant|recipe|cook|timer|alarm|remind|summary|summarize|analyze|compare|review|debug|fix|test|deploy|install|terminal|shell|pip|npm|scan|screenshot|ocr|read this|what does this say|describe this|identify|recognize|detect)\b/i
+const TOOL_ACTION_PHRASES = /\b(show me|tell me about|what('s| is) the (latest|current|price|weather|score|news)|how (much|many|long|far|tall|big|old)|who (won|is the current|is leading)|where (is|can I)|when (did|will|is)|can you (search|find|make|create|generate|build|draw|write|run|execute|calculate|translate))/i
+// Explicit web-search triggers (from agent.js isRealtimeOrSearchQuery)
+const WEB_TRIGGERS = /\b(2024|2025|2026|released|launched|announced|breaking|trending|stock price|crypto price|exchange rate|election|live score|match score)\b/i
+
+/**
+ * Does this utterance require the full tool suite, or is it pure conversation?
+ *
+ * Returns true  → send tools, web search, the works (tool-requiring query)
+ * Returns false → skip tools for instant streaming (conversational turn)
+ */
+export function utteranceNeedsTools(text = '') {
+  const t = String(text).trim()
+  if (!t || t.length < 2) return false
+  // Very short utterances (< 4 words, no tool keywords) are almost always
+  // conversational: "hi", "yes", "tell me more", "that's cool"
+  const wordCount = t.split(/\s+/).length
+  if (wordCount <= 3 && !TOOL_KEYWORDS.test(t) && !TOOL_ACTION_PHRASES.test(t)) return false
+  // Check for explicit tool/action keywords
+  if (TOOL_KEYWORDS.test(t)) return true
+  if (TOOL_ACTION_PHRASES.test(t)) return true
+  if (WEB_TRIGGERS.test(t)) return true
+  // Long utterances (> 12 words) are more likely knowledge questions that
+  // benefit from web search, but still not guaranteed to need tools.
+  // Conservative: only flag if there's a question word + enough substance.
+  if (wordCount > 12 && /^(what|who|where|when|why|how|which|is|are|do|does|did|can|could|should|would|will)\b/i.test(t)) return true
+  return false
+}
+
 const SENTENCE = /([.!?…]+["')\]]*\s+|\n{2,})/
 // The first thing said should leave the mouth as early as possible; a clause is
 // enough to start on and saves ~400ms versus waiting for a full sentence.
@@ -620,7 +662,14 @@ export function createCascadeSession({
     history.splice(0, history.length, ...trimHistoryPairs(history, MAX_HISTORY_TURNS))
 
     thinking = true
-    emit({ type: 'thinking', value: true })
+    const turnStartTime = Date.now()
+    emit({ type: 'thinking', value: true, startTime: turnStartTime })
+
+    // ─── Adaptive Tool Gating: classify utterance BEFORE calling model ───
+    const needsTools = utteranceNeedsTools(userText)
+    if (!needsTools) {
+      emit({ type: 'status', text: '⚡ Fast conversational mode — no tools needed' })
+    }
 
     buffer = ''; spoken = ''; firstChunk = true
     const controller = new AbortController()
@@ -694,8 +743,8 @@ export function createCascadeSession({
         provider: active.provider, apiKey: active.apiKey, model: active.model,
         history: history.slice(0, -1),
         userMessage: content,
-        toolsEnabled: true, webEnabled: true, disabledTools,
-        maxTokens: 500,
+        toolsEnabled: needsTools, webEnabled: needsTools, disabledTools,
+        maxTokens: needsTools ? 500 : 200,
         modelCanSee: active.modelCanSee ?? modelCanSee,
         persona: `${persona ? persona + '\n\n' : ''}CRITICAL LIVE VOICE DIRECTIVES:
 1. Provide quick, precise, accurate, reliable, and brief info. NEVER elongate, lecture, or ramble.
@@ -704,7 +753,7 @@ export function createCascadeSession({
 4. Deliver the direct answer immediately with zero filler, throat-clearing, or restating the question.
 5. If reporting web search, news, or factual info, state ONLY the single top headline or key fact, and offer to give more details if requested.
 6. Absolute rule: No markdown, no bullet points, no numbered lists, no headings, no bolding, no emojis, no asterisks, no quotes.
-7. You have full tools (image/video gen, file export, code execution, web search). The result appears directly on their screen, so state what was found or completed in one short sentence. Never read long code, data, or search excerpts aloud.\n\n${(active.modelCanSee ?? modelCanSee)
+7.${needsTools ? ' You have full tools (image/video gen, file export, code execution, web search). The result appears directly on their screen, so state what was found or completed in one short sentence. Never read long code, data, or search excerpts aloud.' : ' Answer conversationally in 1-2 brief sentences. Be warm, direct, and natural.'}\n\n${(active.modelCanSee ?? modelCanSee)
           ? 'You can SEE through the user\'s camera or shared screen: image frames are attached to the conversation when they ask about what is in view. Describe what you actually see.'
           : 'You CANNOT see images directly. When the user asks about their camera or screen, a text description of the current view is inserted automatically as "[Live view (described on-device): …]". Rely ONLY on that description. Never invent, request, or fetch image URLs (e.g. do not make up links like example.com/photo.jpg); if no description was provided, say you could not see it and offer to look again.'}`,
         signal: controller.signal,
@@ -713,7 +762,7 @@ export function createCascadeSession({
           accumulatedContent += t
           const isStillThinking = /<think(?:\s[^>]*)?>/i.test(accumulatedContent) && !/<\/think>/i.test(accumulatedContent)
           if (isStillThinking) {
-            if (!thinking) { thinking = true; emit({ type: 'thinking', value: true }) }
+            if (!thinking) { thinking = true; emit({ type: 'thinking', value: true, startTime: turnStartTime }) }
             const thinkMatch = accumulatedContent.match(/<think(?:\s[^>]*)?>([\s\S]*)$/i)
             if (thinkMatch) {
               const fullReasoning = thinkMatch[1]
@@ -725,7 +774,12 @@ export function createCascadeSession({
             }
             return
           }
-          if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
+          if (thinking) {
+            thinking = false
+            const thinkMs = Date.now() - turnStartTime
+            emit({ type: 'thinking', value: false, elapsedMs: thinkMs })
+            emit({ type: 'status', text: `⚡ Streaming response… (thought for ${(thinkMs / 1000).toFixed(1)}s)` })
+          }
 
           const { reasoning, answer } = splitReasoning(accumulatedContent)
           if (reasoning) {
@@ -771,6 +825,7 @@ export function createCascadeSession({
         onToolResult: (name, result) => emit({ type: 'toolResult', name, result }),
         onDone: ({ content: full }) => {
           if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
+          const turnElapsedMs = Date.now() - turnStartTime
           const { reasoning, answer } = splitReasoning(full || accumulatedContent)
           if (reasoning) emit({ type: 'reasoning', text: reasoning })
           let effectiveAnswer = answer?.trim() || ''
@@ -787,7 +842,8 @@ export function createCascadeSession({
           }
           flushSentences(true)
           metrics.markTurnEnd()
-          if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
+          if (thinking) { thinking = false; emit({ type: 'thinking', value: false, elapsedMs: turnElapsedMs }) }
+          emit({ type: 'status', text: `✅ Response complete (${(turnElapsedMs / 1000).toFixed(1)}s${needsTools ? ', tools enabled' : ', fast mode'})` })
           if (effectiveAnswer) { history.push({ role: 'assistant', content: effectiveAnswer }); lastReply = effectiveAnswer }
           abort = null
           resolve()

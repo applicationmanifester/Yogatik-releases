@@ -16,7 +16,11 @@ const WHO_ARE_YOU = /^(?:who\s+are\s+you|what\s+is\s+your\s+name|what\s+are\s+yo
 const CAN_YOU_HEAR_ME = /^(?:can\s+you\s+hear\s+me|are\s+you\s+there|you\s+there|mic\s+check|test\s+test|testing|can\s+you\s+hear)\b[.!?, ]*$/i
 const THANKS = /^(?:thank\s+you(?: so much)?|thanks(?: a lot)?|appreciate\s+it|thx)\b[.!?, ]*$/i
 const FAREWELL = /^(?:bye|goodbye|see\s+you(?: later)?|catch\s+you\s+later|take\s+care|talk\s+to\s+you\s+later)\b[.!?, ]*$/i
-const COMPLIMENTS = /^(?:nice|great|awesome|cool|perfect|wonderful|excellent|sounds\s+good|got\s+it)\b[.!?, ]*$/i
+const COMPLIMENTS = /^(?:nice|great|awesome|cool|perfect|wonderful|excellent|sounds\s+good|got\s+it)(?:\s+(?:job|work|one))?[.!?, ]*$/i
+const ACKNOWLEDGMENTS = /^(?:yes|yeah|yep|yup|no|nope|nah|ok|okay|sure|right|correct|exactly|indeed|absolutely|definitely|of\s+course|alright|agreed|understood|roger|copy\s+that|affirmative)(?:\s+(?:sir|ma'am|please|thanks))?[.!?, ]*$/i
+const CONTINUATIONS = /^(?:tell\s+me\s+more|go\s+on|continue|and\s+then|what\s+else|more\s+please|keep\s+going|elaborate|go\s+ahead|anything\s+else)(?:\s+(?:please|about\s+that))?[.!?, ]*$/i
+const CONFUSED = /^(?:what|huh|sorry|excuse\s+me|pardon|i\s+didn'?t\s+(?:get|catch|hear|understand)\s+that|say\s+that\s+again|repeat\s+that|come\s+again|what\s+did\s+you\s+say)(?:\s+(?:again|please))?[.!?, ]*$/i
+const FILLER_GREETINGS = /^(?:(?:hi|hey|hello)\s*){2,}[.!?, ]*$/i
 
 const GREETING_RESPONSES = [
   "Hello! I'm here and listening. What's on your mind?",
@@ -56,6 +60,25 @@ const COMPLIMENT_RESPONSES = [
   "Glad to hear! Let me know what you'd like to do next.",
   "Great! What's next on our agenda?",
 ]
+
+const ACKNOWLEDGMENT_RESPONSES = [
+  "Got it! What would you like to do next?",
+  "Understood. Just say the word when you're ready.",
+  "Alright! I'm here whenever you need me.",
+]
+
+const CONTINUATION_RESPONSES = [
+  "Sure! What specific aspect would you like me to elaborate on?",
+  "Of course. What part would you like me to dive deeper into?",
+  "Happy to continue! What should I expand on?",
+]
+
+const CONFUSED_RESPONSES = [
+  "No worries! Could you repeat that for me?",
+  "Sorry about that! Try asking me again.",
+  "I'm here, just say it again and I'll help.",
+]
+
 
 function pickRandom(list) {
   return list[Math.floor(Math.random() * list.length)]
@@ -161,12 +184,16 @@ export function matchReflex(text = '') {
   if (STATUS_PING.test(t)) return pickRandom(STATUS_RESPONSES)
 
   if (GREETINGS.test(t)) return pickRandom(GREETING_RESPONSES)
+  if (FILLER_GREETINGS.test(t)) return pickRandom(GREETING_RESPONSES)
   if (HOW_ARE_YOU.test(t)) return pickRandom(HOW_ARE_YOU_RESPONSES)
   if (CAN_YOU_HEAR_ME.test(t)) return pickRandom(CAN_YOU_HEAR_ME_RESPONSES)
   if (WHO_ARE_YOU.test(t)) return pickRandom(WHO_ARE_YOU_RESPONSES)
   if (THANKS.test(t)) return pickRandom(THANKS_RESPONSES)
   if (FAREWELL.test(t)) return pickRandom(FAREWELL_RESPONSES)
   if (COMPLIMENTS.test(t)) return pickRandom(COMPLIMENT_RESPONSES)
+  if (ACKNOWLEDGMENTS.test(t)) return pickRandom(ACKNOWLEDGMENT_RESPONSES)
+  if (CONTINUATIONS.test(t)) return pickRandom(CONTINUATION_RESPONSES)
+  if (CONFUSED.test(t)) return pickRandom(CONFUSED_RESPONSES)
 
   return null
 }

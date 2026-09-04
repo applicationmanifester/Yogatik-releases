@@ -5,6 +5,7 @@ export function LiveModelSearchModal({
   open,
   onClose,
   allProviders = {},
+  keyInfo = {},
   activeProvider = '',
   activeModel = '',
   onSelectModel,
@@ -25,6 +26,17 @@ export function LiveModelSearchModal({
     }
   }, [open])
 
+  const checkProviderReady = useCallback((pId) => {
+    if (!pId) return false
+    const pData = allProviders[pId]
+    if (pData?.available === true) return true
+    if (keyInfo?.[pId]?.configured === true) return true
+    if (keyInfo?.[pId]?.key && String(keyInfo[pId].key).trim().length > 0) return true
+    if (pData?.isOllama && (pData?.models || []).length > 0) return true
+    if (pData?.noKey) return true
+    return false
+  }, [allProviders, keyInfo])
+
   // Build flattened list of all available models across providers
   const allModelItems = useMemo(() => {
     const list = []
@@ -32,6 +44,7 @@ export function LiveModelSearchModal({
       const provName = provData?.name || provId
       const models = provData?.models || []
       const isAvailable = provData?.available !== false
+      const isReady = checkProviderReady(provId)
 
       for (const m of models) {
         const lowerM = m.toLowerCase()
@@ -45,6 +58,7 @@ export function LiveModelSearchModal({
           model: m,
           displayName: m.split('/').pop(),
           isAvailable,
+          isReady,
           isVision,
           isReasoning,
           isFast,
@@ -52,7 +66,7 @@ export function LiveModelSearchModal({
       }
     }
     return list
-  }, [allProviders])
+  }, [allProviders, checkProviderReady])
 
   // Filtered list based on search query and provider tab
   const filteredModels = useMemo(() => {
@@ -139,8 +153,10 @@ export function LiveModelSearchModal({
           width: '100%',
           maxWidth: '560px',
           maxHeight: '82vh',
-          backgroundColor: '#0f172a',
-          border: '1px solid rgba(148, 163, 184, 0.25)',
+          backgroundColor: 'rgba(15, 23, 42, 0.72)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
           borderRadius: '18px',
           boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.15)',
           display: 'flex',
@@ -278,6 +294,7 @@ export function LiveModelSearchModal({
               const count = (allProviders[p]?.models || []).length
               if (!count) return null
               const isSelected = selectedProviderFilter === p
+              const isReady = checkProviderReady(p)
               return (
                 <button
                   key={p}
@@ -298,9 +315,24 @@ export function LiveModelSearchModal({
                     whiteSpace: 'nowrap',
                     textTransform: 'capitalize',
                     transition: 'all 0.15s ease',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
                   }}
                 >
-                  {allProviders[p]?.name || p} ({count})
+                  <span
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      backgroundColor: isReady ? '#22c55e' : 'rgba(148, 163, 184, 0.35)',
+                      boxShadow: isReady ? '0 0 6px #22c55e' : 'none',
+                      display: 'inline-block',
+                      flexShrink: 0,
+                    }}
+                    title={isReady ? 'API Key ready' : 'Needs key'}
+                  />
+                  <span>{allProviders[p]?.name || p} ({count})</span>
                 </button>
               )
             })}
@@ -405,7 +437,19 @@ export function LiveModelSearchModal({
                           </span>
                         )}
                       </div>
-                      <span style={{ fontSize: '11px', color: '#64748b' }}>
+                      <span style={{ fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span
+                          style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            backgroundColor: item.isReady ? '#22c55e' : 'rgba(148, 163, 184, 0.35)',
+                            boxShadow: item.isReady ? '0 0 6px #22c55e' : 'none',
+                            display: 'inline-block',
+                            flexShrink: 0,
+                          }}
+                          title={item.isReady ? 'API Key updated & ready' : 'Needs API Key'}
+                        />
                         {item.providerName}
                       </span>
                     </div>

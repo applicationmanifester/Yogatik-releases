@@ -3314,6 +3314,10 @@ html, body {
   animation: frame-blink .2s ease-out;
 }
 @keyframes frame-blink { 0% { opacity: 1; transform: scale(1.4); } 100% { opacity: .6; transform: scale(1); } }
+@keyframes liveFadeIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 
 /* ─── Multi-Ring Mascot ─── */
 .live-orb-wrap {

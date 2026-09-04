@@ -5209,6 +5209,7 @@ export default function App() {
           onTranscript={saveLiveTurn}
           availableModels={models[liveConfig.provider]?.models || []}
           allProviders={models}
+          keyInfo={keyInfo}
           onModelChange={async (newModel) => {
             chooseModel(newModel, liveConfig.provider)
             const status = await getVisionStatus(liveConfig.provider, newModel).catch(() => ({ cached: false, guessed: false }))
