@@ -58,6 +58,23 @@ describe('local filesystem tools (desktop bridge)', () => {
                 // limit. This mock used to answer startLine/endLine — parameters
                 // the handler never read — so the test passed while the feature
                 // did nothing. Same class as the TerminalPanel PTY mock.
+                if (args.find) {
+                  return {
+                    content: `line with ${args.find}`,
+                    bytes: 25, lines: 100, truncated: true, binary: false,
+                    encoding: 'utf8', eol: 'lf', hash: 'abc123',
+                    range: { firstLine: 45, lastLine: 55 },
+                    match_line: 50,
+                  }
+                }
+                if (args.tail) {
+                  return {
+                    content: `tail-${args.tail}-lines`,
+                    bytes: 18, lines: 100, truncated: true, binary: false,
+                    encoding: 'utf8', eol: 'lf', hash: 'abc123',
+                    range: { firstLine: 100 - args.tail + 1, lastLine: 100 },
+                  }
+                }
                 if (args.offset && args.limit) {
                   return {
                     content: `line-${args.offset}-to-${args.offset + args.limit - 1}`,
@@ -97,17 +114,33 @@ describe('local filesystem tools (desktop bridge)', () => {
       const r = await fsReadTool.execute({ path: 'note.txt' })
       expect(r.success).toBe(true)
       expect(r.content).toBe('contents-of-note.txt')
+      expect(r.estimated_tokens).toBeGreaterThan(0)
     })
 
-    it('supports windowed line-range fs_read', async () => {
-      const r = await fsReadTool.execute({ path: 'large.txt', start_line: 10, end_line: 20 })
+    it('supports windowed line-range fs_read with optional line numbers', async () => {
+      const r = await fsReadTool.execute({ path: 'large.txt', start_line: 10, end_line: 20, with_line_numbers: true })
       expect(r.success).toBe(true)
       expect(r.content).toBe('line-10-to-20')
       expect(r.range).toEqual({ firstLine: 10, lastLine: 20 })
+      expect(r.numbered_content).toContain('line-10-to-20')
       // Truncation has to reach the model, or it rewrites files from the part
       // it happened to see.
       expect(r.truncated).toBe(true)
       expect(r.hash).toBe('abc123')
+    })
+
+    it('supports tail parameter in fs_read', async () => {
+      const r = await fsReadTool.execute({ path: 'large.txt', tail: 5 })
+      expect(r.success).toBe(true)
+      expect(r.content).toBe('tail-5-lines')
+      expect(r.range).toEqual({ firstLine: 96, lastLine: 100 })
+    })
+
+    it('supports find parameter in fs_read for symbol location', async () => {
+      const r = await fsReadTool.execute({ path: 'large.txt', find: 'magicFunction' })
+      expect(r.success).toBe(true)
+      expect(r.content).toBe('line with magicFunction')
+      expect(r.match_line).toBe(50)
     })
 
     it('executes fs_batch_read across multiple workspace files', async () => {

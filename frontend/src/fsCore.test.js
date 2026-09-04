@@ -181,6 +181,38 @@ describe('readFileSmart', () => {
     expect(a.hash).not.toBe(b.hash)
   })
 
+  it('supports tail reads to inspect end of file', async () => {
+    const f = path.join(dir, 'tail.txt')
+    fs.writeFileSync(f, '1\n2\n3\n4\n5\n6\n7\n8\n9\n10')
+    const res = await core.readFileSmart(f, { tail: 3 })
+    expect(res.content).toBe('8\n9\n10')
+    expect(res.range).toEqual({ firstLine: 8, lastLine: 10 })
+    expect(res.truncated).toBe(true)
+  })
+
+  it('supports find and surround for symbol lookup', async () => {
+    const f = path.join(dir, 'find.txt')
+    const lines = Array.from({ length: 30 }, (_, i) => i === 15 ? 'function executeSecretTask() {' : `line ${i}`)
+    fs.writeFileSync(f, lines.join('\n'))
+
+    const res = await core.readFileSmart(f, { find: 'executeSecretTask', surround: 2 })
+    expect(res.match_line).toBe(16)
+    expect(res.content).toContain('function executeSecretTask() {')
+    expect(res.range.firstLine).toBe(14)
+    expect(res.range.lastLine).toBe(18)
+  })
+
+  it('provides numbered_content when lineNumbers option is true', async () => {
+    const f = path.join(dir, 'numbered.txt')
+    fs.writeFileSync(f, 'alpha\nbeta\ngamma')
+    const res = await core.readFileSmart(f, { lineNumbers: true })
+    expect(res.numbered_content).toBeDefined()
+    expect(res.numbered_content).toContain('1 | alpha')
+    expect(res.numbered_content).toContain('2 | beta')
+    expect(res.numbered_content).toContain('3 | gamma')
+    expect(res.estimated_tokens).toBeGreaterThan(0)
+  })
+
   it('declines to decode a binary file as text', async () => {
     const f = path.join(dir, 'blob.bin')
     fs.writeFileSync(f, Buffer.from([0, 1, 2, 3, 0, 255]))
@@ -190,3 +222,4 @@ describe('readFileSmart', () => {
     expect(res.note).toMatch(/binary/i)
   })
 })
+

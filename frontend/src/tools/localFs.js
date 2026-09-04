@@ -435,7 +435,7 @@ import { recordSnapshot } from '../workspaceTimeMachine'
 
 export const fsReadTool = {
   schema: {
-    description: 'Read a UTF-8 text file inside this chat’s folders. Supports line-range windowing (start_line/offset, end_line/limit) for reading specific sections of large files with line numbers. Desktop app only.',
+    description: 'Read a UTF-8 text file inside this chat’s folders. Supports line-range windowing (start_line/offset, end_line/limit), tail reading, symbol search (find + surround), and optional line numbering. Desktop app only.',
     parameters: {
       type: 'object',
       properties: {
@@ -445,6 +445,10 @@ export const fsReadTool = {
         offset: { type: 'number', description: 'Optional 1-indexed starting line number (alias for start_line).' },
         end_line: { type: 'number', description: 'Optional 1-indexed ending line number.' },
         limit: { type: 'number', description: 'Optional number of lines to read starting from offset/start_line.' },
+        tail: { type: 'number', description: 'Optional number of lines to read from the end of the file.' },
+        find: { type: 'string', description: 'Optional search text to locate inside the file and return with surrounding lines.' },
+        surround: { type: 'number', description: 'Optional lines of context around find match (default 10).' },
+        with_line_numbers: { type: 'boolean', description: 'If true, provides numbered_content formatted with line numbers.' },
       },
       required: ['path'],
     },
@@ -457,6 +461,13 @@ export const fsReadTool = {
       const rawStart = args.start_line ?? args.offset ?? args.line_start ?? args.startLine ?? args.offset_lines ?? args.from_line ?? args.StartLine
       const rawEnd = args.end_line ?? args.endLine ?? args.line_end ?? args.to_line ?? args.EndLine
       const rawLimit = args.limit ?? args.length ?? args.max_lines ?? args.lines ?? args.count ?? args.Limit
+      const rawTail = args.tail ?? args.last_lines ?? args.tail_lines
+      const tail = Number(rawTail) > 0 ? Number(rawTail) : (Number(rawStart) < 0 ? Math.abs(Number(rawStart)) : 0)
+      const find = typeof (args.find ?? args.search ?? args.query ?? args.pattern) === 'string'
+        ? (args.find ?? args.search ?? args.query ?? args.pattern).trim()
+        : ''
+      const surround = Number(args.surround ?? args.context_lines ?? 10) || 10
+      const lineNumbers = Boolean(args.with_line_numbers ?? args.line_numbers ?? args.numbered ?? args.WithLineNumbers)
 
       let offset = Number(rawStart) > 0 ? Number(rawStart) : 0
       let limit = 0
@@ -468,13 +479,25 @@ export const fsReadTool = {
       }
 
       // In-memory cache hit only for complete, unbounded full-file reads (<0.01ms)
-      if (!offset && !limit && !args.max_bytes) {
+      if (!offset && !limit && !tail && !find && !args.max_bytes) {
         // Scoped to the CALLING chat: a path-only key served chat A's file to
         // chat B whenever both used the same relative path, reported as a
         // successful cached read.
         const cached = globalFsCache.get(path, null, null, cacheScope(opts))
         if (cached && typeof cached === 'string') {
-          return ok({ tool: 'fs_read', path, bytes: cached.length, content: cached, cached: true })
+          const estimated_tokens = Math.round(cached.length / 3.8)
+          const numbered_content = lineNumbers
+            ? cached.split('\n').map((l, i) => `${String(i + 1).padStart(5, ' ')} | ${l}`).join('\n')
+            : undefined
+          return ok({
+            tool: 'fs_read',
+            path,
+            bytes: cached.length,
+            content: cached,
+            numbered_content,
+            estimated_tokens,
+            cached: true,
+          })
         }
       }
 
@@ -483,27 +506,53 @@ export const fsReadTool = {
         maxBytes: args.max_bytes || 5000000,
         offset,
         limit,
+        tail,
+        find,
+        surround,
+        lineNumbers,
       }, opts?.ctx)
       if (typeof res === 'string') {
         globalFsCache.set(path, res, Date.now(), null, cacheScope(opts))
-        return ok({ tool: 'fs_read', path, bytes: res.length, content: res })
+        const estimated_tokens = Math.round(res.length / 3.8)
+        return ok({
+          tool: 'fs_read',
+          path,
+          bytes: res.length,
+          content: res,
+          estimated_tokens,
+          numbered_content: lineNumbers
+            ? res.split('\n').map((l, i) => `${String(i + 1).padStart(5, ' ')} | ${l}`).join('\n')
+            : undefined,
+        })
       }
-      if (res?.content && !offset && !limit && !res.truncated) {
+      if (res?.content && !offset && !limit && !tail && !find && !res.truncated) {
         globalFsCache.set(path, res.content, Date.now(), null, cacheScope(opts))
       }
+      const rawContent = res?.content || ''
+      const estimated_tokens = res?.estimated_tokens || Math.round(rawContent.length / 3.8)
+      const firstLine = res?.range?.firstLine || offset || 1
+      const padLen = Math.max(4, String((res?.lines || firstLine) + 50).length + 1)
+      const numbered_content = res?.numbered_content || (lineNumbers && rawContent
+        ? rawContent.split('\n').map((l, i) => `${String(firstLine + i).padStart(padLen, ' ')} | ${l}`).join('\n')
+        : undefined)
+
       return ok({
         tool: 'fs_read',
         path,
-        bytes: res.bytes,
-        lines: res.lines,
-        content: res.content,
-        truncated: res.truncated,
-        binary: res.binary,
-        encoding: res.encoding,
-        eol: res.eol,
-        hash: res.hash,
-        range: res.range || (offset || limit ? { offset: offset || 1, limit } : undefined),
-        note: res.note || undefined,
+        bytes: res?.bytes,
+        lines: res?.lines,
+        returned_lines: res?.returned_lines || (rawContent ? rawContent.split('\n').length : 0),
+        content: rawContent,
+        numbered_content,
+        estimated_tokens,
+        match_line: res?.match_line,
+        truncated: res?.truncated,
+        binary: res?.binary,
+        encoding: res?.encoding,
+        eol: res?.eol,
+        hash: res?.hash,
+        range: res?.range || (offset || limit || tail ? { offset: offset || 1, limit } : undefined),
+        note: res?.note || undefined,
       })
     })
   },

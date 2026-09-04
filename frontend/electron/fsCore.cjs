@@ -326,7 +326,15 @@ async function existingMode(file) {
  * @param {number} [opts.offset]    1-based first line, for a ranged read
  * @param {number} [opts.limit]     number of lines to return
  */
-async function readFileSmart(file, { maxBytes = 100_000_000, offset = 0, limit = 0 } = {}) {
+async function readFileSmart(file, {
+  maxBytes = 100_000_000,
+  offset = 0,
+  limit = 0,
+  tail = 0,
+  find = '',
+  surround = 10,
+  lineNumbers = false,
+} = {}) {
   const stat = await fs.promises.stat(file)
   if (stat.isDirectory()) throw new Error('Path is a directory, not a file')
 
@@ -342,24 +350,71 @@ async function readFileSmart(file, { maxBytes = 100_000_000, offset = 0, limit =
   }
 
   const eol = detectEol(text)
+  const allLines = toLf(text).split('\n')
+  const totalLines = allLines.length
+
   const base = {
     binary: false, bytes: stat.size, encoding, bom, eol: eol === '\r\n' ? 'crlf' : 'lf',
     readOnly: !!readOnly,
     hash: hashContent(buf),
     mtimeMs: stat.mtimeMs,
+    lines: totalLines,
   }
 
-  // Ranged read: the right way to work with a file too big to hand over whole.
-  if (offset > 0 || limit > 0) {
-    const lines = toLf(text).split('\n')
-    const start = Math.max(0, (offset || 1) - 1)
-    const end = limit > 0 ? Math.min(lines.length, start + limit) : lines.length
+  let start = 0
+  let end = totalLines
+  let matchLine = undefined
+  let isRanged = false
+
+  if (find && typeof find === 'string' && find.trim()) {
+    isRanged = true
+    const term = find.trim().toLowerCase()
+    const idx = allLines.findIndex(l => l.toLowerCase().includes(term))
+    if (idx !== -1) {
+      matchLine = idx + 1
+      const surr = Math.max(1, Number(surround) || 10)
+      start = Math.max(0, idx - surr)
+      end = Math.min(totalLines, idx + surr + 1)
+    } else {
+      return {
+        ...base,
+        content: '',
+        note: `Pattern "${find}" was not found in ${path.basename(file)} (${totalLines} lines).`,
+        match_line: null,
+      }
+    }
+  } else if (tail > 0 || offset < 0) {
+    isRanged = true
+    const t = tail > 0 ? tail : Math.abs(offset)
+    start = Math.max(0, totalLines - t)
+    end = totalLines
+  } else if (offset > 0 || limit > 0) {
+    isRanged = true
+    start = Math.max(0, (offset || 1) - 1)
+    end = limit > 0 ? Math.min(totalLines, start + limit) : totalLines
+  }
+
+  if (isRanged) {
+    const sliced = allLines.slice(start, end)
+    const content = sliced.join('\n')
+    const maxLineNum = end
+    const padLen = String(maxLineNum).length + 1
+    const numbered_content = sliced
+      .map((line, i) => `${String(start + 1 + i).padStart(padLen, ' ')} | ${line}`)
+      .join('\n')
+
     return {
       ...base,
-      content: lines.slice(start, end).join('\n'),
-      lines: lines.length,
+      content,
+      numbered_content: lineNumbers ? numbered_content : undefined,
       range: { firstLine: start + 1, lastLine: end },
-      truncated: end < lines.length || start > 0,
+      returned_lines: sliced.length,
+      estimated_tokens: Math.round(content.length / 3.8),
+      match_line: matchLine,
+      truncated: end < totalLines || start > 0,
+      note: end < totalLines
+        ? `Lines ${start + 1}-${end} of ${totalLines}. To read next section: { start_line: ${end + 1}, limit: ${end - start} }`
+        : undefined,
     }
   }
 
@@ -370,16 +425,27 @@ async function readFileSmart(file, { maxBytes = 100_000_000, offset = 0, limit =
     const decodedHead = decodeBuffer(head).text
     const lastNl = decodedHead.lastIndexOf('\n')
     const content = lastNl > 0 ? decodedHead.slice(0, lastNl) : decodedHead
+    const contentLines = content.split('\n').length
     return {
       ...base,
       content,
       truncated: true,
-      lines: toLf(text).split('\n').length,
-      note: `TRUNCATED: showing the first ${content.length} characters of ${stat.size} bytes. Read the rest with offset/limit — do NOT rewrite this file from what you have seen.`,
+      returned_lines: contentLines,
+      estimated_tokens: Math.round(content.length / 3.8),
+      note: `TRUNCATED: showing lines 1-${contentLines} of ${totalLines} (${stat.size} bytes). Read next section with { start_line: ${contentLines + 1} } — do NOT rewrite this file from what you have seen.`,
     }
   }
 
-  return { ...base, content: text, truncated: false, lines: toLf(text).split('\n').length }
+  return {
+    ...base,
+    content: text,
+    truncated: false,
+    returned_lines: totalLines,
+    estimated_tokens: Math.round(text.length / 3.8),
+    numbered_content: lineNumbers
+      ? allLines.map((line, i) => `${String(i + 1).padStart(String(totalLines).length + 1, ' ')} | ${line}`).join('\n')
+      : undefined,
+  }
 }
 
 module.exports = {
