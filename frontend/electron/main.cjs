@@ -425,9 +425,9 @@ if (!gotLock) {
     // and forwarded none of it until the process closed — a 30-second command
     // was a spinner and then a card, and anything run before the panel was
     // opened was invisible forever.
-    ipcMain.handle('terminal:exec', async (_e, { ctx, command, cwd, timeout = 300000, env: extraEnv } = {}) => {
+    ipcMain.handle('terminal:exec', async (_e, { ctx, command, cwd, timeout = 300000, env: extraEnv, shell } = {}) => {
       const block = await runTerminalBlock({
-        ctx, command, cwd, timeout, env: extraEnv, author: 'agent',
+        ctx, command, cwd, timeout, env: extraEnv, author: 'agent', shell,
       })
       return {
         // A non-zero exit code is a RESULT, not a tool failure. Only "never
@@ -437,6 +437,7 @@ if (!gotLock) {
         exitCode: block.exitCode,
         stdout: block.output || '',
         stderr: '',
+        shell: block.shell,
         killed: block.status === 'killed',
         blockId: block.id,
         durationMs: block.durationMs,

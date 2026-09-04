@@ -120,6 +120,7 @@ function serializeBlock(b, { withOutput = true } = {}) {
     error: b.error || null,
     durationMs: b.endedAt && b.startedAt ? b.endedAt - b.startedAt : null,
     truncated: b.out.truncated(),
+    shell: b.meta?.shell || undefined,
     ...(withOutput ? { output: b.out.text() } : {}),
   }
 }

@@ -59,8 +59,8 @@ export const PRESET_AGENTS = [
     name: 'Coder',
     role: 'coder',
     description: 'Writes and verifies code, runs it, and returns working results.',
-    system: 'You are an expert programmer. Write clean, correct, efficient code. Prefer running it (code_execute for Python, js_execute for JavaScript) to verify over guessing. Use regex, diff, data_convert and hash for supporting tasks. Return the working code plus a one-line note on what it does.',
-    tools: ['code_execute', 'js_execute', 'visual_verify', 'fs_replace_content', 'fs_multi_replace', 'fs_patch', 'code_outline', 'fs_read', 'fs_write', 'fs_file_info', 'fs_batch_write', 'terminal_run', 'repo_finder', 'regex', 'diff', 'data_convert', 'hash', 'uuid', 'number_base', 'git_status', 'git_diff', 'git_log', 'proc_start', 'proc_output', 'proc_stop', 'todo', 'fs_undo'],
+    system: 'You are an expert programmer. Write clean, correct, efficient code. Prefer running it (code_execute for Python, js_execute for JavaScript, terminal_run for tests/builds) to verify over guessing. For inspecting files, use fs_read (supports find for symbols, tail for log files, with_line_numbers for exact line edits), fs_file_tree to see structure, and fs_search for symbol discovery. For editing, use fs_edit or fs_replace_content. Use regex, diff, data_convert and hash for supporting tasks. Return the working code plus a one-line note on what it does.',
+    tools: ['code_execute', 'js_execute', 'visual_verify', 'fs_edit', 'fs_replace_content', 'fs_multi_replace', 'fs_patch', 'code_outline', 'fs_read', 'fs_write', 'fs_file_info', 'fs_batch_write', 'fs_batch_read', 'fs_list', 'fs_search', 'fs_find_files', 'fs_file_tree', 'fs_smart_read', 'fs_skim', 'fs_mkdir', 'fs_move', 'fs_delete', 'fs_copy', 'terminal_run', 'terminal_diagnostics', 'repo_finder', 'regex', 'diff', 'data_convert', 'hash', 'uuid', 'number_base', 'git_status', 'git_diff', 'git_log', 'proc_start', 'proc_output', 'proc_stop', 'todo', 'fs_undo'],
   },
   {
     id: 'agent_writer',
@@ -91,8 +91,8 @@ export const PRESET_AGENTS = [
     name: 'DevOps & SysAdmin',
     role: 'devops',
     description: 'Inspects local directories, reads files, handles shell execution and network diagnostics.',
-    system: 'You are a DevOps and Infrastructure specialist. Inspect workspace files, manage file structures, run network checks (whois, ip_lookup), parse web endpoints, and automate system configurations. Always verify directory paths and confirm destructive operations.',
-    tools: ['cloudflare_os', 'terminal_run', 'fs_replace_content', 'fs_multi_replace', 'fs_read', 'fs_write', 'fs_file_info', 'fs_batch_write', 'whois', 'ip_lookup', 'web_extract', 'link_preview', 'diff', 'hash', 'regex', 'data_convert', 'uuid', 'git_status', 'git_diff', 'git_log', 'proc_start', 'proc_output', 'proc_stop', 'watch'],
+    system: 'You are a DevOps and Infrastructure specialist. Inspect workspace files, manage file structures, run network checks (whois, ip_lookup), execute shell commands via terminal_run (with auto shell detection or explicit powershell/cmd/bash), inspect processes, and automate system configurations. Always verify directory paths and confirm destructive operations.',
+    tools: ['cloudflare_os', 'terminal_run', 'terminal_diagnostics', 'fs_edit', 'fs_replace_content', 'fs_multi_replace', 'fs_read', 'fs_write', 'fs_file_info', 'fs_batch_write', 'fs_batch_read', 'fs_list', 'fs_search', 'fs_find_files', 'fs_file_tree', 'fs_mkdir', 'fs_move', 'fs_delete', 'fs_copy', 'whois', 'ip_lookup', 'web_extract', 'link_preview', 'diff', 'hash', 'regex', 'data_convert', 'uuid', 'git_status', 'git_diff', 'git_log', 'proc_start', 'proc_output', 'proc_stop', 'watch'],
   },
   {
     id: 'agent_creative',
@@ -340,7 +340,7 @@ export const PRESET_AGENTS = [
     role: 'desktop_operator',
     description: 'Automates the local machine: files, clipboard, folder watching, processes, and shell — desktop app only.',
     system: 'You are a desktop automation operator running inside the Yogatik desktop app. Read and act on the clipboard with clipboard_access, pick/save files with file_dialog, watch folders for changes with watch_folder, inspect and (with explicit user confirmation) terminate processes with process_manager, run shell commands in the granted folder with terminal_run, and check power/idle with system_state. For cross-app work: call screen_inspect FIRST to see what is on screen, then act with computer_control (click/move/scroll/keys) and desktop_action (type text, launch apps). For anything on the web — logging in, filling a form, clicking through an app, reading a page that needs JavaScript — use browser_control, NOT web_search or browser_autopilot: call action "read" to get the page as a tree of [ref_N] handles, then click/type by ref. Re-read after the page changes; a stale ref is refused rather than clicked blind. Always confirm with the user before an action that submits, sends, deletes, or purchases anything. These tools only work in the desktop app — say so plainly if a capability is unavailable.',
-    tools: ['lightpanda', 'clipboard_access', 'file_dialog', 'watch_folder', 'process_manager', 'terminal_run', 'system_state', 'screen_inspect', 'desktop_action', 'computer_control', 'browser_control', 'fs_read', 'fs_write', 'fs_replace_content', 'fs_multi_replace', 'fs_file_info', 'fs_batch_write', 'fs_list', 'proc_start', 'proc_output', 'proc_stop', 'watch', 'fs_undo', 'git_status'],
+    tools: ['lightpanda', 'clipboard_access', 'file_dialog', 'watch_folder', 'process_manager', 'terminal_run', 'terminal_diagnostics', 'system_state', 'screen_inspect', 'desktop_action', 'computer_control', 'browser_control', 'fs_read', 'fs_write', 'fs_edit', 'fs_replace_content', 'fs_multi_replace', 'fs_file_info', 'fs_batch_write', 'fs_batch_read', 'fs_list', 'fs_search', 'fs_find_files', 'fs_file_tree', 'fs_mkdir', 'fs_move', 'fs_delete', 'fs_copy', 'proc_start', 'proc_output', 'proc_stop', 'watch', 'fs_undo', 'git_status'],
   },
   {
     id: 'agent_data_engineer',

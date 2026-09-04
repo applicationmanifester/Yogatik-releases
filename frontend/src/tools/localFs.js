@@ -410,9 +410,12 @@ export const fsListTool = {
       required: [],
     },
   },
-  async execute({ path = '', recursive = false, include_ignored = false } = {}, opts = {}) {
+  async execute(args = {}, opts = {}) {
+    const path = args.path ?? args.dir ?? args.directory ?? args.folder ?? args.target ?? ''
+    const recursive = Boolean(args.recursive ?? args.Recursive ?? false)
+    const include_ignored = Boolean(args.include_ignored ?? args.includeIgnored ?? false)
     return guard(async () => {
-      const entries = await invoke('fs_list', { path, recursive: !!recursive, includeIgnored: !!include_ignored }, opts?.ctx)
+      const entries = await invoke('fs_list', { path, recursive, includeIgnored: include_ignored }, opts?.ctx)
       return ok({ tool: 'fs_list', path: path || '.', count: entries.length, entries })
     })
   },
@@ -572,11 +575,14 @@ export const fsCopyTool = {
       required: ['src', 'dest'],
     },
   },
-  async execute({ src, dest, overwrite } = {}, opts = {}) {
+  async execute(args = {}, opts = {}) {
+    const src = args.src || args.source || args.from || args.old_path
+    const dest = args.dest || args.destination || args.to || args.new_path
+    const overwrite = Boolean(args.overwrite ?? args.force ?? false)
     if (!src) return fail('src is required')
     if (!dest) return fail('dest is required')
     return guard(async () => {
-      const r = await invoke('fs_copy', { src, dest, overwrite: !!overwrite }, opts?.ctx)
+      const r = await invoke('fs_copy', { src, dest, overwrite }, opts?.ctx)
       return ok({ tool: 'fs_copy', ...r, message: `Copied ${src} → ${dest}${r.replaced ? ' (replaced)' : ''}` })
     })
   },
@@ -599,8 +605,11 @@ export const fsBatchReadTool = {
       required: ['paths'],
     },
   },
-  async execute({ paths = [], max_bytes_per_file = 250000 } = {}, opts = {}) {
-    if (!Array.isArray(paths) || !paths.length) return fail('paths array is required and must not be empty')
+  async execute(args = {}, opts = {}) {
+    const rawPaths = args.paths || args.files || args.file_paths || args.filepaths || []
+    const paths = Array.isArray(rawPaths) ? rawPaths : (typeof rawPaths === 'string' ? [rawPaths] : [])
+    const max_bytes_per_file = Number(args.max_bytes_per_file ?? args.maxBytesPerFile ?? 250000) || 250000
+    if (!paths.length) return fail('paths array is required and must not be empty')
     return guard(async () => {
       const files = await invoke('fs_batch_read', { paths, maxBytesPerFile: max_bytes_per_file }, opts?.ctx)
       return ok({ tool: 'fs_batch_read', count: files.length, files })
@@ -621,12 +630,15 @@ export const fsFileTreeTool = {
       required: [],
     },
   },
-  async execute({ path = '', max_depth = 3, include_ignored = false } = {}, opts = {}) {
+  async execute(args = {}, opts = {}) {
+    const path = args.path ?? args.dir ?? args.directory ?? args.folder ?? args.root ?? ''
+    const max_depth = Number(args.max_depth ?? args.maxDepth ?? args.depth ?? 3) || 3
+    const include_ignored = Boolean(args.include_ignored ?? args.includeIgnored ?? false)
     return guard(async () => {
       const tree = await invoke('fs_file_tree', {
         path,
-        maxDepth: max_depth || 3,
-        includeIgnored: !!include_ignored,
+        maxDepth: max_depth,
+        includeIgnored: include_ignored,
       }, opts?.ctx)
       return ok({ tool: 'fs_file_tree', path: path || '.', tree })
     })
@@ -812,7 +824,12 @@ export const fsFindFilesTool = {
       required: ['pattern'],
     },
   },
-  async execute({ pattern = '', extension = '', max_depth = 10, limit = 100, include_ignored = false } = {}, opts = {}) {
+  async execute(args = {}, opts = {}) {
+    const pattern = args.pattern ?? args.glob ?? args.query ?? args.name ?? args.search ?? ''
+    const extension = args.extension ?? args.ext ?? ''
+    const max_depth = Number(args.max_depth ?? args.maxDepth ?? args.depth ?? 10) || 10
+    const limit = Number(args.limit ?? args.max_results ?? args.maxResults ?? 100) || 100
+    const include_ignored = Boolean(args.include_ignored ?? args.includeIgnored ?? false)
     if (!pattern && !extension) return fail('Either pattern or extension is required')
     return guard(async () => {
       let files = []
@@ -885,16 +902,22 @@ export const fsSearchTool = {
       required: ['query'],
     },
   },
-  async execute({ query, glob = '', regex = false, max_results = 100, case_sensitive = false, context_lines = 0 } = {}, opts = {}) {
+  async execute(args = {}, opts = {}) {
+    const query = args.query ?? args.search ?? args.term ?? args.pattern ?? args.q ?? args.find ?? ''
+    const glob = args.glob ?? args.filter ?? args.include ?? ''
+    const regex = Boolean(args.regex ?? args.is_regex ?? args.isRegex ?? false)
+    const max_results = Number(args.max_results ?? args.limit ?? args.maxResults ?? 100) || 100
+    const case_sensitive = Boolean(args.case_sensitive ?? args.caseSensitive ?? false)
+    const context_lines = Number(args.context_lines ?? args.contextLines ?? args.surround ?? 0) || 0
     if (!query) return fail('query is required')
     return guard(async () => {
       const matches = await invoke('fs_search', {
         query,
         glob,
-        regex: !!regex,
-        maxResults: max_results || 100,
-        caseSensitive: !!case_sensitive,
-        contextLines: context_lines || 0,
+        regex,
+        maxResults: max_results,
+        caseSensitive: case_sensitive,
+        contextLines: context_lines,
       }, opts?.ctx)
       return ok({ tool: 'fs_search', query, count: matches?.length || 0, matches: matches || [] })
     })
@@ -915,10 +938,13 @@ export const fsDeleteTool = {
       required: ['path'],
     },
   },
-  async execute({ path, recursive = false } = {}, opts = {}) {
+  async execute(args = {}, opts = {}) {
+    const path = args.path || args.file || args.filepath || args.target || args.filename
+    const recursive = Boolean(args.recursive ?? args.Recursive ?? false)
     if (!path) return fail('path is required')
     return guard(async () => {
-      await invoke('fs_delete', { path, recursive: !!recursive }, opts?.ctx)
+      await invoke('fs_delete', { path, recursive }, opts?.ctx)
+      globalFsCache.invalidate(path)
       return ok({ tool: 'fs_delete', path, message: `Deleted ${path}` })
     })
   },
@@ -935,7 +961,8 @@ export const fsMkdirTool = {
       required: ['path'],
     },
   },
-  async execute({ path } = {}, opts = {}) {
+  async execute(args = {}, opts = {}) {
+    const path = args.path || args.dir || args.directory || args.folder || args.path_to_create
     if (!path) return fail('path is required')
     return guard(async () => {
       await invoke('fs_mkdir', { path }, opts?.ctx)
@@ -956,10 +983,14 @@ export const fsMoveTool = {
       required: ['src', 'dest'],
     },
   },
-  async execute({ src, dest } = {}, opts = {}) {
+  async execute(args = {}, opts = {}) {
+    const src = args.src || args.source || args.from || args.old_path || args.oldPath
+    const dest = args.dest || args.destination || args.to || args.new_path || args.newPath
     if (!src || !dest) return fail('src and dest are required')
     return guard(async () => {
       await invoke('fs_move', { src, dest }, opts?.ctx)
+      globalFsCache.invalidate(src)
+      globalFsCache.invalidate(dest)
       return ok({ tool: 'fs_move', src, dest, message: `Moved ${src} → ${dest}` })
     })
   },
@@ -1139,27 +1170,28 @@ export const fsBatchWriteTool = {
       required: ['files'],
     },
   },
-  async execute({ files = [] } = {}, opts = {}) {
-    if (!Array.isArray(files) || !files.length) return fail('files array is required and must not be empty')
+  async execute(args = {}, opts = {}) {
+    const rawFiles = args.files || args.writes || args.items || []
+    const files = Array.isArray(rawFiles) ? rawFiles : []
+    if (!files.length) return fail('files array is required and must not be empty')
     return guard(async () => {
-      // A throw part-way through used to escape the loop, so `guard` returned a
-      // bare failure and the caller had no idea WHICH files had already been
-      // written — the worst possible answer for a half-applied batch. Every
-      // file is now reported individually, and the batch reports itself as
-      // partial rather than as a success or a total failure.
       const written = []
       const failed = []
       for (const f of files) {
-        if (!f?.path) { failed.push({ path: null, error: 'entry has no path' }); continue }
+        const filePath = f?.path || f?.file || f?.filepath || f?.target_file
+        const content = f?.content ?? f?.text ?? f?.code ?? f?.data ?? ''
+        if (!filePath) { failed.push({ path: null, error: 'entry has no path' }); continue }
         try {
-          const r = await invoke('fs_write', { path: f.path, content: f.content ?? '' }, opts?.ctx)
+          const r = await invoke('fs_write', { path: filePath, content: String(content) }, opts?.ctx)
+          globalFsCache.invalidate(filePath)
+          globalWorkspaceTrie.insert(filePath)
           written.push({
-            path: f.path,
-            bytes: (r && typeof r === 'object' ? r.bytes : null) ?? (f.content ?? '').length,
+            path: filePath,
+            bytes: (r && typeof r === 'object' ? r.bytes : null) ?? String(content).length,
             hash: r?.hash,
           })
         } catch (e) {
-          failed.push({ path: f.path, error: e?.message || String(e) })
+          failed.push({ path: filePath, error: e?.message || String(e) })
         }
       }
       return {

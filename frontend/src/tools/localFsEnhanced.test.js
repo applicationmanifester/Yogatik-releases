@@ -132,4 +132,34 @@ describe('bridge wiring', () => {
     expect(res.success).toBe(true)
     expect(res.root).toBe('/root')
   })
+
+  it('passes shell selection parameter to terminal bridge', async () => {
+    const exec = vi.fn(async () => ({ success: true, exitCode: 0, stdout: 'powershell-ok', stderr: '', shell: 'powershell.exe' }))
+    window.__TAURI__ = { core: { invoke: vi.fn(async () => { throw new Error('Unknown command') }) } }
+    window.__YOGATIK_TERMINAL__ = { exec }
+    const res = await terminalRunTool.execute({ command: 'Get-ChildItem', shell: 'powershell' })
+    expect(exec).toHaveBeenCalledWith('Get-ChildItem', expect.objectContaining({ shell: 'powershell' }))
+    expect(res.success).toBe(true)
+    expect(res.shell).toBe('powershell.exe')
+  })
+
+  it('normalizes parameter aliases in fs_batch_read and fs_list', async () => {
+    const invoke = vi.fn(async (cmd, args) => {
+      if (cmd === 'fs_batch_read') return args.paths.map(p => ({ path: p, content: 'data' }))
+      if (cmd === 'fs_list') return [{ name: 'test.js', is_dir: false }]
+      return []
+    })
+    window.__TAURI__ = { core: { invoke } }
+    const { fsBatchReadTool, fsListTool } = await import('./localFs')
+
+    // fs_batch_read accepts "files" alias
+    const batchRes = await fsBatchReadTool.execute({ files: ['a.js', 'b.js'] })
+    expect(batchRes.success).toBe(true)
+    expect(invoke).toHaveBeenCalledWith('fs_batch_read', expect.objectContaining({ paths: ['a.js', 'b.js'] }))
+
+    // fs_list accepts "dir" alias
+    const listRes = await fsListTool.execute({ dir: 'src' })
+    expect(listRes.success).toBe(true)
+    expect(invoke).toHaveBeenCalledWith('fs_list', expect.objectContaining({ path: 'src' }))
+  })
 })

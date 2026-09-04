@@ -89,12 +89,58 @@ function flushOutput(blockId) {
 
 /* ── tier 1: run one command as a block ─────────────────────────────────── */
 
+function isLikelyPowerShell(cmd) {
+  if (!cmd || typeof cmd !== 'string') return false
+  const s = cmd.trim()
+  if (/\b(Get-|Set-|New-|Remove-|Select-String|Select-Object|Where-Object|Test-Path|Invoke-|Start-|Stop-|Out-File|Clear-Content)\b/i.test(s)) return true
+  if (/\$(?:env:[a-zA-Z_0-9]+|_|PSScriptRoot|LASTEXITCODE|PSVersionTable)\b/.test(s)) return true
+  if (/^(?:powershell|pwsh)\b/i.test(s)) return true
+  if (/^(?:cat|ls|pwd|grep|head|tail|export|touch|which|uname)\b/i.test(s)) return true
+  if (/\s*\|\s*(?:grep|cat|head|tail|Select-String|Select-Object|Where-Object)\b/i.test(s)) return true
+  return false
+}
+
+function resolveShell(requestedShell, command, isWin) {
+  if (!isWin) {
+    if (requestedShell === 'bash' || requestedShell === '/bin/bash') {
+      return { cmd: '/bin/bash', args: ['-c', command], name: 'bash' }
+    }
+    return { cmd: requestedShell || '/bin/sh', args: ['-c', command], name: requestedShell || 'sh' }
+  }
+
+  const req = String(requestedShell || '').toLowerCase().trim()
+  const usePs = req === 'powershell' || req === 'pwsh' || (!req || req === 'auto' ? isLikelyPowerShell(command) : false)
+
+  if (usePs) {
+    const bin = req === 'pwsh' ? 'pwsh.exe' : 'powershell.exe'
+    return {
+      cmd: bin,
+      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command],
+      name: bin.replace('.exe', ''),
+    }
+  }
+
+  if (req === 'bash') {
+    return {
+      cmd: 'bash.exe',
+      args: ['-c', command],
+      name: 'bash',
+    }
+  }
+
+  return {
+    cmd: 'cmd.exe',
+    args: ['/d', '/s', '/c', command],
+    name: 'cmd',
+  }
+}
+
 /**
  * @returns {Promise<object>} the serialized block, when it finishes.
  * Never rejects: a tool that throws across IPC arrives as "Error invoking
  * remote method", which the model cannot act on.
  */
-function runBlock({ ctx, command, cwd, author, timeout = 30000, env: extraEnv }) {
+function runBlock({ ctx, command, cwd, author, timeout = 30000, env: extraEnv, shell = 'auto' }) {
   const chatId = String(ctx?.conversationId ?? '')
   const session = sessionFor(chatId)
   const id = `blk_${Date.now().toString(36)}_${++seq}`
@@ -115,19 +161,21 @@ function runBlock({ ctx, command, cwd, author, timeout = 30000, env: extraEnv })
     return fail(`Invalid working directory: ${e.message}`)
   }
 
-  const block = core.beginBlock(session, { id, author, command, cwd: workingDir, now: Date.now() })
+  const isWin = process.platform === 'win32'
+  const shellInfo = resolveShell(shell, command, isWin)
+
+  const block = core.beginBlock(session, {
+    id, author, command, cwd: workingDir, now: Date.now(),
+    meta: { shell: shellInfo.name },
+  })
   // Announce the block BEFORE the first byte, or the drawer shows nothing at
   // all for the first slow command and the user assumes it is broken.
   send('terminal:block', { chatId, block: core.serializeBlock(block) })
 
   return new Promise((resolve) => {
-    const isWin = process.platform === 'win32'
-    const shellCmd = isWin ? 'cmd.exe' : '/bin/sh'
-    const shellArgs = isWin ? ['/d', '/s', '/c', command] : ['-c', command]
-
     let child
     try {
-      child = spawn(shellCmd, shellArgs, {
+      child = spawn(shellInfo.cmd, shellInfo.args, {
         cwd: workingDir,
         windowsHide: true,
         // POSIX: its own process GROUP, so the whole tree can be killed.
@@ -252,12 +300,13 @@ function registerTerminalSession(getWindowFn) {
 
   // A command the HUMAN typed. Same path as the agent's, so both land in the
   // same timeline with the same semantics — that is the whole point.
-  ipcMain.handle('terminal:run', async (_e, { ctx, command, cwd, timeout } = {}) => {
+  ipcMain.handle('terminal:run', async (_e, { ctx, command, cwd, timeout, shell } = {}) => {
     if (!String(command || '').trim()) return { success: false, error: 'No command given.' }
     const block = await runBlock({
       ctx, command, cwd, author: core.AUTHOR.USER,
       // A human watching their own command should not have it shot at 30s.
       timeout: Number(timeout) || 600000,
+      shell,
     })
     return { success: !core.isToolFailure(block), block }
   })

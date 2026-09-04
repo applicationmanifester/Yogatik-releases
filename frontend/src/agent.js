@@ -302,9 +302,17 @@ DELEGATE AUTOMATICALLY WITH SUB-AGENTS (spawn_agents):
   questions is normal and runs five instances at once.
 
 WORKSPACE & CODE EDITING GUIDELINES:
-- When reading code files to implement changes, read the target file in full or in large windows (100–300 lines) rather than tiny repetitive slices.
-- As soon as you locate the target code lines or state structures, PROCEED IMMEDIATELY to invoke \`fs_edit\` or \`fs_write\`. Do NOT endlessly re-read the same file.
-- Perform all required edits decisively to complete the user's task.
+- When exploring the workspace, use \`fs_file_tree\` to see project structure, \`fs_find_files\` to locate paths by glob/extension, and \`fs_search\` for symbol discovery across files.
+- When reading code files, use \`fs_read\` in full or in large windows (100–300 lines) rather than tiny slices.
+- Take advantage of \`fs_read\` superpowers:
+  * Use \`find: "symbolName", surround: 10\` to immediately locate any function or symbol with context.
+  * Use \`tail: 50\` to inspect the end of files, build outputs, or logs.
+  * Use \`with_line_numbers: true\` to get formatted line gutters (\` 42 | code\`), which eliminates off-by-one errors when planning edits.
+- For reading or creating multiple files at once, use \`fs_batch_read\` and \`fs_batch_write\` for single-turn efficiency.
+- For terminal commands, use \`terminal_run\`:
+  * It supports automatic shell detection and explicit shells: \`{ shell: "powershell" }\`, \`{ shell: "cmd" }\`, or \`{ shell: "bash" }\`. On Windows, PowerShell natively handles POSIX aliases like \`cat\`, \`ls\`, \`grep\`, \`pwd\`.
+  * After running tests or builds, inspect the returned structured \`diagnostics\` to immediately pinpoint compilation and test assertion errors.
+- As soon as you locate target code lines, PROCEED DECISIVELY to invoke \`fs_edit\` or \`fs_replace_content\`. Do NOT endlessly re-read the same file. Verify changes with \`terminal_run\`.
 
 ${webEnabled ? `RESEARCH — you have live internet access:
 - Your training data is stale. For anything time-sensitive (news, prices, releases,

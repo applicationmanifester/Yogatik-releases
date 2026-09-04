@@ -54,6 +54,7 @@ export const terminalRunTool = {
         cwd: { type: 'string', description: 'Optional relative path for working directory.' },
         timeout: { type: 'number', description: 'Optional timeout in milliseconds (default 300000 / 5 minutes).' },
         timeout_ms: { type: 'number', description: 'Alias for timeout.' },
+        shell: { type: 'string', description: 'Optional shell: "auto" (default, auto-detects PowerShell/cmd/bash), "powershell", "cmd", or "bash".' },
         env: { type: 'object', description: 'Optional extra environment variables for this command.' },
       },
       required: ['command'],
@@ -63,6 +64,7 @@ export const terminalRunTool = {
     const command = args.command ?? args.cmd ?? args.CommandLine ?? args.script ?? args.exec
     const cwd = args.cwd ?? args.Cwd ?? args.directory ?? args.dir
     const timeout = args.timeout ?? args.timeout_ms ?? args.timeoutMs ?? args.WaitMsBeforeAsync
+    const shell = args.shell ?? args.Shell ?? args.shell_type ?? args.ShellType ?? 'auto'
     const env = args.env
 
     if (!command || typeof command !== 'string' || !command.trim()) {
@@ -91,6 +93,7 @@ export const terminalRunTool = {
       const res = await bridge.exec(command, {
         cwd,
         timeout: waitMs,
+        shell,
         // The ctx MUST come from the chat that issued this command, never from
         // the ambient "active chat". Two chats can stream at once (aborters and
         // loadingMap are both keyed by clientId), and the ambient slot holds
@@ -134,17 +137,25 @@ export const terminalRunTool = {
       // real stdout/stderr instead of an error card with nothing in it.
       const rawStdout = stripAnsi(res?.stdout || '')
       const rawStderr = stripAnsi(res?.stderr || '')
-      const diagnostics = parseTerminalDiagnostics(rawStdout + '\n' + rawStderr)
+      const combined = rawStdout + '\n' + rawStderr
+      const diagnostics = parseTerminalDiagnostics(combined)
+
+      let suggestion = undefined
+      if (res?.exitCode !== 0 && /is not recognized as an internal or external command/i.test(combined)) {
+        suggestion = 'Command was unrecognized by cmd.exe. Try running with { shell: "powershell" } or using PowerShell syntax.'
+      }
 
       return {
         success: true,
         tool: 'terminal_run',
         command,
         cwd: cwd || '.',
+        shell: res?.shell,
         exitCode: res?.exitCode,
         stdout: rawStdout || '(no output)',
         stderr: rawStderr,
         diagnostics: diagnostics.length ? diagnostics : undefined,
+        suggestion,
         durationMs: Date.now() - startedAt,
         killed: res?.killed || false,
         ...(res?.killed ? {
