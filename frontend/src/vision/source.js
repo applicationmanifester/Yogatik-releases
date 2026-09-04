@@ -15,6 +15,7 @@ import { ocrTool } from '../tools/ocr'
 import { analyseImage, describeStructure } from './imageStats'
 import { classifyZeroShot, detectObjects, summariseDetections, describePosition } from './detect'
 import { assessReadability, shouldTrustDescription } from './readable'
+import { queryMoondream } from './moondream'
 
 // ─── Shared source ───────────────────────────────────────────────────────────
 
@@ -114,6 +115,16 @@ export async function describeWithoutModel(image, question = '') {
   const parts = []
   const sources = []
 
+  let moondreamAns = null
+  try {
+    const { getApiKey } = await import('../db')
+    const mdKey = await getApiKey('moondream').catch(() => '')
+    if (mdKey) {
+      const md = await queryMoondream({ image, question, apiKey: mdKey }).catch(() => null)
+      if (md?.answer) moondreamAns = md.answer
+    }
+  } catch {}
+
   const [structure, ocr, labels, objects, vlm] = await Promise.all([
     analyseImage(image).catch(() => null),
     ocrTool.execute({ image_url: image }).catch(() => null),
@@ -164,6 +175,11 @@ export async function describeWithoutModel(image, question = '') {
   if (vlm) {
     parts.push(`DESCRIPTION (on-device vision model): ${vlm}`)
     sources.push('local-vlm')
+  }
+
+  if (moondreamAns) {
+    parts.push(`DESCRIPTION (Moondream VLM): ${moondreamAns}`)
+    sources.push('moondream')
   }
 
   // Even "reliable" OCR is not trustworthy out of a frame this bad — the

@@ -11,8 +11,9 @@ import { runAgent } from '../agent'
 import { createLiveSession } from '../live/session'
 import { createCascadeSession } from '../live/cascade'
 import { formatLiveSessionRecap } from '../live/sessionHandoff'
-import { captureProfile, describeWithoutModel, getSharedVisualSource } from '../vision/source'
+import { captureProfile, describeWithoutModel, getSharedVisualSource, needsMotion } from '../vision/source'
 import { detectObjects } from '../vision/detect'
+import { temporalVideoBuffer } from '../vision/temporalBuffer'
 import { buzz } from '../features'
 import { VisionModal } from './VisionModal'
 import { LiveTranscriptPanel } from './LiveTranscriptPanel'
@@ -848,12 +849,16 @@ export function LiveView({
     try {
       if (modelCanSee) {
         setVision({ via: model ? model.split('/').pop() : provider })
+        const isMotionQ = needsMotion(q)
+        const userMessage = (isMotionQ && temporalVideoBuffer.hasFrames())
+          ? temporalVideoBuffer.buildMultimodalPrompt(q, 3)
+          : [
+              { type: 'text', text: q },
+              { type: 'image_url', image_url: { url: dataUrl } },
+            ]
         await runAgent({
           provider, apiKey, model,
-          userMessage: [
-            { type: 'text', text: q },
-            { type: 'image_url', image_url: { url: dataUrl } },
-          ],
+          userMessage,
           toolsEnabled: false,
           onToken: (t) => setVision({ text: visionText + t }),
         })
@@ -945,6 +950,16 @@ export function LiveView({
   return (
     <div className="live-view" role="dialog" aria-modal="true" aria-label="Live conversation">
       <video ref={videoRef} className={`live-self ${camOn ? '' : 'off'}`} autoPlay playsInline muted />
+      {/* Sci-Fi Camera Viewfinder & Scanline Overlay (Vision-Agents inspired) */}
+      {(camOn || screenOn) && (
+        <div className="live-viewfinder" aria-hidden="true">
+          <div className="live-vf-bracket tl" />
+          <div className="live-vf-bracket tr" />
+          <div className="live-vf-bracket bl" />
+          <div className="live-vf-bracket br" />
+          {objectDetect && <div className="live-detect-scanline" />}
+        </div>
+      )}
       {/* Object-detection boxes, drawn purely client-side over the self-view.
           `.live-self` is CSS-mirrored (scaleX(-1)) but the captured frame is
           NOT — video.js draws the raw, unmirrored pixels — so x is flipped

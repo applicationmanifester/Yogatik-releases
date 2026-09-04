@@ -3271,6 +3271,34 @@ html, body {
   padding: 1px 4px; border-radius: 3px;
   font-family: ui-monospace, SFMono-Regular, monospace;
 }
+
+/* ─── Vision HUD Viewfinder & Scanline (Vision-Agents inspired) ─── */
+.live-viewfinder {
+  position: absolute; inset: 20px; pointer-events: none; z-index: 2;
+  transition: opacity 0.3s ease;
+}
+.live-vf-bracket {
+  position: absolute; width: 24px; height: 24px;
+  border-color: rgba(52, 211, 153, 0.45); border-style: solid;
+}
+.live-vf-bracket.tl { top: 0; left: 0; border-width: 2px 0 0 2px; }
+.live-vf-bracket.tr { top: 0; right: 0; border-width: 2px 2px 0 0; }
+.live-vf-bracket.bl { bottom: 0; left: 0; border-width: 0 0 2px 2px; }
+.live-vf-bracket.br { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+
+.live-detect-scanline {
+  position: absolute; left: 0; right: 0; height: 2.5px;
+  background: linear-gradient(90deg, transparent 0%, rgba(52, 211, 153, 0.8) 20%, rgba(110, 231, 183, 1) 50%, rgba(52, 211, 153, 0.8) 80%, transparent 100%);
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.8), 0 0 24px rgba(52, 211, 153, 0.4);
+  animation: live-scan-sweep 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes live-scan-sweep {
+  0% { top: 0%; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
 .live-view::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(180deg, rgba(5,7,12,0.45) 0%, transparent 18%, transparent 75%, rgba(5,7,12,0.7) 100%);

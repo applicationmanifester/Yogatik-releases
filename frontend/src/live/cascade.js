@@ -595,6 +595,11 @@ export function createCascadeSession({
     const b64 = src.grab(true, captureProfile(userText))
     if (!b64) return null
     if (needsMotion(userText)) {
+      const keyframes = src.getTemporalKeyframes?.(3) || []
+      if (keyframes.length > 1) {
+        // Multi-frame temporal sequence (Vision-Agents pattern)
+        return keyframes.map(kf => framePart(kf.base64))
+      }
       const prev = src.previousFrame?.()
       if (prev) frames.push(prev)
     }

@@ -10,6 +10,7 @@
  */
 
 import { videoConstraints } from './devices'
+import { temporalVideoBuffer } from '../vision/temporalBuffer'
 
 const MAX_EDGE = 768        // MEDIA_RESOLUTION_MEDIUM gets nothing from more
 const HASH_EDGE = 16        // 16x16 grayscale average hash
@@ -57,7 +58,17 @@ async function attach(stream) {
   let prevFrame = null      // the frame before the most recent one
   let lastFrame = null
 
-  stream.getVideoTracks()[0]?.addEventListener('ended', () => { stopped = true })
+  // Rolling temporal frame buffer (Vision-Agents pattern)
+  // Keeps the last ~5 seconds of frames in memory for motion/action reasoning
+  const temporalTicker = setInterval(() => {
+    if (stopped || !video.videoWidth) return
+    temporalVideoBuffer.pushFrame(video, { maxEdge: 640, quality: 0.75 })
+  }, 1000)
+
+  stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+    stopped = true
+    clearInterval(temporalTicker)
+  })
 
   return {
     stream,
@@ -93,14 +104,29 @@ async function attach(stream) {
       const b64 = canvas.toDataURL('image/jpeg', quality).split(',')[1]
       prevFrame = lastFrame
       lastFrame = b64
+
+      // Also record into temporal buffer
+      temporalVideoBuffer.pushFrame(video, { maxEdge, quality })
+
       return b64
     },
 
     /** The frame captured before the current one — "what changed" needs two. */
     previousFrame() { return prevFrame },
 
+    /** Multi-frame keyframes across recent seconds for action/motion understanding */
+    getTemporalKeyframes(count = 3) {
+      return temporalVideoBuffer.getKeyframes(count)
+    },
+
+    /** Multimodal message parts with chronological timing labels */
+    getTemporalPrompt(q, count = 3) {
+      return temporalVideoBuffer.buildMultimodalPrompt(q, count)
+    },
+
     close() {
       stopped = true
+      clearInterval(temporalTicker)
       stream.getTracks().forEach(t => t.stop())
       video.srcObject = null
     },
