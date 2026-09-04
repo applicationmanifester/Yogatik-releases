@@ -894,7 +894,10 @@ export function createCascadeSession({
       emit({ type: 'status', text: `⚠️ ${active.model || active.provider || 'Model'} failed, auto-switching to next provider…` })
       return respondTo(userText, retry + 1)
     }
-    const friendlyError = `I received no text response from ${active.model || active.provider || 'the model'}. ${failure}. Try tapping "⚡ Auto-Pick Fastest" to switch to a fast chat model.`
+    const isAuth = /auth|key|unauthorized|401/i.test(failure)
+    const friendlyError = isAuth
+      ? `Authentication failed for ${active.provider || 'the provider'}. Please check or update your API key in Settings.`
+      : `Unable to complete response using ${active.model || active.provider || 'the model'}: ${failure}. Tap "⚡ Auto-Pick Fastest" to switch to a ready model.`
     emit({ type: 'transcript', role: 'assistant', text: friendlyError })
     emit({ type: 'warning', message: failure })
     speak(friendlyError)
