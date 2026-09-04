@@ -79,6 +79,7 @@ import {
 import { preconnectProvider } from './latencyOptimizer'
 import { matchReflex, streamReflex } from './reflexEngine'
 import { webSearchTool } from '../tools/webSearch'
+import { summariseToolResults } from '../toolSummary'
 
 // ─── Adaptive Tool Gating (ATG) ────────────────────────────────────────────
 // The #1 latency killer in Live mode: sending 18+ tool schemas (~32k tokens)
@@ -822,8 +823,16 @@ export function createCascadeSession({
           }
           metrics.markTool(1)
         },
-        onToolResult: (name, result) => emit({ type: 'toolResult', name, result }),
-        onDone: ({ content: full }) => {
+        onToolResult: (name, result) => {
+          emit({ type: 'toolResult', name, result })
+          // Re-arm watchdog so that if model freezes post-tool, it doesn't hang indefinitely
+          if (!liveTurnTimer) {
+            liveTurnTimer = setTimeout(() => {
+              controller.abort(new Error(`Timeout: ${active.provider || 'model'} did not respond after tool ${name}`))
+            }, 15000)
+          }
+        },
+        onDone: ({ content: full, toolResults }) => {
           if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
           const turnElapsedMs = Date.now() - turnStartTime
           const { reasoning, answer } = splitReasoning(full || accumulatedContent)
@@ -833,6 +842,24 @@ export function createCascadeSession({
           if (!effectiveAnswer && reasoning?.trim()) {
             const lines = reasoning.trim().split(/(?<=[.?!])\s+/).filter(l => l.trim().length > 3)
             effectiveAnswer = lines[lines.length - 1] || reasoning.slice(-120).trim()
+          }
+          // If a tool executed (e.g. web search) but the model returned empty text afterwards:
+          if (!effectiveAnswer && toolResults && Object.keys(toolResults).length > 0) {
+            const ws = toolResults.web_search?.results || toolResults.social_search?.results
+            if (ws && ws.length > 0) {
+              const top = ws[0]
+              effectiveAnswer = `${top.title}: ${top.snippet || ''}`.slice(0, 240)
+            } else {
+              const gathered = summariseToolResults(toolResults)
+              if (gathered) effectiveAnswer = gathered.slice(0, 240)
+            }
+          }
+          // Catch empty response (e.g. specialized models like kosmos-2 that cannot do text chat)
+          if (!effectiveAnswer && !produced) {
+            failure = `${active.model || 'Model'} returned an empty response. It may be specialized or unsupported for conversational chat.`
+            abort = null
+            resolve()
+            return
           }
           if (effectiveAnswer && effectiveAnswer.length > emittedAnswerLength) {
             const finalChunk = effectiveAnswer.slice(emittedAnswerLength)
@@ -863,10 +890,11 @@ export function createCascadeSession({
     // Only switch before anything was spoken — swapping mid-answer would
     // splice two different models' sentences into one reply.
     if (!produced && !closed && retry < chain.length - 1 &&
-        RECOVERABLE.test(failure) && nextProvider()) {
+        (RECOVERABLE.test(failure) || /empty|unsupported|timeout/i.test(failure)) && nextProvider()) {
+      emit({ type: 'status', text: `⚠️ ${active.model || active.provider || 'Model'} failed, auto-switching to next provider…` })
       return respondTo(userText, retry + 1)
     }
-    const friendlyError = `I was unable to complete the response using ${active.provider || 'the model'}: ${failure}. Please check your API key in Settings or switch to Gemini or Groq.`
+    const friendlyError = `I received no text response from ${active.model || active.provider || 'the model'}. ${failure}. Try tapping "⚡ Auto-Pick Fastest" to switch to a fast chat model.`
     emit({ type: 'transcript', role: 'assistant', text: friendlyError })
     emit({ type: 'warning', message: failure })
     speak(friendlyError)

@@ -4,8 +4,9 @@ import {
   AlertTriangle, Monitor, MonitorOff, MessageSquare, Eye, EyeOff,
   Aperture, Volume2, VolumeX, Scan, ScanEye,
   RefreshCw, SwitchCamera, Settings2, Camera, Search,
-  ChevronDown, Check,
+  ChevronDown, Check, Zap,
 } from 'lucide-react'
+import { autoPickModel } from '../api'
 import { runAgent } from '../agent'
 import { createLiveSession } from '../live/session'
 import { createCascadeSession } from '../live/cascade'
@@ -63,6 +64,7 @@ export function LiveView({
   const [showModelSearch, setShowModelSearch] = useState(false)
   const [providerDropdownOpen, setProviderDropdownOpen] = useState(false)
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false)
+  const [isAutoPickingFastest, setIsAutoPickingFastest] = useState(false)
   const providerDropdownRef = useRef(null)
   const modelDropdownRef = useRef(null)
 
@@ -347,6 +349,75 @@ export function LiveView({
     }
     showHudNotice(`Model: ${targetModel.split('/').pop().slice(0, 24)}`)
   }, [activeProvider.provider, provider, modelCanSee, onProviderChange, onModelChange, showHudNotice])
+
+  const handleAutoPickFastest = useCallback(async () => {
+    if (isAutoPickingFastest) return
+    setIsAutoPickingFastest(true)
+    showHudNotice('⚡ Probing fastest live model…')
+    try {
+      let winner = null
+      let targetProv = curProvider
+
+      // 1. First probe candidate models for the current provider
+      try {
+        const res = await autoPickModel(curProvider, { max: 4, timeoutMs: 6000 })
+        if (res?.model) {
+          winner = res
+        }
+      } catch (err) {
+        console.warn(`Auto-pick on ${curProvider} failed:`, err)
+      }
+
+      // 2. If current provider has no key or failed, try other configured providers in order of known speed
+      if (!winner) {
+        const fastOrder = ['groq', 'gemini', 'nvidia', 'openai', 'anthropic', 'cerebras', 'deepseek']
+        const readyAltProviders = fastOrder.filter(p => p !== curProvider && isProviderReady(p, allProviders?.[p]))
+        for (const altP of readyAltProviders) {
+          try {
+            showHudNotice(`⚡ Testing ${allProviders[altP]?.name || altP}…`)
+            const res = await autoPickModel(altP, { max: 3, timeoutMs: 5000 })
+            if (res?.model) {
+              winner = res
+              targetProv = altP
+              break
+            }
+          } catch {
+            // try next
+          }
+        }
+      }
+
+      if (winner) {
+        const isDiff = targetProv !== curProvider
+        setState(prev => ({
+          ...prev,
+          activeProvider: { provider: targetProv, model: winner.model }
+        }))
+        if (isDiff) {
+          sessionRef.current?.setProvider?.(targetProv, undefined, winner.model, modelCanSee)
+          onProviderChange?.(targetProv, winner.model)
+        } else {
+          sessionRef.current?.setModel?.(winner.model, modelCanSee)
+          onModelChange?.(winner.model)
+        }
+        showHudNotice(`⚡ Fastest: ${winner.model.split('/').pop()} (${winner.latencyMs}ms)`)
+      } else {
+        // Fallback: pick the first preferred or non-reasoning fast model
+        const candidates = (allProviders[curProvider]?.models || availableModels || [])
+        const fastCandidate = candidates.find(m => /flash|mini|instant|8b|7b/i.test(m) && !/r1|reason|120b|671b|kosmos/i.test(m)) || candidates[0]
+        if (fastCandidate) {
+          handleModelChange(fastCandidate)
+          showHudNotice(`⚡ Switched to ${fastCandidate.split('/').pop()}`)
+        } else {
+          showHudNotice('⚠️ No fast model found. Check API keys.')
+        }
+      }
+    } catch (e) {
+      showHudNotice(`⚠️ ${e?.message || 'Auto-pick error'}`)
+    } finally {
+      setIsAutoPickingFastest(false)
+    }
+  }, [isAutoPickingFastest, curProvider, allProviders, isProviderReady, availableModels, modelCanSee, onProviderChange, onModelChange, handleModelChange, showHudNotice])
 
   // Dynamically sync model prop changes without tearing down the live call
   useEffect(() => {
@@ -1218,6 +1289,36 @@ export function LiveView({
                 animation: 'liveFadeIn 0.12s ease-out',
               }}
             >
+              {/* Auto-pick fastest model for live button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setModelDropdownOpen(false)
+                  handleAutoPickFastest()
+                }}
+                disabled={isAutoPickingFastest}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  background: 'rgba(34, 197, 94, 0.18)',
+                  border: '1px solid rgba(74, 222, 128, 0.35)',
+                  color: '#4ade80',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: isAutoPickingFastest ? 'wait' : 'pointer',
+                  textAlign: 'left',
+                  marginBottom: '2px',
+                  transition: 'all 0.1s ease',
+                }}
+              >
+                <Zap size={13} className={isAutoPickingFastest ? 'spin' : ''} style={{ color: '#4ade80', flexShrink: 0 }} />
+                <span>{isAutoPickingFastest ? 'Testing Speed…' : '⚡ Auto-pick fastest for live'}</span>
+              </button>
+
               {/* Search all models button */}
               <button
                 type="button"
@@ -1303,6 +1404,34 @@ export function LiveView({
             </div>
           )}
         </div>
+
+        {/* ⚡ Auto Pick Fastest Model Button */}
+        <button
+          type="button"
+          onClick={handleAutoPickFastest}
+          disabled={isAutoPickingFastest}
+          className="live-badge fastest-badge"
+          style={{
+            background: isAutoPickingFastest ? 'rgba(34, 197, 94, 0.25)' : 'rgba(34, 197, 94, 0.14)',
+            color: '#4ade80',
+            border: '1px solid rgba(74, 222, 128, 0.35)',
+            borderRadius: '12px',
+            padding: '2px 9px',
+            fontSize: '11px',
+            fontWeight: 600,
+            cursor: isAutoPickingFastest ? 'wait' : 'pointer',
+            maxHeight: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            boxShadow: '0 2px 8px rgba(34, 197, 94, 0.15)',
+            transition: 'all 0.15s ease',
+          }}
+          title="Auto-select the fastest, lowest-latency model for instant voice responses"
+        >
+          <Zap size={11} className={isAutoPickingFastest ? 'spin' : ''} style={{ color: '#4ade80' }} />
+          <span>{isAutoPickingFastest ? 'Testing Speed…' : '⚡ Auto-Pick Fastest'}</span>
+        </button>
 
         <button
           type="button"

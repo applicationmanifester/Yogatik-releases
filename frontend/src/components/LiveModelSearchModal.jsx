@@ -72,7 +72,9 @@ export function LiveModelSearchModal({
   const filteredModels = useMemo(() => {
     const q = query.trim().toLowerCase()
     return allModelItems.filter(item => {
-      if (selectedProviderFilter !== 'all' && item.provider !== selectedProviderFilter) {
+      if (selectedProviderFilter === 'fast') {
+        if (!item.isFast) return false
+      } else if (selectedProviderFilter !== 'all' && item.provider !== selectedProviderFilter) {
         return false
       }
       if (!q) return true
@@ -289,6 +291,31 @@ export function LiveModelSearchModal({
               }}
             >
               All Providers ({allModelItems.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedProviderFilter('fast')
+                setFocusedIdx(0)
+              }}
+              style={{
+                background: selectedProviderFilter === 'fast' ? 'rgba(34, 197, 94, 0.25)' : 'rgba(34, 197, 94, 0.1)',
+                color: selectedProviderFilter === 'fast' ? '#4ade80' : '#86efac',
+                border: selectedProviderFilter === 'fast' ? '1px solid rgba(74, 222, 128, 0.6)' : '1px solid rgba(74, 222, 128, 0.25)',
+                borderRadius: '8px',
+                padding: '3px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <Zap size={11} style={{ color: '#4ade80' }} />
+              Fast for Live ({allModelItems.filter(m => m.isFast).length})
             </button>
             {providerList.map(p => {
               const count = (allProviders[p]?.models || []).length
