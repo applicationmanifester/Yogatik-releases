@@ -90,6 +90,16 @@ export function LiveView({
   const [deviceIds, setDeviceIds] = useState({ cameraId: '', micId: '' })
   const [showDevices, setShowDevices] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [hudNotice, setHudNotice] = useState('')
+  const [shutterFlash, setShutterFlash] = useState(false)
+  const hudNoticeTimerRef = useRef(null)
+
+  const showHudNotice = useCallback((msg) => {
+    setHudNotice(msg)
+    if (hudNoticeTimerRef.current) clearTimeout(hudNoticeTimerRef.current)
+    hudNoticeTimerRef.current = setTimeout(() => setHudNotice(''), 2400)
+  }, [])
+
   // Live-only overrides so a change applies to THIS call immediately; the
   // Personalise panel still owns the persisted default.
   const [liveRate, setLiveRate] = useState(1)
@@ -330,6 +340,8 @@ export function LiveView({
           msg = err?.message || String(err)
       }
       setState({ error: msg })
+      // Record metrics without terminating the live session
+      if (err?.fatal) liveMetrics.endSession(liveMetrics.END_REASON.ERROR)
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
       errorTimerRef.current = setTimeout(() => {
         setState(prev => prev.error === msg ? { ...prev, error: '' } : prev)
@@ -490,7 +502,23 @@ export function LiveView({
     setState({ visionMode: next })
     sessionRef.current?.setVisionMode?.(next)
     buzz(features, 30)
+    showHudNotice(next === 'always' ? '👁️ Continuous Vision: AI inspects feed every turn' : '👁️ Look When Asked: On-demand visual inspection')
   }
+
+  const toggleAutoScan = () => {
+    const next = !autoScan
+    setVision({ autoScan: next })
+    buzz(features, 30)
+    showHudNotice(next ? '⚡ Auto-Scan enabled (Periodic snapshot every 10s)' : '⚡ Auto-Scan paused')
+  }
+
+  const toggleObjectDetect = () => {
+    const next = !objectDetect
+    setVision({ objectDetect: next, detectError: '' })
+    buzz(features, 30)
+    showHudNotice(next ? '🎯 Object Detection HUD activated' : '🎯 Object Detection HUD disabled')
+  }
+
   const copyText = (text, idx) => {
     navigator.clipboard.writeText(text).then(() => {
       setState({ copiedIdx: idx })
@@ -523,10 +551,14 @@ export function LiveView({
   }
 
   const openVision = () => {
+    buzz(features, 35)
+    setShutterFlash(true)
+    setTimeout(() => setShutterFlash(false), 180)
     const b64 = captureFrame()
     if (!b64) return
     setVision({ image: b64, text: '', q: '', via: '' })
     setVision({ open: true })
+    showHudNotice('📸 Snapshot captured — analyze frame')
   }
 
   /**
@@ -667,9 +699,16 @@ export function LiveView({
                   height: `${Math.max(0, ymax - ymin) * 100}%`,
                 }}
               >
-                <span className="live-detect-label">
-                  {d.label}{d.score ? ` ${Math.round(d.score * 100)}%` : ''}
-                </span>
+                <div className="live-detect-corner tl" />
+                <div className="live-detect-corner tr" />
+                <div className="live-detect-corner bl" />
+                <div className="live-detect-corner br" />
+                <div className="live-detect-crosshair" />
+                <div className="live-detect-tag">
+                  <span className="live-detect-dot" />
+                  <span className="live-detect-label">{d.label?.toUpperCase()}</span>
+                  {d.score ? <span className="live-detect-score">{Math.round(d.score * 100)}%</span> : null}
+                </div>
               </div>
             )
           })}
@@ -764,6 +803,21 @@ export function LiveView({
           </span>
         )}
         {screenOn && <span className="live-badge screen-badge"><Monitor size={12} /> Screen</span>}
+        {visionMode === 'always' && (
+          <span className="live-badge watching-badge" title="AI inspects camera feed on every turn">
+            <Eye size={12} /> Watching Live
+          </span>
+        )}
+        {autoScan && (
+          <span className="live-badge autoscan-badge" title="Auto-scan capturing feed every 10s">
+            <Scan size={12} /> Auto-Scan 10s
+          </span>
+        )}
+        {objectDetect && (
+          <span className="live-badge detect-badge" title="On-device neural object detection HUD">
+            <ScanEye size={12} /> Object HUD {detections.length > 0 ? `(${detections.length})` : ''}
+          </span>
+        )}
       </div>
 
       {/* Yogatik mascot — reacts to audio level */}
@@ -866,17 +920,28 @@ export function LiveView({
         </div>
       )}
 
+      {/* HUD Transient Status Notice */}
+      {hudNotice && (
+        <div className="live-hud-notice" role="status" aria-live="polite">
+          {hudNotice}
+        </div>
+      )}
+
+      {/* Shutter Camera Flash Effect */}
+      {shutterFlash && <div className="live-shutter-flash" aria-hidden="true" />}
+
       {/* Controls */}
       <div className="live-controls">
         <button
-          className={`live-btn ${muted ? 'off' : ''}`}
+          className={`live-btn ${muted ? 'muted-btn' : ''}`}
           onClick={toggleMute}
           aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}
+          title={muted ? 'Microphone muted — tap to unmute' : 'Mute microphone'}
         >
           {muted ? <MicOff size={22} /> : <Mic size={22} />}
         </button>
         <button
-          className={`live-btn ${speakerMuted ? 'off' : ''}`}
+          className={`live-btn ${speakerMuted ? 'muted-btn' : ''}`}
           onClick={toggleSpeaker}
           aria-label={speakerMuted ? 'Turn on AI voice' : 'Turn off AI voice (text/captions only)'}
           title={speakerMuted ? 'AI voice output is off — turn it back on' : 'Mute AI voice output (keeps replying in text)'}
@@ -887,6 +952,7 @@ export function LiveView({
           className={`live-btn ${screenOn ? 'active-screen' : ''}`}
           onClick={toggleScreen}
           aria-label={screenOn ? 'Stop screen sharing' : 'Share screen'}
+          title={screenOn ? 'Stop sharing screen' : 'Share screen with AI'}
         >
           {screenOn ? <MonitorOff size={20} /> : <Monitor size={20} />}
         </button>
@@ -907,60 +973,58 @@ export function LiveView({
           className={`live-btn${modelCanSee ? '' : ' warn'}`}
           onClick={() => setShowSettings(true)}
           aria-label="Live settings"
-          // The badge already says "on-device", which is accurate and explains
-          // nothing. Marking the button is what gets someone to open the panel
-          // that tells them their model is text-only.
           title={modelCanSee ? 'Live settings' : 'Live settings — this model cannot see images'}
         >
           <Settings2 size={20} />
         </button>
-        <button className="live-btn end" onClick={handleEnd} aria-label="End call">
+        <button className="live-btn end" onClick={handleEnd} aria-label="End call" title="End call">
           <PhoneOff size={22} />
         </button>
         <button
-          className={`live-btn ${camOn ? '' : 'off'}`}
+          className={`live-btn ${camOn ? '' : 'muted-btn'}`}
           onClick={toggleCam}
           aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
+          title={camOn ? 'Turn off camera' : 'Turn on camera'}
         >
           {camOn ? <Video size={22} /> : <VideoOff size={22} />}
         </button>
         <button
-          className={`live-btn ${(camOn || screenOn) && !visionOpen ? '' : 'off'}`}
+          className={`live-btn vision-btn snapshot-btn`}
           onClick={openVision}
           disabled={(!camOn && !screenOn) || visionLoading}
-          aria-label="Ask about what the camera sees"
-          title="Ask about this frame"
+          aria-label="Capture snapshot & ask AI"
+          title="Capture snapshot & ask AI (instant scene analysis)"
         >
           <Aperture size={22} />
         </button>
         <button
-          className={`live-btn ${visionMode === 'always' ? 'active-autoscan' : 'off'}`}
+          className={`live-btn vision-btn ${visionMode === 'always' ? 'active-vision' : ''}`}
           onClick={toggleVision}
           disabled={!camOn && !screenOn}
           aria-label={visionMode === 'always' ? 'Stop watching every turn' : 'Watch every turn'}
           title={visionMode === 'always'
-            ? 'Watching every turn — the model sees the feed on every reply. Tap for look-when-relevant.'
-            : 'Look-when-relevant. Tap to watch every turn (any model sees the feed continuously).'}
+            ? 'Watching every turn — AI sees camera feed continuously. Tap for look-when-asked.'
+            : 'Look-when-asked. Tap to watch every turn (AI sees camera feed continuously).'}
         >
           {visionMode === 'always' ? <Eye size={20} /> : <EyeOff size={20} />}
         </button>
         <button
-          className={`live-btn ${autoScan ? 'active-autoscan' : 'off'}`}
-          onClick={() => setVision({ autoScan: !autoScan })}
+          className={`live-btn vision-btn ${autoScan ? 'active-autoscan' : ''}`}
+          onClick={toggleAutoScan}
           disabled={!camOn && !screenOn}
           aria-label={autoScan ? 'Disable Auto-Scan' : 'Enable Auto-Scan'}
-          title={autoScan ? 'Auto-Scan Active (Snapshots every 10s)' : 'Enable Auto-Scan (Snapshots every 10s)'}
+          title={autoScan ? 'Auto-Scan Active (Captures feed every 10s)' : 'Enable Auto-Scan (Periodic 10s visual inspection)'}
         >
           <Scan size={20} />
         </button>
         <button
-          className={`live-btn ${objectDetect ? 'active-autoscan' : 'off'}`}
-          onClick={() => setVision({ objectDetect: !objectDetect, detectError: '' })}
+          className={`live-btn vision-btn ${objectDetect ? 'active-detect' : ''}`}
+          onClick={toggleObjectDetect}
           disabled={!camOn && !screenOn}
           aria-label={objectDetect ? 'Turn off object detection' : 'Turn on object detection'}
           title={detectError
             ? `Object detection: ${detectError}`
-            : (objectDetect ? 'Object detection on — boxes shown on-device, never sent to the model' : 'Draw boxes around what the camera sees, on-device')}
+            : (objectDetect ? 'Object Detection HUD Active (On-device DETR boxes)' : 'Enable Object Detection HUD (Sci-fi target bounding boxes)')}
         >
           <ScanEye size={20} />
         </button>
@@ -968,6 +1032,7 @@ export function LiveView({
           className={`live-btn transcript-toggle ${showTranscript ? 'active-transcript' : ''}`}
           onClick={() => setState({ showTranscript: !showTranscript })}
           aria-label={showTranscript ? 'Hide transcript' : 'Show transcript'}
+          title="Transcript & conversation history"
         >
           <MessageSquare size={20} />
         </button>
