@@ -104,7 +104,27 @@ export function diagnoseError(error) {
     }
   }
 
-  if (lower.includes('404') || lower.includes('not found') || lower.includes('deprecated') || lower.includes('decommissioned') || lower.includes('retired') || lower.includes('does not exist') || lower.includes('model_not_found') || lower.includes('no models provided') || lower.includes('object object')) {
+  // File edit / patch mismatches: when an agent passes an old_string that doesn't match
+  if (/old_string not found|old_string is not unique|target string not found|replacement failed|old_string/i.test(msg)) {
+    const isUnique = /not unique/i.test(msg)
+    return {
+      type: 'fs_edit_mismatch',
+      category: 'File Edit Mismatch',
+      title: isUnique ? 'Multiple Matches Found in File' : 'Target Text Not Found in File',
+      suggestion: isUnique
+        ? 'The text snippet to replace appears multiple times in this file. Specify a start_line/end_line range, add more surrounding lines as context, or set replace_all: true.'
+        : 'The text snippet to replace (old_string) was not found in the file. Inspect the file with fs_read first to confirm the exact lines, formatting, and indentation before editing.',
+      actionType: 'none',
+      actionLabel: '',
+    }
+  }
+
+  const isModelNotFound =
+    /model.*not found|not found.*model|model.*does not exist|model_not_found|no models provided|decommissioned|retired|model.*deprecated/i.test(msg) ||
+    ((lower.includes('404') || lower.includes('not found') || lower.includes('does not exist') || lower.includes('object object')) &&
+      !/file|folder|path|directory|old_string|element|command|module|package|variable|table|entry/i.test(msg))
+
+  if (isModelNotFound) {
     return {
       type: 'model_not_found',
       category: 'Model Availability',
@@ -242,8 +262,32 @@ export function diagnoseError(error) {
     /working folder|no folder granted|not granted|fs_grant|fs_add_folder/i.test(msg) ||
     /desktop app|desktop only|electron build/i.test(msg) ||
     /escapes the granted folder|absolute paths are not allowed/i.test(msg) ||
-    /ENOENT|no such file or directory|file not found|path does not exist/i.test(msg)
+    /ENOENT|no such file or directory|file not found|path does not exist/i.test(msg) ||
+    /path is a directory|is a directory|eisdir/i.test(msg) ||
+    /permission denied|operation not permitted|eacces|eperm/i.test(msg)
   ) {
+    const isDir = /path is a directory|is a directory|eisdir/i.test(msg)
+    if (isDir) {
+      return {
+        type: 'fs_directory',
+        category: 'Directory Specified',
+        title: 'Path Is a Directory, Not a File',
+        suggestion: 'You specified a directory path for a file reading operation. Use fs_list or fs_file_tree to inspect the folder contents, or specify a file inside this directory.',
+        actionType: 'none',
+        actionLabel: '',
+      }
+    }
+    const isPerm = /permission denied|operation not permitted|eacces|eperm/i.test(msg)
+    if (isPerm) {
+      return {
+        type: 'fs_permission',
+        category: 'File Permissions',
+        title: 'Permission Denied',
+        suggestion: 'The desktop app lacks permission to access or modify this path on your computer.',
+        actionType: 'none',
+        actionLabel: '',
+      }
+    }
     const isNotFound = /ENOENT|no such file or directory|file not found|path does not exist/i.test(msg)
     const needsFolder = /working folder|no folder granted|not granted|fs_grant|fs_add_folder/i.test(msg)
     if (isNotFound) {

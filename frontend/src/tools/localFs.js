@@ -120,10 +120,20 @@ export async function guard(fn) {
     if (/no folder granted|not granted/i.test(msg)) {
       return { success: false, error: 'No working folder for this chat. Call fs_add_folder so the user can pick one.' }
     }
+    if (/path is a directory|is a directory|eisdir/i.test(msg)) {
+      return {
+        success: false,
+        error: 'Path is a directory, not a file. Use fs_list or fs_file_tree to inspect directory contents.',
+        is_directory: true,
+      }
+    }
     if (/ENOENT|no such file or directory/i.test(msg)) {
       const match = msg.match(/stat '([^']+)'|open '([^']+)'|'([^']+)'/i)
       const target = match ? (match[1] || match[2] || match[3]) : ''
       return { success: false, error: target ? `File not found: ${target} (no such file or directory)` : 'File not found (no such file or directory)' }
+    }
+    if (/EACCES|EPERM|permission denied|operation not permitted/i.test(msg)) {
+      return { success: false, error: 'Permission denied: cannot access or modify this path.' }
     }
     return fail(msg)
   }

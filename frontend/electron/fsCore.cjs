@@ -142,6 +142,8 @@ function findFuzzyLineMatches(fileLines, oldString) {
   const oldLines = toLf(oldString).split('\n').map(l => l.trim()).filter(Boolean)
   if (!oldLines.length) return []
   const matches = []
+
+  // Pass 1: Trimmed line matching
   for (let i = 0; i <= fileLines.length - oldLines.length; i++) {
     let matched = true
     for (let j = 0; j < oldLines.length; j++) {
@@ -154,6 +156,23 @@ function findFuzzyLineMatches(fileLines, oldString) {
       matches.push(i)
     }
   }
+  if (matches.length > 0) return matches
+
+  // Pass 2: Internal whitespace normalization (collapses multiple spaces/tabs)
+  const normOld = oldLines.map(l => l.replace(/\s+/g, ' ').trim())
+  for (let i = 0; i <= fileLines.length - normOld.length; i++) {
+    let matched = true
+    for (let j = 0; j < normOld.length; j++) {
+      if (fileLines[i + j].replace(/\s+/g, ' ').trim() !== normOld[j]) {
+        matched = false
+        break
+      }
+    }
+    if (matched) {
+      matches.push(i)
+    }
+  }
+
   return matches
 }
 

@@ -196,3 +196,46 @@ describe('a browser timeout is not a provider failure', () => {
     expect(diagnoseError('503 Service Unavailable').type).toBe('general')
   })
 })
+
+describe('fs_edit and workspace errors are never misdiagnosed as model retirement', () => {
+  it('diagnoses "old_string not found in file" as a file edit mismatch, not a model error', () => {
+    const d = diagnoseError("Error invoking remote method 'fs_edit': Error: old_string not found in file")
+    expect(d.type).toBe('fs_edit_mismatch')
+    expect(d.category).toBe('File Edit Mismatch')
+    expect(d.title).toBe('Target Text Not Found in File')
+    expect(d.suggestion).not.toMatch(/provider|auto-pick|model/i)
+  })
+
+  it('diagnoses "old_string is not unique" with helpful advice', () => {
+    const d = diagnoseError('Error: old_string is not unique (3 matches) within lines 10 to 50')
+    expect(d.type).toBe('fs_edit_mismatch')
+    expect(d.title).toBe('Multiple Matches Found in File')
+    expect(d.suggestion).toMatch(/replace_all/i)
+  })
+
+  it('diagnoses missing files without claiming the model is retired', () => {
+    const d = diagnoseError('File not found: src/components/Missing.jsx (no such file or directory)')
+    expect(d.type).toBe('fs_not_found')
+    expect(d.category).toBe('File Not Found')
+    expect(d.title).toBe('File Not Found on Disk')
+    expect(d.suggestion).not.toMatch(/provider|auto-pick|model/i)
+  })
+
+  it('diagnoses "Path is a directory, not a file" as a directory issue, not a provider failure', () => {
+    const d = diagnoseError("Error invoking remote method 'fs_read': Error: Path is a directory, not a file")
+    expect(d.type).toBe('fs_directory')
+    expect(d.category).toBe('Directory Specified')
+    expect(d.title).toBe('Path Is a Directory, Not a File')
+    expect(d.suggestion).toMatch(/fs_list|fs_file_tree/i)
+    expect(d.suggestion).not.toMatch(/model provider/i)
+  })
+
+  it('diagnoses permission denied errors properly', () => {
+    const d = diagnoseError('Error: EACCES: permission denied, open "/etc/shadow"')
+    expect(d.type).toBe('fs_permission')
+    expect(d.category).toBe('File Permissions')
+    expect(d.title).toBe('Permission Denied')
+    expect(d.suggestion).not.toMatch(/model provider/i)
+  })
+})
+
