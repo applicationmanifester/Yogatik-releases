@@ -3,7 +3,7 @@ import {
   Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Wrench,
   AlertTriangle, Monitor, MonitorOff, MessageSquare, Eye, EyeOff,
   Aperture, Volume2, VolumeX, Scan, ScanEye,
-  RefreshCw, SwitchCamera, Settings2,
+  RefreshCw, SwitchCamera, Settings2, Camera,
 } from 'lucide-react'
 import { runAgent } from '../agent'
 import { createLiveSession } from '../live/session'
@@ -136,6 +136,7 @@ export function LiveView({
    * boundary, and it works on both engines without a protocol change.
    */
   const lastDeltaAtRef = useRef(0)
+  const errorTimerRef = useRef(null)
   const TURN_GAP_MS = 1200
 
   const pushDelta = useCallback((role, text) => {
@@ -173,6 +174,27 @@ export function LiveView({
       turnRef.current = { role, text }
     }
   }, [onTranscript])
+
+  const handleModelChange = useCallback((newModel) => {
+    if (!newModel) return
+    setState(prev => ({
+      ...prev,
+      activeProvider: { ...prev.activeProvider, model: newModel }
+    }))
+    sessionRef.current?.setModel?.(newModel, modelCanSee)
+    onModelChange?.(newModel)
+  }, [modelCanSee, onModelChange])
+
+  // Dynamically sync model prop changes without tearing down the live call
+  useEffect(() => {
+    if (model) {
+      sessionRef.current?.setModel?.(model, modelCanSee)
+      setState(prev => ({
+        ...prev,
+        activeProvider: { ...prev.activeProvider, model }
+      }))
+    }
+  }, [model, modelCanSee])
 
   // Keyboard handling for vision modal
   useEffect(() => {
@@ -276,9 +298,14 @@ export function LiveView({
           case 'reconnecting':
             setState({ connectionState: 'reconnecting', state: 'connecting' })
             break
+          case 'warning':
           case 'error':
-            liveMetrics.endSession(liveMetrics.END_REASON.ERROR)
-            setState({ error: e.message, state: 'error', connectionState: 'failed' })
+            // Errors and warnings must NEVER close or tear down the live session!
+            setState({ error: e.message })
+            if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
+            errorTimerRef.current = setTimeout(() => {
+              setState(prev => prev.error === e.message ? { ...prev, error: '' } : prev)
+            }, 7000)
             break
           case 'ended': setState({ state: 'ended' }); break
           default: break
@@ -302,21 +329,22 @@ export function LiveView({
         default:
           msg = err?.message || String(err)
       }
-      setState({ error: msg, state: 'error' })
+      setState({ error: msg })
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
+      errorTimerRef.current = setTimeout(() => {
+        setState(prev => prev.error === msg ? { ...prev, error: '' } : prev)
+      }, 7000)
     })
 
     return () => {
       cancelled = true
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
       const t = turnRef.current
       if (t.role && t.text.trim()) onTranscript?.(t.role, t.text.trim())
-      // A no-op if the session was already ended by handleEnd or by an error.
-      // Reaching here with a session still open means the user navigated away
-      // mid-call — a silent ending, and the one most likely to mean the thing
-      // was not working.
       liveMetrics.endSession(liveMetrics.END_REASON.UNMOUNT)
       session.stop()
     }
-  }, [provider, model, apiKey, voice, voiceEngine, engine])
+  }, [provider, apiKey, voice, voiceEngine, engine])
 
   // Auto-scroll transcript
   useEffect(() => {
@@ -664,7 +692,7 @@ export function LiveView({
         provider={activeProvider.provider || provider}
         model={activeProvider.model || model}
         availableModels={availableModels}
-        onModelChange={(m) => { onModelChange?.(m); setShowSettings(false) }}
+        onModelChange={(m) => { handleModelChange(m); setShowSettings(false) }}
         visionMode={visionMode}
         onVisionMode={(m) => { setState({ visionMode: m }); sessionRef.current?.setVisionMode?.(m) }}
         voiceEngine={liveEngine}
@@ -705,10 +733,7 @@ export function LiveView({
         {availableModels && availableModels.length > 0 ? (
           <select
             value={activeProvider.model || model}
-            onChange={e => {
-              const newModel = e.target.value
-              onModelChange?.(newModel)
-            }}
+            onChange={e => handleModelChange(e.target.value)}
             className="live-badge provider select-badge"
             style={{
               background: 'rgba(255,255,255,0.08)',
@@ -811,11 +836,22 @@ export function LiveView({
         </div>
       </div>
 
-      {state === 'error' && (
-        <div className="live-error">
-          <AlertTriangle size={18} />
-          <p>{error}</p>
-          <button className="btn" onClick={handleEnd}>Close</button>
+      {/* Floating non-blocking toast banner — NEVER closes live */}
+      {error && (
+        <div className="live-toast-banner" role="alert">
+          <AlertTriangle size={16} className="live-toast-icon" />
+          <span className="live-toast-msg">{error}</span>
+          <button
+            type="button"
+            className="live-toast-close"
+            onClick={() => {
+              if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
+              setState({ error: '' })
+            }}
+            aria-label="Dismiss message"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -860,10 +896,10 @@ export function LiveView({
         <button
           className="live-btn"
           onClick={() => setShowDevices(true)}
-          aria-label="Choose camera and microphone"
-          title="Camera & microphone"
+          aria-label="Switch camera and microphone"
+          title="Switch camera & microphone"
         >
-          <Video size={20} />
+          <Camera size={20} />
         </button>
         <button
           className={`live-btn${modelCanSee ? '' : ' warn'}`}

@@ -677,7 +677,7 @@ export function createCascadeSession({
         RECOVERABLE.test(failure) && nextProvider()) {
       return respondTo(userText, retry + 1)
     }
-    emit({ type: 'error', message: failure })
+    emit({ type: 'warning', message: failure })
   }
 
   // ─── Input: continuous recognition ───
@@ -948,6 +948,23 @@ export function createCascadeSession({
     getSpeakerMuted: () => speakerMuted,
     /** Current frame for the vision panel — never opens a second camera. */
     grabFrame: (profile) => (screen || cam)?.grab(true, profile) || null,
+
+    /** Change the active model mid-call without interrupting or dropping the session. */
+    setModel: (newModel, newModelCanSee) => {
+      if (!newModel) return
+      active.model = newModel
+      if (typeof newModelCanSee === 'boolean') {
+        active.modelCanSee = newModelCanSee
+      }
+      emit({ type: 'provider', provider: active.provider, model: active.model })
+    },
+    setProvider: (newProvider, newApiKey, newModel, newModelCanSee) => {
+      if (newProvider) active.provider = newProvider
+      if (newApiKey !== undefined) active.apiKey = newApiKey
+      if (newModel) active.model = newModel
+      if (typeof newModelCanSee === 'boolean') active.modelCanSee = newModelCanSee
+      emit({ type: 'provider', provider: active.provider, model: active.model })
+    },
 
     listDevices: () => enumerate(),
 

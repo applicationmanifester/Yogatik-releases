@@ -261,7 +261,7 @@ You can see them through their camera and hear them through their microphone. Be
         // Auto-stop when browser's "Stop sharing" is clicked
         screen.stream.getVideoTracks()[0].addEventListener('ended', () => enableScreenShare(false))
       } catch {
-        emit({ type: 'error', message: 'Screen sharing was cancelled or not supported.' })
+        emit({ type: 'warning', message: 'Screen sharing was cancelled or not supported.' })
       }
     } else if (!on && screen) {
       clearInterval(screenTimer); screenTimer = null
@@ -382,6 +382,9 @@ You can see them through their camera and hear them through their microphone. Be
      */
     setSpeakerMuted: (v) => { player?.setMuted(v); emit({ type: 'speaker-muted', value: !!v }) },
     isSpeakerMuted: () => !!player?.isMuted(),
+    setModel: (newModel) => {
+      emit({ type: 'provider', provider: 'gemini', model: newModel })
+    },
     get cameraOn() { return !!cam },
     get screenOn() { return !!screen },
   }
