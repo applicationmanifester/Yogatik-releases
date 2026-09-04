@@ -295,6 +295,18 @@ const aborters = new Map()
 export const routeCache = new Map()
 const ROUTE_CACHE_TTL = 5 * 60 * 1000
 
+// ZSRD: Pre-warm agent module promise to avoid dynamic import stall during streaming turn
+let _agentModulePromise = null
+function getAgentModule() {
+  if (!_agentModulePromise) {
+    _agentModulePromise = import('./agent')
+  }
+  return _agentModulePromise
+}
+if (typeof window !== 'undefined' || typeof globalThis !== 'undefined') {
+  getAgentModule().catch(() => {})
+}
+
 export async function streamMessage(body, onToken, onSources, onDone, onError, onStatus, onStreamId, onToolsDetected, onToolResult) {
   const provider = body.provider || await getActiveProvider()
   const apiKey = await db.getSetting(`apikey_${provider}`)
@@ -346,7 +358,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
       let failure = null
       let produced = false
 
-      const { runAgent } = await import('./agent')
+      const { runAgent } = await getAgentModule()
       await runAgent({
         provider: pid, apiKey: key, model: mdl,
         history: body.messages || [],
@@ -399,7 +411,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
             activeMdl = fallbackMdl
             onStatus?.(`${mdl || pid} unavailable — trying ${fallbackMdl}…`)
             failure = null
-            const { runAgent } = await import('./agent')
+            const { runAgent } = await getAgentModule()
             await runAgent({
               provider: pid, apiKey: key, model: fallbackMdl,
               history: body.messages || [],

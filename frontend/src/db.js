@@ -130,7 +130,19 @@ export async function getAgentTraces(conversationId, limit = 50) {
 // through unchanged, and legacy plaintext + cloud-synced keys keep working.
 const isApiKeySetting = (key) => typeof key === 'string' && key.startsWith('apikey_')
 
+// L1-SMC: Ultra-low-latency in-memory cache for settings.
+// Avoids 5-25ms IndexedDB transaction overhead per key on every chat/tool turn.
+const _settingsCache = new Map()
+
+export function _clearSettingsCache() {
+  _settingsCache.clear()
+}
+
 export async function getSetting(key, fallback = null) {
+  if (_settingsCache.has(key)) {
+    const cached = _settingsCache.get(key)
+    return (cached != null) ? cached : fallback
+  }
   const row = await withReopen(() => db.settings.get(key))
   // A row holding null must still yield the fallback: `getSetting(k, '')`
   // returning null put null into controlled inputs. false/0 are kept.
@@ -142,9 +154,12 @@ export async function getSetting(key, fallback = null) {
       value = opened == null ? fallback : opened
     } catch { /* keep raw value if the vault helper is unavailable */ }
   }
+  _settingsCache.set(key, value)
   return value
 }
+
 export async function setSetting(key, value) {
+  _settingsCache.set(key, value)
   let toStore = value
   if (isApiKeySetting(key) && typeof value === 'string' && value) {
     try {
@@ -154,9 +169,19 @@ export async function setSetting(key, value) {
   }
   await withReopen(() => db.settings.put({ key, value: toStore }))
 }
+
 export async function getAllSettings() {
   const rows = await withReopen(() => db.settings.toArray())
-  return Object.fromEntries(rows.map(r => [r.key, r.value]))
+  const obj = Object.fromEntries(rows.map(r => [r.key, r.value]))
+  for (const [k, v] of Object.entries(obj)) {
+    if (!_settingsCache.has(k)) _settingsCache.set(k, v)
+  }
+  return obj
+}
+
+// Eager background priming of settings cache on startup
+if (typeof window !== 'undefined' || typeof globalThis !== 'undefined') {
+  getAllSettings().catch(() => {})
 }
 // ─── Conversations ───
 export async function createConversation(title = 'New Chat', projectId = null, provider = null, model = null, settings = null) {
@@ -359,6 +384,7 @@ export async function importAll(data, mode = 'merge') {
       if (/^apikey_|^synced_|^user$/.test(row.key)) continue   // never restore secrets
       await db.settings.put(row)
     }
+    _clearSettingsCache()
     for (const mem of data.memories || []) {
       if (db.memories) {
         const { id, ...rest } = mem

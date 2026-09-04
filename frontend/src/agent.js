@@ -865,7 +865,7 @@ export async function runAgent({
       throwIfAborted()
       onStatus?.('Searching the web for latest information…')
       try {
-        const searchRes = await executeTool('web_search', { query: userMessage, fast: Boolean(maxTokens && maxTokens <= 200) })
+        const searchRes = await executeTool('web_search', { query: userMessage, fast: true })
         throwIfAborted()
         if (searchRes?.results?.length) {
           toolResults['web_search'] = searchRes

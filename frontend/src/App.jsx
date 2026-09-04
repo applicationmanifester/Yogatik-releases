@@ -46,6 +46,7 @@ import { enqueueOutbox, flushOutbox } from './offlineQueue'
 import { requestPersistence, storageReport, formatBytes } from './storage'
 import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clearLocalModelCache } from './localLLM'
 import { isDirectTimeQuery } from './timeQuery'
+import { matchReflex } from './live/reflexEngine'
 import { isInstalledApp, shareYogatik, nativeShareAvailable } from './share'
 import { groupConversations } from './convGroups'
 import { shouldNotifyTurn, notificationBody, notificationTitle, cleanReply } from './desktopNotify'
@@ -2620,11 +2621,12 @@ export default function App() {
       return next
     })
 
-    if (!attachedFile && !sentImage && isDirectTimeQuery(msgText)) {
+    const reflexAnswer = (!attachedFile && !sentImage) ? matchReflex(msgText) : null
+    if (!attachedFile && !sentImage && (reflexAnswer || isDirectTimeQuery(msgText))) {
       const assistantMsg = {
         createdAt: Date.now(),
         role: 'assistant',
-        content: `It is ${formatDirectTimeAnswer()}.`,
+        content: reflexAnswer || `It is ${formatDirectTimeAnswer()}.`,
         sources: [],
         provider: useProvider,
         model: useModel,
@@ -2645,6 +2647,8 @@ export default function App() {
       setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
       setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
       setStreamIdMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+      try { playCue('complete') } catch {}
+      announce('Response ready')
       return
     }
 
