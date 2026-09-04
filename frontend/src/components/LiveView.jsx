@@ -183,8 +183,12 @@ export function LiveView({
         if (role === 'user') {
           const cleanText = text.trim()
           const cleanLast = last.text.trim()
-          if (cleanLast.toLowerCase() === cleanText.toLowerCase() || cleanLast.toLowerCase().includes(cleanText.toLowerCase())) {
-            lines[lines.length - 1] = { role, text: cleanText.length > cleanLast.length ? text : last.text }
+          const normL = cleanLast.toLowerCase()
+          const normT = cleanText.toLowerCase()
+          if (normL === normT || normL.includes(normT) || normL.startsWith(normT)) {
+            lines[lines.length - 1] = { role, text: last.text }
+          } else if (normT.includes(normL) || normT.startsWith(normL)) {
+            lines[lines.length - 1] = { role, text: cleanText }
           } else {
             lines[lines.length - 1] = { role, text: `${last.text} ${text}`.trim() }
           }
@@ -204,16 +208,33 @@ export function LiveView({
         if (role === 'user') {
           const cleanText = text.trim()
           const cleanLast = last.text.trim()
-          if (cleanLast.toLowerCase() === cleanText.toLowerCase() || cleanLast.toLowerCase().includes(cleanText.toLowerCase())) {
-            transcript[transcript.length - 1] = { ...last, text: cleanText.length > cleanLast.length ? text : last.text, time: Date.now(), streaming: false }
+          const normL = cleanLast.toLowerCase()
+          const normT = cleanText.toLowerCase()
+          if (normL === normT || normL.includes(normT) || normL.startsWith(normT)) {
+            transcript[transcript.length - 1] = { ...last, text: last.text, time: Date.now(), streaming: false }
+          } else if (normT.includes(normL) || normT.startsWith(normL)) {
+            transcript[transcript.length - 1] = { ...last, text: cleanText, time: Date.now(), streaming: false }
           } else {
             transcript[transcript.length - 1] = { ...last, text: `${last.text} ${text}`.trim(), time: Date.now(), streaming: false }
           }
         } else {
-          transcript[transcript.length - 1] = { ...last, text: last.text + text, time: Date.now(), streaming: true }
+          transcript[transcript.length - 1] = {
+            ...last,
+            text: last.text + text,
+            reasoning: last.reasoning || prev.reasoningText || undefined,
+            time: Date.now(),
+            streaming: true,
+          }
         }
       } else {
-        transcript.push({ role, text, type: 'message', time: Date.now(), streaming: true })
+        transcript.push({
+          role,
+          text,
+          type: 'message',
+          time: Date.now(),
+          streaming: true,
+          reasoning: role === 'assistant' ? prev.reasoningText : undefined,
+        })
       }
       return { ...prev, transcript }
     })
@@ -323,7 +344,7 @@ export function LiveView({
             setState(prev => ({
               ...prev,
               thinking: e.value,
-              // When thinking stops, keep reasoningText for user review
+              ...(e.value ? { reasoningText: '', liveStatusText: 'Thinking & formulating response…' } : {}),
             }))
             break
           case 'status':
@@ -337,9 +358,23 @@ export function LiveView({
             setState(prev => {
               const full = e.text || (prev.reasoningText + (e.delta || ''))
               const transcript = [...prev.transcript]
-              const last = transcript[transcript.length - 1]
-              if (last && last.role === 'assistant' && last.type === 'message') {
-                transcript[transcript.length - 1] = { ...last, reasoning: full }
+              let found = false
+              for (let i = transcript.length - 1; i >= 0; i--) {
+                if (transcript[i].role === 'assistant' && transcript[i].type === 'message') {
+                  transcript[i] = { ...transcript[i], reasoning: full }
+                  found = true
+                  break
+                }
+              }
+              if (!found) {
+                transcript.push({
+                  role: 'assistant',
+                  type: 'message',
+                  text: '',
+                  reasoning: full,
+                  time: Date.now(),
+                  streaming: true,
+                })
               }
               return {
                 ...prev,
@@ -1153,6 +1188,9 @@ export function LiveView({
         isOpen={showTranscript}
         onClose={() => setState({ showTranscript: false })}
         transcript={transcript}
+        activeTool={tool}
+        isThinking={thinking}
+        liveStatusText={liveStatusText}
         onCopy={copyText}
         copiedIdx={copiedIdx}
         formatTime={formatTime}

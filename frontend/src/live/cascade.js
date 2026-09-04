@@ -133,12 +133,15 @@ export function sameUtterance(a = '', b = '') {
   return x.startsWith(y) || y.startsWith(x)
 }
 
+export const INCOMPLETE_STARTERS = /^(?:tell me about|what is|how do|how to|who is|where is|can you|could you|explain|search for|find me|look up|show me|give me|what are|why does|why do)\b/i
+
 export function endpointDelay(text = '') {
   const t = String(text).trim()
   if (/[.!?]$/.test(t)) return 200
-  // Semantic continuation gating: If user paused on a connective word, give them more time
+  // Semantic continuation gating: If user paused on a connective word or incomplete starter, give them more time
   if (CONTINUATION_CONNECTORS.test(t)) return 650
   const words = t ? t.split(/\s+/).length : 0
+  if (words < 6 && INCOMPLETE_STARTERS.test(t)) return 650
   if (words >= 8) return 260
   if (words >= 4) return 360
   return 480
@@ -425,19 +428,42 @@ export function createCascadeSession({
   // Without this the session runs two agents at once and talks over itself.
   let turnLock = null
   let queued = null
+  let activeTurnText = ''
 
   function enqueue(text) {
     if (!text.trim()) return
-    if (turnLock) { queued = queued ? `${queued} ${text}` : text; return }
+    const t = text.trim()
+    if (turnLock) {
+      const normActive = activeTurnText.toLowerCase()
+      const normNew = t.toLowerCase()
+      // If incoming text is an extension or completion of the currently running turn
+      // (e.g. user paused mid-sentence, then finished) and voice playback has not started yet:
+      // abort the premature turn and restart with the complete text.
+      if (normNew.startsWith(normActive) && abort && !spoken) {
+        abort.abort()
+        abort = null
+        queued = t
+        return
+      }
+      // If it is the exact same or already contained, ignore duplicate
+      if (normActive === normNew || normActive.startsWith(normNew)) return
+      queued = queued ? (queued.toLowerCase().includes(normNew) ? queued : `${queued} ${t}`) : t
+      return
+    }
     turnLock = (async () => {
       try {
-        await respondTo(text)
+        activeTurnText = t
+        await respondTo(t)
         while (queued && !closed) {
           const next = queued
           queued = null
+          activeTurnText = next
           await respondTo(next)
         }
-      } finally { turnLock = null }
+      } finally {
+        turnLock = null
+        activeTurnText = ''
+      }
     })()
   }
 
@@ -661,8 +687,15 @@ export function createCascadeSession({
         history: history.slice(0, -1),
         userMessage: content,
         toolsEnabled: true, webEnabled: true, disabledTools,
+        maxTokens: 140,
         modelCanSee: active.modelCanSee ?? modelCanSee,
-        persona: `${persona ? persona + '\n\n' : ''}You are in a live spoken conversation, heard through the user's microphone. Reply the way a person speaks: short sentences, no markdown, no lists, no headings, no emoji. Two or three sentences unless asked for more. You have full tools: generate images and videos, create and export files, run code and automated tests and report the results, and search the web — the result is shown on their screen, so just say briefly what you made or found. Never read out long code or file contents aloud. For a big, multi-part request, delegate to specialists that run in parallel (spawn_agents / crew_orchestrator) and then say the result in a sentence or two.\n\n${(active.modelCanSee ?? modelCanSee)
+        persona: `${persona ? persona + '\n\n' : ''}CRITICAL LIVE VOICE DIRECTIVES:
+1. Provide quick, precise, accurate, reliable, and brief info. NEVER elongate, lecture, or ramble.
+2. Limit spoken replies strictly to 1 to 2 short, crisp sentences (under 30 words total).
+3. Deliver the direct answer immediately with zero filler, throat-clearing, or restating the question.
+4. If reporting web search, news, or factual info, state ONLY the single top headline or key fact, and offer to give more details if requested.
+5. Absolute rule: No markdown, no bullet points, no numbered lists, no headings, no bolding, no emojis, no asterisks, no quotes.
+6. You have full tools (image/video gen, file export, code execution, web search). The result appears directly on their screen, so state what was found or completed in one short sentence. Never read long code, data, or search excerpts aloud.\n\n${(active.modelCanSee ?? modelCanSee)
           ? 'You can SEE through the user\'s camera or shared screen: image frames are attached to the conversation when they ask about what is in view. Describe what you actually see.'
           : 'You CANNOT see images directly. When the user asks about their camera or screen, a text description of the current view is inserted automatically as "[Live view (described on-device): …]". Rely ONLY on that description. Never invent, request, or fetch image URLs (e.g. do not make up links like example.com/photo.jpg); if no description was provided, say you could not see it and offer to look again.'}`,
         signal: controller.signal,

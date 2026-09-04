@@ -356,7 +356,7 @@ async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeo
 
 export async function streamChat({
   provider, apiKey, model, messages, tools = null,
-  temperature = 0.7, signal, onToken, onToolCall, onDone, onError, onStatus,
+  temperature = 0.7, maxTokens = null, signal, onToken, onToolCall, onDone, onError, onStatus,
   retriedWithoutTools = false, onToolsRejected = null,
 }) {
   const prov = getProviders()[provider]
@@ -400,6 +400,11 @@ export async function streamChat({
     stream: true,
   }
 
+  if (maxTokens && Number.isFinite(maxTokens)) {
+    body.max_tokens = maxTokens
+    if (provider === 'openai') body.max_completion_tokens = maxTokens
+  }
+
   // Add mild anti-repetition penalty for standard OpenAI/NVIDIA endpoints to prevent N-gram degeneration loops
   if (!prov.isAnthropic && !prov.baseUrl.includes('anthropic')) {
     body.presence_penalty = 0.05
@@ -408,7 +413,7 @@ export async function streamChat({
 
   if (prov.isAnthropic) {
     endpoint = `${prov.baseUrl}/messages`
-    body.max_tokens = 4096
+    body.max_tokens = (maxTokens && Number.isFinite(maxTokens)) ? maxTokens : 4096
     let systemPrompt = ''
     const anthropicMessages = []
     for (const m of messages) {

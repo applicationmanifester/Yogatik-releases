@@ -481,7 +481,7 @@ function collectSources(result) {
  */
 export async function runAgent({
   provider, apiKey, model, history = [], userMessage, userImage = null,
-  toolsEnabled = true, webEnabled = true, disabledTools = [], persona = null, temperature = 0.7, signal,
+  toolsEnabled = true, webEnabled = true, disabledTools = [], persona = null, temperature = 0.7, maxTokens = null, signal,
   conversationId = null, projectId = null,
   modelCanSee = false, localVisionEnabled = true, maxRounds: explicitMaxRounds = null,
   onToken, onStatus, onToolStart, onToolResult, onDone, onError, onSources,
@@ -973,7 +973,7 @@ export async function runAgent({
     onStatus?.('🧠 Thinking & formulating response…')
 
     streamChat({
-      provider, apiKey, model, messages, tools, temperature, signal,
+      provider, apiKey, model, messages, tools, temperature, maxTokens, signal,
       // In prompted mode the reply may BE a tool call, so it is buffered and
       // only shown once we know it is prose. Even in native mode, models like Nemotron/Qwen
       // may emit raw XML tool calls, so we avoid streaming raw tool tags into the user's bubble.

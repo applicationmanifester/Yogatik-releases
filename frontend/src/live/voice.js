@@ -83,6 +83,14 @@ export function createSpeaker({
       .catch(() => { onEngine('system'); return false })   // stay robotic, stay working
   }
 
+  // Pre-warm the browser's speech synthesis engine and voice catalog immediately
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    try {
+      window.speechSynthesis.getVoices()
+      if (window.speechSynthesis.paused) window.speechSynthesis.resume()
+    } catch { /* ignore */ }
+  }
+
   const waitForNeural = async () => {
     if (neuralReady) return true
     if (!ready || !cached()) return false
