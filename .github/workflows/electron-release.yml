@@ -1,0 +1,101 @@
+name: Build desktop apps (Windows, macOS, Linux)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish into, e.g. v6.1.0'
+        required: false
+        default: 'v6.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            build: npm run electron:build
+          - os: macos-latest
+            name: macOS
+            build: npm run electron:build:mac
+          - os: ubuntu-latest
+            name: Linux
+            build: npm run electron:build:linux
+
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          repository: applicationmanifester/Yogatik
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Build desktop app
+        working-directory: frontend
+        run: ${{ matrix.build }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: yogatik-${{ matrix.name }}
+          retention-days: 1
+          if-no-files-found: warn
+          path: |
+            frontend/release-electron/*.exe
+            frontend/release-electron/*.dmg
+            frontend/release-electron/*.zip
+            frontend/release-electron/*.AppImage
+            frontend/release-electron/*.deb
+            frontend/release-electron/*.blockmap
+            frontend/release-electron/latest*.yml
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || 'v6.1.0' }}
+          name: 'Yogatik Desktop ${{ inputs.tag || ''v6.1.0'' }}'
+          body: |
+            Desktop builds for Windows, macOS and Linux — download under Assets.
+
+            * **Windows** — `Yogatik-Setup.exe`
+            * **macOS (Apple Silicon M1/M2/M3)** — `Yogatik-arm64.dmg` or `Yogatik-arm64.zip`
+            * **macOS (Intel)** — `Yogatik-x64.dmg` or `Yogatik-x64.zip`
+            * **Linux** — `Yogatik.AppImage` or `Yogatik.deb`
+
+            These builds are unsigned. macOS will need right-click → Open the
+            first time, and Windows SmartScreen may warn; that is expected until
+            code-signing certificates are added.
+
+            `latest*.yml` and `.blockmap` enable in-app auto-update.
+          fail_on_unmatched_files: false
+          files: |
+            frontend/release-electron/*.exe
+            frontend/release-electron/*.dmg
+            frontend/release-electron/*.zip
+            frontend/release-electron/*.AppImage
+            frontend/release-electron/*.deb
+            frontend/release-electron/*.blockmap
+            frontend/release-electron/latest*.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
