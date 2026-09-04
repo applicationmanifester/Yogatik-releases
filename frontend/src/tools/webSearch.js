@@ -433,7 +433,8 @@ export const webSearchTool = {
     const cacheKey = `${normKey}_${recency}_${site || ''}`
     const cached = SEARCH_CACHE.get(cacheKey)
     if (cached && (Date.now() - cached.ts) < SEARCH_CACHE_TTL) {
-      return { ...cached.data, cached: true }
+      const sliced = (cached.data.results || []).slice(0, n)
+      return { ...cached.data, results: sliced, count: sliced.length, cached: true }
     }
 
     const braveKey = await getSetting('apikey_brave')
