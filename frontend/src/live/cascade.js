@@ -765,17 +765,24 @@ export function createCascadeSession({
     const toolMode = await getToolMode(active.provider, active.model).catch(() => 'native')
 
     await new Promise((resolve) => {
+      let watchdogTimedOut = false
+      let timeoutMessage = ''
+
       // 12s live response watchdog: If provider hangs with 0 tokens, failover to next provider
       let liveTurnTimer = setTimeout(() => {
         if (!produced && thinking && !controller.signal.aborted) {
-          controller.abort(new Error(`Timeout: ${active.provider || 'model'} did not respond within 12s`))
+          watchdogTimedOut = true
+          timeoutMessage = `Timeout: ${active.provider || 'model'} did not respond within 12s`
+          controller.abort(new Error(timeoutMessage))
         }
       }, 12000)
 
       // 35s hard turn ceiling: ensure watchdog safety without truncating thorough thinking
       let hardTurnCeilingTimer = setTimeout(() => {
         if (thinking && !controller.signal.aborted) {
-          controller.abort(new Error(`Live voice limit: ${active.model || 'model'} took over 35s to formulate response`))
+          watchdogTimedOut = true
+          timeoutMessage = `Live voice limit: ${active.model || 'model'} took over 35s to formulate response`
+          controller.abort(new Error(timeoutMessage))
         }
       }, 35000)
 
@@ -884,6 +891,16 @@ export function createCascadeSession({
           if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
           if (hardTurnCeilingTimer) { clearTimeout(hardTurnCeilingTimer); hardTurnCeilingTimer = null }
 
+          if (watchdogTimedOut) {
+            if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
+            buffer = ''
+            spoken = ''
+            failure = timeoutMessage || 'Response timed out'
+            abort = null
+            resolve()
+            return
+          }
+
           // Clean exit if aborted: never speak partial sentences, never report failure, never retry
           if (controller.signal.aborted || aborted) {
             if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
@@ -941,6 +958,15 @@ export function createCascadeSession({
           if (hardTurnCeilingTimer) { clearTimeout(hardTurnCeilingTimer); hardTurnCeilingTimer = null }
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
 
+          if (watchdogTimedOut) {
+            buffer = ''
+            spoken = ''
+            failure = timeoutMessage || e?.message || 'Response timed out'
+            abort = null
+            resolve()
+            return
+          }
+
           // Clean exit if aborted: user stopped or cancelled the turn
           if (controller.signal.aborted || e?.name === 'AbortError') {
             buffer = ''
@@ -955,11 +981,21 @@ export function createCascadeSession({
           abort = null
           resolve()
         },
+      }).catch((e) => {
+        if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
+        if (hardTurnCeilingTimer) { clearTimeout(hardTurnCeilingTimer); hardTurnCeilingTimer = null }
+        if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
+        if (watchdogTimedOut) {
+          failure = timeoutMessage || e?.message || 'Response timed out'
+        } else if (!controller.signal.aborted && e?.name !== 'AbortError') {
+          failure = e?.message || String(e)
+        }
+        resolve()
       })
     })
 
-    // If turn was aborted or session closed, exit immediately without failover retries
-    if (controller.signal.aborted || closed) {
+    // If turn was aborted by user or session closed, exit immediately without failover retries
+    if ((controller.signal.aborted && !watchdogTimedOut) || closed) {
       abort = null
       return
     }
@@ -1008,9 +1044,14 @@ export function createCascadeSession({
     let committed = ''
     let committedAt = 0
     const COMMIT_ECHO_MS = 1200
+    let sppsTimer = null
+    let sppsLastQuery = ''
 
     clearPendingSpeech = () => {
       clearEndpoint()
+      clearTimeout(sppsTimer)
+      sppsTimer = null
+      sppsLastQuery = ''
       pendingInterim = ''
       committed = ''
       committedAt = 0
@@ -1045,6 +1086,8 @@ export function createCascadeSession({
       if (finalText.trim()) {
         const text = finalText.trim()
         clearEndpoint()
+        clearTimeout(sppsTimer)
+        sppsTimer = null
         pendingInterim = ''
         // Drop the final if the endpoint timer already sent this.
         if (Date.now() - committedAt < COMMIT_ECHO_MS && sameUtterance(text, committed)) return
@@ -1057,9 +1100,14 @@ export function createCascadeSession({
         pendingInterim = interim.trim()
         clearEndpoint()
 
-        // Speculative Parallel Pre-Search (SPPS):
-        if (isRealtimeOrSearchQuery(pendingInterim) && pendingInterim.split(/\s+/).length >= 3) {
-          webSearchTool.execute({ query: pendingInterim, count: 4, fast: true }).catch(() => {})
+        // Speculative Parallel Pre-Search (SPPS) — debounced & deduped:
+        clearTimeout(sppsTimer)
+        const q = pendingInterim.trim()
+        if (isRealtimeOrSearchQuery(q) && q.split(/\s+/).length >= 4 && q !== sppsLastQuery) {
+          sppsTimer = setTimeout(() => {
+            sppsLastQuery = q
+            webSearchTool.execute({ query: q, count: 4, fast: true }).catch(() => {})
+          }, 600)
         }
 
         // Adaptive: a complete-sounding phrase commits sooner than a fragment.
@@ -1067,6 +1115,8 @@ export function createCascadeSession({
           const text = pendingInterim
           pendingInterim = ''
           endpointTimer = null
+          clearTimeout(sppsTimer)
+          sppsTimer = null
           if (text.length >= 2) {
             committed = text
             committedAt = Date.now()
@@ -1187,7 +1237,11 @@ export function createCascadeSession({
     }
   }
 
-  function stop() {
+  function stop(turnOnly = false) {
+    if (turnOnly === true) {
+      interrupt(true)
+      return
+    }
     if (closed) return
     closed = true
     document.removeEventListener('visibilitychange', onVisibility)
@@ -1209,6 +1263,8 @@ export function createCascadeSession({
   return {
     start,
     stop,
+    stopTurn: () => interrupt(true),
+    interrupt: (userExplicit = true) => interrupt(userExplicit),
     enableCamera,
     enableScreenShare,
     sendText: (t) => enqueue(t),

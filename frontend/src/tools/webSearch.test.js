@@ -100,4 +100,33 @@ describe('web_search (Brave)', () => {
     expect(opts.credentials).toBe(true)
     expect(opts.headers['X-Subscription-Token']).toBe('brave-key-123')
   })
+
+  it('falls back to Google News XML via proxyText when rss2json returns 429', async () => {
+    const NEWS_XML = `
+      <rss version="2.0"><channel>
+        <item>
+          <title>India launches new space initiative - Times</title>
+          <link>https://news.google.com/rss/articles/123</link>
+          <description>&lt;a href="..."&gt;India makes massive breakthrough&lt;/a&gt;</description>
+          <pubDate>Sat, 05 Sep 2026 10:00:00 GMT</pubDate>
+        </item>
+      </channel></rss>
+    `
+    // Mock proxyText for Google News RSS URL
+    proxyText.mockImplementation((url) => {
+      if (typeof url === 'string' && url.includes('news.google.com/rss')) {
+        return Promise.resolve(NEWS_XML)
+      }
+      return Promise.resolve('<html><body></body></html>')
+    })
+    globalThis.fetch.mockResolvedValue({ status: 429, ok: false })
+
+    const res = await webSearchTool.execute({ query: "today's news in India", count: 4 })
+    expect(res.results.length).toBeGreaterThan(0)
+    const newsItem = res.results.find(r => r.engine === 'google_news')
+    expect(newsItem).toBeDefined()
+    expect(newsItem.title).toContain('India launches new space initiative')
+    expect(newsItem.url).toBe('https://news.google.com/rss/articles/123')
+    expect(newsItem.snippet).toContain('India makes massive breakthrough')
+  })
 })

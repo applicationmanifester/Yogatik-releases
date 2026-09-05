@@ -721,9 +721,14 @@ export async function runAgent({
     }
   }
 
-  // Pre-fetch YouTube transcript/details when a URL is present so every provider
-  // sees the same grounded context instead of guessing from the bare link.
-  const ytMatch = userMessage && userMessage.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
+  const toolResults = {}
+  const sources = []
+  let fullContent = ''
+
+  try {
+    // Pre-fetch YouTube transcript/details when a URL is present so every provider
+    // sees the same grounded context instead of guessing from the bare link.
+    const ytMatch = userMessage && userMessage.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
   if (ytMatch) {
     throwIfAborted()
     onStatus?.('Fetching YouTube video details…')
@@ -795,8 +800,6 @@ export async function runAgent({
       `[Download CSV Spreadsheet (.csv)](spreadsheet.csv)\n`
   }
 
-  const toolResults = {}
-  const sources = []
   // Every distinct tool call made this turn, keyed by name + arguments, so an
   // identical one is answered from here instead of being run again.
   const seenCalls = new Map()
@@ -852,7 +855,7 @@ export async function runAgent({
       throwIfAborted()
       onStatus?.('Searching social media for live posts…')
       try {
-        const socialRes = await executeTool('social_search', { query: userMessage })
+        const socialRes = await executeTool('social_search', { query: userMessage }, { signal, ctx: executionCtx })
         throwIfAborted()
         if (socialRes?.results?.length) {
           toolResults['social_search'] = socialRes
@@ -867,13 +870,13 @@ export async function runAgent({
           }
         }
       } catch (e) {
-        if (e.name === 'AbortError') throw e
+        if (e.name === 'AbortError' || signal?.aborted) throw e
       }
     } else if (isLocalProvider || isRealtimeOrSearchQuery(userMessage)) {
       throwIfAborted()
       onStatus?.('Searching the web for latest information…')
       try {
-        const searchRes = await executeTool('web_search', { query: userMessage, fast: true })
+        const searchRes = await executeTool('web_search', { query: userMessage, fast: true }, { signal, ctx: executionCtx })
         throwIfAborted()
         if (searchRes?.results?.length) {
           toolResults['web_search'] = searchRes
@@ -888,7 +891,7 @@ export async function runAgent({
           }
         }
       } catch (e) {
-        if (e.name === 'AbortError') throw e
+        if (e.name === 'AbortError' || signal?.aborted) throw e
       }
     }
   }
@@ -967,7 +970,7 @@ export async function runAgent({
   // the user with a blank bubble. Shared with the bubble and the activity panel.
   const visibleAnswer = (text) => sharedVisibleAnswer(text)
 
-  let fullContent = ''   // everything shown to the user, across all rounds
+  fullContent = ''   // everything shown to the user, across all rounds
   let roundContent = ''  // text from the current round only
   let toolCallsToProcess = []
   let forcedFinal = false  // a 'stop using tools, answer now' pass already ran
@@ -1122,7 +1125,6 @@ export async function runAgent({
     return attempts
   }
 
-  try {
     // First LLM call — may return text or tool calls
     let first = await processStream()
     if (first?.rejectedTools) {
@@ -1518,8 +1520,8 @@ export async function runAgent({
     onDone?.({ content: cleanedContent, toolResults, sources, toolMode, promptLeakDetected: leak.leaked, trace: traceRef ? [...traceRef] : undefined })
   } catch (err) {
     let cleanedContent = stripToolCallSyntax(fullContent)
-    if (err.name === 'AbortError') {
-      // User pressed Stop: keep whatever was generated instead of dropping it.
+    if (err?.name === 'AbortError' || signal?.aborted) {
+      // User pressed Stop or turn was aborted: keep whatever was generated instead of dropping it.
       const leak = checkCanaryForLeak(canaryToken, cleanedContent, executionCtx.conversationId)
       if (leak.redacted) cleanedContent = leak.text
       onDone?.({ content: cleanedContent, toolResults, sources, aborted: true, promptLeakDetected: leak.leaked, trace: traceRef ? [...traceRef] : undefined })

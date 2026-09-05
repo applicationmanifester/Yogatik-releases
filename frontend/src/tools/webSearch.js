@@ -94,28 +94,88 @@ async function wikipediaSearch(query, count) {
   }
 }
 
-/** Google News RSS Search — free keyless real-time news search via rss2json */
+const NEWS_CACHE = new Map()
+const NEWS_CACHE_TTL = 5 * 60_000 // 5 minutes
+let rss2jsonCooldownUntil = 0
+
+function parseGoogleNewsXml(xml, count) {
+  if (!xml || typeof xml !== 'string') return []
+  try {
+    const doc = new DOMParser().parseFromString(xml, 'text/xml')
+    const items = [...doc.querySelectorAll('item')].slice(0, count)
+    return items.map(item => ({
+      title: (item.querySelector('title')?.textContent || '').replace(/<[^>]+>/g, '').trim(),
+      url: (item.querySelector('link')?.textContent || item.querySelector('guid')?.textContent || '').trim(),
+      snippet: (item.querySelector('description')?.textContent || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 250),
+      published: item.querySelector('pubDate')?.textContent || undefined,
+      engine: 'google_news',
+    })).filter(r => r.url && r.title)
+  } catch {
+    return []
+  }
+}
+
+/** Google News RSS Search — free keyless real-time news search via direct proxy & rss2json fallback */
 async function googleNewsSearch(query, count) {
   try {
     const cleanQ = sanitizeSearchQuery(query)
-    // These were pinned to hl=en-US&gl=US&ceid=US:en, so "what is in the news"
-    // returned American coverage in Mumbai, Berlin and Lagos alike — the most
-    // visibly wrong regional behaviour in the app, and invisible to anyone
-    // testing from the US.
+    if (!cleanQ) return []
+
+    // 1. Check in-memory news cache (0ms instant return, avoids hitting external APIs repeatedly)
+    const normKey = cleanQ.toLowerCase()
+    const cached = NEWS_CACHE.get(normKey)
+    if (cached && (Date.now() - cached.ts) < NEWS_CACHE_TTL) {
+      return cached.results.slice(0, count)
+    }
+
     const L = localeSnapshot()
     const { hl, gl, ceid } = newsParams(L.locale, L.region)
     const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cleanQ)}&hl=${encodeURIComponent(hl)}&gl=${encodeURIComponent(gl)}&ceid=${encodeURIComponent(ceid)}`
-    // rss2json converts RSS → JSON without CORS issues (Google News blocks datacenter IPs directly)
-    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`
-    const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(6000) }).then(r => r.json()).catch(() => null)
-    if (!resp?.items?.length) return []
-    return resp.items.slice(0, count).map(item => ({
-      title: (item.title || '').trim(),
-      url: (item.link || '').trim(),
-      snippet: (item.description || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 250),
-      published: item.pubDate || undefined,
-      engine: 'google_news',
-    })).filter(r => r.url && r.title)
+
+    let results = []
+
+    // 2. Try direct CORS proxy first if available (bypasses api.rss2json.com rate limits completely)
+    try {
+      const xml = await proxyText(rssUrl, { timeout: 4000 })
+      results = parseGoogleNewsXml(xml, count)
+    } catch {
+      results = []
+    }
+
+    // 3. If direct proxy returned empty/failed and rss2json is not in 429 cooldown:
+    if (!results.length && Date.now() > rss2jsonCooldownUntil) {
+      try {
+        const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`
+        const res = await fetch(apiUrl, { signal: AbortSignal.timeout(4000) })
+        if (res.status === 429) {
+          // Rate limited: back off for 15 minutes to stop console errors
+          rss2jsonCooldownUntil = Date.now() + 15 * 60_000
+        } else if (res.ok) {
+          const resp = await res.json()
+          if (resp?.items?.length) {
+            results = resp.items.slice(0, count).map(item => ({
+              title: (item.title || '').trim(),
+              url: (item.link || '').trim(),
+              snippet: (item.description || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 250),
+              published: item.pubDate || undefined,
+              engine: 'google_news',
+            })).filter(r => r.url && r.title)
+          }
+        }
+      } catch {
+        /* skip */
+      }
+    }
+
+    if (results.length) {
+      if (NEWS_CACHE.size > 50) {
+        const firstKey = NEWS_CACHE.keys().next().value
+        NEWS_CACHE.delete(firstKey)
+      }
+      NEWS_CACHE.set(normKey, { results, ts: Date.now() })
+    }
+
+    return results
   } catch {
     return []
   }
@@ -126,16 +186,25 @@ async function arxivSearch(query, count) {
   try {
     const cleanQ = sanitizeSearchQuery(query)
     const rssUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(cleanQ)}&max_results=${count}`
-    const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`
-    const resp = await fetch(url).then(r => r.json()).catch(() => null)
-    if (resp?.items?.length) {
-      return resp.items.slice(0, count).map(item => ({
-        title: (item.title || '').replace(/\s+/g, ' ').trim(),
-        url: (item.link || item.guid || '').trim(),
-        snippet: (item.description || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 250),
-        published: item.pubDate || undefined,
-        engine: 'arxiv',
-      })).filter(r => r.url && r.title)
+    if (Date.now() > rss2jsonCooldownUntil) {
+      try {
+        const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`
+        const resp = await fetch(url, { signal: AbortSignal.timeout(4000) })
+        if (resp.status === 429) {
+          rss2jsonCooldownUntil = Date.now() + 15 * 60_000
+        } else if (resp.ok) {
+          const data = await resp.json()
+          if (data?.items?.length) {
+            return data.items.slice(0, count).map(item => ({
+              title: (item.title || '').replace(/\s+/g, ' ').trim(),
+              url: (item.link || item.guid || '').trim(),
+              snippet: (item.description || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 250),
+              published: item.pubDate || undefined,
+              engine: 'arxiv',
+            })).filter(r => r.url && r.title)
+          }
+        }
+      } catch {}
     }
     const xml = await proxyText(rssUrl)
     const doc = new DOMParser().parseFromString(xml, 'text/xml')
@@ -387,11 +456,13 @@ const SEARCH_CACHE_TTL = 5 * 60_000 // 5 minutes
 
 function withFastTimeout(promise, ms = 2200) {
   let timer
+  // Ensure the underlying promise has its own catch handler so it never triggers an unhandled promise rejection
+  const safePromise = Promise.resolve(promise).catch(() => [])
   const timeoutPromise = new Promise(resolve => {
     timer = setTimeout(() => resolve([]), ms)
   })
   return Promise.race([
-    promise.then(res => { clearTimeout(timer); return res }),
+    safePromise.then(res => { clearTimeout(timer); return res }),
     timeoutPromise
   ]).catch(() => [])
 }

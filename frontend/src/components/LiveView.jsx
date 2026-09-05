@@ -994,7 +994,13 @@ export function LiveView({
 
   const handleStopTurn = useCallback(() => {
     try {
-      sessionRef.current?.stop?.(true)
+      if (typeof sessionRef.current?.stopTurn === 'function') {
+        sessionRef.current.stopTurn()
+      } else if (typeof sessionRef.current?.interrupt === 'function') {
+        sessionRef.current.interrupt(true)
+      } else {
+        sessionRef.current?.stop?.(true)
+      }
     } catch (e) {
       console.warn('Error interrupting live turn:', e)
     }
