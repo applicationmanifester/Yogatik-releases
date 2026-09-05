@@ -63,6 +63,7 @@ export function LiveTranscriptPanel({
   activeModel,
 }) {
   const bodyRef = useRef(null)
+  const transcriptEndRef = useRef(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterType, setFilterType] = useState('all') // 'all' | 'user' | 'assistant' | 'tool' | 'status'
 

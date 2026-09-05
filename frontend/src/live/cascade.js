@@ -575,7 +575,8 @@ export function createCascadeSession({
   /** Grab the frames this question actually needs, or nothing. */
   function visualParts(userText) {
     const src = screen || cam
-    if (!modelCanSee || visionMode === 'off') return null
+    const canSee = active.modelCanSee ?? modelCanSee
+    if (!canSee || visionMode === 'off') return null
 
     // 'always' + a live source → attach a frame every turn (model watches).
     const always = visionMode === 'always' && !!src
@@ -614,7 +615,8 @@ export function createCascadeSession({
    */
   async function describeIfVisual(userText) {
     const src = screen || cam
-    if (modelCanSee || !src || visionMode === 'off') return null
+    const canSee = active.modelCanSee ?? modelCanSee
+    if (canSee || !src || visionMode === 'off') return null
     // 'always' → describe every turn. 'auto' → on visual questions, or reuse a
     // frame auto-scan already flagged as changed. This is what lets ANY model,
     // vision-capable or not, "see" the live camera/screen and answer about it.
@@ -692,7 +694,8 @@ export function createCascadeSession({
       // Non-vision model + shared camera/screen: give it eyes on-device ONLY when
       // the question is actually visual or visionMode is 'always'.
       const src = screen || cam
-      const needsLocalVision = !modelCanSee && src && visionMode !== 'off' && (visionMode === 'always' || isVisualQuestion(userText) || watched)
+      const canSee = active.modelCanSee ?? modelCanSee
+      const needsLocalVision = !canSee && src && visionMode !== 'off' && (visionMode === 'always' || isVisualQuestion(userText) || watched)
       if (needsLocalVision) {
         const line = pickFiller(['identify'], { announced: filler.announced, last: filler.last })
         if (line) { filler.announced = true; filler.last = line; speak(line) }
