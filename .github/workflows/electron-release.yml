@@ -1,35 +1,20 @@
-name: Build desktop apps (Windows, macOS, Linux)
+name: Build web app and desktop apps (Windows, macOS, Linux)
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to publish into, e.g. v6.1.0'
+        description: 'Release tag to publish into, e.g. v6.2.0'
         required: false
-        default: 'v6.1.0'
+        default: 'v6.2.0'
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            name: Windows
-            build: npm run electron:build
-          - os: macos-latest
-            name: macOS
-            build: npm run electron:build:mac
-          - os: ubuntu-latest
-            name: Linux
-            build: npm run electron:build:linux
-
-    runs-on: ${{ matrix.os }}
-    name: ${{ matrix.name }}
-
+  build-web:
+    name: Web App
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout source repository
         uses: actions/checkout@v4
@@ -47,13 +32,97 @@ jobs:
         working-directory: frontend
         run: npm install --no-audit --no-fund
 
+      - name: Build web application
+        working-directory: frontend
+        run: npm run build
+
+      - name: Package web distribution zip
+        run: |
+          cd frontend/dist
+          zip -r ../../yogatik-web-dist.zip .
+          cd ../..
+
+      - name: Upload web app artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yogatik-web-dist
+          retention-days: 7
+          path: yogatik-web-dist.zip
+
+      - name: Publish Web App to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || 'v6.2.0' }}
+          name: 'Yogatik ${{ inputs.tag || ''v6.2.0'' }}'
+          body: |
+            ## Yogatik ${{ inputs.tag || 'v6.2.0' }} — Web & Desktop Releases
+
+            Download installers and standalone distributions below under **Assets**:
+
+            * **Web App (Self-Hosted / Static)** — `yogatik-web-dist.zip` (extract and serve with any web server, Nginx, or Caddy)
+            * **Windows** — `Yogatik-Setup.exe`
+            * **macOS (Apple Silicon M1/M2/M3/M4)** — `Yogatik-arm64.dmg` or `Yogatik-arm64.zip`
+            * **macOS (Intel)** — `Yogatik-x64.dmg` or `Yogatik-x64.zip`
+            * **Linux** — `Yogatik.AppImage` or `Yogatik.deb`
+
+            ### Notes
+            * Desktop builds are unsigned. macOS may require right-click → Open the first time.
+            * `latest*.yml` and `.blockmap` enable seamless in-app desktop auto-updates.
+          fail_on_unmatched_files: false
+          files: |
+            yogatik-web-dist.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-desktop:
+    name: Desktop - ${{ matrix.name }}
+    needs: [build-web]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            build: npm run electron:build
+          - os: macos-latest
+            name: macOS
+            build: npm run electron:build:mac
+          - os: ubuntu-latest
+            name: Linux
+            build: npm run electron:build:linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          repository: applicationmanifester/Yogatik
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libasound2-dev libpulse-dev
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
       - name: Build desktop app
         working-directory: frontend
         run: ${{ matrix.build }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Upload artefacts
+      - name: Upload desktop artefacts
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
@@ -69,24 +138,11 @@ jobs:
             frontend/release-electron/*.blockmap
             frontend/release-electron/latest*.yml
 
-      - name: Publish to GitHub Release
+      - name: Publish Desktop App to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag || 'v6.1.0' }}
-          name: 'Yogatik Desktop ${{ inputs.tag || ''v6.1.0'' }}'
-          body: |
-            Desktop builds for Windows, macOS and Linux — download under Assets.
-
-            * **Windows** — `Yogatik-Setup.exe`
-            * **macOS (Apple Silicon M1/M2/M3)** — `Yogatik-arm64.dmg` or `Yogatik-arm64.zip`
-            * **macOS (Intel)** — `Yogatik-x64.dmg` or `Yogatik-x64.zip`
-            * **Linux** — `Yogatik.AppImage` or `Yogatik.deb`
-
-            These builds are unsigned. macOS will need right-click → Open the
-            first time, and Windows SmartScreen may warn; that is expected until
-            code-signing certificates are added.
-
-            `latest*.yml` and `.blockmap` enable in-app auto-update.
+          tag_name: ${{ inputs.tag || 'v6.2.0' }}
+          name: 'Yogatik ${{ inputs.tag || ''v6.2.0'' }}'
           fail_on_unmatched_files: false
           files: |
             frontend/release-electron/*.exe
