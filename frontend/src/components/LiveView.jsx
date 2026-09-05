@@ -72,6 +72,7 @@ export function LiveView({
   const [providerDropdownOpen, setProviderDropdownOpen] = useState(false)
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false)
   const [isAutoPickingFastest, setIsAutoPickingFastest] = useState(false)
+  const [endConfirm, setEndConfirm] = useState(false)
   const providerDropdownRef = useRef(null)
   const modelDropdownRef = useRef(null)
 
@@ -431,63 +432,37 @@ export function LiveView({
   const handleAutoPickFastest = useCallback(async () => {
     if (isAutoPickingFastest) return
     setIsAutoPickingFastest(true)
-    showHudNotice('⚡ Probing fastest live model…')
+    showHudNotice(`⚡ Probing fastest ${curProvider} model…`)
     try {
+      // Always probe ONLY the currently-selected provider.
+      // The user has chosen that provider intentionally; switching to
+      // Groq because NVIDIA is slow would be confusing and invisible.
       let winner = null
-      let targetProv = curProvider
 
-      // 1. First probe candidate models for the current provider
       try {
         const res = await autoPickModel(curProvider, { max: 4, timeoutMs: 6000 })
-        if (res?.model) {
-          winner = res
-        }
+        if (res?.model) winner = res
       } catch (err) {
         console.warn(`Auto-pick on ${curProvider} failed:`, err)
       }
 
-      // 2. If current provider has no key or failed, try other configured providers in order of known speed
-      if (!winner) {
-        const fastOrder = ['groq', 'gemini', 'nvidia', 'openai', 'anthropic', 'cerebras', 'deepseek']
-        const readyAltProviders = fastOrder.filter(p => p !== curProvider && isProviderReady(p, allProviders?.[p]))
-        for (const altP of readyAltProviders) {
-          try {
-            showHudNotice(`⚡ Testing ${allProviders[altP]?.name || altP}…`)
-            const res = await autoPickModel(altP, { max: 3, timeoutMs: 5000 })
-            if (res?.model) {
-              winner = res
-              targetProv = altP
-              break
-            }
-          } catch {
-            // try next
-          }
-        }
-      }
-
       if (winner) {
-        const isDiff = targetProv !== curProvider
+        sessionRef.current?.setModel?.(winner.model, modelCanSee)
+        onModelChange?.(winner.model)
         setState(prev => ({
           ...prev,
-          activeProvider: { provider: targetProv, model: winner.model }
+          activeProvider: { provider: curProvider, model: winner.model }
         }))
-        if (isDiff) {
-          sessionRef.current?.setProvider?.(targetProv, undefined, winner.model, modelCanSee)
-          onProviderChange?.(targetProv, winner.model)
-        } else {
-          sessionRef.current?.setModel?.(winner.model, modelCanSee)
-          onModelChange?.(winner.model)
-        }
-        showHudNotice(`⚡ Fastest: ${winner.model.split('/').pop()} (${winner.latencyMs}ms)`)
+        showHudNotice(`⚡ Fastest on ${curProvider}: ${winner.model.split('/').pop()} (${winner.latencyMs}ms)`)
       } else {
-        // Fallback: pick the first preferred or non-reasoning fast model
+        // Static fallback: pick a known-fast model from the current provider's list
         const candidates = (allProviders[curProvider]?.models || availableModels || [])
-        const fastCandidate = candidates.find(m => /flash|mini|instant|8b|7b/i.test(m) && !/r1|reason|120b|671b|kosmos/i.test(m)) || candidates[0]
+        const fastCandidate = candidates.find(m => /flash|mini|instant|8b|7b|turbo|haiku/i.test(m) && !/r1|reason|120b|671b|kosmos/i.test(m)) || candidates[0]
         if (fastCandidate) {
           handleModelChange(fastCandidate)
-          showHudNotice(`⚡ Switched to ${fastCandidate.split('/').pop()}`)
+          showHudNotice(`⚡ ${curProvider} fastest: ${fastCandidate.split('/').pop()}`)
         } else {
-          showHudNotice('⚠️ No fast model found. Check API keys.')
+          showHudNotice(`⚠️ No fast model found for ${curProvider}.`)
         }
       }
     } catch (e) {
@@ -495,7 +470,7 @@ export function LiveView({
     } finally {
       setIsAutoPickingFastest(false)
     }
-  }, [isAutoPickingFastest, curProvider, allProviders, isProviderReady, availableModels, modelCanSee, onProviderChange, onModelChange, handleModelChange, showHudNotice])
+  }, [isAutoPickingFastest, curProvider, allProviders, availableModels, modelCanSee, onModelChange, handleModelChange, showHudNotice])
 
   // Dynamically sync model prop changes without tearing down the live call
   useEffect(() => {
@@ -1993,7 +1968,7 @@ export function LiveView({
         >
           <Settings2 size={20} />
         </button>
-        <button className="live-btn end" onClick={handleEnd} aria-label="End call" title="End call">
+        <button className="live-btn end" onClick={() => setEndConfirm(true)} aria-label="End call" title="End call">
           <PhoneOff size={22} />
         </button>
         <button
@@ -2104,6 +2079,75 @@ export function LiveView({
         activeModel={activeProvider.model || model}
         onSelectModel={handlePickModelFromSearch}
       />
+      {/* ─── End-call confirmation modal ─── */}
+      {endConfirm && (
+        <div
+          className="vision-modal-overlay"
+          style={{ zIndex: 500 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setEndConfirm(false) }}
+        >
+          <div style={{
+            background: 'var(--live-modal-bg, rgba(20,24,34,.96))',
+            border: '1px solid var(--live-modal-border, rgba(255,255,255,.12))',
+            borderRadius: 20,
+            padding: '32px 28px 24px',
+            width: 'min(340px, 88vw)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+            textAlign: 'center',
+            boxShadow: '0 24px 64px rgba(0,0,0,.45)',
+            animation: 'vision-slide-up .25s cubic-bezier(.16,1,.3,1)',
+          }}>
+            {/* Orange phone-off icon */}
+            <div style={{
+              width: 60, height: 60, borderRadius: '50%',
+              background: 'var(--accent-gradient, linear-gradient(135deg,#ff6b35,#f7c948))',
+              display: 'grid', placeItems: 'center',
+              boxShadow: '0 0 28px var(--accent-glow, rgba(255,107,53,.4))',
+            }}>
+              <PhoneOff size={26} color="#fff" />
+            </div>
+            <h3 style={{
+              margin: 0, fontSize: 17, fontWeight: 700,
+              color: 'var(--live-text, #fff)',
+            }}>End this session?</h3>
+            <p style={{
+              margin: 0, fontSize: 13, lineHeight: 1.55,
+              color: 'var(--live-text-dim, rgba(255,255,255,.6))',
+            }}>
+              The conversation will be saved as a recap in your chat. You can start a new Live session anytime.
+            </p>
+            <div style={{ display: 'flex', gap: 10, width: '100%', marginTop: 4 }}>
+              <button
+                style={{
+                  flex: 1, padding: '10px 0', borderRadius: 12,
+                  background: 'var(--live-surface, rgba(255,255,255,.07))',
+                  border: '1px solid var(--live-border, rgba(255,255,255,.12))',
+                  color: 'var(--live-text, #fff)',
+                  fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                  transition: 'background .15s',
+                }}
+                onClick={() => setEndConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                style={{
+                  flex: 1, padding: '10px 0', borderRadius: 12,
+                  background: 'var(--accent-gradient, linear-gradient(135deg,#ff6b35,#f7c948))',
+                  border: 'none',
+                  color: '#fff',
+                  fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                  boxShadow: '0 4px 16px var(--accent-glow, rgba(255,107,53,.35))',
+                  transition: 'filter .15s',
+                }}
+                onClick={() => { setEndConfirm(false); handleEnd() }}
+              >
+                End Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
