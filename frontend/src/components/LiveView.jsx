@@ -67,6 +67,7 @@ export function LiveView({
   persona, disabledTools, modelCanSee, onEnd, onTranscript, features = {},
   availableModels = [], onModelChange,
   allProviders = {}, onProviderChange, keyInfo = {},
+  conversationId = null, projectId = null,
 }) {
   const [showModelSearch, setShowModelSearch] = useState(false)
   const [providerDropdownOpen, setProviderDropdownOpen] = useState(false)
@@ -535,6 +536,7 @@ export function LiveView({
     const session = make({
       provider, apiKey, model, voice, voiceEngine, fallbacks,
       persona, disabledTools, modelCanSee, camera: false, noiseSuppression,
+      conversationId, projectId,
       visionMode: features.liveWatchAlways ? 'always' : 'auto',
       onEvent: (e) => {
         if (cancelled) return

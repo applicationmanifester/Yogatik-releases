@@ -67,6 +67,7 @@
  */
 
 import { runAgent, isRealtimeOrSearchQuery } from '../agent'
+import { getToolMode, setToolMode } from '../api'
 import { splitReasoning } from '../reasoning'
 import { createCamera, createScreenCapture, switchCamera as switchCameraTrack } from './video'
 import { pickFiller } from './fillers'
@@ -283,6 +284,7 @@ export function createCascadeSession({
   provider, apiKey, model, persona = null, disabledTools = [],
   modelCanSee = false, camera = false, voice = null, voiceEngine = 'neural',
   lang = defaultLang(), rate = 1.05,
+  conversationId = null, projectId = null,
   // 'auto'  — describe/attach a frame only when the user asks about the view (or
   //           auto-scan noticed a change). 'always' — every turn while a source
   //           is live (any model sees continuously). 'off' — never.
@@ -742,6 +744,8 @@ export function createCascadeSession({
       }
     }
 
+    const toolMode = await getToolMode(active.provider, active.model).catch(() => 'native')
+
     await new Promise((resolve) => {
       // 12s live response watchdog: If provider hangs with 0 tokens, failover to next provider
       let liveTurnTimer = setTimeout(() => {
@@ -750,31 +754,31 @@ export function createCascadeSession({
         }
       }, 12000)
 
-      // 25s hard turn ceiling: voice conversations must NEVER hang in a thinking loop for minutes
+      // 35s hard turn ceiling: ensure watchdog safety without truncating thorough thinking
       let hardTurnCeilingTimer = setTimeout(() => {
         if (thinking && !controller.signal.aborted) {
-          controller.abort(new Error(`Live voice limit: ${active.model || 'model'} took over 25s to formulate response`))
+          controller.abort(new Error(`Live voice limit: ${active.model || 'model'} took over 35s to formulate response`))
         }
-      }, 25000)
+      }, 35000)
 
       runAgent({
         provider: active.provider, apiKey: active.apiKey, model: active.model,
         history: history.slice(0, -1),
         userMessage: content,
-        toolsEnabled: needsTools, webEnabled: needsTools, disabledTools,
-        maxTokens: needsTools ? 1024 : 350,
-        maxRounds: needsTools ? 2 : 1,
+        conversationId,
+        projectId,
+        toolsEnabled: true,
+        webEnabled: true,
+        disabledTools,
+        initialToolMode: toolMode,
+        onToolModeChange: (mode) => { setToolMode(active.provider, active.model, mode).catch(() => {}) },
+        // NO maxTokens limit — model runs with its natural full token capacity identical to main UI
         modelCanSee: active.modelCanSee ?? modelCanSee,
-        persona: `${persona ? persona + '\n\n' : ''}CRITICAL LIVE VOICE DIRECTIVES:
-1. Provide quick, precise, accurate, reliable, and brief info. NEVER elongate, lecture, or ramble.
-2. Answer directly in plain conversational English. Do NOT output internal scratch-work, monologue, or <think> tags.
-3. Limit spoken replies strictly to 1 to 2 short, crisp sentences (under 30 words total).
-4. Deliver the direct answer immediately with zero filler, throat-clearing, or restating the question.
-5. If reporting web search, news, or factual info, state ONLY the single top headline or key fact, and offer to give more details if requested.
-6. Absolute rule: No markdown, no bullet points, no numbered lists, no headings, no bolding, no emojis, no asterisks, no quotes.
-7.${needsTools ? ' You have full tools (image/video gen, file export, code execution, web search). The result appears directly on their screen, so state what was found or completed in one short sentence. Never read long code, data, or search excerpts aloud.' : ' Answer conversationally in 1-2 brief sentences. Be warm, direct, and natural.'}\n\n${(active.modelCanSee ?? modelCanSee)
-          ? 'You can SEE through the user\'s camera or shared screen: image frames are attached to the conversation when they ask about what is in view. Describe what you actually see.'
-          : 'You CANNOT see images directly. When the user asks about their camera or screen, a text description of the current view is inserted automatically as "[Live view (described on-device): …]". Rely ONLY on that description. Never invent, request, or fetch image URLs (e.g. do not make up links like example.com/photo.jpg); if no description was provided, say you could not see it and offer to look again.'}`,
+        persona: `${persona ? persona + '\n\n' : ''}LIVE CONVERSATIONAL MODE:
+- Speak directly, naturally, and warmly.
+- Deliver accurate, clear, and helpful answers.
+- You have full access to tools and web search. If reporting live news or web results, share the core facts directly.
+- Keep answers conversational without unnecessary internal monologue.`,
         signal: controller.signal,
         onToken: (t) => {
           if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }

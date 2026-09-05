@@ -5206,6 +5206,8 @@ export default function App() {
           persona={liveConfig.persona}
           disabledTools={liveConfig.disabledTools}
           features={features}
+          conversationId={conv?.id || null}
+          projectId={activeProject?.id || null}
           onTranscript={saveLiveTurn}
           availableModels={models[liveConfig.provider]?.models || []}
           allProviders={models}
