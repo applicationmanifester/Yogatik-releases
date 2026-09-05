@@ -5,7 +5,7 @@ import {
   AlertTriangle, Monitor, MonitorOff, MessageSquare, Eye, EyeOff,
   Aperture, Volume2, VolumeX, Scan, ScanEye,
   RefreshCw, SwitchCamera, Settings2, Camera, Search,
-  ChevronDown, Check, Zap, Layers, PictureInPicture2, Maximize2,
+  ChevronDown, Check, Zap, Layers, PictureInPicture2, Maximize2, Square,
 } from 'lucide-react'
 import { autoPickModel } from '../api'
 import { runAgent } from '../agent'
@@ -970,6 +970,23 @@ export function LiveView({
 
   const startTimeRef = useRef(Date.now())
 
+  const handleStopTurn = useCallback(() => {
+    try {
+      sessionRef.current?.interrupt?.()
+      sessionRef.current?.stop?.()
+    } catch (e) {
+      console.warn('Error interrupting live turn:', e)
+    }
+    setState(prev => ({
+      ...prev,
+      thinking: false,
+      speaking: false,
+      tool: null,
+      liveStatusText: '⏹️ Stopped response',
+    }))
+    showHudNotice('⏹️ Stopped AI response')
+  }, [showHudNotice])
+
   const handleEnd = useCallback(() => {
     // The reason matters more than the duration. "Hung up after two turns" and
     // "the socket died" are indistinguishable in a length histogram and mean
@@ -1779,20 +1796,43 @@ export function LiveView({
         {thinking && (
           <div className="live-status thinking-status" style={{
             display: 'flex', alignItems: 'center', gap: 8,
-            background: 'rgba(15, 23, 42, 0.75)',
+            background: 'rgba(15, 23, 42, 0.85)',
             backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(96, 165, 250, 0.35)',
+            border: '1px solid rgba(96, 165, 250, 0.45)',
             borderRadius: '12px',
-            padding: '8px 16px',
+            padding: '7px 12px',
             color: '#93c5fd',
             fontSize: '13px',
             fontWeight: 500,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
           }}>
             <span className="thinking-dots"><span /><span /><span /></span>
             🧠 Thinking
             {uiState.thinkingStartTime && (
               <ActivityTimer startTime={uiState.thinkingStartTime} />
             )}
+            <button
+              type="button"
+              onClick={handleStopTurn}
+              style={{
+                marginLeft: 4,
+                padding: '3px 8px',
+                borderRadius: 8,
+                background: 'rgba(239, 68, 68, 0.25)',
+                border: '1px solid rgba(239, 68, 68, 0.55)',
+                color: '#fca5a5',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                transition: 'all 0.15s ease',
+              }}
+              title="Stop model thinking & cancel response"
+            >
+              <Square size={10} fill="currentColor" /> Stop
+            </button>
           </div>
         )}
         {tool && (
@@ -1971,6 +2011,24 @@ export function LiveView({
         <button className="live-btn end" onClick={() => setEndConfirm(true)} aria-label="End call" title="End call">
           <PhoneOff size={22} />
         </button>
+        {(thinking || speaking) && (
+          <button
+            type="button"
+            className="live-btn stop-turn-btn"
+            onClick={handleStopTurn}
+            aria-label="Stop response"
+            title="Stop AI response (halts thinking or speech without ending call)"
+            style={{
+              background: 'rgba(239, 68, 68, 0.35)',
+              border: '1.5px solid rgba(239, 68, 68, 0.8)',
+              color: '#f87171',
+              boxShadow: '0 0 16px rgba(239, 68, 68, 0.45)',
+              animation: 'pulse 1.5s infinite',
+            }}
+          >
+            <Square size={20} fill="currentColor" />
+          </button>
+        )}
         <button
           className={`live-btn ${camOn ? '' : 'muted-btn'}`}
           onClick={toggleCam}

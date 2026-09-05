@@ -453,17 +453,20 @@ export function createCascadeSession({
 
   /** Barge-in, done by hand: kill the voice and abandon the generation. */
   const interrupt = async () => {
-    if (!speaking && !abort) return
+    if (!speaking && !abort && !thinking) return
     // Stop synthesis first - wait for it to complete
     await speaker.cancel()
     abort?.abort()
     abort = null
     speaking = false
+    thinking = false
     // Arm the echo tail: cancelled audio can still echo for a moment. Keep
     // spokenAloud so that residual echo is filtered rather than looped back.
     speechEndedAt = Date.now()
     emit({ type: 'interrupted' })
     emit({ type: 'speaking', value: false })
+    emit({ type: 'thinking', value: false })
+    emit({ type: 'status', text: '⏹️ Stopped' })
   }
 
   // ─── Turn queue ───
@@ -747,12 +750,20 @@ export function createCascadeSession({
         }
       }, 12000)
 
+      // 25s hard turn ceiling: voice conversations must NEVER hang in a thinking loop for minutes
+      let hardTurnCeilingTimer = setTimeout(() => {
+        if (thinking && !controller.signal.aborted) {
+          controller.abort(new Error(`Live voice limit: ${active.model || 'model'} took over 25s to formulate response`))
+        }
+      }, 25000)
+
       runAgent({
         provider: active.provider, apiKey: active.apiKey, model: active.model,
         history: history.slice(0, -1),
         userMessage: content,
         toolsEnabled: needsTools, webEnabled: needsTools, disabledTools,
-        maxTokens: needsTools ? 500 : 200,
+        maxTokens: needsTools ? 1024 : 350,
+        maxRounds: needsTools ? 2 : 1,
         modelCanSee: active.modelCanSee ?? modelCanSee,
         persona: `${persona ? persona + '\n\n' : ''}CRITICAL LIVE VOICE DIRECTIVES:
 1. Provide quick, precise, accurate, reliable, and brief info. NEVER elongate, lecture, or ramble.
@@ -849,6 +860,7 @@ export function createCascadeSession({
         },
         onDone: ({ content: full, toolResults }) => {
           if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
+          if (hardTurnCeilingTimer) { clearTimeout(hardTurnCeilingTimer); hardTurnCeilingTimer = null }
           const turnElapsedMs = Date.now() - turnStartTime
           const { reasoning, answer } = splitReasoning(full || accumulatedContent)
           if (reasoning) emit({ type: 'reasoning', text: reasoning })
@@ -892,6 +904,7 @@ export function createCascadeSession({
         },
         onError: (e) => {
           if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
+          if (hardTurnCeilingTimer) { clearTimeout(hardTurnCeilingTimer); hardTurnCeilingTimer = null }
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
           failure = e?.message || String(e)
           abort = null
@@ -1264,5 +1277,7 @@ export function createCascadeSession({
     getNoiseSuppression: () => true,
     get cameraOn() { return !!cam },
     get screenOn() { return !!screen },
+    interrupt,
+    stop: interrupt,
   }
 }

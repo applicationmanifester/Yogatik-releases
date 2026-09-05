@@ -404,6 +404,8 @@ You can see them through their camera and hear them through their microphone. Be
     setModel: (newModel) => {
       emit({ type: 'provider', provider: 'gemini', model: newModel })
     },
+    interrupt: () => { player?.flush(); emit({ type: 'speaking', value: false }); emit({ type: 'thinking', value: false }) },
+    stop: () => { player?.flush(); emit({ type: 'speaking', value: false }); emit({ type: 'thinking', value: false }) },
     get cameraOn() { return !!cam },
     get screenOn() { return !!screen },
   }
