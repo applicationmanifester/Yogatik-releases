@@ -37,21 +37,21 @@
 import { synthesize, loadNarrator, narratorCached, DEFAULT_VOICE } from '../video/speech'
 
 /** How long a clause will wait for the neural voice before going robotic. */
-const WAIT_WHEN_CACHED_MS = 600
+const WAIT_WHEN_CACHED_MS = 400
 
 /** Voice ids are engine-specific; this maps the neural ones to a system hint. */
 const SYSTEM_HINT = {
-  af_heart: /female|samantha|zira|aria/i,
-  af_nova: /female|samantha|zira/i,
-  am_michael: /male|david|guy/i,
-  am_puck: /male|david|guy/i,
-  bf_emma: /(en-gb|british).*female|hazel|sonia/i,
-  bm_george: /(en-gb|british).*male|george|ryan/i,
+  af_heart: /female|samantha|zira|aria|cortana|karen/i,
+  af_nova: /female|samantha|zira|aria/i,
+  am_michael: /male|david|guy|mark|james/i,
+  am_puck: /male|david|guy|mark/i,
+  bf_emma: /(en-gb|british).*female|hazel|sonia|susan/i,
+  bm_george: /(en-gb|british).*male|george|ryan|richard/i,
 }
 
 /** How long a clause will wait for the neural voice before going robotic. */
 export function createSpeaker({
-  engine = 'system',
+  engine = 'neural',
   voice = DEFAULT_VOICE,
   lang = 'en-US',
   rate = 1.08,
@@ -135,7 +135,10 @@ export function createSpeaker({
   }
 
   async function speakNeural(text) {
-    const { pcm, sampleRate } = await synth(text, { voice, speed: rate })
+    // Neural voice sounds unnatural above 1.2× speed; clamp it here so a
+    // user-set rate of 1.3 does not produce chipmunk speech.
+    const neuralRate = Math.min(rate, 1.2)
+    const { pcm, sampleRate } = await synth(text, { voice, speed: neuralRate })
     if (cancelled || !pcm?.length) return
     const ac = ctx()
     const buffer = ac.createBuffer(1, pcm.length, sampleRate)

@@ -108,7 +108,7 @@ export function LiveView({
     // no way to turn the assistant's speaking off without also turning off
     // listening.
     speakerMuted: false,
-    camOn: true,
+    camOn: false,
     screenOn: false,
     // 'auto' = look when asked / on scene change; 'always' = watch every turn
     // (works for ANY model — non-vision models are described on-device).
@@ -173,7 +173,7 @@ export function LiveView({
   // Personalise panel still owns the persisted default.
   const [liveRate, setLiveRate] = useState(1)
   const [liveVoiceId, setLiveVoiceId] = useState(voice || '')
-  const [liveEngine, setLiveEngine] = useState(voiceEngine || 'system')
+  const [liveEngine, setLiveEngine] = useState(voiceEngine || 'neural')
   const [showCaptions, setShowCaptions] = useState(features.liveCaptions !== false)
   const [noiseSuppression, setNoiseSuppression] = useState(true)
   const [hasFlip, setHasFlip] = useState(false)

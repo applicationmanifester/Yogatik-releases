@@ -180,14 +180,14 @@ export const INCOMPLETE_STARTERS = /^(?:tell me about|what is|how do|how to|who 
 
 export function endpointDelay(text = '') {
   const t = String(text).trim()
-  if (/[.!?]$/.test(t)) return 140
+  if (/[.!?]$/.test(t)) return 110
   // Semantic continuation gating: If user paused on a connective word or incomplete starter, give them more time
-  if (CONTINUATION_CONNECTORS.test(t)) return 550
+  if (CONTINUATION_CONNECTORS.test(t)) return 480
   const words = t ? t.split(/\s+/).length : 0
-  if (words < 6 && INCOMPLETE_STARTERS.test(t)) return 550
-  if (words >= 8) return 190
-  if (words >= 4) return 270
-  return 360
+  if (words < 6 && INCOMPLETE_STARTERS.test(t)) return 480
+  if (words >= 8) return 160
+  if (words >= 4) return 230
+  return 300
 }
 
 // ─── Hands-free voice commands ─────────────────────────────────────────────
@@ -238,7 +238,7 @@ export function stripWakeWord(text = '', wake = '') {
  * "unknown" and never rejected — only a real, low positive score is.
  */
 /** Consecutive `network` failures before we stop trusting the cloud recogniser. */
-export const NETWORK_FAILS_BEFORE_LOCAL = 2
+export const NETWORK_FAILS_BEFORE_LOCAL = 1
 
 /**
  * What to do about a Web Speech error.
@@ -281,7 +281,7 @@ export function trimHistoryPairs(history = [], maxTurns = MAX_HISTORY_TURNS) {
 
 export function createCascadeSession({
   provider, apiKey, model, persona = null, disabledTools = [],
-  modelCanSee = false, camera = true, voice = null, voiceEngine = 'system',
+  modelCanSee = false, camera = false, voice = null, voiceEngine = 'neural',
   lang = defaultLang(), rate = 1.05,
   // 'auto'  — describe/attach a frame only when the user asks about the view (or
   //           auto-scan noticed a change). 'always' — every turn while a source
@@ -1051,7 +1051,12 @@ export function createCascadeSession({
   }
 
   async function start() {
-    if (!speechRecognitionAvailable()) {
+    // Local/Ollama providers: skip cloud Web Speech entirely — it needs the internet
+    // and the whole point of a local model is offline-first. Go straight to on-device Whisper.
+    const isLocalProvider = provider === 'ollama' || provider === 'lmstudio' ||
+      provider === 'local' || String(provider).startsWith('localhost') || String(apiKey).startsWith('http://')
+
+    if (!speechRecognitionAvailable() || isLocalProvider) {
       startLocalRecognition()
       if (camera) {
         try { await enableCamera(true) } catch (camErr) {

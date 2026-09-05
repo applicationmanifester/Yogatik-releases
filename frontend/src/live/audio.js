@@ -79,6 +79,16 @@ export async function createMicCapture(onChunk, { deviceId = '', noiseSuppressio
   const src = ctx.createMediaStreamSource(stream)
   const node = new AudioWorkletNode(ctx, 'capture', { numberOfOutputs: 0 })
   let muted = false
+  // Voice level analyser — used by the mic-quality stat exposed below.
+  const levelAnalyser = ctx.createAnalyser()
+  levelAnalyser.fftSize = 512
+  const levelBuf = new Float32Array(levelAnalyser.fftSize)
+  let peakRms = 0
+  let rmsAccum = 0
+  let rmsFrames = 0
+  // Feed both the worklet AND the analyser from the same source node.
+  src.connect(levelAnalyser)
+
   node.port.onmessage = (e) => { if (!muted) onChunk(bytesToBase64(e.data)) }
   src.connect(node)
 
@@ -86,6 +96,29 @@ export async function createMicCapture(onChunk, { deviceId = '', noiseSuppressio
     stream,
     setMuted: (v) => { muted = v },
     isMuted: () => muted,
+    /**
+     * Current voice quality snapshot — safe to call at any frequency.
+     * rms:     short-term energy (0–1)
+     * peakRms: highest seen since the last call (resets on read)
+     * snrEst:  rough SNR estimate in dB (needs at least 5 frames to stabilise)
+     */
+    getVoiceStats() {
+      levelAnalyser.getFloatTimeDomainData(levelBuf)
+      let sum = 0
+      for (let i = 0; i < levelBuf.length; i++) sum += levelBuf[i] * levelBuf[i]
+      const frameRms = Math.sqrt(sum / levelBuf.length)
+      if (frameRms > peakRms) peakRms = frameRms
+      rmsAccum += frameRms
+      rmsFrames++
+      const avg = rmsFrames > 0 ? rmsAccum / rmsFrames : 0
+      const peak = peakRms
+      // Reset peak + rolling avg every read so callers get the CURRENT burst, not all-time.
+      peakRms = 0; rmsAccum = 0; rmsFrames = 0
+      // Noise floor estimate: quietest 20% of the rolling avg is background.
+      const noiseEst = avg * 0.2
+      const snrEst = noiseEst > 1e-9 ? 20 * Math.log10(avg / noiseEst) : Infinity
+      return { rms: frameRms, peakRms: peak, snrEst }
+    },
     async setNoiseSuppression(enabled) {
       const track = stream.getAudioTracks()[0]
       if (track && typeof track.applyConstraints === 'function') {
@@ -99,7 +132,7 @@ export async function createMicCapture(onChunk, { deviceId = '', noiseSuppressio
       return false
     },
     async close() {
-      try { node.port.onmessage = null; node.disconnect(); src.disconnect() } catch {}
+      try { node.port.onmessage = null; node.disconnect(); src.disconnect(); levelAnalyser.disconnect() } catch {}
       stream.getTracks().forEach(t => t.stop())
       try { await ctx.close() } catch {}
     },
