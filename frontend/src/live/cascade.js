@@ -370,6 +370,7 @@ export function createCascadeSession({
   let restartDelay = 0
   let recogFatal = false
   let speechEndedAt = 0   // when the synthesiser last stopped (echo-tail guard)
+  let clearPendingSpeech = () => {}
   let lastReply = ''      // for the "repeat that" voice command
   const history = []
 
@@ -455,16 +456,31 @@ export function createCascadeSession({
 
   /** Barge-in, done by hand or speech: kill the voice and abandon the generation. */
   const interrupt = async (userExplicit = false) => {
-    if (!speaking && !abort && !thinking) return
-    // Stop synthesis first - wait for it to complete
+    // 1. Immediately drop any pending turn queued behind the current one
+    queued = null
+    activeTurnText = ''
+    buffer = ''
+    spoken = ''
+
+    // 2. Clear speech recognition timers and buffers so next query is immediately processed
+    clearPendingSpeech()
+
+    // 3. Stop synthesis first - wait for it to complete
     await speaker.cancel()
-    abort?.abort()
-    abort = null
+
+    // 4. Abort in-flight LLM/tool execution
+    if (abort) {
+      try { abort.abort() } catch { /* ignore */ }
+      abort = null
+    }
+
     speaking = false
     thinking = false
-    // Arm the echo tail: cancelled audio can still echo for a moment. Keep
-    // spokenAloud so that residual echo is filtered rather than looped back.
-    speechEndedAt = Date.now()
+
+    // 5. Reset echo audio window so user speech isn't treated as echo
+    speechEndedAt = userExplicit ? 0 : Date.now()
+    spokenAloud = ''
+
     emit({ type: 'interrupted' })
     emit({ type: 'speaking', value: false })
     emit({ type: 'thinking', value: false })
@@ -864,9 +880,21 @@ export function createCascadeSession({
             }, 15000)
           }
         },
-        onDone: ({ content: full, toolResults }) => {
+        onDone: ({ content: full, toolResults, aborted }) => {
           if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
           if (hardTurnCeilingTimer) { clearTimeout(hardTurnCeilingTimer); hardTurnCeilingTimer = null }
+
+          // Clean exit if aborted: never speak partial sentences, never report failure, never retry
+          if (controller.signal.aborted || aborted) {
+            if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
+            buffer = ''
+            spoken = ''
+            failure = null
+            abort = null
+            resolve()
+            return
+          }
+
           const turnElapsedMs = Date.now() - turnStartTime
           const { reasoning, answer } = splitReasoning(full || accumulatedContent)
           if (reasoning) emit({ type: 'reasoning', text: reasoning })
@@ -912,12 +940,29 @@ export function createCascadeSession({
           if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
           if (hardTurnCeilingTimer) { clearTimeout(hardTurnCeilingTimer); hardTurnCeilingTimer = null }
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
+
+          // Clean exit if aborted: user stopped or cancelled the turn
+          if (controller.signal.aborted || e?.name === 'AbortError') {
+            buffer = ''
+            spoken = ''
+            failure = null
+            abort = null
+            resolve()
+            return
+          }
+
           failure = e?.message || String(e)
           abort = null
           resolve()
         },
       })
     })
+
+    // If turn was aborted or session closed, exit immediately without failover retries
+    if (controller.signal.aborted || closed) {
+      abort = null
+      return
+    }
 
     if (!failure) return
 
@@ -962,9 +1007,17 @@ export function createCascadeSession({
     // final. The model answered it twice too.
     let committed = ''
     let committedAt = 0
-    const COMMIT_ECHO_MS = 2500
+    const COMMIT_ECHO_MS = 1200
+
+    clearPendingSpeech = () => {
+      clearEndpoint()
+      pendingInterim = ''
+      committed = ''
+      committedAt = 0
+    }
 
     recog.onresult = (e) => {
+      networkFails = 0
       let finalText = ''
       let interim = ''
       let finalConfidence = 0
@@ -983,9 +1036,6 @@ export function createCascadeSession({
       if (echoWindow && isEcho(heard, spokenAloud)) return
       // Genuine barge-in only counts while actually speaking (not during the tail, and never while thinking/tools).
       if (speaking && (finalText || heard.length >= MIN_BARGE_CHARS)) {
-        // `spokeAfter` is the whole point of recording this. An interrupt
-        // followed by nothing is noise or the assistant's own echo, and that
-        // is the failure people never report — they just stop using it.
         metrics.markBargeIn(!!heard.trim())
         interrupt(false)
       }
@@ -996,10 +1046,7 @@ export function createCascadeSession({
         const text = finalText.trim()
         clearEndpoint()
         pendingInterim = ''
-        // Drop the final if the endpoint timer already sent this. Compared on
-        // the normalised text rather than by identity, because Chrome tidies
-        // punctuation and capitalisation between the interim and the final —
-        // "hi hello" becomes "Hi hello." and a strict === would let it through.
+        // Drop the final if the endpoint timer already sent this.
         if (Date.now() - committedAt < COMMIT_ECHO_MS && sameUtterance(text, committed)) return
         committed = text
         committedAt = Date.now()
@@ -1011,8 +1058,6 @@ export function createCascadeSession({
         clearEndpoint()
 
         // Speculative Parallel Pre-Search (SPPS):
-        // If the interim utterance signals search/news with >= 3 words, pre-fetch search
-        // results speculatively in the background so results are cached before speech ends.
         if (isRealtimeOrSearchQuery(pendingInterim) && pendingInterim.split(/\s+/).length >= 3) {
           webSearchTool.execute({ query: pendingInterim, count: 4, fast: true }).catch(() => {})
         }
@@ -1040,11 +1085,12 @@ export function createCascadeSession({
         emit({ type: 'error', message: 'Microphone access was blocked. Allow it in your browser and try again.' })
         return
       }
-      if (verdict === 'fallback' || e.error === 'network' || e.error === 'service-not-available') {
-        recogFatal = true   // stop the retry storm; switch immediately to on-device Whisper
+      if (verdict === 'fallback') {
+        recogFatal = true   // switch to on-device Whisper only after retries exhausted
         startLocalRecognition()
         return
       }
+      if (e.error === 'network' || e.error === 'service-not-available') networkFails++
       restartDelay = Math.min(restartDelay ? restartDelay * 2 : 500, 8000)
       emit({ type: 'status', message: `Reconnecting speech recognition (${e.error})…` })
     }

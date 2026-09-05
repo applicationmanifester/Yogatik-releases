@@ -571,12 +571,30 @@ export function LiveView({
               ),
             }))
             break
+          case 'interrupted':
+            setState(prev => ({
+              ...prev,
+              thinking: false,
+              speaking: false,
+              tool: null,
+              liveStatusText: '⏹️ Stopped',
+              transcript: prev.transcript.map(t => t.streaming ? { ...t, streaming: false } : t),
+            }))
+            setTimeout(() => {
+              setState(prev => (prev.liveStatusText === '⏹️ Stopped' ? { ...prev, liveStatusText: '' } : prev))
+            }, 2500)
+            break
           case 'status':
             setState(prev => ({
               ...prev,
               liveStatusText: e.text,
               transcript: [...prev.transcript, { type: 'status', text: e.text, time: Date.now() }],
             }))
+            if (e.text && (e.text === '⏹️ Stopped' || e.text.includes('Stopped'))) {
+              setTimeout(() => {
+                setState(prev => (prev.liveStatusText === e.text ? { ...prev, liveStatusText: '' } : prev))
+              }, 2500)
+            }
             break
           case 'reasoning':
             setState(prev => {
@@ -976,8 +994,7 @@ export function LiveView({
 
   const handleStopTurn = useCallback(() => {
     try {
-      sessionRef.current?.interrupt?.()
-      sessionRef.current?.stop?.()
+      sessionRef.current?.stop?.(true)
     } catch (e) {
       console.warn('Error interrupting live turn:', e)
     }
@@ -986,9 +1003,13 @@ export function LiveView({
       thinking: false,
       speaking: false,
       tool: null,
-      liveStatusText: '⏹️ Stopped response',
+      liveStatusText: '⏹️ Stopped',
+      transcript: prev.transcript.map(t => t.streaming ? { ...t, streaming: false } : t),
     }))
     showHudNotice('⏹️ Stopped AI response')
+    setTimeout(() => {
+      setState(prev => (prev.liveStatusText === '⏹️ Stopped' ? { ...prev, liveStatusText: '' } : prev))
+    }, 2500)
   }, [showHudNotice])
 
   const handleEnd = useCallback(() => {
@@ -1639,7 +1660,11 @@ export function LiveView({
         )}
         {liveStatusText && !thinking && !tool && (
           <div className="live-status action-status">
-            <Loader2 size={13} className="spin" />
+            {liveStatusText.includes('⏹') || liveStatusText.includes('Stopped') ? (
+              <Square size={10} fill="currentColor" />
+            ) : (
+              <Loader2 size={13} className="spin" />
+            )}
             <span>{liveStatusText}</span>
           </div>
         )}
