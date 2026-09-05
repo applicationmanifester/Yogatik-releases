@@ -559,7 +559,7 @@ export function LiveView({
     const make = engine === 'gemini' ? createLiveSession : createCascadeSession
     const session = make({
       provider, apiKey, model, voice, voiceEngine, fallbacks,
-      persona, disabledTools, modelCanSee, camera: true, noiseSuppression,
+      persona, disabledTools, modelCanSee, camera: false, noiseSuppression,
       visionMode: features.liveWatchAlways ? 'always' : 'auto',
       onEvent: (e) => {
         if (cancelled) return
