@@ -3,16 +3,83 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '6.1.0'
+export const APP_VERSION = '6.2.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 6.1.0 — Real-Time Live Vision HUD, AI Voice Mute, Chrome AI Tools & Process Tree Management'
+export const APP_CODENAME = 'Yogatik 6.2.0 — LiveView Ambient HUD, Scanned PDF Auto-OCR & Universal File Extraction'
 
 export const APP_RELEASES = [
+  {
+    version: '6.2.0',
+    title: 'Yogatik 6.2.0: LiveView Ambient HUD, Scanned PDF Auto-OCR & Universal File Extraction',
+    date: 'September 5, 2026',
+    isLatest: true,
+    highlights: [
+      'LiveView Ambient HUD & Perceptual Diffing: Floating pill HUD with biometric audio waveforms, dynamic 5 FPS frame scaling, and 70% bandwidth reduction via 64-bit pHash perceptual change detection',
+      'Spatial Telestration & Live Stage: Real-time visual vectors, highlights, and annotations directly over screen feeds plus a synchronized workspace side stage for live code/document projections',
+      'Scanned PDF Auto-OCR & RAG Persistence: Automatic detection of flattened raster tickets and image documents with 1.75x high-DPI offscreen canvas rendering and client-side Tesseract OCR indexing',
+      'Universal Client-Side File Extraction: Direct extraction for Word (.docx), Excel spreadsheets (.xlsx/.xls), images via OCR, and 50+ programming languages with automated UTF-8 byte inspection fallback',
+      'Multi-Platform Production Distributions: Automated release pipeline publishing standalone Windows (.exe), macOS Apple Silicon & Intel (.dmg/.zip), Linux (.AppImage/.deb), and self-hostable Web (.zip)',
+    ],
+    sections: [
+      {
+        category: '🎙️ LiveView High-Performance Architecture',
+        items: [
+          {
+            title: 'Perceptual screen differencing & dynamic framerate',
+            description: 'Adaptive 64-bit pHash comparison skips redundant frames to cut API token costs by 70%, dynamically scaling from 0.5 FPS up to 5 FPS on active screen changes.',
+          },
+          {
+            title: 'Live Dock Overlay & interactive HUD',
+            description: 'Ambient floating control pill provides live audio waveforms, instant device routing, and latency/FPS telemetry without obstructing active workspace windows.',
+          },
+          {
+            title: 'Spatial telestration & workspace artifact stage',
+            description: 'Visual vector annotations over screen captures and a dedicated live side-stage for interactive code and document reviews during audio calls.',
+          },
+        ],
+      },
+      {
+        category: '📄 Document Intelligence & RAG Persist',
+        items: [
+          {
+            title: 'Scanned PDF high-DPI auto-OCR',
+            description: 'Flattened tickets, receipts, and graphic PDFs automatically render to an offscreen 1.75x canvas and run through client-side Tesseract OCR.',
+          },
+          {
+            title: 'Guaranteed local IndexedDB storage',
+            description: 'Extracted text from scanned documents is immediately chunked and indexed into IndexedDB, fully queryable via doc_list and doc_search.',
+          },
+        ],
+      },
+      {
+        category: '🌐 Universal Document & File Support',
+        items: [
+          {
+            title: 'Microsoft Word (.docx) & Excel (.xlsx)',
+            description: 'Client-side XML parsing for Word documents and SheetJS tabular CSV conversion for multi-sheet Excel spreadsheets.',
+          },
+          {
+            title: 'Universal text & code inspection',
+            description: 'Automated byte inspection identifies any text-encoded file (including extensionless Dockerfile, Makefile, LICENSE) and indexes it cleanly.',
+          },
+        ],
+      },
+      {
+        category: '🚀 Multi-Platform Releases & Web App',
+        items: [
+          {
+            title: 'Standalone Web App zip & Desktop matrix',
+            description: 'Automated GitHub Actions pipeline builds and publishes yogatik-web-dist.zip and installers for Windows, macOS, and Linux.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '6.1.0',
     title: 'Yogatik 6.1.0: Real-Time Live Vision HUD, AI Voice Mute, Chrome AI Tools & Process Tree Management',
     date: 'September 4, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Live Feed Object Detection Overlay: Client-side continuous DETR object detection with smart mirror coordinate mapping and aHash change-gated visual processing',
       'AI Voice Output Mute: Dedicated speaker audio toggle in Live call controls with cascade choke-point gating and zero-latency gain-node muting',
