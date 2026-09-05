@@ -120,12 +120,12 @@ export function videoConstraints({ deviceId, facingMode, exact = false, width = 
 }
 
 /** Build a getUserMedia audio constraint, keeping the echo guards. */
-export function audioConstraints({ deviceId, exact = false } = {}) {
+export function audioConstraints({ deviceId, exact = false, noiseSuppression = true } = {}) {
   const audio = {
     // Never negotiable: the model's own voice comes out of the speakers, and
     // without these the session hears itself and interrupts itself forever.
     echoCancellation: true,
-    noiseSuppression: true,
+    noiseSuppression: noiseSuppression !== false,
     autoGainControl: true,
     channelCount: 1,
     sampleRate: 16000,

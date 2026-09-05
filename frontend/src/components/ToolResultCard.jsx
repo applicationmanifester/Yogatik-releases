@@ -93,6 +93,8 @@ export const TOOL_ICONS = {
   screen_inspect: Monitor,
   desktop_action: MousePointer,
   browser_autopilot: Compass,
+  background_task: Sparkles,
+  background_task_spawn: Sparkles,
 }
 
 /**
@@ -1525,6 +1527,49 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
           </pre>
         )}
         {result.message && <div className="tool-detail" style={{ color: 'var(--text-secondary)' }}>{result.message}</div>}
+      </div>
+    )
+  }
+
+  // ── Background Task / Autonomous Worker result ─────────────────────────────
+  if ((tool === 'background_task' || tool === 'background_task_spawn') && result) {
+    return (
+      <div className="tool-result-card" style={{ borderLeft: '3px solid #38bdf8' }}>
+        <div className="tool-result-header">
+          <Sparkles size={14} style={{ color: '#38bdf8' }} />
+          <span>{result.title || 'Autonomous Background Task'}</span>
+          <span className="tool-result-meta" style={{
+            fontSize: 10,
+            color: result.status === 'completed' ? '#10b981' : '#38bdf8',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+          }}>
+            {result.status || 'Active'}
+          </span>
+        </div>
+        {result.persona && (
+          <div className="tool-detail" style={{ fontSize: 11, color: '#94a3b8' }}>
+            Assigned to: <strong style={{ color: '#cbd5e1' }}>{result.persona}</strong>
+          </div>
+        )}
+        {result.summary && (
+          <div className="tool-detail" style={{ fontWeight: 500, color: 'var(--text-primary)', marginTop: 4 }}>
+            {result.summary}
+          </div>
+        )}
+        {result.message && !result.summary && (
+          <div className="tool-detail" style={{ color: 'var(--text-secondary)' }}>
+            {result.message}
+          </div>
+        )}
+        {Array.isArray(result.logs) && result.logs.length > 0 && (
+          <div style={{ marginTop: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Execution Logs</div>
+            <pre className="code-output" style={{ maxHeight: 120, overflowY: 'auto', fontSize: 10, marginTop: 3 }}>
+              {result.logs.slice(-5).join('\n')}
+            </pre>
+          </div>
+        )}
       </div>
     )
   }

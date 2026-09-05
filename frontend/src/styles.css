@@ -9022,3 +9022,74 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
 .style-picker-link:disabled { opacity: .5; cursor: default; }
 .style-picker-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 .style-picker-note { font-size: 11.5px; color: var(--text-muted); }
+
+/* ─── Live Spatial Stage & Dock Overlay ─── */
+.live-view.mode-dock {
+  background: transparent !important;
+  pointer-events: none !important;
+}
+.live-view.mode-dock::after {
+  display: none !important;
+}
+.live-view.mode-dock .live-self,
+.live-view.mode-dock .live-viewfinder,
+.live-view.mode-dock .live-detect-layer,
+.live-view.mode-dock .live-badges,
+.live-view.mode-dock .live-orb-wrap,
+.live-view.mode-dock .live-controls,
+.live-view.mode-dock .live-captions {
+  display: none !important;
+}
+.live-view.mode-dock .live-dock-overlay {
+  pointer-events: auto !important;
+}
+
+@keyframes liveDockDrop {
+  0% { opacity: 0; transform: translate(-50%, -24px) scale(0.92); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@keyframes liveArtifactSlideIn {
+  0% { opacity: 0; transform: translateX(20px) scale(0.97); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+.live-mode-switch-group {
+  display: flex;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.live-mode-switch-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.live-mode-switch-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.live-mode-switch-btn.active {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.18);
+  font-weight: 600;
+  box-shadow: 0 1px 6px rgba(56, 189, 248, 0.2);
+}

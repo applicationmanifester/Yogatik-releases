@@ -14,7 +14,7 @@
 
 /**
  * @typedef {Object} CascadeEvent
- * @property {'ready'|'camera'|'screen'|'level'|'speaking'|'thinking'|'transcript'|'tools'|'toolResult'|'voice'|'provider'|'reconnecting'|'error'|'ended'|'interrupted'|'status'|'watched'|'looked'|'muted'} type
+ * @property {'ready'|'camera'|'screen'|'level'|'speaking'|'thinking'|'transcript'|'tools'|'toolResult'|'artifact'|'voice'|'provider'|'reconnecting'|'error'|'ended'|'interrupted'|'status'|'watched'|'looked'|'muted'} type
  * @property {MediaStream} [stream]
  * @property {number} [value]
  * @property {string} [role]
@@ -22,6 +22,7 @@
  * @property {string[]} [names]
  * @property {string} [name]
  * @property {any} [result]
+ * @property {any} [artifact]
  * @property {string} [engine]
  * @property {string} [provider]
  * @property {string} [model]
@@ -94,8 +95,8 @@ import { summariseToolResults } from '../toolSummary'
 // FALSE POSITIVE (sends tools unnecessarily) → same latency as before, no harm.
 // The bias is toward SPEED: default is no-tools unless keywords are detected.
 
-const TOOL_KEYWORDS = /\b(search|find|look up|browse|google|weather|forecast|temperature|image|photo|picture|generate|create|make|build|draw|paint|design|code|run|execute|script|program|file|document|write|read|save|download|export|pdf|ppt|powerpoint|presentation|slides?|spreadsheet|csv|excel|word doc|video|audio|music|song|record|translate|convert|calculate|compute|solve|chart|graph|diagram|plot|map|directions|navigate|stock|price|crypto|bitcoin|news|latest|recent|trending|today|current|score|match|game|schedule|flight|booking|hotel|restaurant|recipe|cook|timer|alarm|remind|summary|summarize|analyze|compare|review|debug|fix|test|deploy|install|terminal|shell|pip|npm|scan|screenshot|ocr|read this|what does this say|describe this|identify|recognize|detect)\b/i
-const TOOL_ACTION_PHRASES = /\b(show me|tell me about|what('s| is) the (latest|current|price|weather|score|news)|how (much|many|long|far|tall|big|old)|who (won|is the current|is leading)|where (is|can I)|when (did|will|is)|can you (search|find|make|create|generate|build|draw|write|run|execute|calculate|translate))/i
+const TOOL_KEYWORDS = /\b(search|find|look up|browse|google|weather|forecast|temperature|image|photo|picture|generate|create|make|build|draw|paint|design|code|run|execute|script|program|file|document|write|read|save|download|export|pdf|ppt|powerpoint|presentation|slides?|spreadsheet|csv|excel|word doc|video|audio|music|song|record|translate|convert|calculate|compute|solve|chart|graph|diagram|plot|map|directions|navigate|stock|price|crypto|bitcoin|news|latest|recent|trending|today|current|score|match|game|schedule|flight|booking|hotel|restaurant|recipe|cook|timer|alarm|remind|summary|summarize|analyze|compare|review|debug|fix|test|deploy|install|terminal|shell|pip|npm|scan|screenshot|ocr|read this|what does this say|describe this|identify|recognize|detect|background|worker|swarm|task|subagent|sub-agent|autonomous|delegate|offload)\b/i
+const TOOL_ACTION_PHRASES = /\b(show me|tell me about|what('s| is) the (latest|current|price|weather|score|news)|how (much|many|long|far|tall|big|old)|who (won|is the current|is leading)|where (is|can I)|when (did|will|is)|can you (search|find|make|create|generate|build|draw|write|run|execute|calculate|translate|spawn|delegate))/i
 // Explicit web-search triggers (from agent.js isRealtimeOrSearchQuery)
 const WEB_TRIGGERS = /\b(2024|2025|2026|released|launched|announced|breaking|trending|stock price|crypto price|exchange rate|election|live score|match score)\b/i
 
@@ -116,10 +117,8 @@ export function utteranceNeedsTools(text = '') {
   if (TOOL_KEYWORDS.test(t)) return true
   if (TOOL_ACTION_PHRASES.test(t)) return true
   if (WEB_TRIGGERS.test(t)) return true
-  // Long utterances (> 12 words) are more likely knowledge questions that
-  // benefit from web search, but still not guaranteed to need tools.
-  // Conservative: only flag if there's a question word + enough substance.
-  if (wordCount > 12 && /^(what|who|where|when|why|how|which|is|are|do|does|did|can|could|should|would|will)\b/i.test(t)) return true
+  // Check if the query specifically requires current/realtime data or search
+  if (isRealtimeOrSearchQuery(t)) return true
   return false
 }
 
@@ -181,14 +180,14 @@ export const INCOMPLETE_STARTERS = /^(?:tell me about|what is|how do|how to|who 
 
 export function endpointDelay(text = '') {
   const t = String(text).trim()
-  if (/[.!?]$/.test(t)) return 200
+  if (/[.!?]$/.test(t)) return 140
   // Semantic continuation gating: If user paused on a connective word or incomplete starter, give them more time
-  if (CONTINUATION_CONNECTORS.test(t)) return 650
+  if (CONTINUATION_CONNECTORS.test(t)) return 550
   const words = t ? t.split(/\s+/).length : 0
-  if (words < 6 && INCOMPLETE_STARTERS.test(t)) return 650
-  if (words >= 8) return 260
-  if (words >= 4) return 360
-  return 480
+  if (words < 6 && INCOMPLETE_STARTERS.test(t)) return 550
+  if (words >= 8) return 190
+  if (words >= 4) return 270
+  return 360
 }
 
 // ─── Hands-free voice commands ─────────────────────────────────────────────
@@ -830,6 +829,14 @@ export function createCascadeSession({
         },
         onToolResult: (name, result) => {
           emit({ type: 'toolResult', name, result })
+          emit({
+            type: 'artifact',
+            artifact: {
+              name,
+              result,
+              time: Date.now(),
+            },
+          })
           // Re-arm watchdog so that if model freezes post-tool, it doesn't hang indefinitely
           if (!liveTurnTimer) {
             liveTurnTimer = setTimeout(() => {
@@ -1245,6 +1252,8 @@ export function createCascadeSession({
       }
     },
 
+    setNoiseSuppression: (v) => { /* Web Speech API manages its own capture */ },
+    getNoiseSuppression: () => true,
     get cameraOn() { return !!cam },
     get screenOn() { return !!screen },
   }

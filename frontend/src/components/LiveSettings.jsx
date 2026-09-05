@@ -1,5 +1,5 @@
 import React from 'react'
-import { Volume2, Eye, Captions, Gauge, Sparkles, AlertTriangle, X } from 'lucide-react'
+import { Volume2, Eye, Captions, Gauge, Sparkles, AlertTriangle, X, Mic } from 'lucide-react'
 import { VOICE_LABELS } from '../video/speech'
 import { looksVisionCapable } from '../vision/capability'
 
@@ -31,6 +31,7 @@ export function LiveSettings({
   voiceEngine, voice, onVoice, onVoiceEngine,
   rate = 1, onRate,
   captions = true, onCaptions,
+  noiseSuppression = true, onNoiseSuppression,
 }) {
   if (!open) return null
 
@@ -170,6 +171,22 @@ export function LiveSettings({
             />
             <span className="ls-value">{Number(rate).toFixed(2)}×</span>
           </div>
+        </div>
+
+        {/* ── Noise Suppression ─────────────────────────────────────────── */}
+        <div className="ldp-group">
+          <div className="ldp-group-title"><Mic size={13} /> Noise suppression</div>
+          <button
+            className={`ldp-row${noiseSuppression ? ' active' : ''}`}
+            onClick={() => onNoiseSuppression?.(!noiseSuppression)}
+          >
+            <span className="ldp-label">Filter background noise (fan, typing, room echo)</span>
+            <span className="ldp-tag">{noiseSuppression ? 'On' : 'Off'}</span>
+          </button>
+          <p className="ldp-empty">
+            Uses the browser's built-in noise suppression. Turning this off may improve
+            voice pickup in very quiet environments but will let through more ambient sound.
+          </p>
         </div>
 
         {/* ── Captions ───────────────────────────────────────────────────── */}

@@ -1,7 +1,7 @@
 {
   "name": "yogatik",
   "private": true,
-  "version": "6.1.0",
+  "version": "6.2.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -27,7 +27,7 @@
     "e2e:ui": "playwright test --ui",
     "test:companion": "electron electron/browserHarness/companion.cjs",
     "mcp:server": "node mcp-server/server.mjs",
-    "postinstall": "electron-builder install-app-deps && node ./scripts/ensure-native-deps.mjs",
+    "postinstall": "node -e \"try{require('child_process').execSync('npx electron-builder install-app-deps',{stdio:'inherit'})}catch(e){console.warn('install-app-deps warning:',e.message)}\" && node ./scripts/ensure-native-deps.mjs",
     "rebuild:pty": "electron-rebuild -f -w node-pty"
   },
   "bin": {

@@ -973,28 +973,10 @@ export async function deleteTemplate(id) {
 
 // ─── Documents (browser-native retrieval, no backend) ───
 
-/** Text extraction per file type. PDFs go through pdf.js, everything else is read as text. */
+/** Text extraction per file type: PDF (digital & OCR), Word (.docx), Excel (.xlsx/.xls), Images (OCR), Code, and Text formats. */
 async function extractText(file) {
-  const name = (file.name || '').toLowerCase()
-
-  if (name.endsWith('.pdf') || file.type === 'application/pdf') {
-    const { pdfExtractTool } = await import('./tools/pdfExtract')
-    const url = URL.createObjectURL(file)
-    try {
-      const res = await pdfExtractTool.execute({ url })
-      if (!res?.text) throw new Error('No extractable text — the PDF may be a scan. Try the OCR tool.')
-      return res.text
-    } finally {
-      URL.revokeObjectURL(url)
-    }
-  }
-
-  if (/\.(txt|md|markdown|csv|tsv|json|log|xml|ya?ml|html?|jsx?|tsx?|py|css)$/.test(name) ||
-      file.type.startsWith('text/') || file.type === 'application/json') {
-    return file.text()
-  }
-
-  throw new Error(`Unsupported file type: ${file.type || name}. Supported: PDF, TXT, MD, CSV, JSON, code files.`)
+  const { extractFileText } = await import('./tools/docExtractors')
+  return extractFileText(file)
 }
 
 async function computeTextHash(text) {

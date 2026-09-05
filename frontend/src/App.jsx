@@ -4831,7 +4831,7 @@ export default function App() {
               onChange={(m) => chooseModel(m, conv?.provider || provider)} />
             <label className="upload-btn">
               <Upload size={12} /> Upload
-              <input type="file" hidden accept="image/*,.pdf,.txt,.md,.csv,.json,.log,.html,.xml,.rtf" onChange={handleUpload} />
+              <input type="file" hidden accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.tsv,.txt,.md,.json,.xml,.yaml,.yml,.toml,.ini,.env,.sql,.js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.h,.cs,.go,.rs,.php,.rb,.sh,.html,.css,*/*" onChange={handleUpload} />
             </label>
             {features.enhance && <button className={`small-btn ${isEnhancing ? 'pulsing' : ''}`} onClick={handleEnhancePrompt} disabled={!input.trim() || isEnhancing} title="Enhance prompt with AI" aria-label="Enhance prompt with AI">
               <Sparkles size={12} /> {isEnhancing ? 'Enhancing...' : 'Enhance'}

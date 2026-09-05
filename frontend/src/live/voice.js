@@ -37,7 +37,7 @@
 import { synthesize, loadNarrator, narratorCached, DEFAULT_VOICE } from '../video/speech'
 
 /** How long a clause will wait for the neural voice before going robotic. */
-const WAIT_WHEN_CACHED_MS = 3000
+const WAIT_WHEN_CACHED_MS = 600
 
 /** Voice ids are engine-specific; this maps the neural ones to a system hint. */
 const SYSTEM_HINT = {
@@ -54,7 +54,7 @@ export function createSpeaker({
   engine = 'system',
   voice = DEFAULT_VOICE,
   lang = 'en-US',
-  rate = 1.05,
+  rate = 1.08,
   onStart = () => {},
   onEnd = () => {},
   onEngine = () => {},

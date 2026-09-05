@@ -54,18 +54,18 @@ export function base64ToPcm16(b64) {
 }
 
 /** Microphone -> 32ms base64 PCM16 chunks (ultra-low latency). */
-export async function createMicCapture(onChunk, { deviceId = '' } = {}) {
+export async function createMicCapture(onChunk, { deviceId = '', noiseSuppression = true } = {}) {
   // The echo guards live in devices.audioConstraints — they are not optional
   // and must not be re-spelled per call site, or one of them loses a guard and
   // the session starts hearing itself.
   let stream
   try {
-    stream = await navigator.mediaDevices.getUserMedia(audioConstraints({ deviceId }))
+    stream = await navigator.mediaDevices.getUserMedia(audioConstraints({ deviceId, noiseSuppression }))
   } catch (err) {
     // A remembered microphone that has been unplugged fails the whole call.
     // Fall back to the system default rather than refusing to start.
     if (deviceId && (err?.name === 'OverconstrainedError' || err?.name === 'NotFoundError')) {
-      stream = await navigator.mediaDevices.getUserMedia(audioConstraints({}))
+      stream = await navigator.mediaDevices.getUserMedia(audioConstraints({ noiseSuppression }))
     } else throw err
   }
   const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 })
@@ -86,6 +86,18 @@ export async function createMicCapture(onChunk, { deviceId = '' } = {}) {
     stream,
     setMuted: (v) => { muted = v },
     isMuted: () => muted,
+    async setNoiseSuppression(enabled) {
+      const track = stream.getAudioTracks()[0]
+      if (track && typeof track.applyConstraints === 'function') {
+        try {
+          await track.applyConstraints({ noiseSuppression: !!enabled })
+          return true
+        } catch {
+          return false
+        }
+      }
+      return false
+    },
     async close() {
       try { node.port.onmessage = null; node.disconnect(); src.disconnect() } catch {}
       stream.getTracks().forEach(t => t.stop())

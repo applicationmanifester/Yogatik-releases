@@ -74,10 +74,11 @@ const RECONNECT_MAX = 3
 
 export function createLiveSession({
   apiKey, model = LIVE_MODELS[0], voice = 'Puck', persona = null,
-  disabledTools = [], camera = true, onEvent = () => {},
+  disabledTools = [], camera = true, noiseSuppression = true, onEvent = () => {},
 }) {
   let ws = null
   let mic = null
+  let currentNoiseSuppression = noiseSuppression
   let cam = null
   let screen = null
   let player = null
@@ -118,7 +119,10 @@ You can see them through their camera and hear them through their microphone. Be
         return { id: c.id, name: c.name, result: { error: e?.message || String(e) } }
       }
     }))
-    for (const r of responses) emit({ type: 'toolResult', name: r.name, result: r.result })
+    for (const r of responses) {
+      emit({ type: 'toolResult', name: r.name, result: r.result })
+      emit({ type: 'artifact', artifact: { name: r.name, result: r.result, time: Date.now() } })
+    }
     send(toolResponse(responses))
   }
 
@@ -206,7 +210,10 @@ You can see them through their camera and hear them through their microphone. Be
 
     // Open the microphone the user last chose; an unplugged one falls back
     // to the system default inside createMicCapture rather than failing.
-    mic = await createMicCapture((b64) => send(audioChunk(b64)), { deviceId: loadPreferredDevices().micId })
+    mic = await createMicCapture((b64) => send(audioChunk(b64)), {
+      deviceId: loadPreferredDevices().micId,
+      noiseSuppression: currentNoiseSuppression,
+    })
     emit({ type: 'mic', stream: mic.stream })
 
     if (camera) {
@@ -360,7 +367,10 @@ You can see them through their camera and hear them through their microphone. Be
     async switchMic({ deviceId } = {}) {
       try {
         const wasMuted = !!mic?.isMuted()
-        const next = await createMicCapture((b64) => send(audioChunk(b64)), { deviceId })
+        const next = await createMicCapture((b64) => send(audioChunk(b64)), {
+          deviceId,
+          noiseSuppression: currentNoiseSuppression,
+        })
         // Close the old one only once the new one is live, or a failure here
         // leaves the call with no microphone at all.
         mic?.close()
@@ -375,6 +385,14 @@ You can see them through their camera and hear them through their microphone. Be
     },
     setMuted: (v) => { mic?.setMuted(v); emit({ type: 'muted', value: v }) },
     isMuted: () => !!mic?.isMuted(),
+    async setNoiseSuppression(enabled) {
+      currentNoiseSuppression = enabled !== false
+      if (mic?.setNoiseSuppression) {
+        return mic.setNoiseSuppression(currentNoiseSuppression)
+      }
+      return false
+    },
+    getNoiseSuppression: () => currentNoiseSuppression,
     /**
      * AI VOICE OUTPUT, separate from `setMuted` (the mic). Gemini's realtime
      * socket has no "stop sending audio" message — it is receive-only from

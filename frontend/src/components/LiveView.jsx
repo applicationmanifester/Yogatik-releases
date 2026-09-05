@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import ReactDOM from 'react-dom'
 import {
   Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Wrench,
   AlertTriangle, Monitor, MonitorOff, MessageSquare, Eye, EyeOff,
   Aperture, Volume2, VolumeX, Scan, ScanEye,
   RefreshCw, SwitchCamera, Settings2, Camera, Search,
-  ChevronDown, Check, Zap,
+  ChevronDown, Check, Zap, Layers, PictureInPicture2, Maximize2,
 } from 'lucide-react'
 import { autoPickModel } from '../api'
 import { runAgent } from '../agent'
@@ -20,10 +21,15 @@ import { LiveTranscriptPanel } from './LiveTranscriptPanel'
 import { LiveDevicePicker } from './LiveDevicePicker'
 import { LiveSettings } from './LiveSettings'
 import { LiveModelSearchModal } from './LiveModelSearchModal'
+import { LiveDockOverlay } from './LiveDockOverlay'
+import { LiveArtifactStage } from './LiveArtifactStage'
+import { LiveTelestration } from './LiveTelestration'
+import { openDocumentPip, isDocumentPipSupported } from '../pipCompanion'
 import { enumerate, canFlipCamera } from '../live/devices'
 import * as liveMetrics from '../live/metrics'
 import { db } from '../db'
 import { preconnectProvider } from '../live/latencyOptimizer'
+import { backgroundWorkers } from '../backgroundWorkers'
 
 /** Ticking elapsed timer for the Activity HUD — shows how long the AI has been thinking */
 function ActivityTimer({ startTime }) {
@@ -169,7 +175,78 @@ export function LiveView({
   const [liveVoiceId, setLiveVoiceId] = useState(voice || '')
   const [liveEngine, setLiveEngine] = useState(voiceEngine || 'system')
   const [showCaptions, setShowCaptions] = useState(features.liveCaptions !== false)
+  const [noiseSuppression, setNoiseSuppression] = useState(true)
   const [hasFlip, setHasFlip] = useState(false)
+  const [viewMode, setViewMode] = useState('cinema') // 'cinema' | 'dock' | 'pip'
+  const [artifacts, setArtifacts] = useState([])
+  const [activeArtifactIdx, setActiveArtifactIdx] = useState(0)
+  const [showArtifactStage, setShowArtifactStage] = useState(true)
+  const [pipRoot, setPipRoot] = useState(null)
+
+  const handlePopoutPip = useCallback(async () => {
+    if (!isDocumentPipSupported()) {
+      showHudNotice('Document Picture-in-Picture requires Chrome/Edge 116+')
+      return
+    }
+    try {
+      const pipWin = await openDocumentPip({
+        width: 400,
+        height: 620,
+        onClosed: () => {
+          setPipRoot(null)
+          setViewMode('cinema')
+        },
+      })
+      const mount = pipWin?.document?.getElementById('pip-root')
+      if (mount) {
+        setPipRoot(mount)
+        setViewMode('pip')
+        showHudNotice('Popped out to desktop companion')
+      }
+    } catch (err) {
+      showHudNotice(err?.message || 'Failed to open PiP window')
+    }
+  }, [showHudNotice])
+
+  useEffect(() => {
+    db.getSetting('chat_prefs', {}).then(p => {
+      if (p?.live_noise_suppression !== undefined) {
+        setNoiseSuppression(!!p.live_noise_suppression)
+      }
+    }).catch(() => {})
+  }, [])
+
+  // Connect background worker notifications directly to the live artifact stage
+  useEffect(() => {
+    const unsub = backgroundWorkers.subscribe((tasks) => {
+      const recent = (tasks || []).find(
+        (t) => t.status === 'completed' && Date.now() - (t.completedAt || t.lastUpdated || 0) < 6000
+      )
+      if (recent) {
+        setArtifacts((prev) => {
+          if (prev.some((a) => a.result?.taskId === recent.id)) return prev
+          return [
+            {
+              name: 'background_task',
+              result: {
+                taskId: recent.id,
+                title: recent.title,
+                persona: recent.agentPersona,
+                status: recent.status,
+                summary: recent.result?.summary || recent.logs?.slice(-1)[0] || 'Task completed.',
+                logs: recent.logs,
+              },
+              time: Date.now(),
+            },
+            ...prev,
+          ].slice(0, 15)
+        })
+        setShowArtifactStage(true)
+        showHudNotice(`⚡ Task Done: ${recent.title.slice(0, 24)}`)
+      }
+    })
+    return unsub
+  }, [showHudNotice])
 
   const videoRef = useRef(null)
   const sessionRef = useRef(null)
@@ -482,7 +559,7 @@ export function LiveView({
     const make = engine === 'gemini' ? createLiveSession : createCascadeSession
     const session = make({
       provider, apiKey, model, voice, voiceEngine, fallbacks,
-      persona, disabledTools, modelCanSee, camera: true,
+      persona, disabledTools, modelCanSee, camera: true, noiseSuppression,
       visionMode: features.liveWatchAlways ? 'always' : 'auto',
       onEvent: (e) => {
         if (cancelled) return
@@ -561,9 +638,23 @@ export function LiveView({
               transcript: [...prev.transcript, { type: 'tool', name: e.names.join(', '), time: Date.now() }],
             }))
             break
+          case 'artifact':
+            if (e.artifact) {
+              setArtifacts(prev => [e.artifact, ...prev.filter(a => a.name !== e.artifact.name || Math.abs(a.time - e.artifact.time) > 2000)].slice(0, 15))
+              setShowArtifactStage(true)
+            }
+            break
           case 'toolResult': {
             // Keep the raw result object so images/videos/files/code render richly.
             const r = e.result
+            if (e.name && r) {
+              setArtifacts(prev => {
+                const exists = prev.some(a => a.name === e.name && Math.abs(a.time - Date.now()) < 2000)
+                if (exists) return prev
+                return [{ name: e.name, result: r, time: Date.now() }, ...prev].slice(0, 15)
+              })
+              setShowArtifactStage(true)
+            }
             setState(prev => ({
               ...prev,
               tool: null,
@@ -947,8 +1038,102 @@ export function LiveView({
   const ring3Scale = useMemo(() => 1 + (speaking ? assistantLevel * 0.18 : 0), [speaking, assistantLevel])
   const breathingScale = useMemo(() => 1 + Math.sin(breathingPhase) * 0.02, [breathingPhase])
 
+  const telestrationTargets = useMemo(() => {
+    return (detections || []).map((d, i) => {
+      const b = d.box || {}
+      const xmin = Math.max(0, Math.min(1, b.xmin ?? 0))
+      const xmax = Math.max(0, Math.min(1, b.xmax ?? 0))
+      const ymin = Math.max(0, Math.min(1, b.ymin ?? 0))
+      const ymax = Math.max(0, Math.min(1, b.ymax ?? 0))
+      return {
+        id: `det-${i}-${d.label}`,
+        label: `${(d.label || 'target').toUpperCase()}${d.score ? ` (${Math.round(d.score * 100)}%)` : ''}`,
+        score: d.score,
+        box: {
+          x: 1 - xmax, // mirrored compensation for .live-self
+          y: ymin,
+          w: Math.max(0.05, xmax - xmin),
+          h: Math.max(0.05, ymax - ymin),
+        },
+      }
+    })
+  }, [detections])
+
   return (
-    <div className="live-view" role="dialog" aria-modal="true" aria-label="Live conversation">
+    <div className={`live-view ${viewMode === 'dock' ? 'mode-dock' : ''}`} role="dialog" aria-modal="true" aria-label="Live conversation">
+      {/* Floating Dynamic Island Companion Dock */}
+      {viewMode === 'dock' && (
+        <LiveDockOverlay
+          state={state}
+          speaking={speaking}
+          thinking={thinking}
+          tool={tool}
+          liveStatusText={liveStatusText}
+          muted={muted}
+          speakerMuted={speakerMuted}
+          camOn={camOn}
+          userLevel={userLevel}
+          assistantLevel={assistantLevel}
+          activeArtifact={artifacts[activeArtifactIdx] || artifacts[0]}
+          onToggleMute={toggleMute}
+          onToggleSpeakerMute={toggleSpeaker}
+          onToggleCam={toggleCam}
+          onExpandCinema={() => setViewMode('cinema')}
+          onPopoutPip={handlePopoutPip}
+          onEndCall={handleEnd}
+          onSelectArtifact={() => {
+            setViewMode('cinema')
+            setShowArtifactStage(true)
+          }}
+        />
+      )}
+
+      {/* Document PiP Companion Window Portal */}
+      {pipRoot && ReactDOM.createPortal(
+        <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', background: '#0a0f1d' }}>
+          <LiveDockOverlay
+            state={state}
+            speaking={speaking}
+            thinking={thinking}
+            tool={tool}
+            liveStatusText={liveStatusText}
+            muted={muted}
+            speakerMuted={speakerMuted}
+            camOn={camOn}
+            userLevel={userLevel}
+            assistantLevel={assistantLevel}
+            activeArtifact={artifacts[activeArtifactIdx] || artifacts[0]}
+            onToggleMute={toggleMute}
+            onToggleSpeakerMute={toggleSpeaker}
+            onToggleCam={toggleCam}
+            onExpandCinema={() => {
+              try { pipRoot.ownerDocument.defaultView?.close() } catch {}
+              setPipRoot(null)
+              setViewMode('cinema')
+            }}
+            onPopoutPip={() => {}}
+            onEndCall={handleEnd}
+            onSelectArtifact={() => {
+              try { pipRoot.ownerDocument.defaultView?.close() } catch {}
+              setPipRoot(null)
+              setViewMode('cinema')
+              setShowArtifactStage(true)
+            }}
+          />
+          {artifacts.length > 0 && (
+            <div style={{ flex: 1, overflow: 'hidden', padding: 12 }}>
+              <LiveArtifactStage
+                artifacts={artifacts}
+                activeIndex={activeArtifactIdx}
+                onSelectIndex={setActiveArtifactIdx}
+                onClose={() => {}}
+              />
+            </div>
+          )}
+        </div>,
+        pipRoot
+      )}
+
       <video ref={videoRef} className={`live-self ${camOn ? '' : 'off'}`} autoPlay playsInline muted />
       {/* Sci-Fi Camera Viewfinder & Scanline Overlay (Vision-Agents inspired) */}
       {(camOn || screenOn) && (
@@ -959,6 +1144,16 @@ export function LiveView({
           <div className="live-vf-bracket br" />
           {objectDetect && <div className="live-detect-scanline" />}
         </div>
+      )}
+
+      {/* Augmented Reality / Neon Telestration Laser Focus Overlay */}
+      {(camOn || screenOn) && (
+        <LiveTelestration
+          targets={telestrationTargets}
+          onTargetClick={(target) => {
+            showHudNotice(`Target focus: ${target.label}`)
+          }}
+        />
       )}
       {/* Object-detection boxes, drawn purely client-side over the self-view.
           `.live-self` is CSS-mirrored (scaleX(-1)) but the captured frame is
@@ -1009,6 +1204,28 @@ export function LiveView({
           button guessing what they want. See buildGuards.test.js's orphan allowlist
           for LiveHudOverlay.jsx. */}
 
+      {/* Live Spatial Artifact Stage Drawer (Cinema mode) */}
+      {viewMode === 'cinema' && artifacts.length > 0 && showArtifactStage && (
+        <div
+          className="live-spatial-artifact-drawer"
+          style={{
+            position: 'absolute',
+            right: '20px',
+            top: '68px',
+            bottom: '100px',
+            width: 'min(480px, calc(100vw - 40px))',
+            zIndex: 25,
+          }}
+        >
+          <LiveArtifactStage
+            artifacts={artifacts}
+            activeIndex={activeArtifactIdx}
+            onSelectIndex={setActiveArtifactIdx}
+            onClose={() => setShowArtifactStage(false)}
+          />
+        </div>
+      )}
+
       <LiveSettings
         open={showSettings}
         onClose={() => setShowSettings(false)}
@@ -1041,6 +1258,12 @@ export function LiveView({
         onRate={(r) => { setLiveRate(r); sessionRef.current?.setRate?.(r) }}
         captions={showCaptions}
         onCaptions={setShowCaptions}
+        noiseSuppression={noiseSuppression}
+        onNoiseSuppression={(val) => {
+          setNoiseSuppression(val)
+          sessionRef.current?.setNoiseSuppression?.(val)
+          db.getSetting('chat_prefs', {}).then(p => db.setSetting('chat_prefs', { ...p, live_noise_suppression: val })).catch(() => {})
+        }}
       />
 
       <LiveDevicePicker
@@ -1055,8 +1278,54 @@ export function LiveView({
         micSwitchable={engine === 'gemini'}
       />
 
-      {/* Awareness badges — provider/model only; vision status is in the HUD overlay */}
+      {/* Awareness badges — provider/model & View Mode Switcher */}
       <div className="live-badges">
+        {/* View Mode Switcher: Cinema | Companion Dock | PiP Window */}
+        <div className="live-mode-switch-group" role="group" aria-label="View mode">
+          <button
+            type="button"
+            className={`live-mode-switch-btn ${viewMode === 'cinema' ? 'active' : ''}`}
+            onClick={() => setViewMode('cinema')}
+            title="Full Stage Cinema View"
+          >
+            <Maximize2 size={12} />
+            <span>Cinema</span>
+          </button>
+          <button
+            type="button"
+            className={`live-mode-switch-btn ${viewMode === 'dock' ? 'active' : ''}`}
+            onClick={() => {
+              setViewMode('dock')
+              showHudNotice('Docked to dynamic island overlay')
+            }}
+            title="Dock to top Dynamic Island overlay while working in app"
+          >
+            <Layers size={12} />
+            <span>Dock</span>
+          </button>
+          {isDocumentPipSupported() && (
+            <button
+              type="button"
+              className={`live-mode-switch-btn ${viewMode === 'pip' ? 'active' : ''}`}
+              onClick={handlePopoutPip}
+              title="Pop out into floating Desktop PiP Window"
+            >
+              <PictureInPicture2 size={12} />
+              <span>PiP</span>
+            </button>
+          )}
+          {artifacts.length > 0 && (
+            <button
+              type="button"
+              className={`live-mode-switch-btn ${showArtifactStage ? 'active' : ''}`}
+              onClick={() => setShowArtifactStage(v => !v)}
+              title="Toggle Live Spatial Artifact Stage"
+            >
+              <Layers size={12} style={{ color: '#38bdf8' }} />
+              <span>Artifacts ({artifacts.length})</span>
+            </button>
+          )}
+        </div>
         {/* Custom Glassmorphism Provider Dropdown */}
         {allProviders && Object.keys(allProviders).length > 0 ? (
           <div ref={providerDropdownRef} style={{ position: 'relative', display: 'inline-block' }}>

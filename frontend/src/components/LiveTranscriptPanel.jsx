@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Wrench, Copy, Check, Zap, Brain, Clock, Activity, Search, Cpu, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import React, { useEffect, useRef, useState, useMemo } from 'react'
+import { ChevronRight, Wrench, Copy, Check, Zap, Brain, Clock, Activity, Search, Cpu, CheckCircle2, AlertCircle, Loader2, X } from 'lucide-react'
 import { ToolResultCard } from './ToolResultCard'
 
 /**
@@ -12,6 +12,7 @@ import { ToolResultCard } from './ToolResultCard'
  * - Status updates with categorised icons
  * - Performance metrics per turn (TTFT, total time)
  * - Full conversation transcript with copy support
+ * - Search/filter to find specific moments
  */
 
 function statusIcon(text = '') {
@@ -62,23 +63,127 @@ export function LiveTranscriptPanel({
   activeModel,
 }) {
   const bodyRef = useRef(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterType, setFilterType] = useState('all') // 'all' | 'user' | 'assistant' | 'tool' | 'status'
 
-  // Auto-scroll to bottom on new entries
+  // Auto-scroll to bottom on new entries (unless user scrolled up)
+  const [userScrolledUp, setUserScrolledUp] = useState(false)
+  
   useEffect(() => {
-    if (bodyRef.current) {
+    if (bodyRef.current && !userScrolledUp) {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight
     }
-  }, [transcript, isThinking, activeTool, liveStatusText])
+  }, [transcript, isThinking, activeTool, liveStatusText, userScrolledUp])
+
+  const handleScroll = () => {
+    if (bodyRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = bodyRef.current
+      setUserScrolledUp(scrollHeight - scrollTop - clientHeight > 50)
+    }
+  }
+
+  // Filter transcript based on search query and filter type
+  const filteredTranscript = useMemo(() => {
+    return transcript.filter(item => {
+      // Type filter
+      if (filterType !== 'all') {
+        if (filterType === 'user' && item.role !== 'user') return false
+        if (filterType === 'assistant' && item.role !== 'assistant') return false
+        if (filterType === 'tool' && item.type !== 'tool' && item.type !== 'toolResult') return false
+        if (filterType === 'status' && item.type !== 'status') return false
+      }
+      
+      // Search query filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase()
+        const searchableText = [
+          item.text,
+          item.name,
+          item.reasoning,
+          item.type,
+          item.role,
+        ].filter(Boolean).join(' ').toLowerCase()
+        
+        if (!searchableText.includes(q)) return false
+      }
+      
+      return true
+    })
+  }, [transcript, searchQuery, filterType])
 
   if (!isOpen) return null
 
   return (
     <div className={`live-transcript-panel ${isOpen ? 'open' : ''}`}>
       <div className="live-transcript-header">
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Activity size={16} style={{ color: '#38bdf8' }} />
-          Transcript & AI Activity
-        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+            <Activity size={16} style={{ color: '#38bdf8' }} />
+            Transcript & AI Activity
+          </h3>
+          {/* Search box */}
+          <div style={{ position: 'relative', flex: 1, maxWidth: 300 }}>
+            <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#64748b', pointerEvents: 'none' }} />
+            <input
+              type="text"
+              placeholder="Search transcript…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '6px 10px 6px 32px',
+                background: 'rgba(15, 23, 42, 0.6)',
+                border: '1px solid rgba(56, 189, 248, 0.2)',
+                borderRadius: '6px',
+                color: '#e2e8f0',
+                fontSize: '12px',
+                outline: 'none',
+              }}
+              onFocus={() => {}}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{
+                  position: 'absolute',
+                  right: 6,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  cursor: 'pointer',
+                  padding: 2,
+                }}
+                aria-label="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          {/* Filter dropdown */}
+          <select
+            value={filterType}
+            onChange={e => setFilterType(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              background: 'rgba(15, 23, 42, 0.6)',
+              border: '1px solid rgba(56, 189, 248, 0.2)',
+              borderRadius: '6px',
+              color: '#e2e8f0',
+              fontSize: '11px',
+              outline: 'none',
+              cursor: 'pointer',
+            }}
+            aria-label="Filter by type"
+          >
+            <option value="all">All</option>
+            <option value="user">🎙️ You</option>
+            <option value="assistant">🤖 Assistant</option>
+            <option value="tool">🔧 Tools</option>
+            <option value="status">📋 Status</option>
+          </select>
+        </div>
         <button className="live-transcript-close" onClick={onClose} aria-label="Close transcript">
           <ChevronRight size={18} />
         </button>
@@ -99,8 +204,35 @@ export function LiveTranscriptPanel({
         </div>
       )}
 
-      <div className="live-transcript-body" ref={bodyRef}>
-        {transcript.length === 0 && (
+      {/* Results count */}
+      {searchQuery && (
+        <div style={{
+          padding: '4px 14px', margin: '0 12px',
+          fontSize: '11px', color: '#64748b',
+          display: 'flex', justifyContent: 'space-between',
+        }}>
+          <span>{filteredTranscript.length} of {transcript.length} entries match</span>
+          <button
+            onClick={() => { setSearchQuery(''); setFilterType('all'); }}
+            style={{
+              background: 'none', border: 'none', color: '#38bdf8',
+              fontSize: '11px', cursor: 'pointer', textDecoration: 'underline',
+            }}
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
+
+      <div className="live-transcript-body" ref={bodyRef} onScroll={handleScroll}>
+        {filteredTranscript.length === 0 && transcript.length > 0 && (
+          <div className="live-transcript-empty" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
+            <Search size={24} style={{ opacity: 0.5, marginBottom: 8 }} />
+            <p>No entries match your search/filter.</p>
+            <p style={{ marginTop: 8, fontSize: 11 }}>Try clearing filters or adjusting your search.</p>
+          </div>
+        )}
+        {filteredTranscript.length === 0 && transcript.length === 0 && (
           <div className="live-transcript-empty">
             <p>Conversation and live AI activity will appear here…</p>
             <p style={{ marginTop: 8, fontSize: 11, opacity: 0.7 }}>
@@ -109,12 +241,12 @@ export function LiveTranscriptPanel({
             </p>
           </div>
         )}
-        {transcript.map((item, i) => {
+        {filteredTranscript.map((item, originalIndex) => {
           // ── Status event ──
           if (item.type === 'status') {
             const sc = statusColor(item.text)
             return (
-              <div key={i} style={{
+              <div key={originalIndex} style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '5px 10px', margin: '3px 0',
                 background: sc.bg, border: `1px solid ${sc.border}`,
@@ -131,7 +263,7 @@ export function LiveTranscriptPanel({
           // ── Tool invocation ──
           if (item.type === 'tool') {
             return (
-              <div key={i} style={{
+              <div key={originalIndex} style={{
                 display: 'flex', alignItems: 'center', gap: 8,
                 padding: '7px 12px', margin: '4px 0',
                 background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.12) 100%)',
@@ -153,7 +285,7 @@ export function LiveTranscriptPanel({
           if (item.type === 'toolResult') {
             if (item.result && typeof item.result === 'object') {
               return (
-                <div key={i} style={{ margin: '4px 0', animation: 'liveFadeIn 0.3s ease-out' }}>
+                <div key={originalIndex} style={{ margin: '4px 0', animation: 'liveFadeIn 0.3s ease-out' }}>
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 6,
                     fontSize: '11px', color: '#34d399', marginBottom: 4, fontWeight: 600,
@@ -168,7 +300,7 @@ export function LiveTranscriptPanel({
             }
             const text = typeof item.result === 'string' ? item.result : ''
             return (
-              <div key={i} style={{
+              <div key={originalIndex} style={{
                 padding: '6px 10px', margin: '3px 0',
                 background: 'rgba(16, 185, 129, 0.08)',
                 border: '1px solid rgba(16, 185, 129, 0.25)',
@@ -183,7 +315,7 @@ export function LiveTranscriptPanel({
 
           // ── Message (user or assistant) ──
           return (
-            <div key={i} className={`live-transcript-msg ${item.role}`} style={{ animation: 'liveFadeIn 0.2s ease-out' }}>
+            <div key={originalIndex} className={`live-transcript-msg ${item.role}`} style={{ animation: 'liveFadeIn 0.2s ease-out' }}>
               <div className="live-transcript-msg-header">
                 <span className="live-transcript-role" style={{
                   display: 'flex', alignItems: 'center', gap: 5,
@@ -194,120 +326,110 @@ export function LiveTranscriptPanel({
                 <time>{formatTime(item.time)}</time>
                 <button
                   className="live-transcript-copy"
-                  onClick={() => onCopy(item.text, i)}
+                  onClick={() => onCopy(item.text, originalIndex)}
                   aria-label="Copy message"
                 >
-                  {copiedIdx === i ? <Check size={12} /> : <Copy size={12} />}
+                  {copiedIdx === originalIndex ? <Check size={12} /> : <Copy size={12} />}
                 </button>
               </div>
-
-              {/* Reasoning / thinking section */}
               {item.reasoning && (
-                <details className="reasoning-bubble" open style={{
-                  margin: '6px 0',
-                  fontSize: '11.5px',
-                  background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.82) 0%, rgba(30, 41, 59, 0.72) 100%)',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(147, 197, 253, 0.25)',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
-                }}>
-                  <summary style={{
-                    cursor: 'pointer',
-                    color: '#93c5fd',
-                    fontWeight: 600,
-                    userSelect: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}>
-                    <Brain size={13} style={{ color: '#60a5fa' }} />
-                    <span>AI Reasoning & Thought Process</span>
-                    {item.streaming && !item.text && (
-                      <span style={{ fontSize: '10px', color: '#60a5fa', opacity: 0.85, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} />
-                        formulating…
-                      </span>
-                    )}
+                <details className="live-transcript-reasoning" open>
+                  <summary style={{ cursor: 'pointer', fontSize: '11px', color: '#a5b4fc', marginBottom: 4 }}>
+                    <Brain size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} /> Reasoning
+                    {item.reasoningTime && <span style={{ marginLeft: 8 }}><Clock size={10} /> {(item.reasoningTime / 1000).toFixed(1)}s</span>}
                   </summary>
-                  <div style={{
-                    marginTop: '8px',
-                    whiteSpace: 'pre-wrap',
-                    color: '#cbd5e1',
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                    lineHeight: '1.45',
-                    fontSize: '11px',
-                    maxHeight: '250px',
-                    overflowY: 'auto',
-                  }}>
-                    {item.reasoning}
-                  </div>
+                  <pre style={{
+                    marginTop: 4, padding: '8px', background: 'rgba(99, 102, 241, 0.1)',
+                    borderRadius: '6px', fontSize: '11px', lineHeight: 1.5,
+                    overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    color: '#c7d2fe',
+                  }}>{item.reasoning}</pre>
                 </details>
               )}
-
-              {/* Message text */}
-              {item.text ? (
-                <p>{item.text}</p>
-              ) : (
-                item.streaming && item.role === 'assistant' && (
-                  <p style={{
-                    fontStyle: 'italic', opacity: 0.65, fontSize: '12px', margin: '4px 0',
-                    display: 'flex', alignItems: 'center', gap: 6,
-                  }}>
-                    <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
-                    Formulating response…
-                  </p>
-                )
-              )}
-
-              {/* Turn metrics */}
-              {item.turnTimeMs && item.role === 'assistant' && !item.streaming && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  fontSize: '10px', color: '#64748b', marginTop: 4,
-                }}>
-                  <Clock size={10} />
-                  <span>Turn: {(item.turnTimeMs / 1000).toFixed(1)}s</span>
-                  {item.toolsUsed && <span>· Tools: {item.toolsUsed}</span>}
+              {item.ttftMs != null && (
+                <div style={{ fontSize: '10px', color: '#38bdf8', marginTop: -4, marginBottom: 4 }}>
+                  ⚡ TTFT:{' '}
+                  {item.ttftMs < 1000 ? `<${item.ttftMs}ms` : `${(item.ttftMs / 1000).toFixed(2)}s`}
+                  {item.totalMs && ` · Total:${' '}${item.totalMs < 1000 ? `${item.totalMs}ms` : `${(item.totalMs / 1000).toFixed(2)}s`}`}
                 </div>
               )}
+              <div className="live-transcript-text" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {item.text}
+              </div>
             </div>
           )
         })}
-
-        {/* Live activity indicator (at bottom) */}
-        {(isThinking || activeTool || liveStatusText) && (
-          <div style={{
+        {/* Active tool indicator */}
+        {activeTool && (
+          <div key="active-tool" style={{
             display: 'flex', alignItems: 'center', gap: 8,
-            padding: '10px 14px', margin: '8px 0',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12) 0%, rgba(99, 102, 241, 0.14) 100%)',
-            border: '1px solid rgba(56, 189, 248, 0.35)',
-            color: '#7dd3fc', fontSize: '12px', fontWeight: 500,
+            padding: '7px 12px', margin: '4px 0',
+            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.12) 100%)',
+            border: '1px solid rgba(129, 140, 248, 0.4)',
+            borderRadius: '8px', color: '#c7d2fe', fontSize: '12px', fontWeight: 500,
             animation: 'liveFadeIn 0.25s ease-out',
           }}>
-            {activeTool ? (
+            <Wrench size={13} style={{ color: '#a5b4fc', flexShrink: 0, animation: 'spin 2s linear infinite' }} />
+            <span>🔧 <strong style={{ color: '#e0e7ff' }}>{activeTool}</strong> executing…</span>
+          </div>
+        )}
+        {/* Live status text */}
+        {liveStatusText && !activeTool && (
+          <div key="live-status" style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '5px 10px', margin: '3px 0',
+            background: statusColor(liveStatusText).bg,
+            border: `1px solid ${statusColor(liveStatusText).border}`,
+            borderRadius: '6px', fontSize: '11px', color: statusColor(liveStatusText).color,
+            animation: 'liveFadeIn 0.2s ease-out',
+          }}>
+            {statusIcon(liveStatusText)}
+            <span style={{ flex: 1 }}>{liveStatusText}</span>
+            {isThinking && thinkingStartTime && (
               <>
-                <Wrench size={14} style={{ animation: 'spin 2s linear infinite', color: '#a5b4fc' }} />
-                <span>🔧 Using: <strong style={{ color: '#e0e7ff' }}>{activeTool}</strong></span>
-              </>
-            ) : isThinking ? (
-              <>
-                <Brain size={14} style={{ color: '#60a5fa', animation: 'pulse 1.5s ease-in-out infinite' }} />
-                <span>
-                  🧠 Thinking…{' '}
-                  {thinkingStartTime && <ThinkingTimer startTime={thinkingStartTime} />}
-                </span>
-              </>
-            ) : (
-              <>
-                {statusIcon(liveStatusText)}
-                <span>{liveStatusText}</span>
+                <span> · </span>
+                <ThinkingTimer startTime={thinkingStartTime} />
               </>
             )}
           </div>
         )}
+        {/* Scroll anchor */}
+        <div ref={transcriptEndRef} />
       </div>
+
+      {/* Scroll-to-bottom button when user scrolled up */}
+      {userScrolledUp && (
+        <button
+          onClick={() => {
+            if (bodyRef.current) {
+              bodyRef.current.scrollTop = bodyRef.current.scrollHeight
+              setUserScrolledUp(false)
+            }
+          }}
+          className="live-transcript-scroll-btn"
+          aria-label="Scroll to bottom"
+          style={{
+            position: 'absolute',
+            bottom: '80px',
+            right: '16px',
+            zIndex: 10,
+            width: '36px',
+            height: '36px',
+            borderRadius: '50%',
+            background: '#3b82f6',
+            border: 'none',
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4)',
+            animation: 'liveFadeIn 0.2s ease-out',
+          }}
+        >
+          <ChevronRight size={18} style={{ transform: 'rotate(90deg)' }} />
+        </button>
+      )}
     </div>
-  )
+    )
 }
