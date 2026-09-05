@@ -116,6 +116,11 @@ jobs:
         working-directory: frontend
         run: npm install --no-audit --no-fund
 
+      - name: Install Electron app dependencies
+        working-directory: frontend
+        run: npx -y electron-builder install-app-deps
+        continue-on-error: true
+
       - name: Build desktop app
         working-directory: frontend
         run: ${{ matrix.build }}
