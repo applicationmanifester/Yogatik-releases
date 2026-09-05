@@ -6,6 +6,7 @@ import {
   Aperture, Volume2, VolumeX, Scan, ScanEye,
   RefreshCw, SwitchCamera, Settings2, Camera, Search,
   ChevronDown, Check, Zap, Layers, PictureInPicture2, Maximize2, Square,
+  Sun, Moon,
 } from 'lucide-react'
 import { autoPickModel } from '../api'
 import { runAgent } from '../agent'
@@ -68,6 +69,7 @@ export function LiveView({
   availableModels = [], onModelChange,
   allProviders = {}, onProviderChange, keyInfo = {},
   conversationId = null, projectId = null,
+  theme = 'dark', onToggleTheme,
 }) {
   const [showModelSearch, setShowModelSearch] = useState(false)
   const [providerDropdownOpen, setProviderDropdownOpen] = useState(false)
@@ -375,7 +377,7 @@ export function LiveView({
           text,
           type: 'message',
           time: Date.now(),
-          streaming: true,
+          streaming: role === 'assistant',
           reasoning: role === 'assistant' ? prev.reasoningText : undefined,
         })
       }
@@ -1054,7 +1056,7 @@ export function LiveView({
   }, [detections])
 
   return (
-    <div className={`live-view ${viewMode === 'dock' ? 'mode-dock' : ''}`} role="dialog" aria-modal="true" aria-label="Live conversation">
+    <div className={`live-view ${viewMode === 'dock' ? 'mode-dock' : ''}`} data-theme={theme} role="dialog" aria-modal="true" aria-label="Live conversation">
       {/* Floating Dynamic Island Companion Dock */}
       {viewMode === 'dock' && (
         <LiveDockOverlay
@@ -1320,6 +1322,18 @@ export function LiveView({
             </button>
           )}
         </div>
+
+        {onToggleTheme && (
+          <button
+            type="button"
+            className="live-badge theme-toggle-badge"
+            onClick={onToggleTheme}
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+            style={{ cursor: 'pointer', height: '24px', padding: '0 8px' }}
+          >
+            {theme === 'dark' ? <Sun size={12} /> : <Moon size={12} />}
+          </button>
+        )}
         {/* Custom Glassmorphism Provider Dropdown */}
         {allProviders && Object.keys(allProviders).length > 0 ? (
           <div ref={providerDropdownRef} style={{ position: 'relative', display: 'inline-block' }}>
@@ -1330,93 +1344,25 @@ export function LiveView({
                 setModelDropdownOpen(false)
               }}
               className="live-badge provider-custom-btn"
-              style={{
-                background: 'rgba(15, 23, 42, 0.45)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                color: '#38bdf8',
-                border: providerDropdownOpen
-                  ? '1px solid rgba(56, 189, 248, 0.6)'
-                  : '1px solid rgba(56, 189, 248, 0.25)',
-                borderRadius: '12px',
-                padding: '3px 10px',
-                fontSize: '11px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                height: '24px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-                transition: 'all 0.15s ease',
-              }}
               title="Switch AI Provider"
             >
               {/* Glowing Green Dot if current provider is ready */}
               <span
-                style={{
-                  width: '7px',
-                  height: '7px',
-                  borderRadius: '50%',
-                  backgroundColor: isCurProviderReady ? '#22c55e' : 'rgba(148, 163, 184, 0.4)',
-                  boxShadow: isCurProviderReady ? '0 0 8px #22c55e, 0 0 2px #4ade80' : 'none',
-                  display: 'inline-block',
-                  flexShrink: 0,
-                }}
+                className="live-ready-indicator"
+                style={{ backgroundColor: isCurProviderReady ? '#22c55e' : 'rgba(148, 163, 184, 0.4)' }}
                 title={isCurProviderReady ? 'API Key updated & ready' : 'Needs API Key'}
               />
               <span>{allProviders[curProvider]?.name || curProvider}</span>
               <ChevronDown
                 size={11}
-                style={{
-                  opacity: 0.7,
-                  transform: providerDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.15s ease',
-                }}
+                className={`dropdown-icon ${providerDropdownOpen ? 'open' : ''}`}
               />
             </button>
 
             {/* Transparent Frosted Glass Dropdown Panel */}
             {providerDropdownOpen && (
-              <div
-                className="live-custom-dropdown-panel"
-                style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 6px)',
-                  left: 0,
-                  minWidth: '230px',
-                  maxWidth: '300px',
-                  maxHeight: '340px',
-                  overflowY: 'auto',
-                  background: 'rgba(10, 16, 30, 0.68)',
-                  backdropFilter: 'blur(20px)',
-                  WebkitBackdropFilter: 'blur(20px)',
-                  border: '1px solid rgba(255, 255, 255, 0.14)',
-                  borderRadius: '14px',
-                  boxShadow: '0 16px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.12)',
-                  padding: '5px',
-                  zIndex: 9999,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px',
-                  animation: 'liveFadeIn 0.12s ease-out',
-                }}
-              >
-                <div
-                  style={{
-                    padding: '6px 10px 4px',
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    color: 'rgba(148, 163, 184, 0.7)',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-                    marginBottom: '2px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
+              <div className="live-custom-dropdown-panel">
+                <div className="live-custom-dropdown-header">
                   <span>Select Provider</span>
                   <span style={{ fontSize: '9px', color: '#22c55e', display: 'flex', alignItems: 'center', gap: '3px' }}>
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e' }} /> Ready
@@ -1434,28 +1380,7 @@ export function LiveView({
                         handleProviderSelect(pId)
                         setProviderDropdownOpen(false)
                       }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        width: '100%',
-                        padding: '7px 10px',
-                        borderRadius: '8px',
-                        background: isSelected ? 'rgba(56, 189, 248, 0.18)' : 'transparent',
-                        border: isSelected ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid transparent',
-                        color: isSelected ? '#38bdf8' : '#f1f5f9',
-                        fontSize: '12px',
-                        fontWeight: isSelected ? 600 : 400,
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.1s ease',
-                      }}
-                      onMouseEnter={e => {
-                        if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
-                      }}
-                      onMouseLeave={e => {
-                        if (!isSelected) e.currentTarget.style.background = 'transparent'
-                      }}
+                      className={`live-dropdown-item-btn ${isSelected ? 'selected' : ''}`}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
                         {/* Glowing green dot for providers who have API key updated and ready */}
@@ -1465,7 +1390,6 @@ export function LiveView({
                             height: '7px',
                             borderRadius: '50%',
                             backgroundColor: isReady ? '#22c55e' : 'rgba(148, 163, 184, 0.3)',
-                            boxShadow: isReady ? '0 0 8px #22c55e, 0 0 2px #4ade80' : 'none',
                             flexShrink: 0,
                             display: 'inline-block',
                           }}
@@ -1478,11 +1402,11 @@ export function LiveView({
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         {!isReady && (
-                          <span style={{ fontSize: '9px', color: '#94a3b8', opacity: 0.65 }}>
+                          <span style={{ fontSize: '9px', opacity: 0.65 }}>
                             no key
                           </span>
                         )}
-                        {isSelected && <Check size={12} style={{ color: '#38bdf8', flexShrink: 0 }} />}
+                        {isSelected && <Check size={12} style={{ color: 'var(--accent, #ff6b35)', flexShrink: 0 }} />}
                       </div>
                     </button>
                   )
@@ -1505,26 +1429,6 @@ export function LiveView({
               setProviderDropdownOpen(false)
             }}
             className="live-badge model-custom-btn"
-            style={{
-              background: 'rgba(15, 23, 42, 0.45)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              color: '#f1f5f9',
-              border: modelDropdownOpen
-                ? '1px solid rgba(255, 255, 255, 0.35)'
-                : '1px solid rgba(255, 255, 255, 0.15)',
-              borderRadius: '12px',
-              padding: '3px 10px',
-              fontSize: '11px',
-              cursor: 'pointer',
-              height: '24px',
-              maxWidth: '220px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-              transition: 'all 0.15s ease',
-            }}
             title="Change active model or search"
           >
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1532,41 +1436,13 @@ export function LiveView({
             </span>
             <ChevronDown
               size={11}
-              style={{
-                opacity: 0.7,
-                transform: modelDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 0.15s ease',
-                flexShrink: 0,
-              }}
+              className={`dropdown-icon ${modelDropdownOpen ? 'open' : ''}`}
             />
           </button>
 
           {/* Transparent Frosted Glass Dropdown Panel */}
           {modelDropdownOpen && (
-            <div
-              className="live-custom-dropdown-panel"
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 6px)',
-                left: 0,
-                minWidth: '240px',
-                maxWidth: '320px',
-                maxHeight: '340px',
-                overflowY: 'auto',
-                background: 'rgba(10, 16, 30, 0.68)',
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
-                border: '1px solid rgba(255, 255, 255, 0.14)',
-                borderRadius: '14px',
-                boxShadow: '0 16px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.12)',
-                padding: '5px',
-                zIndex: 9999,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '2px',
-                animation: 'liveFadeIn 0.12s ease-out',
-              }}
-            >
+            <div className="live-custom-dropdown-panel">
               {/* Auto-pick fastest model for live button */}
               <button
                 type="button"
@@ -1575,25 +1451,14 @@ export function LiveView({
                   handleAutoPickFastest()
                 }}
                 disabled={isAutoPickingFastest}
+                className="live-dropdown-action-btn"
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  width: '100%',
-                  padding: '8px 10px',
-                  borderRadius: '8px',
-                  background: 'rgba(34, 197, 94, 0.18)',
+                  background: 'rgba(34, 197, 94, 0.14)',
                   border: '1px solid rgba(74, 222, 128, 0.35)',
-                  color: '#4ade80',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: isAutoPickingFastest ? 'wait' : 'pointer',
-                  textAlign: 'left',
-                  marginBottom: '2px',
-                  transition: 'all 0.1s ease',
+                  color: '#16a34a',
                 }}
               >
-                <Zap size={13} className={isAutoPickingFastest ? 'spin' : ''} style={{ color: '#4ade80', flexShrink: 0 }} />
+                <Zap size={13} className={isAutoPickingFastest ? 'spin' : ''} style={{ color: '#16a34a', flexShrink: 0 }} />
                 <span>{isAutoPickingFastest ? 'Testing Speed…' : '⚡ Auto-pick fastest for live'}</span>
               </button>
 
@@ -1604,39 +1469,14 @@ export function LiveView({
                   setModelDropdownOpen(false)
                   setShowModelSearch(true)
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  width: '100%',
-                  padding: '8px 10px',
-                  borderRadius: '8px',
-                  background: 'rgba(56, 189, 248, 0.15)',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
-                  color: '#38bdf8',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  marginBottom: '4px',
-                  transition: 'all 0.1s ease',
-                }}
+                className="live-dropdown-action-btn"
               >
                 <Search size={13} style={{ flexShrink: 0 }} />
                 <span>🔍 Search all models…</span>
               </button>
 
-              <div
-                style={{
-                  padding: '4px 10px 2px',
-                  fontSize: '10px',
-                  fontWeight: 600,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  color: 'rgba(148, 163, 184, 0.7)',
-                }}
-              >
-                {allProviders[curProvider]?.name || curProvider} Models
+              <div className="live-custom-dropdown-header">
+                <span>{allProviders[curProvider]?.name || curProvider} Models</span>
               </div>
 
               {currentModels.map(m => {
@@ -1649,33 +1489,12 @@ export function LiveView({
                       handleModelChange(m)
                       setModelDropdownOpen(false)
                     }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      width: '100%',
-                      padding: '7px 10px',
-                      borderRadius: '8px',
-                      background: isSelected ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
-                      border: isSelected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent',
-                      color: isSelected ? '#fff' : '#cbd5e1',
-                      fontSize: '12px',
-                      fontWeight: isSelected ? 600 : 400,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.1s ease',
-                    }}
-                    onMouseEnter={e => {
-                      if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'
-                    }}
-                    onMouseLeave={e => {
-                      if (!isSelected) e.currentTarget.style.background = 'transparent'
-                    }}
+                    className={`live-dropdown-item-btn ${isSelected ? 'selected' : ''}`}
                   >
                     <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                       {m.split('/').pop()}
                     </span>
-                    {isSelected && <Check size={12} style={{ color: '#38bdf8', flexShrink: 0 }} />}
+                    {isSelected && <Check size={12} style={{ color: 'var(--accent, #ff6b35)', flexShrink: 0 }} />}
                   </button>
                 )
               })}
@@ -1796,41 +1615,16 @@ export function LiveView({
           </div>
         )}
         {thinking && (
-          <div className="live-status thinking-status" style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            background: 'rgba(15, 23, 42, 0.85)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(96, 165, 250, 0.45)',
-            borderRadius: '12px',
-            padding: '7px 12px',
-            color: '#93c5fd',
-            fontSize: '13px',
-            fontWeight: 500,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-          }}>
+          <div className="live-status thinking-status">
             <span className="thinking-dots"><span /><span /><span /></span>
-            🧠 Thinking
+            <span>🧠 Thinking</span>
             {uiState.thinkingStartTime && (
               <ActivityTimer startTime={uiState.thinkingStartTime} />
             )}
             <button
               type="button"
               onClick={handleStopTurn}
-              style={{
-                marginLeft: 4,
-                padding: '3px 8px',
-                borderRadius: 8,
-                background: 'rgba(239, 68, 68, 0.25)',
-                border: '1px solid rgba(239, 68, 68, 0.55)',
-                color: '#fca5a5',
-                fontSize: '11px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                transition: 'all 0.15s ease',
-              }}
+              className="live-stop-turn-chip"
               title="Stop model thinking & cancel response"
             >
               <Square size={10} fill="currentColor" /> Stop
@@ -1838,64 +1632,25 @@ export function LiveView({
           </div>
         )}
         {tool && (
-          <div className="live-status" style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            background: 'rgba(15, 23, 42, 0.75)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(129, 140, 248, 0.4)',
-            borderRadius: '12px',
-            padding: '8px 16px',
-            color: '#c7d2fe',
-            fontSize: '13px',
-            fontWeight: 500,
-          }}>
-            <Wrench size={14} style={{ animation: 'spin 2s linear infinite' }} />
-            🔧 Using: <strong style={{ color: '#e0e7ff' }}>{tool}</strong>
+          <div className="live-status tool-status">
+            <Wrench size={14} className="spin" />
+            <span>🔧 Using: <strong>{tool}</strong></span>
           </div>
         )}
         {liveStatusText && !thinking && !tool && (
-          <div className="live-status action-status" style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            background: 'rgba(15, 23, 42, 0.65)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(56, 189, 248, 0.3)',
-            borderRadius: '12px',
-            padding: '7px 14px',
-            color: '#7dd3fc',
-            fontSize: '12px',
-            fontWeight: 500,
-            maxWidth: '90vw',
-          }}>
+          <div className="live-status action-status">
             <Loader2 size={13} className="spin" />
-            {liveStatusText}
+            <span>{liveStatusText}</span>
           </div>
         )}
 
         {reasoningText && (
           <div
-            className="live-reasoning-chip"
-            style={{
-              maxWidth: '90vw',
-              width: '420px',
-              margin: '8px auto 0',
-              background: 'rgba(15, 23, 42, 0.85)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(148, 163, 184, 0.25)',
-              borderRadius: '12px',
-              padding: '8px 12px',
-              textAlign: 'left',
-              color: '#cbd5e1',
-              fontSize: '12px',
-              maxHeight: showReasoning ? '180px' : '48px',
-              overflowY: 'auto',
-              transition: 'all 0.2s ease',
-              cursor: 'pointer',
-              zIndex: 10,
-            }}
+            className={`live-reasoning-chip ${showReasoning ? 'expanded' : ''}`}
             onClick={() => setState(prev => ({ ...prev, showReasoning: !prev.showReasoning }))}
             title="Click to toggle AI reasoning scratchpad"
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', fontWeight: 600, color: '#93c5fd' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', fontWeight: 600, color: 'var(--accent, #ff6b35)' }}>
               <span>🧠 AI Reasoning {thinking ? '(In Progress…)' : ''}</span>
               <span style={{ fontSize: '10px', opacity: 0.7 }}>{showReasoning ? '▲ Collapse' : '▼ View full'}</span>
             </div>

@@ -26,13 +26,13 @@ export function LiveArtifactStage({
         flexDirection: 'column',
         height: '100%',
         maxHeight: '100%',
-        background: 'rgba(15, 23, 42, 0.72)',
+        background: 'var(--live-panel-bg, rgba(15, 23, 42, 0.72))',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
-        border: '1px solid rgba(56, 189, 248, 0.25)',
+        border: '1px solid var(--live-panel-border, rgba(56, 189, 248, 0.25))',
         borderRadius: '16px',
         overflow: 'hidden',
-        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.45)',
+        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.18)',
         animation: 'liveArtifactSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
@@ -43,8 +43,8 @@ export function LiveArtifactStage({
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '10px 14px',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          background: 'rgba(15, 23, 42, 0.4)',
+          borderBottom: '1px solid var(--live-border, rgba(255, 255, 255, 0.08))',
+          background: 'var(--live-surface, rgba(15, 23, 42, 0.4))',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -151,10 +151,10 @@ export function LiveArtifactStage({
           <div
             style={{
               padding: '16px',
-              background: 'rgba(15, 23, 42, 0.5)',
+              background: 'var(--live-surface, rgba(15, 23, 42, 0.5))',
               borderRadius: '10px',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              color: '#e2e8f0',
+              border: '1px solid var(--live-border, rgba(255, 255, 255, 0.08))',
+              color: 'var(--live-text, #e2e8f0)',
               fontSize: '13px',
               lineHeight: 1.6,
               whiteSpace: 'pre-wrap',

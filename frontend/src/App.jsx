@@ -5206,6 +5206,8 @@ export default function App() {
           persona={liveConfig.persona}
           disabledTools={liveConfig.disabledTools}
           features={features}
+          theme={theme}
+          onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
           conversationId={conv?.id || null}
           projectId={activeProject?.id || null}
           onTranscript={saveLiveTurn}

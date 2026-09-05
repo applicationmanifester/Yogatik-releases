@@ -239,7 +239,7 @@ export function stripWakeWord(text = '', wake = '') {
  * "unknown" and never rejected — only a real, low positive score is.
  */
 /** Consecutive `network` failures before we stop trusting the cloud recogniser. */
-export const NETWORK_FAILS_BEFORE_LOCAL = 1
+export const NETWORK_FAILS_BEFORE_LOCAL = 2
 
 /**
  * What to do about a Web Speech error.
@@ -337,8 +337,8 @@ export function createCascadeSession({
           // Muted and echo handling mirror the Web Speech path; without the echo
           // guard the assistant transcribes its own voice and answers itself.
           if (muted || closed) return
-          if ((speaking || abort || (Date.now() - speechEndedAt) < ECHO_TAIL_MS) && isEcho(text, spokenAloud)) return
-          if (speaking || abort) interrupt()
+          if ((speaking || (Date.now() - speechEndedAt) < ECHO_TAIL_MS) && isEcho(text, spokenAloud)) return
+          if (speaking) interrupt(false)
           handleUtterance(text, 1)
         },
         onError: (err) => emit({ type: 'error', message: `On-device speech: ${err.message}` }),
@@ -453,8 +453,8 @@ export function createCascadeSession({
     }
   }
 
-  /** Barge-in, done by hand: kill the voice and abandon the generation. */
-  const interrupt = async () => {
+  /** Barge-in, done by hand or speech: kill the voice and abandon the generation. */
+  const interrupt = async (userExplicit = false) => {
     if (!speaking && !abort && !thinking) return
     // Stop synthesis first - wait for it to complete
     await speaker.cancel()
@@ -468,7 +468,9 @@ export function createCascadeSession({
     emit({ type: 'interrupted' })
     emit({ type: 'speaking', value: false })
     emit({ type: 'thinking', value: false })
-    emit({ type: 'status', text: '⏹️ Stopped' })
+    if (userExplicit) {
+      emit({ type: 'status', text: '⏹️ Stopped' })
+    }
   }
 
   // ─── Turn queue ───
@@ -518,8 +520,8 @@ export function createCascadeSession({
   // ─── Spoken control commands + wake word + noise gate ───
   function handleCommand(cmd) {
     switch (cmd.type) {
-      case 'stop': interrupt(); return
-      case 'pause': muted = true; interrupt(); emit({ type: 'muted', value: true }); return
+      case 'stop': interrupt(true); return
+      case 'pause': muted = true; interrupt(true); emit({ type: 'muted', value: true }); return
       case 'resume': muted = false; emit({ type: 'muted', value: false }); return
       case 'repeat':
         if (lastReply) { emit({ type: 'status', text: 'Repeating…' }); speak(lastReply) }
@@ -977,15 +979,15 @@ export function createCascadeSession({
       // buffer) for a beat AFTER playback ends, so guard for a tail window too —
       // otherwise the echoed FINAL transcript lands with speaking already false,
       // gets enqueued, and the assistant answers its own voice in a loop.
-      const echoWindow = speaking || abort || (Date.now() - speechEndedAt) < ECHO_TAIL_MS
+      const echoWindow = speaking || (Date.now() - speechEndedAt) < ECHO_TAIL_MS
       if (echoWindow && isEcho(heard, spokenAloud)) return
-      // Genuine barge-in only counts while actually speaking (not during the tail).
-      if ((speaking || abort) && (finalText || heard.length >= MIN_BARGE_CHARS)) {
+      // Genuine barge-in only counts while actually speaking (not during the tail, and never while thinking/tools).
+      if (speaking && (finalText || heard.length >= MIN_BARGE_CHARS)) {
         // `spokeAfter` is the whole point of recording this. An interrupt
         // followed by nothing is noise or the assistant's own echo, and that
         // is the failure people never report — they just stop using it.
         metrics.markBargeIn(!!heard.trim())
-        interrupt()
+        interrupt(false)
       }
 
       if (muted) return
@@ -1166,7 +1168,7 @@ export function createCascadeSession({
     sendText: (t) => enqueue(t),
     /** Auto-scan tick: remember the scene if it changed, say nothing. */
     watch,
-    setMuted: (v) => { muted = v; if (v) interrupt(); emit({ type: 'muted', value: v }) },
+    setMuted: (v) => { muted = v; if (v) interrupt(false); emit({ type: 'muted', value: v }) },
     isMuted: () => muted,
     /** Let ANY model watch the feed continuously: 'auto' | 'always' | 'off'. */
     setVisionMode: (mode) => { if (['auto', 'always', 'off'].includes(mode)) { visionMode = mode; emit({ type: 'status', text: `Vision: ${mode}` }) } },
@@ -1281,7 +1283,7 @@ export function createCascadeSession({
     getNoiseSuppression: () => true,
     get cameraOn() { return !!cam },
     get screenOn() { return !!screen },
-    interrupt,
-    stop: interrupt,
+    interrupt: (userExplicit = false) => interrupt(userExplicit),
+    stop: (userExplicit = true) => interrupt(userExplicit),
   }
 }

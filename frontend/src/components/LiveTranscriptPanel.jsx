@@ -30,10 +30,10 @@ function statusIcon(text = '') {
 
 function statusColor(text = '') {
   const t = text.toLowerCase()
-  if (t.includes('complete') || t.includes('✅')) return { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.35)', color: '#86efac' }
-  if (t.includes('error') || t.includes('failed') || t.includes('timeout')) return { bg: 'rgba(239, 68, 68, 0.12)', border: 'rgba(239, 68, 68, 0.35)', color: '#fca5a5' }
-  if (t.includes('fast') || t.includes('⚡') || t.includes('streaming')) return { bg: 'rgba(56, 189, 248, 0.1)', border: 'rgba(56, 189, 248, 0.3)', color: '#7dd3fc' }
-  return { bg: 'rgba(56, 189, 248, 0.08)', border: 'rgba(56, 189, 248, 0.25)', color: '#93c5fd' }
+  if (t.includes('complete') || t.includes('✅')) return { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.35)', color: 'var(--live-text-accent-success, #16a34a)' }
+  if (t.includes('error') || t.includes('failed') || t.includes('timeout')) return { bg: 'rgba(239, 68, 68, 0.12)', border: 'rgba(239, 68, 68, 0.35)', color: 'var(--live-text-accent-error, #dc2626)' }
+  if (t.includes('fast') || t.includes('⚡') || t.includes('streaming')) return { bg: 'rgba(56, 189, 248, 0.1)', border: 'rgba(56, 189, 248, 0.3)', color: 'var(--live-text-accent-info, #0284c7)' }
+  return { bg: 'var(--live-surface, rgba(0,0,0,0.04))', border: 'var(--live-border, rgba(0,0,0,0.08))', color: 'var(--live-text-dim, #64748b)' }
 }
 
 /** Elapsed timer that ticks every 100ms while thinking is active */
@@ -133,10 +133,10 @@ export function LiveTranscriptPanel({
               style={{
                 width: '100%',
                 padding: '6px 10px 6px 32px',
-                background: 'rgba(15, 23, 42, 0.6)',
-                border: '1px solid rgba(56, 189, 248, 0.2)',
+                background: 'var(--live-surface, rgba(0, 0, 0, 0.04))',
+                border: '1px solid var(--live-border, rgba(0, 0, 0, 0.1))',
                 borderRadius: '6px',
-                color: '#e2e8f0',
+                color: 'var(--live-text, #0f172a)',
                 fontSize: '12px',
                 outline: 'none',
               }}
@@ -168,10 +168,10 @@ export function LiveTranscriptPanel({
             onChange={e => setFilterType(e.target.value)}
             style={{
               padding: '6px 10px',
-              background: 'rgba(15, 23, 42, 0.6)',
-              border: '1px solid rgba(56, 189, 248, 0.2)',
+              background: 'var(--live-surface, rgba(0, 0, 0, 0.04))',
+              border: '1px solid var(--live-border, rgba(0, 0, 0, 0.1))',
               borderRadius: '6px',
-              color: '#e2e8f0',
+              color: 'var(--live-text, #0f172a)',
               fontSize: '11px',
               outline: 'none',
               cursor: 'pointer',
@@ -195,11 +195,11 @@ export function LiveTranscriptPanel({
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6,
           padding: '6px 14px', margin: '0 12px 6px',
-          background: 'rgba(99, 102, 241, 0.1)',
-          border: '1px solid rgba(99, 102, 241, 0.25)',
-          borderRadius: '6px', fontSize: '11px', color: '#a5b4fc',
+          background: 'var(--live-surface, rgba(0, 0, 0, 0.04))',
+          border: '1px solid var(--live-border, rgba(0, 0, 0, 0.08))',
+          borderRadius: '6px', fontSize: '11px', color: 'var(--live-text, #0f172a)',
         }}>
-          <Cpu size={11} style={{ flexShrink: 0 }} />
+          <Cpu size={11} style={{ flexShrink: 0, color: 'var(--accent, #ff6b35)' }} />
           <span style={{ fontWeight: 600 }}>{activeProvider || 'AI'}</span>
           {activeModel && <span style={{ opacity: 0.7 }}>· {String(activeModel).split('/').pop().slice(0, 30)}</span>}
         </div>
@@ -305,7 +305,7 @@ export function LiveTranscriptPanel({
                 padding: '6px 10px', margin: '3px 0',
                 background: 'rgba(16, 185, 129, 0.08)',
                 border: '1px solid rgba(16, 185, 129, 0.25)',
-                borderRadius: '6px', fontSize: '11px', color: '#a7f3d0',
+                borderRadius: '6px', fontSize: '11px', color: 'var(--live-text-accent-success, #16a34a)',
                 animation: 'liveFadeIn 0.3s ease-out',
               }}>
                 <span style={{ fontWeight: 600 }}>↳ {item.name}:</span>{' '}
@@ -323,7 +323,7 @@ export function LiveTranscriptPanel({
                 }}>
                   {item.role === 'user' ? '🎙️ You' : '🤖 Yogatik'}
                 </span>
-                {item.streaming && <span className="streaming-indicator" aria-label="Streaming">▊</span>}
+                {item.streaming && item.role === 'assistant' && <span className="streaming-indicator" aria-label="Streaming" />}
                 <time>{formatTime(item.time)}</time>
                 <button
                   className="live-transcript-copy"
