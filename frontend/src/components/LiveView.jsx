@@ -27,7 +27,7 @@ import { LiveTelestration } from './LiveTelestration'
 import { openDocumentPip, isDocumentPipSupported } from '../pipCompanion'
 import { enumerate, canFlipCamera } from '../live/devices'
 import * as liveMetrics from '../live/metrics'
-import { db } from '../db'
+import { db, getSetting, setSetting } from '../db'
 import { preconnectProvider } from '../live/latencyOptimizer'
 import { backgroundWorkers } from '../backgroundWorkers'
 
@@ -209,7 +209,7 @@ export function LiveView({
   }, [showHudNotice])
 
   useEffect(() => {
-    db.getSetting('chat_prefs', {}).then(p => {
+    getSetting('chat_prefs', {}).then(p => {
       if (p?.live_noise_suppression !== undefined) {
         setNoiseSuppression(!!p.live_noise_suppression)
       }
@@ -1245,7 +1245,7 @@ export function LiveView({
           if (r?.success === false) setState({ error: r.error })
           else {
             setLiveEngine(e)
-            db.getSetting('chat_prefs', {}).then(p => db.setSetting('chat_prefs', { ...p, live_voice_engine: e })).catch(() => {})
+            getSetting('chat_prefs', {}).then(p => setSetting('chat_prefs', { ...p, live_voice_engine: e })).catch(() => {})
           }
         }}
         voice={liveVoiceId}
@@ -1262,7 +1262,7 @@ export function LiveView({
         onNoiseSuppression={(val) => {
           setNoiseSuppression(val)
           sessionRef.current?.setNoiseSuppression?.(val)
-          db.getSetting('chat_prefs', {}).then(p => db.setSetting('chat_prefs', { ...p, live_noise_suppression: val })).catch(() => {})
+          getSetting('chat_prefs', {}).then(p => setSetting('chat_prefs', { ...p, live_noise_suppression: val })).catch(() => {})
         }}
       />
 

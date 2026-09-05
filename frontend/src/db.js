@@ -179,6 +179,10 @@ export async function getAllSettings() {
   return obj
 }
 
+db.getSetting = getSetting
+db.setSetting = setSetting
+db.getAllSettings = getAllSettings
+
 // Eager background priming of settings cache on startup
 if (typeof window !== 'undefined' || typeof globalThis !== 'undefined') {
   getAllSettings().catch(() => {})
