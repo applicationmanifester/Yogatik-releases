@@ -115,7 +115,7 @@ function run() {
     `[ensure-native-deps] ${process.platform}-${process.arch} is missing: ${toInstall.join(', ')} ` +
     `(this is npm/cli#4828 — a lockfile resolved on a different platform). Installing…`
   )
-  execFileSync(npmBin(), ['install', '--no-save', '--no-audit', '--no-fund', ...toInstall], { stdio: 'inherit' })
+  execFileSync(npmBin(), ['install', '--no-save', '--no-audit', '--no-fund', '--ignore-scripts', ...toInstall], { stdio: 'inherit' })
   console.log('[ensure-native-deps] Done.')
 }
 
