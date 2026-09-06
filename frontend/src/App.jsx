@@ -664,16 +664,20 @@ export default function App() {
     showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact ||
     showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor ||
     showWorkspace || showTour || showBilling ||
-    // showAgents/showMcpModal were missing here (and below, in isAnyModalOpen)
-    // before the DashboardShell migration — the same "finished UI nothing
-    // wired up" gap this file's own notes call out elsewhere, just on the
-    // occlusion/modal-open checks instead of on reachability. Fixed here
-    // rather than left as a pre-existing bug now that all seven panels
-    // render through one shared code path. showAccount/showProviders/
-    // showPrivacy are the same three that split off "Settings" — see
-    // DASHBOARD_SECTIONS in DashboardShell.jsx.
     showAgents || showMcpModal || showPlugins ||
-    showAccount || showProviders || showPrivacy
+    showAccount || showProviders || showPrivacy ||
+    showGrokDock || showGeminiDock
+  )
+
+  const webDockOccluded = !!(
+    showPersonalise || showSkills || showToolPicker ||
+    showPalette || showProviderModal || showAuthModal || showDataDashboard ||
+    showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact ||
+    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor ||
+    showWorkspace || showTour || showBilling ||
+    showAgents || showMcpModal || showPlugins ||
+    showAccount || showProviders || showPrivacy ||
+    browserPanel
   )
 
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
@@ -3582,8 +3586,8 @@ export default function App() {
       { id: 'workspace-scm', group: 'View', label: '🔀 Review the agent’s file changes', hint: isDesktop() ? 'Source control' : 'Desktop app', run: () => setShowWorkspace(true) },
       { id: 'scheduler', group: 'Tools', label: '⏰ Scheduled tasks (cron jobs)', hint: 'Manage & cancel', run: () => setShowScheduler(true) },
       { id: 'sub-agents', group: 'Tools', label: '🧩 Sub-agent runner', hint: 'Isolated agents', run: () => setShowSubAgents(true) },
-      { id: 'grok-dock', group: 'Tools', label: '🤖 Grok.com Studio Dock (Desktop Local Files Bridge)', hint: 'xAI Web + Files', run: () => setShowGrokDock(true) },
-      { id: 'gemini-dock', group: 'Tools', label: '✨ Gemini.com Studio Dock (Desktop Local Files Bridge)', hint: 'Google Web + Files', run: () => setShowGeminiDock(true) },
+      { id: 'grok-dock', group: 'Tools', label: '🤖 Grok.com Studio Dock (Desktop Local Files Bridge)', hint: 'xAI Web + Files', run: () => { setShowGrokDock(true); setShowGeminiDock(false); } },
+      { id: 'gemini-dock', group: 'Tools', label: '✨ Gemini.com Studio Dock (Desktop Local Files Bridge)', hint: 'Google Web + Files', run: () => { setShowGeminiDock(true); setShowGrokDock(false); } },
       { id: 'auto-skills', group: 'Tools', label: '✨ Auto-generated skills', hint: 'Review & prune', run: () => setShowAutoSkills(true) },
       { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => navigateDashboard('capabilities') },
       { id: 'usage-data', group: 'Settings', label: 'Usage, cost & storage', hint: 'Data hub', run: () => navigateDashboard('usage') },
@@ -4556,7 +4560,10 @@ export default function App() {
               <button className="icon-btn domain-hub-header-btn" onClick={() => setShowDomainHub(true)} title="Social Media & Domain Hub (Alt+D)" aria-label="Social Media & Domain Hub"><Globe size={17} /></button>
               <button
                 className="icon-btn grok-dock-header-btn"
-                onClick={() => setShowGrokDock(s => !s)}
+                onClick={() => setShowGrokDock(s => {
+                  if (!s) setShowGeminiDock(false)
+                  return !s
+                })}
                 title="Grok.com Studio Dock & Local Files Bridge"
                 aria-label="Grok.com Studio Dock"
               >
@@ -4564,7 +4571,10 @@ export default function App() {
               </button>
               <button
                 className="icon-btn gemini-dock-header-btn"
-                onClick={() => setShowGeminiDock(s => !s)}
+                onClick={() => setShowGeminiDock(s => {
+                  if (!s) setShowGrokDock(false)
+                  return !s
+                })}
                 title="Gemini.com Studio Dock & Local Files Bridge"
                 aria-label="Gemini.com Studio Dock"
               >
@@ -5503,12 +5513,22 @@ export default function App() {
         <GrokDock
           onClose={() => setShowGrokDock(false)}
           onToast={showToast}
+          occluded={webDockOccluded}
+          onSwitchToGemini={() => {
+            setShowGrokDock(false)
+            setShowGeminiDock(true)
+          }}
         />
       )}
       {showGeminiDock && (
         <GeminiDock
           onClose={() => setShowGeminiDock(false)}
           onToast={showToast}
+          occluded={webDockOccluded}
+          onSwitchToGrok={() => {
+            setShowGeminiDock(false)
+            setShowGrokDock(true)
+          }}
         />
       )}
       {showPersonaModal && (

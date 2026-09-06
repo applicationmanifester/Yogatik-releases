@@ -12,8 +12,9 @@ export { buildWorkspaceContextPrompt }
  * Generates an evaluation script to inject text into gemini.google.com's chat input.
  * Supports Quill editor (.ql-editor), rich-textarea, and contenteditable elements.
  */
-export function getGeminiInputInjectionScript(text) {
+export function getGeminiInputInjectionScript(text, { autoSubmit = false } = {}) {
   const safeText = JSON.stringify(text)
+  const shouldSubmit = Boolean(autoSubmit)
   return `(() => {
     try {
       const selectors = [
@@ -26,14 +27,25 @@ export function getGeminiInputInjectionScript(text) {
         'div[role="textbox"]',
         'textarea',
       ];
-      let target = null;
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0)) {
-          target = el;
-          break;
+
+      function findInputDeep(root = document) {
+        for (const sel of selectors) {
+          const el = root.querySelector(sel);
+          if (el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0)) {
+            return el;
+          }
         }
+        const all = root.querySelectorAll('*');
+        for (const el of all) {
+          if (el.shadowRoot) {
+            const found = findInputDeep(el.shadowRoot);
+            if (found) return found;
+          }
+        }
+        return null;
       }
+
+      let target = findInputDeep(document);
       if (!target) {
         target = document.querySelector('.ql-editor') || document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
       }
@@ -70,6 +82,15 @@ export function getGeminiInputInjectionScript(text) {
         }
       }
 
+      if (${shouldSubmit}) {
+        setTimeout(() => {
+          const btn = document.querySelector('button[aria-label*="Send"], button.send-button, button[aria-label*="Submit"], button[type="submit"]');
+          if (btn && !btn.disabled) {
+            btn.click();
+          }
+        }, 150);
+      }
+
       return { success: true, targetType: target.tagName.toLowerCase() };
     } catch (err) {
       return { success: false, error: err?.message || String(err) };
@@ -93,7 +114,10 @@ export function getGeminiCodeExtractionScript() {
       const list = Array.from(preElements).slice(-10);
       list.forEach((pre, idx) => {
         const codeEl = pre.querySelector('code') || pre;
-        const text = codeEl.innerText || codeEl.textContent || '';
+        // Strip copy buttons or header labels that might leak into innerText
+        const clone = codeEl.cloneNode(true);
+        clone.querySelectorAll('button, [aria-label*="Copy"], [aria-label*="copy"], .copy-button, .code-block-decoration').forEach(b => b.remove());
+        const text = clone.innerText || clone.textContent || '';
         if (!text.trim()) return;
 
         let lang = 'text';
@@ -113,10 +137,17 @@ export function getGeminiCodeExtractionScript() {
         if (header && header.textContent && /\\.[a-z0-9]{1,8}$/i.test(header.textContent.trim())) {
           filename = header.textContent.trim();
         }
+        if (!filename) {
+          const firstLine = text.trim().split('\\n')[0] || '';
+          const match = firstLine.match(/(?:\/\/|#|\\/\\*|<!--)\\s*(?:filepath:|filename:|file:)?\\s*([a-zA-Z0-9_\\-./\\\\]+\\.[a-z0-9]{1,8})/i);
+          if (match && match[1] && !match[1].startsWith('http')) {
+            filename = match[1];
+          }
+        }
 
         codeBlocks.push({
           id: idx,
-          code: text,
+          code: text.trim(),
           language: lang,
           filename: filename || '',
           lines: text.split('\\n').length
@@ -133,13 +164,13 @@ export function getGeminiCodeExtractionScript() {
 /**
  * High-level bridge helper to inject text into the active Gemini session.
  */
-export async function injectTextIntoGemini(conversationId, text) {
+export async function injectTextIntoGemini(conversationId, text, options = {}) {
   const br = typeof window !== 'undefined' ? window.__YOGATIK_BROWSER__ : null
   if (!br || typeof br.evaluate !== 'function') {
     throw new Error('Desktop browser bridge is not available. Please run Yogatik in desktop mode.')
   }
 
-  const script = getGeminiInputInjectionScript(text)
+  const script = getGeminiInputInjectionScript(text, options)
   const result = await br.evaluate({
     conversationId,
     expression: script,

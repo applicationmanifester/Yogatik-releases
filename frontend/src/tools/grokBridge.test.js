@@ -41,15 +41,27 @@ describe('grokBridge', () => {
       expect(script).toContain('const x = \\"hello\\" && y > 10;')
       expect(script).toContain('textarea')
       expect(script).toContain('dispatchEvent')
+      expect(script).toContain('findInputDeep')
+    })
+
+    it('handles autoSubmit flag', () => {
+      const scriptNoSubmit = getGrokInputInjectionScript('test', { autoSubmit: false })
+      const scriptWithSubmit = getGrokInputInjectionScript('test', { autoSubmit: true })
+      expect(scriptNoSubmit).toContain('if (false)')
+      expect(scriptWithSubmit).toContain('if (true)')
+      expect(scriptWithSubmit).toContain('btn.click()')
     })
   })
 
   describe('getGrokCodeExtractionScript', () => {
-    it('returns a script that searches for pre and code blocks', () => {
+    it('returns a script that searches for pre and code blocks and strips copy buttons', () => {
       const script = getGrokCodeExtractionScript()
       expect(script).toContain('querySelectorAll(\'pre\')')
       expect(script).toContain('codeBlocks')
       expect(script).toContain('language-')
+      expect(script).toContain('cloneNode(true)')
+      expect(script).toContain('button, [aria-label*="Copy"]')
+      expect(script).toContain('filepath:')
     })
   })
 

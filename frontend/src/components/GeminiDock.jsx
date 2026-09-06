@@ -14,7 +14,21 @@ import {
 const GEMINI_CONV_ID = 'gemini-dock'
 const GEMINI_URL = 'https://gemini.google.com/'
 
-export function GeminiDock({ onClose, onToast, activeFileName = '', activeFileContent = '' }) {
+const BINARY_EXTS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'ico', 'webp', 'svg', 'mp4', 'mp3', 'wav',
+  'pdf', 'zip', 'tar', 'gz', 'bin', 'exe', 'dll', 'so', 'dylib', 'wasm',
+  'iso', '7z', 'rar', 'lock'
+])
+const MAX_INJECT_BYTES = 180 * 1024 // 180KB safety ceiling
+
+export function GeminiDock({
+  onClose,
+  onToast,
+  occluded = false,
+  onSwitchToGrok,
+  activeFileName = '',
+  activeFileContent = ''
+}) {
   const holeRef = useRef(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -23,6 +37,7 @@ export function GeminiDock({ onClose, onToast, activeFileName = '', activeFileCo
   // Bridge File Picker State
   const [showFilePicker, setShowFilePicker] = useState(false)
   const [availableFiles, setAvailableFiles] = useState([])
+  const [fileFilter, setFileFilter] = useState('')
   const [selectedFile, setSelectedFile] = useState('')
   const [searchingFiles, setSearchingFiles] = useState(false)
 
@@ -34,6 +49,9 @@ export function GeminiDock({ onClose, onToast, activeFileName = '', activeFileCo
 
   const br = () => (typeof window !== 'undefined' && window.__YOGATIK_BROWSER__) || null
   const desktop = isDesktop()
+
+  // An overlay/drawer paints UNDER the native view in Electron, so detach WebContentsView while occluded
+  const isOccluded = occluded || showFilePicker || showCodeDrawer
 
   const reportBounds = useCallback(() => {
     const b = br()
@@ -75,6 +93,16 @@ export function GeminiDock({ onClose, onToast, activeFileName = '', activeFileCo
     }
   }, [reportBounds])
 
+  // Handle occlusion / dialog detachment
+  useEffect(() => {
+    const b = br()
+    if (!b) return
+    b.setDetached({ conversationId: GEMINI_CONV_ID, detached: !!isOccluded })
+    if (!isOccluded) {
+      reportBounds()
+    }
+  }, [isOccluded, reportBounds])
+
   const handleReload = () => {
     const b = br()
     if (b) {
@@ -98,12 +126,19 @@ export function GeminiDock({ onClose, onToast, activeFileName = '', activeFileCo
   const openFileSelector = async () => {
     setShowFilePicker(true)
     setSearchingFiles(true)
+    setFileFilter('')
     try {
-      const res = await wsFindFiles('*', { limit: 120 })
+      const res = await wsFindFiles('*', { limit: 150 })
       const files = Array.isArray(res) ? res : res?.files || []
-      setAvailableFiles(files.filter(f => !f.includes('node_modules') && !f.includes('.git/')))
-      if (files.length && !selectedFile) {
-        setSelectedFile(files[0])
+      const filtered = files.filter(f => {
+        if (f.includes('node_modules') || f.includes('.git/')) return false
+        if (f.endsWith('package-lock.json') || f.endsWith('yarn.lock') || f.endsWith('pnpm-lock.yaml')) return false
+        const ext = f.split('.').pop()?.toLowerCase() || ''
+        return !BINARY_EXTS.has(ext)
+      })
+      setAvailableFiles(filtered)
+      if (filtered.length && !selectedFile) {
+        setSelectedFile(filtered[0])
       }
     } catch {
       setAvailableFiles([])
@@ -123,7 +158,11 @@ export function GeminiDock({ onClose, onToast, activeFileName = '', activeFileCo
     setStatusMsg(`Reading ${pathToSend}...`)
     try {
       const res = await wsRead(pathToSend)
-      const content = typeof res === 'string' ? res : res?.content || ''
+      let content = typeof res === 'string' ? res : res?.content || ''
+      if (content.length > MAX_INJECT_BYTES) {
+        content = content.slice(0, MAX_INJECT_BYTES) + `\n\n/* [NOTE: File trimmed to 180KB for prompt transmission (${Math.round(content.length / 1024)}KB total)] */`
+        onToast?.(`Notice: ${pathToSend} trimmed to 180KB to fit prompt limits`)
+      }
       const ext = pathToSend.split('.').pop() || 'text'
       const prompt = `📁 **File: \`${pathToSend}\`**\n\`\`\`${ext}\n${content}\n\`\`\`\nPlease analyze this code.`
 
@@ -202,6 +241,11 @@ export function GeminiDock({ onClose, onToast, activeFileName = '', activeFileCo
 
       setExtractedBlocks(blocks)
       setShowCodeDrawer(true)
+      const initialPaths = {}
+      blocks.forEach(b => {
+        if (b.filename) initialPaths[b.id] = b.filename
+      })
+      setTargetPaths(prev => ({ ...initialPaths, ...prev }))
       setStatusMsg(`Extracted ${blocks.length} code block(s)`)
       onToast?.(`Found ${blocks.length} code block(s) from Gemini`)
     } catch (err) {
@@ -224,6 +268,10 @@ export function GeminiDock({ onClose, onToast, activeFileName = '', activeFileCo
     }
   }
 
+  const displayedFiles = availableFiles.filter(
+    f => !fileFilter || f.toLowerCase().includes(fileFilter.toLowerCase())
+  )
+
   return (
     <div className={`gemini-dock-container ${fullscreen ? 'fullscreen' : ''}`}>
       {/* Top Header */}
@@ -234,6 +282,15 @@ export function GeminiDock({ onClose, onToast, activeFileName = '', activeFileCo
           <span className="gemini-status-badge">
             <span className="status-dot online" /> {desktop ? 'Desktop Bridge Active' : 'Web View'}
           </span>
+          {onSwitchToGrok && (
+            <button
+              className="dock-switch-pill"
+              onClick={onSwitchToGrok}
+              title="Switch to Grok.com Studio"
+            >
+              🤖 Switch to Grok
+            </button>
+          )}
           <span className="gemini-dock-hint">({statusMsg})</span>
         </div>
 
@@ -311,11 +368,21 @@ export function GeminiDock({ onClose, onToast, activeFileName = '', activeFileCo
               <h4><FolderOpen size={15} /> Select Workspace File to Send</h4>
               <button className="icon-btn" onClick={() => setShowFilePicker(false)}><X size={14} /></button>
             </div>
+            <div className="picker-search-bar">
+              <input
+                type="search"
+                placeholder="Filter files (e.g. App.jsx)..."
+                value={fileFilter}
+                onChange={e => setFileFilter(e.target.value)}
+                className="path-input"
+                autoFocus
+              />
+            </div>
             {searchingFiles ? (
               <p className="picker-loading">Listing project files…</p>
-            ) : availableFiles.length > 0 ? (
+            ) : displayedFiles.length > 0 ? (
               <div className="picker-list">
-                {availableFiles.map(file => (
+                {displayedFiles.map(file => (
                   <button
                     key={file}
                     className={`picker-item ${selectedFile === file ? 'active' : ''}`}
@@ -326,7 +393,11 @@ export function GeminiDock({ onClose, onToast, activeFileName = '', activeFileCo
                 ))}
               </div>
             ) : (
-              <p className="picker-empty">No files discovered in current workspace root.</p>
+              <p className="picker-empty">
+                {availableFiles.length === 0
+                  ? 'No files discovered in current workspace root.'
+                  : 'No files match your search filter.'}
+              </p>
             )}
             <div className="picker-footer">
               <button className="small-btn" onClick={() => setShowFilePicker(false)}>Cancel</button>

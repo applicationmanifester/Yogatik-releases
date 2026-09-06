@@ -10042,6 +10042,37 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
   border: 1px solid var(--border);
 }
 
+.dock-switch-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(255, 107, 53, 0.1);
+  border: 1px solid rgba(255, 107, 53, 0.25);
+  border-radius: 999px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dock-switch-pill:hover {
+  background: rgba(255, 107, 53, 0.2);
+  transform: translateY(-1px);
+}
+
+.picker-search-bar {
+  padding: 8px 12px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.picker-search-bar .path-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .grok-dock-hint {
   font-size: 11px;
   font-weight: 400;

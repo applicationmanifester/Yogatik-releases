@@ -9,8 +9,9 @@ import { invoke, isDesktop } from './localFs'
  * Generates an evaluation script to inject text into grok.com's chat input.
  * Supports both standard textarea and contenteditable rich-text editors.
  */
-export function getGrokInputInjectionScript(text) {
+export function getGrokInputInjectionScript(text, { autoSubmit = false } = {}) {
   const safeText = JSON.stringify(text)
+  const shouldSubmit = Boolean(autoSubmit)
   return `(() => {
     try {
       const selectors = [
@@ -22,14 +23,25 @@ export function getGrokInputInjectionScript(text) {
         '[contenteditable="true"]',
         'div[role="textbox"]'
       ];
-      let target = null;
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0)) {
-          target = el;
-          break;
+
+      function findInputDeep(root = document) {
+        for (const sel of selectors) {
+          const el = root.querySelector(sel);
+          if (el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0)) {
+            return el;
+          }
         }
+        const all = root.querySelectorAll('*');
+        for (const el of all) {
+          if (el.shadowRoot) {
+            const found = findInputDeep(el.shadowRoot);
+            if (found) return found;
+          }
+        }
+        return null;
       }
+
+      let target = findInputDeep(document);
       if (!target) {
         target = document.querySelector('textarea') || document.querySelector('[contenteditable="true"]');
       }
@@ -67,6 +79,15 @@ export function getGrokInputInjectionScript(text) {
         }
       }
 
+      if (${shouldSubmit}) {
+        setTimeout(() => {
+          const btn = document.querySelector('button[aria-label*="Submit"], button[aria-label*="Send"], button[type="submit"]');
+          if (btn && !btn.disabled) {
+            btn.click();
+          }
+        }, 150);
+      }
+
       return { success: true, targetType: target.tagName.toLowerCase() };
     } catch (err) {
       return { success: false, error: err?.message || String(err) };
@@ -91,7 +112,10 @@ export function getGrokCodeExtractionScript() {
       const list = Array.from(preElements).slice(-10);
       list.forEach((pre, idx) => {
         const codeEl = pre.querySelector('code') || pre;
-        const text = codeEl.innerText || codeEl.textContent || '';
+        // Strip copy buttons or header labels that might leak into innerText
+        const clone = codeEl.cloneNode(true);
+        clone.querySelectorAll('button, [aria-label*="Copy"], [aria-label*="copy"], .copy-button').forEach(b => b.remove());
+        const text = clone.innerText || clone.textContent || '';
         if (!text.trim()) return;
 
         // Try to determine language from class names (e.g. language-js, hljs, etc.)
@@ -113,10 +137,17 @@ export function getGrokCodeExtractionScript() {
         if (prev && prev.textContent && /\\.[a-z0-9]{1,8}$/i.test(prev.textContent.trim())) {
           filename = prev.textContent.trim();
         }
+        if (!filename) {
+          const firstLine = text.trim().split('\\n')[0] || '';
+          const match = firstLine.match(/(?:\/\/|#|\\/\\*|<!--)\\s*(?:filepath:|filename:|file:)?\\s*([a-zA-Z0-9_\\-./\\\\]+\\.[a-z0-9]{1,8})/i);
+          if (match && match[1] && !match[1].startsWith('http')) {
+            filename = match[1];
+          }
+        }
 
         codeBlocks.push({
           id: idx,
-          code: text,
+          code: text.trim(),
           language: lang,
           filename: filename || '',
           lines: text.split('\\n').length
@@ -173,13 +204,13 @@ export function buildWorkspaceContextPrompt({
 /**
  * High-level bridge helper to inject text into the active Grok session.
  */
-export async function injectTextIntoGrok(conversationId, text) {
+export async function injectTextIntoGrok(conversationId, text, options = {}) {
   const br = typeof window !== 'undefined' ? window.__YOGATIK_BROWSER__ : null
   if (!br || typeof br.evaluate !== 'function') {
     throw new Error('Desktop browser bridge is not available. Please run Yogatik in desktop mode.')
   }
 
-  const script = getGrokInputInjectionScript(text)
+  const script = getGrokInputInjectionScript(text, options)
   const result = await br.evaluate({
     conversationId,
     expression: script,

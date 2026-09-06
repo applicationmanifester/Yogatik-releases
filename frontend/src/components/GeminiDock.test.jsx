@@ -56,7 +56,7 @@ describe('GeminiDock Component', () => {
     expect(await screen.findByText(/Select Workspace File to Send/)).toBeTruthy()
   })
 
-  it('pulls code blocks and displays code drawer', async () => {
+  it('pulls code blocks and displays code drawer with pre-seeded filename', async () => {
     render(<GeminiDock onClose={() => {}} />)
 
     const pullBtn = screen.getByText(/Pull Code from Gemini/)
@@ -64,5 +64,22 @@ describe('GeminiDock Component', () => {
 
     expect(await screen.findByText(/Extracted Code Blocks/)).toBeTruthy()
     expect(screen.getByText(/def solve\(\): return 42/)).toBeTruthy()
+    const input = screen.getByDisplayValue('solution.py')
+    expect(input).toBeTruthy()
+  })
+
+  it('renders switch to grok button when provided', () => {
+    const onSwitch = vi.fn()
+    render(<GeminiDock onClose={() => {}} onSwitchToGrok={onSwitch} />)
+    const switchBtn = screen.getByText(/Switch to Grok/)
+    expect(switchBtn).toBeTruthy()
+    fireEvent.click(switchBtn)
+    expect(onSwitch).toHaveBeenCalledTimes(1)
+  })
+
+  it('filters files in picker when searching', async () => {
+    render(<GeminiDock onClose={() => {}} />)
+    fireEvent.click(screen.getByText(/Send File/))
+    expect(await screen.findByPlaceholderText(/Filter files/)).toBeTruthy()
   })
 })

@@ -14,15 +14,27 @@ describe('geminiBridge', () => {
       expect(script).toContain('rich-textarea')
       expect(script).toContain('Analyze my Python function')
       expect(script).toContain('dispatchEvent')
+      expect(script).toContain('findInputDeep')
+    })
+
+    it('handles autoSubmit flag', () => {
+      const scriptNoSubmit = getGeminiInputInjectionScript('test', { autoSubmit: false })
+      const scriptWithSubmit = getGeminiInputInjectionScript('test', { autoSubmit: true })
+      expect(scriptNoSubmit).toContain('if (false)')
+      expect(scriptWithSubmit).toContain('if (true)')
+      expect(scriptWithSubmit).toContain('btn.click()')
     })
   })
 
   describe('getGeminiCodeExtractionScript', () => {
-    it('returns a script searching for pre, code-block, and pre code elements', () => {
+    it('returns a script searching for pre, code-block, and pre code elements and strips copy buttons', () => {
       const script = getGeminiCodeExtractionScript()
       expect(script).toContain('querySelectorAll(\'pre, code-block, .code-block\')')
       expect(script).toContain('codeBlocks')
       expect(script).toContain('language-')
+      expect(script).toContain('cloneNode(true)')
+      expect(script).toContain('button, [aria-label*="Copy"]')
+      expect(script).toContain('filepath:')
     })
   })
 
