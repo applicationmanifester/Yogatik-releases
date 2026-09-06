@@ -27,10 +27,12 @@
     "e2e:ui": "playwright test --ui",
     "test:companion": "electron electron/browserHarness/companion.cjs",
     "mcp:server": "node mcp-server/server.mjs",
+    "cli": "node bin/yogatik-cli.mjs",
     "postinstall": "node ./scripts/ensure-native-deps.mjs",
     "rebuild:pty": "electron-rebuild -f -w node-pty"
   },
   "bin": {
+    "yogatik": "bin/yogatik-cli.mjs",
     "yogatik-mcp": "mcp-server/server.mjs"
   },
   "dependencies": {
