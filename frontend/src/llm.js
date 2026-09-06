@@ -357,7 +357,7 @@ async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeo
 export async function streamChat({
   provider, apiKey, model, messages, tools = null,
   temperature = 1.0, maxTokens = null, signal, onToken, onToolCall, onDone, onError, onStatus,
-  retriedWithoutTools = false, onToolsRejected = null, retriedFixedTemp = false,
+  retriedWithoutTools = false, onToolsRejected = null, retriedFixedTemp = false, retriedOmitTemp = false,
 }) {
   const prov = getProviders()[provider]
   if (!prov) throw new Error(`Unknown provider: ${provider}`)
@@ -391,8 +391,10 @@ export async function streamChat({
     headers['X-Title'] = 'Yogatik'
   }
 
-  const isReasoningModel = /^(o[13](-mini|-preview)?|.*nemotron-.*ultra.*|.*deepseek-r1.*)/i.test(cleanModel)
-  const isFixedTemp = isReasoningModel || retriedFixedTemp
+  const isNoTempModel = /(^|\/)(o[13](-mini|-preview)?|deepseek-r1|gpt-4o-realtime)/i.test(cleanModel)
+  const isReasoningModel = /(^|\/)(o[13](-mini|-preview)?|nemotron-.*ultra|deepseek-r1)/i.test(cleanModel)
+  const shouldOmitTemp = retriedOmitTemp || isNoTempModel
+  const isFixedTemp = (isReasoningModel && !shouldOmitTemp) || retriedFixedTemp
 
   let endpoint = `${prov.baseUrl}/chat/completions`
   const body = {
@@ -401,7 +403,9 @@ export async function streamChat({
     stream: true,
   }
 
-  if (isFixedTemp) {
+  if (shouldOmitTemp) {
+    // Model route rejects the temperature parameter completely
+  } else if (isFixedTemp) {
     body.temperature = 1.0
   } else {
     body.temperature = Math.max(0.2, temperature)
@@ -414,8 +418,8 @@ export async function streamChat({
   }
 
   // Add mild anti-repetition penalty for standard OpenAI/NVIDIA endpoints to prevent N-gram degeneration loops
-  // (Skip for reasoning models which reject presence_penalty and frequency_penalty)
-  if (!prov.isAnthropic && !prov.baseUrl.includes('anthropic') && !isFixedTemp) {
+  // (Skip for reasoning models or routes that reject sampling parameters)
+  if (!prov.isAnthropic && !prov.baseUrl.includes('anthropic') && !isFixedTemp && !shouldOmitTemp) {
     body.presence_penalty = 0.05
     body.frequency_penalty = 0.05
   }
@@ -487,14 +491,28 @@ export async function streamChat({
           retriedFixedTemp,
         })
       }
-      // Certain reasoning models/routes strictly enforce temperature: 1.0 (between 1.0 and 1.0)
-      const isTempError = /temperature.*(supported.*between 1|unsupported)|unsupported.*value.*temperature/i.test(err)
-      if (resp.status === 400 && isTempError && !retriedFixedTemp) {
+      // 1. Certain models or provider routes strictly forbid the temperature parameter
+      // (e.g. "The parameter 'temperature' is not supported by this model route. Remove the field...")
+      const isOmitTempError = /temperature.*(not supported|remove the field)|(not supported|remove the field).*temperature/i.test(err)
+      if (resp.status === 400 && isOmitTempError && !retriedOmitTemp) {
+        return streamChat({
+          provider, apiKey, model: cleanModel, messages, tools,
+          temperature, signal, onToken, onToolCall, onDone, onError, onStatus,
+          retriedWithoutTools, onToolsRejected,
+          retriedFixedTemp,
+          retriedOmitTemp: true,
+        })
+      }
+
+      // 2. Certain reasoning models/routes strictly enforce temperature: 1.0 (between 1.0 and 1.0)
+      const isFixedTempError = /temperature.*(supported.*between 1|only supports 1\.0)|unsupported.*value.*temperature/i.test(err)
+      if (resp.status === 400 && isFixedTempError && !retriedFixedTemp) {
         return streamChat({
           provider, apiKey, model: cleanModel, messages, tools,
           temperature: 1.0, signal, onToken, onToolCall, onDone, onError, onStatus,
           retriedWithoutTools, onToolsRejected,
           retriedFixedTemp: true,
+          retriedOmitTemp,
         })
       }
       if (resp.status === 400) {
@@ -670,10 +688,13 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
     headers['HTTP-Referer'] = 'https://yogatik.app'
     headers['X-Title'] = 'Yogatik'
   }
-  const isReasoningModel = /^(o[13](-mini|-preview)?|.*nemotron-.*ultra.*|.*deepseek-r1.*)/i.test(cleanModel)
+  const isNoTempModel = /(^|\/)(o[13](-mini|-preview)?|deepseek-r1|gpt-4o-realtime)/i.test(cleanModel)
+  const isReasoningModel = /(^|\/)(o[13](-mini|-preview)?|nemotron-.*ultra|deepseek-r1)/i.test(cleanModel)
   let endpoint = `${prov.baseUrl}/chat/completions`
   const body = { model: cleanModel, messages }
-  if (isReasoningModel) {
+  if (isNoTempModel) {
+    // Model route rejects the temperature parameter completely
+  } else if (isReasoningModel) {
     body.temperature = 1.0
   } else {
     body.temperature = temperature
@@ -713,7 +734,18 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
   }, prov, { timeoutMs, retries })
   if (!resp.ok) {
     const raw = await resp.text()
-    if (resp.status === 400 && /temperature.*(supported.*between 1|unsupported)|unsupported.*value.*temperature/i.test(raw) && body.temperature !== 1.0) {
+    const isOmitTempError = /temperature.*(not supported|remove the field)|(not supported|remove the field).*temperature/i.test(raw)
+    const isFixedTempError = /temperature.*(supported.*between 1|only supports 1\.0)|unsupported.*value.*temperature/i.test(raw)
+    if (resp.status === 400 && isOmitTempError && body.temperature !== undefined) {
+      delete body.temperature
+      delete body.top_p
+      delete body.presence_penalty
+      delete body.frequency_penalty
+      const retryResp = await fetchWithRetry(endpoint, {
+        method: 'POST', headers, body: JSON.stringify(body),
+      }, prov, { timeoutMs, retries })
+      if (retryResp.ok) return retryResp.json()
+    } else if (resp.status === 400 && isFixedTempError && body.temperature !== 1.0) {
       body.temperature = 1.0
       delete body.top_p
       delete body.presence_penalty

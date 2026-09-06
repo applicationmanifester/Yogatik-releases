@@ -227,6 +227,16 @@ describe('request shaping', () => {
     expect(bodyOf().tool_choice).toBeUndefined()
   })
 
+  it('omits temperature and penalties for models that do not support temperature', async () => {
+    fetchMock.mockResolvedValue(sseResponse(['data: [DONE]\n\n']))
+    await streamChat({ provider: 'openrouter', apiKey: 'k', model: 'openai/o1-mini', messages: [{ role: 'user', content: 'hi' }], onDone: () => {} })
+    const b = bodyOf()
+    expect(b.temperature).toBeUndefined()
+    expect(b.top_p).toBeUndefined()
+    expect(b.presence_penalty).toBeUndefined()
+    expect(b.frequency_penalty).toBeUndefined()
+  })
+
   it('rejects an unknown provider instead of guessing an endpoint', async () => {
     await expect(streamChat({
       provider: 'nope', apiKey: 'k', model: 'm', messages: [], onDone: () => {},
@@ -244,6 +254,39 @@ describe('chatComplete', () => {
     })
     const out = await chatComplete({ provider: 'groq', apiKey: 'k', model: 'llama', messages: [{ role: 'user', content: 'ping' }] })
     expect(JSON.stringify(out)).toContain('pong')
+  })
+
+  it('auto-retries chatComplete without temperature if rejected with 400 not supported', async () => {
+    fetchMock
+      .mockResolvedValueOnce(errorResponse(400, "The parameter 'temperature' is not supported by this model route. Remove the field or choose a different model."))
+      .mockResolvedValueOnce({
+        ok: true, status: 200,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ choices: [{ message: { content: 'healed' } }] }),
+        text: async () => '{}',
+      })
+    const out = await chatComplete({ provider: 'openrouter', apiKey: 'k', model: 'custom-model', messages: [{ role: 'user', content: 'ping' }] })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const secondCallBody = JSON.parse(fetchMock.mock.calls[1][1].body)
+    expect(secondCallBody.temperature).toBeUndefined()
+    expect(JSON.stringify(out)).toContain('healed')
+  })
+})
+
+describe('streamChat error recovery', () => {
+  it('auto-retries streamChat without temperature if rejected with 400 not supported', async () => {
+    fetchMock
+      .mockResolvedValueOnce(errorResponse(400, "The parameter 'temperature' is not supported by this model route. Remove the field or choose a different model."))
+      .mockResolvedValueOnce(sseResponse([delta({ content: 'success' }), 'data: [DONE]\n\n']))
+    const tokens = []
+    await streamChat({
+      provider: 'openrouter', apiKey: 'k', model: 'custom-route-model', messages: [{ role: 'user', content: 'hi' }],
+      onToken: t => tokens.push(t), onDone: () => {},
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const retryBody = JSON.parse(fetchMock.mock.calls[1][1].body)
+    expect(retryBody.temperature).toBeUndefined()
+    expect(tokens.join('')).toBe('success')
   })
 })
 
