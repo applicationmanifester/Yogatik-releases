@@ -680,6 +680,18 @@ export default function App() {
     browserPanel
   )
 
+  const handleOpenBrowser = useCallback((url = 'https://google.com') => {
+    const b = typeof window !== 'undefined' ? window.__YOGATIK_BROWSER__ : null
+    if (b?.navigate) {
+      b.navigate({ url, display: 'window' })
+      showToast('Opened Yogatik Browser')
+    } else if (window.__YOGATIK_DESKTOP__?.openExternal) {
+      window.__YOGATIK_DESKTOP__.openExternal(url)
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
+  }, [showToast])
+
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
 
   // Install the approval UI. permissions.js FAILS CLOSED without this, so a
@@ -3588,6 +3600,7 @@ export default function App() {
       { id: 'sub-agents', group: 'Tools', label: '🧩 Sub-agent runner', hint: 'Isolated agents', run: () => setShowSubAgents(true) },
       { id: 'grok-dock', group: 'Tools', label: '🤖 Grok.com Studio Dock (Desktop Local Files Bridge)', hint: 'xAI Web + Files', run: () => { setShowGrokDock(true); setShowGeminiDock(false); } },
       { id: 'gemini-dock', group: 'Tools', label: '✨ Gemini.com Studio Dock (Desktop Local Files Bridge)', hint: 'Google Web + Files', run: () => { setShowGeminiDock(true); setShowGrokDock(false); } },
+      { id: 'open-yogatik-browser', group: 'Tools', label: '🧭 Open Yogatik Browser (Desktop Browser Window)', hint: 'Browser', run: () => handleOpenBrowser('https://google.com') },
       { id: 'auto-skills', group: 'Tools', label: '✨ Auto-generated skills', hint: 'Review & prune', run: () => setShowAutoSkills(true) },
       { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => navigateDashboard('capabilities') },
       { id: 'usage-data', group: 'Settings', label: 'Usage, cost & storage', hint: 'Data hub', run: () => navigateDashboard('usage') },
@@ -4556,6 +4569,14 @@ export default function App() {
                 aria-label="MCP Connectors"
               >
                 <Plug size={17} />
+              </button>
+              <button
+                className="icon-btn browser-header-btn"
+                onClick={() => handleOpenBrowser('https://google.com')}
+                title="Yogatik Browser (Desktop Browser Window)"
+                aria-label="Yogatik Browser"
+              >
+                <Compass size={17} />
               </button>
               <button className="icon-btn domain-hub-header-btn" onClick={() => setShowDomainHub(true)} title="Social Media & Domain Hub (Alt+D)" aria-label="Social Media & Domain Hub"><Globe size={17} /></button>
               <button

@@ -10,6 +10,7 @@ import {
   extractLatestCodeFromGemini,
   buildWorkspaceContextPrompt
 } from '../tools/geminiBridge'
+import { WebCompanionStudio } from './WebCompanionStudio'
 
 const GEMINI_CONV_ID = 'gemini-dock'
 const GEMINI_URL = 'https://gemini.google.com/'
@@ -280,7 +281,7 @@ export function GeminiDock({
           <span className="gemini-dock-logo">✨</span>
           <strong>Gemini.com Studio</strong>
           <span className="gemini-status-badge">
-            <span className="status-dot online" /> {desktop ? 'Desktop Bridge Active' : 'Web View'}
+            <span className="status-dot online" /> {desktop ? 'Desktop Bridge Active' : 'Web Companion Mode'}
           </span>
           {onSwitchToGrok && (
             <button
@@ -295,9 +296,11 @@ export function GeminiDock({
         </div>
 
         <div className="gemini-dock-controls">
-          <button className="icon-btn" onClick={handleReload} title="Reload Gemini.com" aria-label="Reload">
-            <RotateCw size={14} className={loading ? 'spinning' : ''} />
-          </button>
+          {desktop && (
+            <button className="icon-btn" onClick={handleReload} title="Reload Gemini.com" aria-label="Reload">
+              <RotateCw size={14} className={loading ? 'spinning' : ''} />
+            </button>
+          )}
           <button className="icon-btn" onClick={handleOpenExternal} title="Open in external browser" aria-label="External">
             <ExternalLink size={14} />
           </button>
@@ -319,44 +322,43 @@ export function GeminiDock({
       </header>
 
       {/* Desktop Local File Bridge Toolbar */}
-      <div className="gemini-bridge-toolbar">
-        <span className="bridge-label">Local File Bridge:</span>
+      {desktop && (
+        <div className="gemini-bridge-toolbar">
+          <span className="bridge-label">Local File Bridge:</span>
 
-        <button className="bridge-btn" onClick={openFileSelector} title="Send local file content to Gemini">
-          <FolderOpen size={13} /> Send File…
-        </button>
+          <button className="bridge-btn" onClick={openFileSelector} title="Send local file content to Gemini">
+            <FolderOpen size={13} /> Send File…
+          </button>
 
-        <button className="bridge-btn" onClick={handleSendContext} title="Inject project file tree & environment context">
-          <Sparkles size={13} /> Send Workspace Context
-        </button>
+          <button className="bridge-btn" onClick={handleSendContext} title="Inject project file tree & environment context">
+            <Sparkles size={13} /> Send Workspace Context
+          </button>
 
-        <button className="bridge-btn" onClick={handleSendDiff} title="Send Git working tree diff for review">
-          <GitPullRequest size={13} /> Send Git Diff
-        </button>
+          <button className="bridge-btn" onClick={handleSendDiff} title="Send Git working tree diff for review">
+            <GitPullRequest size={13} /> Send Git Diff
+          </button>
 
-        <div className="bridge-divider" />
+          <div className="bridge-divider" />
 
-        <button className="bridge-btn accent-gemini" onClick={handlePullCode} title="Extract generated code from Gemini and save to disk">
-          <Download size={13} /> Pull Code from Gemini
-        </button>
-      </div>
+          <button className="bridge-btn accent-gemini" onClick={handlePullCode} title="Extract generated code from Gemini and save to disk">
+            <Download size={13} /> Pull Code from Gemini
+          </button>
+        </div>
+      )}
 
-      {/* Main View Area / Hole for WebContentsView */}
+      {/* Main View Area / Hole for WebContentsView or Web Companion Studio */}
       <div className="gemini-dock-view">
         {desktop ? (
           <div ref={holeRef} className="gemini-native-hole" />
         ) : (
-          <div className="gemini-fallback-banner">
-            <AlertCircle size={24} />
-            <h4>Desktop App Mode Required</h4>
-            <p>
-              Direct embedded session with local file read/write is enabled in Yogatik Desktop.
-              You can also open gemini.google.com externally and use Yogatik's file export tools.
-            </p>
-            <button className="btn-primary" onClick={handleOpenExternal}>
-              <ExternalLink size={14} /> Open https://gemini.google.com/ in Browser
-            </button>
-          </div>
+          <WebCompanionStudio
+            serviceName="Gemini"
+            serviceUrl={GEMINI_URL}
+            serviceIcon="✨"
+            onToast={onToast}
+            onSwitchService={onSwitchToGrok}
+            switchLabel="🤖 Switch to Grok"
+          />
         )}
       </div>
 

@@ -10,6 +10,7 @@ import {
   extractLatestCodeFromGrok,
   buildWorkspaceContextPrompt
 } from '../tools/grokBridge'
+import { WebCompanionStudio } from './WebCompanionStudio'
 
 const GROK_CONV_ID = 'grok-dock'
 const GROK_URL = 'https://grok.com/'
@@ -280,7 +281,7 @@ export function GrokDock({
           <span className="grok-dock-logo">🤖</span>
           <strong>Grok.com Studio</strong>
           <span className="grok-status-badge">
-            <span className="status-dot online" /> {desktop ? 'Desktop Bridge Active' : 'Web View'}
+            <span className="status-dot online" /> {desktop ? 'Desktop Bridge Active' : 'Web Companion Mode'}
           </span>
           {onSwitchToGemini && (
             <button
@@ -295,9 +296,11 @@ export function GrokDock({
         </div>
 
         <div className="grok-dock-controls">
-          <button className="icon-btn" onClick={handleReload} title="Reload Grok.com" aria-label="Reload">
-            <RotateCw size={14} className={loading ? 'spinning' : ''} />
-          </button>
+          {desktop && (
+            <button className="icon-btn" onClick={handleReload} title="Reload Grok.com" aria-label="Reload">
+              <RotateCw size={14} className={loading ? 'spinning' : ''} />
+            </button>
+          )}
           <button className="icon-btn" onClick={handleOpenExternal} title="Open in external browser" aria-label="External">
             <ExternalLink size={14} />
           </button>
@@ -319,44 +322,43 @@ export function GrokDock({
       </header>
 
       {/* Desktop Local File Bridge Toolbar */}
-      <div className="grok-bridge-toolbar">
-        <span className="bridge-label">Local File Bridge:</span>
+      {desktop && (
+        <div className="grok-bridge-toolbar">
+          <span className="bridge-label">Local File Bridge:</span>
 
-        <button className="bridge-btn" onClick={openFileSelector} title="Send local file content to Grok">
-          <FolderOpen size={13} /> Send File…
-        </button>
+          <button className="bridge-btn" onClick={openFileSelector} title="Send local file content to Grok">
+            <FolderOpen size={13} /> Send File…
+          </button>
 
-        <button className="bridge-btn" onClick={handleSendContext} title="Inject project file tree & environment context">
-          <Sparkles size={13} /> Send Workspace Context
-        </button>
+          <button className="bridge-btn" onClick={handleSendContext} title="Inject project file tree & environment context">
+            <Sparkles size={13} /> Send Workspace Context
+          </button>
 
-        <button className="bridge-btn" onClick={handleSendDiff} title="Send Git working tree diff for review">
-          <GitPullRequest size={13} /> Send Git Diff
-        </button>
+          <button className="bridge-btn" onClick={handleSendDiff} title="Send Git working tree diff for review">
+            <GitPullRequest size={13} /> Send Git Diff
+          </button>
 
-        <div className="bridge-divider" />
+          <div className="bridge-divider" />
 
-        <button className="bridge-btn accent" onClick={handlePullCode} title="Extract generated code from Grok and save to disk">
-          <Download size={13} /> Pull Code from Grok
-        </button>
-      </div>
+          <button className="bridge-btn accent" onClick={handlePullCode} title="Extract generated code from Grok and save to disk">
+            <Download size={13} /> Pull Code from Grok
+          </button>
+        </div>
+      )}
 
-      {/* Main View Area / Hole for WebContentsView */}
+      {/* Main View Area / Hole for WebContentsView or Web Companion Studio */}
       <div className="grok-dock-view">
         {desktop ? (
           <div ref={holeRef} className="grok-native-hole" />
         ) : (
-          <div className="grok-fallback-banner">
-            <AlertCircle size={24} />
-            <h4>Desktop App Mode Required</h4>
-            <p>
-              Direct embedded session with local file read/write is enabled in Yogatik Desktop.
-              You can also open grok.com externally and use Yogatik's file export tools.
-            </p>
-            <button className="btn-primary" onClick={handleOpenExternal}>
-              <ExternalLink size={14} /> Open https://grok.com/ in Browser
-            </button>
-          </div>
+          <WebCompanionStudio
+            serviceName="Grok"
+            serviceUrl={GROK_URL}
+            serviceIcon="🤖"
+            onToast={onToast}
+            onSwitchService={onSwitchToGemini}
+            switchLabel="✨ Switch to Gemini"
+          />
         )}
       </div>
 
