@@ -3,16 +3,62 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '7.1.0'
+export const APP_VERSION = '7.2.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 7.1.0 — Grok.com & Gemini.com Studio Docks with Local Files Bridge'
+export const APP_CODENAME = 'Yogatik 7.2.0 — Built-in BitTorrent Engine, Yogatik Browser Search Bar & Grok Local Files Bridge'
 
 export const APP_RELEASES = [
+  {
+    version: '7.2.0',
+    title: 'Yogatik 7.2.0: Built-in BitTorrent Engine, Yogatik Browser Search Bar & Grok Local Files Bridge',
+    date: 'September 6, 2026',
+    isLatest: true,
+    highlights: [
+      'Built-in BitTorrent P2P Engine: Download open-source torrents and magnet links natively in Yogatik Desktop with real-time peer swarms, download speeds, DHT, pause/resume, and destination path selection',
+      'Yogatik Browser Search & New Tab Start Page: Dedicated, clean start page with DuckDuckGo, Google, Bing, Brave, GitHub, and Wikipedia search engine switcher and speed-dial shortcuts',
+      'Grok.com Local Folder Files Bundler: Send multiple project files and full subfolder source code directly into Grok with explicit anti-artifacts cloud sandbox redirection',
+      'Entitlement Matrix & Safe Window Hardening: All BitTorrent and desktop browser capabilities classified as Free Always (FA) and protected by safeWindow communication',
+      'Bulletproof Exception Recovery: Comprehensive type guards on local paths and dialog pickers preventing React error #31',
+    ],
+    sections: [
+      {
+        category: '🌊 Built-in BitTorrent Client',
+        items: [
+          {
+            title: 'Native Electron P2P BitTorrent Engine',
+            description: 'Direct swarm downloading for magnet URIs and torrent files with piece allocation, speed telemetry, and 1-click open folder in explorer.',
+          },
+          {
+            title: 'Free Always Entitlement Guarantee',
+            description: 'BitTorrent download management and destination directories remain 100% accessible to the user with zero subscription lockouts.',
+          },
+        ],
+      },
+      {
+        category: '🧭 Yogatik Browser Search Engine',
+        items: [
+          {
+            title: 'Built-in Start Page & Search Bar',
+            description: 'Never opens to an empty black screen again — launches with a modern search bar, multi-engine switcher, and quick web shortcuts.',
+          },
+        ],
+      },
+      {
+        category: '🤖 Grok Local Files & Folder Bridge',
+        items: [
+          {
+            title: 'Multi-File Folder Bundler',
+            description: 'Package and transmit source code files from any project folder directly into Grok.com with clear instructions to review the user code instead of looking in empty cloud sandbox folders.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '7.1.0',
     title: 'Yogatik 7.1.0: Grok.com & Gemini.com Studio Docks with Desktop Local Files Bridge',
     date: 'September 6, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Grok.com Studio Dock with Local Files Bridge: Seamless embedded session of grok.com with bidirectional workspace file injector, active Git diff review, and 1-click code block extraction to disk',
       'Gemini.com Studio Dock with Deep Shadow DOM Traversal: Full Google Web Components integration, real-time code extraction, and comment-based filepath auto-detection',
