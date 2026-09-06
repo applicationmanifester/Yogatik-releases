@@ -4,9 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to publish into, e.g. v6.3.0'
+        description: 'Release tag to publish into, e.g. v7.3.0'
         required: false
-        default: 'v6.3.0'
+        default: 'v7.3.0'
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -52,10 +57,10 @@ jobs:
       - name: Publish Web App to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag || 'v6.3.0' }}
-          name: 'Yogatik ${{ inputs.tag || ''v6.3.0'' }}'
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v7.3.0' }}
+          name: 'Yogatik ${{ github.ref_type == ''tag'' && github.ref_name || inputs.tag || ''v7.3.0'' }}'
           body: |
-            ## Yogatik ${{ inputs.tag || 'v6.3.0' }} — Web & Desktop Releases
+            ## Yogatik ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v7.3.0' }} — Web & Desktop Releases
 
             Download installers and standalone distributions below under **Assets**:
 
@@ -146,8 +151,8 @@ jobs:
       - name: Publish Desktop App to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag || 'v6.3.0' }}
-          name: 'Yogatik ${{ inputs.tag || ''v6.3.0'' }}'
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v7.3.0' }}
+          name: 'Yogatik ${{ github.ref_type == ''tag'' && github.ref_name || inputs.tag || ''v7.3.0'' }}'
           fail_on_unmatched_files: false
           files: |
             frontend/release-electron/*.exe
