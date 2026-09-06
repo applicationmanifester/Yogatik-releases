@@ -141,11 +141,11 @@ export function LiveArtifactStage({
           padding: '12px',
         }}
       >
-        {current.type === 'toolResult' || current.type === 'tool' ? (
+        {(current.type === 'toolResult' || current.type === 'tool' || (current.name && current.result !== undefined)) ? (
           <ToolResultCard
             tool={current.name}
             result={current.result}
-            args={current.args}
+            args={current.args || {}}
           />
         ) : (
           <div
@@ -155,7 +155,8 @@ export function LiveArtifactStage({
               borderRadius: '10px',
               border: '1px solid var(--live-border, rgba(255, 255, 255, 0.08))',
               color: 'var(--live-text, #e2e8f0)',
-              fontSize: '13px',
+              fontSize: '12px',
+              fontFamily: 'monospace',
               lineHeight: 1.6,
               whiteSpace: 'pre-wrap',
             }}

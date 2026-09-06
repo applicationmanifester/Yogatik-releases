@@ -29,10 +29,10 @@ const QUICK_TEMPLATES = {
   nvidia: {
     name: 'NVIDIA NIM',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
-    models: ['meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct', 'openai/gpt-oss-20b'],
+    models: ['meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct', 'meta/llama-3.1-8b-instruct'],
     default: 'meta/llama-3.3-70b-instruct',
     keyUrl: 'https://build.nvidia.com',
-    note: 'Llama 3.3, Nemotron 70B & GPT-OSS models',
+    note: 'Llama 3.3, Nemotron 70B & Llama 3.1 8B',
   },
   gemini: {
     name: 'Google Gemini',

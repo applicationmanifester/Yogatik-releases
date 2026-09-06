@@ -1,5 +1,8 @@
 import React from 'react'
-import { Bot, Plus, Trash2, Check, Download, Upload, X, Play, Square, Users, Target, GitBranch } from 'lucide-react'
+import {
+  Bot, Plus, Trash2, Check, Download, Upload, X, Play, Square,
+  Users, Target, GitBranch, LayoutGrid, CheckCircle2, Clock, PlayCircle, ArrowRight
+} from 'lucide-react'
 import { Modal } from './Modal'
 import {
   getAgents, upsertAgent, deleteAgent, getActiveAgentId, setActiveAgent, exportAgent, parseAgent,
@@ -35,6 +38,15 @@ export function AgentsPanel({ onClose, onToast, conversationId = null, embedded 
   const [stepStatus, setStepStatus] = React.useState({})   // index -> 'run' | 'done'
   const [report, setReport] = React.useState('')
   const abortRef = React.useRef(null)
+
+  // Kanban board tasks state
+  const [customTasks, setCustomTasks] = React.useState([
+    { id: 't_init_1', title: 'System Architecture Audit', agent: 'Security Specialist', status: 'done', priority: 'high', timestamp: Date.now() - 3600000 },
+    { id: 't_init_2', title: 'Live Meeting Diarization Pipeline', agent: 'Voice Copilot', status: 'progress', priority: 'urgent', timestamp: Date.now() - 1200000 },
+    { id: 't_init_3', title: 'Pitch Deck Template Generation', agent: 'Document Engine', status: 'backlog', priority: 'normal', timestamp: Date.now() - 600000 },
+  ])
+  const [newTaskTitle, setNewTaskTitle] = React.useState('')
+  const [newTaskAgent, setNewTaskAgent] = React.useState('General')
 
   // Scoped to THIS chat, inheriting the global default. Without the id the
   // panel read and wrote the single global key, so activating an agent here
@@ -88,13 +100,212 @@ export function AgentsPanel({ onClose, onToast, conversationId = null, embedded 
   const [crewTraces, setCrewTraces] = React.useState([])
   React.useEffect(() => subscribeCrewTraces(setCrewTraces), [])
 
+  const moveTask = (taskId, nextStatus) => {
+    setCustomTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: nextStatus } : t))
+  }
+
+  const addTask = (e) => {
+    e?.preventDefault?.()
+    if (!newTaskTitle.trim()) return
+    const task = {
+      id: `task_${Date.now()}`,
+      title: newTaskTitle.trim(),
+      agent: newTaskAgent || 'General',
+      status: 'backlog',
+      priority: 'normal',
+      timestamp: Date.now()
+    }
+    setCustomTasks(prev => [task, ...prev])
+    setNewTaskTitle('')
+  }
+
+  // Combine autonomous plan steps into board dynamically
+  const allBoardTasks = React.useMemo(() => {
+    const tasks = [...customTasks]
+    plan.forEach((s, idx) => {
+      const isDone = stepStatus[idx] === 'done'
+      const isRun = stepStatus[idx] === 'run'
+      tasks.push({
+        id: `plan_step_${idx}`,
+        title: s,
+        agent: 'Autonomous Planner',
+        status: isDone ? 'done' : isRun ? 'progress' : 'backlog',
+        priority: 'high',
+        timestamp: Date.now(),
+        isAutoStep: true,
+      })
+    })
+    return tasks
+  }, [customTasks, plan, stepStatus])
+
   return (
     <Modal title="Agents" icon={<Bot size={16} />} onClose={onClose} embedded={embedded}>
       <div className="tab-row" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <button className={tab === 'board' ? 'active' : ''} onClick={() => setTab('board')}><LayoutGrid size={12} /> Board</button>
         <button className={tab === 'agents' ? 'active' : ''} onClick={() => setTab('agents')}><Users size={12} /> Agents</button>
         <button className={tab === 'auto' ? 'active' : ''} onClick={() => setTab('auto')}><Target size={12} /> Autonomous</button>
         <button className={tab === 'crew' ? 'active' : ''} onClick={() => setTab('crew')}><GitBranch size={12} /> Crew traces{crewTraces.length ? ` (${crewTraces.length})` : ''}</button>
       </div>
+
+      {tab === 'board' && (
+        <div className="personalise-group" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <p className="personalise-hint" style={{ margin: 0 }}>
+              Multi-Agent Collaboration Board — Real-time synchronization of sub-agents, autonomous planning steps, and team tasks.
+            </p>
+            <form onSubmit={addTask} style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%', maxWidth: 420 }}>
+              <input
+                type="text"
+                placeholder="New multi-agent task..."
+                value={newTaskTitle}
+                onChange={e => setNewTaskTitle(e.target.value)}
+                style={{ flex: 1, padding: '4px 8px', fontSize: '12px' }}
+              />
+              <select
+                value={newTaskAgent}
+                onChange={e => setNewTaskAgent(e.target.value)}
+                style={{ padding: '4px 6px', fontSize: '11px', background: 'var(--bg-input, #1e1e2e)', color: 'inherit', border: '1px solid var(--border-color, rgba(255,255,255,0.1))', borderRadius: 4 }}
+              >
+                <option value="General">General</option>
+                <option value="Researcher">Researcher</option>
+                <option value="Coder">Coder</option>
+                <option value="Security Specialist">Security Specialist</option>
+                <option value="Document Engine">Document Engine</option>
+                <option value="Voice Copilot">Voice Copilot</option>
+              </select>
+              <button type="submit" className="small-btn" disabled={!newTaskTitle.trim()}>
+                <Plus size={12} /> Add
+              </button>
+            </form>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 10,
+            marginTop: 4,
+            overflowX: 'auto',
+            paddingBottom: 4
+          }}>
+            {[
+              { key: 'backlog', title: 'Backlog / Queue', color: '#38bdf8', icon: Clock },
+              { key: 'progress', title: 'In Progress', color: '#fb923c', icon: PlayCircle },
+              { key: 'review', title: 'Review / Validating', color: '#a855f7', icon: Target },
+              { key: 'done', title: 'Completed', color: '#34d399', icon: CheckCircle2 }
+            ].map(col => {
+              const colTasks = allBoardTasks.filter(t => t.status === col.key)
+              const ColIcon = col.icon
+              return (
+                <div
+                  key={col.key}
+                  style={{
+                    background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                    border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))',
+                    borderRadius: 8,
+                    padding: 8,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    minHeight: 220,
+                  }}
+                >
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingBottom: 6,
+                    borderBottom: '1px solid var(--border-color, rgba(255, 255, 255, 0.06))',
+                  }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '11.5px', fontWeight: 700, color: col.color }}>
+                      <ColIcon size={12} /> {col.title}
+                    </span>
+                    <span style={{
+                      background: 'rgba(255,255,255,0.08)',
+                      borderRadius: 10,
+                      padding: '1px 6px',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                    }}>
+                      {colTasks.length}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, overflowY: 'auto', maxHeight: 320 }}>
+                    {colTasks.length === 0 ? (
+                      <div style={{ fontSize: '11px', opacity: 0.4, textAlign: 'center', padding: '24px 0', fontStyle: 'italic' }}>
+                        Empty
+                      </div>
+                    ) : (
+                      colTasks.map(task => {
+                        const nextMap = {
+                          backlog: 'progress',
+                          progress: 'review',
+                          review: 'done',
+                          done: 'backlog'
+                        }
+                        return (
+                          <div
+                            key={task.id}
+                            style={{
+                              background: 'var(--bg-secondary, rgba(30, 30, 46, 0.7))',
+                              border: '1px solid var(--border-color, rgba(255, 255, 255, 0.07))',
+                              borderRadius: 6,
+                              padding: '7px 8px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 5,
+                              boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+                            }}
+                          >
+                            <div style={{ fontSize: '12px', fontWeight: 500, lineHeight: 1.35, color: '#f1f5f9' }}>
+                              {task.title}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
+                              <span style={{
+                                fontSize: '9.5px',
+                                background: 'rgba(99, 102, 241, 0.15)',
+                                color: '#a5b4fc',
+                                border: '1px solid rgba(99, 102, 241, 0.25)',
+                                borderRadius: 4,
+                                padding: '1px 5px',
+                                fontWeight: 600,
+                              }}>
+                                {task.agent}
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                                {!task.isAutoStep && (
+                                  <button
+                                    className="icon-btn"
+                                    title="Advance status"
+                                    onClick={() => moveTask(task.id, nextMap[task.status])}
+                                    style={{ padding: '2px 4px', fontSize: '9.5px', display: 'flex', alignItems: 'center', gap: 2 }}
+                                  >
+                                    <ArrowRight size={10} />
+                                  </button>
+                                )}
+                                {!task.isAutoStep && (
+                                  <button
+                                    className="icon-btn"
+                                    title="Delete task"
+                                    onClick={() => setCustomTasks(prev => prev.filter(t => t.id !== task.id))}
+                                    style={{ padding: '2px 4px' }}
+                                  >
+                                    <Trash2 size={10} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {tab === 'agents' && (
         <div className="personalise-group">

@@ -109,3 +109,72 @@ describe('adaptive tool gating (ATG)', () => {
   })
 })
 
+describe('silent live / speakerMuted mode', () => {
+  it('supports initializing session with speakerMuted: true', async () => {
+    const { createCascadeSession } = await import('./cascade')
+    const session = createCascadeSession({
+      provider: 'groq',
+      apiKey: 'test-key',
+      model: 'llama-3.3-70b-versatile',
+      speakerMuted: true,
+      onEvent: () => {},
+    })
+    expect(session.getSpeakerMuted()).toBe(true)
+    session.setSpeakerMuted(false)
+    expect(session.getSpeakerMuted()).toBe(false)
+    await session.stop()
+  })
+
+  it('handles turn errors without ReferenceError for watchdogTimedOut', async () => {
+    const { createCascadeSession } = await import('./cascade')
+    const events = []
+    const session = createCascadeSession({
+      provider: 'nvidia',
+      apiKey: 'test-key',
+      model: 'non-existent-model',
+      speakerMuted: true,
+      onEvent: (evt) => events.push(evt),
+    })
+
+    // Submitting text triggers respondTo
+    session.sendText('which is the nearest star to Sun')
+    // Wait for async turn loop to process
+    await new Promise((r) => setTimeout(r, 200))
+    await session.stop()
+
+    // Ensure session completed without unhandled promise rejection
+    expect(events.length).toBeGreaterThan(0)
+  })
+
+  it('session.stop() performs full teardown and emits ended event instead of just interrupting', async () => {
+    const { createCascadeSession } = await import('./cascade')
+    const events = []
+    const session = createCascadeSession({
+      provider: 'groq',
+      apiKey: 'test-key',
+      model: 'llama-3.3-70b-versatile',
+      speakerMuted: true,
+      onEvent: (evt) => events.push(evt),
+    })
+
+    expect(typeof session.stop).toBe('function')
+    session.stop()
+    expect(events.some(e => e.type === 'ended')).toBe(true)
+  })
+})
+
+describe('Gemini live session teardown', () => {
+  it('session.stop() performs full teardown and emits ended event', async () => {
+    const { createLiveSession } = await import('./session')
+    const events = []
+    const session = createLiveSession({
+      apiKey: 'test-key',
+      model: 'gemini-2.0-flash-exp',
+      onEvent: (evt) => events.push(evt),
+    })
+
+    expect(typeof session.stop).toBe('function')
+    session.stop()
+    expect(events.some(e => e.type === 'ended')).toBe(true)
+  })
+})

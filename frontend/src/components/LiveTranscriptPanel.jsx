@@ -1,11 +1,15 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react'
-import { ChevronRight, Wrench, Copy, Check, Zap, Brain, Clock, Activity, Search, Cpu, CheckCircle2, AlertCircle, Loader2, X } from 'lucide-react'
+import { ChevronRight, Wrench, Copy, Check, Zap, Brain, Clock, Activity, Search, Cpu, CheckCircle2, AlertCircle, Loader2, X, Layers } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { ToolResultCard } from './ToolResultCard'
+import { LiveArtifactStage } from './LiveArtifactStage'
 
 /**
  * Live Transcript & Activity Feed — Full AI transparency panel.
  *
  * Shows everything the AI is doing in real-time:
+ * - Tab switcher between Transcript & Artifacts
  * - Reasoning / thinking with elapsed timer
  * - Tool invocations with tool name and animated spinner
  * - Tool results with rich cards
@@ -61,6 +65,11 @@ export function LiveTranscriptPanel({
   features,
   activeProvider,
   activeModel,
+  artifacts = [],
+  activeArtifactIdx = 0,
+  onSelectArtifactIndex,
+  activeTab = 'transcript',
+  onTabChange,
 }) {
   const bodyRef = useRef(null)
   const transcriptEndRef = useRef(null)
@@ -117,115 +126,153 @@ export function LiveTranscriptPanel({
   return (
     <div className={`live-transcript-panel ${isOpen ? 'open' : ''}`}>
       <div className="live-transcript-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
-            <Activity size={16} style={{ color: '#38bdf8' }} />
-            Transcript & AI Activity
-          </h3>
-          {/* Search box */}
-          <div style={{ position: 'relative', flex: 1, maxWidth: 300 }}>
-            <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#64748b', pointerEvents: 'none' }} />
-            <input
-              type="text"
-              placeholder="Search transcript…"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '6px 10px 6px 32px',
-                background: 'var(--live-surface, rgba(0, 0, 0, 0.04))',
-                border: '1px solid var(--live-border, rgba(0, 0, 0, 0.1))',
-                borderRadius: '6px',
-                color: 'var(--live-text, #0f172a)',
-                fontSize: '12px',
-                outline: 'none',
-              }}
-              onFocus={() => {}}
-            />
-            {searchQuery && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, overflow: 'hidden' }}>
+          {artifacts && artifacts.length > 0 ? (
+            <div className="live-transcript-tabs">
               <button
-                onClick={() => setSearchQuery('')}
-                style={{
-                  position: 'absolute',
-                  right: 6,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none',
-                  border: 'none',
-                  color: '#64748b',
-                  cursor: 'pointer',
-                  padding: 2,
-                }}
-                aria-label="Clear search"
+                type="button"
+                className={`live-transcript-tab ${activeTab === 'transcript' ? 'active' : ''}`}
+                onClick={() => onTabChange?.('transcript')}
               >
-                <X size={12} />
+                <Activity size={13} />
+                <span>Transcript & Activity</span>
               </button>
-            )}
-          </div>
-          {/* Filter dropdown */}
-          <select
-            value={filterType}
-            onChange={e => setFilterType(e.target.value)}
-            style={{
-              padding: '6px 10px',
-              background: 'var(--live-surface, rgba(0, 0, 0, 0.04))',
-              border: '1px solid var(--live-border, rgba(0, 0, 0, 0.1))',
-              borderRadius: '6px',
-              color: 'var(--live-text, #0f172a)',
-              fontSize: '11px',
-              outline: 'none',
-              cursor: 'pointer',
-            }}
-            aria-label="Filter by type"
-          >
-            <option value="all">All</option>
-            <option value="user">🎙️ You</option>
-            <option value="assistant">🤖 Assistant</option>
-            <option value="tool">🔧 Tools</option>
-            <option value="status">📋 Status</option>
-          </select>
+              <button
+                type="button"
+                className={`live-transcript-tab ${activeTab === 'artifacts' ? 'active' : ''}`}
+                onClick={() => onTabChange?.('artifacts')}
+              >
+                <Layers size={13} />
+                <span>Artifacts ({artifacts.length})</span>
+              </button>
+            </div>
+          ) : (
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: '13px' }}>
+              <Activity size={16} style={{ color: '#38bdf8' }} />
+              Transcript & AI Activity
+            </h3>
+          )}
         </div>
-        <button className="live-transcript-close" onClick={onClose} aria-label="Close transcript">
+        <button className="live-transcript-close" onClick={onClose} aria-label="Close panel">
           <ChevronRight size={18} />
         </button>
       </div>
 
-      {/* Active model badge */}
-      {(activeProvider || activeModel) && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          padding: '6px 14px', margin: '0 12px 6px',
-          background: 'var(--live-surface, rgba(0, 0, 0, 0.04))',
-          border: '1px solid var(--live-border, rgba(0, 0, 0, 0.08))',
-          borderRadius: '6px', fontSize: '11px', color: 'var(--live-text, #0f172a)',
-        }}>
-          <Cpu size={11} style={{ flexShrink: 0, color: 'var(--accent, #ff6b35)' }} />
-          <span style={{ fontWeight: 600 }}>{activeProvider || 'AI'}</span>
-          {activeModel && <span style={{ opacity: 0.7 }}>· {String(activeModel).split('/').pop().slice(0, 30)}</span>}
+      {activeTab === 'artifacts' && artifacts && artifacts.length > 0 ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '10px' }}>
+          <LiveArtifactStage
+            artifacts={artifacts}
+            activeIndex={activeArtifactIdx}
+            onSelectIndex={onSelectArtifactIndex}
+            onClose={onClose}
+          />
         </div>
-      )}
+      ) : (
+        <>
+          {/* Subheader with search & filter */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 14px', borderBottom: '1px solid var(--live-border, rgba(255,255,255,0.06))',
+          }}>
+            {/* Search box */}
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#64748b', pointerEvents: 'none' }} />
+              <input
+                type="text"
+                placeholder="Search transcript…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '5px 8px 5px 28px',
+                  background: 'var(--live-surface, rgba(0, 0, 0, 0.04))',
+                  border: '1px solid var(--live-border, rgba(0, 0, 0, 0.1))',
+                  borderRadius: '6px',
+                  color: 'var(--live-text, #0f172a)',
+                  fontSize: '12px',
+                  outline: 'none',
+                }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{
+                    position: 'absolute',
+                    right: 6,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: '#64748b',
+                    cursor: 'pointer',
+                    padding: 2,
+                  }}
+                  aria-label="Clear search"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+            {/* Filter dropdown */}
+            <select
+              value={filterType}
+              onChange={e => setFilterType(e.target.value)}
+              style={{
+                padding: '5px 8px',
+                background: 'var(--live-surface, rgba(0, 0, 0, 0.04))',
+                border: '1px solid var(--live-border, rgba(0, 0, 0, 0.1))',
+                borderRadius: '6px',
+                color: 'var(--live-text, #0f172a)',
+                fontSize: '11px',
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+              aria-label="Filter by type"
+            >
+              <option value="all">All</option>
+              <option value="user">🎙️ You</option>
+              <option value="assistant">🤖 Assistant</option>
+              <option value="tool">🔧 Tools</option>
+              <option value="status">📋 Status</option>
+            </select>
+          </div>
 
-      {/* Results count */}
-      {searchQuery && (
-        <div style={{
-          padding: '4px 14px', margin: '0 12px',
-          fontSize: '11px', color: '#64748b',
-          display: 'flex', justifyContent: 'space-between',
-        }}>
-          <span>{filteredTranscript.length} of {transcript.length} entries match</span>
-          <button
-            onClick={() => { setSearchQuery(''); setFilterType('all'); }}
-            style={{
-              background: 'none', border: 'none', color: '#38bdf8',
-              fontSize: '11px', cursor: 'pointer', textDecoration: 'underline',
-            }}
-          >
-            Clear filters
-          </button>
-        </div>
-      )}
+          {/* Active model badge */}
+          {(activeProvider || activeModel) && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '5px 14px', margin: '6px 12px 2px',
+              background: 'var(--live-surface, rgba(0, 0, 0, 0.04))',
+              border: '1px solid var(--live-border, rgba(0, 0, 0, 0.08))',
+              borderRadius: '6px', fontSize: '11px', color: 'var(--live-text, #0f172a)',
+            }}>
+              <Cpu size={11} style={{ flexShrink: 0, color: 'var(--accent, #ff6b35)' }} />
+              <span style={{ fontWeight: 600 }}>{activeProvider || 'AI'}</span>
+              {activeModel && <span style={{ opacity: 0.7 }}>· {String(activeModel).split('/').pop().slice(0, 30)}</span>}
+            </div>
+          )}
 
-      <div className="live-transcript-body" ref={bodyRef} onScroll={handleScroll}>
+          {/* Results count */}
+          {searchQuery && (
+            <div style={{
+              padding: '4px 14px', margin: '0 12px',
+              fontSize: '11px', color: '#64748b',
+              display: 'flex', justifyContent: 'space-between',
+            }}>
+              <span>{filteredTranscript.length} of {transcript.length} entries match</span>
+              <button
+                onClick={() => { setSearchQuery(''); setFilterType('all'); }}
+                style={{
+                  background: 'none', border: 'none', color: '#38bdf8',
+                  fontSize: '11px', cursor: 'pointer', textDecoration: 'underline',
+                }}
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
+
+          <div className="live-transcript-body" ref={bodyRef} onScroll={handleScroll}>
         {filteredTranscript.length === 0 && transcript.length > 0 && (
           <div className="live-transcript-empty" style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
             <Search size={24} style={{ opacity: 0.5, marginBottom: 8 }} />
@@ -334,7 +381,7 @@ export function LiveTranscriptPanel({
                 </button>
               </div>
               {item.reasoning && (
-                <details className="live-transcript-reasoning" open>
+                <details className="live-transcript-reasoning" open={item.streaming && !item.text}>
                   <summary style={{ cursor: 'pointer', fontSize: '11px', color: '#a5b4fc', marginBottom: 4 }}>
                     <Brain size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} /> Reasoning
                     {item.reasoningTime && <span style={{ marginLeft: 8 }}><Clock size={10} /> {(item.reasoningTime / 1000).toFixed(1)}s</span>}
@@ -354,8 +401,14 @@ export function LiveTranscriptPanel({
                   {item.totalMs && ` · Total:${' '}${item.totalMs < 1000 ? `${item.totalMs}ms` : `${(item.totalMs / 1000).toFixed(2)}s`}`}
                 </div>
               )}
-              <div className="live-transcript-text" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {item.text}
+              <div className="live-transcript-text prose" style={{ fontSize: '13px', lineHeight: 1.6, wordBreak: 'break-word' }}>
+                {item.role === 'assistant' ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {item.text}
+                  </ReactMarkdown>
+                ) : (
+                  item.text
+                )}
               </div>
             </div>
           )
@@ -431,6 +484,8 @@ export function LiveTranscriptPanel({
           <ChevronRight size={18} style={{ transform: 'rotate(90deg)' }} />
         </button>
       )}
+      </>
+      )}
     </div>
-    )
+  )
 }

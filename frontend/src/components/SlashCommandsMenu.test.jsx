@@ -61,4 +61,19 @@ describe('SlashCommandsMenu Component', () => {
 
     expect(handleSelect).toHaveBeenCalled()
   })
+
+  it('renders power commands like /deck, /audit, and /swarm', () => {
+    act(() => {
+      root.render(
+        <SlashCommandsMenu
+          filter="/deck"
+          selectedIndex={0}
+          onSelect={() => {}}
+          onClose={() => {}}
+        />
+      )
+    })
+    expect(host.textContent).toContain('/deck')
+    expect(host.textContent).toContain('Presentation Deck')
+  })
 })

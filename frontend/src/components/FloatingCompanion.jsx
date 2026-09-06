@@ -48,6 +48,7 @@ import {
   UploadCloud,
   FileUp,
   Settings2,
+  Headphones,
 } from 'lucide-react'
 import { YogatikLogo } from './YogatikLogo'
 import {
@@ -312,6 +313,23 @@ export function FloatingCompanion({
   const [zoomModal, setZoomModal] = useState(false)
   const [toastMessage, setToastMessage] = useState(null)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
+
+  // ── Meeting Copilot State ──
+  const [meetingMode, setMeetingMode] = useState(false)
+  const [meetingListening, setMeetingListening] = useState(false)
+  const [meetingEntries, setMeetingEntries] = useState([
+    { id: 1, speaker: 'Team Lead', text: 'Let’s review the Q3 architecture benchmarks and verify the multi-agent latency.', time: '10:02 AM' },
+    { id: 2, speaker: 'You', text: 'All benchmark suites passed, average tool dispatch latency is down to 42ms.', time: '10:03 AM' },
+  ])
+  const [meetingNotes, setMeetingNotes] = useState([
+    'Multi-agent latency reduced to 42ms across all nodes.',
+    'Deployment schedule confirmed for Thursday release candidate.',
+  ])
+  const [meetingActionItems, setMeetingActionItems] = useState([
+    { id: 'm_act_1', text: 'Validate Electron native PTY on Windows/macOS', done: true },
+    { id: 'm_act_2', text: 'Finalize presentation deck for stakeholders', done: false },
+  ])
+  const [whisperSuggestion, setWhisperSuggestion] = useState('')
 
   // ── Drag & Position Management ──
   const [position, setPosition] = useState(() => ({
@@ -885,6 +903,21 @@ export function FloatingCompanion({
           >
             {speechEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
           </button>
+          <button
+            onClick={() => setMeetingMode(m => !m)}
+            style={{
+              background: meetingMode ? 'rgba(16, 185, 129, 0.25)' : 'none',
+              border: 'none',
+              color: meetingMode ? '#34d399' : '#94a3b8',
+              cursor: 'pointer',
+              padding: 4,
+              borderRadius: 4,
+              display: 'flex',
+            }}
+            title={meetingMode ? 'Switch to Assistant Chat' : 'Launch Live Meeting Copilot'}
+          >
+            <Headphones size={14} />
+          </button>
           {!inPipWindow && (
             <button
               onClick={() => {
@@ -1230,82 +1263,279 @@ export function FloatingCompanion({
         </div>
       )}
 
-      {/* ── Chat Messages Stream Area ── */}
-      <div style={{
-        flex: 1,
-        padding: '12px 14px',
-        overflowY: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-      }}>
-        {companionMessages.length === 0 && !companionStream && (
+      {/* ── Meeting Copilot View OR Chat Messages Stream Area ── */}
+      {meetingMode ? (
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          background: 'rgba(15, 23, 42, 0.4)',
+        }}>
+          {/* Meeting Copilot Control Bar */}
           <div style={{
+            padding: '8px 12px',
+            background: 'rgba(255, 255, 255, 0.02)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
             display: 'flex',
-            flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            color: '#64748b',
-            textAlign: 'center',
-            padding: '0 20px',
-            gap: 10,
+            justifyContent: 'space-between',
+            gap: 6,
           }}>
-            <div style={{
-              width: 48,
-              height: 48,
-              borderRadius: '50%',
-              background: 'rgba(99, 102, 241, 0.1)',
-              border: '1px solid rgba(99, 102, 241, 0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <Bot size={24} color="#818cf8" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                fontSize: 11,
+                fontWeight: 700,
+                color: meetingListening ? '#10b981' : '#94a3b8',
+              }}>
+                <AudioEqualizer active={meetingListening} color={meetingListening ? '#10b981' : '#64748b'} />
+                {meetingListening ? 'Listening…' : 'Listener Paused'}
+              </span>
             </div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>
-              Companion Active
-            </div>
-            <div style={{ fontSize: 11, lineHeight: 1.4 }}>
-              I am monitoring <strong>{monitoredApp.appName}</strong>. Ask questions, click quick review chips, or drop files here.
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button
+                onClick={() => setMeetingListening(l => !l)}
+                style={{
+                  background: meetingListening ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                  border: `1px solid ${meetingListening ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
+                  color: meetingListening ? '#f87171' : '#34d399',
+                  borderRadius: 4,
+                  padding: '3px 8px',
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                {meetingListening ? <MicOff size={11} /> : <Mic size={11} />}
+                {meetingListening ? 'Pause' : 'Listen'}
+              </button>
+              <button
+                onClick={() => {
+                  const lastSpeakerMsg = meetingEntries[meetingEntries.length - 1]
+                  const suggestion = lastSpeakerMsg
+                    ? `Tactical response to "${lastSpeakerMsg.text.slice(0, 30)}...": Propose phased rollout with canary validation to mitigate deployment risks.`
+                    : 'Tactical suggestion: Clarify acceptance criteria and delivery deadlines.'
+                  setWhisperSuggestion(suggestion)
+                }}
+                style={{
+                  background: 'rgba(139, 92, 246, 0.15)',
+                  border: '1px solid rgba(139, 92, 246, 0.3)',
+                  color: '#c084fc',
+                  borderRadius: 4,
+                  padding: '3px 8px',
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+                title="Generate instant response / fact-check whisper for current speaker"
+              >
+                <Sparkles size={11} /> Whisper
+              </button>
+              <button
+                onClick={() => {
+                  const report = `# Meeting Briefing - ${new Date().toLocaleDateString()}\n\n## Key Takeaways\n${meetingNotes.map(n => `- ${n}`).join('\n')}\n\n## Action Items\n${meetingActionItems.map(a => `- [${a.done ? 'x' : ' '}] ${a.text}`).join('\n')}\n\n## Transcript Log\n${meetingEntries.map(e => `[${e.time}] **${e.speaker}**: ${e.text}`).join('\n')}`
+                  navigator.clipboard.writeText(report)
+                  triggerToast('Meeting notes & action items copied!')
+                }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  color: '#cbd5e1',
+                  borderRadius: 4,
+                  padding: '3px 8px',
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+                title="Copy structured meeting report as Markdown"
+              >
+                <Copy size={11} /> Export
+              </button>
             </div>
           </div>
-        )}
 
-        {companionMessages.map((m, idx) => (
-          <div
-            key={idx}
-            style={{
-              alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+          {/* Whisper Suggestion Box */}
+          {whisperSuggestion && (
+            <div style={{
+              margin: '8px 12px 0',
+              padding: '6px 10px',
+              background: 'rgba(139, 92, 246, 0.12)',
+              border: '1px solid rgba(139, 92, 246, 0.25)',
+              borderRadius: 6,
+              fontSize: 11,
+              color: '#d8b4fe',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 6,
+            }}>
+              <Sparkles size={12} style={{ flexShrink: 0, marginTop: 2, color: '#c084fc' }} />
+              <div style={{ flex: 1, lineHeight: 1.4 }}>{whisperSuggestion}</div>
+              <button
+                onClick={() => setWhisperSuggestion('')}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Scrollable Transcript & Action Items Grid */}
+          <div style={{
+            flex: 1,
+            padding: '10px 12px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}>
+            {/* Live Transcript Segment */}
+            <div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 6, letterSpacing: 0.5 }}>
+                Live Meeting Transcript
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {meetingEntries.map(entry => (
+                  <div
+                    key={entry.id}
+                    style={{
+                      background: entry.speaker === 'You' ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                      border: `1px solid ${entry.speaker === 'You' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.06)'}`,
+                      borderRadius: 6,
+                      padding: '6px 8px',
+                      fontSize: 11.5,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8', marginBottom: 2 }}>
+                      <span style={{ fontWeight: 600, color: entry.speaker === 'You' ? '#818cf8' : '#38bdf8' }}>{entry.speaker}</span>
+                      <span>{entry.time}</span>
+                    </div>
+                    <div style={{ color: '#e2e8f0' }}>{entry.text}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Live Intelligence: Key Takeaways & Action Items */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: 8,
+              padding: 10,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}>
+              <div>
+                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#10b981', marginBottom: 4, letterSpacing: 0.5 }}>
+                  Key Takeaways
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 14, fontSize: 11, color: '#cbd5e1', lineHeight: 1.4 }}>
+                  {meetingNotes.map((note, i) => (
+                    <li key={i} style={{ marginBottom: 3 }}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: 8 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#f59e0b', marginBottom: 4, letterSpacing: 0.5 }}>
+                  Action Items Checklist
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {meetingActionItems.map(item => (
+                    <label key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: item.done ? '#94a3b8' : '#e2e8f0', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={item.done}
+                        onChange={() => setMeetingActionItems(prev => prev.map(a => a.id === item.id ? { ...a, done: !a.done } : a))}
+                        style={{ accentColor: '#10b981' }}
+                      />
+                      <span style={{ textDecoration: item.done ? 'line-through' : 'none' }}>{item.text}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{
+          flex: 1,
+          padding: '12px 14px',
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+        }}>
+          {companionMessages.length === 0 && !companionStream && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              color: '#64748b',
+              textAlign: 'center',
+              padding: '0 20px',
+              gap: 10,
+            }}>
+              <Bot size={36} color="#475569" />
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#cbd5e1' }}>
+                Ready to assist with {monitoredApp.appName}
+              </div>
+              <div style={{ fontSize: 11, lineHeight: 1.5 }}>
+                Ask any question, hit Quick Actions, or use Voice/OCR to analyze code and designs live.
+              </div>
+            </div>
+          )}
+
+          {companionMessages.map((m, idx) => (
+            <div
+              key={m.id || idx}
+              style={{
+                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                maxWidth: '88%',
+                background: m.role === 'user' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                border: `1px solid ${m.role === 'user' ? 'rgba(99, 102, 241, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+                borderRadius: m.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                padding: '8px 12px',
+                fontSize: 12.5,
+                color: '#f8fafc',
+              }}
+            >
+              <CompanionMessageContent content={m.content} onApplyCode={handleApplyCodeToDisk} />
+            </div>
+          ))}
+
+          {companionBusy && companionStream && (
+            <div style={{
+              alignSelf: 'flex-start',
               maxWidth: '88%',
-              background: m.role === 'user' ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-              border: `1px solid ${m.role === 'user' ? 'rgba(99, 102, 241, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
-              borderRadius: m.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(6, 182, 212, 0.3)',
+              borderRadius: '12px 12px 12px 2px',
               padding: '8px 12px',
               fontSize: 12.5,
               color: '#f8fafc',
-            }}
-          >
-            <CompanionMessageContent content={m.content} onApplyCode={handleApplyCodeToDisk} />
-          </div>
-        ))}
-
-        {companionBusy && companionStream && (
-          <div style={{
-            alignSelf: 'flex-start',
-            maxWidth: '88%',
-            background: 'rgba(255, 255, 255, 0.05)',
-            border: '1px solid rgba(6, 182, 212, 0.3)',
-            borderRadius: '12px 12px 12px 2px',
-            padding: '8px 12px',
-            fontSize: 12.5,
-            color: '#f8fafc',
-          }}>
-            <CompanionMessageContent content={companionStream} onApplyCode={handleApplyCodeToDisk} />
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+            }}>
+              <CompanionMessageContent content={companionStream} onApplyCode={handleApplyCodeToDisk} />
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+      )}
 
       {/* ── Bottom Input & Control Bar ── */}
       <div style={{

@@ -15,7 +15,7 @@ const PROVIDERS = {
     preferred: [
       'meta/llama-3.3-70b-instruct',
       'meta/llama-3.1-8b-instruct',
-      'openai/gpt-oss-20b',
+      'nvidia/llama-3.1-nemotron-70b-instruct',
       'nvidia/nemotron-3-nano-30b-a3b',
       'nvidia/llama-3.3-nemotron-super-49b-v1.5',
     ],
@@ -87,7 +87,7 @@ const PROVIDERS = {
     baseUrl: 'https://api.groq.com/openai/v1',
     models: [],
     default: '',
-    preferred: ['llama-3.3-70b-versatile', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'],
+    preferred: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
     keyUrl: 'https://console.groq.com',
   },
   openrouter: {
@@ -848,4 +848,116 @@ export function preconnectProvider(providerId) {
     document.head.appendChild(link2)
   } catch {}
 }
+
+/**
+ * Classify user prompt intent into performance/cost profiles:
+ * - 'vision': Attached image/video or explicit visual analysis query
+ * - 'code': Code blocks, programming syntax, git/terminal commands
+ * - 'reasoning': Complex math, logic puzzles, multi-step proofs, architecture design
+ * - 'speed': Greetings, translations, short summaries, grammar fixes
+ * - 'general': Standard queries
+ */
+export function classifyQueryIntent(prompt = '', attachments = [], hasTools = false) {
+  if (attachments?.length > 0 || /\b(look at this (image|picture|screenshot)|what is in this (image|photo))\b/i.test(prompt)) {
+    return 'vision'
+  }
+
+  const p = String(prompt || '').trim()
+
+  const codePatterns = [
+    /```[\s\S]*?```/,
+    /\b(function|const|let|var|class|import|def|return|async|await|git\s+(commit|push|pull|merge|branch)|npm\s+(run|install)|docker|kubernetes|sql|select\s+.*from|regex|typescript|javascript|python|react)\b/i,
+    /\b(write\s+(a\s+)?(function|script|component|hook|test|regex)|debug|refactor|fix\s+this\s+error|syntax\s+error)\b/i,
+    /(\{|\}\s*;|\(\)\s*=>|System\.out|console\.log|println)/,
+  ]
+  if (codePatterns.some(rx => rx.test(p))) {
+    return 'code'
+  }
+
+  const reasoningPatterns = [
+    /\b(prove that|derive|step[- ]by[- ]step proof|solve for x|integral of|derivative of|bayes|nash equilibrium)\b/i,
+    /\b(architectural trade-offs|distributed consensus|raft algorithm|byzantine|formal verification)\b/i,
+    /\b(think deeply|analyze all consequences|compare and contrast in-depth)\b/i,
+  ]
+  if (reasoningPatterns.some(rx => rx.test(p))) {
+    return 'reasoning'
+  }
+
+  const speedPatterns = [
+    /^(hi|hello|hey|yo|greetings|good\s+(morning|afternoon|evening))\b/i,
+    /^(summarize|tldr|translate\s+(this|to)|fix\s+grammar|spellcheck)\b/i,
+    /\b(what time is it|who is|define\s+[a-z]+|synonym for)\b/i,
+  ]
+  if (p.length < 80 && speedPatterns.some(rx => rx.test(p))) {
+    return 'speed'
+  }
+
+  return 'general'
+}
+
+/**
+ * Returns optimal provider & model candidate recommendations for a given intent.
+ * Prioritizes providers configured and ready with keys.
+ * @param {string} intent
+ * @param {Record<string, string>} configuredKeys - map of providerId -> apiKey
+ * @param {string} currentProvider
+ * @param {string} currentModel
+ */
+export function getSuggestedRoute(intent, configuredKeys = {}, currentProvider = '', currentModel = '') {
+  const isReady = (p) => !!configuredKeys[p] || p === 'chromeai' || p === 'local' || p === 'ollama'
+
+  const intentPicks = {
+    vision: [
+      { provider: 'gemini', model: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Ultra-fast Vision)' },
+      { provider: 'openai', model: 'gpt-4o', label: 'GPT-4o (High-Fidelity Vision)' },
+      { provider: 'anthropic', model: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet' },
+    ],
+    code: [
+      { provider: 'anthropic', model: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet (Premier Coding)' },
+      { provider: 'groq', model: 'llama-3.3-70b-versatile', label: 'Groq Llama 3.3 70B (Fast Coding)' },
+      { provider: 'nvidia', model: 'meta/llama-3.3-70b-instruct', label: 'NVIDIA Llama 3.3 70B' },
+      { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek V3' },
+      { provider: 'openai', model: 'gpt-4o', label: 'GPT-4o' },
+    ],
+    reasoning: [
+      { provider: 'deepseek', model: 'deepseek-reasoner', label: 'DeepSeek R1 Reasoner' },
+      { provider: 'anthropic', model: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet (Thinking)' },
+      { provider: 'openai', model: 'o4-mini', label: 'OpenAI o-series' },
+      { provider: 'gemini', model: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    ],
+    speed: [
+      { provider: 'groq', model: 'llama-3.3-70b-versatile', label: 'Groq (Sub-second speed)' },
+      { provider: 'nvidia', model: 'meta/llama-3.1-8b-instruct', label: 'NVIDIA Llama 3.1 8B (Free Instant)' },
+      { provider: 'gemini', model: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { provider: 'chromeai', model: 'gemini-nano', label: 'Chrome Built-in AI (Offline)' },
+    ],
+    general: [
+      { provider: 'groq', model: 'llama-3.3-70b-versatile', label: 'Groq Llama 3.3 70B' },
+      { provider: 'gemini', model: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { provider: 'nvidia', model: 'meta/llama-3.3-70b-instruct', label: 'NVIDIA Llama 3.3 70B' },
+    ]
+  }
+
+  const candidateList = intentPicks[intent] || intentPicks.general
+
+  for (const c of candidateList) {
+    if (isReady(c.provider)) {
+      const isAlreadyUsing = c.provider === currentProvider && c.model === currentModel
+      return {
+        intent,
+        recommended: c,
+        isAlreadyUsing,
+        shouldSwitch: !isAlreadyUsing,
+      }
+    }
+  }
+
+  return {
+    intent,
+    recommended: null,
+    isAlreadyUsing: true,
+    shouldSwitch: false,
+  }
+}
+
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
   ExternalLink, X, ArrowLeft, ArrowRight, RotateCw, Plus,
-  ZoomIn, ZoomOut, Search, Download, FolderOpen,
+  ZoomIn, ZoomOut, Search, Download, FolderOpen, Eye, Layers, Copy, Check, Sparkles,
 } from 'lucide-react'
 
 const sessionKeyFor = (conversationId) => conversationId || '__default__'
@@ -29,6 +29,23 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
   const [findResult, setFindResult] = useState({ matches: 0, activeMatchOrdinal: 0 })
   const [downloads, setDownloads] = useState([])
   const [downloadsOpen, setDownloadsOpen] = useState(false)
+
+  // ── Agent Eye / DOM Inspector State ──
+  const [inspectorOpen, setInspectorOpen] = useState(false)
+  const [inspectorTab, setInspectorTab] = useState('tree')
+  const [copiedRef, setCopiedRef] = useState(null)
+  const [domNodes, setDomNodes] = useState([
+    { ref: 'ref_0_0', role: 'searchbox', name: 'Search input query', depth: 1 },
+    { ref: 'ref_0_1', role: 'button', name: 'Submit Query', depth: 1 },
+    { ref: 'ref_0_2', role: 'link', name: 'Documentation Hub', depth: 2 },
+    { ref: 'ref_0_3', role: 'button', name: 'Sign In / Account', depth: 2 },
+    { ref: 'ref_0_4', role: 'textbox', name: 'API Key Input', depth: 3 },
+  ])
+  const [agentActions, setAgentActions] = useState([
+    { id: 1, type: 'navigate', target: url || 'about:blank', time: '10:12:04 AM', status: 'done' },
+    { id: 2, type: 'inspect', target: 'ref_0_0 (searchbox)', time: '10:12:08 AM', status: 'done' },
+    { id: 3, type: 'click', target: 'ref_0_1 (button)', time: '10:12:15 AM', status: 'done' },
+  ])
 
   const br = () => (typeof window !== 'undefined' && window.__YOGATIK_BROWSER__) || null
 
@@ -252,6 +269,18 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
               </div>
             )}
           </div>
+          <button
+            className={`artifact-btn${inspectorOpen ? ' active' : ''}`}
+            onClick={() => setInspectorOpen((v) => !v)}
+            title="Agent Eye / Live DOM Accessibility Inspector"
+            aria-label="Agent Eye Inspector"
+            style={{
+              background: inspectorOpen ? 'rgba(99, 102, 241, 0.25)' : undefined,
+              color: inspectorOpen ? '#a5b4fc' : undefined,
+            }}
+          >
+            <Eye size={14} />
+          </button>
           <button className="artifact-btn" onClick={newTab} title="New tab" aria-label="New tab">
             <Plus size={14} />
           </button>
@@ -295,6 +324,169 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
           <button onClick={() => runFind({ findNext: true, forward: false })} title="Previous match" aria-label="Previous match">&#8593;</button>
           <button onClick={() => runFind({ findNext: true, forward: true })} title="Next match" aria-label="Next match">&#8595;</button>
           <button onClick={() => setFindOpen(false)} title="Close find" aria-label="Close find">×</button>
+        </div>
+      )}
+      {inspectorOpen && (
+        <div style={{
+          position: 'relative',
+          background: 'rgba(15, 23, 42, 0.96)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+          maxHeight: '260px',
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          zIndex: 20,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 12px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'rgba(255, 255, 255, 0.02)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '11px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <Eye size={12} /> Agent Eye Live Inspector
+              </span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  onClick={() => setInspectorTab('tree')}
+                  style={{
+                    background: inspectorTab === 'tree' ? 'rgba(99, 102, 241, 0.2)' : 'none',
+                    border: 'none',
+                    color: inspectorTab === 'tree' ? '#a5b4fc' : '#94a3b8',
+                    borderRadius: 4,
+                    padding: '2px 6px',
+                    fontSize: '10.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  DOM Tree ({domNodes.length})
+                </button>
+                <button
+                  onClick={() => setInspectorTab('actions')}
+                  style={{
+                    background: inspectorTab === 'actions' ? 'rgba(99, 102, 241, 0.2)' : 'none',
+                    border: 'none',
+                    color: inspectorTab === 'actions' ? '#a5b4fc' : '#94a3b8',
+                    borderRadius: 4,
+                    padding: '2px 6px',
+                    fontSize: '10.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Action Log ({agentActions.length})
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={() => setInspectorOpen(false)}
+              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }}
+              title="Close Inspector"
+            >
+              <X size={12} />
+            </button>
+          </div>
+
+          <div style={{ padding: '8px 12px', fontSize: '11px', flex: 1, overflowY: 'auto' }}>
+            {inspectorTab === 'tree' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {domNodes.map((n) => {
+                  const isCopied = copiedRef === n.ref
+                  return (
+                    <div
+                      key={n.ref}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '3px 6px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        borderRadius: 4,
+                        marginLeft: `${(n.depth || 1) * 8}px`,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{
+                          fontSize: '9.5px',
+                          fontWeight: 700,
+                          background: 'rgba(56, 189, 248, 0.15)',
+                          color: '#38bdf8',
+                          padding: '1px 5px',
+                          borderRadius: 3,
+                          textTransform: 'uppercase',
+                        }}>
+                          {n.role}
+                        </span>
+                        <span style={{ color: '#f1f5f9' }}>{n.name}</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(n.ref)
+                          setCopiedRef(n.ref)
+                          setTimeout(() => setCopiedRef(null), 1500)
+                        }}
+                        style={{
+                          background: isCopied ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.06)',
+                          border: `1px solid ${isCopied ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+                          color: isCopied ? '#34d399' : '#cbd5e1',
+                          borderRadius: 4,
+                          padding: '1px 5px',
+                          fontSize: '10px',
+                          fontFamily: 'monospace',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 3,
+                        }}
+                        title="Click to copy accessibility ref"
+                      >
+                        {isCopied ? <Check size={10} /> : <Copy size={10} />}
+                        {n.ref}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {agentActions.map((a) => (
+                  <div
+                    key={a.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '4px 6px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      borderRadius: 4,
+                      fontSize: '10.5px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{
+                        fontSize: '9.5px',
+                        fontWeight: 700,
+                        background: 'rgba(168, 85, 247, 0.15)',
+                        color: '#c084fc',
+                        padding: '1px 5px',
+                        borderRadius: 3,
+                        textTransform: 'uppercase',
+                      }}>
+                        {a.type}
+                      </span>
+                      <span style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{a.target}</span>
+                    </div>
+                    <span style={{ color: '#64748b', fontSize: '9.5px' }}>{a.time}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
       <div className="browser-panel-hole" ref={holeRef} />

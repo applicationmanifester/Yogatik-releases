@@ -87,6 +87,11 @@ export const FEATURES = {
     hint: 'The model sees the camera/screen on every turn — even text-only models, described on-device',
     default: false,
   },
+  liveTextOnly: {
+    label: 'Silent Live (Text/Transcript Only)',
+    hint: 'Mute AI voice output. Fast mic-in, instant streaming text-out with zero audio synthesis or playback delay',
+    default: false,
+  },
   semanticSearch: {
     label: 'Semantic document search',
     hint: 'Re-rank document search by meaning, not just keywords. Downloads ~23MB once',
@@ -120,6 +125,11 @@ export const FEATURES = {
   autoOpenEditedFiles: {
     label: 'Auto-Open Edited Files',
     hint: 'Open files in the background if Agent creates or edits them',
+    default: true,
+  },
+  smartRouter: {
+    label: 'Smart Intent Router',
+    hint: 'Suggests or routes queries to the optimal provider (Speed, Code, Reasoning, or Vision)',
     default: true,
   },
 }

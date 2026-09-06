@@ -82,6 +82,7 @@ import { preconnectProvider } from './latencyOptimizer'
 import { matchReflex, streamReflex } from './reflexEngine'
 import { webSearchTool } from '../tools/webSearch'
 import { summariseToolResults } from '../toolSummary'
+import { cleanForSpeech } from '../video/speech'
 
 // ─── Adaptive Tool Gating (ATG) ────────────────────────────────────────────
 // The #1 latency killer in Live mode: sending 18+ tool schemas (~32k tokens)
@@ -282,7 +283,7 @@ export function trimHistoryPairs(history = [], maxTurns = MAX_HISTORY_TURNS) {
 
 export function createCascadeSession({
   provider, apiKey, model, persona = null, disabledTools = [],
-  modelCanSee = false, camera = false, voice = null, voiceEngine = 'neural',
+  modelCanSee = false, camera = false, voice = null, voiceEngine = 'system',
   lang = defaultLang(), rate = 1.05,
   conversationId = null, projectId = null,
   // 'auto'  — describe/attach a frame only when the user asks about the view (or
@@ -295,6 +296,7 @@ export function createCascadeSession({
   voiceCommands = true,
   // Providers to fall back to when this one dies mid-call, from getLiveConfig.
   fallbacks = [],
+  speakerMuted: initialSpeakerMuted = false,
   onEvent = () => {},
 }) {
   // The active provider can change mid-call: a 429 five minutes into a
@@ -337,8 +339,8 @@ export function createCascadeSession({
           // Muted and echo handling mirror the Web Speech path; without the echo
           // guard the assistant transcribes its own voice and answers itself.
           if (muted || closed) return
-          if ((speaking || (Date.now() - speechEndedAt) < ECHO_TAIL_MS) && isEcho(text, spokenAloud)) return
-          if (speaking) interrupt(false)
+          if (!speakerMuted && (speaking || (Date.now() - speechEndedAt) < ECHO_TAIL_MS) && isEcho(text, spokenAloud)) return
+          if (!speakerMuted && speaking) interrupt(false)
           handleUtterance(text, 1)
         },
         onError: (err) => emit({ type: 'error', message: `On-device speech: ${err.message}` }),
@@ -363,7 +365,7 @@ export function createCascadeSession({
   // for it (the composer's Volume2 icon was imported and never wired to
   // anything). `speak()` is the one choke point every spoken clause already
   // passes through, so muting output costs nothing extra to synthesize.
-  let speakerMuted = false
+  let speakerMuted = !!initialSpeakerMuted
   let speaking = false
   let thinking = false
   let abort = null
@@ -390,7 +392,8 @@ export function createCascadeSession({
   })
 
   const speak = (text) => {
-    if (!text.trim()) return
+    const cleaned = cleanForSpeech(text)
+    if (!cleaned) return
     // AI voice output is off: the reply still streams as text/captions (the
     // caller renders those from the same content independently of this
     // function), it just never reaches the synthesiser — no TTS request, no
@@ -400,8 +403,8 @@ export function createCascadeSession({
     if (speakerMuted) return
     // Recorded before playback: the echo guard needs to know what the room is
     // about to hear, not what it finished hearing.
-    spokenAloud = `${spokenAloud} ${text}`.slice(-400)
-    speaker.speak(text)
+    spokenAloud = `${spokenAloud} ${cleaned}`.slice(-400)
+    speaker.speak(cleaned)
   }
 
   // Remembers the last spoken filler across turns so the same line is not used
@@ -409,6 +412,11 @@ export function createCascadeSession({
   const filler = { announced: false, last: '' }
 
   const flushSentences = (final = false) => {
+    if (speakerMuted) {
+      spoken = buffer
+      if (final) firstChunk = true
+      return
+    }
     let rest = buffer.slice(spoken.length)
     if (final) {
       if (rest.trim()) { speak(rest); spoken = buffer }
@@ -666,7 +674,7 @@ export function createCascadeSession({
     return true
   }
 
-  const RECOVERABLE = /429|rate.?limit|50\d|timeout|network|overload/i
+  const RECOVERABLE = /429|rate.?limit|50\d|timeout|network|overload|404|410|not.?found|decommission|deprecated|unsupported/i
 
   // ─── A turn ───
   async function respondTo(userText, retry = 0) {
@@ -704,6 +712,8 @@ export function createCascadeSession({
     buffer = ''; spoken = ''; firstChunk = true
     const controller = new AbortController()
     abort = controller
+    let watchdogTimedOut = false
+    let timeoutMessage = ''
 
     // A frame is ~1.1k tokens. Send it when the question is about the room,
     // not on every "what's the capital of Peru". When the model cannot see,
@@ -765,9 +775,6 @@ export function createCascadeSession({
     const toolMode = await getToolMode(active.provider, active.model).catch(() => 'native')
 
     await new Promise((resolve) => {
-      let watchdogTimedOut = false
-      let timeoutMessage = ''
-
       // 12s live response watchdog: If provider hangs with 0 tokens, failover to next provider
       let liveTurnTimer = setTimeout(() => {
         if (!produced && thinking && !controller.signal.aborted) {
@@ -803,6 +810,7 @@ export function createCascadeSession({
 - Speak directly, naturally, and warmly.
 - Deliver accurate, clear, and helpful answers.
 - You have full access to tools and web search. If reporting live news or web results, share the core facts directly.
+- For real-time voice chat, give direct spoken responses immediately without verbose internal reasoning or lengthy preamble.
 - Keep answers conversational without unnecessary internal monologue.`,
         signal: controller.signal,
         onToken: (t) => {
@@ -1073,10 +1081,10 @@ export function createCascadeSession({
       // buffer) for a beat AFTER playback ends, so guard for a tail window too —
       // otherwise the echoed FINAL transcript lands with speaking already false,
       // gets enqueued, and the assistant answers its own voice in a loop.
-      const echoWindow = speaking || (Date.now() - speechEndedAt) < ECHO_TAIL_MS
+      const echoWindow = !speakerMuted && (speaking || (Date.now() - speechEndedAt) < ECHO_TAIL_MS)
       if (echoWindow && isEcho(heard, spokenAloud)) return
       // Genuine barge-in only counts while actually speaking (not during the tail, and never while thinking/tools).
-      if (speaking && (finalText || heard.length >= MIN_BARGE_CHARS)) {
+      if (!speakerMuted && speaking && (finalText || heard.length >= MIN_BARGE_CHARS)) {
         metrics.markBargeIn(!!heard.trim())
         interrupt(false)
       }
@@ -1245,7 +1253,14 @@ export function createCascadeSession({
     if (closed) return
     closed = true
     document.removeEventListener('visibilitychange', onVisibility)
-    try { recog?.abort() } catch {}
+    if (recog) {
+      recog.onend = null
+      recog.onerror = null
+      recog.onresult = null
+      try { recog.abort() } catch {}
+      try { recog.stop() } catch {}
+      recog = null
+    }
     // Releases the mic track, the AudioContext and the segmentation timer;
     // leaking those keeps the OS mic indicator lit after the call ends.
     try { localRecognizer?.stop() } catch { /* already stopped */ }
@@ -1256,7 +1271,7 @@ export function createCascadeSession({
     clearSharedVisualSource(screen)
     cam?.close()
     screen?.close()
-    recog = null; cam = null; screen = null
+    cam = null; screen = null
     onEvent({ type: 'ended' })
   }
 
@@ -1385,7 +1400,7 @@ export function createCascadeSession({
     getNoiseSuppression: () => true,
     get cameraOn() { return !!cam },
     get screenOn() { return !!screen },
-    interrupt: (userExplicit = false) => interrupt(userExplicit),
-    stop: (userExplicit = true) => interrupt(userExplicit),
+    configureSpeaker: (opts = {}) => { speaker?.configure?.(opts) },
+    setVoiceEngine: (eng) => { speaker?.configure?.({ engine: eng }) },
   }
 }

@@ -5,9 +5,12 @@ import {
   AlertTriangle, Monitor, MonitorOff, MessageSquare, Eye, EyeOff,
   Aperture, Volume2, VolumeX, Scan, ScanEye,
   RefreshCw, SwitchCamera, Settings2, Camera, Search,
-  ChevronDown, Check, Zap, Layers, PictureInPicture2, Maximize2, Square,
-  Sun, Moon,
+  ChevronDown, ChevronUp, Check, Zap, Layers, PictureInPicture2, Maximize2, Square,
+  Sun, Moon, Copy, Bot, Brain, Clock, Sparkles,
 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { cleanForSpeech } from '../video/speech'
 import { autoPickModel } from '../api'
 import { runAgent } from '../agent'
 import { createLiveSession } from '../live/session'
@@ -51,6 +54,22 @@ function ActivityTimer({ startTime }) {
       ({(elapsed / 1000).toFixed(1)}s)
     </span>
   )
+}
+
+/** Formats subtitle text to a rolling active sentence or clause (max ~130 chars) */
+function formatRollingCaption(fullText) {
+  if (!fullText) return ''
+  const t = cleanForSpeech(fullText).replace(/\s+/g, ' ').trim()
+  if (!t) return ''
+  if (t.length <= 130) return t
+  const clauses = t.split(/(?<=[.?!;:\n])\s+/)
+  const lastClause = clauses[clauses.length - 1] || ''
+  if (lastClause.length >= 20 && lastClause.length <= 130) {
+    return lastClause
+  }
+  const sliced = t.slice(-120)
+  const firstSpace = sliced.indexOf(' ')
+  return firstSpace > 0 ? '… ' + sliced.slice(firstSpace + 1) : sliced
 }
 
 /**
@@ -108,10 +127,15 @@ export function LiveView({
     state: 'connecting',
     error: '',
     muted: false,
-    // AI voice OUTPUT, separate from `muted` (the mic). Previously there was
-    // no way to turn the assistant's speaking off without also turning off
-    // listening.
-    speakerMuted: false,
+    // AI voice OUTPUT, separate from `muted` (the mic). Allows
+    // listening to user speech with instant text/transcript responses only.
+    speakerMuted: (() => {
+      try {
+        const saved = localStorage.getItem('yogatik_live_speaker_muted')
+        if (saved !== null) return saved === 'true'
+      } catch {}
+      return !!features.liveTextOnly
+    })(),
     camOn: false,
     screenOn: false,
     // 'auto' = look when asked / on scene change; 'always' = watch every turn
@@ -129,7 +153,7 @@ export function LiveView({
     showTranscript: false,
     copiedIdx: -1,
     frameSent: false,
-    liveVoice: voiceEngine === 'neural' ? 'loading' : 'system',
+    liveVoice: (voiceEngine || 'system') === 'neural' ? 'loading' : 'system',
     activeProvider: { provider, model },
     connectionState: 'connecting', // connecting | negotiating | ready | reconnecting | failed
     userLevel: 0,
@@ -177,14 +201,58 @@ export function LiveView({
   // Personalise panel still owns the persisted default.
   const [liveRate, setLiveRate] = useState(1)
   const [liveVoiceId, setLiveVoiceId] = useState(voice || '')
-  const [liveEngine, setLiveEngine] = useState(voiceEngine || 'neural')
+  const [liveEngine, setLiveEngine] = useState(voiceEngine || 'system')
   const [showCaptions, setShowCaptions] = useState(features.liveCaptions !== false)
+  const [responseMinimized, setResponseMinimized] = useState(false)
+  const [copiedResponse, setCopiedResponse] = useState(false)
+  const [showLiveReasoning, setShowLiveReasoning] = useState(false)
+  const centerResponseRef = useRef(null)
+  const [userScrolledResponse, setUserScrolledResponse] = useState(false)
+
+  const handleVoiceEngineToggle = useCallback(() => {
+    const next = liveEngine === 'system' ? 'neural' : 'system'
+    setLiveEngine(next)
+    if (sessionRef.current?.setVoiceEngine) {
+      sessionRef.current.setVoiceEngine(next)
+    }
+    getSetting('chat_prefs', {}).then(p => setSetting('chat_prefs', { ...p, live_voice_engine: next })).catch(() => {})
+    showHudNotice(next === 'system' ? '⚡ Fast Voice (0ms instant speech)' : '🧠 Neural HD Voice (Kokoro on-device)')
+  }, [liveEngine, showHudNotice])
+
+  // Extract latest assistant reply for active on-screen display
+  const latestAssistantMsg = useMemo(() => {
+    for (let i = transcript.length - 1; i >= 0; i--) {
+      if (transcript[i].role === 'assistant' && transcript[i].type === 'message' && (transcript[i].text || transcript[i].reasoning)) {
+        return transcript[i]
+      }
+    }
+    const lastLine = lines[lines.length - 1]
+    if (lastLine && lastLine.role === 'assistant' && lastLine.text) {
+      return { role: 'assistant', text: lastLine.text, type: 'message' }
+    }
+    return null
+  }, [transcript, lines])
+
+  useEffect(() => {
+    if (centerResponseRef.current && !userScrolledResponse) {
+      centerResponseRef.current.scrollTop = centerResponseRef.current.scrollHeight
+    }
+  }, [latestAssistantMsg?.text, thinking, reasoningText, userScrolledResponse])
+
+  const handleCopyResponse = useCallback((text) => {
+    if (!text) return
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedResponse(true)
+      setTimeout(() => setCopiedResponse(false), 2000)
+    }).catch(() => {})
+  }, [])
   const [noiseSuppression, setNoiseSuppression] = useState(true)
   const [hasFlip, setHasFlip] = useState(false)
   const [viewMode, setViewMode] = useState('cinema') // 'cinema' | 'dock' | 'pip'
   const [artifacts, setArtifacts] = useState([])
   const [activeArtifactIdx, setActiveArtifactIdx] = useState(0)
-  const [showArtifactStage, setShowArtifactStage] = useState(true)
+  const [showArtifactStage, setShowArtifactStage] = useState(false)
+  const [sidePanelTab, setSidePanelTab] = useState('transcript') // 'transcript' | 'artifacts'
   const [pipRoot, setPipRoot] = useState(null)
 
   const handlePopoutPip = useCallback(async () => {
@@ -536,10 +604,11 @@ export function LiveView({
     liveMetrics.startSession({ engine, provider, modelCanSee })
     const make = engine === 'gemini' ? createLiveSession : createCascadeSession
     const session = make({
-      provider, apiKey, model, voice, voiceEngine, fallbacks,
+      provider, apiKey, model, voice, voiceEngine: liveEngine, fallbacks,
       persona, disabledTools, modelCanSee, camera: false, noiseSuppression,
       conversationId, projectId,
       visionMode: features.liveWatchAlways ? 'always' : 'auto',
+      speakerMuted: uiState.speakerMuted,
       onEvent: (e) => {
         if (cancelled) return
         switch (e.type) {
@@ -807,6 +876,10 @@ export function LiveView({
     const v = !speakerMuted
     setState({ speakerMuted: v })
     sessionRef.current?.setSpeakerMuted?.(v)
+    try {
+      localStorage.setItem('yogatik_live_speaker_muted', v ? 'true' : 'false')
+    } catch {}
+    showHudNotice(v ? '⚡ Silent Live: Mic In ➔ Instant Streaming Text Out' : '🔊 AI Voice Output Restored')
     buzz(features, 30)
   }
   const toggleCam = async () => {
@@ -1023,6 +1096,7 @@ export function LiveView({
     // "the socket died" are indistinguishable in a length histogram and mean
     // opposite things.
     liveMetrics.endSession(liveMetrics.END_REASON.USER)
+    try { sessionRef.current?.stop?.() } catch {}
     const durationSec = Math.max(1, (Date.now() - startTimeRef.current) / 1000)
     const validTranscripts = (transcript || []).filter(t => t.type === 'message' && t.text)
     const toolsRun = (transcript || []).filter(t => t.type === 'toolResult')
@@ -1083,7 +1157,7 @@ export function LiveView({
   }, [detections])
 
   return (
-    <div className={`live-view ${viewMode === 'dock' ? 'mode-dock' : ''}`} data-theme={theme} role="dialog" aria-modal="true" aria-label="Live conversation">
+    <div className={`live-view ${viewMode === 'dock' ? 'mode-dock' : ''} ${(showTranscript || showArtifactStage) ? 'has-side-panel' : ''}`} data-theme={theme} role="dialog" aria-modal="true" aria-label="Live conversation">
       {/* Floating Dynamic Island Companion Dock */}
       {viewMode === 'dock' && (
         <LiveDockOverlay
@@ -1106,6 +1180,7 @@ export function LiveView({
           onEndCall={handleEnd}
           onSelectArtifact={() => {
             setViewMode('cinema')
+            setSidePanelTab('artifacts')
             setShowArtifactStage(true)
           }}
         />
@@ -1140,6 +1215,7 @@ export function LiveView({
               try { pipRoot.ownerDocument.defaultView?.close() } catch {}
               setPipRoot(null)
               setViewMode('cinema')
+              setSidePanelTab('artifacts')
               setShowArtifactStage(true)
             }}
           />
@@ -1178,11 +1254,7 @@ export function LiveView({
           }}
         />
       )}
-      {/* Object-detection boxes, drawn purely client-side over the self-view.
-          `.live-self` is CSS-mirrored (scaleX(-1)) but the captured frame is
-          NOT — video.js draws the raw, unmirrored pixels — so x is flipped
-          here (1 - xmax) rather than mirroring the whole layer, which would
-          also mirror the label text and need a second undo-transform on it. */}
+      {/* Object-detection boxes */}
       {objectDetect && detections.length > 0 && (
         <div className="live-detect-layer" aria-hidden="true">
           {detections.map((d, i) => {
@@ -1217,37 +1289,6 @@ export function LiveView({
           })}
         </div>
       )}
-      {/* The Identify Pill / Scan Barcode / Enhance Macro shortcut bar (LiveHudOverlay)
-          was removed 2026-09-04: it pre-empted the model by capturing the frame and
-          acting the instant the button was tapped, whether or not the user had asked
-          for that specific job. Saying "identify this pill" (or scan/enhance) out loud
-          or in the composer reaches the model through the normal turn — vision is
-          already attached per-turn (visualParts/describeIfVisual above) — so nothing
-          is lost, it just now requires an actual user command instead of a standing
-          button guessing what they want. See buildGuards.test.js's orphan allowlist
-          for LiveHudOverlay.jsx. */}
-
-      {/* Live Spatial Artifact Stage Drawer (Cinema mode) */}
-      {viewMode === 'cinema' && artifacts.length > 0 && showArtifactStage && (
-        <div
-          className="live-spatial-artifact-drawer"
-          style={{
-            position: 'absolute',
-            right: '20px',
-            top: '68px',
-            bottom: '100px',
-            width: 'min(480px, calc(100vw - 40px))',
-            zIndex: 25,
-          }}
-        >
-          <LiveArtifactStage
-            artifacts={artifacts}
-            activeIndex={activeArtifactIdx}
-            onSelectIndex={setActiveArtifactIdx}
-            onClose={() => setShowArtifactStage(false)}
-          />
-        </div>
-      )}
 
       <LiveSettings
         open={showSettings}
@@ -1261,9 +1302,6 @@ export function LiveView({
         onVisionMode={(m) => { setState({ visionMode: m }); sessionRef.current?.setVisionMode?.(m) }}
         voiceEngine={liveEngine}
         onVoiceEngine={(e) => {
-          // Gemini fixes the voice at setup and REFUSES this. Only move the
-          // control once the engine accepted it, or the UI shows a choice that
-          // did not happen.
           const r = sessionRef.current?.setVoiceEngine?.(e)
           if (r?.success === false) setState({ error: r.error })
           else {
@@ -1295,9 +1333,6 @@ export function LiveView({
         onPick={pickDevice}
         currentCameraId={deviceIds.cameraId}
         currentMicId={deviceIds.micId}
-        // Cascade listens through the Web Speech API, which picks the mic
-        // itself and accepts no deviceId. Showing a mic list there would be a
-        // picker that silently does nothing.
         micSwitchable={engine === 'gemini'}
       />
 
@@ -1340,9 +1375,18 @@ export function LiveView({
           {artifacts.length > 0 && (
             <button
               type="button"
-              className={`live-mode-switch-btn ${showArtifactStage ? 'active' : ''}`}
-              onClick={() => setShowArtifactStage(v => !v)}
-              title="Toggle Live Spatial Artifact Stage"
+              className={`live-mode-switch-btn ${(showTranscript || showArtifactStage) && sidePanelTab === 'artifacts' ? 'active' : ''}`}
+              onClick={() => {
+                if ((showTranscript || showArtifactStage) && sidePanelTab === 'artifacts') {
+                  setShowArtifactStage(false)
+                  setState(prev => ({ ...prev, showTranscript: false }))
+                } else {
+                  setSidePanelTab('artifacts')
+                  setShowArtifactStage(true)
+                  setState(prev => ({ ...prev, showTranscript: false }))
+                }
+              }}
+              title="Toggle Live Artifacts & Tools (Side Drawer)"
             >
               <Layers size={12} style={{ color: '#38bdf8' }} />
               <span>Artifacts ({artifacts.length})</span>
@@ -1557,6 +1601,37 @@ export function LiveView({
           <span>{isAutoPickingFastest ? 'Testing Speed…' : '⚡ Auto-Pick Fastest'}</span>
         </button>
 
+        {/* Fast Voice / Neural HD Speed Switcher */}
+        {curProvider !== 'gemini' && (
+          <button
+            type="button"
+            onClick={handleVoiceEngineToggle}
+            className="live-badge voice-speed-badge"
+            style={{
+              background: liveEngine === 'system' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(168, 85, 247, 0.15)',
+              color: liveEngine === 'system' ? '#38bdf8' : '#c084fc',
+              border: `1px solid ${liveEngine === 'system' ? 'rgba(56, 189, 248, 0.35)' : 'rgba(168, 85, 247, 0.35)'}`,
+              borderRadius: '12px',
+              padding: '2px 9px',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              maxHeight: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              boxShadow: liveEngine === 'system' ? '0 2px 8px rgba(56, 189, 248, 0.15)' : '0 2px 8px rgba(168, 85, 247, 0.15)',
+              transition: 'all 0.15s ease',
+            }}
+            title={liveEngine === 'system'
+              ? 'Voice: Fast System (0ms instant speech). Tap to switch to Neural HD.'
+              : 'Voice: Neural HD (Kokoro 82M on-device). Tap to switch to Fast System (0ms instant).'}
+          >
+            {liveEngine === 'system' ? <Zap size={11} /> : <Sparkles size={11} />}
+            <span>{liveEngine === 'system' ? 'Fast Voice (0ms)' : 'Neural HD'}</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => setShowModelSearch(true)}
@@ -1595,118 +1670,248 @@ export function LiveView({
             <ScanEye size={12} /> Object HUD {detections.length > 0 ? `(${detections.length})` : ''}
           </span>
         )}
+        {speakerMuted && (
+          <span
+            className="live-badge speaker-muted-badge"
+            style={{
+              background: 'rgba(245, 158, 11, 0.15)',
+              color: '#fbbf24',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              borderRadius: '12px',
+              padding: '2px 8px',
+              fontSize: '11px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              cursor: 'pointer',
+            }}
+            onClick={toggleSpeaker}
+            title="Silent Live: AI voice muted — streaming text/transcript out only. Click to unmute."
+          >
+            <VolumeX size={11} /> ⚡ Silent Live (Text Only)
+          </span>
+        )}
       </div>
 
-      {/* Yogatik mascot — reacts to audio level */}
-      <div className="live-orb-wrap">
-        <div className="live-orb-rings">
-          <div
-            className={`live-ring ring-3 ${speaking ? 'active' : ''}`}
-            style={{ transform: `scale(${ring3Scale})` }}
-          />
-          <div
-            className={`live-ring ring-2 ${speaking ? 'active' : ''}`}
-            style={{ transform: `scale(${ring2Scale})` }}
-          />
-          <div
-            className={`live-mascot ${speaking ? 'speaking' : ''} ${state === 'connecting' ? 'pending' : ''} ${thinking ? 'thinking' : ''} ${!speaking && !thinking && state === 'live' ? 'breathing' : ''}`}
-            style={{ transform: `scale(${speaking ? orbScale : breathingScale})` }}
-          >
-            <svg viewBox="0 0 512 512" className="live-mascot-svg" aria-hidden="true">
-              {/* Head */}
-              <circle cx="256" cy="256" r="110" fill="none" stroke="currentColor" strokeWidth="14" />
-              {/* Eyes */}
-              <circle cx="220" cy="236" r="14" fill="currentColor" className="live-eye left-eye" />
-              <circle cx="292" cy="236" r="14" fill="currentColor" className="live-eye right-eye" />
-              {/* Mouth — opens wider with audio level */}
-              <path
-                d={speaking
-                  ? `M208 280 q48 ${Math.round(30 + assistantLevel * 50)} 96 0`
-                  : 'M208 280 q48 30 96 0'
-                }
-                fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round"
-                className="live-mouth"
-              />
-            </svg>
-          </div>
-        </div>
-        {state === 'connecting' && (
-          <div className="live-status"><Loader2 size={14} className="spin" /> Connecting…</div>
-        )}
-        {connectionState === 'negotiating' && (
-          <div className="live-status"><Loader2 size={14} className="spin" /> Negotiating session…</div>
-        )}
-        {connectionState === 'reconnecting' && (
-          <div className="live-status reconnecting">
-            <RefreshCw size={14} className="spin" /> Reconnecting…
-          </div>
-        )}
-        {thinking && (
-          <div className="live-status thinking-status">
-            <span className="thinking-dots"><span /><span /><span /></span>
-            <span>🧠 Thinking</span>
-            {uiState.thinkingStartTime && (
-              <ActivityTimer startTime={uiState.thinkingStartTime} />
-            )}
-            <button
-              type="button"
-              onClick={handleStopTurn}
-              className="live-stop-turn-chip"
-              title="Stop model thinking & cancel response"
-            >
-              <Square size={10} fill="currentColor" /> Stop
-            </button>
-          </div>
-        )}
-        {tool && (
-          <div className="live-status tool-status">
-            <Wrench size={14} className="spin" />
-            <span>🔧 Using: <strong>{tool}</strong></span>
-          </div>
-        )}
-        {liveStatusText && !thinking && !tool && (
-          <div className="live-status action-status">
-            {liveStatusText.includes('⏹') || liveStatusText.includes('Stopped') ? (
-              <Square size={10} fill="currentColor" />
-            ) : (
-              <Loader2 size={13} className="spin" />
-            )}
-            <span>{liveStatusText}</span>
-          </div>
-        )}
-
-        {reasoningText && (
-          <div
-            className={`live-reasoning-chip ${showReasoning ? 'expanded' : ''}`}
-            onClick={() => setState(prev => ({ ...prev, showReasoning: !prev.showReasoning }))}
-            title="Click to toggle AI reasoning scratchpad"
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', fontWeight: 600, color: 'var(--accent, #ff6b35)' }}>
-              <span>🧠 AI Reasoning {thinking ? '(In Progress…)' : ''}</span>
-              <span style={{ fontSize: '10px', opacity: 0.7 }}>{showReasoning ? '▲ Collapse' : '▼ View full'}</span>
-            </div>
-            <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '11px', opacity: 0.9 }}>
-              {showReasoning ? reasoningText : (reasoningText.slice(-120) + '…')}
-            </div>
-          </div>
-        )}
-
-        {/* Dynamic Soundwave / Audio Bar Visualizer - Dual mode for user/assistant */}
-        <div className={`live-soundwave ${speaking || assistantLevel > 0.02 ? 'active assistant' : ''} ${!speaking && userLevel > 0.02 ? 'active user' : ''}`}>
-          {[0.6, 1.2, 0.9, 1.4, 0.7].map((factor, idx) => (
-            <span
-              key={idx}
-              className="soundwave-bar"
-              style={{
-                height: `${Math.max(6, Math.min(36, ((speaking ? assistantLevel : userLevel) || (speaking ? 0.25 : 0)) * 90 * factor))}px`,
-                opacity: (speaking || assistantLevel > 0.02 || userLevel > 0.02) ? 0.95 : 0.3,
-                background: speaking
-                  ? 'linear-gradient(180deg, #10b981, #06b6d4)'
-                  : 'linear-gradient(180deg, #ff6b35, #f59e0b)',
-              }}
+      {/* Center Stage: Mascot + Waveform + Active AI Response Card + Activity HUD */}
+      <div className={`live-center-arena ${latestAssistantMsg?.text ? 'has-response' : ''}`}>
+        <div className="live-orb-wrap">
+          <div className="live-orb-rings">
+            <div
+              className={`live-ring ring-3 ${speaking ? 'active' : ''}`}
+              style={{ transform: `scale(${ring3Scale})` }}
             />
-          ))}
+            <div
+              className={`live-ring ring-2 ${speaking ? 'active' : ''}`}
+              style={{ transform: `scale(${ring2Scale})` }}
+            />
+            <div
+              className={`live-mascot ${speaking ? 'speaking' : ''} ${state === 'connecting' ? 'pending' : ''} ${thinking ? 'thinking' : ''} ${!speaking && !thinking && state === 'live' ? 'breathing' : ''}`}
+              style={{ transform: `scale(${speaking ? orbScale : breathingScale})` }}
+            >
+              <svg viewBox="0 0 512 512" className="live-mascot-svg" aria-hidden="true">
+                {/* Head */}
+                <circle cx="256" cy="256" r="110" fill="none" stroke="currentColor" strokeWidth="14" />
+                {/* Eyes */}
+                <circle cx="220" cy="236" r="14" fill="currentColor" className="live-eye left-eye" />
+                <circle cx="292" cy="236" r="14" fill="currentColor" className="live-eye right-eye" />
+                {/* Mouth — opens wider with audio level */}
+                <path
+                  d={speaking
+                    ? `M208 280 q48 ${Math.round(30 + assistantLevel * 50)} 96 0`
+                    : 'M208 280 q48 30 96 0'
+                  }
+                  fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round"
+                  className="live-mouth"
+                />
+              </svg>
+            </div>
+          </div>
+          {/* Dynamic Soundwave / Audio Bar Visualizer - Dual mode for user/assistant */}
+          <div className={`live-soundwave ${speaking || assistantLevel > 0.02 ? 'active assistant' : ''} ${!speaking && userLevel > 0.02 ? 'active user' : ''}`}>
+            {[0.6, 1.2, 0.9, 1.4, 0.7].map((factor, idx) => (
+              <span
+                key={idx}
+                className="soundwave-bar"
+                style={{
+                  height: `${Math.max(6, Math.min(36, ((speaking ? assistantLevel : userLevel) || (speaking ? 0.25 : 0)) * 90 * factor))}px`,
+                  opacity: (speaking || assistantLevel > 0.02 || userLevel > 0.02) ? 0.95 : 0.3,
+                  background: speaking
+                    ? 'linear-gradient(180deg, #10b981, #06b6d4)'
+                    : 'linear-gradient(180deg, #ff6b35, #f59e0b)',
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Single Unified Status Pill */}
+          {state === 'connecting' && (
+            <div className="live-status"><Loader2 size={14} className="spin" /> Connecting…</div>
+          )}
+          {connectionState === 'negotiating' && (
+            <div className="live-status"><Loader2 size={14} className="spin" /> Negotiating session…</div>
+          )}
+          {connectionState === 'reconnecting' && (
+            <div className="live-status reconnecting">
+              <RefreshCw size={14} className="spin" /> Reconnecting…
+            </div>
+          )}
+          {thinking && (
+            <div className="live-status thinking-status">
+              <span className="thinking-dots"><span /><span /><span /></span>
+              <span>🧠 Thinking</span>
+              {uiState.thinkingStartTime && (
+                <ActivityTimer startTime={uiState.thinkingStartTime} />
+              )}
+              {reasoningText && (
+                <button
+                  type="button"
+                  className="live-view-reasoning-chip"
+                  onClick={() => {
+                    setShowLiveReasoning(prev => !prev)
+                  }}
+                  title="Toggle thinking process preview"
+                >
+                  {showLiveReasoning ? 'Hide thoughts' : 'View thoughts →'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleStopTurn}
+                className="live-stop-turn-chip"
+                title="Stop model thinking & cancel response"
+              >
+                <Square size={10} fill="currentColor" /> Stop
+              </button>
+            </div>
+          )}
+          {tool && (
+            <div className="live-status tool-status">
+              <Wrench size={14} className="spin" />
+              <span>🔧 Using: <strong>{tool}</strong></span>
+            </div>
+          )}
+          {liveStatusText && !thinking && !tool && (
+            <div className="live-status action-status">
+              {liveStatusText.includes('⏹') || liveStatusText.includes('Stopped') ? (
+                <Square size={10} fill="currentColor" />
+              ) : (
+                <Loader2 size={13} className="spin" />
+              )}
+              <span>{liveStatusText}</span>
+            </div>
+          )}
         </div>
+
+        {/* Active AI Response Stage — Prominent on-screen card */}
+        {(latestAssistantMsg?.text || (thinking && (reasoningText || uiState.thinkingStartTime))) && !responseMinimized && (
+          <div className="live-center-response" role="region" aria-label="AI response">
+            <div className="live-center-response-card">
+              <div className="live-center-response-header">
+                <div className="live-center-response-title">
+                  <span className="live-center-response-badge">
+                    <Bot size={13} />
+                    <strong>{curProvider === 'gemini' ? 'Gemini Live' : (activeProvider?.model ? String(activeProvider.model).split('/').pop() : 'AI Response')}</strong>
+                  </span>
+                  {speaking && (
+                    <span className="live-center-speaking-tag">
+                      <Volume2 size={11} className="pulse" /> Speaking
+                    </span>
+                  )}
+                  {thinking && (
+                    <span className="live-center-thinking-tag">
+                      <Brain size={11} /> Thinking
+                      {uiState.thinkingStartTime && <ActivityTimer startTime={uiState.thinkingStartTime} />}
+                    </span>
+                  )}
+                </div>
+
+                <div className="live-center-response-actions">
+                  {latestAssistantMsg?.text && (
+                    <button
+                      type="button"
+                      className="live-center-action-btn"
+                      onClick={() => handleCopyResponse(latestAssistantMsg.text)}
+                      title="Copy response to clipboard"
+                    >
+                      {copiedResponse ? <Check size={13} style={{ color: '#4ade80' }} /> : <Copy size={13} />}
+                      <span>{copiedResponse ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="live-center-action-btn"
+                    onClick={() => setResponseMinimized(true)}
+                    title="Minimize response card"
+                  >
+                    <ChevronDown size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Real-time reasoning accordion while thinking */}
+              {reasoningText && (
+                <div className="live-center-reasoning-drawer">
+                  <button
+                    type="button"
+                    className="live-center-reasoning-toggle"
+                    onClick={() => setShowLiveReasoning(prev => !prev)}
+                  >
+                    <Brain size={12} />
+                    <span>{showLiveReasoning ? 'Hide internal reasoning' : 'View internal reasoning'}</span>
+                    <ChevronDown size={12} style={{ transform: showLiveReasoning ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                  </button>
+                  {showLiveReasoning && (
+                    <pre className="live-center-reasoning-body">{reasoningText}</pre>
+                  )}
+                </div>
+              )}
+
+              {/* Formatted Markdown Content */}
+              {latestAssistantMsg?.text ? (
+                <div
+                  className="live-center-response-body prose"
+                  ref={centerResponseRef}
+                  onScroll={(e) => {
+                    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
+                    setUserScrolledResponse(scrollHeight - scrollTop - clientHeight > 40)
+                  }}
+                >
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ node, ...props }) => (
+                        <a {...props} target="_blank" rel="noopener noreferrer" className="live-center-link" />
+                      )
+                    }}
+                  >
+                    {latestAssistantMsg.text}
+                  </ReactMarkdown>
+                </div>
+              ) : thinking ? (
+                <div className="live-center-response-placeholder">
+                  <span className="thinking-dots"><span /><span /><span /></span>
+                  <span>Formulating comprehensive response…</span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
+
+        {/* Minimized Pill Toggle if user collapsed the card */}
+        {latestAssistantMsg?.text && responseMinimized && (
+          <button
+            type="button"
+            className="live-center-minimized-chip"
+            onClick={() => setResponseMinimized(false)}
+            title="Expand AI response"
+          >
+            <Bot size={13} />
+            <span>Show on-screen answer</span>
+            <ChevronUp size={13} />
+          </button>
+        )}
       </div>
 
       {/* Floating non-blocking toast banner — NEVER closes live */}
@@ -1728,14 +1933,19 @@ export function LiveView({
         </div>
       )}
 
-      {/* Live captions — only render when there is text to show, never an empty dark box */}
-      {showCaptions && lines.length > 0 && (
-        <div className="live-captions" aria-live="polite">
-          {lines.map((l, i) => (
-            <p key={i} className={`live-caption ${l.role}`}>
-              <span>{l.text}</span>
-            </p>
-          ))}
+      {/* Live subtitle capsule — sleek, rolling phrase when response card is minimized or before response exists */}
+      {showCaptions && (responseMinimized || !latestAssistantMsg?.text) && lines.length > 0 && lines[lines.length - 1]?.text && (
+        <div className="live-captions-capsule" aria-live="polite">
+          <div className={`live-caption-pill ${lines[lines.length - 1].role}`}>
+            <span className="caption-tag">
+              {lines[lines.length - 1].role === 'user' ? '🎙️ You' : '🤖 AI'}
+            </span>
+            <span className="caption-text">
+              {lines[lines.length - 1].role === 'assistant'
+                ? formatRollingCaption(lines[lines.length - 1].text)
+                : lines[lines.length - 1].text}
+            </span>
+          </div>
         </div>
       )}
 
@@ -1749,136 +1959,129 @@ export function LiveView({
       {/* Shutter Camera Flash Effect */}
       {shutterFlash && <div className="live-shutter-flash" aria-hidden="true" />}
 
-      {/* Controls */}
+      {/* Controls Dock — Organized into 3 balanced groups */}
       <div className="live-controls">
-        <button
-          className={`live-btn ${muted ? 'muted-btn' : ''}`}
-          onClick={toggleMute}
-          aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}
-          title={muted ? 'Microphone muted — tap to unmute' : 'Mute microphone'}
-        >
-          {muted ? <MicOff size={22} /> : <Mic size={22} />}
-        </button>
-        <button
-          className={`live-btn ${speakerMuted ? 'muted-btn' : ''}`}
-          onClick={toggleSpeaker}
-          aria-label={speakerMuted ? 'Turn on AI voice' : 'Turn off AI voice (text/captions only)'}
-          title={speakerMuted ? 'AI voice output is off — turn it back on' : 'Mute AI voice output (keeps replying in text)'}
-        >
-          {speakerMuted ? <VolumeX size={22} /> : <Volume2 size={22} />}
-        </button>
-        <button
-          className={`live-btn ${screenOn ? 'active-screen' : ''}`}
-          onClick={toggleScreen}
-          aria-label={screenOn ? 'Stop screen sharing' : 'Share screen'}
-          title={screenOn ? 'Stop sharing screen' : 'Share screen with AI'}
-        >
-          {screenOn ? <MonitorOff size={20} /> : <Monitor size={20} />}
-        </button>
-        {camOn && hasFlip && (
-          <button className="live-btn" onClick={flipCam} aria-label="Switch between front and back camera" title="Flip camera">
-            <SwitchCamera size={21} />
-          </button>
-        )}
-        <button
-          className="live-btn"
-          onClick={() => setShowDevices(true)}
-          aria-label="Switch camera and microphone"
-          title="Switch camera & microphone"
-        >
-          <Camera size={20} />
-        </button>
-        <button
-          className={`live-btn${modelCanSee ? '' : ' warn'}`}
-          onClick={() => setShowSettings(true)}
-          aria-label="Live settings"
-          title={modelCanSee ? 'Live settings' : 'Live settings — this model cannot see images'}
-        >
-          <Settings2 size={20} />
-        </button>
-        <button className="live-btn end" onClick={() => setEndConfirm(true)} aria-label="End call" title="End call">
-          <PhoneOff size={22} />
-        </button>
-        {(thinking || speaking) && (
+        {/* Media Inputs Group */}
+        <div className="live-controls-group">
           <button
-            type="button"
-            className="live-btn stop-turn-btn"
-            onClick={handleStopTurn}
-            aria-label="Stop response"
-            title="Stop AI response (halts thinking or speech without ending call)"
-            style={{
-              background: 'rgba(239, 68, 68, 0.35)',
-              border: '1.5px solid rgba(239, 68, 68, 0.8)',
-              color: '#f87171',
-              boxShadow: '0 0 16px rgba(239, 68, 68, 0.45)',
-              animation: 'pulse 1.5s infinite',
-            }}
+            className={`live-btn ${muted ? 'muted-btn' : ''}`}
+            onClick={toggleMute}
+            aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}
+            title={muted ? 'Microphone muted — tap to unmute' : 'Mute microphone'}
           >
-            <Square size={20} fill="currentColor" />
+            {muted ? <MicOff size={20} /> : <Mic size={20} />}
           </button>
-        )}
-        <button
-          className={`live-btn ${camOn ? '' : 'muted-btn'}`}
-          onClick={toggleCam}
-          aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
-          title={camOn ? 'Turn off camera' : 'Turn on camera'}
-        >
-          {camOn ? <Video size={22} /> : <VideoOff size={22} />}
-        </button>
-        <button
-          className={`live-btn vision-btn snapshot-btn`}
-          onClick={openVision}
-          disabled={(!camOn && !screenOn) || visionLoading}
-          aria-label="Capture snapshot & ask AI"
-          title="Capture snapshot & ask AI (instant scene analysis)"
-        >
-          <Aperture size={22} />
-        </button>
-        <button
-          className={`live-btn vision-btn ${visionMode === 'always' ? 'active-vision' : ''}`}
-          onClick={toggleVision}
-          disabled={!camOn && !screenOn}
-          aria-label={visionMode === 'always' ? 'Stop watching every turn' : 'Watch every turn'}
-          title={visionMode === 'always'
-            ? 'Watching every turn — AI sees camera feed continuously. Tap for look-when-asked.'
-            : 'Look-when-asked. Tap to watch every turn (AI sees camera feed continuously).'}
-        >
-          {visionMode === 'always' ? <Eye size={20} /> : <EyeOff size={20} />}
-        </button>
-        <button
-          className={`live-btn vision-btn ${autoScan ? 'active-autoscan' : ''}`}
-          onClick={toggleAutoScan}
-          disabled={!camOn && !screenOn}
-          aria-label={autoScan ? 'Disable Auto-Scan' : 'Enable Auto-Scan'}
-          title={autoScan ? 'Auto-Scan Active (Captures feed every 10s)' : 'Enable Auto-Scan (Periodic 10s visual inspection)'}
-        >
-          <Scan size={20} />
-        </button>
-        <button
-          className={`live-btn vision-btn ${objectDetect ? 'active-detect' : ''}`}
-          onClick={toggleObjectDetect}
-          disabled={!camOn && !screenOn}
-          aria-label={objectDetect ? 'Turn off object detection' : 'Turn on object detection'}
-          title={detectError
-            ? `Object detection: ${detectError}`
-            : (objectDetect ? 'Object Detection HUD Active (On-device DETR boxes)' : 'Enable Object Detection HUD (Sci-fi target bounding boxes)')}
-        >
-          <ScanEye size={20} />
-        </button>
-        <button
-          className={`live-btn transcript-toggle ${showTranscript ? 'active-transcript' : ''}`}
-          onClick={() => setState({ showTranscript: !showTranscript })}
-          aria-label={showTranscript ? 'Hide transcript' : 'Show transcript'}
-          title="Transcript & conversation history"
-        >
-          <MessageSquare size={20} />
-        </button>
+          <button
+            className={`live-btn ${speakerMuted ? 'muted-btn' : ''}`}
+            onClick={toggleSpeaker}
+            aria-label={speakerMuted ? 'Turn on AI voice' : 'Turn off AI voice (silent text/transcript only)'}
+            title={speakerMuted ? 'AI voice muted — tap to turn voice on' : 'Mute AI voice output (fast silent text/transcript only)'}
+          >
+            {speakerMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+          </button>
+          <button
+            className={`live-btn ${camOn ? '' : 'muted-btn'}`}
+            onClick={toggleCam}
+            aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
+            title={camOn ? 'Turn off camera' : 'Turn on camera'}
+          >
+            {camOn ? <Video size={20} /> : <VideoOff size={20} />}
+          </button>
+          <button
+            className={`live-btn ${screenOn ? 'active-screen' : ''}`}
+            onClick={toggleScreen}
+            aria-label={screenOn ? 'Stop screen sharing' : 'Share screen'}
+            title={screenOn ? 'Stop sharing screen' : 'Share screen with AI'}
+          >
+            {screenOn ? <MonitorOff size={20} /> : <Monitor size={20} />}
+          </button>
+          {camOn && hasFlip && (
+            <button className="live-btn" onClick={flipCam} aria-label="Switch between front and back camera" title="Flip camera">
+              <SwitchCamera size={19} />
+            </button>
+          )}
+        </div>
+
+        {/* Primary Call Action Group */}
+        <div className="live-controls-group main-actions">
+          {(thinking || speaking) && (
+            <button
+              type="button"
+              className="live-btn stop-turn-btn"
+              onClick={handleStopTurn}
+              aria-label="Stop response"
+              title="Stop AI response"
+            >
+              <Square size={18} fill="currentColor" />
+            </button>
+          )}
+          <button
+            className="live-btn end"
+            onClick={() => setEndConfirm(true)}
+            aria-label="End call"
+            title="End call"
+          >
+            <PhoneOff size={22} />
+          </button>
+        </div>
+
+        {/* Tools & Views Group */}
+        <div className="live-controls-group">
+          <button
+            className="live-btn vision-btn snapshot-btn"
+            onClick={openVision}
+            disabled={(!camOn && !screenOn) || visionLoading}
+            aria-label="Capture snapshot & ask AI"
+            title="Capture snapshot & ask AI (instant scene analysis)"
+          >
+            <Aperture size={20} />
+          </button>
+          <button
+            className="live-btn"
+            onClick={() => setShowDevices(true)}
+            aria-label="Switch camera and microphone"
+            title="Switch camera & microphone"
+          >
+            <Camera size={19} />
+          </button>
+          <button
+            className={`live-btn${modelCanSee ? '' : ' warn'}`}
+            onClick={() => setShowSettings(true)}
+            aria-label="Live settings"
+            title={modelCanSee ? 'Live settings' : 'Live settings — this model cannot see images'}
+          >
+            <Settings2 size={19} />
+          </button>
+          <button
+            className={`live-btn transcript-toggle ${(showTranscript || showArtifactStage) ? 'active-transcript' : ''}`}
+            onClick={() => {
+              if (showTranscript || showArtifactStage) {
+                setState(prev => ({ ...prev, showTranscript: false }))
+                setShowArtifactStage(false)
+              } else {
+                setSidePanelTab('transcript')
+                setState(prev => ({ ...prev, showTranscript: true }))
+              }
+            }}
+            aria-label={(showTranscript || showArtifactStage) ? 'Hide side panel' : 'Show transcript & AI activity'}
+            title="Transcript & AI Activity (Side Panel)"
+            style={{ position: 'relative' }}
+          >
+            <MessageSquare size={20} />
+            {artifacts.length > 0 && (
+              <span className="live-btn-badge">{artifacts.length}</span>
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* Transcript Panel - using extracted component */}
+      {/* Unified Transcript & Artifacts Drawer */}
       <LiveTranscriptPanel
-        isOpen={showTranscript}
-        onClose={() => setState({ showTranscript: false })}
+        isOpen={showTranscript || showArtifactStage}
+        onClose={() => {
+          setState(prev => ({ ...prev, showTranscript: false }))
+          setShowArtifactStage(false)
+        }}
         transcript={transcript}
         activeTool={tool}
         isThinking={thinking}
@@ -1890,6 +2093,20 @@ export function LiveView({
         features={features}
         activeProvider={activeProvider.provider || provider}
         activeModel={activeProvider.model || model}
+        artifacts={artifacts}
+        activeArtifactIdx={activeArtifactIdx}
+        onSelectArtifactIndex={setActiveArtifactIdx}
+        activeTab={sidePanelTab}
+        onTabChange={(tab) => {
+          setSidePanelTab(tab)
+          if (tab === 'artifacts') {
+            setShowArtifactStage(true)
+            setState(prev => ({ ...prev, showTranscript: false }))
+          } else {
+            setShowArtifactStage(false)
+            setState(prev => ({ ...prev, showTranscript: true }))
+          }
+        }}
       />
 
       {/* Vision Modal - using extracted component */}

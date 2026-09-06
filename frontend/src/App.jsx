@@ -32,13 +32,13 @@ import { ActiveTimerIndicator } from './components/ActiveTimerIndicator'
 import { openDocumentPip, closeDocumentPip, isDocumentPipSupported, getPipMount } from './pipCompanion'
 import { getErrorLog, clearErrorLog, getDiagnosticsReport, diagnoseError } from './errorLog'
 import { isDbClosedError } from './db'
-import { resolveFeatures } from './features'
+import { resolveFeatures, isEnabled } from './features'
 import { setLocalVLMConsent } from './vision/localVLM'
 import { setSegmentConsent } from './vision/sam'
 import { setDetectorConsent } from './vision/detect'
 import { setSemanticConsent } from './semantic'
 import { looksVisionCapable } from './vision/capability'
-import { getProviders as getLLMProviders, normalizeModelName, preconnectProvider } from './llm'
+import { getProviders as getLLMProviders, normalizeModelName, preconnectProvider, classifyQueryIntent, getSuggestedRoute } from './llm'
 import { DASHBOARD_KEYS, DASHBOARD_TITLES, dashboardPath, dashboardKeyFromPath } from './dashboardRoutes'
 import { prepareImage, isImageFile, imageFromClipboard, imageFromDrop } from './vision/attach'
 import { registerServiceWorker } from './pwa'
@@ -2440,6 +2440,35 @@ export default function App() {
     }, 0)
   }, [conv?.clientId, autoResize])
 
+  const smartRouteSuggestion = useMemo(() => {
+    if (!isEnabled(features, 'smartRouter') || isStreamingHere || !input.trim() || input.trim().length < 12) {
+      return null
+    }
+    const intent = classifyQueryIntent(input, attachedImage ? [attachedImage] : [])
+    if (intent === 'general') return null
+
+    const readyMap = {}
+    if (models) {
+      for (const [k, v] of Object.entries(models)) {
+        if (v?.available || v?.isLocal || v?.is_local || v?.is_ollama) readyMap[k] = true
+      }
+    }
+    const route = getSuggestedRoute(intent, readyMap, provider, model)
+    if (route && route.shouldSwitch && route.recommended) {
+      return route
+    }
+    return null
+  }, [features, isStreamingHere, input, attachedImage, models, provider, model])
+
+  const applySmartRoute = useCallback((route) => {
+    if (!route?.recommended) return
+    const { provider: newProv, model: newMod } = route.recommended
+    setProvider(newProv)
+    setModel(newMod)
+    handlePickProviderModel(newProv, newMod)
+    showToast(`⚡ Switched to ${route.recommended.label}`)
+  }, [handlePickProviderModel, showToast])
+
   const send = async (text = input, overrideImage = null, explicitIdx = null) => {
     if (compareMode) {
       runCompare(text)
@@ -2484,7 +2513,7 @@ export default function App() {
       showToast('Prompt queued — will send automatically when the model finishes.')
       return
     }
-    const useProvider = targetConv.provider || provider || 'local'
+    let useProvider = targetConv.provider || provider || 'local'
     let useModel = normalizeModelName(targetConv.model) || normalizeModelName(model)
     if (!useModel) {
       const provDef = getLLMProviders()[useProvider]
@@ -2511,6 +2540,27 @@ export default function App() {
       if (visionCandidate) {
         chooseModel(visionCandidate, useProvider)
         useModel = visionCandidate
+      }
+    }
+
+    // Smart Intent Router: automatically switch provider/model if autoRoute is enabled
+    if (autoRoute && isEnabled(features, 'smartRouter') && !targetConv.lockModel) {
+      const intent = classifyQueryIntent(text, (attachedImage || overrideImage) ? [attachedImage || overrideImage] : [], useTools)
+      if (intent !== 'general') {
+        const readyMap = {}
+        if (models) {
+          for (const [k, v] of Object.entries(models)) {
+            if (v?.available || v?.isLocal || v?.is_local || v?.is_ollama) readyMap[k] = true
+          }
+        }
+        const route = getSuggestedRoute(intent, readyMap, useProvider, useModel)
+        if (route && route.shouldSwitch && route.recommended) {
+          useProvider = route.recommended.provider
+          useModel = route.recommended.model
+          setProvider(useProvider)
+          setModel(useModel)
+          handlePickProviderModel(useProvider, useModel)
+        }
       }
     }
 
@@ -3038,6 +3088,38 @@ export default function App() {
     setShowSlashMenu(false)
     if (!cmd) return
     switch (cmd.command) {
+      case '/graph':
+        setShowCitationGraph(true)
+        setInput('')
+        break
+      case '/deck':
+        setInput('Generate a complete presentation pitch deck (.pptx) on: ')
+        setTimeout(() => textareaRef.current?.focus(), 50)
+        break
+      case '/doc':
+        setInput('Generate a formal executive document report (.docx) about: ')
+        setTimeout(() => textareaRef.current?.focus(), 50)
+        break
+      case '/anim':
+        setInput('Create a mathematical animation (Manim/3D) explaining: ')
+        setTimeout(() => textareaRef.current?.focus(), 50)
+        break
+      case '/audit':
+        setInput('Perform a deep security vulnerability and code audit on: ')
+        setTimeout(() => textareaRef.current?.focus(), 50)
+        break
+      case '/cast':
+        setInput('Discover local Cast devices and stream to TV: ')
+        setTimeout(() => textareaRef.current?.focus(), 50)
+        break
+      case '/swarm':
+        setInput('Deploy a multi-agent swarm to independently solve: ')
+        setTimeout(() => textareaRef.current?.focus(), 50)
+        break
+      case '/calc':
+        setInput('Calculate with dimensional units: ')
+        setTimeout(() => textareaRef.current?.focus(), 50)
+        break
       case '/enhance':
         handleEnhancePrompt()
         break
@@ -5031,6 +5113,50 @@ export default function App() {
               </div>
             )
           })()}
+          {smartRouteSuggestion && (
+            <div className="smart-route-banner" style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '6px 12px',
+              marginBottom: '6px',
+              background: 'rgba(56, 189, 248, 0.08)',
+              border: '1px solid rgba(56, 189, 248, 0.25)',
+              borderRadius: '8px',
+              fontSize: '11px',
+              color: '#38bdf8',
+            }}>
+              <Sparkles size={13} style={{ flexShrink: 0, color: '#38bdf8' }} />
+              <span style={{ flex: 1 }}>
+                {smartRouteSuggestion.intent === 'code' && '💻 Coding prompt detected:'}
+                {smartRouteSuggestion.intent === 'reasoning' && '🧠 Complex reasoning prompt detected:'}
+                {smartRouteSuggestion.intent === 'speed' && '⚡ Quick query detected:'}
+                {smartRouteSuggestion.intent === 'vision' && '👁️ Visual query detected:'}
+                {' '}Switch to <strong>{smartRouteSuggestion.recommended.label}</strong> for optimal results.
+              </span>
+              <button
+                type="button"
+                className="small-btn"
+                onClick={() => applySmartRoute(smartRouteSuggestion)}
+                style={{
+                  padding: '3px 8px',
+                  fontSize: '10.5px',
+                  background: '#0284c7',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <Zap size={10} /> Switch Model
+              </button>
+            </div>
+          )}
 
           <div className="input-wrapper" style={{ position: 'relative' }}>
             {showSlashMenu && (
@@ -5242,6 +5368,7 @@ export default function App() {
                   { role: 'assistant', content: handoff.recapMarkdown, id: `live_recap_${Date.now()}` }
                 ]
               } : c))
+              showToast('🎙️ Live session recap & deliverables saved to chat!')
             }
             if (typeof window !== 'undefined' && window.location.pathname === '/live') {
               try {

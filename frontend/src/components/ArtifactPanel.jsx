@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Eye, Code as CodeIcon, X, Download, Copy, Check } from 'lucide-react'
+import { Eye, Code as CodeIcon, X, Download, Copy, Check, ExternalLink, Sparkles } from 'lucide-react'
 
 export function ArtifactPanel({ artifact, onClose }) {
   const [activeTab, setActiveTab] = useState('preview')
@@ -27,14 +27,24 @@ export function ArtifactPanel({ artifact, onClose }) {
     URL.revokeObjectURL(url)
   }
 
+  const handleOpenFullscreen = () => {
+    const isHtml = ['html', 'svg', 'xml'].includes(language?.toLowerCase())
+    const content = isHtml
+      ? code
+      : `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title || 'Artifact'}</title><style>body{margin:0;padding:24px;background:#0f172a;color:#f8fafc;font-family:system-ui,sans-serif;}pre{background:#1e293b;padding:16px;border-radius:8px;overflow:auto;line-height:1.5;}</style></head><body><h2>${title || 'Artifact'}</h2><pre>${code.replace(/</g, '&lt;')}</pre></body></html>`
+    const blob = new Blob([content], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+  }
+
   const renderPreview = () => {
-    const lang = language.toLowerCase()
+    const lang = (language || '').toLowerCase()
     if (lang === 'html' || lang === 'svg' || lang === 'xml') {
       return (
         <iframe
           title="HTML Artifact Preview"
           srcDoc={code}
-          sandbox="allow-scripts"
+          sandbox="allow-scripts allow-modals allow-forms"
           className="artifact-iframe"
         />
       )
@@ -55,6 +65,14 @@ export function ArtifactPanel({ artifact, onClose }) {
           <span className="artifact-lang-tag">{language}</span>
         </div>
         <div className="artifact-actions">
+          <button
+            className="artifact-btn"
+            onClick={handleOpenFullscreen}
+            title="Open in new fullscreen tab"
+            aria-label="Open fullscreen"
+          >
+            <ExternalLink size={14} />
+          </button>
           <button className="artifact-btn" onClick={handleCopy} title="Copy code" aria-label="Copy code">
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>

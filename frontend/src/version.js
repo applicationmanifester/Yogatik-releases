@@ -3,16 +3,71 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '6.2.0'
+export const APP_VERSION = '6.3.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 6.2.0 — LiveView Ambient HUD, Scanned PDF Auto-OCR & Universal File Extraction'
+export const APP_CODENAME = 'Yogatik 6.3.0 — Live Meeting Copilot, Multi-Agent Collaboration Board & Visual Browser Inspector'
 
 export const APP_RELEASES = [
+  {
+    version: '6.3.0',
+    title: 'Yogatik 6.3.0: Live Meeting Copilot, Multi-Agent Collaboration Board & Visual Browser Inspector',
+    date: 'September 6, 2026',
+    isLatest: true,
+    highlights: [
+      'Live Meeting Copilot in Desktop Companion: Real-time speaker audio transcription, interactive action items checklist, instant tactical whisper suggestions, and 1-click Markdown export',
+      'Multi-Agent Collaboration Board: Responsive 4-column Kanban layout (Backlog, In Progress, Review, Completed) with real-time sync of sub-agents, autonomous planning steps, and team tasks',
+      'Power Slash Command Palette: Instant slash commands (/deck, /doc, /anim, /audit, /cast, /swarm, /calc, /graph) with prompt auto-fill and composer focus',
+      'Visual Browser DOM Live Inspector: In-app "Agent Eye" displaying accessibility element trees, interactive refs (ref_epoch_idx), and real-time browser action history',
+      'Dual-Mode Semantic Memory & Knowledge Graph: Interactive radial visualization of quantized vector memory clusters and federated research citations with node inspection and memory pruning',
+      'Post-Live Meeting Secretary & Smart Intent Router: Automatic categorization, executive briefings, and real-time model switching recommendations',
+    ],
+    sections: [
+      {
+        category: '🎙️ Live Meeting Copilot & Audio Intelligence',
+        items: [
+          {
+            title: 'Passive Meeting Transcriber & Audio Visualizer',
+            description: 'Monitors audio streams with real-time biometric equalizers, attributing statements to speakers and logging chronological transcripts.',
+          },
+          {
+            title: 'Whisper Suggestion Engine & Action Checklist',
+            description: 'Generates tactical replies and fact-checks on what speakers said, keeping a live checklist of meeting action items.',
+          },
+        ],
+      },
+      {
+        category: '⚡ Multi-Agent Swarms & Visual Collaboration',
+        items: [
+          {
+            title: 'Interactive Kanban Board',
+            description: 'Organize tasks across Backlog, In Progress, Review, and Completed columns, seamlessly reflecting running sub-agents and planner steps.',
+          },
+          {
+            title: 'Power Slash Commands & One-Click Templates',
+            description: 'Fast trigger shortcuts for presentations (/deck), executive documents (/doc), animations (/anim), security audits (/audit), and TV casting (/cast).',
+          },
+        ],
+      },
+      {
+        category: '🔍 Browser DOM Inspector & Semantic Knowledge Graph',
+        items: [
+          {
+            title: 'Agent Eye Live Inspector',
+            description: 'Inspect the browser DOM accessibility tree, element interaction refs, and recent browser automation actions in a dedicated slide-over drawer.',
+          },
+          {
+            title: 'TurboQuant Vector Memory Visualizer',
+            description: 'Dual-mode radial graph linking user preferences, architecture decisions, meeting notes, and research citations.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '6.2.0',
     title: 'Yogatik 6.2.0: LiveView Ambient HUD, Scanned PDF Auto-OCR & Universal File Extraction',
     date: 'September 5, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'LiveView Ambient HUD & Perceptual Diffing: Floating pill HUD with biometric audio waveforms, dynamic 5 FPS frame scaling, and 70% bandwidth reduction via 64-bit pHash perceptual change detection',
       'Spatial Telestration & Live Stage: Real-time visual vectors, highlights, and annotations directly over screen feeds plus a synchronized workspace side stage for live code/document projections',

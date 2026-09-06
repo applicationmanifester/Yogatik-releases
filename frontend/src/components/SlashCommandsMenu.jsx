@@ -1,7 +1,67 @@
 import React, { useEffect, useRef } from 'react'
-import { Sparkles, Terminal, Shield, RefreshCw, Trash2, Settings, MessageSquare, Download, Play, HelpCircle } from 'lucide-react'
+import {
+  Sparkles, Terminal, Shield, RefreshCw, Trash2, Settings, MessageSquare,
+  Download, Play, HelpCircle, Presentation, FileText, Video, ShieldAlert,
+  Tv, Users, Calculator, Share2
+} from 'lucide-react'
 
 export const SLASH_COMMANDS = [
+  {
+    command: '/graph',
+    label: 'Knowledge & Memory Graph',
+    description: 'Explore visual graph of semantic memories, citations & decisions',
+    icon: Share2,
+    color: '#06b6d4',
+  },
+  {
+    command: '/deck',
+    label: 'Presentation Deck',
+    description: 'Generate multi-slide .pptx presentation pitch deck',
+    icon: Presentation,
+    color: '#f97316',
+  },
+  {
+    command: '/doc',
+    label: 'Executive Document',
+    description: 'Generate formal executive .docx report with tables & headers',
+    icon: FileText,
+    color: '#3b82f6',
+  },
+  {
+    command: '/anim',
+    label: 'Math / 3D Animation',
+    description: 'Create Manim math animation or Three.js 3D WebGL scene',
+    icon: Video,
+    color: '#ec4899',
+  },
+  {
+    command: '/audit',
+    label: 'Security Audit',
+    description: 'Run HexStrike / DeepSec vulnerability scan & security audit',
+    icon: ShieldAlert,
+    color: '#ef4444',
+  },
+  {
+    command: '/cast',
+    label: 'Cast to TV',
+    description: 'Discover local Cast devices and beam tab or presentation to smart TV',
+    icon: Tv,
+    color: '#8b5cf6',
+  },
+  {
+    command: '/swarm',
+    label: 'Multi-Agent Swarm',
+    description: 'Deploy parallel sub-agent swarm to execute complex tasks',
+    icon: Users,
+    color: '#10b981',
+  },
+  {
+    command: '/calc',
+    label: 'Scientific / Unit Calc',
+    description: 'High-precision dimensional unit calculations with Numbat',
+    icon: Calculator,
+    color: '#eab308',
+  },
   {
     command: '/enhance',
     label: 'Enhance Prompt',

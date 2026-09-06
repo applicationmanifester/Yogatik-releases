@@ -141,6 +141,28 @@ export const KNOWN_MCP_SERVERS = [
     desktopOnly: true,
     keywords: [], // memory4.js already covers this natively — see file header
   },
+  {
+    id: 'filesystem_mcp',
+    name: 'Filesystem MCP (Local)',
+    desc: 'Deep filesystem inspection, file search, and directory tree navigation.',
+    badge: 'Filesystem',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '.'],
+    desktopOnly: true,
+    keywords: ['file system', 'browse directory', 'local folder'],
+  },
+  {
+    id: 'duckdb_mcp',
+    name: 'DuckDB MCP (Local)',
+    desc: 'Embedded analytical SQL query engine over Parquet, CSV, and JSON files.',
+    badge: 'Analytics',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-duckdb'],
+    desktopOnly: true,
+    keywords: ['duckdb', 'parquet', 'analytics database'],
+  },
 ]
 
 function normalize(s) { return String(s || '').toLowerCase() }
