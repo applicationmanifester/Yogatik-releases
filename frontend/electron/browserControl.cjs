@@ -252,6 +252,11 @@ function createTab(s, url) {
   s.activeTabId = tabId
 
   const wc = view.webContents
+  try {
+    const defaultUA = wc.getUserAgent()
+    const cleanedUA = defaultUA.replace(/Electron\/[0-9\.]+\s?/g, '').replace(/Yogatik\/[0-9\.]+\s?/g, '')
+    wc.setUserAgent(cleanedUA)
+  } catch {}
   // A fresh document invalidates every ref issued against the old one.
   wc.on('did-start-navigation', (_e, _url, _inPlace, isMainFrame) => {
     if (isMainFrame) {
@@ -1738,12 +1743,16 @@ function registerBrowserControl(getMainWindow) {
   ipcMain.handle('browser:set-bounds', (_e, p = {}) => {
     const s = getSession(p.conversationId)
     if (!s) return { success: false }
+    if (s.mode !== 'panel') {
+      setMode(s, 'panel')
+    }
     s.bounds = {
       x: Math.round(p.x || 0),
       y: Math.round(p.y || 0),
       width: Math.max(0, Math.round(p.width || 0)),
       height: Math.max(0, Math.round(p.height || 0)),
     }
+    showActive(s)
     layout(s)
     return { success: true }
   })

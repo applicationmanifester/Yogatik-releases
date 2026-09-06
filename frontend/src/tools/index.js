@@ -1139,9 +1139,15 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
     scores['web_extract'] = 180
     scores['deep_research'] = 160
   }
-  if (/\b(research|investigate|find out|explore|lookup|search|overview|information on|facts about|analysis of|summary of)\b/i.test(text)) {
+  if (/\b(deep research|in-depth research|comprehensive research|literature review|research briefing|study guide|deep dive)\b/i.test(text)) {
+    scores['deep_research'] = 280
+    scores['research_briefing'] = 240
     scores['web_search'] = 220
-    scores['deep_research'] = 200
+    scores['scholar'] = 200
+    scores['web_extract'] = 180
+  } else if (/\b(research|investigate|find out|explore|lookup|search|overview|information on|facts about|analysis of|summary of)\b/i.test(text)) {
+    scores['web_search'] = 220
+    scores['deep_research'] = 210
     scores['web_extract'] = 180
     scores['wikipedia'] = 150
   }

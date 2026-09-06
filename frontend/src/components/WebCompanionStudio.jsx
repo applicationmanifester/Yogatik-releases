@@ -512,7 +512,7 @@ export function WebCompanionStudio({
           </span>
         </div>
         <a href="/platforms.html" className="desktop-download-link">
-          Download Yogatik 7.2.0 Desktop ↗
+          Download Yogatik 7.3.0 Desktop ↗
         </a>
       </div>
     </div>

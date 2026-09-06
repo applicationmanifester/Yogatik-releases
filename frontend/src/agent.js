@@ -108,12 +108,22 @@ export function isRealtimeOrSearchQuery(text) {
     /\b(recent|recently|latest|newest|today|yesterday|tonight|tomorrow|current|currently|upcoming|breaking|trending|at present|nowadays|this week|this month|this year|2024|2025|2026)\b/i,
     /\b(news|updates|release|released|releasing|launch|launched|launching|announcement|announced|announcing)\b/i,
     /\b(who is currently|who is the current|who won|score of|live score|match score|election|stock price|crypto price|exchange rate|weather in|weather forecast)\b/i,
+    /\b(movie|film|cinema|box office|rotten tomatoes|imdb|letterboxd|showtimes?)\b.*\b(review|ratings?|verdict|critic|reception|plot|cast)\b/i,
+    /\b(review|ratings?|verdict)\b.*\b(movie|film|cinema|series|season \d+)\b/i,
     /\b(did .+ (release|launch|announce|create|build|make|buy|acquire|win|lose))\b/i,
     /\b(what happened (to|in|with)|is .+ (alive|dead|available|out|open|closed))\b/i,
     /\b(search (for|the web|google|bing)|look up|browse for|find info on|google)\b/i,
     /\b(xai|grok|deepseek|chatgpt|openai|gemini|claude 3|llama 3|sora|qwen|mistral)\b/i,
   ]
   return patterns.some(p => p.test(t.slice(0, 300)))
+}
+
+export function isResearchQuery(text) {
+  if (!text || typeof text !== 'string') return false
+  const t = text.trim()
+  if (t.length < 5) return false
+  if (/\b(based on this|based on the following|summarize (this|the following)|build a ppt|convert this)\b/i.test(t.slice(0, 100))) return false
+  return /\b(deep research|in-depth research|comprehensive research|literature review|research on|research the|deep dive on|investigate the|thorough research|conduct research|detailed study on)\b/i.test(t.slice(0, 200))
 }
 
 export function isPresentationQuery(text) {
@@ -401,7 +411,10 @@ function pruneOldImages(messages) {
 }
 
 /** Tools that surface citable web sources */
-const SOURCE_TOOLS = new Set(['deep_research', 'web_search', 'web_extract', 'link_preview'])
+const SOURCE_TOOLS = new Set([
+  'deep_research', 'web_search', 'web_extract', 'link_preview',
+  'scholar', 'research_briefing', 'hackernews', 'wikipedia'
+])
 
 /**
  * Tools whose SUCCESS is itself proof the model already has file/folder/shell
@@ -872,6 +885,29 @@ export async function runAgent({
       } catch (e) {
         if (e.name === 'AbortError' || signal?.aborted) throw e
       }
+    } else if (isResearchQuery(userMessage) && !disabledTools.includes('deep_research')) {
+      throwIfAborted()
+      onStatus?.('Conducting deep research across web sources…')
+      try {
+        const researchRes = await executeTool('deep_research', { query: userMessage, depth: 3 }, { signal, ctx: executionCtx })
+        throwIfAborted()
+        if (researchRes?.pages?.length || researchRes?.sources?.length) {
+          toolResults['deep_research'] = researchRes
+          traceRef.push({ tool: 'deep_research', args: { query: userMessage, depth: 3 }, status: 'done' })
+          onToolStart?.('deep_research', { query: userMessage, depth: 3 })
+          onToolResult?.('deep_research', researchRes)
+          const synthesis = researchRes.executive_summary ||
+            (researchRes.pages || []).slice(0, 4).map(p => `[${p.n}] ${p.title} (${p.url}):\n${p.content?.slice(0, 1500)}`).join('\n\n')
+          messages[0].content += `\n\nDEEP RESEARCH GROUND TRUTH FINDINGS:\n${synthesis}\n\nCRITICAL: Ground your comprehensive response in the deep research findings above. Include inline citations with markdown links [Title](URL) matching verified sources.`
+          const collected = collectSources(researchRes)
+          if (collected.length) {
+            sources.push(...collected)
+            onSources?.(sources)
+          }
+        }
+      } catch (e) {
+        if (e.name === 'AbortError' || signal?.aborted) throw e
+      }
     } else if (isLocalProvider || isRealtimeOrSearchQuery(userMessage)) {
       throwIfAborted()
       onStatus?.('Searching the web for latest information…')
@@ -884,7 +920,7 @@ export async function runAgent({
           onToolStart?.('web_search', { query: userMessage })
           onToolResult?.('web_search', searchRes)
           const topResults = searchRes.results.slice(0, 6).map(r => `${r.title} (${r.url}): ${r.snippet}`).join('\n\n')
-          messages[0].content += `\n\nREAL-TIME WEB SEARCH RESULTS (GROUND TRUTH — fetched live):\n${topResults}\n\nCRITICAL: Base your answer directly on the verified real-time search results above. Cite facts, dates, and names accurately. Never claim a company, product, or release mentioned above does not exist.`
+          messages[0].content += `\n\nREAL-TIME WEB SEARCH RESULTS (GROUND TRUTH — fetched live):\n${topResults}\n\nCRITICAL: Base your answer directly on the verified real-time search results above. Cite facts, dates, names, critic ratings, and reviews accurately. Never claim a movie, company, product, or release mentioned above does not exist or that your training cutoff prevents answering.`
           if (searchRes.results.some(r => r.url)) {
             sources.push(...searchRes.results.filter(r => r.url).map(r => ({ title: r.title, url: r.url, snippet: r.snippet })))
             onSources?.(sources)

@@ -34,8 +34,28 @@ async function getWebTorrentClient() {
   return client
 }
 
+function stopTorrentSeeding(record) {
+  if (!record || !record.torrent) return
+  record.paused = true
+  record.autoStoppedOnDone = true
+  try {
+    record.torrent.pause()
+  } catch (err) {
+    console.error('[Yogatik BitTorrent] Error pausing torrent:', err?.message || err)
+  }
+  // Disconnect all upload/download peer connections so network traffic ceases immediately
+  if (Array.isArray(record.torrent.wires)) {
+    for (const wire of [...record.torrent.wires]) {
+      try {
+        wire.destroy()
+      } catch {}
+    }
+  }
+}
+
 function formatTorrentData(t, isPaused = false) {
   if (!t) return null
+  const isDone = Boolean(t.done || (t.progress != null && t.progress >= 1))
   return {
     name: t.name || 'Retrieving metadata...',
     infoHash: t.infoHash,
@@ -47,8 +67,8 @@ function formatTorrentData(t, isPaused = false) {
     uploadSpeed: isPaused ? 0 : (t.uploadSpeed || 0),
     numPeers: isPaused ? 0 : (t.numPeers || 0),
     length: t.length || 0,
-    timeRemaining: isPaused ? Infinity : (t.timeRemaining || 0),
-    done: Boolean(t.done),
+    timeRemaining: isDone ? 0 : (isPaused ? Infinity : (t.timeRemaining || 0)),
+    done: isDone,
     paused: Boolean(isPaused),
     path: t.path || '',
     files: (t.files || []).map(f => ({
@@ -69,8 +89,13 @@ function startBroadcasting(getWindow) {
     if (!win || win.isDestroyed()) return
 
     const list = []
-    for (const [infoHash, record] of activeTorrents.entries()) {
+    for (const [, record] of activeTorrents.entries()) {
       if (record.torrent) {
+        // Auto-stop completed torrents from uploading to peers
+        const isDone = Boolean(record.torrent.done || (record.torrent.progress != null && record.torrent.progress >= 1))
+        if (isDone && !record.autoStoppedOnDone && !record.userManuallyResumed && !record.paused) {
+          stopTorrentSeeding(record)
+        }
         list.push(formatTorrentData(record.torrent, record.paused))
       }
     }
@@ -112,12 +137,25 @@ function registerTorrentIpc(getWindow) {
         let settled = false
 
         torrentClient.add(trimmed, { path: targetDir }, (torrent) => {
-          activeTorrents.set(torrent.infoHash, {
+          const record = {
             torrent,
             paused: false,
+            autoStoppedOnDone: false,
+            userManuallyResumed: false,
             customPath: targetDir,
             addedAt: Date.now()
+          }
+          activeTorrents.set(torrent.infoHash, record)
+
+          // Auto-stop downloading and uploading peers once download is complete
+          torrent.on('done', () => {
+            console.log(`[Yogatik BitTorrent] Torrent ${torrent.name || torrent.infoHash} reached 100%. Auto-stopping seeding & disconnecting peers.`)
+            stopTorrentSeeding(record)
           })
+
+          if (torrent.done || (torrent.progress != null && torrent.progress >= 1)) {
+            stopTorrentSeeding(record)
+          }
 
           startBroadcasting(getWindow)
 
@@ -126,7 +164,7 @@ function registerTorrentIpc(getWindow) {
             resolve({
               success: true,
               infoHash: torrent.infoHash,
-              torrent: formatTorrentData(torrent, false)
+              torrent: formatTorrentData(torrent, record.paused)
             })
           }
         })
@@ -146,17 +184,28 @@ function registerTorrentIpc(getWindow) {
               trimmed.includes(t.infoHash) || (t.magnetURI && t.magnetURI === trimmed)
             )
             if (found) {
-              activeTorrents.set(found.infoHash, {
+              const record = {
                 torrent: found,
                 paused: false,
+                autoStoppedOnDone: false,
+                userManuallyResumed: false,
                 customPath: targetDir,
                 addedAt: Date.now()
+              }
+              activeTorrents.set(found.infoHash, record)
+
+              found.on('done', () => {
+                stopTorrentSeeding(record)
               })
+              if (found.done || (found.progress != null && found.progress >= 1)) {
+                stopTorrentSeeding(record)
+              }
+
               startBroadcasting(getWindow)
               resolve({
                 success: true,
                 infoHash: found.infoHash,
-                torrent: formatTorrentData(found, false),
+                torrent: formatTorrentData(found, record.paused),
                 note: 'Torrent added; connecting to peers in background.'
               })
             } else {
@@ -189,8 +238,7 @@ function registerTorrentIpc(getWindow) {
     if (!record || !record.torrent) return { success: false, error: 'Torrent not found' }
 
     try {
-      record.torrent.pause()
-      record.paused = true
+      stopTorrentSeeding(record)
       return { success: true }
     } catch (err) {
       return { success: false, error: err.message }
@@ -203,8 +251,9 @@ function registerTorrentIpc(getWindow) {
     if (!record || !record.torrent) return { success: false, error: 'Torrent not found' }
 
     try {
-      record.torrent.resume()
+      record.userManuallyResumed = true
       record.paused = false
+      record.torrent.resume()
       return { success: true }
     } catch (err) {
       return { success: false, error: err.message }

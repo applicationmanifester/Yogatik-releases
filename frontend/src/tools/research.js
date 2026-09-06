@@ -66,12 +66,21 @@ export function decomposeQuery(query = '') {
     const firstSentence = clean.split(/[.?!]/)[0]
     clean = (firstSentence && firstSentence.length >= 10 && firstSentence.length <= 200) ? firstSentence : clean.slice(0, 160)
   }
-  const splitPattern = /\b(?:vs|versus|compared to|and also|as well as)\b/i
+  const splitPattern = /\b(?:vs|versus|compared to|and also|as well as|difference between)\b/i
   if (splitPattern.test(clean)) {
     const parts = clean.split(splitPattern).map(p => p.trim()).filter(p => p.length >= 3)
     if (parts.length >= 2) return parts.slice(0, 3).map(p => toSearchQuery(p))
   }
-  return [toSearchQuery(clean)]
+  const primary = toSearchQuery(clean)
+  const words = primary.split(/\s+/).filter(Boolean)
+  // For deep research inquiries (>= 3 words), expand into multi-facet sub-queries
+  if (words.length >= 3) {
+    const isTechOrScience = /\b(quantum|ai|model|battery|fusion|crispr|chip|semiconductor|neural|algorithm|protocol|cryptography|cancer|diabetes|medicine|health)\b/i.test(clean)
+    const facet2 = isTechOrScience ? `${primary} architecture benchmarks` : `${primary} analysis overview`
+    const facet3 = `${primary} challenges developments`
+    return [primary, facet2, facet3]
+  }
+  return [primary]
 }
 
 /**
@@ -297,7 +306,7 @@ async function fetchPage(url) {
     const html = await Promise.race([proxyText(url), timeout])
     const page = extractReadable(html, { maxChars: EXTRACT_CHARS })
     if (page.text.length < 200) return null
-    const res = { url, ...page }
+    const res = { url, _html: html, ...page }
     if (PAGE_CACHE.size > 200) {
       const firstKey = PAGE_CACHE.keys().next().value
       PAGE_CACHE.delete(firstKey)
@@ -446,6 +455,38 @@ export const researchTool = {
       }
     }
 
+    const structuredFindings = extractStructuredMetrics(allPages)
+    const citations = extractCitations(rendered)
+    const crossCheck = findConflicts(rendered)
+
+    // Synthesize structured executive overview with inline citations
+    const keyPoints = structuredFindings?.key_takeaways || []
+    const summaryLines = [
+      `### Executive Research Synthesis: "${query}"`,
+      `*Grounded synthesis from ${allPages.length} primary page${allPages.length > 1 ? 's' : ''} across ${searchResults.length} search facet${searchResults.length > 1 ? 's' : ''} (Confidence: ${computeConfidence(allPages).overall}).*`,
+      '',
+    ]
+    if (keyPoints.length) {
+      summaryLines.push('**Core Findings & Grounded Takeaways:**')
+      keyPoints.slice(0, 6).forEach(pt => summaryLines.push(`- ${pt}`))
+      summaryLines.push('')
+    }
+    if (structuredFindings?.extracted_metrics?.length) {
+      summaryLines.push('**Extracted Key Metrics:**')
+      structuredFindings.extracted_metrics.slice(0, 5).forEach(m => summaryLines.push(`- **${m.metric}**: ${m.context}`))
+      summaryLines.push('')
+    }
+    if (crossCheck?.corroborated?.length) {
+      summaryLines.push('**Cross-Source Corroborations:**')
+      crossCheck.corroborated.slice(0, 3).forEach(c => summaryLines.push(`- Corroborated figure: \`${c.figure}\` (Sources [${c.pages.join(', ')}])`))
+      summaryLines.push('')
+    }
+    summaryLines.push('**Verified References:**')
+    rendered.forEach(p => {
+      summaryLines.push(`- [${p.n}] [${p.title}](${p.url})${p.published ? ` — *${p.published}*` : ''}`)
+    })
+    const executiveSummary = summaryLines.join('\n')
+
     return {
       success: true,
       tool: 'deep_research',
@@ -454,10 +495,11 @@ export const researchTool = {
       fetched_at: new Date().toISOString(),
       hops: follow_up ? Math.min(3, allPages.length > pages.length ? 2 + (allPages.length - pages.length > 3 ? 1 : 0) : 1) : 1,
       confidence: computeConfidence(allPages),
-      structured_findings: extractStructuredMetrics(allPages),
+      executive_summary: executiveSummary,
+      structured_findings: structuredFindings,
       structured_tables: structuredTables.length ? structuredTables : undefined,
-      citations: extractCitations(rendered),
-      cross_check: findConflicts(rendered),
+      citations,
+      cross_check: crossCheck,
       related_terms: followUpTerms(rendered, query),
       pages: rendered,
       sources: allResults.map(r => ({ title: r.title, url: r.url, snippet: r.snippet })),

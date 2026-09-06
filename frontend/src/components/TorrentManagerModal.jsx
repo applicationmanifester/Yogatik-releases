@@ -17,7 +17,12 @@ import {
   Layers,
   ChevronDown,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  Minus,
+  Maximize2,
+  Minimize2,
+  Copy,
+  Check
 } from 'lucide-react'
 import {
   isTorrentAvailable,
@@ -57,8 +62,12 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
   const [expandedFiles, setExpandedFiles] = useState({})
   const [confirmDelete, setConfirmDelete] = useState(null) // { infoHash, name }
   const [deleteFilesDisk, setDeleteFilesDisk] = useState(false)
+  const [isMinimized, setIsMinimized] = useState(false)
+  const [isMaximized, setIsMaximized] = useState(false)
+  const [copiedHash, setCopiedHash] = useState(null)
 
   const isAvailableRef = useRef(false)
+  const completedNotifiedRef = useRef(new Set())
 
   // Initialize paths and verify desktop bridge availability
   useEffect(() => {
@@ -75,18 +84,25 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
     }
   }, [isOpen])
 
-  // Real-time status update subscription
+  // Real-time status update subscription + automatic completion alerts
   useEffect(() => {
     if (!isOpen || !isAvailable) return
     const unsubscribe = subscribeTorrentUpdates((updatedList) => {
       if (Array.isArray(updatedList)) {
         setTorrents(updatedList)
+        // Alert when any downloading torrent completes
+        updatedList.forEach(t => {
+          if ((t.done || (t.progress != null && t.progress >= 1)) && !completedNotifiedRef.current.has(t.infoHash)) {
+            completedNotifiedRef.current.add(t.infoHash)
+            showToast?.(`✓ Download complete: ${t.name || t.infoHash}`)
+          }
+        })
       }
     })
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe()
     }
-  }, [isOpen, isAvailable])
+  }, [isOpen, isAvailable, showToast])
 
   const fetchTorrents = useCallback(async () => {
     if (!isAvailableRef.current) return
@@ -173,6 +189,14 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
     }
   }
 
+  const handleCopyHash = (hash) => {
+    if (!hash) return
+    navigator.clipboard?.writeText(hash)
+    setCopiedHash(hash)
+    showToast?.('Copied InfoHash to clipboard')
+    setTimeout(() => setCopiedHash(null), 2000)
+  }
+
   const toggleFiles = (infoHash) => {
     setExpandedFiles(prev => ({
       ...prev,
@@ -187,21 +211,255 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
   const totalUpSpeed = torrents.reduce((acc, t) => acc + (t.paused ? 0 : (t.uploadSpeed || 0)), 0)
   const activeCount = torrents.filter(t => !t.done && !t.paused).length
 
+  // Minimized floating player widget
+  if (isMinimized) {
+    const activeTorrent = torrents.find(t => !t.done && !t.paused) || torrents[0]
+    const activePct = activeTorrent ? Math.round((activeTorrent.progress || 0) * 100) : 0
+    const hasDownloads = torrents.length > 0
+
+    return (
+      <div
+        className="torrent-floating-minibar"
+        style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          zIndex: 99999,
+          background: 'rgba(18, 20, 26, 0.95)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(99, 102, 241, 0.35)',
+          boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65), 0 0 24px rgba(99, 102, 241, 0.2)',
+          borderRadius: '16px',
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          maxWidth: '480px',
+          minWidth: '340px',
+          cursor: 'default',
+          transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+        }}
+      >
+        {/* Glowing Torrent Icon Badge */}
+        <div
+          onClick={() => setIsMinimized(false)}
+          style={{
+            position: 'relative',
+            width: '40px',
+            height: '40px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#fff',
+            flexShrink: 0,
+            cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+          }}
+          title="Click to restore Torrent Downloader"
+        >
+          <DownloadCloud size={20} />
+          {activeCount > 0 && (
+            <span
+              style={{
+                position: 'absolute',
+                top: '-2px',
+                right: '-2px',
+                width: '10px',
+                height: '10px',
+                borderRadius: '50%',
+                background: '#4ade80',
+                border: '2px solid #12141a',
+                boxShadow: '0 0 8px #4ade80'
+              }}
+            />
+          )}
+        </div>
+
+        {/* Info & Progress (Click to restore) */}
+        <div
+          onClick={() => setIsMinimized(false)}
+          style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+          title="Click to restore Torrent Downloader"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
+            <div
+              style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                color: '#f3f4f6',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '220px'
+              }}
+            >
+              {activeTorrent?.name || 'Torrent Downloader'}
+            </div>
+            {hasDownloads && (
+              <span style={{ fontSize: '12px', fontWeight: 700, color: '#a5b4fc', flexShrink: 0 }}>
+                {activePct}%
+              </span>
+            )}
+          </div>
+
+          {/* Mini progress track */}
+          {hasDownloads && (
+            <div
+              style={{
+                width: '100%',
+                height: '5px',
+                borderRadius: '3px',
+                background: 'rgba(255, 255, 255, 0.1)',
+                overflow: 'hidden',
+                marginBottom: '6px'
+              }}
+            >
+              <div
+                style={{
+                  height: '100%',
+                  width: `${activePct}%`,
+                  background: 'linear-gradient(90deg, #6366f1 0%, #a855f7 100%)',
+                  borderRadius: '3px',
+                  transition: 'width 0.3s ease'
+                }}
+              />
+            </div>
+          )}
+
+          {/* Stats sub-line */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', color: '#9ca3af' }}>
+            <span style={{ color: totalDownSpeed > 0 ? '#4ade80' : '#9ca3af', fontWeight: 500 }}>
+              ↓ {formatSpeed(totalDownSpeed)}
+            </span>
+            {totalUpSpeed > 0 && (
+              <span style={{ color: '#60a5fa' }}>
+                ↑ {formatSpeed(totalUpSpeed)}
+              </span>
+            )}
+            {activeTorrent && !activeTorrent.done && activeTorrent.timeRemaining > 0 && (
+              <span>ETA: {formatEta(activeTorrent.timeRemaining)}</span>
+            )}
+            {activeCount > 1 && (
+              <span style={{ color: '#c084fc' }}>({activeCount} active)</span>
+            )}
+          </div>
+        </div>
+
+        {/* Quick actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          {activeTorrent && (
+            activeTorrent.paused ? (
+              <button
+                onClick={(e) => { e.stopPropagation(); handleResume(activeTorrent.infoHash) }}
+                title="Resume Download"
+                style={{
+                  background: 'rgba(34, 197, 94, 0.15)',
+                  color: '#4ade80',
+                  border: '1px solid rgba(34, 197, 94, 0.3)',
+                  borderRadius: '8px',
+                  padding: '6px',
+                  cursor: 'pointer',
+                  display: 'flex'
+                }}
+              >
+                <Play size={14} />
+              </button>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); handlePause(activeTorrent.infoHash) }}
+                title="Pause Download"
+                style={{
+                  background: 'rgba(234, 179, 8, 0.15)',
+                  color: '#facc15',
+                  border: '1px solid rgba(234, 179, 8, 0.3)',
+                  borderRadius: '8px',
+                  padding: '6px',
+                  cursor: 'pointer',
+                  display: 'flex'
+                }}
+              >
+                <Pause size={14} />
+              </button>
+            )
+          )}
+          {activeTorrent && (
+            <button
+              onClick={(e) => { e.stopPropagation(); handleOpenFolder(activeTorrent.infoHash) }}
+              title="Open Download Folder"
+              style={{
+                background: 'rgba(255, 255, 255, 0.06)',
+                color: '#9ca3af',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '6px',
+                cursor: 'pointer',
+                display: 'flex'
+              }}
+            >
+              <FolderOpen size={14} />
+            </button>
+          )}
+          <button
+            onClick={() => setIsMinimized(false)}
+            title="Expand / Restore window"
+            style={{
+              background: 'rgba(99, 102, 241, 0.15)',
+              color: '#a5b4fc',
+              border: '1px solid rgba(99, 102, 241, 0.3)',
+              borderRadius: '8px',
+              padding: '6px',
+              cursor: 'pointer',
+              display: 'flex'
+            }}
+          >
+            <Maximize2 size={14} />
+          </button>
+          <button
+            onClick={onClose}
+            title="Close Downloader"
+            style={{
+              background: 'rgba(255, 255, 255, 0.06)',
+              color: '#9ca3af',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '6px',
+              cursor: 'pointer',
+              display: 'flex'
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="modal-overlay" style={{ zIndex: 10000 }}>
+    <div
+      className="modal-overlay"
+      style={{ zIndex: 10000 }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) setIsMinimized(true)
+      }}
+    >
       <div
         className="modal-content"
         style={{
-          width: '900px',
-          maxWidth: '95vw',
-          maxHeight: '90vh',
+          width: isMaximized ? '96vw' : '900px',
+          maxWidth: '96vw',
+          height: isMaximized ? '94vh' : 'auto',
+          maxHeight: '94vh',
           display: 'flex',
           flexDirection: 'column',
           borderRadius: '16px',
           background: 'var(--bg-secondary, #18191e)',
           border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
           boxShadow: '0 24px 48px rgba(0, 0, 0, 0.5)',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
         }}
       >
         {/* Modal Header */}
@@ -253,14 +511,35 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
               </p>
             </div>
           </div>
-          <button
-            className="icon-btn"
-            onClick={onClose}
-            style={{ padding: '6px', borderRadius: '8px', cursor: 'pointer' }}
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              className="icon-btn"
+              onClick={() => setIsMinimized(true)}
+              style={{ padding: '6px', borderRadius: '8px', cursor: 'pointer', color: '#9ca3af' }}
+              title="Minimize to floating mini-bar"
+              aria-label="Minimize"
+            >
+              <Minus size={16} />
+            </button>
+            <button
+              className="icon-btn"
+              onClick={() => setIsMaximized(m => !m)}
+              style={{ padding: '6px', borderRadius: '8px', cursor: 'pointer', color: '#9ca3af' }}
+              title={isMaximized ? "Restore standard size" : "Maximize window"}
+              aria-label="Maximize"
+            >
+              {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+            <button
+              className="icon-btn"
+              onClick={onClose}
+              style={{ padding: '6px', borderRadius: '8px', cursor: 'pointer', color: '#9ca3af' }}
+              title="Close"
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Modal Body */}
@@ -486,8 +765,23 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
                                 <div style={{ fontSize: '14px', fontWeight: 600, color: '#f3f4f6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={t.name}>
                                   {t.name}
                                 </div>
-                                <div style={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace' }}>
-                                  {t.infoHash?.substring(0, 16)}...
+                                <div style={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span>{t.infoHash?.substring(0, 16)}...</span>
+                                  <button
+                                    onClick={() => handleCopyHash(t.infoHash)}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: copiedHash === t.infoHash ? '#4ade80' : '#818cf8',
+                                      cursor: 'pointer',
+                                      padding: '2px',
+                                      display: 'flex',
+                                      alignItems: 'center'
+                                    }}
+                                    title="Copy full InfoHash"
+                                  >
+                                    {copiedHash === t.infoHash ? <Check size={12} /> : <Copy size={12} />}
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -495,9 +789,30 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
                             {/* Actions */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                               {isComplete ? (
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#4ade80', marginRight: '6px' }}>
-                                  <CheckCircle2 size={14} /> Complete
-                                </span>
+                                <>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: isPaused ? '#4ade80' : '#38bdf8', marginRight: '6px' }}>
+                                    <CheckCircle2 size={14} /> {isPaused ? 'Complete' : 'Seeding'}
+                                  </span>
+                                  {isPaused ? (
+                                    <button
+                                      className="icon-btn"
+                                      onClick={() => handleResume(t.infoHash)}
+                                      title="Seed Torrent (Resume Uploading)"
+                                      style={{ padding: '6px', background: 'rgba(99, 102, 241, 0.1)', color: '#a5b4fc', borderRadius: '6px', cursor: 'pointer' }}
+                                    >
+                                      <Play size={14} />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      className="icon-btn"
+                                      onClick={() => handlePause(t.infoHash)}
+                                      title="Stop Seeding & Disconnect Peers"
+                                      style={{ padding: '6px', background: 'rgba(234, 179, 8, 0.1)', color: '#facc15', borderRadius: '6px', cursor: 'pointer' }}
+                                    >
+                                      <Pause size={14} />
+                                    </button>
+                                  )}
+                                </>
                               ) : isPaused ? (
                                 <button
                                   className="icon-btn"
@@ -625,18 +940,39 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
             <Zap size={13} style={{ color: '#a855f7' }} />
             <span>P2P Protocol: BitTorrent over TCP/uTP + DHT Kademlia + WebTorrent</span>
           </div>
-          <button
-            className="secondary-btn"
-            onClick={onClose}
-            style={{
-              padding: '6px 14px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '12px'
-            }}
-          >
-            Close
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              className="secondary-btn"
+              onClick={() => setIsMinimized(true)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'rgba(99, 102, 241, 0.15)',
+                border: '1px solid rgba(99, 102, 241, 0.35)',
+                color: '#a5b4fc'
+              }}
+            >
+              <Minus size={13} />
+              Minimize to Background
+            </button>
+            <button
+              className="secondary-btn"
+              onClick={onClose}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '12px'
+              }}
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         {/* Delete Confirmation Dialog */}

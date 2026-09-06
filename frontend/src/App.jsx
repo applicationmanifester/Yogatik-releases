@@ -678,8 +678,7 @@ export default function App() {
     showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor ||
     showWorkspace || showTour || showBilling ||
     showAgents || showMcpModal || showPlugins ||
-    showAccount || showProviders || showPrivacy ||
-    showTorrentModal || browserPanel
+    showAccount || showProviders || showPrivacy
   )
 
   const handleOpenBrowser = useCallback((url) => {

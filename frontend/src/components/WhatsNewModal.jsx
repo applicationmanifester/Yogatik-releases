@@ -77,7 +77,7 @@ export function WhatsNewModal({ onClose, onOpenSettings }) {
                 </span>
                 <span>•</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Tag size={12} /> {APP_CODENAME}
+                  <Tag size={12} /> {currentRelease.codename || currentRelease.title || APP_CODENAME}
                 </span>
               </div>
             </div>

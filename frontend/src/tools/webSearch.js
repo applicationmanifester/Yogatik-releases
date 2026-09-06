@@ -18,6 +18,14 @@ export function sanitizeSearchQuery(query = '') {
     .replace(/[#*`_~[\]()]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+
+  // Clean conversational leading phrases that degrade search engine accuracy
+  const conversationalLead = /^(?:can you (?:please )?(?:give|tell|show|write|find|provide|give me|tell me)(?: a| an| the)?|please (?:tell|give|show|find|write)(?: me)?|what (?:is|are|was|were) (?:the )?|tell me (?:about )?(?:the )?|give me (?:a |the )?|do you know (?:about )?|i want (?:a |to know )?|search for (?:a |the )?)\s+/i
+  if (conversationalLead.test(q)) {
+    const stripped = q.replace(conversationalLead, '').trim()
+    if (stripped.length >= 3) q = stripped
+  }
+
   if (q.length > 180) {
     const firstSentence = q.split(/[.?!]/)[0]
     q = (firstSentence && firstSentence.length >= 10 && firstSentence.length <= 180) ? firstSentence : q.slice(0, 160)
@@ -327,14 +335,66 @@ async function stackOverflowSearch(query, count) {
   }
 }
 
+/** Hacker News Algolia Search — keyless, fast, open CORS tech/programming/startup search */
+async function hackerNewsSearch(query, count) {
+  try {
+    const cleanQ = sanitizeSearchQuery(query)
+    const url = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(cleanQ)}&hitsPerPage=${count}`
+    const resp = await fetch(url, { signal: AbortSignal.timeout(6000) }).catch(() => proxyJson(url))
+    const data = resp && typeof resp.json === 'function' ? await resp.json() : resp
+    return (data?.hits || []).map(h => ({
+      title: `${h.title || h.story_title || 'HN Discussion'} (${h.points || 0} pts, ${h.num_comments || 0} comments)`,
+      url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
+      snippet: (h.story_text || h.comment_text || h.title || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 250),
+      published: h.created_at || undefined,
+      engine: 'hackernews',
+    })).filter(r => r.url && r.title)
+  } catch {
+    return []
+  }
+}
+
+/** Europe PMC Search — keyless, open CORS biomedical & life sciences research search */
+async function europePmcSearch(query, count) {
+  try {
+    const cleanQ = sanitizeSearchQuery(query)
+    const url = `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(cleanQ)}&format=json&pageSize=${count}&resultType=core`
+    const resp = await fetch(url, { signal: AbortSignal.timeout(7000) }).catch(() => proxyJson(url))
+    const data = resp && typeof resp.json === 'function' ? await resp.json() : resp
+    const items = data?.resultList?.result || []
+    return items.map(item => ({
+      title: (item.title || '').replace(/\.$/, '').replace(/\s+/g, ' ').trim(),
+      url: item.doi ? `https://doi.org/${item.doi}` : (item.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${item.pmid}/` : `https://europepmc.org/article/MED/${item.id}`),
+      snippet: (item.abstractText || item.authorString || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 250),
+      published: item.pubYear ? `${item.pubYear}` : (item.firstPublicationDate || undefined),
+      engine: 'europe_pmc',
+    })).filter(r => r.url && r.title)
+  } catch {
+    return []
+  }
+}
+
+/** Extract clean publisher domain from result URL */
+export function extractResultDomain(urlStr = '') {
+  try {
+    return new URL(urlStr).hostname.replace(/^www\./i, '')
+  } catch {
+    return ''
+  }
+}
+
 /**
  * Intent-based smart engine routing — picks the optimal engine mix per query.
  */
-function detectSearchIntent(query) {
+export function detectSearchIntent(query) {
   const q = (query || '').toLowerCase()
-  if (/\b(code|coding|debug|error|exception|function|api|library|npm|pip|package|github|repo|repository|syntax|compile|runtime|stack trace|import|module)\b/.test(q)) return 'code'
+  if (/\b(movie|film|cinema|trailer|actor|actress|director|hollywood|bollywood|tollywood|kollywood|box office|imdb|rotten tomatoes|letterboxd|netflix|ott|anime|manga|game|gameplay|soundtrack|album|song|music)\b/.test(q)) return 'entertainment'
+  if (/\b(disease|symptom|drug|therapy|clinical|trial|vaccine|patient|treatment|cancer|cardiology|biology|gene|crispr|pharma|healthcare|medicine|medical|dosage|infection|surgery|syndrome)\b/.test(q)) return 'medical'
+  if (/\b(stock|stocks|crypto|bitcoin|ethereum|market|btc|eth|nasdaq|dow|s&p|dividend|fed|inflation|interest rate|quarterly|earnings|revenue|valuation|investing|shares|fund|etf)\b/.test(q)) return 'finance'
+  if (/\b(code|coding|debug|error|exception|function|api|library|npm|pip|package|github|repo|repository|syntax|compile|runtime|stack trace|import|module|rust|python|typescript|javascript|golang|docker|kubernetes|linux)\b/.test(q)) return 'code'
   if (/\b(paper|research|study|journal|ieee|arxiv|conference|citation|doi|abstract|methodology|hypothesis|experiment|findings|literature)\b/.test(q)) return 'academic'
-  if (/\b(news|latest|today|yesterday|breaking|announced|released|launched|update|election|crisis|event)\b/.test(q)) return 'news'
+  if (/\b(news|latest|today|yesterday|breaking|announced|released|launched|update|election|crisis|event|war|summit|president|minister)\b/.test(q)) return 'news'
+  if (/\b(tech|technology|ai|llm|neural|openai|deepseek|claude|gemini|hardware|gpu|nvidia|benchmark|silicon|chips?|semiconductor|startup|hackernews)\b/.test(q)) return 'tech'
   if (/\b(review|opinion|reddit|forum|community|discuss|experience|recommend|best|worst|comparison|vs|versus)\b/.test(q)) return 'community'
   if (/\b(how to|tutorial|guide|learn|example|step by step|setup|install|configure)\b/.test(q)) return 'howto'
   return 'general'
@@ -361,7 +421,7 @@ async function redditSearch(query, count) {
 }
 
 /** Merge engines, dedupe by URL, and rank by how many engines agreed. */
-function mergeResults(lists, count) {
+export function mergeResults(lists, count) {
   const byUrl = new Map()
   lists.forEach((list, rank) => {
     (list || []).forEach((r, i) => {
@@ -369,12 +429,19 @@ function mergeResults(lists, count) {
       const key = r.url.replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase()
       const existing = byUrl.get(key)
       const isPrivate = Boolean(r.private)
+      const domain = r.domain || extractResultDomain(r.url)
       if (existing) {
         existing.agree += isPrivate ? 5 : 1
-        existing.engines.push(r.engine)
+        if (!existing.engines.includes(r.engine)) existing.engines.push(r.engine)
         if (!existing.snippet && r.snippet) existing.snippet = r.snippet
       } else {
-        byUrl.set(key, { ...r, agree: isPrivate ? 5 : 1, engines: [r.engine], position: (isPrivate ? 0 : rank * 100) + i })
+        byUrl.set(key, {
+          ...r,
+          domain,
+          agree: isPrivate ? 5 : 1,
+          engines: [r.engine],
+          position: (isPrivate ? 0 : rank * 100) + i,
+        })
       }
     })
   })
@@ -501,9 +568,18 @@ export const webSearchTool = {
     const n = Math.min(Math.max(1, count | 0), MAX_RESULTS)
     if (!query) return { error: 'Empty query' }
 
+    // Auto-infer recency bias when not explicitly provided
+    let effectiveRecency = recency
+    if (effectiveRecency === 'any') {
+      if (/\b(today|yesterday|tonight|this morning)\b/i.test(query)) effectiveRecency = 'day'
+      else if (/\b(this week|recent days|latest|breaking)\b/i.test(query)) effectiveRecency = 'week'
+      else if (/\b(this month|recently|newest)\b/i.test(query)) effectiveRecency = 'month'
+      else if (/\b(this year|2024|2025|2026)\b/i.test(query)) effectiveRecency = 'year'
+    }
+
     // Instant Cache Hit check (0ms latency for repeated or speculatively pre-fetched queries)
     const normKey = query.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
-    const cacheKey = `${normKey}_${recency}_${site || ''}`
+    const cacheKey = `${normKey}_${effectiveRecency}_${site || ''}`
     const cached = SEARCH_CACHE.get(cacheKey)
     if (cached && (Date.now() - cached.ts) < SEARCH_CACHE_TTL) {
       const sliced = (cached.data.results || []).slice(0, n)
@@ -534,19 +610,40 @@ export const webSearchTool = {
     )
 
     if (braveKey) {
-      tasks.push(withFastTimeout(braveSearch(site ? `${query} site:${site}` : query, braveKey, n, recency), defaultTimeout))
+      tasks.push(withFastTimeout(braveSearch(site ? `${query} site:${site}` : query, braveKey, n, effectiveRecency), defaultTimeout))
     }
-    tasks.push(withFastTimeout(duckDuckGoSearch(ddgQuery(query, recency, site), n), defaultTimeout))
+    tasks.push(withFastTimeout(duckDuckGoSearch(ddgQuery(query, effectiveRecency, site), n), defaultTimeout))
     if (wide) {
       // Smart engine routing based on detected intent
-      if (intent === 'code' || intent === 'howto') {
+      if (intent === 'medical') {
+        tasks.push(withFastTimeout(europePmcSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(openAlexSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(googleNewsSearch(query, 3), fast ? 1100 : 2200))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), fast ? 900 : 1500))
+      } else if (intent === 'tech') {
+        tasks.push(withFastTimeout(hackerNewsSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(githubSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(googleNewsSearch(query, 3), fast ? 1100 : 2200))
+        tasks.push(withFastTimeout(stackOverflowSearch(query, 2), defaultTimeout))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), fast ? 900 : 1500))
+      } else if (intent === 'finance') {
+        tasks.push(withFastTimeout(googleNewsSearch(query, 4), fast ? 1100 : 2200))
+        tasks.push(withFastTimeout(redditSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), fast ? 900 : 1500))
+      } else if (intent === 'code' || intent === 'howto') {
         tasks.push(withFastTimeout(githubSearch(query, 3), defaultTimeout))
         tasks.push(withFastTimeout(stackOverflowSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(hackerNewsSearch(query, 2), defaultTimeout))
         tasks.push(withFastTimeout(wikipediaSearch(query, 2), fast ? 900 : 1500))
       } else if (intent === 'academic') {
         tasks.push(withFastTimeout(arxivSearch(query, 3), defaultTimeout))
         tasks.push(withFastTimeout(crossrefSearch(query, 3), defaultTimeout))
         tasks.push(withFastTimeout(semanticScholarSearch(query, 3), defaultTimeout))
+        tasks.push(withFastTimeout(europePmcSearch(query, 2), defaultTimeout))
+        tasks.push(withFastTimeout(wikipediaSearch(query, 2), fast ? 900 : 1500))
+      } else if (intent === 'entertainment') {
+        tasks.push(withFastTimeout(googleNewsSearch(query, 4), fast ? 1500 : 2500))
+        tasks.push(withFastTimeout(redditSearch(query, 3), defaultTimeout))
         tasks.push(withFastTimeout(wikipediaSearch(query, 2), fast ? 900 : 1500))
       } else if (intent === 'news') {
         tasks.push(withFastTimeout(googleNewsSearch(query, 4), fast ? 1100 : 2200))
@@ -564,6 +661,7 @@ export const webSearchTool = {
         if (!fast) {
           tasks.push(withFastTimeout(marginaliaSearch(query, 3), 2000))
           tasks.push(withFastTimeout(githubSearch(query, 2), 2000))
+          tasks.push(withFastTimeout(hackerNewsSearch(query, 2), 2000))
           if (/\b(paper|arxiv|study|research|algorithm|theorem|science|physics|academic|scholar)\b/i.test(query)) {
             tasks.push(withFastTimeout(semanticScholarSearch(query, 2), 2000))
             tasks.push(withFastTimeout(arxivSearch(query, 2), 2000))
@@ -592,8 +690,8 @@ export const webSearchTool = {
           resolve()
         }
 
-        // Hard cap at 900ms for fast/live mode, 1800ms for normal mode
-        const timer = setTimeout(finish, fast ? 900 : 1800)
+        // Hard cap at 1600ms for fast/live mode, 2600ms for normal mode
+        const timer = setTimeout(finish, fast ? 1600 : 2600)
 
         tasks.forEach(async (taskPromise) => {
           try {

@@ -2,13 +2,15 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
   ExternalLink, X, RotateCw, FolderOpen, Send, Download,
   GitPullRequest, Code, FileCode, Sparkles, Maximize2, Minimize2,
-  AlertCircle
+  AlertCircle, Layers, Minus
 } from 'lucide-react'
 import { wsFindFiles, wsRead, wsWrite, gitDiff, gitStatus, listRoots, isDesktop } from '../tools/localFs'
 import {
   injectTextIntoGemini,
   extractLatestCodeFromGemini,
-  buildWorkspaceContextPrompt
+  buildWorkspaceContextPrompt,
+  buildFolderFilesBundlePrompt,
+  buildChunkedBundles
 } from '../tools/geminiBridge'
 import { WebCompanionStudio } from './WebCompanionStudio'
 
@@ -32,6 +34,7 @@ export function GeminiDock({
 }) {
   const holeRef = useRef(null)
   const [fullscreen, setFullscreen] = useState(false)
+  const [isMinimized, setIsMinimized] = useState(false)
   const [loading, setLoading] = useState(false)
   const [statusMsg, setStatusMsg] = useState('Ready')
 
@@ -51,8 +54,8 @@ export function GeminiDock({
   const br = () => (typeof window !== 'undefined' && window.__YOGATIK_BROWSER__) || null
   const desktop = isDesktop()
 
-  // An overlay/drawer paints UNDER the native view in Electron, so detach WebContentsView while occluded
-  const isOccluded = occluded || showFilePicker || showCodeDrawer
+  // An overlay/drawer paints UNDER the native view in Electron, so detach WebContentsView while occluded or minimized
+  const isOccluded = occluded || showFilePicker || showCodeDrawer || isMinimized
 
   const reportBounds = useCallback(() => {
     const b = br()
@@ -74,7 +77,8 @@ export function GeminiDock({
     if (!b) return
 
     setLoading(true)
-    b.navigate({ conversationId: GEMINI_CONV_ID, url: GEMINI_URL })
+    b.setMode({ conversationId: GEMINI_CONV_ID, display: 'panel' }).catch(() => {})
+    b.navigate({ conversationId: GEMINI_CONV_ID, url: GEMINI_URL, display: 'panel' })
       .catch(() => {})
       .finally(() => setLoading(false))
 
@@ -228,6 +232,82 @@ export function GeminiDock({
     }
   }
 
+  // Bundle and send ALL text files from the local folder into Gemini (chunked if large)
+  const handleSendFolderBundle = async () => {
+    setStatusMsg('Scanning entire folder...')
+    try {
+      const [roots, filesRes] = await Promise.all([
+        listRoots().catch(() => []),
+        wsFindFiles('*', { limit: 1000 }).catch(() => []),
+      ])
+
+      const primaryRoot = roots[0]?.path || roots[0]?.label || 'Workspace'
+      const rawFiles = Array.isArray(filesRes) ? filesRes : filesRes?.files || []
+      const textFiles = rawFiles.filter(f => {
+        if (f.includes('node_modules') || f.includes('.git/') || f.includes('dist/') || f.includes('__pycache__')) return false
+        if (f.endsWith('package-lock.json') || f.endsWith('yarn.lock') || f.endsWith('pnpm-lock.yaml')) return false
+        const ext = f.split('.').pop()?.toLowerCase() || ''
+        return !BINARY_EXTS.has(ext)
+      })
+
+      if (!textFiles.length) {
+        onToast?.('No readable text files found in workspace folder')
+        setStatusMsg('No files found')
+        return
+      }
+
+      setStatusMsg(`Reading ${textFiles.length} project files...`)
+      let totalBytes = 0
+      const MAX_TOTAL = 10 * 1024 * 1024 // 10MB total budget
+      const MAX_PER_FILE = 250 * 1024 // 250KB per file
+      const filesWithContent = []
+      for (const filePath of textFiles) {
+        if (totalBytes > MAX_TOTAL) break
+        try {
+          const res = await wsRead(filePath)
+          const content = typeof res === 'string' ? res : res?.content || ''
+          if (content && content.trim()) {
+            const trimmed = content.length > MAX_PER_FILE
+              ? content.slice(0, MAX_PER_FILE) + '\n/* [truncated — full file is ' + Math.round(content.length / 1024) + 'KB] */'
+              : content
+            totalBytes += trimmed.length
+            filesWithContent.push({ path: filePath, content: trimmed })
+          }
+        } catch {
+          // skip unreadable files
+        }
+      }
+
+      if (!filesWithContent.length) {
+        onToast?.('Could not read workspace files')
+        return
+      }
+
+      // Split into chunks for sequential injection
+      const chunks = buildChunkedBundles({
+        projectName: primaryRoot.split(/[\\/]/).pop() || 'Project',
+        rootPath: primaryRoot,
+        filesWithContent,
+      })
+
+      for (let i = 0; i < chunks.length; i++) {
+        setStatusMsg(`Injecting part ${i + 1}/${chunks.length} (${filesWithContent.length} files)...`)
+        await injectTextIntoGemini(GEMINI_CONV_ID, chunks[i])
+        if (i < chunks.length - 1) {
+          // Brief delay between parts to let the UI process
+          await new Promise(r => setTimeout(r, 800))
+        }
+      }
+
+      const partsNote = chunks.length > 1 ? ` in ${chunks.length} parts` : ''
+      onToast?.(`✓ Injected ${filesWithContent.length} files into Gemini${partsNote} (copied to clipboard)`)
+      setStatusMsg(`Injected ${filesWithContent.length} files${partsNote}`)
+    } catch (err) {
+      onToast?.(`Failed to send folder files: ${err?.message || err}`)
+      setStatusMsg('Folder injection failed')
+    }
+  }
+
   // Pull code blocks generated by Gemini on gemini.google.com
   const handlePullCode = async () => {
     setStatusMsg('Scanning Gemini response for code...')
@@ -273,6 +353,70 @@ export function GeminiDock({
     f => !fileFilter || f.toLowerCase().includes(fileFilter.toLowerCase())
   )
 
+  if (isMinimized) {
+    return (
+      <div
+        className="gemini-dock-minimized-pill"
+        style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '8px 14px',
+          background: 'rgba(15, 23, 42, 0.92)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255, 255, 255, 0.16)',
+          borderRadius: '24px',
+          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+          color: '#fff',
+          cursor: 'pointer',
+          userSelect: 'none',
+          animation: 'fadeSlideUp 0.2s ease-out',
+        }}
+        onClick={() => {
+          setIsMinimized(false)
+          setTimeout(reportBounds, 80)
+        }}
+      >
+        <span style={{ fontSize: '15px' }}>✨</span>
+        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+          <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.2px' }}>Gemini.com Studio</span>
+          <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6', display: 'inline-block' }} />
+            {desktop ? 'Bridge Active' : 'Companion Mode'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }} onClick={e => e.stopPropagation()}>
+          <button
+            type="button"
+            className="icon-btn"
+            style={{ padding: '4px', background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '50%', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+            onClick={() => {
+              setIsMinimized(false)
+              setTimeout(reportBounds, 80)
+            }}
+            title="Restore Gemini Studio"
+          >
+            <Maximize2 size={13} />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            style={{ padding: '4px', background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '50%', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+            onClick={onClose}
+            title="Close Gemini Dock"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={`gemini-dock-container ${fullscreen ? 'fullscreen' : ''}`}>
       {/* Top Header */}
@@ -306,6 +450,14 @@ export function GeminiDock({
           </button>
           <button
             className="icon-btn"
+            onClick={() => setIsMinimized(true)}
+            title="Minimize to floating widget"
+            aria-label="Minimize"
+          >
+            <Minus size={14} />
+          </button>
+          <button
+            className="icon-btn"
             onClick={() => {
               setFullscreen(f => !f)
               setTimeout(reportBounds, 80)
@@ -332,6 +484,10 @@ export function GeminiDock({
 
           <button className="bridge-btn" onClick={handleSendContext} title="Inject project file tree & environment context">
             <Sparkles size={13} /> Send Workspace Context
+          </button>
+
+          <button className="bridge-btn" onClick={handleSendFolderBundle} title="Bundle all files from this folder and inject their code into Gemini">
+            <Layers size={13} /> Send Folder Files
           </button>
 
           <button className="bridge-btn" onClick={handleSendDiff} title="Send Git working tree diff for review">
@@ -401,8 +557,26 @@ export function GeminiDock({
                   : 'No files match your search filter.'}
               </p>
             )}
-            <div className="picker-footer">
+            <div className="picker-footer" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button className="small-btn" onClick={() => setShowFilePicker(false)}>Cancel</button>
+              <button
+                className="small-btn"
+                style={{
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  border: '1px solid rgba(59, 130, 246, 0.4)',
+                  color: '#93c5fd',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px'
+                }}
+                onClick={() => {
+                  setShowFilePicker(false)
+                  handleSendFolderBundle()
+                }}
+                title="Read and bundle multiple files from this workspace folder into Gemini"
+              >
+                <Layers size={12} /> Bundle Entire Folder
+              </button>
               <button
                 className="small-btn btn-primary"
                 disabled={!selectedFile}

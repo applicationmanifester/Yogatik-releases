@@ -436,181 +436,873 @@
         });
     })();
 
-    // What's New & Updates registry (5 latest releases) with interactive version selector
+    // What's New & Updates registry (all releases) with interactive version selector
     (function () {
       var RELEASES = [
-        {
-          version: '7.2.0',
-          title: 'Yogatik 7.2.0: Built-in BitTorrent Engine, Yogatik Browser Search Bar & Grok Local Files Bridge',
-          date: 'September 6, 2026',
-          codename: 'Built-in BitTorrent Engine, Yogatik Browser Search Bar & Grok Local Files Bridge',
-          isLatest: true,
-          highlights: [
-            ['Built-in BitTorrent P2P Engine', 'Download open-source torrents and magnet links natively in Yogatik Desktop with real-time peer swarms, download speeds, DHT, pause/resume, and destination path selection.'],
-            ['Yogatik Browser Search & New Tab Start Page', 'Dedicated start page with DuckDuckGo, Google, Bing, Brave, GitHub, and Wikipedia search engine switcher and speed-dial shortcuts.'],
-            ['Grok.com Local Folder Files Bundler', 'Send multiple project files and full subfolder source code directly into Grok with explicit anti-artifacts cloud sandbox redirection.'],
-            ['Entitlement Matrix & Safe Window Hardening', 'All BitTorrent and desktop browser capabilities classified as Free Always (FA) and protected by safeWindow communication.'],
-            ['Bulletproof Exception Recovery', 'Comprehensive type guards on local paths and dialog pickers preventing React error #31.']
-          ]
-        },
-        {
-          version: '7.1.0',
-          title: 'Yogatik 7.1.0: Grok.com & Gemini.com Studio Docks with Desktop Local Files Bridge',
-          date: 'September 6, 2026',
-          codename: 'Grok.com & Gemini.com Studio Docks with Local Files Bridge',
-          isLatest: false,
-          highlights: [
-            ['Grok.com Studio Dock with Local Files Bridge', 'Seamless embedded session of grok.com with bidirectional workspace file injector, active Git diff review, and 1-click code block extraction to disk.'],
-            ['Gemini.com Studio Dock with Deep Shadow DOM Traversal', 'Full Google Web Components integration, real-time code extraction, and comment-based filepath auto-detection.'],
-            ['Dynamic WebContentsView Occlusion & Detachment', 'Electron native webview automatically detaches during modal overlays (Send File, Code Pull Drawer, Ctrl+K Palette) eliminating layering occlusions.'],
-            ['Mutual Dock Exclusivity & 1-Click Switcher', 'Prevents concurrent GPU/RAM spikes with instant toggle between Grok and Gemini studios directly in the header.'],
-            ['Safe Local File Bridge Guards', 'Automatic binary file filtration and 180KB safe chunking for high-speed IPC transmission.'],
-            ['Dynamic Precision Temperature Bar', 'Interactive slider in Personalization and Chat Composer supporting reasoning models and auto-retry error handling.']
-          ]
-        },
-        {
-          version: '6.3.0',
-          title: 'Yogatik 6.3.0: Live Meeting Copilot, Multi-Agent Collaboration Board & Visual Browser Inspector',
-          date: 'September 6, 2026',
-          codename: 'Live Meeting Copilot & Multi-Agent Collaboration Board',
-          isLatest: false,
-          highlights: [
-            ['Live Meeting Copilot in Desktop Companion', 'Real-time speaker audio transcription, interactive action items checklist, instant tactical whisper suggestions, and 1-click Markdown export.'],
-            ['Multi-Agent Collaboration Board', 'Responsive 4-column Kanban layout (Backlog, In Progress, Review, Completed) with real-time sync of sub-agents, autonomous planning steps, and team tasks.'],
-            ['Power Slash Command Palette', 'Instant slash commands (/deck, /doc, /anim, /audit, /cast, /swarm, /calc, /graph) with prompt auto-fill and composer focus.'],
-            ['Visual Browser DOM Live Inspector', 'In-app "Agent Eye" displaying accessibility element trees, interactive refs (ref_epoch_idx), and real-time browser action history.'],
-            ['Dual-Mode Semantic Memory & Knowledge Graph', 'Interactive radial visualization of quantized vector memory clusters and federated research citations with node inspection and memory pruning.'],
-            ['Post-Live Meeting Secretary & Smart Intent Router', 'Automatic categorization, executive briefings, and real-time model switching recommendations.']
-          ]
-        },
-        {
-          version: '6.2.0',
-          title: 'Yogatik 6.2.0: LiveView Ambient HUD, Scanned PDF Auto-OCR & Universal File Extraction',
-          date: 'September 5, 2026',
-          codename: 'LiveView Ambient HUD & Scanned PDF Auto-OCR',
-          isLatest: false,
-          highlights: [
-            ['LiveView Ambient HUD & Perceptual Diffing', 'Floating pill HUD with biometric audio waveforms, dynamic 5 FPS frame scaling, and 70% bandwidth reduction via 64-bit pHash perceptual change detection.'],
-            ['Spatial Telestration & Live Stage', 'Real-time visual vectors, highlights, and annotations directly over screen feeds plus a synchronized workspace side stage for live code/document projections.'],
-            ['Scanned PDF Auto-OCR & RAG Persistence', 'Automatic detection of flattened raster tickets and image documents with 1.75x high-DPI offscreen canvas rendering and client-side Tesseract OCR indexing.'],
-            ['Universal Client-Side File Extraction', 'Direct extraction for Word (.docx), Excel spreadsheets (.xlsx/.xls), images via OCR, and 50+ programming languages with automated UTF-8 byte inspection fallback.'],
-            ['Multi-Platform Production Distributions', 'Automated release pipeline publishing standalone Windows (.exe), macOS Apple Silicon & Intel (.dmg/.zip), Linux (.AppImage/.deb), and self-hostable Web (.zip).']
-          ]
-        },
-        {
-          version: '6.1.0',
-          title: 'Yogatik 6.1.0: Real-Time Live Vision HUD, AI Voice Mute, Chrome AI Tools & Process Tree Management',
-          date: 'September 4, 2026',
-          codename: 'Real-Time Vision HUD & Chrome AI Tools',
-          isLatest: false,
-          highlights: [
-            ['Live Feed Object Detection', 'Client-side continuous DETR object detection with smart mirror coordinate mapping and aHash change-gated visual processing.'],
-            ['AI Voice Output Mute', 'Dedicated speaker audio toggle in Live call controls with cascade choke-point gating and zero-latency gain-node muting.'],
-            ['Chrome AI Tool Calling Fixed', 'Fixed prompted-mode tool injection on turn start and added interactive replay status heartbeats.'],
-            ['Honest Web Scraping & Proxy Routing', 'Eliminated fabricated claims in Scrapling/Lightpanda; routed all URL fetches through resilient proxy layer.'],
-            ['Sports Scores & Anime Lookup', 'Added keyless TheSportsDB live sports tracking and Jikan/MyAnimeList search; unified Wayback Machine archive tools.'],
-            ['Process Tree Termination', 'Robust taskkill/SIGKILL tree termination preventing port binding leaks on stopped dev servers.']
-          ]
-        },
-        {
-          version: '5.2.0',
-          title: 'Yogatik 5.2.0: Dynamic Model Discovery, Provider CORS Bypass & Resilient Web Tools',
-          date: 'September 4, 2026',
-          codename: 'Dynamic Model Discovery & Resilient Web Tools',
-          isLatest: false,
-          highlights: [
-            ['Dynamic Model Discovery', 'Directly queries and live-validates available models from upstream providers (NVIDIA NIM, Anthropic, OpenAI, custom endpoints) without hardcoded models.'],
-            ['Provider CORS Bypass', 'High-speed edge proxy routing with X-Target-URL for NVIDIA NIM, Anthropic, and custom endpoints eliminating CORS preflight errors in browser.'],
-            ['Instant Bot-Free Web Search', 'Official DuckDuckGo Instant Answer JSON API integration for high-speed search without anti-bot blocks or 500 relay failures.'],
-            ['Statically Bundled Tools', 'Built-in MCP connector registry bundling to eliminate dynamic chunk 404 network fetch errors during conversation turns.'],
-            ['Continuous Desktop Releases', 'Streamlined GitHub Actions build and release pipeline with unmetered public mirror release publishing.']
-          ]
-        },
-        {
-          version: '5.1.0',
-          title: 'Yogatik 5.1.0: MCP Auto-Connect, Relevance-Ranked Web Reading & On-Device AI Setup',
-          date: 'September 3, 2026',
-          codename: 'MCP Auto-Connect & On-Device AI Setup',
-          isLatest: false,
-          highlights: [
-            ['MCP Auto-Connect', 'A connector you already configured but left disabled reconnects on its own the moment a request needs it.'],
-            ['MCP Suggestions', 'Honest suggestions for unconfigured connectors like GitHub, Stripe, and Cloudflare instead of doing nothing.'],
-            ['Smarter Web Reading', 'Target long pages for passages that answer your question instead of blind truncation.'],
-            ['File Skimming', 'fs_skim tool lets the agent view function and class signatures before deciding to read entire files.'],
-            ['On-Device AI Setup Fixed', 'WebLLM and Chrome AI show real consent screens with download progress.']
-          ]
-        },
-        {
-          version: '4.3.2',
-          title: 'Yogatik 4.3.2: Desktop Pro Entitlement Sync, Version Dropdown & Clean Tool Registry',
-          date: 'September 2, 2026',
-          codename: 'Desktop Pro Sync, Version Dropdown & Clean Tool Registry',
-          isLatest: false,
-          highlights: [
-            ['Desktop Pro Account Sync', 'Fixed Firebase auth state preservation on desktop so Pro subscriptions and 30-day trials sync immediately between web and desktop.'],
-            ['Interactive Version Dropdown', 'Added version selector dropdown to the What’s New showcase with instantaneous switching across recent releases.'],
-            ['Clean & Resilient Tool Registry', 'Streamlined agent tools and removed noisy recipe lookup failures for smooth, robust task completion.'],
-            ['Cross-Platform Build Parity', 'Synchronized release 4.3.2 across web app, Windows installer (NSIS), macOS DMG, and Linux AppImage/Deb packages.'],
-            ['Hardened Native IPC Lifecycle', 'Safe window messaging across Electron main and renderer processes eliminating destroyed-window exceptions.']
-          ]
-        },
-        {
-          version: '4.2.0',
-          title: 'Yogatik 4.2: Desktop Account Linking Fix, Faster Startup, Cleaner Codebase',
-          date: 'September 2, 2026',
-          codename: 'Desktop Account Linking Fix & Faster Startup',
-          isLatest: false,
-          highlights: [
-            ['Desktop Firestore Auth Fixed', 'The desktop app now correctly authenticates its own local Firebase session on sign-in, enabling instant sync.'],
-            ['Live Token Refresh', 'Window-focus and background entitlement checks now fetch a current token instead of resending expired sign-in credentials.'],
-            ['Accurate Locked-State Messaging', 'The account page names the real reason a device is locked instead of always reporting trial ended.'],
-            ['Background Tool Registry Loading', 'Tool registry loads as a background chunk right after first paint, slashing initial bundle size by ~34%.'],
-            ['Clean Codebase & Monorepo Cleanup', 'Removed unused scaffolding and dead dependencies for improved build reliability.']
-          ]
-        },
-        {
-          version: '4.1.5',
-          title: 'Yogatik 4.1: Pro Payment Versioning, Cross-Platform Desktop Matrix & Unified Clean Provider Hub',
-          date: 'September 2, 2026',
-          codename: 'Pro Payment Versioning & Cross-Platform Matrix',
-          isLatest: false,
-          highlights: [
-            ['Pro Payment Verification', 'File-system access and pro entitlements verified directly against live Paddle/Razorpay subscription states.'],
-            ['Cross-Platform Matrix', 'Automated GitHub release builds producing Windows NSIS installers, macOS DMGs, and Linux AppImages.'],
-            ['Clean AI Provider Hub', 'Neutral provider directory with auto-loading models across custom API endpoints, Ollama, and WebLLMs.'],
-            ['Sanitized TTS Read Aloud', 'Model thinking scratchpads, tool execution traces, and raw code blocks are automatically filtered from speech.'],
-            ['Universal Theme Sync', 'Zero-flash light/dark theme persistence across all application surfaces and palettes.']
-          ]
-        },
-        {
-          version: '4.0.0',
-          title: 'Yogatik 4.0: Dedicated Full-Page Dashboard, Live Paddle Billing, Left Sidebar Overhaul & Theme Sync',
-          date: 'September 1, 2026',
-          codename: 'Dedicated Full-Page Dashboard & Theme Sync',
-          isLatest: false,
-          highlights: [
-            ['Dedicated Full-Page Dashboard', 'Transformed settings and tools into a spacious, full-viewport dashboard experience with dedicated deep links.'],
-            ['Clean Minimalist Sidebar', 'Streamlined conversation history view with date groupings and quick search.'],
-            ['Live Paddle & Razorpay Billing', 'Live subscription checkout with automated Secret Manager webhook signature verification.'],
-            ['Theme Synchronization', 'Complete contrast and theme overhaul across Universal Search Command Palette and all modal surfaces.'],
-            ['Local AI Daemon Suite', 'Native ComfyUI daemon lifecycle, Windows Ollama binary resolution, and layered Live Voice & Vision HUD.']
-          ]
-        },
-        {
-          version: '3.22.4',
-          title: 'Yogatik Ultra: ComfyUI Local Daemon, Deep Links, Layered Live HUD & Windows Ollama Path Resolution',
-          date: 'September 1, 2026',
-          codename: 'ComfyUI Local Daemon & Layered Live HUD',
-          isLatest: false,
-          highlights: [
-            ['Native ComfyUI Daemon Support', 'Automatic detection, probing, and background launching of local ComfyUI instances on port 8188.'],
-            ['Windows Ollama Path Resolution', 'Accurate binary resolution via homedir with HTTP streaming fallback for seamless model discovery.'],
-            ['Layered Live HUD Overlay', 'Re-architected Live call HUD into non-colliding bands with safe-area spacing and bottom settings sheet.'],
-            ['Deep Linking & CSP Whitelisting', 'Added yogatik:// deep link support and updated CSP connect-src with explicit local loopback daemon ports.'],
-            ['On-Device Image Segmentation', 'Added segment tool for instant background removal, object isolation, and cutout operations.']
-          ]
-        }
-      ];
+  {
+    "version": "7.3.0",
+    "title": "Yogatik 7.3.0: SOTA Deep Research Engine, Multi-Facet Sub-Query Decomposition & Keyless Multi-Index Web Search",
+    "date": "September 7, 2026",
+    "codename": "SOTA Deep Research Engine, Multi-Facet Sub-Query Decomposition & Keyless Multi-Index Web Search",
+    "isLatest": true,
+    "highlights": [
+      [
+        "SOTA Deep Research Engine",
+        "Parallel multi-facet sub-query decomposition analyzing core overview, technical benchmarks, and critical challenges simultaneously"
+      ],
+      [
+        "Hacker News Algolia & Europe PMC Search",
+        "Zero-rate-limit, open-CORS keyless engines covering engineering/tech, AI, and peer-reviewed biomedical literature"
+      ],
+      [
+        "Structured Table & Metrics Extraction",
+        "Retains raw page HTML to extract spec comparisons, data benchmarks, and financial metrics into structured Markdown tables"
+      ],
+      [
+        "Dialectic Research Briefings & Study Guides",
+        "NotebookLM-inspired executive synthesis with quantitative metrics, active recall flashcards, and 4-speaker debate script"
+      ],
+      [
+        "Domain Extraction & Citable Links",
+        "Clean domain attribution with anti-hallucination markdown link anchors [Title](URL) across all tool results"
+      ]
+    ]
+  },
+  {
+    "version": "7.2.0",
+    "title": "Yogatik 7.2.0: Built-in BitTorrent Engine, Yogatik Browser Search Bar & Grok Local Files Bridge",
+    "date": "September 6, 2026",
+    "codename": "Built-in BitTorrent Engine, Yogatik Browser Search Bar & Grok Local Files Bridge",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Built-in BitTorrent P2P Engine",
+        "Download open-source torrents and magnet links natively in Yogatik Desktop with real-time peer swarms, download speeds, DHT, pause/resume, and destination path selection"
+      ],
+      [
+        "Yogatik Browser Search & New Tab Start Page",
+        "Dedicated, clean start page with DuckDuckGo, Google, Bing, Brave, GitHub, and Wikipedia search engine switcher and speed-dial shortcuts"
+      ],
+      [
+        "Grok.com Local Folder Files Bundler",
+        "Send multiple project files and full subfolder source code directly into Grok with explicit anti-artifacts cloud sandbox redirection"
+      ],
+      [
+        "Entitlement Matrix & Safe Window Hardening",
+        "All BitTorrent and desktop browser capabilities classified as Free Always (FA) and protected by safeWindow communication"
+      ],
+      [
+        "Bulletproof Exception Recovery",
+        "Comprehensive type guards on local paths and dialog pickers preventing React error #31"
+      ]
+    ]
+  },
+  {
+    "version": "7.1.0",
+    "title": "Yogatik 7.1.0: Grok.com & Gemini.com Studio Docks with Desktop Local Files Bridge",
+    "date": "September 6, 2026",
+    "codename": "Grok.com & Gemini.com Studio Docks with Desktop Local Files Bridge",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Grok.com Studio Dock with Local Files Bridge",
+        "Seamless embedded session of grok.com with bidirectional workspace file injector, active Git diff review, and 1-click code block extraction to disk"
+      ],
+      [
+        "Gemini.com Studio Dock with Deep Shadow DOM Traversal",
+        "Full Google Web Components integration, real-time code extraction, and comment-based filepath auto-detection"
+      ],
+      [
+        "Dynamic WebContentsView Occlusion & Detachment",
+        "Electron native webview automatically detaches during modal overlays (Send File, Code Pull Drawer, Ctrl+K Palette) eliminating layering occlusions"
+      ],
+      [
+        "Mutual Dock Exclusivity & 1-Click Switcher",
+        "Prevents concurrent GPU/RAM spikes with instant toggle between Grok and Gemini studios directly in the header"
+      ],
+      [
+        "Safe Local File Bridge Guards",
+        "Automatic binary file filtration and 180KB safe chunking for high-speed IPC transmission"
+      ]
+    ]
+  },
+  {
+    "version": "6.3.0",
+    "title": "Yogatik 6.3.0: Live Meeting Copilot, Multi-Agent Collaboration Board & Visual Browser Inspector",
+    "date": "September 6, 2026",
+    "codename": "Live Meeting Copilot, Multi-Agent Collaboration Board & Visual Browser Inspector",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Live Meeting Copilot in Desktop Companion",
+        "Real-time speaker audio transcription, interactive action items checklist, instant tactical whisper suggestions, and 1-click Markdown export"
+      ],
+      [
+        "Multi-Agent Collaboration Board",
+        "Responsive 4-column Kanban layout (Backlog, In Progress, Review, Completed) with real-time sync of sub-agents, autonomous planning steps, and team tasks"
+      ],
+      [
+        "Power Slash Command Palette",
+        "Instant slash commands (/deck, /doc, /anim, /audit, /cast, /swarm, /calc, /graph) with prompt auto-fill and composer focus"
+      ],
+      [
+        "Visual Browser DOM Live Inspector",
+        "In-app \"Agent Eye\" displaying accessibility element trees, interactive refs (ref_epoch_idx), and real-time browser action history"
+      ],
+      [
+        "Dual-Mode Semantic Memory & Knowledge Graph",
+        "Interactive radial visualization of quantized vector memory clusters and federated research citations with node inspection and memory pruning"
+      ]
+    ]
+  },
+  {
+    "version": "6.2.0",
+    "title": "Yogatik 6.2.0: LiveView Ambient HUD, Scanned PDF Auto-OCR & Universal File Extraction",
+    "date": "September 5, 2026",
+    "codename": "LiveView Ambient HUD, Scanned PDF Auto-OCR & Universal File Extraction",
+    "isLatest": false,
+    "highlights": [
+      [
+        "LiveView Ambient HUD & Perceptual Diffing",
+        "Floating pill HUD with biometric audio waveforms, dynamic 5 FPS frame scaling, and 70% bandwidth reduction via 64-bit pHash perceptual change detection"
+      ],
+      [
+        "Spatial Telestration & Live Stage",
+        "Real-time visual vectors, highlights, and annotations directly over screen feeds plus a synchronized workspace side stage for live code/document projections"
+      ],
+      [
+        "Scanned PDF Auto-OCR & RAG Persistence",
+        "Automatic detection of flattened raster tickets and image documents with 1.75x high-DPI offscreen canvas rendering and client-side Tesseract OCR indexing"
+      ],
+      [
+        "Universal Client-Side File Extraction",
+        "Direct extraction for Word (.docx), Excel spreadsheets (.xlsx/.xls), images via OCR, and 50+ programming languages with automated UTF-8 byte inspection fallback"
+      ],
+      [
+        "Multi-Platform Production Distributions",
+        "Automated release pipeline publishing standalone Windows (.exe), macOS Apple Silicon & Intel (.dmg/.zip), Linux (.AppImage/.deb), and self-hostable Web (.zip)"
+      ]
+    ]
+  },
+  {
+    "version": "6.1.0",
+    "title": "Yogatik 6.1.0: Real-Time Live Vision HUD, AI Voice Mute, Chrome AI Tools & Process Tree Management",
+    "date": "September 4, 2026",
+    "codename": "Real-Time Live Vision HUD, AI Voice Mute, Chrome AI Tools & Process Tree Management",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Live Feed Object Detection Overlay",
+        "Client-side continuous DETR object detection with smart mirror coordinate mapping and aHash change-gated visual processing"
+      ],
+      [
+        "AI Voice Output Mute",
+        "Dedicated speaker audio toggle in Live call controls with cascade choke-point gating and zero-latency gain-node muting"
+      ],
+      [
+        "Chrome Built-in AI (Gemini Nano) Tool Calling",
+        "Fixed prompted-mode tool injection on turn start and added interactive replay status heartbeats"
+      ],
+      [
+        "Honest Web Scraping & Proxy Routing",
+        "Eliminated fabricated bypass and browser claims in Scrapling and Lightpanda; routed all URL fetches through resilient proxy layer"
+      ],
+      [
+        "Sports Scores & Anime Lookup",
+        "Added keyless TheSportsDB live sports tracking and Jikan/MyAnimeList search; unified Wayback Machine archive tools"
+      ]
+    ]
+  },
+  {
+    "version": "5.2.0",
+    "title": "Yogatik 5.2.0: Dynamic Model Discovery, Provider CORS Bypass & Resilient Web Tools",
+    "date": "September 4, 2026",
+    "codename": "Dynamic Model Discovery, Provider CORS Bypass & Resilient Web Tools",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Dynamic Model Discovery",
+        "Directly queries and live-validates available models from upstream providers (NVIDIA NIM, Anthropic, OpenAI, custom endpoints) with zero hardcoded presets"
+      ],
+      [
+        "Provider CORS Bypass",
+        "High-speed edge proxy routing with X-Target-URL for NVIDIA NIM, Anthropic, and custom endpoints eliminating CORS preflight errors in browser"
+      ],
+      [
+        "Instant Bot-Free Web Search",
+        "Official DuckDuckGo Instant Answer API integration for high-speed search without anti-bot blocks or 500 relay failures"
+      ],
+      [
+        "Statically Bundled Tools",
+        "Built-in MCP registry bundling to eliminate dynamic chunk 404 network fetch errors during conversation turns"
+      ],
+      [
+        "Desktop Packaging Pipeline",
+        "Resilient GitHub Actions multi-platform workflow with continue-on-error artifact uploads and unmetered Releases publishing"
+      ]
+    ]
+  },
+  {
+    "version": "5.1.0",
+    "title": "Yogatik 5.1.0: MCP Auto-Connect, Relevance-Ranked Web Reading & On-Device AI Setup",
+    "date": "September 3, 2026",
+    "codename": "MCP Auto-Connect, Relevance-Ranked Web Reading & On-Device AI Setup",
+    "isLatest": false,
+    "highlights": [
+      [
+        "MCP Auto-Connect",
+        "a connector you already configured but left disabled reconnects on its own the moment a request needs it — no re-adding it by hand"
+      ],
+      [
+        "MCP Suggestions",
+        "when a request could use a connector you have not set up yet (GitHub, Stripe, Cloudflare, and more), Yogatik tells you so instead of quietly doing nothing"
+      ],
+      [
+        "Smarter Web Reading",
+        "web_extract can now target a long page for the passages that actually answer your question instead of just the first few thousand characters"
+      ],
+      [
+        "File Skimming",
+        "a new fs_skim tool lets the agent see a source file’s shape — every function and class signature — before deciding whether to read the whole thing"
+      ],
+      [
+        "On-Device AI Setup Fixed",
+        "picking WebLLM or Chrome’s built-in AI now shows a real consent screen with download progress, instead of silently starting a multi-hundred-MB download"
+      ]
+    ]
+  },
+  {
+    "version": "4.3.2",
+    "title": "Yogatik 4.3.2: Desktop Pro Entitlement Sync, Version Dropdown & Clean Tool Registry",
+    "date": "September 2, 2026",
+    "codename": "Desktop Pro Entitlement Sync, Version Dropdown & Clean Tool Registry",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Desktop Pro Account Sync",
+        "Fixed Firebase auth state preservation on desktop so Pro subscriptions and 30-day trials sync immediately between web and desktop"
+      ],
+      [
+        "Interactive Version Dropdown",
+        "Added version selector dropdown to the What’s New showcase with instantaneous switching across recent releases"
+      ],
+      [
+        "Clean & Resilient Tool Registry",
+        "Streamlined agent tools and removed noisy recipe lookup failures for smooth, robust task completion"
+      ],
+      [
+        "Cross-Platform Build Parity",
+        "Synchronized release 4.3.2 across web app, Windows installer (NSIS), macOS DMG, and Linux AppImage/Deb packages"
+      ],
+      [
+        "Hardened Native IPC Lifecycle",
+        "Safe window messaging across Electron main and renderer processes eliminating destroyed-window exceptions"
+      ]
+    ]
+  },
+  {
+    "version": "4.3.1",
+    "title": "Yogatik 4.3.1: Interactive Browser Automation, Agent Reflex Loop & Cross-Platform Desktop Sync",
+    "date": "September 2, 2026",
+    "codename": "Interactive Browser Automation, Agent Reflex Loop & Cross-Platform Desktop Sync",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Interactive Browser Automation",
+        "Full IPC-driven browser control with accessibility tree parsing, interactive element targeting, and visual viewport highlight overlay"
+      ],
+      [
+        "Autonomous Agent Reflex Loop",
+        "Added reflective self-evaluation heuristics to detect repetitive tool calls, inspect progress, and trigger corrective reasoning mid-turn"
+      ],
+      [
+        "Cross-Platform Desktop & Web Parity",
+        "Synchronized version 4.3.1 across web app, Windows installer (NSIS), macOS DMG, and Linux AppImage/Deb packages"
+      ],
+      [
+        "Hardened Native IPC Lifecycle",
+        "Safe window messaging across Electron main and renderer processes eliminating destroyed-window exceptions"
+      ],
+      [
+        "Optimized App State & Rendering",
+        "Clean separation of UI state helpers and reactive sub-agent pipelines for smooth chat execution"
+      ]
+    ]
+  },
+  {
+    "version": "4.2.0",
+    "title": "Yogatik 4.2: Desktop Account Linking Fix, Faster Startup, Cleaner Codebase",
+    "date": "September 2, 2026",
+    "codename": "Desktop Account Linking Fix, Faster Startup, Cleaner Codebase",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Fixed",
+        "desktop sign-in was authenticating to the CLOUD FUNCTION correctly but never actually authenticating its own local Firestore session — a credential-type mismatch (Firebase ID token fed to an API expecting Google's own OAuth token) meant every Firestore call from the desktop app went out unauthenticated and was silently rejected"
+      ],
+      [
+        "Fixed",
+        "API key / chat cloud sync between web and desktop for the same signed-in account — was a direct consequence of the auth bug above"
+      ],
+      [
+        "Fixed",
+        "desktop showing \"Trial ended\" / an upgrade prompt for accounts that are Pro on the web — the desktop's licence refresh was resending an already-expired sign-in token on every window-focus check instead of fetching a current one, and eventually the local licence cache aged out with nothing to renew it"
+      ],
+      [
+        "Yogatik 4.2: Desktop Account Linking Fix, Faster Startup, Cleaner Codebase",
+        "The \"Trial ended\" account screen now names the real reason (no licence yet, wrong account, clock rollback, awaiting renewal, etc.) instead of one label for every locked state"
+      ],
+      [
+        "Yogatik 4.2: Desktop Account Linking Fix, Faster Startup, Cleaner Codebase",
+        "Initial app bundle cut ~34% (1.79MB → 1.18MB, 587KB → 386KB gzipped) by loading the ~195-tool registry as its own background chunk instead of blocking first paint"
+      ]
+    ]
+  },
+  {
+    "version": "4.1.5",
+    "title": "Yogatik 4.1: Pro Payment Versioning, Cross-Platform Desktop Matrix & Unified Clean Provider Hub",
+    "date": "September 2, 2026",
+    "codename": "Pro Payment Versioning, Cross-Platform Desktop Matrix & Unified Clean Provider Hub",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Pro Payment Versioning",
+        "File-system access restrictions and pro entitlements tied directly to live Paddle/Razorpay subscription verification"
+      ],
+      [
+        "Cross-Platform Git Builds",
+        "Complete multi-platform build matrices configured for Windows (.exe / NSIS), macOS (.dmg / universal), and Linux (.AppImage / .deb)"
+      ],
+      [
+        "Clean AI Provider Hub",
+        "Neutral provider directory with auto-loading models across custom API endpoints, Ollama daemons, and on-device WebLLMs"
+      ],
+      [
+        "Sanitized Read Aloud TTS",
+        "Model thinking/scratchpads, tool execution traces, and raw code blocks are automatically filtered from voice playback"
+      ],
+      [
+        "Universal Theme Synchronization",
+        "Zero-flash light/dark theme persistence across all application surfaces, command palettes, and static marketing pages"
+      ]
+    ]
+  },
+  {
+    "version": "4.0.0",
+    "title": "Yogatik 4.0: Dedicated Full-Page Dashboard, Live Paddle Billing, Left Sidebar Overhaul & Theme Sync",
+    "date": "September 1, 2026",
+    "codename": "Dedicated Full-Page Dashboard, Live Paddle Billing, Left Sidebar Overhaul & Theme Sync",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Dedicated Full-Page Dashboard & Settings",
+        "Transformed settings and tool panels into a spacious, full-viewport dashboard experience with dedicated URLs (/app/settings, /app/billing, /app/agents, /app/usage, /app/mcp, /app/skills) and single-step Esc/Back-to-Chat navigation"
+      ],
+      [
+        "Clean Minimalist Sidebar",
+        "Streamlined conversation history view with date groupings, quick search, and an unobtrusive status and dashboard trigger"
+      ],
+      [
+        "Live Paddle & Razorpay Billing",
+        "Live subscription checkout ($9.99/mo & $99.99/yr), Google Secret Manager automated webhook signature verification, and instant pro entitlement activation"
+      ],
+      [
+        "Universal Light & Dark Theme Synchronization",
+        "Complete contrast and theme overhaul across the Universal Search Command Palette (Ctrl+K), Social Media & Domain Hub, and all modal surfaces"
+      ],
+      [
+        "Local AI Daemon & Multimodal Suite",
+        "Native ComfyUI daemon lifecycle, Windows Ollama binary resolution, and layered Live Voice & Vision HUD"
+      ]
+    ]
+  },
+  {
+    "version": "3.22.4",
+    "title": "Yogatik Ultra: ComfyUI Local Daemon, Deep Links, Layered Live HUD & Windows Ollama Path Resolution",
+    "date": "September 1, 2026",
+    "codename": "ComfyUI Local Daemon, Deep Links, Layered Live HUD & Windows Ollama Path Resolution",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Local ComfyUI Daemon & Workflows",
+        "Added native ComfyUI daemon lifecycle management and direct HTTP workflow execution for on-device image generation"
+      ],
+      [
+        "Windows Ollama Path Resolution",
+        "Fixed user profile path discovery for Windows accounts with special usernames and added HTTP model streaming fallback"
+      ],
+      [
+        "Layered Live HUD Overlay",
+        "Re-architected Live call HUD into non-colliding bands with safe-area spacing and Live settings bottom sheet"
+      ],
+      [
+        "Deep Linking & CSP Whitelisting",
+        "Added yogatik:// deep link support and updated CSP connect-src with explicit local loopback daemon ports (11434, 1234, 8188)"
+      ]
+    ]
+  },
+  {
+    "version": "3.22.3",
+    "title": "Yogatik Ultra: Live Device Picker, Front/Back Camera Flipping, On-Device Image Segmentation & Crash Hardening",
+    "date": "August 31, 2026",
+    "codename": "Live Device Picker, Front/Back Camera Flipping, On-Device Image Segmentation & Crash Hardening",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Live Device Selection",
+        "Real-time audio and camera device picker bottom sheet with instant front/back camera flipping without ending the call"
+      ],
+      [
+        "On-Device Image Segmentation",
+        "Added segment tool for instant background removal, object isolation and cutout operations"
+      ],
+      [
+        "Lint & Stability Hardening",
+        "Resolved undefined variable crashes in LiveView and PersonalisePanel, and prevented AdSense push TagError"
+      ],
+      [
+        "Global Pricing Normalization",
+        "Unified Pro tier at $9/mo or $99/year internationally across all checkout and landing pages"
+      ]
+    ]
+  },
+  {
+    "version": "3.22.2",
+    "title": "Yogatik Ultra: Seamless Marketing-to-Paywall Routing, In-Modal Sign-In & Platform Pricing Matrix",
+    "date": "August 31, 2026",
+    "codename": "Seamless Marketing-to-Paywall Routing, In-Modal Sign-In & Platform Pricing Matrix",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Deep-Linked Upgrade Funnel",
+        "Instant navigation from marketing pages (/platforms) directly to the interactive paywall with ?upgrade=1"
+      ],
+      [
+        "In-Modal Frictionless Sign-In",
+        "Direct sign-in action within the upgrade modal with automatic modal restoration post-auth"
+      ],
+      [
+        "Unified Marketing Pricing Matrix",
+        "Complete transparent tiers comparison on the platforms showcase"
+      ]
+    ]
+  },
+  {
+    "version": "3.22.1",
+    "title": "Yogatik Ultra: Multi-Surface Entitlements, Razorpay/Paddle Checkout Routing & Ad Suppression",
+    "date": "August 31, 2026",
+    "codename": "Multi-Surface Entitlements, Razorpay/Paddle Checkout Routing & Ad Suppression",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Multi-Surface Pro Entitlement",
+        "Unified single account subscription across web and desktop with reactive ad suppression"
+      ],
+      [
+        "Dedicated /checkout Gateway",
+        "Seamless routing for Razorpay (UPI/Card) and Paddle with token protection and CSP security"
+      ],
+      [
+        "Live Account Sync",
+        "Direct Firestore account integration for real-time subscription status without Cloud Function overhead"
+      ],
+      [
+        "Enhanced Upgrade Pitch",
+        "Surface-aware upgrade modals tailored for web and desktop capabilities"
+      ]
+    ]
+  },
+  {
+    "version": "3.22.0",
+    "title": "Yogatik Ultra: Interactive Human-In-The-Loop Execution, Native Video Players & Command Controls",
+    "date": "August 29, 2026",
+    "codename": "Interactive Human-In-The-Loop Execution, Native Video Players & Command Controls",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Interactive Human-In-The-Loop Execution",
+        "Added ask_user tool with interactive decision cards and option selection mid-turn"
+      ],
+      [
+        "Continuous Input & Steer Mode",
+        "Send messages seamlessly while the AI is busy; toggle between FIFO Queue and Immediate Steer execution"
+      ],
+      [
+        "Terminal Command Auto Execution Settings",
+        "Configure terminal approval policies (Always Proceed, Ask for Confirmation, Never Allow) in Settings"
+      ],
+      [
+        "Native Embedded Video & YouTube Player",
+        "Responsive in-chat YouTube video player with resilient ID parsing and HTML5 direct video playback"
+      ],
+      [
+        "Document Deduplication & Multi-Tier Translation",
+        "Zero-storage SHA-256 hash deduplication and multi-tier fallback translation pipeline"
+      ]
+    ]
+  },
+  {
+    "version": "3.21.0",
+    "title": "Yogatik Ultra: Isolated Workspace Roots, Zero-Latency Streaming & Academic Peer Review Swarm",
+    "date": "August 28, 2026",
+    "codename": "Isolated Workspace Roots, Zero-Latency Streaming & Academic Peer Review Swarm",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Strict Per-Chat Root Isolation",
+        "Added automatic unbinding on chat deletion and eliminated global default folder pollution"
+      ],
+      [
+        "Ultra-Low Latency Pipeline",
+        "Speculative Pyodide WASM pre-warming and parallel multi-agent swarm evaluation cut execution delays by >50%"
+      ],
+      [
+        "Enterprise Academic & IEEE Tools",
+        "Integrated OpenAlex citation graphs, DOI Crossref resolution, and CSL-JSON bibliography manager"
+      ],
+      [
+        "Hardware Verification & UVM Architecture",
+        "IEEE 1800.2 UVM testbench generator and SystemVerilog Assertions (SVA) synthesizer"
+      ],
+      [
+        "LaTeX Error Diagnostics & Multi-File Bundling",
+        "Automated Overleaf ZIP generator and compiler error triage parser"
+      ]
+    ]
+  },
+  {
+    "version": "3.20.0",
+    "title": "Yogatik Studio Edition: Native Git Tools, Intelligent Turn Auto-Scroll & Resilient File Diagnostics",
+    "date": "August 25, 2026",
+    "codename": "Native Git Tools, Intelligent Turn Auto-Scroll & Resilient File Diagnostics",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Native Git Tool (`fs_git`)",
+        "Added structured status, diff, log, commit, staging and unstage actions without raw shell risks"
+      ],
+      [
+        "Intelligent Turn Auto-Scroll",
+        "Opening or switching any chat instantly focuses on the latest prompt and response with sub-tick layout shift stabilization"
+      ],
+      [
+        "Self-Healing Query Aliases",
+        "Auto-repairs missing query keys from prompt topics, questions, and search terms to eliminate tool validation errors"
+      ],
+      [
+        "Resilient File System Diagnostics",
+        "Cleanly handles missing file lookups (ENOENT) with helpful directory search suggestions instead of provider error cards"
+      ],
+      [
+        "Multi-Chat Context Isolation",
+        "Parallel turns and subagents execute with fully isolated filesystem, PTY, and browser contexts"
+      ]
+    ]
+  },
+  {
+    "version": "3.19.0",
+    "title": "Yogatik Studio Edition: Multi-Chat Parallel Isolation, Advanced Browser Automation & JIT Schema Engine",
+    "date": "August 25, 2026",
+    "codename": "Multi-Chat Parallel Isolation, Advanced Browser Automation & JIT Schema Engine",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Multi-Chat Context Isolation",
+        "Parallel chats run their own independent tools, terminals, filesystem workspaces, and browser sessions without cross-talk"
+      ],
+      [
+        "Advanced Browser Automation",
+        "Added native hover, PDF export, cookie & storage inspectors, and batch script pipeline execution (`run_script`)"
+      ],
+      [
+        "JIT Schema Prioritization",
+        "Intent-driven tool schema filtering saves 70% prompt tokens and eliminates small-model hallucinations"
+      ],
+      [
+        "Multi-Agent Shared Blackboard",
+        "Inter-agent in-memory artifact sharing for parallel DAG dependency waves"
+      ],
+      [
+        "Self-Healing Tool Reflection",
+        "Inline error remediation hints and schema type coercion for zero-crash tool calling"
+      ]
+    ]
+  },
+  {
+    "version": "3.18.0",
+    "title": "Yogatik Studio Edition: 100% Independent Agentic Engine & 1,465+ Skills Library",
+    "date": "August 25, 2026",
+    "codename": "100% Independent Agentic Engine & 1,465+ Skills Library",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Yogatik Studio",
+        "Standalone, unrestricted desktop edition running with isolated storage and zero license gates"
+      ],
+      [
+        "Autonomous Skills Engine",
+        "Integrated Stable Skills Manifest v1 with 1,465+ agentic skills across 18 domains"
+      ],
+      [
+        "Autonomous Workflows",
+        "Built-in multi-stage execution DAGs (SaaS MVP Launch, Security Hardening, Refactoring, Full-Stack Delivery)"
+      ],
+      [
+        "Dynamic @skill Mentions",
+        "Instant prompt augmentation with specialized rules, constraints, and tool permissions"
+      ],
+      [
+        "Zero Cloud Dependency",
+        "Fully offline skill catalog indexing and local vector retrieval via TurboVec"
+      ]
+    ]
+  },
+  {
+    "version": "3.17.0",
+    "title": "Hyper-Stable Reactive Architecture, Window Guards & Unrestricted Desktop Suite",
+    "date": "August 25, 2026",
+    "codename": "Hyper-Stable Reactive Architecture, Window Guards & Unrestricted Desktop Suite",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Zero-Tear Terminal Store",
+        "Referentially stable cached snapshots resolving React re-render loops (Error #185)"
+      ],
+      [
+        "100% Unrestricted Personal Desktop",
+        "Gating bypass, zero license checks, and isolated application user profile"
+      ],
+      [
+        "Native Window Lifecycle Hardening",
+        "Full protection against destroyed object exceptions during background tray and second-instance activations"
+      ],
+      [
+        "Multi-Persona AI Companion",
+        "Pair Programmer, Security Analyst, Code Copilot, and Concierge with live voice PTT"
+      ],
+      [
+        "Proactive Quick Actions & Code Copy",
+        "1-click Git review, error scanner, test generator, and formatted code blocks"
+      ]
+    ]
+  },
+  {
+    "version": "3.16.0",
+    "title": "Unrestricted Personal Desktop Edition, Proactive AI Companion & Resilient Lifecycle",
+    "date": "August 25, 2026",
+    "codename": "Unrestricted Personal Desktop Edition, Proactive AI Companion & Resilient Lifecycle",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Unrestricted Personal Edition",
+        "100% unlocked native desktop application with no subscriptions, restrictions, or license gates"
+      ],
+      [
+        "Multi-Persona AI Companion",
+        "Specialized modes (Pair Programmer, Security Analyst, Code Copilot, Concierge) with dynamic prompt injection"
+      ],
+      [
+        "Proactive Dev Quick Actions",
+        "1-click Git Diff Review, Terminal Error Scanner, Active File Explainer, and Test Generation"
+      ],
+      [
+        "Push-to-Talk & Global Shortcuts",
+        "Dedicated PTT voice dictation, shortcuts (Ctrl+Alt+V / W / M), and live audio equalizer animation"
+      ],
+      [
+        "Syntax Code Blocks & Copy",
+        "High-readability formatted code blocks with 1-click copy inside AI Companion turns"
+      ]
+    ]
+  },
+  {
+    "version": "3.15.0",
+    "title": "Adaptive Scrapling Web Engine, Workspace IDE & Deep Task Limits",
+    "date": "August 25, 2026",
+    "codename": "Adaptive Scrapling Web Engine, Workspace IDE & Deep Task Limits",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Workspace IDE Suite",
+        "Integrated File Explorer, Git Changes panel, Side-by-Side Diff Viewer, and Code Editor pane"
+      ],
+      [
+        "Zero-Dependency Scrapling Engine",
+        "Self-healing adaptive element tracking using DOM fingerprints & semantic similarity"
+      ],
+      [
+        "Progressive Stealth Fetcher",
+        "Anti-bot bypass (Cloudflare Turnstile, Datadome, PerimeterX) with modern TLS hints"
+      ],
+      [
+        "Deep Tool Loop Allowance",
+        "Default round limit raised to 50–100 rounds for uninterrupted multi-step coding tasks"
+      ],
+      [
+        "Git Write Guard & Journal Core",
+        "Pre-write safety verification, workspace snapshotting, and transaction rollbacks"
+      ]
+    ]
+  },
+  {
+    "version": "3.14.0",
+    "title": "In-Flight Prompt Queueing, Arrow History Recall & Resilient Filesystem",
+    "date": "August 24, 2026",
+    "codename": "In-Flight Prompt Queueing, Arrow History Recall & Resilient Filesystem",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Interactive In-Flight Prompt Queueing",
+        "Queue messages while model generates with automatic FIFO execution"
+      ],
+      [
+        "In-Flight Prompt Queueing, Arrow History Recall & Resilient Filesystem",
+        "Keyboard Arrow History Navigation (↑/↓) with unsubmitted draft preservation"
+      ],
+      [
+        "In-Flight Prompt Queueing, Arrow History Recall & Resilient Filesystem",
+        "Ambient AI Companion screen forwarding, STT voice input, TTS voice out, and webcam capture"
+      ],
+      [
+        "In-Flight Prompt Queueing, Arrow History Recall & Resilient Filesystem",
+        "Resilient Fuzzy Line Matcher in fsCore & localFs for indentation-agnostic code edits"
+      ],
+      [
+        "In-Flight Prompt Queueing, Arrow History Recall & Resilient Filesystem",
+        "Windows Drive Path Sanitization & workspace boundary enforcement"
+      ]
+    ]
+  },
+  {
+    "version": "3.13.0",
+    "title": "Universal Model Protocol, Resilient Patcher & High-Speed MCP Suite",
+    "date": "August 24, 2026",
+    "codename": "Universal Model Protocol, Resilient Patcher & High-Speed MCP Suite",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Universal Model Protocol, Resilient Patcher & High-Speed MCP Suite",
+        "Universal XML, Nemotron, Hermes, Claude invoke & ReAct tool call parsing"
+      ],
+      [
+        "Universal Model Protocol, Resilient Patcher & High-Speed MCP Suite",
+        "Unified Diff Resilient Patching engine (fs_patch) with fuzzy whitespace matching"
+      ],
+      [
+        "Universal Model Protocol, Resilient Patcher & High-Speed MCP Suite",
+        "AST Code Outline & symbol extractor (code_outline) for high-speed file inspection"
+      ],
+      [
+        "Universal Model Protocol, Resilient Patcher & High-Speed MCP Suite",
+        "Zero-Latency Stale-While-Revalidate discovery cache (<1ms) for Model Context Protocol"
+      ],
+      [
+        "Universal Model Protocol, Resilient Patcher & High-Speed MCP Suite",
+        "Dynamic MCP Resource Templates, Multimodal Normalizer & Interactive Tool Tester"
+      ]
+    ]
+  },
+  {
+    "version": "3.12.0",
+    "title": "Autonomous Multi-Agent DAG & Multimodal UI Verification",
+    "date": "August 24, 2026",
+    "codename": "Autonomous Multi-Agent DAG & Multimodal UI Verification",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Autonomous Multi-Agent DAG & Multimodal UI Verification",
+        "Topological Multi-Agent DAG Wave Scheduling with automatic dependency piping"
+      ],
+      [
+        "Autonomous Multi-Agent DAG & Multimodal UI Verification",
+        "Multimodal UI Visual Verification tool (visual_verify) for offscreen component evaluation"
+      ],
+      [
+        "Autonomous Multi-Agent DAG & Multimodal UI Verification",
+        "Speculative runtime pre-warming on user typing intent via requestIdleCallback"
+      ],
+      [
+        "Autonomous Multi-Agent DAG & Multimodal UI Verification",
+        "Cross-Agent Shared Blackboard memory for zero-redundancy collaborative research"
+      ],
+      [
+        "Autonomous Multi-Agent DAG & Multimodal UI Verification",
+        "Dynamic Self-Healing Tool Reflection & Error Auto-Repair hints"
+      ]
+    ]
+  },
+  {
+    "version": "3.11.0",
+    "title": "Precision Prompting & High-Performance Hyperdrive",
+    "date": "August 23, 2026",
+    "codename": "Precision Prompting & High-Performance Hyperdrive",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Precision Prompting & High-Performance Hyperdrive",
+        "Unbiased, universal prompt enhancement engine independent of workspace or app bias"
+      ],
+      [
+        "Precision Prompting & High-Performance Hyperdrive",
+        "One-key prompt enhancement keyboard shortcut (Ctrl+Shift+E / Cmd+Shift+E)"
+      ],
+      [
+        "Precision Prompting & High-Performance Hyperdrive",
+        "Vite bundle optimization with ~50% faster compile/load times via split vendor chunks"
+      ],
+      [
+        "Precision Prompting & High-Performance Hyperdrive",
+        "Native Electron on-device Whisper speech recognition fallback with zero network errors"
+      ],
+      [
+        "Precision Prompting & High-Performance Hyperdrive",
+        "Reasoning stream separation preventing <think> scratchpad tokens from leaking into voice"
+      ]
+    ]
+  },
+  {
+    "version": "3.10.4",
+    "title": "Multi-Agent Orchestration & Enterprise RAG Frameworks",
+    "date": "August 23, 2026",
+    "codename": "Multi-Agent Orchestration & Enterprise RAG Frameworks",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Multi-Agent Orchestration & Enterprise RAG Frameworks",
+        "Implemented LangGraph stateful multi-agent workflows and Haystack RAG pipelines"
+      ],
+      [
+        "Multi-Agent Orchestration & Enterprise RAG Frameworks",
+        "DSPy prompt compilation, Aider copilot unified diffs, and LangSmith observability"
+      ],
+      [
+        "Multi-Agent Orchestration & Enterprise RAG Frameworks",
+        "Zero-key local LLM orchestration supporting Ollama and vLLM server endpoints"
+      ]
+    ]
+  },
+  {
+    "version": "3.10.0",
+    "title": "Autonomous Skills & Encrypted Vault Sync",
+    "date": "August 2026",
+    "codename": "Autonomous Skills & Encrypted Vault Sync",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Autonomous Skills & Encrypted Vault Sync",
+        "Dynamic Auto-Skills discovery with rule generation"
+      ],
+      [
+        "Autonomous Skills & Encrypted Vault Sync",
+        "End-to-end encrypted cloud synchronization for keys and conversations"
+      ],
+      [
+        "Autonomous Skills & Encrypted Vault Sync",
+        "Live Companion video calling and screen share diagnostics"
+      ]
+    ]
+  }
+];
 
       function renderRelease(idx) {
         var r = RELEASES[idx] || RELEASES[0];

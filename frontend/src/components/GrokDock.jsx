@@ -2,14 +2,15 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
   ExternalLink, X, RotateCw, FolderOpen, Send, Download,
   GitPullRequest, Check, Code, FileCode, Sparkles, Maximize2, Minimize2,
-  AlertCircle, ChevronRight, Layers
+  AlertCircle, ChevronRight, Layers, Minus
 } from 'lucide-react'
 import { wsFindFiles, wsRead, wsWrite, gitDiff, gitStatus, listRoots, isDesktop } from '../tools/localFs'
 import {
   injectTextIntoGrok,
   extractLatestCodeFromGrok,
   buildWorkspaceContextPrompt,
-  buildFolderFilesBundlePrompt
+  buildFolderFilesBundlePrompt,
+  buildChunkedBundles
 } from '../tools/grokBridge'
 import { WebCompanionStudio } from './WebCompanionStudio'
 
@@ -33,6 +34,7 @@ export function GrokDock({
 }) {
   const holeRef = useRef(null)
   const [fullscreen, setFullscreen] = useState(false)
+  const [isMinimized, setIsMinimized] = useState(false)
   const [loading, setLoading] = useState(false)
   const [statusMsg, setStatusMsg] = useState('Ready')
 
@@ -52,8 +54,8 @@ export function GrokDock({
   const br = () => (typeof window !== 'undefined' && window.__YOGATIK_BROWSER__) || null
   const desktop = isDesktop()
 
-  // An overlay/drawer paints UNDER the native view in Electron, so detach WebContentsView while occluded
-  const isOccluded = occluded || showFilePicker || showCodeDrawer
+  // An overlay/drawer paints UNDER the native view in Electron, so detach WebContentsView while occluded or minimized
+  const isOccluded = occluded || showFilePicker || showCodeDrawer || isMinimized
 
   const reportBounds = useCallback(() => {
     const b = br()
@@ -75,7 +77,8 @@ export function GrokDock({
     if (!b) return
 
     setLoading(true)
-    b.navigate({ conversationId: GROK_CONV_ID, url: GROK_URL })
+    b.setMode({ conversationId: GROK_CONV_ID, display: 'panel' }).catch(() => {})
+    b.navigate({ conversationId: GROK_CONV_ID, url: GROK_URL, display: 'panel' })
       .catch(() => {})
       .finally(() => setLoading(false))
 
@@ -208,23 +211,23 @@ export function GrokDock({
     }
   }
 
-  // Bundle and send multiple files from the local folder directly into Grok
+  // Bundle and send ALL text files from the local folder into Grok (chunked if large)
   const handleSendFolderBundle = async () => {
-    setStatusMsg('Reading folder files...')
+    setStatusMsg('Scanning entire folder...')
     try {
       const [roots, filesRes] = await Promise.all([
         listRoots().catch(() => []),
-        wsFindFiles('*', { limit: 80 }).catch(() => []),
+        wsFindFiles('*', { limit: 1000 }).catch(() => []),
       ])
 
       const primaryRoot = roots[0]?.path || roots[0]?.label || 'Workspace'
       const rawFiles = Array.isArray(filesRes) ? filesRes : filesRes?.files || []
       const textFiles = rawFiles.filter(f => {
-        if (f.includes('node_modules') || f.includes('.git/') || f.includes('dist/')) return false
+        if (f.includes('node_modules') || f.includes('.git/') || f.includes('dist/') || f.includes('__pycache__')) return false
         if (f.endsWith('package-lock.json') || f.endsWith('yarn.lock') || f.endsWith('pnpm-lock.yaml')) return false
         const ext = f.split('.').pop()?.toLowerCase() || ''
         return !BINARY_EXTS.has(ext)
-      }).slice(0, 12)
+      })
 
       if (!textFiles.length) {
         onToast?.('No readable text files found in workspace folder')
@@ -234,19 +237,23 @@ export function GrokDock({
 
       setStatusMsg(`Reading ${textFiles.length} project files...`)
       let totalBytes = 0
+      const MAX_TOTAL = 10 * 1024 * 1024 // 10MB total budget
+      const MAX_PER_FILE = 250 * 1024 // 250KB per file
       const filesWithContent = []
       for (const filePath of textFiles) {
-        if (totalBytes > 120 * 1024) break
+        if (totalBytes > MAX_TOTAL) break
         try {
           const res = await wsRead(filePath)
           const content = typeof res === 'string' ? res : res?.content || ''
           if (content && content.trim()) {
-            const trimmed = content.length > 25000 ? content.slice(0, 25000) + '\n/* [truncated] */' : content
+            const trimmed = content.length > MAX_PER_FILE
+              ? content.slice(0, MAX_PER_FILE) + '\n/* [truncated — full file is ' + Math.round(content.length / 1024) + 'KB] */'
+              : content
             totalBytes += trimmed.length
             filesWithContent.push({ path: filePath, content: trimmed })
           }
         } catch {
-          // skip
+          // skip unreadable files
         }
       }
 
@@ -255,15 +262,25 @@ export function GrokDock({
         return
       }
 
-      const prompt = buildFolderFilesBundlePrompt({
+      // Split into chunks for sequential injection
+      const chunks = buildChunkedBundles({
         projectName: primaryRoot.split(/[\\/]/).pop() || 'Project',
         rootPath: primaryRoot,
         filesWithContent,
       })
 
-      await injectTextIntoGrok(GROK_CONV_ID, prompt)
-      onToast?.(`✓ Injected ${filesWithContent.length} files from folder into Grok`)
-      setStatusMsg(`Injected ${filesWithContent.length} files`)
+      for (let i = 0; i < chunks.length; i++) {
+        setStatusMsg(`Injecting part ${i + 1}/${chunks.length} (${filesWithContent.length} files)...`)
+        await injectTextIntoGrok(GROK_CONV_ID, chunks[i])
+        if (i < chunks.length - 1) {
+          // Brief delay between parts to let the UI process
+          await new Promise(r => setTimeout(r, 800))
+        }
+      }
+
+      const partsNote = chunks.length > 1 ? ` in ${chunks.length} parts` : ''
+      onToast?.(`✓ Injected ${filesWithContent.length} files into Grok${partsNote} (copied to clipboard)`)
+      setStatusMsg(`Injected ${filesWithContent.length} files${partsNote}`)
     } catch (err) {
       onToast?.(`Failed to send folder files: ${err?.message || err}`)
       setStatusMsg('Folder injection failed')
@@ -336,6 +353,70 @@ export function GrokDock({
     f => !fileFilter || f.toLowerCase().includes(fileFilter.toLowerCase())
   )
 
+  if (isMinimized) {
+    return (
+      <div
+        className="grok-dock-minimized-pill"
+        style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '8px 14px',
+          background: 'rgba(15, 23, 42, 0.92)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255, 255, 255, 0.16)',
+          borderRadius: '24px',
+          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+          color: '#fff',
+          cursor: 'pointer',
+          userSelect: 'none',
+          animation: 'fadeSlideUp 0.2s ease-out',
+        }}
+        onClick={() => {
+          setIsMinimized(false)
+          setTimeout(reportBounds, 80)
+        }}
+      >
+        <span style={{ fontSize: '15px' }}>🤖</span>
+        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+          <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.2px' }}>Grok.com Studio</span>
+          <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+            {desktop ? 'Bridge Active' : 'Companion Mode'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }} onClick={e => e.stopPropagation()}>
+          <button
+            type="button"
+            className="icon-btn"
+            style={{ padding: '4px', background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '50%', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+            onClick={() => {
+              setIsMinimized(false)
+              setTimeout(reportBounds, 80)
+            }}
+            title="Restore Grok Studio"
+          >
+            <Maximize2 size={13} />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            style={{ padding: '4px', background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '50%', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+            onClick={onClose}
+            title="Close Grok Dock"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={`grok-dock-container ${fullscreen ? 'fullscreen' : ''}`}>
       {/* Top Header */}
@@ -366,6 +447,14 @@ export function GrokDock({
           )}
           <button className="icon-btn" onClick={handleOpenExternal} title="Open in external browser" aria-label="External">
             <ExternalLink size={14} />
+          </button>
+          <button
+            className="icon-btn"
+            onClick={() => setIsMinimized(true)}
+            title="Minimize to floating widget"
+            aria-label="Minimize"
+          >
+            <Minus size={14} />
           </button>
           <button
             className="icon-btn"

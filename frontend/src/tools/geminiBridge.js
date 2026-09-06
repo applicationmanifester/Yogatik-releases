@@ -4,9 +4,9 @@
  */
 
 import { invoke, isDesktop } from './localFs'
-import { buildWorkspaceContextPrompt } from './grokBridge'
+import { buildWorkspaceContextPrompt, buildFolderFilesBundlePrompt, buildChunkedBundles } from './grokBridge'
 
-export { buildWorkspaceContextPrompt }
+export { buildWorkspaceContextPrompt, buildFolderFilesBundlePrompt, buildChunkedBundles }
 
 /**
  * Generates an evaluation script to inject text into gemini.google.com's chat input.

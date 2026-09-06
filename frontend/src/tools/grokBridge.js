@@ -15,19 +15,30 @@ export function getGrokInputInjectionScript(text, { autoSubmit = false } = {}) {
   return `(() => {
     try {
       const selectors = [
-        'textarea[placeholder*="Ask"]',
-        'textarea[placeholder*="Grok"]',
-        'textarea[placeholder*="anything"]',
-        'textarea[placeholder*="message"]',
+        'textarea[placeholder*="Ask" i]',
+        'textarea[placeholder*="Grok" i]',
+        'textarea[placeholder*="anything" i]',
+        'textarea[placeholder*="message" i]',
         'textarea',
         '[contenteditable="true"]',
-        'div[role="textbox"]'
+        '[role="textbox"]',
+        'div[data-lexical-editor="true"]',
+        'div.ProseMirror',
+        'div[aria-label*="Ask" i]',
+        'div[aria-label*="message" i]',
+        'div[aria-label*="Grok" i]'
       ];
+
+      function isVisible(el) {
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        return (rect.width > 0 || rect.height > 0 || el.offsetWidth > 0 || el.offsetHeight > 0);
+      }
 
       function findInputDeep(root = document) {
         for (const sel of selectors) {
           const el = root.querySelector(sel);
-          if (el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0)) {
+          if (el && isVisible(el)) {
             return el;
           }
         }
@@ -46,13 +57,14 @@ export function getGrokInputInjectionScript(text, { autoSubmit = false } = {}) {
         target = document.querySelector('textarea') || document.querySelector('[contenteditable="true"]');
       }
       if (!target) {
-        return { success: false, error: 'Could not find Grok chat input on grok.com' };
+        return { success: false, error: 'Could not locate Grok chat input on grok.com' };
       }
 
       target.focus();
 
-      if (target.tagName === 'TEXTAREA') {
-        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+      if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+          || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
         if (nativeSetter) {
           nativeSetter.call(target, ${safeText});
         } else {
@@ -61,29 +73,36 @@ export function getGrokInputInjectionScript(text, { autoSubmit = false } = {}) {
         if (target._valueTracker) {
           target._valueTracker.setValue('');
         }
-        target.dispatchEvent(new Event('input', { bubbles: true }));
-        target.dispatchEvent(new Event('change', { bubbles: true }));
+        target.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        target.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        try {
+          target.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: ${safeText} }));
+        } catch {}
       } else {
         target.focus();
+        let inserted = false;
         if (document.execCommand) {
           try {
             document.execCommand('selectAll', false, null);
-            document.execCommand('insertText', false, ${safeText});
-          } catch {
-            target.textContent = ${safeText};
-            target.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-        } else {
-          target.textContent = ${safeText};
-          target.dispatchEvent(new Event('input', { bubbles: true }));
+            inserted = document.execCommand('insertText', false, ${safeText});
+          } catch {}
+        }
+        if (!inserted) {
+          target.innerText = ${safeText};
+          target.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          try {
+            target.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: ${safeText} }));
+          } catch {}
         }
       }
 
       if (${shouldSubmit}) {
         setTimeout(() => {
-          const btn = document.querySelector('button[aria-label*="Submit"], button[aria-label*="Send"], button[type="submit"]');
+          const btn = document.querySelector('button[aria-label*="Submit" i], button[aria-label*="Send" i], button[aria-label*="Ask" i], form button[type="submit"], button.bg-white, button.bg-primary');
           if (btn && !btn.disabled) {
             btn.click();
+          } else {
+            target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
           }
         }, 150);
       }
@@ -229,6 +248,75 @@ export function buildFolderFilesBundlePrompt({
 }
 
 /**
+ * Splits a large filesWithContent[] into multiple prompt chunks, each ≤ chunkCeiling bytes.
+ * Returns an array of prompt strings with part headers: "[Part 1/3]", etc.
+ * Use this when the total bundle exceeds the injection byte limit.
+ */
+export function buildChunkedBundles({
+  projectName = 'Workspace',
+  rootPath = '',
+  filesWithContent = [],
+  instruction = 'Please inspect all files in this project folder and identify issues, bugs, and improvements.',
+  chunkCeiling = 150 * 1024, // 150KB per chunk for safe web chat injection
+} = {}) {
+  if (!filesWithContent.length) return []
+
+  // Split files into groups that fit within the ceiling
+  const groups = []
+  let currentGroup = []
+  let currentBytes = 0
+  const headerOverhead = 600 // approx bytes for the header/footer per chunk
+
+  for (const item of filesWithContent) {
+    const itemBytes = (item.content?.length || 0) + (item.path?.length || 0) + 40 // markdown wrapping
+    if (currentGroup.length > 0 && (currentBytes + itemBytes + headerOverhead) > chunkCeiling) {
+      groups.push(currentGroup)
+      currentGroup = []
+      currentBytes = 0
+    }
+    currentGroup.push(item)
+    currentBytes += itemBytes
+  }
+  if (currentGroup.length > 0) groups.push(currentGroup)
+
+  const totalParts = groups.length
+
+  // If everything fits in one chunk, use the standard prompt
+  if (totalParts === 1) {
+    return [buildFolderFilesBundlePrompt({ projectName, rootPath, filesWithContent, instruction })]
+  }
+
+  // Build each part with a header
+  return groups.map((group, idx) => {
+    const partNum = idx + 1
+    const parts = []
+    parts.push(`### 📁 Local Project Files Bundle [Part ${partNum}/${totalParts}]: ${projectName}`)
+    if (rootPath) parts.push(`**Local Root:** \`${rootPath}\``)
+    parts.push(`**Files in this part:** ${group.length} | **Total parts:** ${totalParts}`)
+    parts.push(`*IMPORTANT: These files are from the user's local Windows PC via Yogatik Desktop Bridge. Do NOT look in /home/workdir/artifacts.*`)
+
+    if (partNum === 1) {
+      parts.push(`\n**Task:** ${instruction}\n`)
+    } else {
+      parts.push(`\n*(Continuation of project files — part ${partNum} of ${totalParts})*\n`)
+    }
+
+    for (const item of group) {
+      const ext = item.path.split('.').pop() || 'text'
+      parts.push(`\n--- FILE: \`${item.path}\` ---\n\`\`\`${ext}\n${item.content}\n\`\`\``)
+    }
+
+    if (partNum === totalParts) {
+      parts.push(`\n**All ${totalParts} parts received.** Please provide a detailed analysis of all files above.`)
+    } else {
+      parts.push(`\n*More files coming in the next message (part ${partNum + 1}/${totalParts})…*`)
+    }
+
+    return parts.join('\n')
+  })
+}
+
+/**
  * High-level bridge helper to inject text into the active Grok session.
  */
 export async function injectTextIntoGrok(conversationId, text, options = {}) {
@@ -237,13 +325,39 @@ export async function injectTextIntoGrok(conversationId, text, options = {}) {
     throw new Error('Desktop browser bridge is not available. Please run Yogatik in desktop mode.')
   }
 
+  // Copy to clipboard immediately as a universal, instant fallback for the user
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {})
+  }
+
   const script = getGrokInputInjectionScript(text, options)
-  const result = await br.evaluate({
+  let res = await br.evaluate({
     conversationId,
     expression: script,
   })
 
-  return result
+  // If specific conversation failed or has no tab, attempt fallback to default browser session
+  if ((!res?.success || res?.result?.success === false) && conversationId !== '__default__') {
+    try {
+      const fallback = await br.evaluate({
+        conversationId: '__default__',
+        expression: script,
+      })
+      if (fallback?.success && fallback?.result?.success !== false) {
+        res = fallback
+      }
+    } catch {}
+  }
+
+  if (!res?.success) {
+    throw new Error(res?.error || 'Browser evaluation failed')
+  }
+
+  if (res?.result && res.result.success === false) {
+    throw new Error(res.result.error || 'Failed to locate chat input on grok.com')
+  }
+
+  return res.result || res
 }
 
 /**

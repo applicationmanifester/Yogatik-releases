@@ -23,38 +23,48 @@ export function generateStudyGuide(sourceText = '', topic = 'Research Overview')
   const paragraphs = sourceText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
   const sentences = sourceText.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 20)
 
-  // 1. Extract Key Takeaways
-  const keyTakeaways = sentences.slice(0, 5).map((s, idx) => ({
+  // 1. Extract Key Takeaways (deduplicated and cleaned)
+  const keyTakeaways = sentences.slice(0, 7).map((s, idx) => ({
     id: idx + 1,
     point: s.replace(/^[-*•\d.]+\s*/, '')
   }))
 
-  // 2. Generate FAQs
+  // 2. Extract Key Numerical Metrics & Data Points
+  const metrics = []
+  const metricPattern = /(?:[$€£₹]\s?\d[\d,.]*\s?(?:billion|million|bn|m|k)?|\b\d[\d,.]*\s?(?:%|percent|billion|million|users|TOPS|GB|MB|qubits?|nm|ms|kg|km)\b)/gi
+  for (const s of sentences) {
+    const m = s.match(metricPattern)
+    if (m && metrics.length < 6) {
+      metrics.push({ metric: m[0], context: s.slice(0, 140) })
+    }
+  }
+
+  // 3. Generate Active Recall FAQs & Flashcards
   const faq = []
-  for (let i = 0; i < Math.min(sentences.length, 4); i++) {
+  for (let i = 0; i < Math.min(sentences.length, 5); i++) {
     const s = sentences[i]
+    const shortLead = s.slice(0, 45).replace(/[.,;:!?]+$/, '')
     faq.push({
-      question: `What does this research conclude regarding "${s.slice(0, 30)}..."?`,
+      question: `What does the evidence show regarding "${shortLead}..."?`,
       answer: s,
       confidence: 0.95
     })
   }
 
-  // 3. Multi-Speaker Discussion Script (4 Personas)
-  const speakers = ['Host', 'Expert', 'Skeptic', 'Clarifier']
+  // 4. Multi-Speaker Dialectic Discussion Script (4 Personas)
   const discussionScript = []
 
   discussionScript.push({
     speaker: 'Host',
     role: 'Moderator',
-    text: `Welcome everyone. Today we are diving into our research on ${topic}. Let's break down the core findings.`
+    text: `Welcome everyone to this deep-dive briefing on "${topic}". Let's unpack the core architecture, data, and critical implications.`
   })
 
   if (sentences.length > 0) {
     discussionScript.push({
       speaker: 'Expert',
       role: 'Domain Lead',
-      text: `The central insight here is that ${sentences[0]}. This has significant implications for how we approach this.`
+      text: `Looking at the primary findings: ${sentences[0]}. This represents a pivotal cornerstone in this domain.`
     })
   }
 
@@ -62,7 +72,7 @@ export function generateStudyGuide(sourceText = '', topic = 'Research Overview')
     discussionScript.push({
       speaker: 'Skeptic',
       role: 'Critical Challenger',
-      text: `That's interesting, but what about the constraints? Notice how ${sentences[1]}. How do we address that challenge?`
+      text: `Let's scrutinize the potential limitations. Consider that ${sentences[1]}. How do we validate this under real-world stress or adverse conditions?`
     })
   }
 
@@ -70,21 +80,48 @@ export function generateStudyGuide(sourceText = '', topic = 'Research Overview')
     discussionScript.push({
       speaker: 'Clarifier',
       role: 'Synthesizer',
-      text: `To bridge both perspectives: ${sentences[2]}. That gives us a clear path forward.`
+      text: `To bridge both perspectives and resolve that tension: ${sentences[2]}. This provides an actionable path forward.`
+    })
+  }
+
+  if (sentences.length > 3) {
+    discussionScript.push({
+      speaker: 'Expert',
+      role: 'Domain Lead',
+      text: `Exactly. Furthermore, ${sentences[3]}, which solidifies the strategic direction.`
     })
   }
 
   discussionScript.push({
     speaker: 'Host',
     role: 'Moderator',
-    text: `That wraps up our briefing. Check the study guide notes and key takeaways in your notebook!`
+    text: `That gives us a comprehensive overview of ${topic}. Review the key takeaways, metrics table, and flashcards in your research guide!`
   })
+
+  // 5. Formatted Markdown Briefing
+  const briefingLines = [
+    `# Research Briefing: ${topic}`,
+    `*Generated on ${new Date().toLocaleDateString(undefined, { dateStyle: 'medium' })} — Synthesized from ${paragraphs.length} source section${paragraphs.length > 1 ? 's' : ''}*`,
+    '',
+    `## Executive Overview`,
+    paragraphs[0] || 'Summary generated from input research corpus.',
+    '',
+    `## Key Takeaways`,
+    ...keyTakeaways.map(t => `- **Takeaway ${t.id}**: ${t.point}`),
+  ]
+
+  if (metrics.length) {
+    briefingLines.push('', '## Extracted Metrics & Data Benchmarks', '| Metric | Context |', '| :--- | :--- |')
+    metrics.forEach(m => briefingLines.push(`| **${m.metric}** | ${m.context} |`))
+  }
 
   return {
     topic,
     totalSources: paragraphs.length,
     executiveSummary: paragraphs[0] || 'Summary generated from input documents.',
+    briefingMarkdown: briefingLines.join('\n'),
     keyTakeaways,
+    metrics: metrics.length ? metrics : undefined,
     faq,
     discussionScript,
     generatedAt: Date.now()
