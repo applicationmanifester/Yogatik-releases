@@ -1,0 +1,385 @@
+import React, { useEffect, useRef, useState, useCallback } from 'react'
+import {
+  ExternalLink, X, RotateCw, FolderOpen, Send, Download,
+  GitPullRequest, Check, Code, FileCode, Sparkles, Maximize2, Minimize2,
+  AlertCircle, ChevronRight
+} from 'lucide-react'
+import { wsFindFiles, wsRead, wsWrite, gitDiff, gitStatus, listRoots, isDesktop } from '../tools/localFs'
+import {
+  injectTextIntoGrok,
+  extractLatestCodeFromGrok,
+  buildWorkspaceContextPrompt
+} from '../tools/grokBridge'
+
+const GROK_CONV_ID = 'grok-dock'
+const GROK_URL = 'https://grok.com/'
+
+export function GrokDock({ onClose, onToast, activeFileName = '', activeFileContent = '' }) {
+  const holeRef = useRef(null)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [statusMsg, setStatusMsg] = useState('Ready')
+
+  // Bridge File Picker State
+  const [showFilePicker, setShowFilePicker] = useState(false)
+  const [availableFiles, setAvailableFiles] = useState([])
+  const [selectedFile, setSelectedFile] = useState('')
+  const [searchingFiles, setSearchingFiles] = useState(false)
+
+  // Code Pull Drawer State
+  const [extractedBlocks, setExtractedBlocks] = useState([])
+  const [showCodeDrawer, setShowCodeDrawer] = useState(false)
+  const [savingFile, setSavingFile] = useState(null)
+  const [targetPaths, setTargetPaths] = useState({})
+
+  const br = () => (typeof window !== 'undefined' && window.__YOGATIK_BROWSER__) || null
+  const desktop = isDesktop()
+
+  const reportBounds = useCallback(() => {
+    const b = br()
+    const el = holeRef.current
+    if (!b || !el) return
+    const r = el.getBoundingClientRect()
+    b.setBounds({
+      conversationId: GROK_CONV_ID,
+      x: Math.round(r.left),
+      y: Math.round(r.top),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    })
+  }, [])
+
+  // Initialize and mount Grok Webview in Electron
+  useEffect(() => {
+    const b = br()
+    if (!b) return
+
+    setLoading(true)
+    b.navigate({ conversationId: GROK_CONV_ID, url: GROK_URL })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+
+    reportBounds()
+    const ro = new ResizeObserver(reportBounds)
+    if (holeRef.current) ro.observe(holeRef.current)
+    window.addEventListener('resize', reportBounds)
+
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', reportBounds)
+      try {
+        b.setDetached({ conversationId: GROK_CONV_ID, detached: true })
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [reportBounds])
+
+  const handleReload = () => {
+    const b = br()
+    if (b) {
+      setLoading(true)
+      b.reload({ conversationId: GROK_CONV_ID })
+        .catch(() => {})
+        .finally(() => setLoading(false))
+      onToast?.('Reloaded grok.com')
+    }
+  }
+
+  const handleOpenExternal = () => {
+    if (window.__YOGATIK_DESKTOP__?.openExternal) {
+      window.__YOGATIK_DESKTOP__.openExternal(GROK_URL)
+    } else {
+      window.open(GROK_URL, '_blank', 'noopener,noreferrer')
+    }
+  }
+
+  // Load project files for the file injector
+  const openFileSelector = async () => {
+    setShowFilePicker(true)
+    setSearchingFiles(true)
+    try {
+      const res = await wsFindFiles('*', { limit: 120 })
+      const files = Array.isArray(res) ? res : res?.files || []
+      setAvailableFiles(files.filter(f => !f.includes('node_modules') && !f.includes('.git/')))
+      if (files.length && !selectedFile) {
+        setSelectedFile(files[0])
+      }
+    } catch {
+      setAvailableFiles([])
+    } finally {
+      setSearchingFiles(false)
+    }
+  }
+
+  // Send a specific local file to Grok
+  const handleSendFile = async (filePath) => {
+    const pathToSend = filePath || selectedFile
+    if (!pathToSend) {
+      onToast?.('Please choose a file to send')
+      return
+    }
+    setShowFilePicker(false)
+    setStatusMsg(`Reading ${pathToSend}...`)
+    try {
+      const res = await wsRead(pathToSend)
+      const content = typeof res === 'string' ? res : res?.content || ''
+      const ext = pathToSend.split('.').pop() || 'text'
+      const prompt = `📁 **File: \`${pathToSend}\`**\n\`\`\`${ext}\n${content}\n\`\`\`\nPlease analyze this file.`
+
+      await injectTextIntoGrok(GROK_CONV_ID, prompt)
+      onToast?.(`✓ Injected ${pathToSend} into Grok prompt`)
+      setStatusMsg(`Injected ${pathToSend}`)
+    } catch (err) {
+      onToast?.(`Failed to send file: ${err?.message || err}`)
+      setStatusMsg('File injection failed')
+    }
+  }
+
+  // Send workspace tree & context
+  const handleSendContext = async () => {
+    setStatusMsg('Gathering workspace context...')
+    try {
+      const [roots, filesRes, gitRes] = await Promise.all([
+        listRoots().catch(() => []),
+        wsFindFiles('*', { limit: 60 }).catch(() => []),
+        gitStatus().catch(() => null),
+      ])
+
+      const primaryRoot = roots[0]?.path || roots[0]?.label || 'Workspace'
+      const files = Array.isArray(filesRes) ? filesRes : filesRes?.files || []
+      const prompt = buildWorkspaceContextPrompt({
+        projectName: primaryRoot.split(/[\\/]/).pop() || 'Project',
+        rootPath: primaryRoot,
+        files,
+        gitBranch: gitRes?.branch || '',
+        gitStatus: gitRes?.clean ? 'clean' : `${(gitRes?.files || []).length} uncommitted changes`,
+        activeFileName,
+        activeFileContent,
+      })
+
+      await injectTextIntoGrok(GROK_CONV_ID, prompt)
+      onToast?.('✓ Workspace context injected into Grok')
+      setStatusMsg('Context injected')
+    } catch (err) {
+      onToast?.(`Failed to inject context: ${err?.message || err}`)
+      setStatusMsg('Context injection failed')
+    }
+  }
+
+  // Send Git diff
+  const handleSendDiff = async () => {
+    setStatusMsg('Reading Git diff...')
+    try {
+      const res = await gitDiff()
+      const diffText = typeof res === 'string' ? res : res?.diff || ''
+      if (!diffText.trim()) {
+        onToast?.('Working tree is clean — no git changes to send')
+        setStatusMsg('Working tree clean')
+        return
+      }
+      const prompt = `### 🔀 Current Git Diff\n\`\`\`diff\n${diffText.slice(0, 15000)}\n\`\`\`\nPlease review these changes.`
+      await injectTextIntoGrok(GROK_CONV_ID, prompt)
+      onToast?.('✓ Git diff injected into Grok')
+      setStatusMsg('Diff injected')
+    } catch (err) {
+      onToast?.(`Failed to send Git diff: ${err?.message || err}`)
+      setStatusMsg('Diff injection failed')
+    }
+  }
+
+  // Pull code blocks generated by Grok on grok.com
+  const handlePullCode = async () => {
+    setStatusMsg('Scanning Grok response for code...')
+    try {
+      const res = await extractLatestCodeFromGrok(GROK_CONV_ID)
+      const blocks = res?.blocks || []
+      if (!blocks.length) {
+        onToast?.('No code blocks found in recent Grok messages')
+        setStatusMsg('No code found')
+        return
+      }
+
+      setExtractedBlocks(blocks)
+      setShowCodeDrawer(true)
+      setStatusMsg(`Extracted ${blocks.length} code block(s)`)
+      onToast?.(`Found ${blocks.length} code block(s) from Grok`)
+    } catch (err) {
+      onToast?.(`Could not pull code: ${err?.message || err}`)
+      setStatusMsg('Code pull failed')
+    }
+  }
+
+  // Save extracted code block to workspace disk
+  const handleSaveBlock = async (block) => {
+    const target = targetPaths[block.id] || block.filename || `grok_output_${Date.now()}.${block.language || 'txt'}`
+    setSavingFile(block.id)
+    try {
+      await wsWrite(target, block.code)
+      onToast?.(`✓ Saved code block to ${target}`)
+    } catch (err) {
+      onToast?.(`Failed to save: ${err?.message || err}`)
+    } finally {
+      setSavingFile(null)
+    }
+  }
+
+  return (
+    <div className={`grok-dock-container ${fullscreen ? 'fullscreen' : ''}`}>
+      {/* Top Header */}
+      <header className="grok-dock-header">
+        <div className="grok-dock-title-group">
+          <span className="grok-dock-logo">🤖</span>
+          <strong>Grok.com Studio</strong>
+          <span className="grok-status-badge">
+            <span className="status-dot online" /> {desktop ? 'Desktop Bridge Active' : 'Web View'}
+          </span>
+          <span className="grok-dock-hint">({statusMsg})</span>
+        </div>
+
+        <div className="grok-dock-controls">
+          <button className="icon-btn" onClick={handleReload} title="Reload Grok.com" aria-label="Reload">
+            <RotateCw size={14} className={loading ? 'spinning' : ''} />
+          </button>
+          <button className="icon-btn" onClick={handleOpenExternal} title="Open in external browser" aria-label="External">
+            <ExternalLink size={14} />
+          </button>
+          <button
+            className="icon-btn"
+            onClick={() => {
+              setFullscreen(f => !f)
+              setTimeout(reportBounds, 80)
+            }}
+            title={fullscreen ? 'Restore view' : 'Maximize dock'}
+            aria-label="Toggle Fullscreen"
+          >
+            {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
+          <button className="icon-btn close-btn" onClick={onClose} title="Close Grok Dock" aria-label="Close">
+            <X size={15} />
+          </button>
+        </div>
+      </header>
+
+      {/* Desktop Local File Bridge Toolbar */}
+      <div className="grok-bridge-toolbar">
+        <span className="bridge-label">Local File Bridge:</span>
+
+        <button className="bridge-btn" onClick={openFileSelector} title="Send local file content to Grok">
+          <FolderOpen size={13} /> Send File…
+        </button>
+
+        <button className="bridge-btn" onClick={handleSendContext} title="Inject project file tree & environment context">
+          <Sparkles size={13} /> Send Workspace Context
+        </button>
+
+        <button className="bridge-btn" onClick={handleSendDiff} title="Send Git working tree diff for review">
+          <GitPullRequest size={13} /> Send Git Diff
+        </button>
+
+        <div className="bridge-divider" />
+
+        <button className="bridge-btn accent" onClick={handlePullCode} title="Extract generated code from Grok and save to disk">
+          <Download size={13} /> Pull Code from Grok
+        </button>
+      </div>
+
+      {/* Main View Area / Hole for WebContentsView */}
+      <div className="grok-dock-view">
+        {desktop ? (
+          <div ref={holeRef} className="grok-native-hole" />
+        ) : (
+          <div className="grok-fallback-banner">
+            <AlertCircle size={24} />
+            <h4>Desktop App Mode Required</h4>
+            <p>
+              Direct embedded session with local file read/write is enabled in Yogatik Desktop.
+              You can also open grok.com externally and use Yogatik's file export tools.
+            </p>
+            <button className="btn-primary" onClick={handleOpenExternal}>
+              <ExternalLink size={14} /> Open https://grok.com/ in Browser
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* File Picker Modal */}
+      {showFilePicker && (
+        <div className="grok-modal-overlay" onClick={() => setShowFilePicker(false)}>
+          <div className="grok-picker-card" onClick={e => e.stopPropagation()}>
+            <div className="picker-header">
+              <h4><FolderOpen size={15} /> Select Workspace File to Send</h4>
+              <button className="icon-btn" onClick={() => setShowFilePicker(false)}><X size={14} /></button>
+            </div>
+            {searchingFiles ? (
+              <p className="picker-loading">Listing project files…</p>
+            ) : availableFiles.length > 0 ? (
+              <div className="picker-list">
+                {availableFiles.map(file => (
+                  <button
+                    key={file}
+                    className={`picker-item ${selectedFile === file ? 'active' : ''}`}
+                    onClick={() => setSelectedFile(file)}
+                  >
+                    <FileCode size={13} /> {file}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="picker-empty">No files discovered in current workspace root.</p>
+            )}
+            <div className="picker-footer">
+              <button className="small-btn" onClick={() => setShowFilePicker(false)}>Cancel</button>
+              <button
+                className="small-btn btn-primary"
+                disabled={!selectedFile}
+                onClick={() => handleSendFile(selectedFile)}
+              >
+                <Send size={12} /> Inject into Grok
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Code Pull Drawer */}
+      {showCodeDrawer && (
+        <div className="grok-code-drawer">
+          <div className="drawer-header">
+            <h4><Code size={15} /> Extracted Code Blocks ({extractedBlocks.length})</h4>
+            <button className="icon-btn" onClick={() => setShowCodeDrawer(false)}><X size={14} /></button>
+          </div>
+          <div className="drawer-body">
+            {extractedBlocks.map(block => (
+              <div key={block.id} className="extracted-block-card">
+                <div className="block-meta">
+                  <span className="lang-tag">{block.language}</span>
+                  <span className="line-tag">{block.lines} lines</span>
+                </div>
+                <pre className="block-preview">
+                  <code>{block.code.slice(0, 300)}{block.code.length > 300 ? '…' : ''}</code>
+                </pre>
+                <div className="save-row">
+                  <input
+                    type="text"
+                    placeholder="target/path/to/file.js"
+                    value={targetPaths[block.id] ?? block.filename ?? ''}
+                    onChange={e => setTargetPaths({ ...targetPaths, [block.id]: e.target.value })}
+                    className="path-input"
+                  />
+                  <button
+                    className="small-btn btn-primary"
+                    disabled={savingFile === block.id}
+                    onClick={() => handleSaveBlock(block)}
+                  >
+                    {savingFile === block.id ? 'Saving…' : <><Download size={12} /> Save to Disk</>}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
