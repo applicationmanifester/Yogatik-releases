@@ -53,7 +53,21 @@ function stopTorrentSeeding(record) {
   }
 }
 
-function formatTorrentData(t, isPaused = false) {
+// High-speed public trackers to maximize swarm peer discovery across firewalls
+const HIGH_SPEED_PUBLIC_TRACKERS = [
+  'udp://tracker.opentrackr.org:1337/announce',
+  'udp://open.stealth.si:80/announce',
+  'udp://tracker.torrent.eu.org:451/announce',
+  'udp://explodie.org:6969/announce',
+  'udp://tracker.moeking.me:6969/announce',
+  'http://tracker.opentrackr.org:1337/announce',
+  'http://torrent.ubuntu.com:6969/announce',
+  'wss://tracker.openwebtorrent.com',
+  'wss://tracker.btorrent.xyz',
+  'wss://tracker.fastcast.nz'
+]
+
+function formatTorrentData(t, isPaused = false, error = null) {
   if (!t) return null
   const isDone = Boolean(t.done || (t.progress != null && t.progress >= 1))
   return {
@@ -71,6 +85,7 @@ function formatTorrentData(t, isPaused = false) {
     done: isDone,
     paused: Boolean(isPaused),
     path: t.path || '',
+    error: error || null,
     files: (t.files || []).map(f => ({
       name: f.name,
       path: f.path,
@@ -96,7 +111,7 @@ function startBroadcasting(getWindow) {
         if (isDone && !record.autoStoppedOnDone && !record.userManuallyResumed && !record.paused) {
           stopTorrentSeeding(record)
         }
-        list.push(formatTorrentData(record.torrent, record.paused))
+        list.push(formatTorrentData(record.torrent, record.paused, record.error))
       }
     }
     safeSend(win, 'torrent:update', list)
@@ -136,16 +151,23 @@ function registerTorrentIpc(getWindow) {
       return new Promise((resolve) => {
         let settled = false
 
-        torrentClient.add(trimmed, { path: targetDir }, (torrent) => {
+        torrentClient.add(trimmed, { path: targetDir, announce: HIGH_SPEED_PUBLIC_TRACKERS }, (torrent) => {
           const record = {
             torrent,
             paused: false,
             autoStoppedOnDone: false,
             userManuallyResumed: false,
             customPath: targetDir,
-            addedAt: Date.now()
+            addedAt: Date.now(),
+            error: null
           }
           activeTorrents.set(torrent.infoHash, record)
+
+          // Catch any piece read/write or socket errors on this torrent
+          torrent.on('error', (err) => {
+            console.error('[Yogatik BitTorrent] Torrent error:', err?.message || err)
+            record.error = err?.message || String(err)
+          })
 
           // Auto-stop downloading and uploading peers once download is complete
           torrent.on('done', () => {
@@ -164,7 +186,7 @@ function registerTorrentIpc(getWindow) {
             resolve({
               success: true,
               infoHash: torrent.infoHash,
-              torrent: formatTorrentData(torrent, record.paused)
+              torrent: formatTorrentData(torrent, record.paused, record.error)
             })
           }
         })
@@ -190,9 +212,15 @@ function registerTorrentIpc(getWindow) {
                 autoStoppedOnDone: false,
                 userManuallyResumed: false,
                 customPath: targetDir,
-                addedAt: Date.now()
+                addedAt: Date.now(),
+                error: null
               }
               activeTorrents.set(found.infoHash, record)
+
+              found.on('error', (err) => {
+                console.error('[Yogatik BitTorrent] Torrent error:', err?.message || err)
+                record.error = err?.message || String(err)
+              })
 
               found.on('done', () => {
                 stopTorrentSeeding(record)
@@ -205,7 +233,7 @@ function registerTorrentIpc(getWindow) {
               resolve({
                 success: true,
                 infoHash: found.infoHash,
-                torrent: formatTorrentData(found, record.paused),
+                torrent: formatTorrentData(found, record.paused, record.error),
                 note: 'Torrent added; connecting to peers in background.'
               })
             } else {
@@ -226,7 +254,7 @@ function registerTorrentIpc(getWindow) {
     const list = []
     for (const [, record] of activeTorrents.entries()) {
       if (record.torrent) {
-        list.push(formatTorrentData(record.torrent, record.paused))
+        list.push(formatTorrentData(record.torrent, record.paused, record.error))
       }
     }
     return { success: true, torrents: list }

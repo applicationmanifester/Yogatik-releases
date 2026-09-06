@@ -22,7 +22,9 @@ import {
   Maximize2,
   Minimize2,
   Copy,
-  Check
+  Check,
+  GripVertical,
+  Move
 } from 'lucide-react'
 import {
   isTorrentAvailable,
@@ -39,20 +41,6 @@ import {
   formatEta
 } from '../tools/torrentClient'
 
-// Well-known legal open-source torrent magnets for testing
-const SAMPLE_LEGAL_TORRENTS = [
-  {
-    name: 'Ubuntu 24.04.1 LTS Server (ISO)',
-    uri: 'magnet:?xt=urn:btih:3b10b05ff347c701520423719c61925b4ff44768&dn=ubuntu-24.04.1-live-server-amd64.iso&tr=https%3A%2F%2Ftorrent.ubuntu.com%2Fannounce',
-    desc: 'Official Canonical Linux Server ISO distribution'
-  },
-  {
-    name: 'Arch Linux 2024 (x86_64 ISO)',
-    uri: 'magnet:?xt=urn:btih:c75d4a193630f9a2e6f98ef426177bfa9c3be792&dn=archlinux-x86_64.iso&tr=http%3A%2F%2Ftracker.archlinux.org%3A6969%2Fannounce',
-    desc: 'Official Arch Linux rolling release ISO'
-  }
-]
-
 export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
   const [torrents, setTorrents] = useState([])
   const [magnetInput, setMagnetInput] = useState('')
@@ -65,6 +53,29 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
   const [isMinimized, setIsMinimized] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
   const [copiedHash, setCopiedHash] = useState(null)
+
+  // Persistent & draggable minibar position
+  const [minibarPos, setMinibarPos] = useState(() => {
+    try {
+      const saved = localStorage.getItem('yogatik_torrent_minibar_pos')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          return parsed
+        }
+      }
+    } catch { /* ignore */ }
+    // Default position: Safely above bottom chat prompt bar
+    const defaultX = typeof window !== 'undefined' ? Math.max(16, window.innerWidth - 460) : 100
+    const defaultY = typeof window !== 'undefined' ? Math.max(80, window.innerHeight - 150) : 400
+    return { x: defaultX, y: defaultY }
+  })
+
+  const [isDraggingMinibar, setIsDraggingMinibar] = useState(false)
+  const isDraggingMinibarRef = useRef(false)
+  const dragMinibarStartRef = useRef({ mouseX: 0, mouseY: 0, posX: 0, posY: 0 })
+  const hasMinibarMovedRef = useRef(false)
+  const minibarRef = useRef(null)
 
   const isAvailableRef = useRef(false)
   const completedNotifiedRef = useRef(new Set())
@@ -103,6 +114,141 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
       if (typeof unsubscribe === 'function') unsubscribe()
     }
   }, [isOpen, isAvailable, showToast])
+
+  // Window drag handlers for minimized widget (Mouse & Touch)
+  const handleMinibarMouseDown = useCallback((e) => {
+    if (e.target.closest('button') || e.target.closest('input') || e.target.closest('a')) return
+    if (e.button !== undefined && e.button !== 0) return
+
+    const clientX = e.clientX ?? e.touches?.[0]?.clientX
+    const clientY = e.clientY ?? e.touches?.[0]?.clientY
+    if (clientX == null || clientY == null) return
+
+    isDraggingMinibarRef.current = true
+    setIsDraggingMinibar(true)
+    hasMinibarMovedRef.current = false
+
+    dragMinibarStartRef.current = {
+      mouseX: clientX,
+      mouseY: clientY,
+      posX: minibarPos.x,
+      posY: minibarPos.y
+    }
+  }, [minibarPos])
+
+  useEffect(() => {
+    const handleMove = (e) => {
+      if (!isDraggingMinibarRef.current) return
+      const clientX = e.clientX ?? e.touches?.[0]?.clientX
+      const clientY = e.clientY ?? e.touches?.[0]?.clientY
+      if (clientX == null || clientY == null) return
+
+      const dx = clientX - dragMinibarStartRef.current.mouseX
+      const dy = clientY - dragMinibarStartRef.current.mouseY
+
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasMinibarMovedRef.current = true
+      }
+
+      const barWidth = minibarRef.current?.offsetWidth || 420
+      const barHeight = minibarRef.current?.offsetHeight || 64
+
+      const minX = 12
+      const maxX = Math.max(minX, window.innerWidth - barWidth - 12)
+      const minY = 12
+      const maxY = Math.max(minY, window.innerHeight - barHeight - 12)
+
+      const targetX = Math.min(maxX, Math.max(minX, dragMinibarStartRef.current.posX + dx))
+      const targetY = Math.min(maxY, Math.max(minY, dragMinibarStartRef.current.posY + dy))
+
+      setMinibarPos({ x: targetX, y: targetY })
+    }
+
+    const handleEnd = () => {
+      if (!isDraggingMinibarRef.current) return
+      isDraggingMinibarRef.current = false
+      setIsDraggingMinibar(false)
+
+      setMinibarPos(current => {
+        try {
+          localStorage.setItem('yogatik_torrent_minibar_pos', JSON.stringify(current))
+        } catch { /* ignore */ }
+        return current
+      })
+    }
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleEnd)
+    window.addEventListener('touchmove', handleMove, { passive: false })
+    window.addEventListener('touchend', handleEnd)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleEnd)
+      window.removeEventListener('touchmove', handleMove)
+      window.removeEventListener('touchend', handleEnd)
+    }
+  }, [])
+
+  // Keep minibar within window boundaries on resize
+  useEffect(() => {
+    const handleResize = () => {
+      setMinibarPos(prev => {
+        const barWidth = minibarRef.current?.offsetWidth || 420
+        const barHeight = minibarRef.current?.offsetHeight || 64
+        const minX = 12
+        const maxX = Math.max(minX, window.innerWidth - barWidth - 12)
+        const minY = 12
+        const maxY = Math.max(minY, window.innerHeight - barHeight - 12)
+
+        const clampedX = Math.min(maxX, Math.max(minX, prev.x))
+        const clampedY = Math.min(maxY, Math.max(minY, prev.y))
+
+        if (clampedX !== prev.x || clampedY !== prev.y) {
+          const updated = { x: clampedX, y: clampedY }
+          try {
+            localStorage.setItem('yogatik_torrent_minibar_pos', JSON.stringify(updated))
+          } catch { /* ignore */ }
+          return updated
+        }
+        return prev
+      })
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Cycle corner positions (Bottom-Right -> Top-Right -> Top-Left -> Bottom-Left)
+  const cycleMinibarPosition = useCallback((e) => {
+    e?.stopPropagation()
+    const barWidth = minibarRef.current?.offsetWidth || 420
+    const barHeight = minibarRef.current?.offsetHeight || 64
+    const margin = 20
+
+    const corners = [
+      { name: 'Bottom-Right (Above chat)', x: window.innerWidth - barWidth - margin, y: window.innerHeight - barHeight - 96 },
+      { name: 'Top-Right', x: window.innerWidth - barWidth - margin, y: 76 },
+      { name: 'Top-Left', x: margin, y: 76 },
+      { name: 'Bottom-Left', x: margin, y: window.innerHeight - barHeight - 96 }
+    ]
+
+    let closestIdx = 0
+    let minDistance = Infinity
+    corners.forEach((c, idx) => {
+      const dist = Math.hypot(c.x - minibarPos.x, c.y - minibarPos.y)
+      if (dist < minDistance) {
+        minDistance = dist
+        closestIdx = idx
+      }
+    })
+
+    const nextCorner = corners[(closestIdx + 1) % corners.length]
+    setMinibarPos({ x: nextCorner.x, y: nextCorner.y })
+    try {
+      localStorage.setItem('yogatik_torrent_minibar_pos', JSON.stringify({ x: nextCorner.x, y: nextCorner.y }))
+    } catch { /* ignore */ }
+    showToast?.(`Torrent bar moved to ${nextCorner.name}`)
+  }, [minibarPos, showToast])
 
   const fetchTorrents = useCallback(async () => {
     if (!isAvailableRef.current) return
@@ -219,35 +365,57 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
 
     return (
       <div
+        ref={minibarRef}
         className="torrent-floating-minibar"
+        onMouseDown={handleMinibarMouseDown}
+        onTouchStart={handleMinibarMouseDown}
         style={{
           position: 'fixed',
-          bottom: '24px',
-          right: '24px',
+          left: `${minibarPos.x}px`,
+          top: `${minibarPos.y}px`,
           zIndex: 99999,
           background: 'rgba(18, 20, 26, 0.95)',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
-          border: '1px solid rgba(99, 102, 241, 0.35)',
-          boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65), 0 0 24px rgba(99, 102, 241, 0.2)',
+          border: isDraggingMinibar ? '1px solid #818cf8' : '1px solid rgba(99, 102, 241, 0.35)',
+          boxShadow: isDraggingMinibar
+            ? '0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(99, 102, 241, 0.4)'
+            : '0 16px 40px rgba(0, 0, 0, 0.65), 0 0 24px rgba(99, 102, 241, 0.2)',
           borderRadius: '16px',
-          padding: '12px 16px',
+          padding: '10px 14px',
           display: 'flex',
           alignItems: 'center',
-          gap: '14px',
-          maxWidth: '480px',
-          minWidth: '340px',
-          cursor: 'default',
-          transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+          gap: '12px',
+          maxWidth: '520px',
+          minWidth: '360px',
+          cursor: isDraggingMinibar ? 'grabbing' : 'grab',
+          userSelect: 'none',
+          transition: isDraggingMinibar ? 'none' : 'box-shadow 0.2s ease, border-color 0.2s ease'
         }}
       >
+        {/* Visual Grip Drag Handle */}
+        <div
+          title="Drag to reposition anywhere on screen"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: isDraggingMinibar ? '#a5b4fc' : '#6b7280',
+            cursor: isDraggingMinibar ? 'grabbing' : 'grab',
+            padding: '2px 0',
+            flexShrink: 0
+          }}
+        >
+          <GripVertical size={16} />
+        </div>
+
         {/* Glowing Torrent Icon Badge */}
         <div
-          onClick={() => setIsMinimized(false)}
+          onClick={() => { if (!hasMinibarMovedRef.current) setIsMinimized(false) }}
           style={{
             position: 'relative',
-            width: '40px',
-            height: '40px',
+            width: '38px',
+            height: '38px',
             borderRadius: '12px',
             background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
             display: 'flex',
@@ -260,7 +428,7 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
           }}
           title="Click to restore Torrent Downloader"
         >
-          <DownloadCloud size={20} />
+          <DownloadCloud size={19} />
           {activeCount > 0 && (
             <span
               style={{
@@ -280,7 +448,7 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
 
         {/* Info & Progress (Click to restore) */}
         <div
-          onClick={() => setIsMinimized(false)}
+          onClick={() => { if (!hasMinibarMovedRef.current) setIsMinimized(false) }}
           style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
           title="Click to restore Torrent Downloader"
         >
@@ -330,7 +498,7 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
           )}
 
           {/* Stats sub-line */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', color: '#9ca3af' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '11px', color: '#9ca3af' }}>
             <span style={{ color: totalDownSpeed > 0 ? '#4ade80' : '#9ca3af', fontWeight: 500 }}>
               ↓ {formatSpeed(totalDownSpeed)}
             </span>
@@ -339,7 +507,18 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
                 ↑ {formatSpeed(totalUpSpeed)}
               </span>
             )}
-            {activeTorrent && !activeTorrent.done && activeTorrent.timeRemaining > 0 && (
+            {activeTorrent?.error ? (
+              <span style={{ color: '#f87171', fontWeight: 500 }} title={activeTorrent.error}>
+                Error
+              </span>
+            ) : (
+              <span style={{ color: (activeTorrent?.numPeers || 0) > 0 ? '#38bdf8' : '#eab308' }}>
+                {(activeTorrent?.numPeers || 0) > 0
+                  ? `${activeTorrent.numPeers} peers`
+                  : (activeTorrent?.paused ? 'Paused' : 'Finding peers...')}
+              </span>
+            )}
+            {activeTorrent && !activeTorrent.done && !activeTorrent.paused && activeTorrent.timeRemaining > 0 && Number.isFinite(activeTorrent.timeRemaining) && (
               <span>ETA: {formatEta(activeTorrent.timeRemaining)}</span>
             )}
             {activeCount > 1 && (
@@ -349,7 +528,7 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
         </div>
 
         {/* Quick actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
           {activeTorrent && (
             activeTorrent.paused ? (
               <button
@@ -402,6 +581,22 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
               <FolderOpen size={14} />
             </button>
           )}
+          {/* Snap Corner Position Button */}
+          <button
+            onClick={cycleMinibarPosition}
+            title="Snap to corner (Bottom-Right, Top-Right, Top-Left, Bottom-Left)"
+            style={{
+              background: 'rgba(99, 102, 241, 0.12)',
+              color: '#c7d2fe',
+              border: '1px solid rgba(99, 102, 241, 0.25)',
+              borderRadius: '8px',
+              padding: '6px',
+              cursor: 'pointer',
+              display: 'flex'
+            }}
+          >
+            <Move size={14} />
+          </button>
           <button
             onClick={() => setIsMinimized(false)}
             title="Expand / Restore window"
@@ -655,30 +850,6 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
                     Change...
                   </button>
                 </div>
-
-                {/* Quick 1-Click Samples */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                  <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: 500 }}>Quick Legal Test Swarms:</span>
-                  {SAMPLE_LEGAL_TORRENTS.map((sample, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleAddTorrent(sample.uri)}
-                      style={{
-                        padding: '3px 10px',
-                        borderRadius: '12px',
-                        background: 'rgba(99, 102, 241, 0.08)',
-                        border: '1px solid rgba(99, 102, 241, 0.25)',
-                        color: '#a5b4fc',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease'
-                      }}
-                      title={sample.desc}
-                    >
-                      ⚡ {sample.name}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               {/* Active Torrents Section */}
@@ -721,7 +892,7 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
                     <Radio size={32} style={{ marginBottom: '10px', opacity: 0.4 }} />
                     <p style={{ margin: 0, fontSize: '14px', fontWeight: 500, color: '#9ca3af' }}>No Active Torrent Transfers</p>
                     <p style={{ margin: '4px 0 0 0', fontSize: '12px' }}>
-                      Paste a magnet link or click one of the legal sample swarms above to start downloading.
+                      Paste a magnet link or .torrent URL above to start downloading.
                     </p>
                   </div>
                 ) : (
