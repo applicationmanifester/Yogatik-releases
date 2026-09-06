@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   buildWorkspaceContextPrompt,
+  buildFolderFilesBundlePrompt,
   getGrokInputInjectionScript,
   getGrokCodeExtractionScript,
   injectTextIntoGrok,
@@ -32,6 +33,27 @@ describe('grokBridge', () => {
       const prompt = buildWorkspaceContextPrompt()
       expect(prompt).toContain('Local Workspace Context: Workspace')
       expect(prompt).toContain('Please review this codebase context')
+    })
+  })
+
+  describe('buildFolderFilesBundlePrompt', () => {
+    it('bundles multiple files with explicit anti-artifacts directive', () => {
+      const prompt = buildFolderFilesBundlePrompt({
+        projectName: 'MyProject',
+        rootPath: 'C:/Users/test/MyProject',
+        filesWithContent: [
+          { path: 'src/index.js', content: 'console.log("start")' },
+          { path: 'src/utils.js', content: 'export const add = (a, b) => a + b' },
+        ],
+      })
+
+      expect(prompt).toContain('Local Windows Project Files Bundle: MyProject')
+      expect(prompt).toContain('C:/Users/test/MyProject')
+      expect(prompt).toContain('Do NOT execute shell commands looking in /home/workdir/artifacts')
+      expect(prompt).toContain('--- FILE: `src/index.js` ---')
+      expect(prompt).toContain('console.log("start")')
+      expect(prompt).toContain('--- FILE: `src/utils.js` ---')
+      expect(prompt).toContain('export const add = (a, b) => a + b')
     })
   })
 

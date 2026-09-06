@@ -2,13 +2,14 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
   ExternalLink, X, RotateCw, FolderOpen, Send, Download,
   GitPullRequest, Check, Code, FileCode, Sparkles, Maximize2, Minimize2,
-  AlertCircle, ChevronRight
+  AlertCircle, ChevronRight, Layers
 } from 'lucide-react'
 import { wsFindFiles, wsRead, wsWrite, gitDiff, gitStatus, listRoots, isDesktop } from '../tools/localFs'
 import {
   injectTextIntoGrok,
   extractLatestCodeFromGrok,
-  buildWorkspaceContextPrompt
+  buildWorkspaceContextPrompt,
+  buildFolderFilesBundlePrompt
 } from '../tools/grokBridge'
 import { WebCompanionStudio } from './WebCompanionStudio'
 
@@ -207,6 +208,68 @@ export function GrokDock({
     }
   }
 
+  // Bundle and send multiple files from the local folder directly into Grok
+  const handleSendFolderBundle = async () => {
+    setStatusMsg('Reading folder files...')
+    try {
+      const [roots, filesRes] = await Promise.all([
+        listRoots().catch(() => []),
+        wsFindFiles('*', { limit: 80 }).catch(() => []),
+      ])
+
+      const primaryRoot = roots[0]?.path || roots[0]?.label || 'Workspace'
+      const rawFiles = Array.isArray(filesRes) ? filesRes : filesRes?.files || []
+      const textFiles = rawFiles.filter(f => {
+        if (f.includes('node_modules') || f.includes('.git/') || f.includes('dist/')) return false
+        if (f.endsWith('package-lock.json') || f.endsWith('yarn.lock') || f.endsWith('pnpm-lock.yaml')) return false
+        const ext = f.split('.').pop()?.toLowerCase() || ''
+        return !BINARY_EXTS.has(ext)
+      }).slice(0, 12)
+
+      if (!textFiles.length) {
+        onToast?.('No readable text files found in workspace folder')
+        setStatusMsg('No files found')
+        return
+      }
+
+      setStatusMsg(`Reading ${textFiles.length} project files...`)
+      let totalBytes = 0
+      const filesWithContent = []
+      for (const filePath of textFiles) {
+        if (totalBytes > 120 * 1024) break
+        try {
+          const res = await wsRead(filePath)
+          const content = typeof res === 'string' ? res : res?.content || ''
+          if (content && content.trim()) {
+            const trimmed = content.length > 25000 ? content.slice(0, 25000) + '\n/* [truncated] */' : content
+            totalBytes += trimmed.length
+            filesWithContent.push({ path: filePath, content: trimmed })
+          }
+        } catch {
+          // skip
+        }
+      }
+
+      if (!filesWithContent.length) {
+        onToast?.('Could not read workspace files')
+        return
+      }
+
+      const prompt = buildFolderFilesBundlePrompt({
+        projectName: primaryRoot.split(/[\\/]/).pop() || 'Project',
+        rootPath: primaryRoot,
+        filesWithContent,
+      })
+
+      await injectTextIntoGrok(GROK_CONV_ID, prompt)
+      onToast?.(`✓ Injected ${filesWithContent.length} files from folder into Grok`)
+      setStatusMsg(`Injected ${filesWithContent.length} files`)
+    } catch (err) {
+      onToast?.(`Failed to send folder files: ${err?.message || err}`)
+      setStatusMsg('Folder injection failed')
+    }
+  }
+
   // Send Git diff
   const handleSendDiff = async () => {
     setStatusMsg('Reading Git diff...')
@@ -332,6 +395,10 @@ export function GrokDock({
 
           <button className="bridge-btn" onClick={handleSendContext} title="Inject project file tree & environment context">
             <Sparkles size={13} /> Send Workspace Context
+          </button>
+
+          <button className="bridge-btn" onClick={handleSendFolderBundle} title="Bundle multiple files from this folder and inject their code into Grok">
+            <Layers size={13} /> Send Folder Files
           </button>
 
           <button className="bridge-btn" onClick={handleSendDiff} title="Send Git working tree diff for review">

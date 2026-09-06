@@ -192,12 +192,39 @@ export function buildWorkspaceContextPrompt({
     parts.push(`\n**Active File: \`${activeFileName}\`**\n\`\`\`${ext}\n${activeFileContent}\n\`\`\``)
   }
 
+  parts.push(`*Note for Grok: This context is provided directly from the user's local Windows PC workspace via Yogatik Desktop Bridge. Do NOT look in /home/workdir/artifacts.*`)
+
   if (customInstruction) {
     parts.push(`\n**Instructions:**\n${customInstruction}`)
   } else {
     parts.push(`\nPlease review this codebase context to assist me with development tasks.`)
   }
 
+  return parts.join('\n')
+}
+
+/**
+ * Builds a comprehensive multi-file code bundle prompt for injection into Grok.
+ */
+export function buildFolderFilesBundlePrompt({
+  projectName = 'Workspace',
+  rootPath = '',
+  filesWithContent = [],
+  instruction = 'Please inspect all files in this project folder and identify issues, bugs, and improvements.',
+} = {}) {
+  const parts = []
+  parts.push(`### 📁 Local Windows Project Files Bundle: ${projectName}`)
+  if (rootPath) parts.push(`**Local Root:** \`${rootPath}\``)
+  parts.push(`**Files included:** ${filesWithContent.length}`)
+  parts.push(`*IMPORTANT NOTE FOR GROK: These files are provided directly from the user's local Windows PC via Yogatik Desktop Bridge. Do NOT execute shell commands looking in /home/workdir/artifacts. The actual file contents are provided below:*`)
+  parts.push(`\n**Task:** ${instruction}\n`)
+
+  for (const item of filesWithContent) {
+    const ext = item.path.split('.').pop() || 'text'
+    parts.push(`\n--- FILE: \`${item.path}\` ---\n\`\`\`${ext}\n${item.content}\n\`\`\``)
+  }
+
+  parts.push(`\nBased on the files above, please provide a detailed analysis of any issues found.`)
   return parts.join('\n')
 }
 
