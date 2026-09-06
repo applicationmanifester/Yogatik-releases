@@ -1,4 +1,4 @@
-name: Build desktop apps (Windows, macOS, Linux)
+name: Build web app and desktop apps (Windows, macOS, Linux)
 
 # Manual run (Actions tab -> Run workflow) or on a version tag like v3.9.0.
 #

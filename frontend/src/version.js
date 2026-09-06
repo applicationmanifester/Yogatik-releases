@@ -3,16 +3,71 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '6.3.0'
+export const APP_VERSION = '7.1.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 6.3.0 — Live Meeting Copilot, Multi-Agent Collaboration Board & Visual Browser Inspector'
+export const APP_CODENAME = 'Yogatik 7.1.0 — Grok.com & Gemini.com Studio Docks with Local Files Bridge'
 
 export const APP_RELEASES = [
+  {
+    version: '7.1.0',
+    title: 'Yogatik 7.1.0: Grok.com & Gemini.com Studio Docks with Desktop Local Files Bridge',
+    date: 'September 6, 2026',
+    isLatest: true,
+    highlights: [
+      'Grok.com Studio Dock with Local Files Bridge: Seamless embedded session of grok.com with bidirectional workspace file injector, active Git diff review, and 1-click code block extraction to disk',
+      'Gemini.com Studio Dock with Deep Shadow DOM Traversal: Full Google Web Components integration, real-time code extraction, and comment-based filepath auto-detection',
+      'Dynamic WebContentsView Occlusion & Detachment: Electron native webview automatically detaches during modal overlays (Send File, Code Pull Drawer, Ctrl+K Palette) eliminating layering occlusions',
+      'Mutual Dock Exclusivity & 1-Click Switcher: Prevents concurrent GPU/RAM spikes with instant toggle between Grok and Gemini studios directly in the header',
+      'Safe Local File Bridge Guards: Automatic binary file filtration and 180KB safe chunking for high-speed IPC transmission',
+      'Dynamic Precision Temperature Bar: Interactive slider in Personalization and Chat Composer supporting reasoning models and auto-retry error handling',
+    ],
+    sections: [
+      {
+        category: '🤖 Grok.com & Gemini.com Desktop Studio Docks',
+        items: [
+          {
+            title: 'Embedded WebContentsView Studio Docks',
+            description: 'Direct interactive sessions for grok.com and gemini.google.com docked alongside your workspace files with persistent session state and responsive layout.',
+          },
+          {
+            title: 'Bidirectional Desktop Local Files Bridge',
+            description: 'Read local workspace files or git diffs and inject formatted markdown prompts into Grok/Gemini; extract generated code blocks directly back into workspace files.',
+          },
+        ],
+      },
+      {
+        category: '⚡ Native Performance & Occlusion Engine',
+        items: [
+          {
+            title: 'Intelligent WebContentsView Occlusion Handling',
+            description: 'Solves the Electron native window overlay limitation by dynamically detaching webviews during modal displays and re-attaching on dismiss.',
+          },
+          {
+            title: 'Memory & Resource Isolation',
+            description: 'Enforces mutual dock exclusivity and binary file filtering to keep memory low and prevent IPC transmission freezes.',
+          },
+        ],
+      },
+      {
+        category: '🎨 UI Enhancements & Temperature Tuning',
+        items: [
+          {
+            title: 'Precision Temperature Control Slider',
+            description: 'Fine-tune model creativity directly from the Chat Composer or Personalization modal, with automatic compatibility fallbacks for fixed-temperature models.',
+          },
+          {
+            title: '1-Click Studio Switcher',
+            description: 'Instant header toggle to switch between Grok.com and Gemini.com without losing conversation context.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '6.3.0',
     title: 'Yogatik 6.3.0: Live Meeting Copilot, Multi-Agent Collaboration Board & Visual Browser Inspector',
     date: 'September 6, 2026',
-    isLatest: true,
+    isLatest: false,
     highlights: [
       'Live Meeting Copilot in Desktop Companion: Real-time speaker audio transcription, interactive action items checklist, instant tactical whisper suggestions, and 1-click Markdown export',
       'Multi-Agent Collaboration Board: Responsive 4-column Kanban layout (Backlog, In Progress, Review, Completed) with real-time sync of sub-agents, autonomous planning steps, and team tasks',
