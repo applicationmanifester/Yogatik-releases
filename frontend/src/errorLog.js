@@ -162,6 +162,17 @@ export function diagnoseError(error) {
     }
   }
 
+  if (lower.includes('aborted without reason') || lower.includes('signal is aborted') || lower === 'stopped' || lower === 'cancelled' || lower === 'request cancelled') {
+    return {
+      type: 'cancelled',
+      category: 'Request Cancelled',
+      title: 'Operation Cancelled or Interrupted',
+      suggestion: 'The operation was interrupted or timed out. You can retry the request or try with different parameters.',
+      actionType: 'retry',
+      actionLabel: 'Retry',
+    }
+  }
+
   if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('offline') || lower.includes('timeout') || lower.includes('abort') || lower.includes('connection refused') || lower.includes('err_connection')) {
     return {
       type: 'network',

@@ -140,7 +140,13 @@ export async function proxyFetch(url, { credentials = false, ...init } = {}) {
     try {
       const target = relay.includes('?') ? relay + encodeURIComponent(url) : relay + url
       const relayController = new AbortController()
-      const relayTimer = setTimeout(() => relayController.abort(), 8000)
+      const relayTimer = setTimeout(() => {
+        try {
+          relayController.abort(new DOMException('Public relay timeout after 8s', 'TimeoutError'))
+        } catch {
+          relayController.abort()
+        }
+      }, 8000)
       const fetchSignal = signal
         ? (AbortSignal.any ? AbortSignal.any([signal, relayController.signal]) : signal)
         : relayController.signal
@@ -158,7 +164,9 @@ export async function proxyFetch(url, { credentials = false, ...init } = {}) {
     } catch (err) {
       if (signal?.aborted) throw err
       penalise(relay)
-      lastError = err
+      lastError = err?.message?.includes('aborted without reason')
+        ? new Error(`Public relay timeout connecting to ${new URL(relay).hostname}`)
+        : err
     }
   }
   // Nothing could reach it: blame the target, not the relays.

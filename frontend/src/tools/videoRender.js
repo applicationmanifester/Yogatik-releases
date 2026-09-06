@@ -211,14 +211,17 @@ export const videoRenderTool = {
     // Decode every image up front: the draw loop is synchronous, and awaiting
     // inside it would stall the encoder queue between frames.
     const imagesAt = performance.now()
-    try {
-      await Promise.all(spec.scenes.map(async (s) => {
-        const url = s.image_url || s.url
-        if (s.type === 'image' && url) s._image = await loadImage(url)
-      }))
-    } catch (e) {
-      return { success: false, error: e.message }
-    }
+    await Promise.all(spec.scenes.map(async (s) => {
+      const url = s.image_url || s.url
+      if (s.type === 'image' && url) {
+        try {
+          s._image = await loadImage(url)
+        } catch (imgErr) {
+          console.warn('[video_render] Could not load image for scene:', url, imgErr?.message || imgErr)
+          s._image = null
+        }
+      }
+    }))
 
     t.images_ms = Math.round(performance.now() - imagesAt)
 
