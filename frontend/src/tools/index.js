@@ -36,6 +36,7 @@ import { webExtractTool } from './webExtract'
 import { researchTool } from './research'
 import { docSearchTool, docListTool, localVaultTool } from './documents'
 import { localSearchTool } from './localSearch.js'
+import { localIndexSearchTool, localCrawlerTool } from './localIndexEngine.js'
 import {
   wikipediaTool, scholarTool, stackOverflowTool, hackerNewsTool,
   archiveTool, dictionaryTool, booksTool,
@@ -261,6 +262,8 @@ const ALL_TOOLS = {
   ip_lookup: ipLookupTool,
   md_to_pdf: mdToPdfTool,
   web_search: localSearchTool,
+  local_search: localIndexSearchTool,
+  local_crawl: localCrawlerTool,
   deep_research: researchTool,
   doc_search: docSearchTool,
   doc_list: docListTool,

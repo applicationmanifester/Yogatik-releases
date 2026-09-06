@@ -58,6 +58,18 @@ db.version(6).stores({
   memories: '++id, store, at',
   traces: '++id, conversationId, tool, createdAt, [conversationId+createdAt]',
 })
+// v7: Yogatik private on-device search engine & crawled pages index
+db.version(7).stores({
+  conversations: '++id, title, updatedAt, projectId',
+  messages: '++id, conversationId, role, createdAt, [conversationId+createdAt]',
+  settings: 'key',
+  documents: '++id, name, createdAt, projectId',
+  projects: '++id, name, createdAt',
+  media: '++id, createdAt',
+  memories: '++id, store, at',
+  traces: '++id, conversationId, tool, createdAt, [conversationId+createdAt]',
+  indexed_pages: '++id, url, domain, title, createdAt, [domain+createdAt]',
+})
 
 // A backgrounded/hidden tab (mobile especially) can have IndexedDB closed out
 // from under us; the next Dexie call throws DatabaseClosedError / InvalidStateError
@@ -326,19 +338,20 @@ export async function assignConversation(conversationId, projectId) {
 // ─── Whole-database backup ───
 // No backend means no sync: a cleared browser profile is total data loss.
 export async function exportAll() {
-  const [conversations, messages, documents, settings, projects, memories] = await Promise.all([
+  const [conversations, messages, documents, settings, projects, memories, indexedPages] = await Promise.all([
     db.conversations.toArray(),
     db.messages.toArray(),
     db.documents.toArray(),
     db.settings.toArray(),
     db.projects.toArray(),
     db.memories ? db.memories.toArray().catch(() => []) : Promise.resolve([]),
+    db.indexed_pages ? db.indexed_pages.toArray().catch(() => []) : Promise.resolve([]),
   ])
   return {
     format: 'yogatik-backup',
     version: 1,
     exportedAt: new Date().toISOString(),
-    conversations, messages, documents, projects, memories,
+    conversations, messages, documents, projects, memories, indexedPages,
     // API keys are deliberately excluded — a backup file is not an encrypted
     // store, and users share these without thinking.
     settings: settings.filter(r => !/^apikey_|^synced_|^user$/.test(r.key)),
@@ -358,6 +371,7 @@ export async function importAll(data, mode = 'merge') {
         db.documents.clear(),
         db.projects.clear(),
         db.memories ? db.memories.clear().catch(() => {}) : Promise.resolve(),
+        db.indexed_pages ? db.indexed_pages.clear().catch(() => {}) : Promise.resolve(),
       ])
     }
 
@@ -395,12 +409,19 @@ export async function importAll(data, mode = 'merge') {
         await db.memories.add(rest).catch(() => {})
       }
     }
+    for (const page of data.indexedPages || []) {
+      if (db.indexed_pages) {
+        const { id, ...rest } = page
+        await db.indexed_pages.add(rest).catch(() => {})
+      }
+    }
 
     return {
       conversations: (data.conversations || []).length,
       messages: (data.messages || []).length,
       documents: (data.documents || []).length,
       memories: (data.memories || []).length,
+      indexedPages: (data.indexedPages || []).length,
     }
   })
 }
@@ -412,6 +433,105 @@ export async function exportConversation(id) {
   return conv.messages.map(m =>
     `**${m.role === 'user' ? 'You' : 'Yogatik'}**:\n\n${m.content}`
   ).join('\n\n---\n\n')
+}
+
+// ─── Indexed Pages (Private Search Engine) ───
+export async function saveIndexedPage(page) {
+  return withReopen(async () => {
+    if (!page?.url) throw new Error('Cannot index page without URL')
+    const url = page.url.trim()
+    let domain = page.domain
+    if (!domain) {
+      try {
+        domain = new URL(url).hostname.replace(/^www\./, '')
+      } catch {
+        domain = 'unknown'
+      }
+    }
+    const existing = await db.indexed_pages.where('url').equals(url).first()
+    const now = Date.now()
+    const record = {
+      url,
+      domain,
+      title: (page.title || url).trim().slice(0, 300),
+      description: (page.description || '').trim().slice(0, 800),
+      snippet: (page.snippet || page.description || page.content?.slice(0, 350) || '').trim(),
+      content: (page.content || '').slice(0, 60000),
+      keywords: Array.isArray(page.keywords) ? page.keywords : [],
+      wordCount: page.wordCount || (page.content ? page.content.split(/\s+/).length : 0),
+      vector: page.vector || null,
+      updatedAt: now,
+    }
+    if (existing) {
+      await db.indexed_pages.update(existing.id, record)
+      return { id: existing.id, createdAt: existing.createdAt, ...record }
+    } else {
+      const id = await db.indexed_pages.add({ ...record, createdAt: now })
+      return { id, createdAt: now, ...record }
+    }
+  })
+}
+
+export async function getIndexedPages({ limit = 50, offset = 0, domain = null, query = null } = {}) {
+  return withReopen(async () => {
+    let collection
+    if (domain) {
+      collection = db.indexed_pages.where('domain').equals(domain).reverse()
+    } else {
+      collection = db.indexed_pages.orderBy('createdAt').reverse()
+    }
+    if (query) {
+      const q = query.toLowerCase().trim()
+      collection = collection.filter(p => 
+        (p.title && p.title.toLowerCase().includes(q)) ||
+        (p.url && p.url.toLowerCase().includes(q)) ||
+        (p.description && p.description.toLowerCase().includes(q)) ||
+        (p.snippet && p.snippet.toLowerCase().includes(q)) ||
+        (p.content && p.content.toLowerCase().includes(q))
+      )
+    }
+    return await collection.offset(offset).limit(limit).toArray()
+  })
+}
+
+export async function getIndexedPage(id) {
+  return withReopen(() => db.indexed_pages.get(Number(id)))
+}
+
+export async function getIndexedPageByUrl(url) {
+  if (!url) return null
+  return withReopen(() => db.indexed_pages.where('url').equals(url.trim()).first())
+}
+
+export async function deleteIndexedPage(id) {
+  return withReopen(() => db.indexed_pages.delete(Number(id)))
+}
+
+export async function clearIndexedPages() {
+  return withReopen(() => db.indexed_pages.clear())
+}
+
+export async function countIndexedPages(domain = null) {
+  return withReopen(async () => {
+    if (domain) {
+      return await db.indexed_pages.where('domain').equals(domain).count()
+    }
+    return await db.indexed_pages.count()
+  })
+}
+
+export async function getAllIndexedDomains() {
+  return withReopen(async () => {
+    const pages = await db.indexed_pages.toArray()
+    const domainCounts = {}
+    for (const p of pages) {
+      const d = p.domain || 'unknown'
+      domainCounts[d] = (domainCounts[d] || 0) + 1
+    }
+    return Object.entries(domainCounts)
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => b.count - a.count)
+  })
 }
 
 export default db

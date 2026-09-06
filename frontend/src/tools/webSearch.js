@@ -6,6 +6,7 @@
 import { proxyFetch, proxyText, proxyJson } from './http'
 import { getSetting } from '../db'
 import { newsParams, localeSnapshot } from '../locale'
+import { searchLocalIndex } from './localIndexEngine.js'
 
 const MAX_RESULTS = 12
 
@@ -363,16 +364,17 @@ async function redditSearch(query, count) {
 function mergeResults(lists, count) {
   const byUrl = new Map()
   lists.forEach((list, rank) => {
-    list.forEach((r, i) => {
+    (list || []).forEach((r, i) => {
       if (!r?.url) return
       const key = r.url.replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase()
       const existing = byUrl.get(key)
+      const isPrivate = Boolean(r.private)
       if (existing) {
-        existing.agree += 1
+        existing.agree += isPrivate ? 5 : 1
         existing.engines.push(r.engine)
         if (!existing.snippet && r.snippet) existing.snippet = r.snippet
       } else {
-        byUrl.set(key, { ...r, agree: 1, engines: [r.engine], position: rank * 100 + i })
+        byUrl.set(key, { ...r, agree: isPrivate ? 5 : 1, engines: [r.engine], position: (isPrivate ? 0 : rank * 100) + i })
       }
     })
   })
@@ -514,6 +516,23 @@ export const webSearchTool = {
 
     const tasks = []
     const defaultTimeout = fast ? 1200 : 2500
+
+    // Query private on-device local index in parallel (<10ms response)
+    tasks.push(
+      withFastTimeout(
+        searchLocalIndex({ query, count: Math.min(n, 3), domain: site })
+          .then(res => (res?.results || []).map(r => ({
+            title: `[Private Memory] ${r.title}`,
+            url: r.url,
+            snippet: r.snippet,
+            published: r.published,
+            engine: 'local_index',
+            private: true,
+          }))),
+        fast ? 800 : 1500
+      )
+    )
+
     if (braveKey) {
       tasks.push(withFastTimeout(braveSearch(site ? `${query} site:${site}` : query, braveKey, n, recency), defaultTimeout))
     }

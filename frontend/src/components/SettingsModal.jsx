@@ -3,12 +3,13 @@ import {
   Sliders, Server, Cpu, Wrench, Palette, Volume2, Cloud, Activity,
   Key, Plus, Trash2, Check, RefreshCw, Eye, EyeOff, ExternalLink,
   Shield, Zap, Globe, Sparkles, Download, Upload, AlertCircle, Copy,
-  CheckCircle2, XCircle, HardDrive, HelpCircle, Sun, Moon, Monitor
+  CheckCircle2, XCircle, HardDrive, HelpCircle, Sun, Moon, Monitor, Compass
 } from 'lucide-react'
 import { Modal } from './Modal'
 import { ModelPicker } from './ModelPicker'
 import { LocalModelPanel } from './LocalModelPanel'
 import { ChromeAIPanel } from './ChromeAIPanel'
+import { SearchEnginePanel } from './SearchEnginePanel'
 import { DEFAULT_LOCAL_MODEL } from '../localLLM'
 import { FEATURES, resolveFeatures, FEATURE_DEFAULTS } from '../features'
 import { VOICE_LABELS, DEFAULT_VOICE } from '../video/speech'
@@ -344,6 +345,15 @@ export function SettingsModal({
           >
             <Cloud size={15} />
             <span>Privacy &amp; Sync</span>
+          </button>
+
+          <button
+            className={`settings-nav-item ${activeTab === 'searchengine' ? 'active' : ''}`}
+            onClick={() => setActiveTab('searchengine')}
+          >
+            <Compass size={15} />
+            <span>Search &amp; Crawler</span>
+            <span className="settings-badge green">Private</span>
           </button>
 
           <button
@@ -1457,6 +1467,11 @@ export function SettingsModal({
                 </div>
               </div>
             </section>
+          )}
+
+          {/* TAB: PRIVATE SEARCH ENGINE & CRAWLER */}
+          {activeTab === 'searchengine' && (
+            <SearchEnginePanel />
           )}
 
           {/* TAB 7: DIAGNOSTICS & SYSTEM */}

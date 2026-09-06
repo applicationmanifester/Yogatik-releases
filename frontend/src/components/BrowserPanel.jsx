@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
   ExternalLink, X, ArrowLeft, ArrowRight, RotateCw, Plus,
-  ZoomIn, ZoomOut, Search, Download, FolderOpen, Eye, Layers, Copy, Check, Sparkles,
+  ZoomIn, ZoomOut, Search, Download, FolderOpen, Eye, Layers, Copy, Check, Sparkles, Compass,
 } from 'lucide-react'
 
 const sessionKeyFor = (conversationId) => conversationId || '__default__'
@@ -29,6 +29,22 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
   const [findResult, setFindResult] = useState({ matches: 0, activeMatchOrdinal: 0 })
   const [downloads, setDownloads] = useState([])
   const [downloadsOpen, setDownloadsOpen] = useState(false)
+  const [indexState, setIndexState] = useState(null) // null | 'indexing' | 'indexed' | 'error'
+
+  const handleIndexCurrentPage = async () => {
+    const targetUrl = nav.url || url
+    if (!targetUrl || targetUrl.startsWith('about:')) return
+    setIndexState('indexing')
+    try {
+      const { indexUrlDirect } = await import('../tools/localIndexEngine.js')
+      await indexUrlDirect(targetUrl)
+      setIndexState('indexed')
+      setTimeout(() => setIndexState(null), 3000)
+    } catch {
+      setIndexState('error')
+      setTimeout(() => setIndexState(null), 3000)
+    }
+  }
 
   // ── Agent Eye / DOM Inspector State ──
   const [inspectorOpen, setInspectorOpen] = useState(false)
@@ -280,6 +296,19 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
             }}
           >
             <Eye size={14} />
+          </button>
+          <button
+            className={`artifact-btn${indexState === 'indexed' ? ' active' : ''}`}
+            onClick={handleIndexCurrentPage}
+            disabled={indexState === 'indexing' || !nav.url || nav.url.startsWith('about:')}
+            title={indexState === 'indexed' ? 'Indexed into Yogatik Search Engine!' : 'Index page into Yogatik Search Engine'}
+            aria-label="Index page into Yogatik Search Engine"
+            style={{
+              color: indexState === 'indexed' ? '#4ade80' : indexState === 'error' ? '#f87171' : undefined,
+              background: indexState === 'indexed' ? 'rgba(34, 197, 94, 0.2)' : undefined,
+            }}
+          >
+            {indexState === 'indexed' ? <Check size={14} /> : <Compass size={14} />}
           </button>
           <button className="artifact-btn" onClick={newTab} title="New tab" aria-label="New tab">
             <Plus size={14} />
