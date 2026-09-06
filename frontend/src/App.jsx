@@ -1067,6 +1067,9 @@ export default function App() {
   const updatePref = useCallback((key, value) => {
     if (typeof key === 'object' && key !== null) {
       const entries = Object.entries(key)
+      if (key.temperature !== undefined) {
+        setTemperature(key.temperature)
+      }
       setPrefsState(p => {
         const next = { ...p, ...key }
         for (const [k] of entries) {
@@ -1084,6 +1087,10 @@ export default function App() {
       return
     }
 
+    if (key === 'temperature') {
+      setTemperature(value)
+    }
+
     setPrefsState(p => {
       const next = { ...p, [key]: value }
       if (typeof key === 'string' && key.endsWith('_override')) {
@@ -1093,7 +1100,7 @@ export default function App() {
       return next
     })
     setPref(key, value).catch(() => {})
-  }, [])
+  }, [setTemperature])
 
   // Only the tail of a long conversation is mounted; older turns stay in state
   // (and IndexedDB) but are not rendered until asked for. Keeps a 500-message
@@ -3726,7 +3733,15 @@ export default function App() {
           <DashboardShell active={dashActive} onNavigate={navigateDashboard} onClose={closeDashboard}>
             {dashActive === 'settings' && (
               <>
-                <PersonalisePanel embedded prefs={prefs} onChange={updatePref} onClose={closeDashboard} />
+                <PersonalisePanel
+                  embedded
+                  prefs={{
+                    ...prefs,
+                    temperature: conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)
+                  }}
+                  onChange={updatePref}
+                  onClose={closeDashboard}
+                />
                 <div style={{ display: 'none' }}>
                   <StylePicker conversationId={scopeId} onToast={showToast} />
                 </div>
@@ -4918,6 +4933,25 @@ export default function App() {
               formatLatency={formatLatency}
               disabled={!models[conv?.provider || provider]?.available}
               onChange={(m) => chooseModel(m, conv?.provider || provider)} />
+
+            {/* Quick Sampling Temperature Bar directly in composer toolbar */}
+            <div
+              className="temp-control-pill"
+              title={`Sampling Temperature: ${(conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)).toFixed(2)} (${(conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)) <= 0.2 ? 'Deterministic / Code' : (conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)) <= 0.7 ? 'Balanced' : 'Creative / Brainstorming'})`}
+            >
+              <span className="temp-indicator">🌡️ {(conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)).toFixed(2)}</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)}
+                onChange={e => setTemperature(parseFloat(e.target.value))}
+                className="temp-inline-slider"
+                aria-label="Model Sampling Temperature"
+              />
+            </div>
+
             <label className="upload-btn">
               <Upload size={12} /> Upload
               <input type="file" hidden accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.tsv,.txt,.md,.json,.xml,.yaml,.yml,.toml,.ini,.env,.sql,.js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.h,.cs,.go,.rs,.php,.rb,.sh,.html,.css,*/*" onChange={handleUpload} />

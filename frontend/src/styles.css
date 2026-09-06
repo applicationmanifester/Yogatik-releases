@@ -1049,6 +1049,42 @@ html, body {
 .upload-area .stop-btn { background: var(--error); border-color: var(--error); color: #fff; }
 .upload-area .stop-btn:hover { opacity: .9; color: #fff; }
 
+.temp-control-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all var(--transition);
+}
+.temp-control-pill:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.temp-control-pill .temp-indicator {
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+}
+.temp-control-pill .temp-inline-slider {
+  width: 52px;
+  height: 4px;
+  cursor: pointer;
+  accent-color: var(--accent);
+  margin: 0;
+  padding: 0;
+  vertical-align: middle;
+}
+
 /* Typing indicator */
 .typing { display: flex; gap: 4px; padding: 8px 0; }
 .typing span {

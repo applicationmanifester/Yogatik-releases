@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Sliders, Volume2, Play, Square, LayoutGrid, RotateCcw, Globe } from 'lucide-react'
+import { Sliders, Volume2, Play, Square, LayoutGrid, RotateCcw, Globe, Thermometer } from 'lucide-react'
 import { Modal } from './Modal'
 import { localeSnapshot } from '../locale'
 import { FEATURES, resolveFeatures, FEATURE_DEFAULTS } from '../features'
@@ -41,6 +41,7 @@ export function PersonalisePanel({ prefs, onChange, onClose, embedded = false })
   const rawRounds = Number(prefs.max_tool_rounds)
   const isUnlimited = !rawRounds || rawRounds >= 100 || rawRounds === 0
   const rounds = isUnlimited ? 100 : Math.max(5, Math.min(95, rawRounds))
+  const temperature = prefs.temperature !== undefined ? Number(prefs.temperature) : 0.7
   const [previewing, setPreviewing] = useState(false)
 
   const gender = GENDER.male.includes(voice) ? 'male' : 'female'
@@ -177,6 +178,30 @@ export function PersonalisePanel({ prefs, onChange, onClose, embedded = false })
             onChange={e => onChange('formality_level', Number(e.target.value))}
           />
         </div>
+      </section>
+
+      <section className="personalise-group">
+        <h4><Thermometer size={13} /> Sampling &amp; Creativity (Temperature)</h4>
+        <p className="personalise-hint">
+          Control how creative vs. deterministic the model responses are. Lower values are optimal for code, logic, and factual accuracy. Higher values produce diverse, creative answers.
+        </p>
+        <div className="toggle-row">
+          <label htmlFor="p-temperature">
+            Temperature <span className="personalise-value">{temperature.toFixed(2)}</span>
+          </label>
+          <input
+            id="p-temperature" type="range" min="0" max="1" step="0.05"
+            value={temperature}
+            onChange={e => onChange('temperature', parseFloat(e.target.value))}
+          />
+        </div>
+        <p className="personalise-hint" style={{ marginTop: '6px', fontSize: '0.8rem', opacity: 0.85 }}>
+          {temperature <= 0.2
+            ? '🎯 Precise & Deterministic (Ideal for coding, math, structured data & strict rules)'
+            : temperature <= 0.7
+            ? '⚖️ Balanced (Recommended for general conversation, writing & analytical answers)'
+            : '🎨 Creative & Exploratory (Great for brainstorming, roleplay & creative writing)'}
+        </p>
       </section>
 
       <section className="personalise-group">
