@@ -4,7 +4,7 @@
  * API key stored in IndexedDB, never sent to any backend.
  */
 
-import { createReasoningTagger } from './reasoning'
+import { createReasoningTagger } from './reasoning.js'
 
 const PROVIDERS = {
   nvidia: {
