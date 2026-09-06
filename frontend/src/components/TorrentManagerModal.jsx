@@ -69,7 +69,7 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
 
     if (avail) {
       getDefaultDownloadPath().then(p => {
-        if (p) setTargetPath(p)
+        if (typeof p === 'string' && p) setTargetPath(p)
       })
       fetchTorrents()
     }
@@ -357,9 +357,9 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap'
                     }}
-                    title={targetPath}
+                    title={typeof targetPath === 'string' ? targetPath : ''}
                   >
-                    {targetPath || 'Default Downloads folder'}
+                    {typeof targetPath === 'string' && targetPath ? targetPath : 'Default Downloads folder'}
                   </span>
                   <button
                     onClick={handlePickFolder}

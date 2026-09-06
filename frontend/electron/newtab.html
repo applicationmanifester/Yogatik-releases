@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>New Tab · Yogatik Browser</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0e14;
+      --card-bg: rgba(22, 27, 35, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent: #6366f1;
+      --accent-glow: rgba(99, 102, 241, 0.3);
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at top center, #111827 0%, #0a0e14 70%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 30px 20px;
+      user-select: none;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 680px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+      animation: fadeIn 0.4s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Logo & Header */
+    .brand-header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      text-align: center;
+    }
+    .brand-logo {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px var(--accent-glow);
+    }
+    .brand-logo svg {
+      width: 32px;
+      height: 32px;
+      fill: none;
+      stroke: #ffffff;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .brand-title {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .brand-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* Search Bar */
+    .search-card {
+      width: 100%;
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
+      padding: 6px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .search-card:focus-within {
+      border-color: rgba(99, 102, 241, 0.6);
+      box-shadow: 0 16px 40px rgba(99, 102, 241, 0.2);
+    }
+
+    .search-form {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 10px;
+    }
+
+    .engine-select {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #cbd5e1;
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+      transition: background 0.15s;
+    }
+    .engine-select:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .engine-select option {
+      background: #161b23;
+      color: #f1f5f9;
+    }
+
+    .search-input {
+      flex: 1;
+      min-width: 0;
+      background: transparent;
+      border: none;
+      outline: none;
+      font-size: 15px;
+      color: #ffffff;
+      padding: 10px 4px;
+    }
+    .search-input::placeholder {
+      color: #64748b;
+    }
+
+    .search-btn {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: #ffffff;
+      border: none;
+      border-radius: 10px;
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 0.1s, opacity 0.15s;
+    }
+    .search-btn:hover {
+      opacity: 0.92;
+      transform: scale(1.02);
+    }
+    .search-btn:active {
+      transform: scale(0.96);
+    }
+    .search-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: #ffffff;
+      stroke-width: 2.2;
+      fill: none;
+    }
+
+    /* Quick Shortcut Cards */
+    .shortcuts-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      width: 100%;
+    }
+    @media (max-width: 540px) {
+      .shortcuts-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .shortcut-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 14px;
+      padding: 14px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.15s, transform 0.15s, border-color 0.15s;
+    }
+    .shortcut-card:hover {
+      background: rgba(255, 255, 255, 0.07);
+      border-color: rgba(255, 255, 255, 0.14);
+      transform: translateY(-2px);
+    }
+    .shortcut-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .shortcut-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #e2e8f0;
+    }
+
+    /* Privacy Footer */
+    .footer-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 8px;
+    }
+    .shield-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="brand-header">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+        </svg>
+      </div>
+      <h1 class="brand-title">Yogatik Search</h1>
+      <p class="brand-subtitle">Private, ultra-fast browsing engine</p>
+    </div>
+
+    <div class="search-card">
+      <form class="search-form" id="search-form">
+        <select class="engine-select" id="engine-select" title="Choose Search Engine">
+          <option value="ddg">DuckDuckGo</option>
+          <option value="google">Google</option>
+          <option value="bing">Bing</option>
+          <option value="brave">Brave</option>
+          <option value="github">GitHub</option>
+          <option value="wiki">Wikipedia</option>
+        </select>
+        <input
+          type="text"
+          class="search-input"
+          id="search-input"
+          placeholder="Search the web or enter URL..."
+          autocomplete="off"
+          spellcheck="false"
+          autofocus
+        />
+        <button type="submit" class="search-btn" title="Search">
+          <svg viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </button>
+      </form>
+    </div>
+
+    <div class="shortcuts-grid">
+      <a class="shortcut-card" href="https://duckduckgo.com">
+        <div class="shortcut-icon" style="background: rgba(222, 88, 51, 0.15); color: #de5833;">🦆</div>
+        <span class="shortcut-label">DuckDuckGo</span>
+      </a>
+      <a class="shortcut-card" href="https://www.google.com">
+        <div class="shortcut-icon" style="background: rgba(66, 133, 244, 0.15); color: #4285f4;">G</div>
+        <span class="shortcut-label">Google</span>
+      </a>
+      <a class="shortcut-card" href="https://github.com">
+        <div class="shortcut-icon" style="background: rgba(255, 255, 255, 0.12); color: #ffffff;">🐙</div>
+        <span class="shortcut-label">GitHub</span>
+      </a>
+      <a class="shortcut-card" href="https://www.youtube.com">
+        <div class="shortcut-icon" style="background: rgba(255, 0, 0, 0.15); color: #ef4444;">▶</div>
+        <span class="shortcut-label">YouTube</span>
+      </a>
+      <a class="shortcut-card" href="https://grok.com">
+        <div class="shortcut-icon" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">🤖</div>
+        <span class="shortcut-label">Grok.com</span>
+      </a>
+      <a class="shortcut-card" href="https://www.reddit.com">
+        <div class="shortcut-icon" style="background: rgba(255, 69, 0, 0.15); color: #ff5722;">💬</div>
+        <span class="shortcut-label">Reddit</span>
+      </a>
+      <a class="shortcut-card" href="https://en.wikipedia.org">
+        <div class="shortcut-icon" style="background: rgba(255, 255, 255, 0.1); color: #e2e8f0;">W</div>
+        <span class="shortcut-label">Wikipedia</span>
+      </a>
+      <a class="shortcut-card" href="https://archive.org">
+        <div class="shortcut-icon" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">🏛</div>
+        <span class="shortcut-label">Archive.org</span>
+      </a>
+    </div>
+
+    <div class="footer-badge">
+      <span class="shield-dot"></span>
+      <span>Yogatik Sandbox Active · Ad/Tracker Shield Enabled</span>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('search-form');
+    const input = document.getElementById('search-input');
+    const engineSelect = document.getElementById('engine-select');
+
+    // Restore chosen engine preference
+    try {
+      const savedEngine = localStorage.getItem('yogatik_search_engine');
+      if (savedEngine && engineSelect.querySelector(`option[value="${savedEngine}"]`)) {
+        engineSelect.value = savedEngine;
+      }
+    } catch (_) {}
+
+    engineSelect.addEventListener('change', () => {
+      try {
+        localStorage.setItem('yogatik_search_engine', engineSelect.value);
+      } catch (_) {}
+      input.focus();
+    });
+
+    function resolveDestination(rawText, engine) {
+      const q = rawText.trim();
+      if (!q) return null;
+
+      // Check if already a full URL
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(q)) {
+        return q;
+      }
+
+      // Check if looks like domain or host
+      const noSpace = !/\s/.test(q);
+      const isHost = noSpace && (
+        /^localhost(:\d+)?(\/.*)?$/i.test(q) ||
+        /^\d{1,3}(\.\d{1,3}){3}(:\d+)?(\/.*)?$/.test(q) ||
+        /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(:\d+)?(\/.*)?$/i.test(q)
+      );
+      if (isHost) {
+        return 'https://' + q;
+      }
+
+      // Build search engine query URL
+      const encoded = encodeURIComponent(q);
+      switch (engine) {
+        case 'google':
+          return `https://www.google.com/search?q=${encoded}`;
+        case 'bing':
+          return `https://www.bing.com/search?q=${encoded}`;
+        case 'brave':
+          return `https://search.brave.com/search?q=${encoded}`;
+        case 'github':
+          return `https://github.com/search?q=${encoded}`;
+        case 'wiki':
+          return `https://en.wikipedia.org/wiki/Special:Search?search=${encoded}`;
+        case 'ddg':
+        default:
+          return `https://duckduckgo.com/?q=${encoded}`;
+      }
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const dest = resolveDestination(input.value, engineSelect.value);
+      if (dest) {
+        window.location.href = dest;
+      }
+    });
+
+    // Auto-focus search input
+    window.addEventListener('load', () => {
+      input.focus();
+      input.select();
+    });
+  </script>
+</body>
+</html>

@@ -219,6 +219,11 @@ const CHANNELS = {
   // with a `kc.v1:` prefix. Gate the keychain and a lapsed customer cannot
   // read their OWN API keys — the app looks like it deleted them. Never gate.
   'keychain:available': FA, 'keychain:encrypt': FA, 'keychain:decrypt': FA,
+  // BitTorrent client runs locally in desktop mode; user's own downloads and
+  // folders are always accessible and never locked out.
+  'torrent:getDefaultPath': FA, 'torrent:add': FA, 'torrent:list': FA,
+  'torrent:pause': FA, 'torrent:resume': FA, 'torrent:remove': FA,
+  'torrent:openFolder': FA,
 }
 
 /** Every capability a state grants, or null for "everything". */

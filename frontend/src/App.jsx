@@ -685,7 +685,7 @@ export default function App() {
   const handleOpenBrowser = useCallback((url) => {
     const b = typeof window !== 'undefined' ? window.__YOGATIK_BROWSER__ : null
     if (b?.navigate) {
-      b.navigate({ url: url || 'about:blank', display: 'window' })
+      b.navigate({ url: url || '', display: 'window' })
       showToast('Opened Yogatik Browser')
     } else if (window.__YOGATIK_DESKTOP__?.openExternal && url) {
       window.__YOGATIK_DESKTOP__.openExternal(url)

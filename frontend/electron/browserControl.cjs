@@ -14,12 +14,21 @@
 
 const { BrowserWindow, WebContentsView, ipcMain, session: electronSession, shell } = require('electron')
 const path = require('path')
+const { pathToFileURL } = require('url')
 const { safeSend } = require('./safeWindow.cjs')
 const {
   buildTree, walkerSource, refResolverSource, elementRefExpression, parseRef, isStaleRef,
   normalizeAddressInput, stepZoom,
   findRelocationMatch, relocateScanSource, relocateResolverSource,
 } = require('./browserTree.cjs')
+
+const NEW_TAB_URL = pathToFileURL(path.join(__dirname, 'newtab.html')).href
+
+function isNewTabUrl(u) {
+  if (!u) return true
+  const str = String(u)
+  return str === 'about:blank' || str === 'yogatik://newtab' || str === NEW_TAB_URL || str.includes('newtab.html')
+}
 
 // Window-mode chrome height: the toolbar (back/forward/reload/address bar)
 // plus the tab strip beneath it, both 36px in browserWindow.html's own CSS.
@@ -68,12 +77,16 @@ function tabFor(s, tabId) {
 }
 
 function listTabs(s) {
-  return [...s.tabs.entries()].map(([tabId, t]) => ({
-    tabId,
-    url: safe(() => t.view.webContents.getURL(), ''),
-    title: safe(() => t.view.webContents.getTitle(), ''),
-    active: tabId === s.activeTabId,
-  }))
+  return [...s.tabs.entries()].map(([tabId, t]) => {
+    const rawUrl = safe(() => t.view.webContents.getURL(), '')
+    const isHome = isNewTabUrl(rawUrl)
+    return {
+      tabId,
+      url: isHome ? '' : rawUrl,
+      title: isHome ? 'New Tab' : (safe(() => t.view.webContents.getTitle(), '') || 'New Tab'),
+      active: tabId === s.activeTabId,
+    }
+  })
 }
 
 // ── Surfaces ──────────────────────────────────────────────────────────────
@@ -158,11 +171,13 @@ function showActive(s) {
 // to, and back/forward would have no way to grey out.
 function navSnapshot(s) {
   const t = activeTab(s)
+  const rawUrl = t ? safe(() => t.view.webContents.getURL(), '') : ''
+  const isHome = isNewTabUrl(rawUrl)
   return {
     conversationId: s.key === '__default__' ? null : s.key,
     tabs: listTabs(s),
     activeTabId: s.activeTabId,
-    url: t ? safe(() => t.view.webContents.getURL(), '') : '',
+    url: isHome ? '' : rawUrl,
     canGoBack: t ? safe(() => t.view.webContents.navigationHistory.canGoBack(), false) : false,
     canGoForward: t ? safe(() => t.view.webContents.navigationHistory.canGoForward(), false) : false,
     loading: t ? safe(() => t.view.webContents.isLoading(), false) : false,
@@ -358,11 +373,13 @@ function createTab(s, url) {
   })
 
   showActive(s)
-  if (url) navigate(s, tabId, url)
+  const targetUrl = isNewTabUrl(url) ? NEW_TAB_URL : url
+  navigate(s, tabId, targetUrl)
   return tabId
 }
 
 function navigate(s, tabId, url) {
+  const targetUrl = isNewTabUrl(url) ? NEW_TAB_URL : url
   const t = tabFor(s, tabId)
   if (!t) return Promise.resolve({ success: false, error: 'No such tab' })
   const wc = t.view.webContents
@@ -378,7 +395,7 @@ function navigate(s, tabId, url) {
     }
     const ok = () => done({
       success: true,
-      url: safe(() => wc.getURL(), url),
+      url: safe(() => wc.getURL(), targetUrl),
       title: safe(() => wc.getTitle(), ''),
     })
     const fail = (_e, code, desc, failedUrl, isMainFrame) => {
@@ -391,13 +408,13 @@ function navigate(s, tabId, url) {
     const timer = setTimeout(() => done({
       success: true,
       timeout: true,
-      url: safe(() => wc.getURL(), url),
+      url: safe(() => wc.getURL(), targetUrl),
       title: safe(() => wc.getTitle(), ''),
       note: 'Load did not finish within 30s; reporting what rendered so far.',
     }), LOAD_TIMEOUT)
     wc.on('did-finish-load', ok)
     wc.on('did-fail-load', fail)
-    wc.loadURL(url).catch(err => done({ success: false, error: err.message }))
+    wc.loadURL(targetUrl).catch(err => done({ success: false, error: err.message }))
   })
 }
 

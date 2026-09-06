@@ -5,6 +5,7 @@
 const { ipcMain, app, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { safeSend } = require('./safeWindow.cjs')
 
 let client = null
 let WebTorrentClass = null
@@ -73,11 +74,7 @@ function startBroadcasting(getWindow) {
         list.push(formatTorrentData(record.torrent, record.paused))
       }
     }
-    try {
-      win.webContents.send('torrent:update', list)
-    } catch {
-      // window closed or navigating
-    }
+    safeSend(win, 'torrent:update', list)
   }, 1000)
 }
 

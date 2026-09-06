@@ -46,7 +46,12 @@ export async function openTorrentFolder(infoHash) {
 
 export async function getDefaultDownloadPath() {
   if (!isTorrentAvailable()) return ''
-  return window.__YOGATIK_TORRENT__.getDefaultPath()
+  try {
+    const res = await window.__YOGATIK_TORRENT__.getDefaultPath()
+    return typeof res === 'string' ? res : ''
+  } catch {
+    return ''
+  }
 }
 
 export function subscribeTorrentUpdates(callback) {
