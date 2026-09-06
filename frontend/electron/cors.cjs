@@ -48,19 +48,42 @@ const FIRST_PARTY = [
   /^https:\/\/identitytoolkit\.googleapis\.com\//,
 ]
 
+// Studio docks and interactive browser auth (Grok, Gemini, xAI, Google, X/Twitter).
+// Cookies and credentials must persist across sessions so the user stays logged in.
+const STUDIO_AUTH_PATTERNS = [
+  /^https:\/\/(?:[^/]*\.)?grok\.com\//,
+  /^https:\/\/(?:[^/]*\.)?x\.ai\//,
+  /^https:\/\/(?:[^/]*\.)?x\.com\//,
+  /^https:\/\/(?:[^/]*\.)?twitter\.com\//,
+  /^https:\/\/(?:[^/]*\.)?google\.com\//,
+  /^https:\/\/(?:[^/]*\.)?googleusercontent\.com\//,
+  /^https:\/\/(?:[^/]*\.)?gstatic\.com\//,
+]
+
 const ALL_URLS = { urls: ['http://*/*', 'https://*/*'] }
 const LOCALHOST_ORIGIN = /:(11434|1234)\b/
 
 const isProvider = (url) => PROVIDER_PATTERNS.some(re => re.test(url))
 const isFirstParty = (url) => FIRST_PARTY.some(re => re.test(url))
+const isStudioAuth = (url) => STUDIO_AUTH_PATTERNS.some(re => re.test(url))
 
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-  '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+  '(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
 
 function enableProviderCors() {
   const wr = session.defaultSession.webRequest
 
   wr.onHeadersReceived(ALL_URLS, (details, cb) => {
+    const url = details.url || ''
+    const isNavigation = details.resourceType === 'mainFrame' || details.resourceType === 'subFrame'
+
+    // Interactive user browsing in Yogatik Browser and Studio Docks must receive genuine
+    // server headers without CORS mutations or stripping of Set-Cookie / Credentials.
+    if (isNavigation || isStudioAuth(url)) {
+      cb({ responseHeaders: details.responseHeaders })
+      return
+    }
+
     const headers = details.responseHeaders || {}
     headers['Access-Control-Allow-Origin'] = ['*']
     headers['Access-Control-Allow-Methods'] = ['GET, POST, PUT, DELETE, PATCH, OPTIONS']
@@ -80,38 +103,27 @@ function enableProviderCors() {
   wr.onBeforeSendHeaders(ALL_URLS, (details, cb) => {
     const h = details.requestHeaders
     const url = details.url || ''
+    const isNavigation = details.resourceType === 'mainFrame' || details.resourceType === 'subFrame'
+
+    // Use a genuine, modern Chrome User-Agent across requests so Google and xAI
+    // do not flag the session as an insecure embedded webview.
+    if (!h['User-Agent'] || /Electron|Yogatik/i.test(h['User-Agent'])) {
+      h['User-Agent'] = BROWSER_UA
+    }
 
     if (LOCALHOST_ORIGIN.test(url)) {
-      // Send an Origin the daemon ALREADY trusts, and derive it from the URL
-      // rather than hardcoding one.
-      //
-      // Ollama's default allowlist is 127.0.0.1 and 0.0.0.0 — anything else
-      // needs OLLAMA_ORIGINS set by the user, which a desktop app must not
-      // require. This previously sent a fixed `http://localhost:11434`, so
-      // when the request went to 127.0.0.1 the Origin named a DIFFERENT host
-      // than the target, and on an Ollama build that does not allowlist
-      // `localhost` the daemon answers 403. A 403 with no CORS headers reaches
-      // the renderer as a bare network failure, which the app then reported as
-      // "network or CORS proxy issue" — the same unhelpful sentence for a
-      // rejected origin as for a daemon that is not running.
-      //
-      // Matching the origin to the target host means the request always looks
-      // same-origin to the daemon, for both Ollama (11434) and LM Studio (1234).
       try {
         const u = new URL(url)
         h['Origin'] = `${u.protocol}//${u.host}`
       } catch {
         h['Origin'] = 'http://127.0.0.1:11434'
       }
-    } else if (!isProvider(url) && !isFirstParty(url)) {
-      // General web read: go anonymously. See the SAFETY note above.
+    } else if (isNavigation || isStudioAuth(url) || isFirstParty(url) || isProvider(url)) {
+      // Interactive user browsing, OAuth flows, and Studio docks MUST keep cookies and credentials intact
+    } else {
+      // General web read via tool (web_extract, scrapling, etc.): go anonymously.
       delete h['Cookie']
       delete h['cookie']
-      // Many sites serve a bot page or 403 to an unknown UA; presenting a normal
-      // browser UA is a large part of what makes "read any site" actually work.
-      if (!h['User-Agent'] || /Electron|Yogatik/i.test(h['User-Agent'])) {
-        h['User-Agent'] = BROWSER_UA
-      }
       // A file:// Origin makes some servers refuse outright; omitting it makes
       // the request look like an ordinary top-level fetch.
       delete h['Origin']
@@ -121,6 +133,6 @@ function enableProviderCors() {
 }
 
 module.exports = {
-  enableProviderCors, isProvider, isFirstParty,
-  PROVIDER_PATTERNS, FIRST_PARTY, BROWSER_UA,
+  enableProviderCors, isProvider, isFirstParty, isStudioAuth,
+  PROVIDER_PATTERNS, FIRST_PARTY, STUDIO_AUTH_PATTERNS, BROWSER_UA,
 }

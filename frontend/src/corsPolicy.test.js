@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isProvider, isFirstParty, PROVIDER_PATTERNS, FIRST_PARTY } from '../electron/cors.cjs'
+import { isProvider, isFirstParty, isStudioAuth, PROVIDER_PATTERNS, FIRST_PARTY, STUDIO_AUTH_PATTERNS } from '../electron/cors.cjs'
 
 describe('CORS policy classification', () => {
   it('recognises every LLM provider host', () => {
@@ -45,8 +45,21 @@ describe('CORS policy classification', () => {
     expect(isFirstParty('https://notfirebaseapp.com/')).toBe(false)
   })
 
+  it('recognises studio auth and interactive login hosts for Grok and Gemini', () => {
+    for (const u of [
+      'https://grok.com/',
+      'https://accounts.x.ai/login',
+      'https://x.ai/api',
+      'https://gemini.google.com/app',
+      'https://x.com/login',
+      'https://twitter.com/oauth',
+    ]) expect(isStudioAuth(u)).toBe(true)
+  })
+
   it('patterns are anchored, not substring matches', () => {
     expect(PROVIDER_PATTERNS.every(re => re.source.startsWith('^'))).toBe(true)
     expect(FIRST_PARTY.every(re => re.source.startsWith('^'))).toBe(true)
+    expect(STUDIO_AUTH_PATTERNS.every(re => re.source.startsWith('^'))).toBe(true)
   })
 })
+
