@@ -468,8 +468,26 @@ export function GrokDock({
                   : 'No files match your search filter.'}
               </p>
             )}
-            <div className="picker-footer">
+            <div className="picker-footer" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button className="small-btn" onClick={() => setShowFilePicker(false)}>Cancel</button>
+              <button
+                className="small-btn"
+                style={{
+                  background: 'rgba(99, 102, 241, 0.15)',
+                  border: '1px solid rgba(99, 102, 241, 0.4)',
+                  color: '#a5b4fc',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px'
+                }}
+                onClick={() => {
+                  setShowFilePicker(false)
+                  handleSendFolderBundle()
+                }}
+                title="Read and bundle multiple files from this workspace folder into Grok"
+              >
+                <Layers size={12} /> Bundle Entire Folder
+              </button>
               <button
                 className="small-btn btn-primary"
                 disabled={!selectedFile}
