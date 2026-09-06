@@ -357,7 +357,7 @@ async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeo
 export async function streamChat({
   provider, apiKey, model, messages, tools = null,
   temperature = 0.7, maxTokens = null, signal, onToken, onToolCall, onDone, onError, onStatus,
-  retriedWithoutTools = false, onToolsRejected = null,
+  retriedWithoutTools = false, onToolsRejected = null, retriedFixedTemp = false,
 }) {
   const prov = getProviders()[provider]
   if (!prov) throw new Error(`Unknown provider: ${provider}`)
@@ -391,22 +391,31 @@ export async function streamChat({
     headers['X-Title'] = 'Yogatik'
   }
 
+  const isReasoningModel = /^(o[13](-mini|-preview)?|.*nemotron-.*ultra.*|.*deepseek-r1.*)/i.test(cleanModel)
+  const isFixedTemp = isReasoningModel || retriedFixedTemp
+
   let endpoint = `${prov.baseUrl}/chat/completions`
   const body = {
     model: cleanModel,
     messages,
-    temperature: Math.max(0.2, temperature),
-    top_p: 0.95,
     stream: true,
+  }
+
+  if (isFixedTemp) {
+    body.temperature = 1.0
+  } else {
+    body.temperature = Math.max(0.2, temperature)
+    body.top_p = 0.95
   }
 
   if (maxTokens && Number.isFinite(maxTokens)) {
     body.max_tokens = maxTokens
-    if (provider === 'openai') body.max_completion_tokens = maxTokens
+    if (provider === 'openai' || isReasoningModel) body.max_completion_tokens = maxTokens
   }
 
   // Add mild anti-repetition penalty for standard OpenAI/NVIDIA endpoints to prevent N-gram degeneration loops
-  if (!prov.isAnthropic && !prov.baseUrl.includes('anthropic')) {
+  // (Skip for reasoning models which reject presence_penalty and frequency_penalty)
+  if (!prov.isAnthropic && !prov.baseUrl.includes('anthropic') && !isFixedTemp) {
     body.presence_penalty = 0.05
     body.frequency_penalty = 0.05
   }
@@ -475,6 +484,17 @@ export async function streamChat({
           provider, apiKey, model: cleanModel, messages, tools: null,
           temperature, signal, onToken, onToolCall, onDone, onError, onStatus,
           retriedWithoutTools: true,
+          retriedFixedTemp,
+        })
+      }
+      // Certain reasoning models/routes strictly enforce temperature: 1.0 (between 1.0 and 1.0)
+      const isTempError = /temperature.*(supported.*between 1|unsupported)|unsupported.*value.*temperature/i.test(err)
+      if (resp.status === 400 && isTempError && !retriedFixedTemp) {
+        return streamChat({
+          provider, apiKey, model: cleanModel, messages, tools,
+          temperature: 1.0, signal, onToken, onToolCall, onDone, onError, onStatus,
+          retriedWithoutTools, onToolsRejected,
+          retriedFixedTemp: true,
         })
       }
       if (resp.status === 400) {
@@ -650,9 +670,18 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
     headers['HTTP-Referer'] = 'https://yogatik.app'
     headers['X-Title'] = 'Yogatik'
   }
+  const isReasoningModel = /^(o[13](-mini|-preview)?|.*nemotron-.*ultra.*|.*deepseek-r1.*)/i.test(cleanModel)
   let endpoint = `${prov.baseUrl}/chat/completions`
-  const body = { model: cleanModel, messages, temperature }
-  if (maxTokens) body.max_tokens = maxTokens
+  const body = { model: cleanModel, messages }
+  if (isReasoningModel) {
+    body.temperature = 1.0
+  } else {
+    body.temperature = temperature
+  }
+  if (maxTokens) {
+    body.max_tokens = maxTokens
+    if (provider === 'openai' || isReasoningModel) body.max_completion_tokens = maxTokens
+  }
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto' }
 
   if (prov?.isAnthropic) {
@@ -684,6 +713,16 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
   }, prov, { timeoutMs, retries })
   if (!resp.ok) {
     const raw = await resp.text()
+    if (resp.status === 400 && /temperature.*(supported.*between 1|unsupported)|unsupported.*value.*temperature/i.test(raw) && body.temperature !== 1.0) {
+      body.temperature = 1.0
+      delete body.top_p
+      delete body.presence_penalty
+      delete body.frequency_penalty
+      const retryResp = await fetchWithRetry(endpoint, {
+        method: 'POST', headers, body: JSON.stringify(body),
+      }, prov, { timeoutMs, retries })
+      if (retryResp.ok) return retryResp.json()
+    }
     throw new Error(parseProviderError(resp.status, raw))
   }
   const data = await resp.json()

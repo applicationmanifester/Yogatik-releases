@@ -4066,6 +4066,13 @@ export default function App() {
               </div>
             )}
           </DashboardShell>
+          {showProviderModal && (
+            <ProviderModal
+              onClose={() => { setShowProviderModal(false); setEditingProvider(null) }}
+              onSaved={() => { refreshModels(); setEditingProvider(null) }}
+              editProvider={editingProvider ? { id: editingProvider, ...models[editingProvider] } : null}
+            />
+          )}
         </React.Suspense>
       </div>
     )

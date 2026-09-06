@@ -1733,7 +1733,12 @@ function friendlyProviderError(rawMsg = '') {
   if (/\b500\b|502\b|504\b|Internal server error/i.test(msg)) {
     return 'Provider server error (500/502/504). Please try again or switch to a lighter model.'
   }
-  if (/\b401\b|invalid api key|unauthorized/i.test(msg)) return 'Invalid API key — check you pasted the whole key.'
+  if (/temperature.*(supported.*between 1|unsupported)|unsupported.*value.*temperature/i.test(msg)) {
+    return 'This model requires temperature 1.0. Yogatik will automatically adjust the sampling temperature.'
+  }
+  if (/authentication failed|invalid api key|unauthorized|\b401\b/i.test(msg)) {
+    return 'Authentication failed (401). Please check that your API key is correct, active, and has remaining quota or credits.'
+  }
   if (/\b403\b/i.test(msg)) return 'Key rejected (403). It may lack permission or be from the wrong account.'
   if (/\b404\b|model.*not found/i.test(msg)) return 'Model not found for this provider — pick a different model.'
   if (/\b429\b/i.test(msg)) return 'Rate limited (429). The key works, but you are over quota right now.'
