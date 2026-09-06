@@ -212,6 +212,31 @@ export const desktopActionTool = {
   execute: executeDesktopAction,
 }
 
+export const torrentDownloadTool = {
+  schema: {
+    type: 'function',
+    function: {
+      name: 'download_torrent',
+      description: 'Download an open-source dataset, Linux ISO, or file using Yogatik Desktop\'s built-in P2P BitTorrent engine via magnet URI or torrent link.',
+      parameters: {
+        type: 'object',
+        properties: {
+          uri: { type: 'string', description: 'Magnet URI (e.g. magnet:?xt=urn:btih:...) or HTTP link to a .torrent file' },
+          download_path: { type: 'string', description: 'Optional custom target folder. Defaults to user\'s Downloads directory.' }
+        },
+        required: ['uri']
+      }
+    }
+  },
+  execute: async ({ uri, download_path }) => {
+    const { addTorrent, isTorrentAvailable } = await import('./torrentClient.js')
+    if (!isTorrentAvailable()) {
+      return { success: false, error: 'BitTorrent engine is available in Yogatik Desktop app only.' }
+    }
+    return addTorrent({ uri, downloadPath: download_path })
+  }
+}
+
 export const browserAutopilotTool = {
   schema: {
     type: 'function',
@@ -264,6 +289,7 @@ const ALL_TOOLS = {
   web_search: localSearchTool,
   local_search: localIndexSearchTool,
   local_crawl: localCrawlerTool,
+  download_torrent: torrentDownloadTool,
   deep_research: researchTool,
   doc_search: docSearchTool,
   doc_list: docListTool,

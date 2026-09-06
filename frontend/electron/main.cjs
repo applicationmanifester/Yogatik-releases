@@ -55,6 +55,7 @@ const { registerMcpStdioClientIpc, stopAllMcpStdioClients } = require('./mcpStdi
 const { registerOllamaIpc, destroyOllamaDaemon } = require('./ollamaDaemon.cjs')
 const { loadConfig: loadComfyConfig, registerComfyIpc, destroyComfyDaemon } = require('./comfyDaemon.cjs')
 const { registerCastIpc, destroyCastControl } = require('./castControl.cjs')
+const { registerTorrentIpc, destroyTorrentManager } = require('./torrentManager.cjs')
 const windowState = require('./windowState.cjs')
 
 const isDev = !app.isPackaged
@@ -338,6 +339,8 @@ if (!gotLock) {
       // SSDP discovery + a tiny local file server + SOAP, no external app,
       // no ffmpeg (see castCore.cjs for why neither is needed here).
       registerCastIpc()
+      // Native BitTorrent P2P download & swarm manager
+      registerTorrentIpc(getWindow)
     })
 
     // Start the local search sidecar WITHOUT awaiting it.
@@ -750,6 +753,7 @@ if (!gotLock) {
     destroyOllamaDaemon()  // kill any managed Ollama daemon + in-progress pulls
     destroyComfyDaemon()   // kill any managed ComfyUI process
     destroyCastControl()   // stop the cast file server and clear discovered devices
+    destroyTorrentManager() // cleanly disconnect P2P swarms and destroy WebTorrent client
     if (searchSidecar) {
       searchSidecar.kill()
     }

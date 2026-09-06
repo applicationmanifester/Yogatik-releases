@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { setUserQuestionHandler } from './tools/askUser'
@@ -73,6 +73,7 @@ const GrokDock = safeLazy(() => import('./components/GrokDock').then(m => ({ def
 const GeminiDock = safeLazy(() => import('./components/GeminiDock').then(m => ({ default: m.GeminiDock })))
 const ActivityPanel = safeLazy(() => import('./components/ActivityPanel').then(m => ({ default: m.ActivityPanel })))
 const DataDashboard = safeLazy(() => import('./components/DataDashboard'))
+const TorrentManagerModal = safeLazy(() => import('./components/TorrentManagerModal'))
 const OnboardingModal = safeLazy(() => import('./components/OnboardingModal'))
 const AuthModal = safeLazy(() => import('./components/AuthModal').then(m => ({ default: m.AuthModal })))
 const ProviderModal = safeLazy(() => import('./components/ProviderModal').then(m => ({ default: m.ProviderModal })))
@@ -486,6 +487,7 @@ export default function App() {
   const [showDomainHub, setShowDomainHub] = useState(false)
   const [showOverviewModal, setShowOverviewModal] = useState(false)
   const [showMcpModal, setShowMcpModal] = useState(false)
+  const [showTorrentModal, setShowTorrentModal] = useState(false)
   const [companionMode, setCompanionMode] = useState(false)
   const [pipWindow, setPipWindow] = useState(null)
 
@@ -677,7 +679,7 @@ export default function App() {
     showWorkspace || showTour || showBilling ||
     showAgents || showMcpModal || showPlugins ||
     showAccount || showProviders || showPrivacy ||
-    browserPanel
+    showTorrentModal || browserPanel
   )
 
   const handleOpenBrowser = useCallback((url) => {
@@ -3605,7 +3607,10 @@ export default function App() {
       { id: 'sub-agents', group: 'Tools', label: '🧩 Sub-agent runner', hint: 'Isolated agents', run: () => setShowSubAgents(true) },
       { id: 'grok-dock', group: 'Tools', label: '🤖 Grok.com Studio Dock (Desktop Local Files Bridge)', hint: 'xAI Web + Files', run: () => { setShowGrokDock(true); setShowGeminiDock(false); } },
       { id: 'gemini-dock', group: 'Tools', label: '✨ Gemini.com Studio Dock (Desktop Local Files Bridge)', hint: 'Google Web + Files', run: () => { setShowGeminiDock(true); setShowGrokDock(false); } },
-      ...(isDesktop() ? [{ id: 'open-yogatik-browser', group: 'Tools', label: '🧭 Yogatik Browser (Desktop Window)', hint: 'Desktop Browser', run: () => handleOpenBrowser() }] : []),
+      ...(isDesktop() ? [
+        { id: 'open-yogatik-browser', group: 'Tools', label: '🧭 Yogatik Browser (Desktop Window)', hint: 'Desktop Browser', run: () => handleOpenBrowser() },
+        { id: 'open-torrent-downloader', group: 'Tools', label: '⚡ P2P Torrent Downloader (Native Engine)', hint: 'P2P Torrents', run: () => setShowTorrentModal(true) },
+      ] : []),
       { id: 'search-engine-crawler', group: 'Tools', label: '🔍 Yogatik Search Engine & Web Crawler (Private Index)', hint: 'Search & Crawl', run: () => { setSettingsModalTab('searchengine'); setShowSettingsModal(true) } },
       { id: 'auto-skills', group: 'Tools', label: '✨ Auto-generated skills', hint: 'Review & prune', run: () => setShowAutoSkills(true) },
       { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => navigateDashboard('capabilities') },
@@ -4620,14 +4625,24 @@ export default function App() {
                 <Plug size={17} />
               </button>
               {isDesktop() && (
-                <button
-                  className="icon-btn browser-header-btn"
-                  onClick={() => handleOpenBrowser()}
-                  title="Yogatik Browser (Desktop Browser Window)"
-                  aria-label="Yogatik Browser"
-                >
-                  <Compass size={17} />
-                </button>
+                <>
+                  <button
+                    className="icon-btn browser-header-btn"
+                    onClick={() => handleOpenBrowser()}
+                    title="Yogatik Browser (Desktop Browser Window)"
+                    aria-label="Yogatik Browser"
+                  >
+                    <Compass size={17} />
+                  </button>
+                  <button
+                    className="icon-btn torrent-header-btn"
+                    onClick={() => setShowTorrentModal(true)}
+                    title="P2P Torrent Downloader (Native Desktop Engine)"
+                    aria-label="P2P Torrent Downloader"
+                  >
+                    <DownloadCloud size={17} />
+                  </button>
+                </>
               )}
               <button className="icon-btn domain-hub-header-btn" onClick={() => setShowDomainHub(true)} title="Social Media & Domain Hub (Alt+D)" aria-label="Social Media & Domain Hub"><Globe size={17} /></button>
               <button
@@ -5539,6 +5554,13 @@ export default function App() {
           isOpen={showFileEditor}
           onClose={() => setShowFileEditor(false)}
           onSave={(path) => showToast(`Saved ${path}`)}
+        />
+      )}
+      {showTorrentModal && (
+        <TorrentManagerModal
+          isOpen={showTorrentModal}
+          onClose={() => setShowTorrentModal(false)}
+          showToast={showToast}
         />
       )}
       {showPalette && <CommandPalette commands={paletteCommands} onClose={() => setShowPalette(false)} onOpenChat={openChatById} />}

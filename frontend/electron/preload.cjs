@@ -458,3 +458,20 @@ contextBridge.exposeInMainWorld('__YOGATIK_SUBAGENT__', {
     namespace: (agentId) => ipcRenderer.invoke('subagent:python:namespace', agentId),
   }
 })
+
+// Desktop Native BitTorrent Engine bridge
+contextBridge.exposeInMainWorld('__YOGATIK_TORRENT__', {
+  add: (opts) => ipcRenderer.invoke('torrent:add', opts),
+  list: () => ipcRenderer.invoke('torrent:list'),
+  pause: (opts) => ipcRenderer.invoke('torrent:pause', opts),
+  resume: (opts) => ipcRenderer.invoke('torrent:resume', opts),
+  remove: (opts) => ipcRenderer.invoke('torrent:remove', opts),
+  openFolder: (opts) => ipcRenderer.invoke('torrent:openFolder', opts),
+  getDefaultPath: () => ipcRenderer.invoke('torrent:getDefaultPath'),
+  onUpdate: (cb) => {
+    const handler = (_e, data) => { try { cb(data) } catch { /* ignore */ } }
+    ipcRenderer.on('torrent:update', handler)
+    return () => ipcRenderer.removeListener('torrent:update', handler)
+  }
+})
+

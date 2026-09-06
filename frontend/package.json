@@ -58,6 +58,7 @@
     "react-markdown": "^9.0.1",
     "react-syntax-highlighter": "^16.1.1",
     "remark-gfm": "^4.0.1",
+    "webtorrent": "^3.0.21",
     "zod": "^3.23.8",
     "zustand": "^5.0.15"
   },
