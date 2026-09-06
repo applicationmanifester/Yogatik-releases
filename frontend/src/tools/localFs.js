@@ -21,7 +21,7 @@
 
 export function isDesktop() {
   return typeof window !== 'undefined' &&
-    (!!window.__TAURI_INTERNALS__ || !!window.__TAURI__ || !!window.__YOGATIK_ELECTRON__ || !!window.__YOGATIK_DESKTOP__)
+    (!!window.__TAURI_INTERNALS__ || !!window.__TAURI__ || !!window.__YOGATIK_ELECTRON__ || !!window.__YOGATIK_DESKTOP__ || !!window.__YOGATIK_BROWSER__)
 }
 
 export const DESKTOP_ONLY_TOOLS = new Set([

@@ -685,13 +685,10 @@ export default function App() {
     if (b?.navigate) {
       b.navigate({ url: url || 'about:blank', display: 'window' })
       showToast('Opened Yogatik Browser')
-    } else if (window.__YOGATIK_DESKTOP__?.openExternal && url && !url.includes('google.com')) {
+    } else if (window.__YOGATIK_DESKTOP__?.openExternal && url) {
       window.__YOGATIK_DESKTOP__.openExternal(url)
-    } else if (url && !url.includes('google.com')) {
-      window.open(url, '_blank', 'noopener,noreferrer')
     } else {
-      setSettingsModalTab('searchengine')
-      setShowSettingsModal(true)
+      showToast('Yogatik Browser is only available in the desktop app')
     }
   }, [showToast])
 
@@ -3608,7 +3605,8 @@ export default function App() {
       { id: 'sub-agents', group: 'Tools', label: '🧩 Sub-agent runner', hint: 'Isolated agents', run: () => setShowSubAgents(true) },
       { id: 'grok-dock', group: 'Tools', label: '🤖 Grok.com Studio Dock (Desktop Local Files Bridge)', hint: 'xAI Web + Files', run: () => { setShowGrokDock(true); setShowGeminiDock(false); } },
       { id: 'gemini-dock', group: 'Tools', label: '✨ Gemini.com Studio Dock (Desktop Local Files Bridge)', hint: 'Google Web + Files', run: () => { setShowGeminiDock(true); setShowGrokDock(false); } },
-      { id: 'open-yogatik-browser', group: 'Tools', label: '🧭 Yogatik Search Engine & Web Crawler (Private Index)', hint: 'Search & Crawl', run: () => { setSettingsModalTab('searchengine'); setShowSettingsModal(true) } },
+      ...(isDesktop() ? [{ id: 'open-yogatik-browser', group: 'Tools', label: '🧭 Yogatik Browser (Desktop Window)', hint: 'Desktop Browser', run: () => handleOpenBrowser() }] : []),
+      { id: 'search-engine-crawler', group: 'Tools', label: '🔍 Yogatik Search Engine & Web Crawler (Private Index)', hint: 'Search & Crawl', run: () => { setSettingsModalTab('searchengine'); setShowSettingsModal(true) } },
       { id: 'auto-skills', group: 'Tools', label: '✨ Auto-generated skills', hint: 'Review & prune', run: () => setShowAutoSkills(true) },
       { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => navigateDashboard('capabilities') },
       { id: 'usage-data', group: 'Settings', label: 'Usage, cost & storage', hint: 'Data hub', run: () => navigateDashboard('usage') },
@@ -4621,17 +4619,16 @@ export default function App() {
               >
                 <Plug size={17} />
               </button>
-              <button
-                className="icon-btn browser-header-btn"
-                onClick={() => {
-                  setSettingsModalTab('searchengine')
-                  setShowSettingsModal(true)
-                }}
-                title="Yogatik Search Engine & Web Crawler (Private On-Device Index)"
-                aria-label="Yogatik Search Engine & Web Crawler"
-              >
-                <Compass size={17} />
-              </button>
+              {isDesktop() && (
+                <button
+                  className="icon-btn browser-header-btn"
+                  onClick={() => handleOpenBrowser()}
+                  title="Yogatik Browser (Desktop Browser Window)"
+                  aria-label="Yogatik Browser"
+                >
+                  <Compass size={17} />
+                </button>
+              )}
               <button className="icon-btn domain-hub-header-btn" onClick={() => setShowDomainHub(true)} title="Social Media & Domain Hub (Alt+D)" aria-label="Social Media & Domain Hub"><Globe size={17} /></button>
               <button
                 className="icon-btn grok-dock-header-btn"
