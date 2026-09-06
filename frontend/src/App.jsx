@@ -680,15 +680,18 @@ export default function App() {
     browserPanel
   )
 
-  const handleOpenBrowser = useCallback((url = 'https://google.com') => {
+  const handleOpenBrowser = useCallback((url) => {
     const b = typeof window !== 'undefined' ? window.__YOGATIK_BROWSER__ : null
     if (b?.navigate) {
-      b.navigate({ url, display: 'window' })
+      b.navigate({ url: url || 'about:blank', display: 'window' })
       showToast('Opened Yogatik Browser')
-    } else if (window.__YOGATIK_DESKTOP__?.openExternal) {
+    } else if (window.__YOGATIK_DESKTOP__?.openExternal && url && !url.includes('google.com')) {
       window.__YOGATIK_DESKTOP__.openExternal(url)
-    } else {
+    } else if (url && !url.includes('google.com')) {
       window.open(url, '_blank', 'noopener,noreferrer')
+    } else {
+      setSettingsModalTab('searchengine')
+      setShowSettingsModal(true)
     }
   }, [showToast])
 
@@ -836,6 +839,11 @@ export default function App() {
   }, [])
 
   const navigateDashboard = useCallback((key) => {
+    if (key === 'searchengine' || key === 'search') {
+      setSettingsModalTab('searchengine')
+      setShowSettingsModal(true)
+      return
+    }
     const wasOpen = !!dashActiveRef.current
     setShowPersonalise(key === 'settings')
     setShowBilling(key === 'billing')
@@ -3600,7 +3608,7 @@ export default function App() {
       { id: 'sub-agents', group: 'Tools', label: '🧩 Sub-agent runner', hint: 'Isolated agents', run: () => setShowSubAgents(true) },
       { id: 'grok-dock', group: 'Tools', label: '🤖 Grok.com Studio Dock (Desktop Local Files Bridge)', hint: 'xAI Web + Files', run: () => { setShowGrokDock(true); setShowGeminiDock(false); } },
       { id: 'gemini-dock', group: 'Tools', label: '✨ Gemini.com Studio Dock (Desktop Local Files Bridge)', hint: 'Google Web + Files', run: () => { setShowGeminiDock(true); setShowGrokDock(false); } },
-      { id: 'open-yogatik-browser', group: 'Tools', label: '🧭 Open Yogatik Browser (Desktop Browser Window)', hint: 'Browser', run: () => handleOpenBrowser('https://google.com') },
+      { id: 'open-yogatik-browser', group: 'Tools', label: '🧭 Yogatik Search Engine & Web Crawler (Private Index)', hint: 'Search & Crawl', run: () => { setSettingsModalTab('searchengine'); setShowSettingsModal(true) } },
       { id: 'auto-skills', group: 'Tools', label: '✨ Auto-generated skills', hint: 'Review & prune', run: () => setShowAutoSkills(true) },
       { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => navigateDashboard('capabilities') },
       { id: 'usage-data', group: 'Settings', label: 'Usage, cost & storage', hint: 'Data hub', run: () => navigateDashboard('usage') },
@@ -4615,9 +4623,12 @@ export default function App() {
               </button>
               <button
                 className="icon-btn browser-header-btn"
-                onClick={() => handleOpenBrowser('https://google.com')}
-                title="Yogatik Browser (Desktop Browser Window)"
-                aria-label="Yogatik Browser"
+                onClick={() => {
+                  setSettingsModalTab('searchengine')
+                  setShowSettingsModal(true)
+                }}
+                title="Yogatik Search Engine & Web Crawler (Private On-Device Index)"
+                aria-label="Yogatik Search Engine & Web Crawler"
               >
                 <Compass size={17} />
               </button>
