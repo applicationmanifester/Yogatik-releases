@@ -70,6 +70,7 @@ import { formatLatency, getStatusIcon, formatDirectTimeAnswer, WINDOW_STEP, SUGG
 const ArtifactPanel = safeLazy(() => import('./components/ArtifactPanel').then(m => ({ default: m.ArtifactPanel })))
 const BrowserPanel = safeLazy(() => import('./components/BrowserPanel').then(m => ({ default: m.BrowserPanel })))
 const GrokDock = safeLazy(() => import('./components/GrokDock').then(m => ({ default: m.GrokDock })))
+const GeminiDock = safeLazy(() => import('./components/GeminiDock').then(m => ({ default: m.GeminiDock })))
 const ActivityPanel = safeLazy(() => import('./components/ActivityPanel').then(m => ({ default: m.ActivityPanel })))
 const DataDashboard = safeLazy(() => import('./components/DataDashboard'))
 const OnboardingModal = safeLazy(() => import('./components/OnboardingModal'))
@@ -455,6 +456,7 @@ export default function App() {
   // Docked agent browser: { url } while panel mode is showing one.
   const [browserPanel, setBrowserPanel] = useState(null)
   const [showGrokDock, setShowGrokDock] = useState(false)
+  const [showGeminiDock, setShowGeminiDock] = useState(false)
   const [showActivity, setShowActivity] = useState(false)
   const [showShareSheet, setShowShareSheet] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
@@ -3581,6 +3583,7 @@ export default function App() {
       { id: 'scheduler', group: 'Tools', label: '⏰ Scheduled tasks (cron jobs)', hint: 'Manage & cancel', run: () => setShowScheduler(true) },
       { id: 'sub-agents', group: 'Tools', label: '🧩 Sub-agent runner', hint: 'Isolated agents', run: () => setShowSubAgents(true) },
       { id: 'grok-dock', group: 'Tools', label: '🤖 Grok.com Studio Dock (Desktop Local Files Bridge)', hint: 'xAI Web + Files', run: () => setShowGrokDock(true) },
+      { id: 'gemini-dock', group: 'Tools', label: '✨ Gemini.com Studio Dock (Desktop Local Files Bridge)', hint: 'Google Web + Files', run: () => setShowGeminiDock(true) },
       { id: 'auto-skills', group: 'Tools', label: '✨ Auto-generated skills', hint: 'Review & prune', run: () => setShowAutoSkills(true) },
       { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => navigateDashboard('capabilities') },
       { id: 'usage-data', group: 'Settings', label: 'Usage, cost & storage', hint: 'Data hub', run: () => navigateDashboard('usage') },
@@ -4559,6 +4562,14 @@ export default function App() {
               >
                 <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>𝕏</span>
               </button>
+              <button
+                className="icon-btn gemini-dock-header-btn"
+                onClick={() => setShowGeminiDock(s => !s)}
+                title="Gemini.com Studio Dock & Local Files Bridge"
+                aria-label="Gemini.com Studio Dock"
+              >
+                <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>✨</span>
+              </button>
             </div>
             <div className="header-btn-group" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
               <button className="icon-btn" onClick={() => setShowPalette(true)} title="Universal Search & Commands (Ctrl+K)" aria-label="Universal Search"><Search size={17} /></button>
@@ -5491,6 +5502,12 @@ export default function App() {
       {showGrokDock && (
         <GrokDock
           onClose={() => setShowGrokDock(false)}
+          onToast={showToast}
+        />
+      )}
+      {showGeminiDock && (
+        <GeminiDock
+          onClose={() => setShowGeminiDock(false)}
           onToast={showToast}
         />
       )}

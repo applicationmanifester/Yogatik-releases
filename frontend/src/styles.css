@@ -10370,3 +10370,209 @@ body.ws-resizing { cursor: col-resize; user-select: none; }
   to { transform: translateY(0); }
 }
 
+/* ── Gemini.com Studio Dock & Local File Bridge ── */
+.gemini-dock-container {
+  position: fixed;
+  top: 48px;
+  right: 16px;
+  width: min(680px, calc(100vw - 32px));
+  height: calc(100vh - 64px);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28), 0 0 0 1px var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 1050;
+  overflow: hidden;
+  transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1), height 0.2s cubic-bezier(0.16, 1, 0.3, 1), top 0.2s, right 0.2s;
+}
+
+.gemini-dock-container.fullscreen {
+  top: 0;
+  right: 0;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  border: none;
+  z-index: 2000;
+}
+
+.gemini-dock-header {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.gemini-dock-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.gemini-dock-logo {
+  font-size: 16px;
+}
+
+.gemini-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.gemini-dock-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.gemini-dock-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gemini-dock-controls .icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.gemini-dock-controls .icon-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.gemini-dock-controls .icon-btn.close-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.gemini-bridge-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.gemini-bridge-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.bridge-btn.accent-gemini {
+  background: linear-gradient(135deg, #1a73e8, #4285f4);
+  border-color: #1a73e8;
+  color: #fff;
+  font-weight: 600;
+}
+
+.bridge-btn.accent-gemini:hover {
+  opacity: 0.92;
+  box-shadow: 0 2px 8px rgba(26, 115, 232, 0.35);
+}
+
+.gemini-dock-view {
+  flex: 1;
+  position: relative;
+  background: #000;
+  overflow: hidden;
+}
+
+.gemini-native-hole {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.gemini-fallback-banner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+}
+
+.gemini-fallback-banner h4 {
+  margin: 12px 0 6px;
+  color: var(--text-primary);
+}
+
+.gemini-fallback-banner p {
+  max-width: 420px;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.gemini-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  padding: 16px;
+}
+
+.gemini-picker-card {
+  width: 100%;
+  max-width: 480px;
+  max-height: 80%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.gemini-code-drawer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 60%;
+  background: var(--bg-secondary);
+  border-top: 2px solid #1a73e8;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  z-index: 1080;
+  animation: slideUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+
