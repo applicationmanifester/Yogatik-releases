@@ -100,7 +100,6 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('firebase')) return 'vendor-firebase'
-            if (id.includes('lucide-react')) return 'vendor-lucide'
             // Keep heavy code editor and syntax highlighter as async chunks
             if (id.includes('react-syntax-highlighter') || id.includes('prismjs') || id.includes('refractor')) return undefined
             if (id.includes('@codemirror') || id.includes('@lezer')) return undefined

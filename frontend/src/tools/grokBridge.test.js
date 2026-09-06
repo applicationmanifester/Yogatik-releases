@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   buildWorkspaceContextPrompt,
-  buildFolderFilesBundlePrompt,
-  buildChunkedBundles,
   getGrokInputInjectionScript,
   getGrokCodeExtractionScript,
   injectTextIntoGrok,
@@ -34,66 +32,6 @@ describe('grokBridge', () => {
       const prompt = buildWorkspaceContextPrompt()
       expect(prompt).toContain('Local Workspace Context: Workspace')
       expect(prompt).toContain('Please review this codebase context')
-    })
-  })
-
-  describe('buildFolderFilesBundlePrompt', () => {
-    it('bundles multiple files with explicit anti-artifacts directive', () => {
-      const prompt = buildFolderFilesBundlePrompt({
-        projectName: 'MyProject',
-        rootPath: 'C:/Users/test/MyProject',
-        filesWithContent: [
-          { path: 'src/index.js', content: 'console.log("start")' },
-          { path: 'src/utils.js', content: 'export const add = (a, b) => a + b' },
-        ],
-      })
-
-      expect(prompt).toContain('Local Windows Project Files Bundle: MyProject')
-      expect(prompt).toContain('C:/Users/test/MyProject')
-      expect(prompt).toContain('Do NOT execute shell commands looking in /home/workdir/artifacts')
-      expect(prompt).toContain('--- FILE: `src/index.js` ---')
-      expect(prompt).toContain('console.log("start")')
-      expect(prompt).toContain('--- FILE: `src/utils.js` ---')
-      expect(prompt).toContain('export const add = (a, b) => a + b')
-    })
-  })
-
-  describe('buildChunkedBundles', () => {
-    it('returns empty array if no files given', () => {
-      expect(buildChunkedBundles({ filesWithContent: [] })).toEqual([])
-    })
-
-    it('returns single chunk if files fit within ceiling', () => {
-      const files = [
-        { path: 'file1.js', content: 'hello' },
-        { path: 'file2.js', content: 'world' },
-      ]
-      const chunks = buildChunkedBundles({
-        projectName: 'TestProj',
-        filesWithContent: files,
-        chunkCeiling: 10000,
-      })
-      expect(chunks.length).toBe(1)
-      expect(chunks[0]).toContain('file1.js')
-      expect(chunks[0]).toContain('file2.js')
-      expect(chunks[0]).not.toContain('[Part 1/')
-    })
-
-    it('splits into multiple parts with headers when exceeding ceiling', () => {
-      const files = [
-        { path: 'a.js', content: 'x'.repeat(400) },
-        { path: 'b.js', content: 'y'.repeat(400) },
-        { path: 'c.js', content: 'z'.repeat(400) },
-      ]
-      const chunks = buildChunkedBundles({
-        projectName: 'BigProj',
-        filesWithContent: files,
-        chunkCeiling: 1000, // Small ceiling to force splitting
-      })
-      expect(chunks.length).toBeGreaterThan(1)
-      expect(chunks[0]).toContain('[Part 1/')
-      expect(chunks[chunks.length - 1]).toContain(`[Part ${chunks.length}/${chunks.length}]`)
-      expect(chunks[chunks.length - 1]).toContain(`All ${chunks.length} parts received`)
     })
   })
 
