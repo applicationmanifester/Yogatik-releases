@@ -132,7 +132,7 @@ export async function isLocalModelCached() {
  * Tool calling is deliberately not offered: 1B-class models call tools badly,
  * and a wrong call is worse than no call.
  */
-export async function streamLocal({ model = DEFAULT_LOCAL_MODEL, messages, temperature = 0.7, tools = null, signal, onToken, onToolCall, onDone, onError, onStatus }) {
+export async function streamLocal({ model = DEFAULT_LOCAL_MODEL, messages, temperature = 1.0, tools = null, signal, onToken, onToolCall, onDone, onError, onStatus }) {
   try {
     if (signal?.aborted) { onDone?.(); return }
 

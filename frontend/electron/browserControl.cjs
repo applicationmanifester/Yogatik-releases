@@ -314,8 +314,25 @@ function createTab(s, url) {
       safeSend(mainWindowGetter(), 'browser:open-find', { conversationId: s.key === '__default__' ? null : s.key })
     }
   })
-  // Pop-ups become real tabs instead of vanishing.
+  // Pop-ups become real tabs, but OAuth/SSO login flows (Google, X, etc.) need native child popups
+  // so window.opener is preserved for token exchanges without 'exchange-token-error'.
   wc.setWindowOpenHandler(({ url: target }) => {
+    const isOAuth = /accounts\.(google|x|youtube)\.com|accounts\.x\.ai|(api\.)?twitter\.com|x\.com\/i\/flow|appleid\.apple\.com|login\.microsoftonline\.com|github\.com\/login\/oauth/i.test(target)
+    if (isOAuth) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 580,
+          height: 700,
+          autoHideMenuBar: true,
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+          }
+        }
+      }
+    }
     if (/^https?:/.test(target)) {
       const id = createTab(s, target)
       s.activeTabId = id

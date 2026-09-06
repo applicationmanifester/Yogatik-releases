@@ -356,7 +356,7 @@ async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeo
 
 export async function streamChat({
   provider, apiKey, model, messages, tools = null,
-  temperature = 0.7, maxTokens = null, signal, onToken, onToolCall, onDone, onError, onStatus,
+  temperature = 1.0, maxTokens = null, signal, onToken, onToolCall, onDone, onError, onStatus,
   retriedWithoutTools = false, onToolsRejected = null, retriedFixedTemp = false,
 }) {
   const prov = getProviders()[provider]

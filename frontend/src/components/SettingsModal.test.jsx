@@ -62,4 +62,17 @@ describe('the dead LocalModelPanel import is gone from App.jsx', () => {
     const appSrc = fs.readFileSync(path.join(HERE, '..', 'App.jsx'), 'utf8')
     expect(appSrc).not.toMatch(/const LocalModelPanel = safeLazy/)
   })
+
+  it('Sampling Temperature is housed under Providers & Keys in SettingsModal and Dashboard, and removed from composer toolbar', () => {
+    const appSrc = fs.readFileSync(path.join(HERE, '..', 'App.jsx'), 'utf8')
+    // SettingsModal has temperature slider under Providers & Keys
+    expect(src).toMatch(/temperature\s*=\s*1\.0/)
+    expect(src).toMatch(/Sampling Temperature/)
+    expect(src).toMatch(/max="2"/)
+    // App.jsx composer toolbar no longer contains temp-control-pill
+    expect(appSrc).not.toMatch(/className="temp-control-pill"/)
+    // App.jsx Providers dashboard includes Sampling Temperature
+    expect(appSrc).toMatch(/dash-card temp-settings-card/)
+  })
 })
+

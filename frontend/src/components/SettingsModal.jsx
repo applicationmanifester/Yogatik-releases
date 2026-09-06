@@ -99,7 +99,7 @@ export function SettingsModal({
   onSelectProvider,
   onSelectModel,
   onProviderSaved,
-  temperature = 0.7,
+  temperature = 1.0,
   onTemperatureChange,
   autoRoute = false,
   onAutoRouteToggle,
@@ -379,6 +379,52 @@ export function SettingsModal({
                 <button className="settings-btn primary" onClick={() => setShowCustomForm(true)}>
                   <Plus size={13} /> Add Custom Provider
                 </button>
+              </div>
+
+              {/* Sampling Temperature Setting */}
+              <div className="settings-card" style={{ marginBottom: 16, borderLeft: '3px solid var(--accent, #ff6b35)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <h4 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.95rem' }}>
+                      <span>🌡️ Sampling Temperature</span>
+                      <span className="settings-badge" style={{ background: 'rgba(255, 107, 53, 0.15)', color: 'var(--accent, #ff6b35)', fontWeight: 600 }}>
+                        {Number(temperature ?? 1.0).toFixed(2)}
+                      </span>
+                    </h4>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', opacity: 0.8 }}>
+                      Controls randomness &amp; creativity for all providers. Range: 0.0 to 2.0. Higher values yield more creative/lateral answers; lower values yield deterministic code and math.
+                    </p>
+                  </div>
+                  <button
+                    className="settings-btn ghost"
+                    style={{ fontSize: '0.75rem', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                    onClick={() => onTemperatureChange?.(1.0)}
+                    title="Reset to default (1.0)"
+                  >
+                    Reset to 1.0 (Default)
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 10 }}>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.05"
+                    value={temperature ?? 1.0}
+                    onChange={e => onTemperatureChange?.(parseFloat(e.target.value))}
+                    style={{ flex: 1, accentColor: 'var(--accent, #ff6b35)', cursor: 'pointer' }}
+                    aria-label="Model Sampling Temperature"
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', opacity: 0.65, marginTop: 6 }}>
+                  <span>0.0 (Deterministic / Code)</span>
+                  <span style={{ fontWeight: (Number(temperature) >= 0.95 && Number(temperature) <= 1.05) ? 700 : 400, color: (Number(temperature) >= 0.95 && Number(temperature) <= 1.05) ? 'var(--accent, #ff6b35)' : 'inherit' }}>
+                    1.0 (Default / Balanced)
+                  </span>
+                  <span>2.0 (High Creativity / Random)</span>
+                </div>
               </div>
 
               {/* Custom Provider Modal Form */}

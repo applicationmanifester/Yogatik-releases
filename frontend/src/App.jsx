@@ -144,7 +144,7 @@ export default function App() {
     model: '',
     systemPrompt: '',
     persona: 'default',
-    temperature: 0.7,
+    temperature: 1.0,
     webSearch: true,
     tools: true,
   }])
@@ -180,7 +180,7 @@ export default function App() {
   const [model, setModel] = useState('')
   const [webSearch, setWebSearchState] = useState(true)
   const [tools, setToolsEnabledState] = useState(true)
-  const [temperature, setTemperatureState] = useState(0.7)
+  const [temperature, setTemperatureState] = useState(1.0)
   const [models, setModels] = useState({})
   const [showProviderModal, setShowProviderModal] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
@@ -1756,7 +1756,7 @@ export default function App() {
         model: activeM,
         systemPrompt: '',
         persona: pref?.persona || 'default',
-        temperature: pref?.temperature ?? 0.7,
+        temperature: pref?.temperature ?? 1.0,
         webSearch: pref?.web_search ?? true,
         tools: pref?.tools_enabled ?? true,
       }
@@ -1783,7 +1783,7 @@ export default function App() {
       model: c.model !== undefined ? c.model : (model || ''),
       systemPrompt: c.settings?.systemPrompt ?? c.systemPrompt ?? '',
       persona: c.settings?.persona ?? c.persona ?? 'default',
-      temperature: c.settings?.temperature ?? c.temperature ?? (temperature ?? 0.7),
+      temperature: c.settings?.temperature ?? c.temperature ?? (temperature ?? 1.0),
       webSearch: c.settings?.webSearch ?? c.webSearch ?? (webSearch ?? true),
       tools: c.settings?.tools ?? c.tools ?? (tools ?? true),
       messages: i === 0 && first ? (first.messages || []).map(hydrate) : [],
@@ -1982,7 +1982,7 @@ export default function App() {
       model: activeM,
       systemPrompt: '',
       persona: activePersona,
-      temperature: temperature ?? 0.7,
+      temperature: temperature ?? 1.0,
       webSearch: webSearch ?? true,
       tools: tools ?? true,
     }
@@ -2056,7 +2056,7 @@ export default function App() {
       model: full.model !== undefined ? full.model : (model || ''),
       systemPrompt: full.settings?.systemPrompt ?? full.systemPrompt ?? '',
       persona: full.settings?.persona ?? full.persona ?? 'default',
-      temperature: full.settings?.temperature ?? full.temperature ?? (temperature ?? 0.7),
+      temperature: full.settings?.temperature ?? full.temperature ?? (temperature ?? 1.0),
       webSearch: full.settings?.webSearch ?? full.webSearch ?? (webSearch ?? true),
       tools: full.settings?.tools ?? full.tools ?? (tools ?? true),
       messages: (full.messages || []).map(hydrate),
@@ -2143,7 +2143,7 @@ export default function App() {
               model: full.model !== undefined ? full.model : conv.model,
               systemPrompt: full.settings?.systemPrompt ?? conv.systemPrompt ?? '',
               persona: full.settings?.persona ?? conv.persona ?? 'default',
-              temperature: full.settings?.temperature ?? conv.temperature ?? 0.7,
+              temperature: full.settings?.temperature ?? conv.temperature ?? 1.0,
               webSearch: full.settings?.webSearch ?? conv.webSearch ?? true,
               tools: full.settings?.tools ?? conv.tools ?? true,
               messages: (full.messages || []).map(hydrate),
@@ -2177,7 +2177,7 @@ export default function App() {
           provider: provider || 'local',
           model: model || '',
           persona: activeTemplate || 'default',
-          temperature: temperature ?? 0.7,
+          temperature: temperature ?? 1.0,
           webSearch: webSearch ?? true,
           tools: tools ?? true,
         }]
@@ -2557,7 +2557,7 @@ export default function App() {
     }
 
     const usePersona = targetConv.persona || activeTemplate || 'default'
-    const useTemp = targetConv.temperature !== undefined ? targetConv.temperature : (temperature ?? 0.7)
+    const useTemp = targetConv.temperature !== undefined ? targetConv.temperature : (temperature ?? 1.0)
     const useWeb = targetConv.webSearch !== undefined ? targetConv.webSearch : (webSearch ?? true)
     const useTools = targetConv.tools !== undefined ? targetConv.tools : (tools ?? true)
 
@@ -3511,7 +3511,7 @@ export default function App() {
         model: forked.model !== undefined ? forked.model : (source?.model || model || ''),
         systemPrompt: forked.settings?.systemPrompt ?? source?.systemPrompt ?? '',
         persona: forked.settings?.persona ?? source?.persona ?? 'default',
-        temperature: forked.settings?.temperature ?? source?.temperature ?? 0.7,
+        temperature: forked.settings?.temperature ?? source?.temperature ?? 1.0,
         webSearch: forked.settings?.webSearch ?? source?.webSearch ?? true,
         tools: forked.settings?.tools ?? source?.tools ?? true,
         messages: (forked.messages || []).map(hydrate),
@@ -3760,7 +3760,7 @@ export default function App() {
                   embedded
                   prefs={{
                     ...prefs,
-                    temperature: conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)
+                    temperature: conv?.temperature !== undefined ? conv.temperature : (temperature ?? 1.0)
                   }}
                   onChange={updatePref}
                   onClose={closeDashboard}
@@ -3875,6 +3875,49 @@ export default function App() {
                   <p className="dash-page-hint">
                     Bring your own key — nothing here ever leaves this device except straight to the provider you pick.
                   </p>
+
+                  {/* Sampling Temperature Setting */}
+                  <div className="dash-card temp-settings-card" style={{ marginBottom: 16, padding: '14px 18px', background: 'var(--card-bg, rgba(255,255,255,0.03))', borderRadius: 8, border: '1px solid var(--border, rgba(255,255,255,0.1))', borderLeft: '3px solid var(--accent, #ff6b35)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.94rem' }}>🌡️ Sampling Temperature</span>
+                          <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: 10, background: 'rgba(255, 107, 53, 0.15)', color: 'var(--accent, #ff6b35)', fontWeight: 600 }}>
+                            {(conv?.temperature !== undefined ? conv.temperature : (temperature ?? 1.0)).toFixed(2)}
+                          </span>
+                        </div>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', opacity: 0.8 }}>
+                          Controls randomness &amp; creativity across all providers. Range: 0.0 to 2.0. Higher values yield more creative/lateral answers; lower values yield deterministic code and math.
+                        </p>
+                      </div>
+                      <button
+                        className="small-btn"
+                        style={{ fontSize: '0.75rem', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                        onClick={() => setTemperature(1.0)}
+                        title="Reset to default (1.0)"
+                      >
+                        Reset to 1.0 (Default)
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 10 }}>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.05"
+                        value={conv?.temperature !== undefined ? conv.temperature : (temperature ?? 1.0)}
+                        onChange={e => setTemperature(parseFloat(e.target.value))}
+                        style={{ flex: 1, accentColor: 'var(--accent, #ff6b35)', cursor: 'pointer' }}
+                        aria-label="Model Sampling Temperature"
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', opacity: 0.65, marginTop: 6 }}>
+                      <span>0.0 (Deterministic / Code)</span>
+                      <span style={{ fontWeight: 600, color: 'var(--accent, #ff6b35)' }}>1.0 (Default / Balanced)</span>
+                      <span>2.0 (High Creativity / Random)</span>
+                    </div>
+                  </div>
                   <div className="providers-list">
                     {Object.entries(models)
                       .sort(([pidA, defA], [pidB, defB]) => {
@@ -4987,23 +5030,6 @@ export default function App() {
               disabled={!models[conv?.provider || provider]?.available}
               onChange={(m) => chooseModel(m, conv?.provider || provider)} />
 
-            {/* Quick Sampling Temperature Bar directly in composer toolbar */}
-            <div
-              className="temp-control-pill"
-              title={`Sampling Temperature: ${(conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)).toFixed(2)} (${(conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)) <= 0.2 ? 'Deterministic / Code' : (conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)) <= 0.7 ? 'Balanced' : 'Creative / Brainstorming'})`}
-            >
-              <span className="temp-indicator">🌡️ {(conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)).toFixed(2)}</span>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)}
-                onChange={e => setTemperature(parseFloat(e.target.value))}
-                className="temp-inline-slider"
-                aria-label="Model Sampling Temperature"
-              />
-            </div>
 
             <label className="upload-btn">
               <Upload size={12} /> Upload
@@ -5393,7 +5419,7 @@ export default function App() {
           onSelectProvider={(pid) => setProvider(pid)}
           onSelectModel={(m, pid) => chooseModel(m, pid)}
           onProviderSaved={() => refreshModels()}
-          temperature={conv?.temperature !== undefined ? conv.temperature : (temperature ?? 0.7)}
+          temperature={conv?.temperature !== undefined ? conv.temperature : (temperature ?? 1.0)}
           onTemperatureChange={(t) => setTemperature(t)}
           autoRoute={autoRoute}
           onAutoRouteToggle={(v) => setAutoRoute(v)}
