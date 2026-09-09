@@ -1,5 +1,20 @@
 # Changelog
 
+## v7.4.0 — Apex Autonomous Orchestrator (2026-09-09)
+
+### 🤖 Apex – Autonomous Desktop Orchestrator (New Agent)
+- **Apex agent** — A fully autonomous multi-agent persona that plans, researches, codes, edits files, runs shell commands, controls the browser, and executes complex projects end-to-end with zero hand-holding
+- **Zero-friction autonomy** — Apex never asks for confirmation or permission mid-task; it acts, recovers from errors automatically, and reports only the final result
+- **Full tool access** — All 195 registered tools available: filesystem, terminal, git, browser, code execution, research, documents, memory, scheduling
+- **Multi-agent orchestration** — Built-in crew templates: `auto`, `sequential`, `hierarchical`, `reflexion`, `map_reduce`, `best_of_n` via `crew_orchestrator`
+- **47 specialist sub-agents** — Researcher, Coder, Analyst, DevOps, QA, Writer, Architect, Scientist, and more available for delegation
+- **Autonomous error recovery** — Test failures, command errors, and tool failures are all handled in a continuous fix-and-retry loop
+- **Smart parallel execution** — Spawns specialists in parallel when possible; auto-sets `isolate_workspace` when agents write files simultaneously
+
+### 🛠 Infrastructure
+- **Version bump** — 7.3.0 → 7.4.0
+- **Idle-registered** — `apexAgent.js` loads as a separate async chunk after first paint; zero impact on initial bundle size
+
 ## v3.13 — Emergency Hotfix (2026-09-02)
 - Test entry to verify changelog updates work
 

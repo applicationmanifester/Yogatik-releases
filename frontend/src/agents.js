@@ -13,6 +13,7 @@
  */
 import { getSetting, setSetting } from './db'
 import { getScoped, setScoped, clearScoped } from './chatScope'
+import { APEX_AGENT } from './apexAgent'
 
 const KEY = 'agents'
 const ACTIVE = 'active_agent'
@@ -41,6 +42,10 @@ export const PRESET_AGENTS = [
       'agent_recreation', 'agent_reasoner', 'agent_modeller', 'agent_builder', 'agent_socratic', 'agent_audiovideo_director',
     ],
   },
+  // ─── Apex: Autonomous Orchestrator ───────────────────────────────────────
+  // Spread here so the entry appears synchronously in the picker, regardless
+  // of whether registerApexAgent() from main.jsx has fired yet.
+  APEX_AGENT,
   {
     id: 'agent_researcher',
     name: 'Researcher',

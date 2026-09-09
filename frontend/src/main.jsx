@@ -26,8 +26,14 @@ autoStartOllama().catch(() => {})
 // Kick it off once the page has painted, idle, so it's already resolved by
 // the time a real chat turn needs it instead of adding latency to that turn.
 const warmTools = () => import('./agent').then(m => m.warmToolRegistry?.()).catch(() => {})
-if ('requestIdleCallback' in window) requestIdleCallback(warmTools, { timeout: 4000 })
-else setTimeout(warmTools, 2000)
+const warmApex = () => import('./apexAgent').then(m => m.registerApexAgent?.()).catch(() => {})
+if ('requestIdleCallback' in window) {
+  requestIdleCallback(warmTools, { timeout: 4000 })
+  requestIdleCallback(warmApex, { timeout: 5000 })
+} else {
+  setTimeout(warmTools, 2000)
+  setTimeout(warmApex, 2500)
+}
 
 // Filter out third-party browser extension message channel warnings
 window.addEventListener('unhandledrejection', (event) => {
@@ -89,7 +95,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ToastProvider>
       <ErrorBoundary>
-        <React.Suspense fallback={null}>
+        <React.Suspense fallback={
+          <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#94a3b8', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff6b35' }} />
+              <span style={{ fontSize: 14 }}>Starting Yogatik…</span>
+            </div>
+          </div>
+        }>
           {isCompanion ? <CompanionView /> : <App />}
         </React.Suspense>
       </ErrorBoundary>

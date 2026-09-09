@@ -1,7 +1,7 @@
 {
   "name": "yogatik",
   "private": true,
-  "version": "7.3.0",
+  "version": "7.4.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -170,3 +170,4 @@
   "description": "Yogatik — private, browser-native AI assistant with local file tools.",
   "author": "applicationmanifester"
 }
+
