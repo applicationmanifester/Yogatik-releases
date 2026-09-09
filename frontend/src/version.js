@@ -3,16 +3,67 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '7.3.0'
+export const APP_VERSION = '7.4.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 7.3.0 — SOTA Deep Research Engine, Multi-Facet Sub-Query Decomposition, Hacker News & Europe PMC Search'
+export const APP_CODENAME = 'Yogatik 7.4.0 — Apex Autonomous Orchestrator: Multi-Agent AI that plans, codes, researches & ships with zero hand-holding'
 
 export const APP_RELEASES = [
+  {
+    "version": "7.4.0",
+    "title": "Yogatik 7.4.0: Apex — Fully Autonomous Multi-Agent Orchestrator",
+    "date": "September 9, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Apex Agent: A fully autonomous multi-agent persona that plans, researches, codes, edits files, runs shell commands, controls the browser, and executes complex projects end-to-end — zero hand-holding required",
+      "Zero-Friction Autonomy: Apex never asks for confirmation mid-task. It acts, recovers from errors automatically, and reports only the final result",
+      "47 Specialist Sub-Agents: Researcher, Coder, Analyst, DevOps, QA Engineer, Writer, Architect, Scientist and more — spawned in parallel when possible",
+      "6 Crew Orchestration Patterns: auto, sequential, hierarchical, reflexion, map_reduce, and best_of_n — Apex picks the right one for every goal",
+      "Full Tool Access: All 195 registered tools — filesystem, terminal, git, browser, code execution, research, documents, memory, scheduling",
+      "Autonomous Error Recovery: Test failures and command errors are fixed in a continuous loop without ever escalating to the user"
+    ],
+    "sections": [
+      {
+        "category": "🤖 Apex Autonomous Orchestrator",
+        "items": [
+          {
+            "title": "Zero-Friction End-to-End Execution",
+            "description": "Give Apex a goal and walk away. It creates a silent plan, delegates to specialist sub-agents in parallel, fixes any errors autonomously, and delivers a clean result — no confirmation prompts, no mid-task questions."
+          },
+          {
+            "title": "47 Built-In Specialist Sub-Agents",
+            "description": "Researcher, Coder, Analyst, DevOps, QA Engineer, Writer, Planner, Architect, Scientist, Translator, Security Auditor, Data Engineer and more — each with scoped tools for safe parallel execution."
+          }
+        ]
+      },
+      {
+        "category": "⚙️ Multi-Agent Orchestration Patterns",
+        "items": [
+          {
+            "title": "6 Crew Workflow Modes",
+            "description": "auto (planner decomposes goal automatically), sequential (strict pipeline), hierarchical (parallel specialists + synthesizer), reflexion (generator → critic loop), map_reduce (N items in parallel), best_of_n (N attempts, critic picks the best)."
+          },
+          {
+            "title": "Automatic Parallel Fan-Out",
+            "description": "Apex never does in series what can be done in parallel. It sets isolate_workspace automatically when multiple agents write files simultaneously."
+          }
+        ]
+      },
+      {
+        "category": "🛡️ Autonomous Error Recovery",
+        "items": [
+          {
+            "title": "Continuous Fix-and-Retry Loop",
+            "description": "If a test fails, Apex reads the error, patches the code, and re-runs — in one uninterrupted loop. Command errors are diagnosed and retried with corrections. Only truly unrecoverable failures surface to the user."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "7.3.0",
     "title": "Yogatik 7.3.0: SOTA Deep Research Engine, Multi-Facet Sub-Query Decomposition & Keyless Multi-Index Web Search",
     "date": "September 7, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "SOTA Deep Research Engine: Parallel multi-facet sub-query decomposition analyzing core overview, technical benchmarks, and critical challenges simultaneously",
       "Hacker News Algolia & Europe PMC Search: Zero-rate-limit, open-CORS keyless engines covering engineering/tech, AI, and peer-reviewed biomedical literature",
