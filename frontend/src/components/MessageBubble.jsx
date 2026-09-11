@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { splitReasoning } from '../reasoning'
 import { stripToolCallSyntax } from '../promptedTools'
+import { extractActionChips } from '../actionChips'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -313,12 +314,15 @@ const MessageBubble = React.memo(function MessageBubble({
     return 'AI Model'
   }, [msg.model, msg.provider])
 
-  const { reasoning, answer } = useMemo(() => {
+  const { reasoning, answer, actionChips } = useMemo(() => {
     const rawText = stripToolCallSyntax(typeof msg.content === 'string' ? msg.content : String(msg.content ?? ''))
     const s = splitReasoning(rawText)
+    const strippedAnswer = stripToolCallSyntax(s.answer || '')
+    const { cleanText, chips } = extractActionChips(strippedAnswer)
     return {
       reasoning: s.reasoning || '',
-      answer: stripToolCallSyntax(s.answer || '')
+      answer: cleanText,
+      actionChips: chips,
     }
   }, [msg.content])
 
@@ -615,10 +619,42 @@ const MessageBubble = React.memo(function MessageBubble({
            )}
          </div>
         ) : (
-         <div className="message-content">
+          <div className="message-content">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{answer}</ReactMarkdown>
           </div>
         )}
+      {actionChips?.length > 0 && (
+        <div className="message-action-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+          {actionChips.map((chip, idx) => (
+            <button
+              key={chip.id || idx}
+              className="action-chip-btn"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('yogatik:submit-prompt', { detail: { prompt: chip.prompt || chip.label } }))
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '5px 12px',
+                borderRadius: '8px',
+                background: 'rgba(59, 130, 246, 0.12)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                color: '#60a5fa',
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.22)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.12)'; e.currentTarget.style.transform = 'none' }}
+            >
+              <span>⚡</span>
+              <span>{chip.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {msg.sources?.length > 0 && (
         <div className="sources" style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg-input, rgba(0,0,0,0.15))', borderRadius: 8, border: '1px solid var(--border)' }}>
           <div className="sources-title" style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>

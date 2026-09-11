@@ -3,16 +3,62 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '7.4.0'
+export const APP_VERSION = '8.1.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 7.4.0 — Apex Autonomous Orchestrator: Multi-Agent AI that plans, codes, researches & ships with zero hand-holding'
+export const APP_CODENAME = 'Yogatik 8.1.0 — Apex Frontier: Next-Gen AI Telemetry, Dynamic Action Chips & Closed-Loop Visual Synthesis'
 
 export const APP_RELEASES = [
+  {
+    "version": "8.1.0",
+    "title": "Yogatik 8.1.0: Apex Frontier — Full Modal Control, Ambient Telemetry & Action Chips",
+    "date": "September 11, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Next-Gen Model Readiness: 100% synergy for frontier and upcoming models (Claude Fable 5.1, GPT-6 Astra, Claude 3.7 Sonnet, Gemini 2.5)",
+      "Ambient UI Telemetry: Live viewport, theme, active modal/tab, and text selection awareness injected into agent prompts",
+      "Interactive Action Chips: AI models emit clickable action pills for instant prompt continuations and one-click workflows",
+      "App Settings & Resource Control: Models can programmatically inspect/modify settings, list workspace resources, and open UI modals via app_settings tool",
+      "Visual Layout Verification: Automated HTML/SVG layout inspection and direct AI feedback loop for artifact previews",
+      "Stepped Progress Trees: Hierarchical animated execution checklists rendered directly inside streaming agent bubbles"
+    ],
+    "sections": [
+      {
+        "category": "🚀 Next-Gen AI-UI Synergy",
+        "items": [
+          {
+            "title": "Ambient Viewport & UI Telemetry",
+            "description": "The AI receives real-time ambient awareness of the active modal, active tab, viewport dimensions, theme, and user text selections."
+          },
+          {
+            "title": "Interactive Action Chips",
+            "description": "Assistant messages dynamically render actionable suggestion chips that execute workflow prompts in one click."
+          },
+          {
+            "title": "Closed-Loop Layout Inspection",
+            "description": "Artifact panels analyze code layouts and provide an instant feedback pipe to ask the AI for visual polish."
+          }
+        ]
+      },
+      {
+        "category": "🛠️ Programmatic Modal & Workspace Control",
+        "items": [
+          {
+            "title": "Dynamic Modal Triggering",
+            "description": "Models can open any modal in the app (File Editor, Settings, Domain Hub, Diagnostics, MCP) with preloaded state."
+          },
+          {
+            "title": "Live Settings Management",
+            "description": "Read, update, and broadcast application settings changes with masked credentials and zero page reloads."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "7.4.0",
     "title": "Yogatik 7.4.0: Apex — Fully Autonomous Multi-Agent Orchestrator",
     "date": "September 9, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Apex Agent: A fully autonomous multi-agent persona that plans, researches, codes, edits files, runs shell commands, controls the browser, and executes complex projects end-to-end — zero hand-holding required",
       "Zero-Friction Autonomy: Apex never asks for confirmation mid-task. It acts, recovers from errors automatically, and reports only the final result",

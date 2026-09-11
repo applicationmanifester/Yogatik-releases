@@ -3176,6 +3176,44 @@ export default function App() {
     })
   }, [])
 
+  // Programmatic prompt submission from Action Chips and Verification HUD
+  useEffect(() => {
+    const handler = (e) => {
+      const prompt = e.detail?.prompt
+      if (prompt) {
+        setInput(prompt)
+        sendRef.current?.(prompt)
+      }
+    }
+    window.addEventListener('yogatik:submit-prompt', handler)
+    return () => window.removeEventListener('yogatik:submit-prompt', handler)
+  }, [])
+
+  // Sync ambient UI context with agent situational awareness
+  useEffect(() => {
+    import('./uiContext').then(({ setUiContext }) => {
+      setUiContext({
+        activeModal: showSettingsModal ? 'settings'
+          : showFileEditor ? 'file_editor'
+          : showDomainHub ? 'domain_hub'
+          : showDiagnosticsModal ? 'diagnostics'
+          : showTorrentModal ? 'torrent_manager'
+          : showProviderModal ? 'providers'
+          : showAuthModal ? 'auth'
+          : showShortcutsModal ? 'shortcuts'
+          : activeArtifact ? 'artifact_canvas'
+          : null,
+        activeTab: showAgents ? 'agents'
+          : showDataDashboard ? 'dashboard'
+          : showScheduler ? 'scheduler'
+          : liveConfig ? 'live'
+          : 'chat',
+        theme,
+        activeDocument: fileEditorProps?.filePath ? { path: fileEditorProps.filePath } : null,
+      })
+    }).catch(() => {})
+  }, [showSettingsModal, showFileEditor, showDomainHub, showDiagnosticsModal, showTorrentModal, showProviderModal, showAuthModal, showShortcutsModal, activeArtifact, showAgents, showDataDashboard, showScheduler, liveConfig, theme, fileEditorProps])
+
 
 
   const handleSlashCommandSelect = (cmd) => {
@@ -4959,6 +4997,13 @@ export default function App() {
                     bare
                     initialText={streamTextRef.current[activeClientId] || ''}
                     onGrow={followStream}
+                    onActionClick={(chip) => {
+                      const p = chip.prompt || chip.label
+                      if (p) {
+                        setInput(p)
+                        sendRef.current?.(p)
+                      }
+                    }}
                   />
                 </div>
                 )

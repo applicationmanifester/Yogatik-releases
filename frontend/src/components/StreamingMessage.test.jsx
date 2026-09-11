@@ -137,4 +137,45 @@ describe('StreamingMessage', () => {
     expect(host.querySelector('.reasoning-body')?.textContent).toBe('Planning the solution...')
     expect(host.querySelector('.message-content')?.textContent).toContain('Here is the final answer.')
   })
+
+  it('renders interactive action chips and calls onActionClick when clicked', () => {
+    const ref = createRef()
+    const onActionClick = vi.fn()
+    mount({ ref, onActionClick })
+
+    act(() => ref.current.push('Done! [action: Run Unit Tests | prompt: npm test]'))
+    paint()
+
+    const btn = host.querySelector('.action-chip-btn')
+    expect(btn).not.toBeNull()
+    expect(btn?.textContent).toContain('Run Unit Tests')
+
+    act(() => btn?.click())
+    expect(onActionClick).toHaveBeenCalledWith(expect.objectContaining({ label: 'Run Unit Tests', prompt: 'npm test' }))
+  })
+
+  it('renders stepped execution tree when activeAction.steps is provided', () => {
+    const ref = createRef()
+    mount({ ref })
+
+    act(() => {
+      ref.current.push('Investigating...')
+      ref.current.setActiveAction({
+        label: 'Multi-Agent Workflow',
+        steps: [
+          { id: '1', name: 'Scrape documentation', status: 'done', duration: '0.4s' },
+          { id: '2', name: 'Run syntax checks', status: 'running' },
+          { id: '3', name: 'Build bundle', status: 'pending' },
+        ],
+      })
+    })
+    paint()
+
+    const tree = host.querySelector('.streaming-steps-tree')
+    expect(tree).not.toBeNull()
+    expect(tree?.textContent).toContain('Multi-Agent Workflow (1/3)')
+    expect(tree?.textContent).toContain('Scrape documentation')
+    expect(tree?.textContent).toContain('Run syntax checks')
+  })
 })
+

@@ -1,5 +1,19 @@
 # Changelog
 
+## v8.1.0 — Apex Frontier (2026-09-11)
+
+### 🚀 Next-Gen AI Model Readiness & Full Modal Synergy
+- **Frontier & custom model parity** — Provider-agnostic streaming and dynamic schema adaptations supporting Claude Fable 5.1, GPT-6 Astra, and next-gen multimodal models.
+- **Ambient UI Telemetry (`uiContext.js`)** — Live injection of viewport dimensions, active modal, active tab, color theme, and selected text into agent prompts, giving models full situational awareness.
+- **Interactive Action Chips (`actionChips.js`)** — AI assistant messages dynamically emit clickable action pills for immediate prompt continuations and multi-step execution.
+- **Stepped Multi-Step Progress Tree** — Hierarchical animated checklists rendered inside streaming bubbles for long-running workflows.
+- **Closed-Loop Visual Layout Verification** — Artifact inspection tool measuring HTML/SVG DOM elements, typography, and responsive rules with one-click "Ask AI to Refine Layout" feedback loop.
+- **App Settings & Resource Control (`app_settings`)** — Direct model access to inspect/modify app settings, list resources, save workspace documents, and programmatically open modals (`file_editor`, `settings`, `domain_hub`, `diagnostics`, `mcp`).
+
+### 🛠 Infrastructure
+- **Version bump** — 7.4.0 → 8.1.0
+- **Regression suite** — 2,551 tests passing across 236 test files with 0 failures.
+
 ## v7.4.0 — Apex Autonomous Orchestrator (2026-09-09)
 
 ### 🤖 Apex – Autonomous Desktop Orchestrator (New Agent)

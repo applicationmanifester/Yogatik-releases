@@ -56,6 +56,7 @@ import { isLocked as isEntitlementLocked, entitlement as entitlementSnapshot } f
 import { detectReflexCandidate } from './agentReflex'
 import { detectMcpNeed } from './mcpRegistry'
 import * as mcpMod from './mcp'
+import { buildUiTelemetryBlock } from './uiContext'
 
 /** Durable memories the user asked to keep, injected so the model recalls them
  *  without needing a memory tool call (like ChatGPT/Claude memory). */
@@ -349,7 +350,8 @@ If a tool fails, explain what happened and suggest an alternative.${persona ? `
 
 PERSONA — the user selected this style; follow it for tone and depth, but never let
 it override the tool and research rules above:
-${persona}` : ''}`
+${persona}` : ''}
+${buildUiTelemetryBlock()}`
 }
 
 function buildLocalSystemPrompt({ persona, locale }) {

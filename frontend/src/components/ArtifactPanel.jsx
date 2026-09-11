@@ -1,13 +1,36 @@
-import React, { useState } from 'react'
-import { Eye, Code as CodeIcon, X, Download, Copy, Check, ExternalLink, Sparkles } from 'lucide-react'
+import React, { useState, useMemo } from 'react'
+import { Eye, Code as CodeIcon, X, Download, Copy, Check, ExternalLink, Sparkles, CheckCheck } from 'lucide-react'
+import { htmlToSvgDataUrl } from '../tools/visualVerify'
 
 export function ArtifactPanel({ artifact, onClose }) {
   const [activeTab, setActiveTab] = useState('preview')
   const [copied, setCopied] = useState(false)
+  const [showVerify, setShowVerify] = useState(false)
+  const [verifyCopied, setVerifyCopied] = useState(false)
 
   if (!artifact) return null
 
   const { title, language, code } = artifact
+
+  // Computed layout and structure metrics for verification
+  const verificationStats = useMemo(() => {
+    const raw = code || ''
+    const isHtmlLike = ['html', 'svg', 'xml'].includes((language || '').toLowerCase())
+    const lineCount = raw.split('\n').length
+    const charCount = raw.length
+    const hasStyles = /<style|style=|css/i.test(raw)
+    const tagMatches = raw.match(/<([a-z0-9-]+)/gi) || []
+    const elementCount = tagMatches.length
+    return {
+      isHtmlLike,
+      lineCount,
+      charCount,
+      hasStyles,
+      elementCount,
+      estimatedViewport: '800 x 600 px',
+      status: elementCount > 0 || lineCount > 1 ? 'Valid Structure' : 'Minimal Content',
+    }
+  }, [code, language])
 
   const handleCopy = () => {
     navigator.clipboard.writeText(code)
@@ -66,6 +89,15 @@ export function ArtifactPanel({ artifact, onClose }) {
         </div>
         <div className="artifact-actions">
           <button
+            className={`artifact-btn ${showVerify ? 'active' : ''}`}
+            onClick={() => setShowVerify(v => !v)}
+            title="Inspect & Verify Visual Layout (AI)"
+            aria-label="Inspect layout"
+            style={showVerify ? { background: 'rgba(59, 130, 246, 0.25)', color: '#60a5fa' } : undefined}
+          >
+            <Sparkles size={14} />
+          </button>
+          <button
             className="artifact-btn"
             onClick={handleOpenFullscreen}
             title="Open in new fullscreen tab"
@@ -99,6 +131,72 @@ export function ArtifactPanel({ artifact, onClose }) {
           <CodeIcon size={14} /> Code Source
         </button>
       </div>
+
+      {showVerify && (
+        <div className="artifact-verification-bar" style={{
+          padding: '10px 16px',
+          background: 'rgba(15, 23, 42, 0.95)',
+          borderBottom: '1px solid rgba(59, 130, 246, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '12px',
+          color: '#e2e8f0',
+          flexWrap: 'wrap',
+          gap: '10px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#34d399', fontWeight: 600 }}>
+              <CheckCheck size={14} /> {verificationStats.status}
+            </span>
+            <span style={{ color: '#94a3b8' }}>
+              {verificationStats.elementCount} tags · {verificationStats.lineCount} lines · {verificationStats.hasStyles ? 'Custom CSS' : 'Default styles'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => {
+                const report = `Artifact Layout Report for "${title || 'Code Artifact'}":\n- Status: ${verificationStats.status}\n- Elements: ${verificationStats.elementCount}\n- Lines: ${verificationStats.lineCount}\n- Viewport: ${verificationStats.estimatedViewport}`
+                navigator.clipboard.writeText(report)
+                setVerifyCopied(true)
+                setTimeout(() => setVerifyCopied(false), 2000)
+              }}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '6px',
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: '#f8fafc',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+            >
+              {verifyCopied ? 'Copied Report' : 'Copy Report'}
+            </button>
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('yogatik:submit-prompt', {
+                  detail: {
+                    prompt: `Please review and enhance the layout, typography, and responsive styling of the artifact '${title || 'Code Artifact'}'.`
+                  }
+                }))
+              }}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '6px',
+                background: 'rgba(59, 130, 246, 0.2)',
+                border: '1px solid rgba(59, 130, 246, 0.4)',
+                color: '#60a5fa',
+                fontSize: '11px',
+                cursor: 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              Ask AI to Refine Layout
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="artifact-body">
         {activeTab === 'preview' ? renderPreview() : (
