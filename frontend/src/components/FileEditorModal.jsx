@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { FileCode, Save, X, Eye, FileText, Check, AlertCircle, RefreshCw } from 'lucide-react'
+import { FileCode, Save, X, Eye, FileText, Check, AlertCircle, RefreshCw, Download } from 'lucide-react'
 import { fsWriteTool, fsReadTool, fsFileInfoTool, isDesktop } from '../tools/localFs'
 
 /**
@@ -57,12 +57,47 @@ export function FileEditorModal({ filePath = '', initialContent = '', isOpen, on
         if (onSave) onSave(path, content)
         setTimeout(() => setStatusMsg(null), 3000)
       } else {
+        // When not on desktop, fallback to saving to Yogatik workspace documents
+        if (!isDesktop()) {
+          const { addDocument, getSetting } = await import('../db')
+          const activeProj = await getSetting('active_project', null)
+          await addDocument({
+            name: path.trim(),
+            type: ext === 'md' ? 'text/markdown' : 'text/plain',
+            content,
+            projectId: activeProj,
+          })
+          setOriginalContent(content)
+          setStatusMsg({ type: 'success', text: `Saved to Yogatik workspace documents: ${path}` })
+          if (onSave) onSave(path, content)
+          setTimeout(() => setStatusMsg(null), 3000)
+          return
+        }
         setStatusMsg({ type: 'error', text: res.error || 'Failed to save file.' })
       }
     } catch (err) {
       setStatusMsg({ type: 'error', text: err.message })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDownload = () => {
+    if (!content) return
+    try {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = path ? path.split(/[\/\\]/).pop() : `file.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setStatusMsg({ type: 'success', text: `Downloaded ${a.download}` })
+      setTimeout(() => setStatusMsg(null), 3000)
+    } catch (e) {
+      setStatusMsg({ type: 'error', text: `Download failed: ${e.message}` })
     }
   }
 
@@ -168,6 +203,27 @@ export function FileEditorModal({ filePath = '', initialContent = '', isOpen, on
                 <Eye size={13} /> Diff {hasChanges && '●'}
               </button>
             </div>
+
+            <button
+              onClick={handleDownload}
+              disabled={!content}
+              title="Download file to device"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: '#f1f5f9',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 500,
+              }}
+            >
+              <Download size={14} /> Download
+            </button>
 
             <button
               onClick={handleSave}

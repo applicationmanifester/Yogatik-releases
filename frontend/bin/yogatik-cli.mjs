@@ -101,7 +101,7 @@ function renderHeader() {
   console.log(`  ${C.bold}${C.white}Yogatik Terminal Studio${C.reset} ${C.gray}v7.3.0 · Built for Antigravity & Local Workspaces${C.reset}`)
   console.log(`  ${C.gray}─`.repeat(68) + C.reset)
   console.log(`  ${C.emerald}●${C.reset} ${C.bold}Engine:${C.reset} ${C.cyan}${activeModel}${C.reset} ${C.gray}(${activeProvider.toUpperCase()})${C.reset}  │  ${C.bold}Workspace:${C.reset} ${C.lightGray}${relPath}${C.reset} ${C.gray}(git: ${branch})${C.reset}`)
-  console.log(`  ${C.gray}Type a question or task, or use:${C.reset} ${C.yellow}/help${C.reset} · ${C.yellow}/model${C.reset} · ${C.yellow}/git${C.reset} · ${C.yellow}/files${C.reset} · ${C.yellow}/run${C.reset} · ${C.yellow}/clear${C.reset}`)
+  console.log(`  ${C.gray}Type a question or task, or use:${C.reset} ${C.yellow}/help${C.reset} · ${C.yellow}/model${C.reset} · ${C.yellow}/bot${C.reset} · ${C.yellow}/git${C.reset} · ${C.yellow}/files${C.reset} · ${C.yellow}/run${C.reset} · ${C.yellow}/clear${C.reset}`)
   console.log(`  ${C.gray}─`.repeat(68) + C.reset)
   console.log('')
 }
@@ -111,6 +111,7 @@ function printHelp() {
   console.log(`\n  ${C.bold}${C.white}⚡ Yogatik Terminal Commands:${C.reset}`)
   console.log(`    ${C.yellow}/help${C.reset}            Show this command guide`)
   console.log(`    ${C.yellow}/model${C.reset}           Switch between local Ollama models or API providers`)
+  console.log(`    ${C.yellow}/bot${C.reset}             Check status of Yogatik Bot Gateway (Telegram/Discord/REST)`)
   console.log(`    ${C.yellow}/files [filter]${C.reset}  List files in the workspace (e.g. /files src)`)
   console.log(`    ${C.yellow}/read <file>${C.reset}     Quick preview of a local file`)
   console.log(`    ${C.yellow}/git${C.reset}             Show git status and active branch diff summary`)
@@ -201,6 +202,26 @@ function runCommand(cmd) {
     console.log(`  ${C.emerald}✓ Command finished${C.reset}\n`)
   } catch (err) {
     console.log(`  ${C.red}Command failed with exit code ${err.status || 1}${C.reset}\n`)
+  }
+}
+
+// Check Yogatik Bot Gateway Status
+async function checkBotGateway() {
+  console.log(`\n  ${C.bold}Checking Yogatik Bot Gateway...${C.reset}`)
+  try {
+    const res = await fetch('http://127.0.0.1:8787/health', { signal: AbortSignal.timeout(1500) })
+    if (res.ok) {
+      const data = await res.json()
+      console.log(`  ${C.emerald}✓ Bot Gateway is ONLINE on port 8787${C.reset}`)
+      console.log(`    ${C.cyan}Provider:${C.reset} ${data.activeProvider || 'unknown'}  │  ${C.cyan}Model:${C.reset} ${data.activeModel || 'default'}  │  ${C.cyan}Agent:${C.reset} ${data.activeAgent || 'generalist'}`)
+      console.log(`    ${C.gray}Endpoints: http://127.0.0.1:8787/health | http://127.0.0.1:8787/api/chat${C.reset}\n`)
+    } else {
+      console.log(`  ${C.yellow}⚠ Bot Gateway returned HTTP ${res.status}${C.reset}\n`)
+    }
+  } catch {
+    console.log(`  ${C.yellow}○ Bot Gateway is currently OFFLINE.${C.reset}`)
+    console.log(`  ${C.gray}To launch the Bot Gateway for Telegram, Discord, and REST webhooks:${C.reset}`)
+    console.log(`    ${C.bold}npm run bot${C.reset}  or run  ${C.bold}.\\bot-gateway.bat${C.reset}\n`)
   }
 }
 
@@ -356,6 +377,8 @@ async function main() {
       readFilePreview(file)
     } else if (input === '/git') {
       showGit()
+    } else if (input === '/bot' || input.startsWith('/bot ')) {
+      await checkBotGateway()
     } else if (input.startsWith('/run ')) {
       const cmd = input.slice(5)
       runCommand(cmd)

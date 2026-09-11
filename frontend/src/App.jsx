@@ -249,6 +249,7 @@ export default function App() {
   const [showSubAgents, setShowSubAgents] = useState(false)
   const [showAutoSkills, setShowAutoSkills] = useState(false)
   const [showFileEditor, setShowFileEditor] = useState(false)
+  const [fileEditorProps, setFileEditorProps] = useState({ filePath: '', initialContent: '' })
   // The workspace is a DOCK, not a modal: it is deliberately absent from
   // isAnyModalOpen so Escape and the global shortcuts keep working while it is
   // open — you are meant to chat and watch files at the same time. It IS in
@@ -1428,6 +1429,66 @@ export default function App() {
     window.addEventListener('yogatik:ollama-ready', onOllamaReady)
     return () => window.removeEventListener('yogatik:ollama-ready', onOllamaReady)
   }, [])
+
+  // Handle AI and external requests to open modals or update settings dynamically
+  useEffect(() => {
+    const handleOpenModal = (e) => {
+      const { modal, props = {} } = e.detail || {}
+      if (modal === 'settings') {
+        if (props.tab) setSettingsModalTab(props.tab)
+        setShowSettingsModal(true)
+      } else if (modal === 'file_editor') {
+        setFileEditorProps({ filePath: props.filePath || '', initialContent: props.initialContent || props.content || '' })
+        setShowFileEditor(true)
+      } else if (modal === 'domain_hub') {
+        setShowDomainHub(true)
+      } else if (modal === 'diagnostics') {
+        setShowDiagnosticsModal(true)
+      } else if (modal === 'torrent_manager') {
+        setShowTorrentModal(true)
+      } else if (modal === 'mcp') {
+        setShowMcpModal(true)
+      } else if (modal === 'app_overview') {
+        setShowOverviewModal(true)
+      } else if (modal === 'shortcuts') {
+        setShowShortcutsModal(true)
+      } else if (modal === 'vision') {
+        setShowVisionModal(true)
+      } else if (modal === 'auto_skills') {
+        setShowAutoSkills(true)
+      }
+    }
+
+    const handleSettingsChanged = (e) => {
+      const { key, value } = e.detail || {}
+      if (key === 'theme') {
+        setTheme(value === 'light' ? 'light' : 'dark')
+      } else if (key === 'temperature') {
+        setTemperature(Number(value))
+      } else if (key === 'active_provider' || key === 'provider') {
+        setProvider(value)
+      } else if (key === 'active_model' || key === 'model') {
+        chooseModel(value)
+      } else if (key === 'webSearch') {
+        setWebSearch(Boolean(value))
+      } else if (key === 'autoRoute') {
+        setAutoRoute(Boolean(value))
+      } else if (key === 'fallback') {
+        setFallback(Boolean(value))
+      } else if (key === 'toolsEnabled') {
+        setToolsEnabled(Boolean(value))
+      } else if (key === 'active_project') {
+        setActiveProject(value)
+      }
+    }
+
+    window.addEventListener('yogatik:open-modal', handleOpenModal)
+    window.addEventListener('yogatik:settings-changed', handleSettingsChanged)
+    return () => {
+      window.removeEventListener('yogatik:open-modal', handleOpenModal)
+      window.removeEventListener('yogatik:settings-changed', handleSettingsChanged)
+    }
+  }, [chooseModel, setTemperature])
 
   // Cheap: cached probe result, else the name heuristic. Tells the user BEFORE
   // they send whether the image goes to the model or gets read on-device.
@@ -5551,7 +5612,12 @@ export default function App() {
       {showFileEditor && (
         <FileEditorModal
           isOpen={showFileEditor}
-          onClose={() => setShowFileEditor(false)}
+          filePath={fileEditorProps.filePath}
+          initialContent={fileEditorProps.initialContent}
+          onClose={() => {
+            setShowFileEditor(false)
+            setFileEditorProps({ filePath: '', initialContent: '' })
+          }}
           onSave={(path) => showToast(`Saved ${path}`)}
         />
       )}

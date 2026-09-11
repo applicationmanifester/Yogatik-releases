@@ -1,4 +1,4 @@
-﻿/**
+/**
  * apexAgent.js — Apex: Autonomous Desktop Orchestrator
  *
  * The most capable multi-agent persona for Yogatik Desktop. Plans, researches,
@@ -144,7 +144,7 @@ export const APEX_AGENT = {
     'agent_desktop_operator', 'agent_data_engineer', 'agent_librarian',
     'agent_media_producer', 'agent_geo', 'agent_orchestrator',
     'agent_recreation', 'agent_reasoner', 'agent_modeller', 'agent_builder',
-    'agent_socratic', 'agent_audiovideo_director',
+    'agent_socratic', 'agent_audiovideo_director', 'agent_bot_architect',
   ],
 }
 

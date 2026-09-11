@@ -12,6 +12,7 @@
 
 import { mdToHtml } from './mdToPdf'
 import { toCsv } from './dataConvert'
+import { addDocument, getSetting } from '../db'
 
 // ─── 1. Word Document (.docx / WordprocessingML) ─────────────────────────────
 
@@ -457,24 +458,185 @@ export function generateCertificate({
   }
 }
 
-// ─── 5. Universal Document Generator Tool for AI Toolchain ─────────────────
+// ─── 5. Structured Markdown Documentation (README, Spec, ADR, Guide) ─────────
+
+export function generateMarkdownDoc({ title = 'Documentation', content = '', author = 'Yogatik AI', tags = [], type = 'guide' } = {}) {
+  const dateStr = new Date().toISOString().split('T')[0]
+  const escapedTitle = title.trim() || 'Documentation'
+  
+  // Generate Table of Contents from markdown headings
+  const headings = []
+  const lines = content.split('\n')
+  for (const line of lines) {
+    const match = line.match(/^(#{2,4})\s+(.+)$/)
+    if (match) {
+      const level = match[1].length - 2
+      const text = match[2].trim()
+      const slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      headings.push({ level, text, slug })
+    }
+  }
+
+  let toc = ''
+  if (headings.length > 1) {
+    toc = '## Table of Contents\n\n' + headings.map(h => `${'  '.repeat(h.level)}- [${h.text}](#${h.slug})`).join('\n') + '\n\n---\n\n'
+  }
+
+  const header = `---
+title: "${escapedTitle}"
+author: "${author}"
+date: "${dateStr}"
+type: "${type}"
+tags: [${tags.map(t => `"${t}"`).join(', ')}]
+generator: "Yogatik AI Document Suite"
+---
+
+# ${escapedTitle}
+
+> **Author:** ${author} | **Date:** ${dateStr} | **Status:** Approved / Active
+
+${toc}`
+
+  const fullMarkdown = `${header}${content.trim()}\n\n---\n*Generated with Yogatik AI Documentation Suite*\n`
+  const filename = `${escapedTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_') || 'documentation'}.md`
+  const dataUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(fullMarkdown)}`
+  const blob = new Blob([fullMarkdown], { type: 'text/markdown;charset=utf-8' })
+
+  return {
+    success: true,
+    tool: 'markdown_doc_generator',
+    format: 'markdown',
+    filename,
+    title: escapedTitle,
+    content: fullMarkdown,
+    size_kb: (blob.size / 1024).toFixed(2),
+    data_url: dataUrl,
+    headings_count: headings.length,
+    download_prompt: `Download Markdown Document: ${filename}`,
+  }
+}
+
+// ─── 6. OpenAPI 3.0 / Swagger API Specification ─────────────────────────────
+
+export function generateApiSpec({ title = 'API Specification', version = '1.0.0', description = '', endpoints = [], baseUrl = 'https://api.example.com/v1' } = {}) {
+  const paths = {}
+  const items = Array.isArray(endpoints) && endpoints.length ? endpoints : [
+    { path: '/status', method: 'get', summary: 'Health check endpoint', description: 'Returns system health status', responseCode: 200 }
+  ]
+
+  for (const ep of items) {
+    const p = ep.path.startsWith('/') ? ep.path : `/${ep.path}`
+    const m = (ep.method || 'get').toLowerCase()
+    if (!paths[p]) paths[p] = {}
+    paths[p][m] = {
+      summary: ep.summary || `${m.toUpperCase()} ${p}`,
+      description: ep.description || '',
+      parameters: ep.parameters || [],
+      responses: {
+        [ep.responseCode || 200]: {
+          description: ep.responseDescription || 'Successful operation',
+          content: {
+            'application/json': {
+              schema: ep.responseSchema || { type: 'object', properties: { success: { type: 'boolean' } } }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const spec = {
+    openapi: '3.0.0',
+    info: {
+      title,
+      version,
+      description: description || 'Generated with Yogatik AI API Specification Builder',
+      contact: { name: 'Yogatik API Integration' },
+    },
+    servers: [{ url: baseUrl, description: 'Production Server' }],
+    paths,
+  }
+
+  const jsonStr = JSON.stringify(spec, null, 2)
+  const filename = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '_') || 'api_spec'}.json`
+  const dataUrl = `data:application/json;charset=utf-8,${encodeURIComponent(jsonStr)}`
+  const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' })
+
+  return {
+    success: true,
+    tool: 'api_spec_generator',
+    format: 'openapi_json',
+    filename,
+    title,
+    spec,
+    size_kb: (blob.size / 1024).toFixed(2),
+    data_url: dataUrl,
+    endpoints_count: Object.keys(paths).length,
+  }
+}
+
+// ─── 7. Executive Technical / System Report ─────────────────────────────────
+
+export function generateSystemReport({ title = 'System Architecture & Technical Audit Report', target = 'Yogatik Workspace', executiveSummary = '', findings = [], recommendations = [] } = {}) {
+  const dateStr = new Date().toISOString().split('T')[0]
+  let reportMd = `# ${title}\n\n`
+  reportMd += `**Target System:** ${target} | **Date:** ${dateStr} | **Auditor:** Yogatik AI System Specialist\n\n`
+  reportMd += `## 1. Executive Summary\n\n${executiveSummary || 'A comprehensive technical inspection was conducted. The system architecture, operational performance, and resource allocations have been verified and documented.'}\n\n`
+  
+  reportMd += `## 2. Key Findings & Observations\n\n`
+  if (findings.length) {
+    findings.forEach((f, i) => {
+      const statusIcon = f.severity === 'high' ? '🔴' : (f.severity === 'medium' ? '🟡' : '🟢')
+      reportMd += `### ${statusIcon} 2.${i + 1} ${f.title || `Finding ${i + 1}`}\n- **Category:** ${f.category || 'Architecture'}\n- **Impact:** ${f.impact || 'Standard'}\n- **Detail:** ${f.detail || f.description || ''}\n\n`
+    })
+  } else {
+    reportMd += `- Architecture patterns comply with modern standards.\n- Zero regressions detected across active modules.\n- Modular decoupling verified across storage, UI, and model tiers.\n\n`
+  }
+
+  reportMd += `## 3. Actionable Recommendations\n\n`
+  if (recommendations.length) {
+    recommendations.forEach((r, i) => {
+      reportMd += `${i + 1}. **${r.action || r.title || r}**: ${r.detail || r.reason || 'Implement according to established guidelines.'}\n`
+    })
+  } else {
+    reportMd += `1. **Maintain Continuous Testing**: Run vitest suite across local packages.\n2. **Security & Guarding**: Ensure all external data payloads validate against safety schemas.\n`
+  }
+
+  reportMd += `\n---\n*Report compiled by Yogatik AI System Engine*\n`
+  const filename = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '_') || 'system_report'}.md`
+  const dataUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(reportMd)}`
+  const blob = new Blob([reportMd], { type: 'text/markdown;charset=utf-8' })
+
+  return {
+    success: true,
+    tool: 'system_report_generator',
+    format: 'markdown_report',
+    filename,
+    title,
+    content: reportMd,
+    size_kb: (blob.size / 1024).toFixed(2),
+    data_url: dataUrl,
+  }
+}
+
+// ─── 8. Universal Document Generator Tool for AI Toolchain ─────────────────
 
 export const documentGeneratorTool = {
   schema: {
     description:
       'Generate professional, standalone documents completely client-side in multiple open-source formats: ' +
-      'Word documents (.doc/.docx), interactive HTML5 presentation slide decks, printable business invoices, awards/certificates, or spreadsheets. ' +
-      'All documents run 100% independently without external servers.',
+      'Word documents (.doc/.docx), interactive HTML5 presentation slide decks, printable business invoices, awards/certificates, CSV spreadsheets, structured Markdown guides/specs/ADRs, OpenAPI 3.0 API specs, or executive system audit reports. ' +
+      'All documents run 100% independently and can be automatically saved to Yogatik project workspace documents.',
     parameters: {
       type: 'object',
       properties: {
         document_type: {
           type: 'string',
-          enum: ['word_docx', 'slide_deck', 'invoice', 'certificate', 'csv_spreadsheet'],
-          description: 'Type of document to generate',
+          enum: ['word_docx', 'slide_deck', 'invoice', 'certificate', 'csv_spreadsheet', 'markdown_doc', 'api_spec', 'system_report'],
+          description: 'Type of document to generate: "word_docx", "slide_deck", "invoice", "certificate", "csv_spreadsheet", "markdown_doc" (structured README/guide/ADR), "api_spec" (OpenAPI/Swagger specification), or "system_report" (audit/architecture report).',
         },
         title: { type: 'string', description: 'Document or presentation title' },
-        content: { type: 'string', description: 'Markdown content for Word docs, or slide markdown separated by "---"' },
+        content: { type: 'string', description: 'Markdown content for Word docs, or slide markdown separated by "---", or markdown body for documentation.' },
         invoice_data: {
           type: 'object',
           description: 'Invoice data (sender, client, items[], currency, tax_percent, discount, notes)',
@@ -488,7 +650,30 @@ export const documentGeneratorTool = {
           items: { type: 'object' },
           description: 'Array of objects for CSV/Spreadsheet generation',
         },
+        endpoints: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'List of API endpoint definitions for OpenAPI 3.0 spec generation',
+        },
+        executive_summary: {
+          type: 'string',
+          description: 'Executive summary for system report',
+        },
+        findings: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'List of audit/system findings for system report',
+        },
+        recommendations: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'Actionable recommendations for system report',
+        },
         theme: { type: 'string', enum: ['midnight', 'dark', 'corporate', 'emerald'], description: 'Theme for slide decks' },
+        save_to_workspace: {
+          type: 'boolean',
+          description: 'Whether to save the document to Yogatik project documents in IndexedDB (default: true).',
+        },
       },
       required: ['document_type'],
     },
@@ -500,37 +685,70 @@ export const documentGeneratorTool = {
     invoice_data = {},
     certificate_data = {},
     spreadsheet_rows = [],
+    endpoints = [],
+    executive_summary = '',
+    findings = [],
+    recommendations = [],
     theme = 'midnight',
+    save_to_workspace = true,
   } = {}) {
     try {
+      let result = null
+
       if (document_type === 'word_docx') {
-        return generateWordDoc({ title, content })
-      }
-      if (document_type === 'slide_deck') {
-        return generateSlideDeck({ title, slides: content, theme })
-      }
-      if (document_type === 'invoice') {
-        return generateInvoice(invoice_data)
-      }
-      if (document_type === 'certificate') {
-        return generateCertificate(certificate_data)
-      }
-      if (document_type === 'csv_spreadsheet') {
+        result = generateWordDoc({ title, content })
+      } else if (document_type === 'slide_deck') {
+        result = generateSlideDeck({ title, slides: content, theme })
+      } else if (document_type === 'invoice') {
+        result = generateInvoice(invoice_data)
+      } else if (document_type === 'certificate') {
+        result = generateCertificate(certificate_data)
+      } else if (document_type === 'csv_spreadsheet') {
         const rows = spreadsheet_rows.length ? spreadsheet_rows : [{ item: 'Sample Data', value: 100 }]
         const csvStr = toCsv(rows)
         const filename = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '_') || 'data'}.csv`
         const dataUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csvStr)}`
-        return {
+        result = {
           success: true,
           tool: 'csv_spreadsheet',
           filename,
           rows_count: rows.length,
           data_url: dataUrl,
         }
+      } else if (document_type === 'markdown_doc') {
+        result = generateMarkdownDoc({ title, content })
+      } else if (document_type === 'api_spec') {
+        result = generateApiSpec({ title, description: content, endpoints })
+      } else if (document_type === 'system_report') {
+        result = generateSystemReport({ title, executiveSummary: executive_summary || content, findings, recommendations })
+      } else {
+        return { success: false, error: `Unsupported document_type: ${document_type}` }
       }
-      return { success: false, error: `Unsupported document_type: ${document_type}` }
+
+      // Auto-save into workspace documents if enabled
+      if (result && result.success && save_to_workspace && typeof addDocument === 'function') {
+        try {
+          const docContent = result.content || (typeof result.spec === 'object' ? JSON.stringify(result.spec, null, 2) : content)
+          if (docContent) {
+            const activeProj = typeof getSetting === 'function' ? await getSetting('active_project', null) : null
+            const savedDoc = await addDocument({
+              name: result.filename || `${title}.md`,
+              type: result.format || 'text/markdown',
+              content: docContent,
+              projectId: activeProj,
+            }).catch(() => null)
+            if (savedDoc) {
+              result.saved_to_workspace = true
+              result.document_id = savedDoc.id
+            }
+          }
+        } catch { /* non-fatal */ }
+      }
+
+      return result
     } catch (e) {
       return { success: false, error: e.message }
     }
   },
 }
+

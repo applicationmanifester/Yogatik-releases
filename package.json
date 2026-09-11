@@ -19,7 +19,9 @@
     "electron:dev": "npm --prefix frontend run electron:dev",
     "electron:build": "npm --prefix frontend run electron:build",
     "install:all": "npm --prefix frontend install",
-    "cli": "node frontend/bin/yogatik-cli.mjs"
+    "cli": "node frontend/bin/yogatik-cli.mjs",
+    "bot": "npm --prefix frontend run bot",
+    "bot:telegram": "npm --prefix frontend run bot:telegram"
   },
   "engines": {
     "node": ">=18.0.0"

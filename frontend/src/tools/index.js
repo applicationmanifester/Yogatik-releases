@@ -171,6 +171,7 @@ import { langsmithObservabilityTool } from './langsmithObservability'
 import { langGraphFlowTool } from './langGraphFlow'
 import { scraplingTool } from './scrapling'
 import { researchBriefingTool } from './researchBriefing'
+import { appSettingsTool } from './appSettings'
 
 export const screenInspectTool = {
   schema: {
@@ -491,10 +492,23 @@ const ALL_TOOLS = {
   langgraph_flow: langGraphFlowTool,
   scrapling_scrape: scraplingTool,
   research_briefing: researchBriefingTool,
+  // Yogatik AI Settings, Workspace Resources, and Modal Control Suite
+  app_settings: appSettingsTool,
 }
 
 /** Common LLM hallucinated tool names mapped to their canonical Yogatik tool */
 export const TOOL_ALIASES = {
+  settings: 'app_settings',
+  settings_manage: 'app_settings',
+  manage_settings: 'app_settings',
+  update_setting: 'app_settings',
+  change_setting: 'app_settings',
+  get_setting: 'app_settings',
+  system_settings: 'app_settings',
+  app_resources: 'app_settings',
+  resource_manager: 'app_settings',
+  open_modal: 'app_settings',
+  local_vault: 'local_vault_search',
   scrapling: 'scrapling_scrape',
   scrapling_tool: 'scrapling_scrape',
   web_scrape_adaptive: 'scrapling_scrape',
@@ -1532,6 +1546,7 @@ export {
   aiderCopilotTool,
   langsmithObservabilityTool,
   langGraphFlowTool,
+  appSettingsTool,
 }
 
 export default ALL_TOOLS
