@@ -69,8 +69,6 @@ import { formatLatency, getStatusIcon, formatDirectTimeAnswer, WINDOW_STEP, SUGG
 // Code-split heavy modals and auxiliary views on demand with auto-retry and cache-bust on new deploys
 const ArtifactPanel = safeLazy(() => import('./components/ArtifactPanel').then(m => ({ default: m.ArtifactPanel })))
 const BrowserPanel = safeLazy(() => import('./components/BrowserPanel').then(m => ({ default: m.BrowserPanel })))
-const GrokDock = safeLazy(() => import('./components/GrokDock').then(m => ({ default: m.GrokDock })))
-const GeminiDock = safeLazy(() => import('./components/GeminiDock').then(m => ({ default: m.GeminiDock })))
 const ActivityPanel = safeLazy(() => import('./components/ActivityPanel').then(m => ({ default: m.ActivityPanel })))
 const DataDashboard = safeLazy(() => import('./components/DataDashboard'))
 const TorrentManagerModal = safeLazy(() => import('./components/TorrentManagerModal'))
@@ -457,8 +455,6 @@ export default function App() {
   const [showPwaInstall, setShowPwaInstall] = useState(false)
   // Docked agent browser: { url } while panel mode is showing one.
   const [browserPanel, setBrowserPanel] = useState(null)
-  const [showGrokDock, setShowGrokDock] = useState(false)
-  const [showGeminiDock, setShowGeminiDock] = useState(false)
   const [showActivity, setShowActivity] = useState(false)
   const [showShareSheet, setShowShareSheet] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
@@ -668,8 +664,7 @@ export default function App() {
     showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor ||
     showWorkspace || showTour || showBilling ||
     showAgents || showMcpModal || showPlugins ||
-    showAccount || showProviders || showPrivacy ||
-    showGrokDock || showGeminiDock
+    showAccount || showProviders || showPrivacy
   )
 
   const webDockOccluded = !!(
@@ -3703,8 +3698,6 @@ export default function App() {
       { id: 'workspace-scm', group: 'View', label: '🔀 Review the agent’s file changes', hint: isDesktop() ? 'Source control' : 'Desktop app', run: () => setShowWorkspace(true) },
       { id: 'scheduler', group: 'Tools', label: '⏰ Scheduled tasks (cron jobs)', hint: 'Manage & cancel', run: () => setShowScheduler(true) },
       { id: 'sub-agents', group: 'Tools', label: '🧩 Sub-agent runner', hint: 'Isolated agents', run: () => setShowSubAgents(true) },
-      { id: 'grok-dock', group: 'Tools', label: '🤖 Grok.com Studio Dock (Desktop Local Files Bridge)', hint: 'xAI Web + Files', run: () => { setShowGrokDock(true); setShowGeminiDock(false); } },
-      { id: 'gemini-dock', group: 'Tools', label: '✨ Gemini.com Studio Dock (Desktop Local Files Bridge)', hint: 'Google Web + Files', run: () => { setShowGeminiDock(true); setShowGrokDock(false); } },
       ...(isDesktop() ? [
         { id: 'open-yogatik-browser', group: 'Tools', label: '🧭 Yogatik Browser (Desktop Window)', hint: 'Desktop Browser', run: () => handleOpenBrowser() },
         { id: 'open-torrent-downloader', group: 'Tools', label: '⚡ P2P Torrent Downloader (Native Engine)', hint: 'P2P Torrents', run: () => setShowTorrentModal(true) },
@@ -4743,28 +4736,6 @@ export default function App() {
                 </>
               )}
               <button className="icon-btn domain-hub-header-btn" onClick={() => setShowDomainHub(true)} title="Social Media & Domain Hub (Alt+D)" aria-label="Social Media & Domain Hub"><Globe size={17} /></button>
-              <button
-                className="icon-btn grok-dock-header-btn"
-                onClick={() => setShowGrokDock(s => {
-                  if (!s) setShowGeminiDock(false)
-                  return !s
-                })}
-                title="Grok.com Studio Dock & Local Files Bridge"
-                aria-label="Grok.com Studio Dock"
-              >
-                <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>𝕏</span>
-              </button>
-              <button
-                className="icon-btn gemini-dock-header-btn"
-                onClick={() => setShowGeminiDock(s => {
-                  if (!s) setShowGrokDock(false)
-                  return !s
-                })}
-                title="Gemini.com Studio Dock & Local Files Bridge"
-                aria-label="Gemini.com Studio Dock"
-              >
-                <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>✨</span>
-              </button>
             </div>
             <div className="header-btn-group" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
               <button className="icon-btn" onClick={() => setShowPalette(true)} title="Universal Search & Commands (Ctrl+K)" aria-label="Universal Search"><Search size={17} /></button>
@@ -5693,28 +5664,6 @@ export default function App() {
           onClose={() => {
             window.__YOGATIK_BROWSER__?.close({ conversationId: browserConvId })
             setBrowserPanel(null)
-          }}
-        />
-      )}
-      {showGrokDock && (
-        <GrokDock
-          onClose={() => setShowGrokDock(false)}
-          onToast={showToast}
-          occluded={webDockOccluded}
-          onSwitchToGemini={() => {
-            setShowGrokDock(false)
-            setShowGeminiDock(true)
-          }}
-        />
-      )}
-      {showGeminiDock && (
-        <GeminiDock
-          onClose={() => setShowGeminiDock(false)}
-          onToast={showToast}
-          occluded={webDockOccluded}
-          onSwitchToGrok={() => {
-            setShowGeminiDock(false)
-            setShowGrokDock(true)
           }}
         />
       )}
