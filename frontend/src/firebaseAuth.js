@@ -170,6 +170,10 @@ export async function ensureFirebaseAuth(f) {
   if (!f) return
   // Already authenticated — nothing to do.
   if (f.auth?.currentUser) return
+  if (f.auth?.authStateReady) {
+    try { await f.auth.authStateReady() } catch {}
+  }
+  if (f.auth?.currentUser) return
   // Not a desktop build — web handles its own Firebase Auth persistence.
   if (typeof window === 'undefined' || !window.__YOGATIK_DESKTOP__) return
   // No cached desktop user — truly signed-out, nothing to restore.

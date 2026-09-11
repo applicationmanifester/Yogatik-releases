@@ -64,7 +64,10 @@ export async function pullCloudKeys() {
     const keys = await getUserApiKeys(secret)
     for (const [provider, key] of Object.entries(keys)) {
       if (!key) continue
-      if (await db.getSetting(`apikey_${provider}`) === key) continue
+      // Safety guard: reject any corrupted ciphertext pushed by older desktop builds
+      if (typeof key === 'string' && key.startsWith('kc.v1:')) continue
+      const current = await db.getSetting(`apikey_${provider}`)
+      if (current === key) continue
       await db.setSetting(`apikey_${provider}`, key)
       pulled++
     }
@@ -86,8 +89,15 @@ export async function pushCloudKeys() {
   ])
 
   for (const id of providerIds) {
-    const key = await db.getSetting(`apikey_${id}`)
+    let key = await db.getSetting(`apikey_${id}`)
     if (!key) continue
+    if (typeof key === 'string' && key.startsWith('kc.v1:')) {
+      try {
+        const { openKey } = await import('./desktopKeychain.js')
+        key = await openKey(key)
+      } catch {}
+      if (!key || (typeof key === 'string' && key.startsWith('kc.v1:'))) continue
+    }
     try {
       const res = await saveUserApiKey(id, key, secret)
       if (res?.synced) { await db.setSetting(`synced_${id}`, Date.now()); pushed++ }
@@ -1120,7 +1130,6 @@ export async function getModels() {
   const desktop = isDesktop()
   const entries = Object.entries(providers).filter(([id, p]) => {
     if (desktop && p.isLocal && !p.isOllama) return false
-    if (!desktop && p.isOllama) return false
     return true
   })
 
@@ -1163,7 +1172,7 @@ export async function getModels() {
         const cached = await cachedModels(id, key, liveModels, allSettings)
         liveModels = (Array.isArray(cached) ? cached : []).map(normalizeModelName).filter(Boolean)
       }
-    } else if (hasKey || p.publicModels) {
+    } else if (hasKey || p.publicModels || p.isOllama) {
       const cached = await cachedModels(id, key, liveModels, allSettings)
       liveModels = (Array.isArray(cached) ? cached : []).map(normalizeModelName).filter(Boolean)
     }

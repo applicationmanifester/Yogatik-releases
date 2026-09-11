@@ -1531,6 +1531,12 @@ export default function App() {
       if (u) {
         setUser(u)
         loadEntitlement().then(setEnt).catch(() => {})
+        syncCloudKeys().then((res) => {
+          if (res?.pulled > 0 || res?.pushed > 0) {
+            refreshKeys()
+            refreshModels()
+          }
+        }).catch(() => {})
       }
     }).catch(() => {})
     // Entitlement: fast synchronous cache initialized, plus async validation

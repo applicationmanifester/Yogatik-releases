@@ -152,7 +152,18 @@ export function _clearSettingsCache() {
 
 export async function getSetting(key, fallback = null) {
   if (_settingsCache.has(key)) {
-    const cached = _settingsCache.get(key)
+    let cached = _settingsCache.get(key)
+    // If cache accidentally received a sealed key, decrypt it on the fly
+    if (isApiKeySetting(key) && typeof cached === 'string' && cached.startsWith('kc.v1:')) {
+      try {
+        const { openKey } = await import('./desktopKeychain.js')
+        const opened = await openKey(cached)
+        cached = opened != null ? opened : fallback
+        _settingsCache.set(key, cached)
+      } catch {
+        cached = fallback
+      }
+    }
     return (cached != null) ? cached : fallback
   }
   const row = await withReopen(() => db.settings.get(key))
@@ -173,7 +184,7 @@ export async function getSetting(key, fallback = null) {
 export async function setSetting(key, value) {
   _settingsCache.set(key, value)
   let toStore = value
-  if (isApiKeySetting(key) && typeof value === 'string' && value) {
+  if (isApiKeySetting(key) && typeof value === 'string' && value && !value.startsWith('kc.v1:')) {
     try {
       const { sealKey } = await import('./desktopKeychain.js')
       toStore = await sealKey(value)
@@ -184,10 +195,26 @@ export async function setSetting(key, value) {
 
 export async function getAllSettings() {
   const rows = await withReopen(() => db.settings.toArray())
-  const obj = Object.fromEntries(rows.map(r => [r.key, r.value]))
-  for (const [k, v] of Object.entries(obj)) {
-    if (!_settingsCache.has(k)) _settingsCache.set(k, v)
-  }
+  const obj = {}
+  let openKeyFn = v => v
+  try {
+    const mod = await import('./desktopKeychain.js')
+    if (mod?.openKey) openKeyFn = mod.openKey
+  } catch {}
+
+  await Promise.all(rows.map(async (r) => {
+    let val = r.value
+    if (isApiKeySetting(r.key) && typeof val === 'string' && val && val.startsWith('kc.v1:')) {
+      try {
+        const opened = await openKeyFn(val)
+        val = opened != null ? opened : null
+      } catch {
+        val = null
+      }
+    }
+    obj[r.key] = val
+    _settingsCache.set(r.key, val)
+  }))
   return obj
 }
 
