@@ -172,6 +172,7 @@ import { langGraphFlowTool } from './langGraphFlow'
 import { scraplingTool } from './scrapling'
 import { researchBriefingTool } from './researchBriefing'
 import { appSettingsTool } from './appSettings'
+import { artemisAndroidTool, executeArtemisAndroid } from './artemisAndroid'
 
 export const screenInspectTool = {
   schema: {
@@ -494,10 +495,20 @@ const ALL_TOOLS = {
   research_briefing: researchBriefingTool,
   // Yogatik AI Settings, Workspace Resources, and Modal Control Suite
   app_settings: appSettingsTool,
+  // Google Artemis: Autonomous Android & Emulator Testing Suite (Pixel Test Engineering)
+  artemis_android: artemisAndroidTool,
 }
 
 /** Common LLM hallucinated tool names mapped to their canonical Yogatik tool */
 export const TOOL_ALIASES = {
+  // Artemis Android aliases
+  artemis: 'artemis_android',
+  google_artemis: 'artemis_android',
+  android_automation: 'artemis_android',
+  adb_device: 'artemis_android',
+  adb_mobile: 'artemis_android',
+  android_test: 'artemis_android',
+  artemis_test: 'artemis_android',
   settings: 'app_settings',
   settings_manage: 'app_settings',
   manage_settings: 'app_settings',
@@ -1456,6 +1467,9 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   if (/\b(langgraph|state graph|agent graph|multi agent flow|conditional edge|human in the loop|checkpoint)\b/i.test(text)) {
     scores['langgraph_flow'] = 230
   }
+  if (/\b(artemis|android automation|adb|pixel test|emulator automation|scrcpy|tap screen|mobile automation|android test)\b/i.test(text)) {
+    scores['artemis_android'] = 240
+  }
   if (/\b(mcp|model context protocol|connectors?|mcp tool|mcp resource|mcp server|mcp prompt)\b/i.test(text)) {
     scores['mcp_search_tools'] = 220
     scores['mcp_resource'] = 210
@@ -1538,6 +1552,8 @@ export function getToolNames() {
 
 export {
   ALL_TOOLS,
+  artemisAndroidTool,
+  executeArtemisAndroid,
   askUserTool,
   setUserQuestionHandler,
   localInferenceTool,

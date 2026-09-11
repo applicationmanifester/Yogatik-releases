@@ -163,6 +163,17 @@ export const KNOWN_MCP_SERVERS = [
     desktopOnly: true,
     keywords: ['duckdb', 'parquet', 'analytics database'],
   },
+  {
+    id: 'google_artemis',
+    name: 'Google Artemis (Android Automation)',
+    desc: 'Autonomous Android device & emulator automation engine via ADB / scrcpy (Pixel Test Engineering).',
+    badge: 'Android / Mobile',
+    transport: 'stdio',
+    command: 'python',
+    args: ['-m', 'artemis.mcp'],
+    desktopOnly: true,
+    keywords: ['artemis', 'android automation', 'adb mobile', 'android testing'],
+  },
 ]
 
 function normalize(s) { return String(s || '').toLowerCase() }
