@@ -1814,8 +1814,8 @@ export function LiveView({
           {/* Phase 4: Latency SLO Badge in Live HUD */}
           {liveMetrics.currentSession()?.lastLatencyMs != null && (
             <div
-              className={`live-latency-badge ${liveMetrics.latencyGrade(liveMetrics.currentSession().lastLatencyMs, videoSource ? 'multimodal' : 'voice')}`}
-              title={`First-word latency: ${Math.round(liveMetrics.currentSession().lastLatencyMs)}ms (SLO target: ${videoSource ? liveMetrics.MULTIMODAL_SLO_MS : liveMetrics.VOICE_SLO_MS}ms)`}
+              className={`live-latency-badge ${liveMetrics.latencyGrade(liveMetrics.currentSession().lastLatencyMs, (camOn || screenOn) ? 'multimodal' : 'voice')}`}
+              title={`First-word latency: ${Math.round(liveMetrics.currentSession().lastLatencyMs)}ms (SLO target: ${(camOn || screenOn) ? liveMetrics.MULTIMODAL_SLO_MS : liveMetrics.VOICE_SLO_MS}ms)`}
               role="status"
               aria-label={`Latency ${Math.round(liveMetrics.currentSession().lastLatencyMs)} milliseconds`}
             >

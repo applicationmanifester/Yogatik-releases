@@ -1468,8 +1468,8 @@ export default function App() {
         setShowOverviewModal(true)
       } else if (modal === 'shortcuts') {
         setShowShortcutsModal(true)
-      } else if (modal === 'vision') {
-        setShowVisionModal(true)
+      } else if (modal === 'vision' || modal === 'live') {
+        startLive()
       } else if (modal === 'auto_skills') {
         setShowAutoSkills(true)
       }
@@ -1504,7 +1504,7 @@ export default function App() {
       window.removeEventListener('yogatik:open-modal', handleOpenModal)
       window.removeEventListener('yogatik:settings-changed', handleSettingsChanged)
     }
-  }, [chooseModel, setTemperature])
+  }, [chooseModel, setTemperature, startLive])
 
   // Cheap: cached probe result, else the name heuristic. Tells the user BEFORE
   // they send whether the image goes to the model or gets read on-device.

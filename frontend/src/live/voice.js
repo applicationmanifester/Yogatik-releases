@@ -89,7 +89,8 @@ export function createSpeaker({
       window.speechSynthesis.getVoices()
       if (window.speechSynthesis.paused) window.speechSynthesis.resume()
       // Pre-warm audio thread in browser runtime only (disabled in Vitest unit test environment)
-      if (typeof SpeechSynthesisUtterance !== 'undefined' && (typeof process === 'undefined' || !process.env?.VITEST)) {
+      const isVitest = typeof globalThis !== 'undefined' && Boolean(globalThis.process?.env?.VITEST || globalThis.__vitest__)
+      if (typeof SpeechSynthesisUtterance !== 'undefined' && !isVitest) {
         const silent = new SpeechSynthesisUtterance(' ')
         silent.volume = 0.001
         window.speechSynthesis.speak(silent)

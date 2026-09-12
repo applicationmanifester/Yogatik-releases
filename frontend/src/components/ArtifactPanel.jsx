@@ -8,9 +8,8 @@ export function ArtifactPanel({ artifact, onClose }) {
   const [showVerify, setShowVerify] = useState(false)
   const [verifyCopied, setVerifyCopied] = useState(false)
 
-  if (!artifact) return null
-
-  const { title, language, code } = artifact
+  const code = artifact?.code
+  const language = artifact?.language
 
   // Computed layout and structure metrics for verification
   const verificationStats = useMemo(() => {
@@ -31,6 +30,10 @@ export function ArtifactPanel({ artifact, onClose }) {
       status: elementCount > 0 || lineCount > 1 ? 'Valid Structure' : 'Minimal Content',
     }
   }, [code, language])
+
+  if (!artifact) return null
+
+  const { title } = artifact
 
   const handleCopy = () => {
     navigator.clipboard.writeText(code)

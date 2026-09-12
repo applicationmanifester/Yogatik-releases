@@ -835,6 +835,7 @@ export function createCascadeSession({
     let failure = null
     let produced = false
     let accumulatedContent = ''
+    let turnStartTime = Date.now()
     let emittedAnswerLength = 0
     let emittedReasoningLength = 0
 
