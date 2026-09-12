@@ -1,5 +1,6 @@
 // Pollinations.ai — free, no key, CORS-friendly with resilient multi-tier fallback
 import { proxyFetch } from './http'
+import * as db from '../db'
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
@@ -25,18 +26,18 @@ export function resetImageRateGate() {
 }
 
 /** Fetch an image URL, rate-gated and retried with automatic proxy fallback. Resolves with a Response. */
-export function fetchImage(url, { retries = 2, signal } = {}) {
+export function fetchImage(url, { retries = 2, signal, headers = {} } = {}) {
   const run = _chain.then(async () => {
     let lastErr
     for (let attempt = 0; attempt <= retries; attempt++) {
       await gate()
       try {
-        const resp = await fetch(url, { signal })
+        const resp = await fetch(url, { signal, headers })
         if (resp.ok) return resp
         // If 403 (Cloudflare/WAF block or model restriction) or 429/500, attempt proxyFetch
         if (resp.status === 403 || resp.status === 429 || resp.status >= 500) {
           try {
-            const proxyResp = await proxyFetch(url, { signal })
+            const proxyResp = await proxyFetch(url, { signal, headers })
             if (proxyResp.ok) return proxyResp
           } catch {}
           const ra = parseFloat(resp.headers?.get?.('retry-after'))
@@ -71,7 +72,7 @@ export const ASPECT_RATIOS = {
 }
 
 // Build a Pollinations URL with the quality knobs the endpoint supports.
-export function pollinationsUrl(prompt, { width = 1024, height = 1024, seed, model = 'flux', enhance = true, negative } = {}) {
+export function pollinationsUrl(prompt, { width = 1024, height = 1024, seed, model = 'flux', enhance = true, negative, key, referrer = 'yogatik.web.app' } = {}) {
   const p = new URLSearchParams({
     width: String(width), height: String(height),
     seed: String(seed ?? Math.floor(Math.random() * 999999)),
@@ -80,6 +81,8 @@ export function pollinationsUrl(prompt, { width = 1024, height = 1024, seed, mod
   })
   if (enhance) p.set('enhance', 'true')
   if (negative) p.set('negative_prompt', negative)
+  if (key) p.set('key', key)
+  if (referrer) p.set('referrer', referrer)
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${p.toString()}`
 }
 
@@ -165,7 +168,13 @@ export const imageGenTool = {
 
     const refinedPrompt = enrichImagePrompt(prompt, style, lighting, quality)
 
-    // Models to attempt in order of preference (fallback on 403 auth restrictions)
+    // Retrieve optional Pollinations account key to unlock watermark-free generations
+    let pollinationsKey = ''
+    try {
+      pollinationsKey = (await db.getSetting('apikey_pollinations')) ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('pollinations_token') || localStorage.getItem('apikey_pollinations') : '') || ''
+    } catch {}
+
     const candidateModels = [model, 'flux', 'turbo'].filter((m, i, arr) => m && arr.indexOf(m) === i)
 
     let lastResp = null
@@ -180,6 +189,8 @@ export const imageGenTool = {
         seed,
         enhance: candModel === 'flux' || candModel === 'turbo',
         negative: negative ? `${DEFAULT_NEGATIVE}, ${negative}` : DEFAULT_NEGATIVE,
+        key: pollinationsKey || undefined,
+        referrer: 'yogatik.web.app',
       })
       lastUrl = url
       chosenModel = candModel
@@ -202,7 +213,8 @@ export const imageGenTool = {
       }
 
       try {
-        const resp = await fetchImage(url)
+        const headers = pollinationsKey ? { Authorization: `Bearer ${pollinationsKey}` } : {}
+        const resp = await fetchImage(url, { headers })
         if (resp.ok) {
           lastResp = resp
           break
