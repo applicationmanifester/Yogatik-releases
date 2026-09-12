@@ -403,13 +403,13 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         onToolStart: (name, args) => onToolsDetected?.([name], args),
         onToolResult: (name, result) => onToolResult?.(name, result),
         onSafety: body.onSafety || null,
-        onDone: ({ content, sources, aborted, trace, toolResults }) => {
+        onDone: ({ content, sources, aborted, trace, toolResults, watchdogEscalate }) => {
           if (sources?.length) onSources?.(sources)
           recordTurn(pid, mdl, {
             inTokens: estimateTokens(body.message || ''),
             outTokens: estimateTokens(content || ''),
           })
-          onDone?.(content, { aborted, provider: pid, model: mdl, trace, toolResults })
+          onDone?.(content, { aborted, provider: pid, model: mdl, trace, toolResults, watchdogEscalate })
         },
         onError: (err) => { failure = err?.message || String(err) },
       })
@@ -450,13 +450,13 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
               onToolStart: (name, args) => onToolsDetected?.([name], args),
               onToolResult: (name, result) => onToolResult?.(name, result),
               onSafety: body.onSafety || null,
-              onDone: ({ content, sources, aborted, trace, toolResults }) => {
+              onDone: ({ content, sources, aborted, trace, toolResults, watchdogEscalate }) => {
                 if (sources?.length) onSources?.(sources)
                 recordTurn(pid, fallbackMdl, {
                   inTokens: estimateTokens(body.message || ''),
                   outTokens: estimateTokens(content || ''),
                 })
-                onDone?.(content, { aborted, provider: pid, model: fallbackMdl, trace, toolResults })
+                onDone?.(content, { aborted, provider: pid, model: fallbackMdl, trace, toolResults, watchdogEscalate })
               },
               onError: (err) => { failure = err?.message || String(err) },
             })

@@ -26,6 +26,10 @@ export function logError(kind, message, stack, meta = null) {
   return entry
 }
 
+export function logWatchdogEvent(action, reason, meta = null) {
+  return logError('watchdog', `Watchdog [${action}]: ${reason}`, null, meta)
+}
+
 export function getErrorLog() { return read() }
 export function clearErrorLog() { write([]) }
 
@@ -36,6 +40,17 @@ export function clearErrorLog() { write([]) }
 export function diagnoseError(error) {
   const msg = typeof error === 'string' ? error : (error?.message || String(error || ''))
   const lower = msg.toLowerCase()
+
+  if (lower.includes('watchdog')) {
+    return {
+      type: 'watchdog',
+      category: 'Response Quality Watchdog',
+      title: 'Model Output Quality Issue',
+      suggestion: 'The AI watchdog detected an incomplete or repetitive response and intervened automatically.',
+      actionType: 'retry',
+      actionLabel: 'Regenerate',
+    }
+  }
 
   // On-device model storage, checked FIRST because its wording is unambiguous
   // and two later tests would otherwise claim it. WebLLM streams its weights

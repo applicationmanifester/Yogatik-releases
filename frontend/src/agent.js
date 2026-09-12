@@ -35,7 +35,7 @@ import { sanitizeExternalContext } from './tools/rebuffGuard'
 // turn it mattered); this is the output-side complement, wired at the real
 // choke point instead of left reachable only by the model's own goodwill.
 import { generateCanary, checkCanaryLeak } from './tools/guardrails'
-import { logError } from './errorLog'
+import { logError, logWatchdogEvent } from './errorLog'
 import { buildToolPrompt, parseToolCalls, formatToolResults, stripToolCallSyntax } from './promptedTools'
 import { setVisionContext } from './tools/see'
 import { describeWithoutModel } from './vision/source'
@@ -56,6 +56,7 @@ import { isLocked as isEntitlementLocked, entitlement as entitlementSnapshot } f
 import { detectReflexCandidate } from './agentReflex'
 import { detectMcpNeed } from './mcpRegistry'
 import * as mcpMod from './mcp'
+import { assessResponse, regenerationPrompt, continuationPrompt as watchdogContinuationPrompt } from './responseWatchdog'
 import { buildUiTelemetryBlock } from './uiContext'
 
 /** Durable memories the user asked to keep, injected so the model recalls them
@@ -1553,9 +1554,93 @@ export async function runAgent({
 
     throwIfAborted()
     let cleanedContent = stripToolCallSyntax(fullContent)
+
+    // ── Response Quality Watchdog ─────────────────────────────────────
+    // Runs AFTER the existing auto-continuation loop and canary check, but
+    // BEFORE onDone fires. Bounded by MAX_WATCHDOG_RETRIES (2) so it never
+    // loops forever.
+    const MAX_WATCHDOG_RETRIES = 2
+    let watchdogRegens = 0
+    let watchdogConts = 0
+    let watchdogEscalate = false
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      throwIfAborted()
+      const watchdogVerdict = assessResponse(cleanedContent, {
+        userMessage,
+        rounds,
+        maxRounds,
+        forcedFinal,
+        regenerations: watchdogRegens,
+        continuations: watchdogConts,
+        provider,
+        model,
+      })
+
+      // Log every non-accept intervention for the Diagnostics panel
+      if (watchdogVerdict.action !== 'accept') {
+        try {
+          logWatchdogEvent(
+            watchdogVerdict.action,
+            watchdogVerdict.reason,
+            { provider, model, check: watchdogVerdict.check, quality: watchdogVerdict.quality,
+              attempt: watchdogRegens, conversationId: executionCtx.conversationId }
+          )
+        } catch { /* diagnostics must never fail a turn */ }
+      }
+
+      if (watchdogVerdict.action === 'accept' || watchdogVerdict.action === 'accept_partial') {
+        break
+      }
+
+      if (watchdogVerdict.action === 'regenerate' && watchdogRegens < MAX_WATCHDOG_RETRIES) {
+        watchdogRegens++
+        onStatus?.(`🔄 Response quality issue — regenerating (attempt ${watchdogRegens}/${MAX_WATCHDOG_RETRIES})…`)
+        fullContent = ''
+        messages.push({
+          role: 'user',
+          content: regenerationPrompt(watchdogVerdict.reason),
+        })
+        toolCallsToProcess = []
+        tools = null  // force prose synthesis — no more tools
+        await processStream()
+        harvestPromptedCalls(true)
+        cleanedContent = stripToolCallSyntax(fullContent)
+        continue
+      }
+
+      if (watchdogVerdict.action === 'continue' && watchdogConts < 3) {
+        watchdogConts++
+        onStatus?.(`⚡ Auto-continuing truncated response (${watchdogConts}/3)…`)
+        messages.push({ role: 'assistant', content: cleanedContent })
+        messages.push({ role: 'user', content: watchdogContinuationPrompt(cleanedContent) })
+        let chunk = ''
+        await new Promise((resolve) => {
+          streamChat({
+            provider, apiKey, model, messages, tools: null, temperature, signal,
+            onToken: (t) => { chunk += t; fullContent += t; onToken?.(t) },
+            onDone: () => resolve(),
+            onError: () => resolve(),
+          })
+        })
+        if (!chunk.trim()) break
+        cleanedContent = stripToolCallSyntax(fullContent)
+        continue
+      }
+
+      if (watchdogVerdict.action === 'escalate') {
+        watchdogEscalate = true
+        break
+      }
+
+      // Any other verdict or exhausted retries → accept what we have
+      break
+    }
+
     const leak = checkCanaryForLeak(canaryToken, cleanedContent, executionCtx.conversationId)
     if (leak.redacted) cleanedContent = leak.text
-    onDone?.({ content: cleanedContent, toolResults, sources, toolMode, promptLeakDetected: leak.leaked, trace: traceRef ? [...traceRef] : undefined })
+    onDone?.({ content: cleanedContent, toolResults, sources, toolMode, promptLeakDetected: leak.leaked, watchdogEscalate, trace: traceRef ? [...traceRef] : undefined })
   } catch (err) {
     let cleanedContent = stripToolCallSyntax(fullContent)
     if (err?.name === 'AbortError' || signal?.aborted) {

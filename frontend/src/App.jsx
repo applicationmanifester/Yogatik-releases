@@ -31,7 +31,8 @@ import { runWorkflow } from './workflows'
 import { FloatingCompanion } from './components/FloatingCompanion'
 import { ActiveTimerIndicator } from './components/ActiveTimerIndicator'
 import { openDocumentPip, closeDocumentPip, isDocumentPipSupported, getPipMount } from './pipCompanion'
-import { getErrorLog, clearErrorLog, getDiagnosticsReport, diagnoseError } from './errorLog'
+import { getErrorLog, clearErrorLog, getDiagnosticsReport, diagnoseError, logWatchdogEvent } from './errorLog'
+import { assessResponse, isRetryableError, retryDelay } from './responseWatchdog'
 import { isDbClosedError } from './db'
 import { resolveFeatures, isEnabled } from './features'
 import { setLocalVLMConsent } from './vision/localVLM'
@@ -2928,183 +2929,248 @@ export default function App() {
       return
     }
 
-    startActivityTurn(targetClientId)
-    const _latTurn = startTurn({ provider: useProvider, model: useModel })
-    await streamMessage(
-      {
-        message: finalText,
-        messages: updated.messages,
-        tools: useTools,
-        use_tools: useTools,
-        use_web_search: useWeb,
-        system_prompt: getSystemPrompt(finalText, targetConv.systemPrompt, usePersona),
-        temperature: useTemp,
-        provider: useProvider,
-        model: useModel || undefined,
-        channel: targetClientId,
-        conversationId: convId || targetClientId,
-        projectId: activeProject?.id || null,
-        image: sentImage?.dataUrl || null,
-        // On-device safety screen → surface a soft support card (never blocks).
-        onSafety: (_verdict, card) => { if (card) setCrisisCard(card) },
-      },
-      (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); publishStream(content, targetClientId); setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' })) },
-      (s) => { sources = s },
-      (_final, meta) => {
-        _latTurn.done()
-        endActivityTurn(targetClientId)
-        setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' }))
-        setStreamIdMap(prev => (prev[targetClientId] == null ? prev : { ...prev, [targetClientId]: null }))
-        setLoadingMap(prev => (!prev[targetClientId] ? prev : (() => { const n = { ...prev }; delete n[targetClientId]; return n })()))
+    const executeStream = async (attempt = 0) => {
+      startActivityTurn(targetClientId)
+      const _latTurn = startTurn({ provider: useProvider, model: useModel })
+      await streamMessage(
+        {
+          message: finalText,
+          messages: updated.messages,
+          tools: useTools,
+          use_tools: useTools,
+          use_web_search: useWeb,
+          system_prompt: getSystemPrompt(finalText, targetConv.systemPrompt, usePersona),
+          temperature: useTemp,
+          provider: useProvider,
+          model: useModel || undefined,
+          channel: targetClientId,
+          conversationId: convId || targetClientId,
+          projectId: activeProject?.id || null,
+          image: sentImage?.dataUrl || null,
+          // On-device safety screen → surface a soft support card (never blocks).
+          onSafety: (_verdict, card) => { if (card) setCrisisCard(card) },
+        },
+        (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); publishStream(content, targetClientId); setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' })) },
+        (s) => { sources = s },
+        (_final, meta) => {
+          _latTurn.done()
+          endActivityTurn(targetClientId)
+          setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' }))
+          setStreamIdMap(prev => (prev[targetClientId] == null ? prev : { ...prev, [targetClientId]: null }))
+          setLoadingMap(prev => (!prev[targetClientId] ? prev : (() => { const n = { ...prev }; delete n[targetClientId]; return n })()))
 
-        // Tell the user their answer arrived if they looked away. The desktop
-        // shell has supported rich notifications since v3.13 and nothing ever
-        // called them, so a long question answered into an unfocused window
-        // produced no signal at all. hasReply puts an inline box on the
-        // notification, so they can carry on without switching back.
-        try {
-          const notify = shouldNotifyTurn({
-            isDesktop: isDesktop(),
-            hidden: typeof document !== 'undefined' && document.hidden,
-            focused: typeof document !== 'undefined' && document.hasFocus(),
-            aborted: !!meta?.aborted,
-            error: meta?.error,
-            hasText: !!content.trim(),
-          })
-          // The cue rides the SAME decision as the notification: it fires when
-          // the answer landed somewhere the user was not looking. Playing it
-          // for a reply they are already watching stream in is just noise, and
-          // noise is what gets a sound feature switched off for good.
-          if (notify) playCue(meta?.error ? 'error' : 'reply')
-          if (notify && typeof window.__YOGATIK_NOTIFY__ === 'function') {
-            window.__YOGATIK_NOTIFY__({
-              title: notificationTitle(conversationsRef.current?.[activeIdxRef.current]?.title),
-              body: notificationBody(content),
-              hasReply: true,
+          // Tell the user their answer arrived if they looked away. The desktop
+          // shell has supported rich notifications since v3.13 and nothing ever
+          // called them, so a long question answered into an unfocused window
+          // produced no signal at all. hasReply puts an inline box on the
+          // notification, so they can carry on without switching back.
+          try {
+            const notify = shouldNotifyTurn({
+              isDesktop: isDesktop(),
+              hidden: typeof document !== 'undefined' && document.hidden,
+              focused: typeof document !== 'undefined' && document.hasFocus(),
+              aborted: !!meta?.aborted,
+              error: meta?.error,
+              hasText: !!content.trim(),
             })
+            // The cue rides the SAME decision as the notification: it fires when
+            // the answer landed somewhere the user was not looking. Playing it
+            // for a reply they are already watching stream in is just noise, and
+            // noise is what gets a sound feature switched off for good.
+            if (notify) playCue(meta?.error ? 'error' : 'reply')
+            if (notify && typeof window.__YOGATIK_NOTIFY__ === 'function') {
+              window.__YOGATIK_NOTIFY__({
+                title: notificationTitle(conversationsRef.current?.[activeIdxRef.current]?.title),
+                body: notificationBody(content),
+                hasReply: true,
+              })
+            }
+          } catch { /* notifications are a courtesy; never break a finished turn */ }
+
+          // Auto-retry once on silent empty dropouts (model stopped without output)
+          if (!content.trim() && !meta?.aborted && attempt < 1) {
+            logWatchdogEvent('retry', 'Model returned empty response on completion — auto-retrying turn', {
+              attempt: attempt + 1,
+              provider: useProvider,
+              model: useModel,
+            })
+            setStatusMap(prev => ({ ...prev, [targetClientId]: '🔄 Retrying empty response…' }))
+            content = ''
+            sources = []
+            setTimeout(() => {
+              executeStream(attempt + 1).catch(() => {})
+            }, retryDelay(attempt))
+            return
           }
-        } catch { /* notifications are a courtesy; never break a finished turn */ }
-        if (!content.trim() && meta?.aborted) {
+
+          if (!content.trim() && meta?.aborted) {
+            setStreamText(targetClientId, '')
+            setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+            setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+            delete toolRunMapRef.current[targetClientId]
+            delete traceMapRef.current[targetClientId]
+            return
+          }
+
+          // Quality watchdog assessment & telemetry
+          if (!meta?.aborted && content.trim()) {
+            try {
+              const watchdogVerdict = assessResponse(content, {
+                userMessage: finalText,
+                provider: useProvider,
+                model: useModel,
+              })
+              if (watchdogVerdict.action !== 'accept' && watchdogVerdict.action !== 'accept_partial') {
+                logWatchdogEvent(watchdogVerdict.action, watchdogVerdict.reason, {
+                  check: watchdogVerdict.check,
+                  quality: watchdogVerdict.quality,
+                  provider: useProvider,
+                  model: useModel,
+                })
+              }
+              if (meta?.watchdogEscalate) {
+                logWatchdogEvent('escalate', 'Response quality watchdog recommended escalation', {
+                  provider: useProvider,
+                  model: useModel,
+                })
+              }
+            } catch { /* watchdog telemetry never breaks the turn */ }
+          }
+
+          const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
+          const channelTrace = traceMapRef.current[targetClientId] || []
+          const finalTrace = (meta?.trace?.length ? meta.trace : channelTrace)
+          const assistantMsg = {
+            createdAt: Date.now(),
+            role: 'assistant',
+            content: meta?.aborted ? content + '\n\n_[stopped]_' : content,
+            sources,
+            toolResults: { ...runData.results },
+            toolsUsed: [...runData.used],
+            trace: finalTrace.length ? [...finalTrace] : undefined,
+            provider: meta?.provider || useProvider,
+            model: meta?.model || useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined),
+          }
+          saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
+          // Implicit procedural adaptation — learn interaction preferences from
+          // behaviour (message length, tools leaned on, active style/persona).
+          try {
+            recordTurn({
+              userLen: typeof finalText === 'string' ? finalText.length : 0,
+              tool: (runData.used && runData.used[0]) || undefined,
+              personaName: (activeTemplate && activeTemplate !== 'default') ? activeTemplate : undefined,
+            })
+          } catch { /* never break the turn */ }
+          setConversations(prev => {
+            const next = prev.map(c =>
+              (c.clientId === targetClientId || (convId && c.id === convId)) ? { ...c, id: convId, messages: [...(c.messages || []), assistantMsg] } : c
+            )
+            conversationsRef.current = next
+            return next
+          })
           setStreamText(targetClientId, '')
           setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
           setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
           delete toolRunMapRef.current[targetClientId]
           delete traceMapRef.current[targetClientId]
-          return
-        }
-        const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
-        const channelTrace = traceMapRef.current[targetClientId] || []
-        const finalTrace = (meta?.trace?.length ? meta.trace : channelTrace)
-        const assistantMsg = {
-          createdAt: Date.now(),
-          role: 'assistant',
-          content: meta?.aborted ? content + '\n\n_[stopped]_' : content,
-          sources,
-          toolResults: { ...runData.results },
-          toolsUsed: [...runData.used],
-          trace: finalTrace.length ? [...finalTrace] : undefined,
-          provider: meta?.provider || useProvider,
-          model: meta?.model || useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined),
-        }
-        saveMessage(convId, assistantMsg).catch(e => console.error('Failed to persist reply', e))
-        // Implicit procedural adaptation — learn interaction preferences from
-        // behaviour (message length, tools leaned on, active style/persona).
-        try {
-          recordTurn({
-            userLen: typeof finalText === 'string' ? finalText.length : 0,
-            tool: (runData.used && runData.used[0]) || undefined,
-            personaName: (activeTemplate && activeTemplate !== 'default') ? activeTemplate : undefined,
+          getTodayUsage().then(setUsage).catch(() => {})
+          // Name the chat: switching away mid-turn would otherwise end the turn
+          // on whichever conversation the user is now looking at.
+          endActivityTurn(targetClientId)
+          triggerNextQueued(targetClientId)
+        },
+        (err) => {
+          const errMsg = typeof err === 'string' ? err : err?.message || ''
+          const isAbort = errMsg.toLowerCase().includes('abort') || errMsg.toLowerCase().includes('cancel')
+          // Auto-retry transient provider failures
+          if (!isAbort && !content.trim() && attempt < 1 && isRetryableError(errMsg)) {
+            logWatchdogEvent('retry', `Auto-retrying turn after transient failure: ${errMsg}`, {
+              attempt: attempt + 1,
+              provider: useProvider,
+              model: useModel,
+            })
+            setStatusMap(prev => ({ ...prev, [targetClientId]: '🔄 Reconnecting & retrying…' }))
+            content = ''
+            sources = []
+            setTimeout(() => {
+              executeStream(attempt + 1).catch(() => {})
+            }, retryDelay(attempt))
+            return
+          }
+
+          try { announceAssertive(typeof err === 'string' ? err : err?.message || 'Error occurred') } catch {}
+          setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
+          setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
+          setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+          delete toolRunMapRef.current[targetClientId]
+          delete traceMapRef.current[targetClientId]
+          if (isRetiredModelError(err)) {
+            pruneRetiredModel(useProvider, useModel).then(() => {
+              setModel('')
+              refreshModels()
+              getAllProviderStatus().then(setProviderStatus)
+            })
+          }
+          setConversations(prev => {
+            const next = prev.map(c =>
+              (c.clientId === targetClientId || (convId && c.id === convId))
+                ? { ...c, id: convId, messages: [...(c.messages || []), { role: 'assistant', provider: useProvider, model: useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined), error: String(err), content: '' }] }
+                : c
+            )
+            conversationsRef.current = next
+            return next
           })
-        } catch { /* never break the turn */ }
-        setConversations(prev => {
-          const next = prev.map(c =>
-            (c.clientId === targetClientId || (convId && c.id === convId)) ? { ...c, id: convId, messages: [...(c.messages || []), assistantMsg] } : c
-          )
-          conversationsRef.current = next
-          return next
-        })
-        setStreamText(targetClientId, '')
-        setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
-        setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
-        delete toolRunMapRef.current[targetClientId]
-        delete traceMapRef.current[targetClientId]
-        getTodayUsage().then(setUsage).catch(() => {})
-        // Name the chat: switching away mid-turn would otherwise end the turn
-        // on whichever conversation the user is now looking at.
-        endActivityTurn(targetClientId)
-        triggerNextQueued(targetClientId)
-      },
-      (err) => {
-        try { announceAssertive(typeof err === 'string' ? err : err?.message || 'Error occurred') } catch {}
-        setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
-        setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
-        setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
-        delete toolRunMapRef.current[targetClientId]
-        delete traceMapRef.current[targetClientId]
-        if (isRetiredModelError(err)) {
-          pruneRetiredModel(useProvider, useModel).then(() => {
-            setModel('')
-            refreshModels()
-            getAllProviderStatus().then(setProviderStatus)
-          })
-        }
-        setConversations(prev => {
-          const next = prev.map(c =>
-            (c.clientId === targetClientId || (convId && c.id === convId))
-              ? { ...c, id: convId, messages: [...(c.messages || []), { role: 'assistant', provider: useProvider, model: useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined), error: String(err), content: '' }] }
-              : c
-          )
-          conversationsRef.current = next
-          return next
-        })
-        setStreamText(targetClientId, '')
-        triggerNextQueued(targetClientId)
-      },
-      (status) => { setStatusMap(prev => (prev[targetClientId] === status ? prev : { ...prev, [targetClientId]: status })) },
-      (streamId) => { setStreamIdMap(prev => (prev[targetClientId] === streamId ? prev : { ...prev, [targetClientId]: streamId })) },
-      (detectedTools, args) => {
-        setActiveToolsMap(prev => (prev[targetClientId] === detectedTools ? prev : { ...prev, [targetClientId]: detectedTools }))
-        const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
-        for (const t of detectedTools) {
-          if (!runData.used.includes(t)) runData.used.push(t)
+          setStreamText(targetClientId, '')
+          triggerNextQueued(targetClientId)
+        },
+        (status) => { setStatusMap(prev => (prev[targetClientId] === status ? prev : { ...prev, [targetClientId]: status })) },
+        (streamId) => { setStreamIdMap(prev => (prev[targetClientId] === streamId ? prev : { ...prev, [targetClientId]: streamId })) },
+        (detectedTools, args) => {
+          setActiveToolsMap(prev => (prev[targetClientId] === detectedTools ? prev : { ...prev, [targetClientId]: detectedTools }))
+          const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
+          for (const t of detectedTools) {
+            if (!runData.used.includes(t)) runData.used.push(t)
+            const trace = traceMapRef.current[targetClientId] || []
+            trace.push({ tool: t, args: args || undefined, status: 'running', startedAt: Date.now() })
+            traceMapRef.current[targetClientId] = trace
+            // Same data, live: keyed by position so the settle below replaces it.
+            publishStep({
+              id: `${targetClientId}:${trace.length - 1}`,
+              name: t,
+              status: 'running',
+              startedAt: Date.now(),
+              detail: args ? String(JSON.stringify(args)).slice(0, 160) : undefined,
+            }, targetClientId)
+          }
+          toolRunMapRef.current[targetClientId] = runData
+        },
+        (toolName, toolResult) => {
+          const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
+          runData.results[toolName] = toolResult
+          toolRunMapRef.current[targetClientId] = runData
+          setPendingToolResultsMap(prev => ({ ...prev, [targetClientId]: { ...(prev[targetClientId] || {}), [toolName]: toolResult } }))
+          // The docked browser only exists while something is in it.
+          if (toolResult?.tool === 'browser_control') {
+            if (toolResult.mode === 'panel') setBrowserPanel({ url: toolResult.url || '' })
+            else if (toolResult.mode === 'window') setBrowserPanel(null)
+          }
           const trace = traceMapRef.current[targetClientId] || []
-          trace.push({ tool: t, args: args || undefined, status: 'running', startedAt: Date.now() })
-          traceMapRef.current[targetClientId] = trace
-          // Same data, live: keyed by position so the settle below replaces it.
-          publishStep({
-            id: `${targetClientId}:${trace.length - 1}`,
-            name: t,
-            status: 'running',
-            startedAt: Date.now(),
-            detail: args ? String(JSON.stringify(args)).slice(0, 160) : undefined,
-          }, targetClientId)
+          const idx = [...trace].reverse().findIndex(s => s.tool === toolName && s.status === 'running')
+          const step = idx === -1 ? null : trace[trace.length - 1 - idx]
+          if (step) step.status = toolResult?.success === false ? 'error' : 'done'
+          if (step) {
+            publishStep({
+              id: `${targetClientId}:${trace.length - 1 - idx}`,
+              status: step.status,
+              ms: step.startedAt ? Date.now() - step.startedAt : undefined,
+              detail: toolResult?.error ? String(toolResult.error).slice(0, 200) : undefined,
+            }, targetClientId)
+          }
         }
-        toolRunMapRef.current[targetClientId] = runData
-      },
-      (toolName, toolResult) => {
-        const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
-        runData.results[toolName] = toolResult
-        toolRunMapRef.current[targetClientId] = runData
-        setPendingToolResultsMap(prev => ({ ...prev, [targetClientId]: { ...(prev[targetClientId] || {}), [toolName]: toolResult } }))
-        // The docked browser only exists while something is in it.
-        if (toolResult?.tool === 'browser_control') {
-          if (toolResult.mode === 'panel') setBrowserPanel({ url: toolResult.url || '' })
-          else if (toolResult.mode === 'window') setBrowserPanel(null)
-        }
-        const trace = traceMapRef.current[targetClientId] || []
-        const idx = [...trace].reverse().findIndex(s => s.tool === toolName && s.status === 'running')
-        const step = idx === -1 ? null : trace[trace.length - 1 - idx]
-        if (step) step.status = toolResult?.success === false ? 'error' : 'done'
-        if (step) {
-          publishStep({
-            id: `${targetClientId}:${trace.length - 1 - idx}`,
-            status: step.status,
-            ms: step.startedAt ? Date.now() - step.startedAt : undefined,
-            detail: toolResult?.error ? String(toolResult.error).slice(0, 200) : undefined,
-          }, targetClientId)
-        }
-      }
-    )
+      )
+    }
+
+    await executeStream(0)
   }
 
   /** An image is not a document: it goes to the model's eyes, not to BM25. */

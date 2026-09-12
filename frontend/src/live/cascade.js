@@ -67,6 +67,8 @@
  */
 
 import { runAgent, isRealtimeOrSearchQuery } from '../agent'
+import { assessResponse } from '../responseWatchdog'
+import { logWatchdogEvent } from '../errorLog'
 import { getToolMode, setToolMode } from '../api'
 import { splitReasoning } from '../reasoning'
 import { createCamera, createScreenCapture, switchCamera as switchCameraTrack } from './video'
@@ -1033,9 +1035,30 @@ export function createCascadeSession({
               if (gathered) effectiveAnswer = gathered.slice(0, 240)
             }
           }
+          // Quality Watchdog assessment for live voice responses
+          const watchdogVerdict = assessResponse(effectiveAnswer, {
+            userMessage: content,
+            mode: 'voice',
+            provider: active.provider,
+            model: active.model,
+          })
+          if (watchdogVerdict.action !== 'accept' && watchdogVerdict.action !== 'accept_partial') {
+            try {
+              logWatchdogEvent(watchdogVerdict.action, watchdogVerdict.reason, {
+                mode: 'voice',
+                check: watchdogVerdict.check,
+                quality: watchdogVerdict.quality,
+                provider: active.provider,
+                model: active.model,
+              })
+            } catch { /* diagnostics must never throw */ }
+          }
+
           // Catch empty response (e.g. specialized models like kosmos-2 that cannot do text chat)
           if (!effectiveAnswer && !produced) {
-            failure = `${active.model || 'Model'} returned an empty response. It may be specialized or unsupported for conversational chat.`
+            failure = watchdogVerdict?.reason
+              ? `Watchdog: ${watchdogVerdict.reason}`
+              : `${active.model || 'Model'} returned an empty response. It may be specialized or unsupported for conversational chat.`
             abort = null
             resolve()
             return
