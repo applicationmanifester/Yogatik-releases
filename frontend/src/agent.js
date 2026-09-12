@@ -1505,53 +1505,6 @@ export async function runAgent({
       }
     }
 
-    // ── Task Completion & Continuity Guard ─────────────────────────
-    // Detect if the model stopped prematurely (e.g. unclosed code fence ```,
-    // dangling sentence ending in a colon or comma, transitional phrases like "Let's check",
-    // or truncated output token limit).
-    const isPotentiallyTruncated = (text) => {
-      if (!text || text.length < 20) return false
-      const trimmed = text.trim()
-      // Check for unclosed markdown code blocks (odd number of ``` fences)
-      const codeBlockMatches = trimmed.match(/```/g)
-      const hasUnclosedCodeBlock = codeBlockMatches && (codeBlockMatches.length % 2 !== 0)
-      // Check for trailing transitional phrases (e.g. "Let's check utils", "Now we will inspect...")
-      const isTransitionalEnding = /\b(let'?s (also )?(check|inspect|look at|examine|see|run)|now (we will|let's|inspect)|next step is to)\s*[^.?!]*$/i.test(trimmed)
-      // Check for trailing mid-thought indicators (ends with colon, comma, dash, or unfinished operator)
-      const endsMidSentence = /[:,(\-&|+=]\s*$/.test(trimmed) || /\b(and|or|because|such as|for example|step \d+:?|following:?)\s*$/i.test(trimmed)
-      return hasUnclosedCodeBlock || endsMidSentence || isTransitionalEnding
-    }
-
-    // Keep the agent continuously executing until all tasks and thoughts are 100% resolved (unbounded)
-    let autoContinueAttempts = 0
-    while (isPotentiallyTruncated(fullContent) && !forcedFinal) {
-      autoContinueAttempts++
-      try {
-        throwIfAborted()
-        onStatus?.(`⚡ Continuing uncompleted task (continuation ${autoContinueAttempts})…`)
-        const continuationPrompt = 'Your previous output ended mid-thought or mid-task. Continue immediately to complete all remaining analysis, code, and conclusions without repeating prior text:'
-        messages.push({ role: 'assistant', content: fullContent })
-        messages.push({ role: 'user', content: continuationPrompt })
-        
-        let continuedChunk = ''
-        await new Promise((resolve) => {
-          streamChat({
-            provider, apiKey, model, messages, tools: null, temperature, signal,
-            onToken: (t) => {
-              continuedChunk += t
-              fullContent += t
-              onToken?.(t)
-            },
-            onDone: () => resolve(),
-            onError: () => resolve(), // Soft fail: keep existing content if continuation errors
-          })
-        })
-        if (!continuedChunk.trim()) break
-      } catch {
-        break
-      }
-    }
-
     throwIfAborted()
     let cleanedContent = stripToolCallSyntax(fullContent)
 

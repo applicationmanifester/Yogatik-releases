@@ -1129,3 +1129,52 @@ describe('MCP auto-reconnect / suggestion (mcpRegistry.js wired into the system 
     expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ content: 'still works' }))
   })
 })
+
+describe('response watchdog integration in runAgent', () => {
+  it('automatically triggers regeneration when the model produces an empty response', async () => {
+    scriptRounds([
+      // Round 0: empty / whitespace response
+      { tokens: ['   '] },
+      // Round 1: regenerated full response
+      { tokens: ['Here is the detailed response after regeneration.'] },
+    ])
+    const onStatus = vi.fn()
+    const onDone = vi.fn()
+    await runAgent({ ...base, userMessage: 'Explain how neural networks learn', onStatus, onDone })
+
+    expect(streamChat).toHaveBeenCalledTimes(2)
+    expect(onStatus.mock.calls.some(c => c[0]?.includes('regenerating'))).toBe(true)
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'Here is the detailed response after regeneration.',
+    }))
+  })
+
+  it('automatically continues truncated responses with unclosed code blocks', async () => {
+    scriptRounds([
+      // Round 0: response cuts off mid-code block
+      { tokens: ['Here is the function:\n```javascript\nfunction test() { return 42;'] },
+      // Round 1: continuation completes code block
+      { tokens: ['\n}\n```\nAll done!'] },
+    ])
+    const onStatus = vi.fn()
+    const onDone = vi.fn()
+    await runAgent({ ...base, userMessage: 'Write a test function in javascript', onStatus, onDone })
+
+    expect(streamChat).toHaveBeenCalledTimes(2)
+    expect(onStatus.mock.calls.some(c => c[0]?.includes('Auto-continuing truncated response'))).toBe(true)
+    expect(onDone.mock.calls[0][0].content).toContain('```javascript\nfunction test() { return 42;\n}\n```\nAll done!')
+  })
+
+  it('detects model refusals and flags watchdogEscalate', async () => {
+    scriptRounds([
+      { tokens: ["I'm sorry, I cannot assist with this task as an AI assistant."] },
+    ])
+    const onDone = vi.fn()
+    await runAgent({ ...base, userMessage: 'Help me with something', onDone })
+
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({
+      watchdogEscalate: true,
+    }))
+  })
+})
+
