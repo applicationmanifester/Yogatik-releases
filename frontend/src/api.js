@@ -25,6 +25,7 @@ import { selectIncoming } from './syncMerge'
 import { recordTurnUsage, getModelPricing } from './usageAnalytics'
 import { splitReasoning } from './reasoning'
 import { stripToolCallSyntax } from './promptedTools'
+import { endsMidThought, hasUnclosedCodeBlock, isRefusal, isErrorContent } from './responseWatchdog'
 
 // ─── Auth (Google Sign-In & encrypted Firestore key vault) ───
 
@@ -503,6 +504,7 @@ export async function enhancePromptText(inputOrOpts, opts = {}) {
   let onToken = null
   let signal = null
   let apiKey = ''
+  let timeoutMs = 25000
 
   if (typeof inputOrOpts === 'string') {
     prompt = inputOrOpts
@@ -511,6 +513,7 @@ export async function enhancePromptText(inputOrOpts, opts = {}) {
     onToken = opts.onToken
     signal = opts.signal
     apiKey = opts.apiKey || ''
+    if (opts.timeoutMs != null) timeoutMs = opts.timeoutMs
   } else if (inputOrOpts && typeof inputOrOpts === 'object') {
     prompt = inputOrOpts.prompt || ''
     provider = inputOrOpts.provider
@@ -518,6 +521,7 @@ export async function enhancePromptText(inputOrOpts, opts = {}) {
     onToken = inputOrOpts.onToken
     signal = inputOrOpts.signal
     apiKey = inputOrOpts.apiKey || ''
+    if (inputOrOpts.timeoutMs != null) timeoutMs = inputOrOpts.timeoutMs
   }
 
   if (!prompt?.trim()) return prompt || ''
@@ -536,6 +540,7 @@ export async function enhancePromptText(inputOrOpts, opts = {}) {
 
   let accumulated = ''
   let lastVisible = ''
+  let streamCompleted = false
 
   try {
     const streamPromise = new Promise((resolve) => {
@@ -546,14 +551,14 @@ export async function enhancePromptText(inputOrOpts, opts = {}) {
         messages: [
           {
             role: 'system',
-            content: 'You are an expert prompt engineer. Your sole task is to rewrite, expand, and structure the user\'s prompt to make it clear, detailed, objective, and effective for ANY general AI model. Do NOT assume, bias towards, or mention any specific software application, codebase, framework, or local project unless explicitly requested by the user. Do NOT include conversational filler, explanations, preambles, or quotes. Output ONLY the refined prompt text directly.',
+            content: 'You are an expert prompt engineer. Your sole task is to rewrite, expand, and structure the user\'s prompt to make it clear, detailed, objective, and effective for ANY general AI model. Do NOT assume, bias towards, or mention any specific software application, codebase, framework, or local project unless explicitly requested by the user. Do NOT include conversational filler, explanations, preambles, thinking tags, or quotes. Keep your output focused, structured, and under 250 words. Output ONLY the refined prompt text directly.',
           },
           {
             role: 'user',
             content: `Refine and enhance the following prompt for maximum clarity, detail, and effectiveness:\n\n${prompt.trim()}`,
           },
         ],
-        temperature: 0.6,
+        temperature: 0.5,
         signal,
         onToken: (token) => {
           accumulated += token
@@ -561,13 +566,16 @@ export async function enhancePromptText(inputOrOpts, opts = {}) {
           if (isStillThinking) return
 
           const { answer } = splitReasoning(accumulated)
-          const text = answer || accumulated.replace(/<think[\s\S]*?<\/think>/gi, '').trim()
+          const text = (answer || accumulated.replace(/<think[\s\S]*?<\/think>/gi, '')).trim()
           if (text && text !== lastVisible) {
             lastVisible = text
             onToken?.(text)
           }
         },
-        onDone: () => resolve(true),
+        onDone: () => {
+          streamCompleted = true
+          resolve(true)
+        },
         onError: (err) => {
           console.warn('enhancePrompt error from streamChat:', err)
           resolve(false)
@@ -578,7 +586,8 @@ export async function enhancePromptText(inputOrOpts, opts = {}) {
       })
     })
 
-    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(false), 4500))
+    // Generous default 25s timeout to allow full generation and thinking tokens across all providers
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(false), timeoutMs))
     await Promise.race([streamPromise, timeoutPromise])
   } catch (err) {
     console.warn('enhancePrompt stream failed, applying intelligent fallback:', err)
@@ -586,11 +595,19 @@ export async function enhancePromptText(inputOrOpts, opts = {}) {
 
   const { answer } = splitReasoning(accumulated)
   const finalExtracted = (answer || lastVisible || accumulated.replace(/<think[\s\S]*?<\/think>/gi, '')).trim()
-  if (finalExtracted && finalExtracted !== prompt.trim()) {
+
+  // Verify that the enhanced prompt is actually complete, not cut off midway.
+  // If the stream did not complete (e.g. timeout, network drop, aborter), any partial text is incomplete
+  // unless it has substantial length and ends cleanly on complete sentence punctuation without mid-thought markers.
+  const endsCleanly = /[.!?]$/.test(finalExtracted) || (finalExtracted.endsWith('```') && !hasUnclosedCodeBlock(finalExtracted))
+  const isComplete = streamCompleted || (finalExtracted.length >= 60 && endsCleanly && !endsMidThought(finalExtracted))
+  const isValid = isComplete && !hasUnclosedCodeBlock(finalExtracted) && !isRefusal(finalExtracted) && !isErrorContent(finalExtracted) && finalExtracted.length >= 15
+
+  if (isValid && finalExtracted !== prompt.trim()) {
     return finalExtracted
   }
 
-  // Guaranteed deterministic enhancement fallback if no provider streaming content returned
+  // Guaranteed deterministic enhancement fallback if provider streaming failed, timed out, or cut off mid-thought
   const clean = prompt.trim()
   return `${clean}\n\nKey Directives & Requirements:\n- Detail step-by-step reasoning and precise technical breakdown\n- Include robust error handling, security precautions, and edge-case management\n- Structure the response with clear headings, actionable examples, and clean formatting`
 }
