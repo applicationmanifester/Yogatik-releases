@@ -29,6 +29,41 @@ export const END_REASON = {
   UNMOUNT: 'unmount',      // navigated away without ending
 }
 
+/* ── Latency SLO thresholds (ms) ───────────────────────────────────────── */
+
+export const VOICE_SLO_MS = 300       // voice-only: ≤300ms first word
+export const MULTIMODAL_SLO_MS = 600  // vision/multimodal: ≤600ms first word
+export const TEXT_SLO_MS = 1000       // text fallback: ≤1000ms TTFB
+
+/**
+ * Check whether a latency measurement meets its SLO.
+ * @param {'voice'|'multimodal'|'text'} type
+ * @param {number} latencyMs
+ * @returns {{ ok: boolean, exceededByMs: number, threshold: number }}
+ */
+export function checkSLO(type, latencyMs) {
+  const threshold = type === 'voice' ? VOICE_SLO_MS
+    : type === 'multimodal' ? MULTIMODAL_SLO_MS
+    : TEXT_SLO_MS
+  const exceeded = Math.max(0, latencyMs - threshold)
+  return { ok: exceeded === 0, exceededByMs: exceeded, threshold }
+}
+
+/**
+ * Classify latency into a display grade.
+ * @param {number} latencyMs
+ * @param {'voice'|'multimodal'|'text'} type
+ * @returns {'ok'|'warn'|'bad'}
+ */
+export function latencyGrade(latencyMs, type = 'voice') {
+  const threshold = type === 'voice' ? VOICE_SLO_MS
+    : type === 'multimodal' ? MULTIMODAL_SLO_MS
+    : TEXT_SLO_MS
+  if (latencyMs <= threshold) return 'ok'
+  if (latencyMs <= threshold * 2) return 'warn'
+  return 'bad'
+}
+
 const emptySession = () => ({
   engine: null,
   provider: null,
@@ -43,6 +78,9 @@ const emptySession = () => ({
   bargeInFalsePositives: 0, // interrupted, then nothing was actually said
   firstWordMs: [],          // per turn: user stopped speaking → first spoken word
   endReason: null,
+  sloViolations: { voice: 0, multimodal: 0, text: 0 },  // Phase 4: SLO violation counts
+  consecutiveSloBreaches: 0, // for fallback suggestion trigger
+  lastLatencyMs: null,       // most recent first-word latency
 })
 
 let current = null
@@ -73,7 +111,9 @@ export function markUtteranceEnd(now = Date.now()) {
 export function markFirstWord(now = Date.now()) {
   if (!current || !current._turnActive || current._spoke) return
   current._spoke = true
-  current.firstWordMs.push(now - current._turnStart)
+  const ms = now - current._turnStart
+  current.firstWordMs.push(ms)
+  recordLatency(ms, current.cameraOn ? 'multimodal' : 'voice')
 }
 
 export function markTurnEnd() {
@@ -118,6 +158,28 @@ export function endSession(reason = END_REASON.USER, now = Date.now()) {
 export function currentSession() { return current }
 export function sessions() { return finished.slice() }
 export function _resetLiveMetrics() { current = null; finished.length = 0 }
+
+/**
+ * Record a latency observation and track SLO violations for the current session.
+ * Called by LiveView after each first-word event.
+ */
+export function recordLatency(latencyMs, type = 'voice') {
+  if (!current) return null
+  current.lastLatencyMs = latencyMs
+  const result = checkSLO(type, latencyMs)
+  if (!result.ok) {
+    current.sloViolations[type] = (current.sloViolations[type] || 0) + 1
+    current.consecutiveSloBreaches++
+  } else {
+    current.consecutiveSloBreaches = 0
+  }
+  return { ...result, consecutiveBreaches: current.consecutiveSloBreaches, latencyMs }
+}
+
+/** True if the current session has had ≥N consecutive SLO violations. */
+export function shouldSuggestTextFallback(threshold = 3) {
+  return current ? current.consecutiveSloBreaches >= threshold : false
+}
 
 /* ── reporting ─────────────────────────────────────────────────────────── */
 

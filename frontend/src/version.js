@@ -3,16 +3,61 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '8.1.0'
+export const APP_VERSION = '8.2.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 8.1.0 — Apex Frontier: Next-Gen AI Telemetry, Dynamic Action Chips & Closed-Loop Visual Synthesis'
+export const APP_CODENAME = 'Yogatik 8.2.0 — Streamlined Core: First-Impression Focus, Strict CSP & 177 Tools Transparency'
 
 export const APP_RELEASES = [
+  {
+    "version": "8.2.0",
+    "title": "Yogatik 8.2.0: Streamlined Core — First-Impression Focus, Strict CSP & 177 Tools Transparency",
+    "date": "September 12, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Focused First Impression: Streamlined onboarding centered on 'Choose a provider or run locally' with clear Cloud vs On-Device paths",
+      "Above-the-Fold Privacy Transparency: Honest disclosures on local storage, transparent developer CORS proxy, and optional Firebase cloud sync",
+      "Strict Content Security Policy: Promoted CSP from Report-Only to enforced blocking headers protecting user API keys and data integrity",
+      "Real 404 Route Handling: Dedicated static 404 page and scoped Firebase rewrites returning genuine HTTP 404 status codes for unknown URLs",
+      "Catalogue & Metadata Sync: Standardized all tool counts across HTML headers, OpenGraph cards, PWA manifest, and desktop guide to 177 tools"
+    ],
+    "sections": [
+      {
+        "category": "🛡️ Security & Routing Integrity",
+        "items": [
+          {
+            "title": "Enforced Content Security Policy (CSP)",
+            "description": "Upgraded response headers to enforce tested CSP rules blocking untrusted origins while preserving ESM WASM execution and local daemons."
+          },
+          {
+            "title": "Standardized 404 Route Responses",
+            "description": "Scoped SPA routing to valid application paths so unknown URLs return real HTTP 404 status codes instead of serving the app shell."
+          }
+        ]
+      },
+      {
+        "category": "✨ UX & Privacy Clarity",
+        "items": [
+          {
+            "title": "Focused First Impression",
+            "description": "Replaced competing welcome buttons with two clear setup cards: Connect an AI Provider (Cloud) or Run Locally on Device (Offline WebGPU / Ollama)."
+          },
+          {
+            "title": "Above-the-Fold Privacy Guarantee",
+            "description": "Added upfront transparent disclosure regarding browser IndexedDB storage, developer CORS proxying for restricted APIs, and optional Firebase sync."
+          },
+          {
+            "title": "Unified Tool Count Metadata",
+            "description": "Updated all marketing descriptions, social preview cards, and manifest files to accurately reflect the 177 browser-native tools catalogue."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "8.1.0",
     "title": "Yogatik 8.1.0: Apex Frontier — Full Modal Control, Ambient Telemetry & Action Chips",
     "date": "September 11, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Next-Gen Model Readiness: 100% synergy for frontier and upcoming models (Claude Fable 5.1, GPT-6 Astra, Claude 3.7 Sonnet, Gemini 2.5)",
       "Ambient UI Telemetry: Live viewport, theme, active modal/tab, and text selection awareness injected into agent prompts",

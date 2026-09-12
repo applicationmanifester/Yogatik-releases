@@ -7,13 +7,14 @@ import remarkGfm from 'remark-gfm'
 import {
   Volume2, Wrench, Copy, Check, RefreshCw, Pencil, AlertTriangle,
   FileDown, FileText, Download, Zap, Key, Settings, HelpCircle,
-  ChevronDown, ChevronUp, ShieldAlert, Cpu, Play
+  ChevronDown, ChevronUp, ShieldAlert, Cpu, Play, Info
 } from 'lucide-react'
 import { CodeBlock } from './CodeBlock'
 import { exportPptx } from '../tools/independentTools'
 import { mdToHtml } from '../tools/mdToPdf'
 import { ToolResultCard, TOOL_ICONS } from './ToolResultCard'
 import { diagnoseError } from '../errorLog'
+import { AdaptiveCard, parseAdaptiveCards } from './AdaptiveCard'
 
 /**
  * "Why did I say this" — a plain-language summary of what shaped the reply
@@ -314,17 +315,24 @@ const MessageBubble = React.memo(function MessageBubble({
     return 'AI Model'
   }, [msg.model, msg.provider])
 
-  const { reasoning, answer, actionChips } = useMemo(() => {
+  const { reasoning, answer, actionChips, adaptiveParts } = useMemo(() => {
     const rawText = stripToolCallSyntax(typeof msg.content === 'string' ? msg.content : String(msg.content ?? ''))
     const s = splitReasoning(rawText)
     const strippedAnswer = stripToolCallSyntax(s.answer || '')
     const { cleanText, chips } = extractActionChips(strippedAnswer)
+    // Parse adaptive cards from the cleaned text
+    const { parts } = parseAdaptiveCards(cleanText)
+    const hasCards = parts.some(p => p.type === 'card')
     return {
       reasoning: s.reasoning || '',
-      answer: cleanText,
+      answer: hasCards ? null : cleanText,
+      adaptiveParts: hasCards ? parts : null,
       actionChips: chips,
     }
   }, [msg.content])
+
+  // Provenance explanation state — expanded/collapsed
+  const [showProvenance, setShowProvenance] = useState(false)
 
 
   // Failed turns are rendered with actionable diagnosis, resolution recommendations, and copy tools
@@ -618,6 +626,14 @@ const MessageBubble = React.memo(function MessageBubble({
              </>
            )}
          </div>
+        ) : adaptiveParts ? (
+          <div className="message-content">
+            {adaptiveParts.map((part, pi) =>
+              part.type === 'card'
+                ? <AdaptiveCard key={`ac-${pi}`} data={part.data} cardIndex={pi} />
+                : <ReactMarkdown key={`md-${pi}`} remarkPlugins={[remarkGfm]} components={markdownComponents}>{part.content}</ReactMarkdown>
+            )}
+          </div>
         ) : (
           <div className="message-content">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{answer}</ReactMarkdown>
@@ -682,6 +698,49 @@ const MessageBubble = React.memo(function MessageBubble({
           {msg.tokSec ? <span>⚡ {Number(msg.tokSec).toFixed(1)} tok/s</span> : null}
           {msg.ttfbMs ? <span>⏱️ TTFB {Math.round(msg.ttfbMs)}ms</span> : null}
           {msg.tokens ? <span>📊 {msg.tokens} tokens</span> : null}
+        </div>
+      )}
+
+      {/* Phase 1: Provenance Badge — visible confidence/source attribution */}
+      {msg.role === 'assistant' && (
+        <div
+          className="provenance-badge"
+          role="status"
+          aria-label={`Response from ${formattedModelName}${msg.toolsUsed?.length ? `, used ${msg.toolsUsed.length} tool${msg.toolsUsed.length === 1 ? '' : 's'}` : ''}${msg.sources?.length ? `, consulted ${msg.sources.length} source${msg.sources.length === 1 ? '' : 's'}` : ''}`}
+        >
+          <span className="provenance-chip">
+            <Cpu size={9} aria-hidden="true" /> {formattedModelName || 'AI Model'}
+          </span>
+          {msg.toolsUsed?.length > 0 && (
+            <span className="provenance-chip tools">
+              <Wrench size={9} aria-hidden="true" /> {msg.toolsUsed.length} tool{msg.toolsUsed.length === 1 ? '' : 's'}
+            </span>
+          )}
+          {msg.sources?.length > 0 && (
+            <span className="provenance-chip sources">
+              <FileText size={9} aria-hidden="true" /> {msg.sources.length} source{msg.sources.length === 1 ? '' : 's'}
+            </span>
+          )}
+          {msg.ttfbMs && (
+            <span className={`provenance-chip latency${msg.ttfbMs > 3000 ? ' bad' : msg.ttfbMs > 1000 ? ' warn' : ''}`}>
+              {Math.round(msg.ttfbMs)}ms
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowProvenance(p => !p)}
+            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px', display: 'flex', alignItems: 'center', marginLeft: 'auto' }}
+            title={showProvenance ? 'Hide explanation' : 'Why did I say this?'}
+            aria-label={showProvenance ? 'Hide explanation' : 'Why did I say this?'}
+            aria-expanded={showProvenance}
+          >
+            <Info size={11} />
+          </button>
+        </div>
+      )}
+      {showProvenance && msg.role === 'assistant' && (
+        <div className="provenance-detail" role="note" aria-label="Response explanation">
+          {explainReply(msg, formattedModelName)}
         </div>
       )}
 

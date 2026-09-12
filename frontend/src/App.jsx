@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { setUserQuestionHandler } from './tools/askUser'
@@ -12,7 +12,8 @@ import { startActivityTurn, publishStream, publishStep, endActivityTurn, setActi
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
 import ToolStatusPanel from './components/ToolStatusPanel'
-import A11yAnnouncer, { announce } from './components/A11yAnnouncer'
+import A11yAnnouncer, { announce, announceAssertive } from './components/A11yAnnouncer'
+import { trackConversation, trackSlashCommand, trackLiveSession, getExpertiseLevelSync, subscribeExpertise, hiddenForLevel } from './expertiseTracker'
 import CrisisCard from './components/CrisisCard'
 import { getProactiveCheckin, markCheckinShown } from './proactive'
 import { recordTurn } from './adaptation'
@@ -39,7 +40,7 @@ import { setDetectorConsent } from './vision/detect'
 import { setSemanticConsent } from './semantic'
 import { looksVisionCapable } from './vision/capability'
 import { getProviders as getLLMProviders, normalizeModelName, preconnectProvider, classifyQueryIntent, getSuggestedRoute } from './llm'
-import { DASHBOARD_KEYS, DASHBOARD_TITLES, dashboardPath, dashboardKeyFromPath } from './dashboardRoutes'
+import { DASHBOARD_KEYS, DASHBOARD_TITLES, dashboardPath, dashboardKeyFromPath, isValidRoute } from './dashboardRoutes'
 import { prepareImage, isImageFile, imageFromClipboard, imageFromDrop } from './vision/attach'
 import { registerServiceWorker } from './pwa'
 import { enqueueOutbox, flushOutbox } from './offlineQueue'
@@ -266,6 +267,10 @@ export default function App() {
   const [rootsOpen, setRootsOpen] = useState(false)
   const rootsWrapRef = useRef(null)
 
+  // Phase 3: Progressive Disclosure & Expertise Level
+  const [expertiseLevel, setExpertiseLevel] = useState(getExpertiseLevelSync)
+  useEffect(() => subscribeExpertise(setExpertiseLevel), [])
+
   // Global Keyboard Shortcuts (Ctrl+/, Ctrl+N, Ctrl+B, Ctrl+`, Ctrl+Shift+D)
   useEffect(() => {
     const handleGlobalKey = (e) => {
@@ -477,6 +482,7 @@ export default function App() {
     try { return !localStorage.getItem('yogatik_onboarded') } catch { return false }
   })
   const [showPersonaModal, setShowPersonaModal] = useState(false)
+  const [notFoundRoute, setNotFoundRoute] = useState(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [settingsModalTab, setSettingsModalTab] = useState('providers')
   const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false)
@@ -876,15 +882,29 @@ export default function App() {
   useEffect(() => {
     const onPopState = () => {
       dashSyncingFromPopRef.current = true
-      const key = dashboardKeyFromPath(window.location.pathname)
-      dashOwnedEntryRef.current = !!key
-      if (key) navigateDashboard(key)
-      else closeDashboard()
+      const raw = (window.location.pathname || '').toLowerCase().replace(/\/+$/, '')
+      if (!isValidRoute(raw)) {
+        setNotFoundRoute(raw)
+      } else {
+        setNotFoundRoute(null)
+        const key = dashboardKeyFromPath(window.location.pathname)
+        dashOwnedEntryRef.current = !!key
+        if (key) navigateDashboard(key)
+        else closeDashboard()
+      }
       dashSyncingFromPopRef.current = false
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [navigateDashboard, closeDashboard])
+
+  useEffect(() => {
+    if (notFoundRoute) {
+      document.title = '404 — Page Not Found | Yogatik'
+    } else {
+      document.title = 'Yogatik'
+    }
+  }, [notFoundRoute])
 
   // send() reads these refs so it always sees the latest state, even when
   // called from a closure captured during a previous render (e.g. right after
@@ -1571,31 +1591,36 @@ export default function App() {
     // dev, where that rewrite doesn't run.
     const params = new URLSearchParams(location.search)
     const rawPath = (location.pathname || '').toLowerCase().replace(/\/+$/, '')
-    const tabFromPath = dashboardKeyFromPath(rawPath)
-      || (rawPath === '/settings' ? 'settings'
-      : rawPath === '/billing' ? 'billing'
-      : rawPath === '/agents' ? 'agents'
-      : rawPath === '/skills' ? 'skills'
-      : rawPath === '/mcp' ? 'mcp'
-      : rawPath === '/plugins' ? 'plugins'
-      : rawPath === '/diagnostics' ? 'diagnostics'
-      : rawPath === '/usage' ? 'usage'
-      : rawPath === '/capabilities' || rawPath === '/tools-picker' ? 'capabilities'
-      : null)
+    if (!isValidRoute(rawPath)) {
+      setNotFoundRoute(rawPath)
+    } else {
+      setNotFoundRoute(null)
+      const tabFromPath = dashboardKeyFromPath(rawPath)
+        || (rawPath === '/settings' ? 'settings'
+        : rawPath === '/billing' ? 'billing'
+        : rawPath === '/agents' ? 'agents'
+        : rawPath === '/skills' ? 'skills'
+        : rawPath === '/mcp' ? 'mcp'
+        : rawPath === '/plugins' ? 'plugins'
+        : rawPath === '/diagnostics' ? 'diagnostics'
+        : rawPath === '/usage' ? 'usage'
+        : rawPath === '/capabilities' || rawPath === '/tools-picker' ? 'capabilities'
+        : null)
 
-    const tabFromQuery = params.get('tab') || params.get('modal') || params.get('section')
-    const activeDashboardTab = tabFromPath || tabFromQuery
+      const tabFromQuery = params.get('tab') || params.get('modal') || params.get('section')
+      const activeDashboardTab = tabFromPath || tabFromQuery
 
-    if (activeDashboardTab) {
-      // Silent: the state should reflect whatever URL the user actually
-      // arrived on, but this first paint must not itself count as a history
-      // entry we own — see dashOwnedEntryRef above. A legacy flat path or a
-      // ?tab= link is intentionally left as-is rather than rewritten to
-      // /app/<key> here, so refreshing or resharing the exact link a user
-      // already has keeps working identically.
-      dashSyncingFromPopRef.current = true
-      navigateDashboard(activeDashboardTab)
-      dashSyncingFromPopRef.current = false
+      if (activeDashboardTab) {
+        // Silent: the state should reflect whatever URL the user actually
+        // arrived on, but this first paint must not itself count as a history
+        // entry we own — see dashOwnedEntryRef above. A legacy flat path or a
+        // ?tab= link is intentionally left as-is rather than rewritten to
+        // /app/<key> here, so refreshing or resharing the exact link a user
+        // already has keeps working identically.
+        dashSyncingFromPopRef.current = true
+        navigateDashboard(activeDashboardTab)
+        dashSyncingFromPopRef.current = false
+      }
     }
 
     const shared = [params.get('title'), params.get('text'), params.get('url')]
@@ -2021,6 +2046,7 @@ export default function App() {
   }, [])
 
   const newChat = useCallback(() => {
+    try { trackConversation() } catch {}
     // Don't stop other chats — let them keep streaming in background
     setConvQuery('')
     setInput('')
@@ -2870,6 +2896,7 @@ export default function App() {
           triggerNextQueued(targetClientId)
         },
         onError: (err) => {
+          try { announceAssertive(typeof err === 'string' ? err : err?.message || 'Error occurred') } catch {}
           setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
           setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
           setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
@@ -3008,6 +3035,7 @@ export default function App() {
         triggerNextQueued(targetClientId)
       },
       (err) => {
+        try { announceAssertive(typeof err === 'string' ? err : err?.message || 'Error occurred') } catch {}
         setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
         setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
         setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
@@ -3219,6 +3247,7 @@ export default function App() {
 
   const handleSlashCommandSelect = (cmd) => {
     setShowSlashMenu(false)
+    try { trackSlashCommand() } catch {}
     if (!cmd) return
     switch (cmd.command) {
       case '/graph':
@@ -4484,6 +4513,51 @@ export default function App() {
             </span>
           </button>
 
+          {/* Phase 3: Progressive Disclosure — More Tools expander */}
+          {hiddenForLevel(expertiseLevel).size > 0 && (
+            <button
+              type="button"
+              className="sidebar-more-tools-btn"
+              onClick={() => setShowAllTools(p => !p)}
+              aria-expanded={showAllTools}
+              title={showAllTools ? 'Hide advanced tools' : 'Show advanced tools'}
+            >
+              <Wrench size={12} />
+              <span>{showAllTools ? 'Hide advanced tools' : `More tools (${hiddenForLevel(expertiseLevel).size})`}</span>
+            </button>
+          )}
+          {showAllTools && (
+            <div style={{ display: 'flex', gap: '6px', padding: '4px 6px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="small-btn"
+                onClick={() => navigateDashboard('agents')}
+                title="Agents Orchestration"
+                style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <Bot size={11} /> Agents
+              </button>
+              <button
+                type="button"
+                className="small-btn"
+                onClick={() => setShowScheduler(true)}
+                title="Scheduled Tasks"
+                style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <Clock size={11} /> Scheduler
+              </button>
+              <button
+                type="button"
+                className="small-btn"
+                onClick={() => navigateDashboard('mcp')}
+                title="Model Context Protocol"
+                style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <Plug size={11} /> MCP
+              </button>
+            </div>
+          )}
+
           {user ? (
             <div className="user-info">
               <button type="button" className="user-info-identity" onClick={() => navigateDashboard('account')} title="Account">
@@ -4756,7 +4830,40 @@ export default function App() {
         </header>
 
         <div className="messages" ref={scrollerRef} onScroll={onScroll}>
-          {allMessages.length === 0 && !isStreamingHere && !arena ? (
+          {notFoundRoute ? (
+            <div className="not-found-view">
+              <div className="not-found-icon">🔍</div>
+              <span className="not-found-badge">404 &middot; Page Not Found</span>
+              <h2>Route Not Found</h2>
+              <p>
+                The requested URL <code>{notFoundRoute}</code> is not a valid Yogatik route.
+              </p>
+              <div className="not-found-actions">
+                <button
+                  className="hero-btn primary"
+                  onClick={() => {
+                    try { window.history.pushState(null, '', '/') } catch {}
+                    setNotFoundRoute(null)
+                    closeDashboard()
+                  }}
+                >
+                  Return to Chat
+                </button>
+                <button
+                  className="hero-btn secondary"
+                  onClick={() => {
+                    setNotFoundRoute(null)
+                    navigateDashboard('providers')
+                  }}
+                >
+                  Open Providers &amp; Keys
+                </button>
+                <a className="hero-btn secondary" href="/tools" style={{ textDecoration: 'none' }}>
+                  Browse 177 Tools
+                </a>
+              </div>
+            </div>
+          ) : allMessages.length === 0 && !isStreamingHere && !arena ? (
             <div className="welcome">
               <h1
                 onClick={() => setShowOverviewModal(true)}
@@ -4765,55 +4872,7 @@ export default function App() {
               >
                 <YogatikLogo size={48} /> Yogatik
               </h1>
-              <div className="hero-buttons">
-                <button
-                  className="hero-btn primary"
-                  onClick={() => setShowDemoModal(true)}
-                >
-                  <PlayCircle size={16} /> Take a Quick Demo
-                </button>
-                <button
-                  className="hero-btn accent"
-                  onClick={() => setShowDomainHub(true)}
-                  title="Explore YouTube, X, Instagram, TikTok, LinkedIn, Naukri & Indeed"
-                >
-                  <Globe size={16} /> Social &amp; Domain Hub
-                </button>
-                <button
-                  className="hero-btn secondary"
-                  onClick={installed ? handleShare : () => setShowDownloadModal(true)}
-                  title={installed ? 'Share Yogatik with someone' : 'Install Yogatik as an app'}
-                >
-                  {installed
-                    ? <><Share2 size={16} /> Share Yogatik</>
-                    : <><Download size={16} /> Install App</>}
-                </button>
-                {/* The cross-surface link used to sit here as a fourth call to
-                    action. It is redundant now: "Install App" opens the platform
-                    modal, which already offers BOTH the desktop app and the PWA,
-                    and the link itself is permanent in the sidebar footer rather
-                    than only on an empty screen. Three actions, not four. */}
-              </div>
-              {/* Every tool at once was a ~60-badge wall: it out-weighed the starter
-                  prompts below it, and a list that long is scanned by nobody. A
-                  recognisable dozen makes the point ("this thing does a lot"), and
-                  the rest stay one click away for anyone actually shopping. */}
-              <div className="tool-badges">
-                {heroTools.map(([name, Icon]) => (
-                  <span key={name} className="tool-badge"><Icon size={14} /> {name.replace(/_/g, ' ')}</span>
-                ))}
-                {hiddenToolCount > 0 && (
-                  <button
-                    type="button"
-                    className="tool-badge tool-badge-more"
-                    onClick={() => setShowAllTools(v => !v)}
-                    aria-expanded={showAllTools}
-                  >
-                    {showAllTools ? 'Show fewer' : `+${hiddenToolCount} more tools`}
-                  </button>
-                )}
-              </div>
-              {!user && <p className="welcome-hint">Sign in to save your chat history across sessions.</p>}
+
               {localBoot && !localBoot.ready && !localBoot.error ? (
                 <div className="setup-card">
                   <Cpu size={18} />
@@ -4838,43 +4897,167 @@ export default function App() {
                   </div>
                 </div>
               ) : !models[provider]?.available ? (
-                <div className="setup-card">
-                  <Key size={18} />
-                  <h3>Add an API key to start</h3>
-                  <p>
-                    Yogatik runs entirely in your browser and talks to the model provider directly,
-                    so it needs your own key. Nothing is sent anywhere else.
+                <div className="first-action-hero">
+                  <h2>Choose a provider or run locally</h2>
+                  <p className="first-action-desc">
+                    Connect an AI provider or run private models offline on this device to start chatting.
                   </p>
-                  {localBoot?.error && (
-                    <p className="local-error">On-device AI could not start here: {localBoot.error}</p>
-                  )}
-                  <div className="setup-actions">
-                    <a className="btn-primary setup-btn" href="https://build.nvidia.com" target="_blank" rel="noopener">
-                      Get a free NVIDIA key
-                    </a>
-                    <button className="small-btn" onClick={() => { setSidebarOpen(true); navigateDashboard('providers') }}>
-                      I have a key — open settings
-                    </button>
-                    <button className="small-btn" onClick={() => {
-                      webGpuDetails().then(g => {
-                        if (!g?.available) {
-                          setErrorModalMsg(`Your browser or device cannot run the on-device model.\n\n${g?.reason || 'WebGPU is unavailable.'}`)
-                          return
-                        }
-                        setProvider('local')
-                        setSidebarOpen(true)
-                        navigateDashboard('providers')
-                      }).catch(err => {
-                        setErrorModalMsg(`Could not check on-device model support.\n\n${err.message}`)
-                      })
-                    }}>
-                      Or run a model on this device
-                    </button>
+
+                  <div className="first-action-grid">
+                    <div className="first-action-card">
+                      <div>
+                        <div className="first-action-card-header">
+                          <div className="first-action-icon"><Cloud size={22} /></div>
+                          <div>
+                            <h3>Connect an AI Provider</h3>
+                            <span className="first-action-badge">Cloud AI</span>
+                          </div>
+                        </div>
+                        <p>
+                          Bring your API key from Google Gemini, Groq, NVIDIA, OpenRouter, OpenAI, or Anthropic.
+                        </p>
+                      </div>
+                      <div className="first-action-btns">
+                        <button
+                          className="hero-btn primary"
+                          onClick={() => { setSidebarOpen(true); navigateDashboard('providers') }}
+                        >
+                          <Key size={15} /> Choose Provider &amp; Enter Key
+                        </button>
+                        <a
+                          className="first-action-link"
+                          href="https://build.nvidia.com"
+                          target="_blank"
+                          rel="noopener"
+                        >
+                          Get a free NVIDIA key &rarr;
+                        </a>
+                      </div>
+                    </div>
+
+                    <div className="first-action-card">
+                      <div>
+                        <div className="first-action-card-header">
+                          <div className="first-action-icon"><Cpu size={22} /></div>
+                          <div>
+                            <h3>Run Locally on Device</h3>
+                            <span className="first-action-badge accent">100% Offline</span>
+                          </div>
+                        </div>
+                        <p>
+                          Run private models directly on your GPU via in-browser WebGPU, or connect local Ollama / LM Studio.
+                        </p>
+                      </div>
+                      <div className="first-action-btns">
+                        <button
+                          className="hero-btn accent"
+                          onClick={() => {
+                            webGpuDetails().then(g => {
+                              if (!g?.available) {
+                                setErrorModalMsg(`Your browser or device cannot run the on-device model.\n\n${g?.reason || 'WebGPU is unavailable.'}`)
+                                return
+                              }
+                              setProvider('local')
+                              setSidebarOpen(true)
+                              navigateDashboard('providers')
+                            }).catch(err => {
+                              setErrorModalMsg(`Could not check on-device model support.\n\n${err.message}`)
+                            })
+                          }}
+                        >
+                          <Cpu size={15} /> Run WebGPU Model
+                        </button>
+                        <button
+                          className="first-action-link-btn"
+                          onClick={() => {
+                            setProvider('ollama')
+                            setSidebarOpen(true)
+                            navigateDashboard('providers')
+                          }}
+                        >
+                          Connect Local Ollama / LM Studio &rarr;
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <span className="setup-note">NVIDIA gives free credits and a wide model catalogue (it routes through the app&apos;s proxy). Groq, Gemini, OpenRouter and OpenAI also work.</span>
+
+                  <div className="welcome-privacy-banner">
+                    <div className="welcome-privacy-header">
+                      <ShieldCheck size={16} />
+                      <span>Privacy &amp; Data Transparency</span>
+                    </div>
+                    <p>
+                      Conversations, files, and keys stay in your browser&apos;s local storage by default. Direct connections call your chosen AI provider or local offline engine. For providers that restrict browser CORS (such as NVIDIA), requests route through our transparent developer proxy. Optional encrypted multi-device backup uses Firebase if you choose to sign in.
+                    </p>
+                  </div>
+
+                  <div className="welcome-secondary-section">
+                    <span className="welcome-secondary-title">Explore Features &amp; Catalogue</span>
+                    <div className="hero-buttons">
+                      <button className="hero-btn secondary" onClick={() => setShowDemoModal(true)}>
+                        <PlayCircle size={15} /> Quick Demo
+                      </button>
+                      <button className="hero-btn secondary" onClick={() => setShowAllTools(v => !v)}>
+                        <Wrench size={15} /> {showAllTools ? 'Hide Tools' : '177 Built-in Tools'}
+                      </button>
+                      <button className="hero-btn secondary" onClick={() => setShowDomainHub(true)}>
+                        <Globe size={15} /> Social Hub
+                      </button>
+                      <button className="hero-btn secondary" onClick={installed ? handleShare : () => setShowDownloadModal(true)}>
+                        {installed ? <><Share2 size={15} /> Share</> : <><Download size={15} /> Desktop App</>}
+                      </button>
+                    </div>
+                    {showAllTools && (
+                      <div className="tool-badges" style={{ marginTop: 12 }}>
+                        {heroTools.map(([name, Icon]) => (
+                          <span key={name} className="tool-badge"><Icon size={14} /> {name.replace(/_/g, ' ')}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <>
+                  <div className="hero-buttons">
+                    <button
+                      className="hero-btn primary"
+                      onClick={() => setShowDemoModal(true)}
+                    >
+                      <PlayCircle size={16} /> Take a Quick Demo
+                    </button>
+                    <button
+                      className="hero-btn accent"
+                      onClick={() => setShowDomainHub(true)}
+                      title="Explore YouTube, X, Instagram, TikTok, LinkedIn, Naukri & Indeed"
+                    >
+                      <Globe size={16} /> Social &amp; Domain Hub
+                    </button>
+                    <button
+                      className="hero-btn secondary"
+                      onClick={installed ? handleShare : () => setShowDownloadModal(true)}
+                      title={installed ? 'Share Yogatik with someone' : 'Install Yogatik as an app'}
+                    >
+                      {installed
+                        ? <><Share2 size={16} /> Share Yogatik</>
+                        : <><Download size={16} /> Install App</>}
+                    </button>
+                  </div>
+                  <div className="tool-badges">
+                    {heroTools.map(([name, Icon]) => (
+                      <span key={name} className="tool-badge"><Icon size={14} /> {name.replace(/_/g, ' ')}</span>
+                    ))}
+                    {hiddenToolCount > 0 && (
+                      <button
+                        type="button"
+                        className="tool-badge tool-badge-more"
+                        onClick={() => setShowAllTools(v => !v)}
+                        aria-expanded={showAllTools}
+                      >
+                        {showAllTools ? 'Show fewer' : `+${hiddenToolCount} more tools`}
+                      </button>
+                    )}
+                  </div>
+                  {!user && <p className="welcome-hint">Sign in to save your chat history across sessions.</p>}
                   <React.Suspense fallback={null}>
                     <StarterCards onSelectPrompt={(prompt) => sendRef.current?.(prompt)} />
                   </React.Suspense>
@@ -5383,6 +5566,62 @@ export default function App() {
             </div>
           )}
 
+          {/* Phase 6: Multimodal Modality Bar */}
+          <div className="modality-bar" role="toolbar" aria-label="Input modalities">
+            <button
+              type="button"
+              className="modality-toggle active"
+              onClick={() => textareaRef.current?.focus()}
+              title="Text chat mode"
+              aria-label="Text chat"
+            >
+              <FileText size={14} />
+            </button>
+            <label
+              className={`modality-toggle ${attachedImage ? 'active' : ''}`}
+              title={attachedImage ? 'Image attached (Vision)' : 'Attach image for Vision'}
+              aria-label="Attach image"
+              style={{ position: 'relative', cursor: 'pointer' }}
+            >
+              <Camera size={14} />
+              {attachedImage && <span className="modality-dot" aria-hidden="true" />}
+              <input type="file" hidden accept="image/*" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) attachImage(f) }} />
+            </label>
+            {recognitionRef.current && (
+              <button
+                type="button"
+                className={`modality-toggle ${listening ? 'active' : ''}`}
+                onClick={toggleVoiceInput}
+                title={listening ? 'Dictation listening' : 'Voice dictation'}
+                aria-label="Voice input"
+                style={{ position: 'relative' }}
+              >
+                <Mic size={14} />
+                {listening && <span className="modality-dot" aria-hidden="true" />}
+              </button>
+            )}
+            <button
+              type="button"
+              className="modality-toggle"
+              onClick={() => { if (!liveConfig) startLive() }}
+              title="Start real-time Live session (voice & vision)"
+              aria-label="Start Live session"
+            >
+              <Radio size={14} />
+            </button>
+            <button
+              type="button"
+              className={`modality-toggle ${(conv?.tools !== undefined ? conv.tools : tools) ? 'active' : ''}`}
+              onClick={() => setToolsEnabled(t => !t)}
+              title={(conv?.tools !== undefined ? conv.tools : tools) ? 'AI Tools active' : 'AI Tools disabled'}
+              aria-label="Toggle AI Tools"
+              style={{ position: 'relative' }}
+            >
+              <Wrench size={14} />
+              {(conv?.tools !== undefined ? conv.tools : tools) && <span className="modality-dot" aria-hidden="true" />}
+            </button>
+          </div>
+
           <div className="input-wrapper" style={{ position: 'relative' }}>
             {showSlashMenu && (
               <React.Suspense fallback={null}>
@@ -5601,6 +5840,7 @@ export default function App() {
               } catch {}
             }
             setLiveConfig(null)
+            try { trackLiveSession() } catch {}
           }}
         />
       )}
@@ -6157,7 +6397,7 @@ export default function App() {
         </Modal>
       )}
 
-      {showOnboarding && (
+      {showOnboarding && models[provider]?.available && (
         <OnboardingModal
           templates={promptTemplates}
           onSkip={() => { try { localStorage.setItem('yogatik_onboarded', '1') } catch {} setShowOnboarding(false) }}

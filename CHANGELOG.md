@@ -1,5 +1,27 @@
 # Changelog
 
+## v8.2.0 — Streamlined Core (2026-09-12)
+
+### 🎯 Focused First-Impression & Streamlined Onboarding
+- **Clear first action** — Replaced competing hero buttons, badges, and persona prompts with a clean, focused setup view centered on: "Choose a provider or run locally".
+- **Two intuitive setup paths** — Clear choice cards for Cloud AI Providers (Gemini, Groq, NVIDIA, OpenRouter, OpenAI, Anthropic) and Run Locally on Device (100% offline WebGPU or local Ollama / LM Studio).
+- **Deferred onboarding prompts** — Persona setup modal waits until a model is connected, preventing immediate popup fatigue on fresh visits.
+- **Collapsible feature catalogue** — Secondary features (Quick Demo, 177 Tools catalogue, Social Hub, Desktop App) organized neatly below the primary choice.
+
+### 🔒 Above-The-Fold Privacy Transparency
+- **Honest data disclosures** — Embedded explicit privacy guarantees above the fold across the web app, noscript block, and metadata.
+- **Accurate architecture copy** — Explicitly clarified browser-native IndexedDB storage, direct provider/offline connections, developer-operated CORS proxying for restricted providers, and optional Firebase encrypted cloud sync.
+
+### 🛡️ Security & Route Integrity
+- **Enforced Content-Security-Policy (CSP)** — Promoted `Content-Security-Policy-Report-Only` to enforced `Content-Security-Policy` header in `firebase.json` to actively protect API keys and mitigate XSS risks.
+- **Real HTTP 404 responses** — Replaced the catch-all hosting rewrite with scoped SPA rules (`/app/**`, `/live`, and legacy shortcuts). Unmatched routes like `/does-not-exist` now correctly return real HTTP 404 status codes.
+- **Dedicated 404 page & client route handling** — Added static `404.html` with `noindex` and helpful navigation links, plus client-side 404 detection in `App.jsx`.
+- **Tool count synchronization** — Unified all tool count references across metadata, OpenGraph cards, PWA manifest, and documentation to the verified 177 browser-native tools catalogue.
+
+### 🛠 Infrastructure
+- **Version bump** — 8.1.0 → 8.2.0
+- **Automated verification** — Added `audit_verification.test.js` and `dashboardRoutes.test.js` covering route validation, tool counts, and CSP rules.
+
 ## v8.1.0 — Apex Frontier (2026-09-11)
 
 ### 🚀 Next-Gen AI Model Readiness & Full Modal Synergy

@@ -7,6 +7,8 @@ import {
   startSession, endSession, markUtteranceEnd, markFirstWord, markTurnEnd,
   markTool, markCameraOn, markBargeIn, report, percentile, currentSession,
   sessions, _resetLiveMetrics, END_REASON,
+  checkSLO, latencyGrade, recordLatency, shouldSuggestTextFallback,
+  VOICE_SLO_MS, MULTIMODAL_SLO_MS, TEXT_SLO_MS,
 } from './metrics'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -90,6 +92,36 @@ describe('live metrics', () => {
   })
 })
 
+describe('latency SLOs', () => {
+  it('correctly evaluates SLO targets', () => {
+    expect(checkSLO('voice', 250)).toEqual({ ok: true, exceededByMs: 0, threshold: VOICE_SLO_MS })
+    expect(checkSLO('voice', 450)).toEqual({ ok: false, exceededByMs: 150, threshold: VOICE_SLO_MS })
+    expect(checkSLO('multimodal', 550)).toEqual({ ok: true, exceededByMs: 0, threshold: MULTIMODAL_SLO_MS })
+    expect(checkSLO('multimodal', 700)).toEqual({ ok: false, exceededByMs: 100, threshold: MULTIMODAL_SLO_MS })
+  })
+
+  it('grades latencies into ok, warn, bad', () => {
+    expect(latencyGrade(200, 'voice')).toBe('ok')
+    expect(latencyGrade(500, 'voice')).toBe('warn')
+    expect(latencyGrade(900, 'voice')).toBe('bad')
+  })
+
+  it('tracks consecutive SLO breaches and suggests text fallback', () => {
+    startSession({}, 0)
+    expect(shouldSuggestTextFallback(3)).toBe(false)
+    recordLatency(400, 'voice') // breach 1
+    expect(shouldSuggestTextFallback(3)).toBe(false)
+    recordLatency(500, 'voice') // breach 2
+    expect(shouldSuggestTextFallback(3)).toBe(false)
+    recordLatency(600, 'voice') // breach 3
+    expect(shouldSuggestTextFallback(3)).toBe(true)
+
+    // A compliant latency clears consecutive count
+    recordLatency(200, 'voice')
+    expect(shouldSuggestTextFallback(3)).toBe(false)
+  })
+})
+
 describe('wiring', () => {
   const cascade = fs.readFileSync(path.join(HERE, 'cascade.js'), 'utf8')
   const view = fs.readFileSync(path.join(HERE, '..', 'components', 'LiveView.jsx'), 'utf8')
@@ -116,5 +148,9 @@ describe('wiring', () => {
 
   it('records camera use, which is the strategic metric', () => {
     expect(view).toMatch(/liveMetrics\.markCameraOn\(\)/)
+  })
+
+  it('guards against turning on the camera with a blind model', () => {
+    expect(view).toMatch(/modelCanSee === false/)
   })
 })

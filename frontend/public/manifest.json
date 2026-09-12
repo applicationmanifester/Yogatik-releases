@@ -1,7 +1,7 @@
 {
   "name": "Yogatik",
   "short_name": "Yogatik",
-  "description": "Private AI assistant with live web research, document Q&A, image generation and code execution \u2014 32 free tools, running entirely in your browser.",
+  "description": "Private AI assistant with live web research, document Q&A, image generation and code execution \u2014 177 free tools, running entirely in your browser.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",

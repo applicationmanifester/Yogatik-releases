@@ -884,6 +884,12 @@ export function LiveView({
   }
   const toggleCam = async () => {
     const v = !camOn
+    // Horizon 1 Guardrail: Refuse to start camera with a text-only model (blind-model trap)
+    if (v && modelCanSee === false) {
+      showHudNotice('⚠️ Current model cannot process images. Switch to a vision model to enable camera.')
+      buzz(features, 50)
+      return
+    }
     // The strategic metric: if camera use is low, Live is a voice app
     // competing on latency, which is the race it cannot win. Recorded as
     // "ever on", not "on now" — the question is whether people reach for it.
@@ -1800,6 +1806,25 @@ export function LiveView({
                 <Loader2 size={13} className="spin" />
               )}
               <span>{liveStatusText}</span>
+            </div>
+          )}
+
+          {/* Phase 4: Latency SLO Badge in Live HUD */}
+          {liveMetrics.currentSession()?.lastLatencyMs != null && (
+            <div
+              className={`live-latency-badge ${liveMetrics.latencyGrade(liveMetrics.currentSession().lastLatencyMs, videoSource ? 'multimodal' : 'voice')}`}
+              title={`First-word latency: ${Math.round(liveMetrics.currentSession().lastLatencyMs)}ms (SLO target: ${videoSource ? liveMetrics.MULTIMODAL_SLO_MS : liveMetrics.VOICE_SLO_MS}ms)`}
+              role="status"
+              aria-label={`Latency ${Math.round(liveMetrics.currentSession().lastLatencyMs)} milliseconds`}
+            >
+              <span className="slo-dot" aria-hidden="true" />
+              <span>{Math.round(liveMetrics.currentSession().lastLatencyMs)}ms</span>
+            </div>
+          )}
+          {liveMetrics.shouldSuggestTextFallback() && (
+            <div className="live-status warning-status" style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5' }}>
+              <AlertTriangle size={13} />
+              <span>Voice latency high. You can switch to text mode.</span>
             </div>
           )}
         </div>

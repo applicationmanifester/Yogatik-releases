@@ -57,7 +57,48 @@
         "destination": "/checkout.html"
       },
       {
-        "source": "**",
+        "comment": "SPA routes: all /app/* dashboard tabs, live face-to-face mode, and legacy shortcuts route to index.html. Unknown URLs fall through so Firebase serves 404.html with HTTP 404.",
+        "source": "/app/**",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/live",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/billing",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/agents",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/skills",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/mcp",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/plugins",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/diagnostics",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/usage",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/capabilities",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/tools-picker",
         "destination": "/index.html"
       }
     ],
@@ -122,8 +163,8 @@
             "value": "DENY"
           },
           {
-            "comment": "Report-Only first: observe violations without breaking esm.run / WASM / provider calls, then promote to Content-Security-Policy once clean.",
-            "key": "Content-Security-Policy-Report-Only",
+            "comment": "Enforced Content Security Policy to secure API keys and prevent cross-site scripting/exfiltration.",
+            "key": "Content-Security-Policy",
             "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://esm.run https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.adtrafficquality.google https://*.google.com https://*.doubleclick.net https://ep2.adtrafficquality.google https://checkout.razorpay.com https://cdn.paddle.com; script-src-elem 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://esm.run https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.adtrafficquality.google https://*.google.com https://*.doubleclick.net https://ep2.adtrafficquality.google https://checkout.razorpay.com https://cdn.paddle.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; media-src 'self' blob: data: https:; font-src 'self' data: https:; connect-src 'self' https: wss: blob: data: http://127.0.0.1:11434 http://localhost:11434 http://127.0.0.1:1234 http://localhost:1234 ws://127.0.0.1:11434 ws://localhost:11434; frame-src 'self' https://googleads.g.doubleclick.net https://tpc.googlesyndication.com https://*.googlesyndication.com https://*.google.com https://*.doubleclick.net https://*.adtrafficquality.google https://ep1.adtrafficquality.google https://ep2.adtrafficquality.google https://api.razorpay.com https://checkout.razorpay.com https://*.razorpay.com https://*.paddle.com https://*.firebaseapp.com https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://accounts.google.com https://*.firebaseapp.com; object-src 'none'"
           }
         ]

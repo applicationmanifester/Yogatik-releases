@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   isEcho, endpointDelay, parseVoiceCommand, stripWakeWord,
   shouldRejectNoise, trimHistoryPairs, utteranceNeedsTools,
+  sameUtterance,
 } from './cascade'
 
 describe('echo guard', () => {
@@ -176,5 +177,23 @@ describe('Gemini live session teardown', () => {
     expect(typeof session.stop).toBe('function')
     session.stop()
     expect(events.some(e => e.type === 'ended')).toBe(true)
+  })
+})
+
+describe('sameUtterance deduplication (Horizon 2 Item 7)', () => {
+  it('identifies exact same utterances across casing and punctuation', () => {
+    expect(sameUtterance('what time is it', 'What time is it?')).toBe(true)
+    expect(sameUtterance('Hello world!', 'hello   world')).toBe(true)
+  })
+
+  it('matches interim prefix with trailing words or trailing period', () => {
+    expect(sameUtterance('what is the capital', 'what is the capital of')).toBe(true)
+    expect(sameUtterance('tell me a story about space', 'Tell me a story about space.')).toBe(true)
+  })
+
+  it('returns false for distinctly different utterances', () => {
+    expect(sameUtterance('what time is it', 'tell me a joke')).toBe(false)
+    expect(sameUtterance('hello', 'goodbye')).toBe(false)
+    expect(sameUtterance('', 'anything')).toBe(false)
   })
 })

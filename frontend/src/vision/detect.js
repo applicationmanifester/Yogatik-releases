@@ -171,3 +171,12 @@ export function describePosition(box) {
 }
 
 export function _resetDetectors() { pipes.clear(); loading.clear(); consented = false }
+
+export {
+  createSessionObjectMemory,
+  recordDetections,
+  getActiveObjects,
+  resolveReference,
+  formatSpatialContext,
+  clearSessionObjectMemory,
+} from './sessionObjectMemory'

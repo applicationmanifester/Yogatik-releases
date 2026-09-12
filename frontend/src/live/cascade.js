@@ -77,8 +77,10 @@ import { createSpeaker, defaultLang } from './voice'
 import {
   setSharedVisualSource, clearSharedVisualSource,
   isVisualQuestion, needsMotion, captureProfile, describeWithoutModel,
+  getSharedObjectMemory,
 } from '../vision/source'
-import { preconnectProvider } from './latencyOptimizer'
+import { resolveReference, formatSpatialContext } from '../vision/sessionObjectMemory'
+import { preconnectProvider, isSyntacticallyComplete } from './latencyOptimizer'
 import { matchReflex, streamReflex } from './reflexEngine'
 import { webSearchTool } from '../tools/webSearch'
 import { summariseToolResults } from '../toolSummary'
@@ -137,6 +139,7 @@ export function speechRecognitionAvailable() {
 const MAX_HISTORY_TURNS = 6   // Ultra-lean context window for sub-second TTFT in live voice
 const MIN_BARGE_CHARS = 6      // Shorter than this is usually echo or a cough
 const ECHO_TAIL_MS = 800      // Keep filtering echo this long after speech ends
+const BARGE_IN_SENSITIVITY = 0      // 0 = trigger on any non‑empty heard text while speaking
 
 /** Loose overlap test: is `heard` just the synthesiser being picked up again? */
 export function isEcho(heard, spoken) {
@@ -497,6 +500,66 @@ export function createCascadeSession({
     }
   }
 
+  // ─── Speculative Turn Coordination (Horizon 2 Item 7) ───
+  let activeSpeculative = null
+
+  function cancelSpeculativeTurn() {
+    if (activeSpeculative) {
+      activeSpeculative.abort()
+      activeSpeculative = null
+    }
+  }
+
+  function startSpeculativeTurn(text) {
+    if (closed || muted || thinking || speaking || turnLock || activeSpeculative) return null
+    const specText = text.trim()
+    if (!specText) return null
+
+    const controller = new AbortController()
+    let isPromoted = false
+    let resolveTurn = null
+    const turnCompletionPromise = new Promise(res => { resolveTurn = res })
+
+    const specObj = {
+      text: specText,
+      controller,
+      startTime: Date.now(),
+      onPromote: null,
+      abort: () => {
+        if (!isPromoted) {
+          try { controller.abort() } catch {}
+        }
+      },
+      promote: (committedText) => {
+        if (isPromoted) return
+        isPromoted = true
+        activeSpeculative = null
+        turnLock = turnCompletionPromise
+        activeTurnText = committedText
+        specObj.onPromote?.(committedText)
+      },
+    }
+
+    activeSpeculative = specObj
+
+    respondTo(specText, 0, {
+      speculative: true,
+      specObj,
+      signal: controller.signal,
+      onFinish: () => {
+        resolveTurn?.()
+        if (isPromoted) {
+          turnLock = null
+          activeTurnText = ''
+        }
+      },
+    }).catch(() => {
+      resolveTurn?.()
+    })
+
+    return specObj
+  }
+
   // ─── Turn queue ───
   // Two finals can land while a turn is in flight (long answers, tool rounds).
   // Without this the session runs two agents at once and talks over itself.
@@ -677,53 +740,83 @@ export function createCascadeSession({
   const RECOVERABLE = /429|rate.?limit|50\d|timeout|network|overload|404|410|not.?found|decommission|deprecated|unsupported/i
 
   // ─── A turn ───
-  async function respondTo(userText, retry = 0) {
+  async function respondTo(userText, retry = 0, options = {}) {
     if (!userText.trim() || closed) return
+    const { speculative = false, specObj = null, signal = null, onFinish = null } = options
+    let isSpec = speculative
+
     // The clock for time-to-first-word starts the moment the utterance is
     // committed, not when the request is sent — the user experiences the whole
     // gap, including anything we do before calling the model.
-    if (retry === 0) metrics.markUtteranceEnd()
-    // Reset the once-per-turn guard HERE, at the top, not further down.
-    // Placed after the vision filler it would still be true from the previous
-    // turn, so the "let me take a closer look" line would fire exactly once
-    // per session and then go quiet forever — a filler that only works the
-    // first time is worse than none, because the silence returns unexplained.
-    // `last` deliberately survives, so two turns do not open identically.
-    if (retry === 0) filler.announced = false
-    if (retry === 0) {
-      emit({ type: 'transcript', role: 'user', text: userText })
-      history.push({ role: 'user', content: userText })
+    if (!isSpec) {
+      if (retry === 0) metrics.markUtteranceEnd()
+      if (retry === 0) filler.announced = false
+      if (retry === 0) {
+        emit({ type: 'transcript', role: 'user', text: userText })
+        history.push({ role: 'user', content: userText })
+      }
     }
 
     // Trim history so token overhead stays low, keeping user/assistant pairs
     // aligned (a bare leading assistant turn confuses some providers).
     history.splice(0, history.length, ...trimHistoryPairs(history, MAX_HISTORY_TURNS))
 
-    thinking = true
-    const turnStartTime = Date.now()
-    emit({ type: 'thinking', value: true, startTime: turnStartTime })
+    if (!isSpec) {
+      thinking = true
+      const turnStartTime = Date.now()
+      emit({ type: 'thinking', value: true, startTime: turnStartTime })
+    }
 
     // ─── Adaptive Tool Gating: classify utterance BEFORE calling model ───
     const needsTools = utteranceNeedsTools(userText)
-    if (!needsTools) {
+    if (!needsTools && !isSpec) {
       emit({ type: 'status', text: '⚡ Fast conversational mode — no tools needed' })
     }
 
     buffer = ''; spoken = ''; firstChunk = true
-    const controller = new AbortController()
+    const controller = signal || new AbortController()
     abort = controller
     let watchdogTimedOut = false
     let timeoutMessage = ''
+
+    if (speculative && specObj) {
+      specObj.onPromote = (committedText) => {
+        isSpec = false
+        if (retry === 0) metrics.markUtteranceEnd()
+        emit({ type: 'transcript', role: 'user', text: committedText })
+        history.push({ role: 'user', content: committedText })
+        emit({ type: 'status', text: '⚡ Promoted speculative turn' })
+        if (buffer.length > spoken.length) {
+          emit({ type: 'transcript', role: 'assistant', text: buffer.slice(spoken.length) })
+          flushSentences()
+          metrics.markFirstWord()
+        }
+      }
+    }
 
     // A frame is ~1.1k tokens. Send it when the question is about the room,
     // not on every "what's the capital of Peru". When the model cannot see,
     // the `see` tool routes a frame to OCR / the on-device VLM instead.
     let content = userText
+    const objMem = getSharedObjectMemory?.()
+    let spatialGrounding = ''
+    if (objMem) {
+      try {
+        const ref = resolveReference(objMem, userText)
+        if (ref?.resolved) {
+          spatialGrounding = `\n\n[Referential Grounding: ${ref.explanation}]`
+        }
+      } catch {}
+    }
+
     const parts = visualParts(userText)
     if (parts) {
-      content = [{ type: 'text', text: userText }, ...parts]
+      content = [{ type: 'text', text: userText + spatialGrounding }, ...parts]
       emit({ type: 'looked', frames: parts.length })
     } else {
+      if (spatialGrounding) {
+        content = `${userText}${spatialGrounding}`
+      }
       // Non-vision model + shared camera/screen: give it eyes on-device ONLY when
       // the question is actually visual or visionMode is 'always'.
       const src = screen || cam
@@ -733,7 +826,7 @@ export function createCascadeSession({
         const line = pickFiller(['identify'], { announced: filler.announced, last: filler.last })
         if (line) { filler.announced = true; filler.last = line; speak(line) }
         const seen = await describeIfVisual(userText)
-        if (seen) content = `${userText}\n\n[Live view (described on-device): ${seen}]`
+        if (seen) content = `${content}\n\n[Live view (described on-device): ${seen}]`
       }
     }
 
@@ -818,19 +911,19 @@ export function createCascadeSession({
           accumulatedContent += t
           const isStillThinking = /<think(?:\s[^>]*)?>/i.test(accumulatedContent) && !/<\/think>/i.test(accumulatedContent)
           if (isStillThinking) {
-            if (!thinking) { thinking = true; emit({ type: 'thinking', value: true, startTime: turnStartTime }) }
+            if (!isSpec && !thinking) { thinking = true; emit({ type: 'thinking', value: true, startTime: turnStartTime }) }
             const thinkMatch = accumulatedContent.match(/<think(?:\s[^>]*)?>([\s\S]*)$/i)
             if (thinkMatch) {
               const fullReasoning = thinkMatch[1]
               if (fullReasoning.length > emittedReasoningLength) {
                 const delta = fullReasoning.slice(emittedReasoningLength)
                 emittedReasoningLength = fullReasoning.length
-                emit({ type: 'reasoning', text: fullReasoning, delta })
+                if (!isSpec) emit({ type: 'reasoning', text: fullReasoning, delta })
               }
             }
             return
           }
-          if (thinking) {
+          if (thinking && !isSpec) {
             thinking = false
             const thinkMs = Date.now() - turnStartTime
             emit({ type: 'thinking', value: false, elapsedMs: thinkMs })
@@ -838,7 +931,7 @@ export function createCascadeSession({
           }
 
           const { reasoning, answer } = splitReasoning(accumulatedContent)
-          if (reasoning) {
+          if (reasoning && !isSpec) {
             emit({ type: 'reasoning', text: reasoning })
           }
           if (answer.length > emittedAnswerLength) {
@@ -846,37 +939,37 @@ export function createCascadeSession({
             emittedAnswerLength = answer.length
             produced = true
             buffer += newChunk
-            emit({ type: 'transcript', role: 'assistant', text: newChunk })
-            flushSentences()
-            metrics.markFirstWord()
+            if (!isSpec) {
+              emit({ type: 'transcript', role: 'assistant', text: newChunk })
+              flushSentences()
+              metrics.markFirstWord()
+            }
           }
         },
-        onStatus: (s) => emit({ type: 'status', text: s }),
+        onStatus: (s) => { if (!isSpec) emit({ type: 'status', text: s }) },
         onToolStart: (name) => {
           if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
-          emit({ type: 'tools', names: [name] })
-          // Say something while the tool runs. A web search is 3-4 seconds
-          // whatever the model does, and in a SPOKEN conversation that silence
-          // reads as a crash — people repeat themselves, which barges in,
-          // which cancels the turn, which makes it genuinely broken. Speaking
-          // one short line turns the same wait into an ordinary pause.
-          //
-          // Guarded to once per turn, and never once the model has started its
-          // own answer: talking over the reply is worse than the silence.
-          const line = pickFiller([name], {
-            hasSpoken: produced || !!spoken,
-            announced: filler.announced,
-            last: filler.last,
-          })
-          if (line) {
-            filler.announced = true
-            filler.last = line
-            speak(line)
-            // A filler IS the first word the user hears. Not counting it would
-            // flatter the metric by exactly the number it is meant to measure.
-            metrics.markFirstWord()
+          if (!isSpec) {
+            emit({ type: 'tools', names: [name] })
+            // Say something while the tool runs. A web search is 3-4 seconds
+            // whatever the model does, and in a SPOKEN conversation that silence
+            // reads as a crash — people repeat themselves, which barges in,
+            // which cancels the turn, which makes it genuinely broken. Speaking
+            // one short line turns the same wait into an ordinary pause.
+            const line = pickFiller([name], {
+              hasSpoken: produced || !!spoken,
+              announced: filler.announced,
+              last: filler.last,
+            })
+            if (line) {
+              filler.announced = true
+              filler.last = line
+              speak(line)
+              // A filler IS the first word the user hears.
+              metrics.markFirstWord()
+            }
+            metrics.markTool(1)
           }
-          metrics.markTool(1)
         },
         onToolResult: (name, result) => {
           emit({ type: 'toolResult', name, result })
@@ -951,20 +1044,24 @@ export function createCascadeSession({
             const finalChunk = effectiveAnswer.slice(emittedAnswerLength)
             emittedAnswerLength = effectiveAnswer.length
             buffer += finalChunk
-            emit({ type: 'transcript', role: 'assistant', text: finalChunk })
+            if (!isSpec) emit({ type: 'transcript', role: 'assistant', text: finalChunk })
           }
-          flushSentences(true)
-          metrics.markTurnEnd()
-          if (thinking) { thinking = false; emit({ type: 'thinking', value: false, elapsedMs: turnElapsedMs }) }
-          emit({ type: 'status', text: `✅ Response complete (${(turnElapsedMs / 1000).toFixed(1)}s${needsTools ? ', tools enabled' : ', fast mode'})` })
-          if (effectiveAnswer) { history.push({ role: 'assistant', content: effectiveAnswer }); lastReply = effectiveAnswer }
+          if (!isSpec) {
+            flushSentences(true)
+            metrics.markTurnEnd()
+            if (thinking) { thinking = false; emit({ type: 'thinking', value: false, elapsedMs: turnElapsedMs }) }
+            emit({ type: 'status', text: `✅ Response complete (${(turnElapsedMs / 1000).toFixed(1)}s${needsTools ? ', tools enabled' : ', fast mode'})` })
+            if (effectiveAnswer) { history.push({ role: 'assistant', content: effectiveAnswer }); lastReply = effectiveAnswer }
+          }
           abort = null
+          onFinish?.()
           resolve()
         },
         onError: (e) => {
           if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
           if (hardTurnCeilingTimer) { clearTimeout(hardTurnCeilingTimer); hardTurnCeilingTimer = null }
           if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
+          onFinish?.()
 
           if (watchdogTimedOut) {
             buffer = ''
@@ -993,6 +1090,7 @@ export function createCascadeSession({
         if (liveTurnTimer) { clearTimeout(liveTurnTimer); liveTurnTimer = null }
         if (hardTurnCeilingTimer) { clearTimeout(hardTurnCeilingTimer); hardTurnCeilingTimer = null }
         if (thinking) { thinking = false; emit({ type: 'thinking', value: false }) }
+        onFinish?.()
         if (watchdogTimedOut) {
           failure = timeoutMessage || e?.message || 'Response timed out'
         } else if (!controller.signal.aborted && e?.name !== 'AbortError') {
@@ -1002,9 +1100,10 @@ export function createCascadeSession({
       })
     })
 
-    // If turn was aborted by user or session closed, exit immediately without failover retries
-    if ((controller.signal.aborted && !watchdogTimedOut) || closed) {
+    // If turn was aborted by user, session closed, or unpromoted speculative turn, exit cleanly
+    if ((controller.signal.aborted && !watchdogTimedOut) || closed || isSpec) {
       abort = null
+      onFinish?.()
       return
     }
 
@@ -1057,6 +1156,7 @@ export function createCascadeSession({
 
     clearPendingSpeech = () => {
       clearEndpoint()
+      cancelSpeculativeTurn()
       clearTimeout(sppsTimer)
       sppsTimer = null
       sppsLastQuery = ''
@@ -1099,6 +1199,16 @@ export function createCascadeSession({
         pendingInterim = ''
         // Drop the final if the endpoint timer already sent this.
         if (Date.now() - committedAt < COMMIT_ECHO_MS && sameUtterance(text, committed)) return
+
+        // Speculative turn promotion on final result
+        if (activeSpeculative && sameUtterance(text, activeSpeculative.text)) {
+          committed = text
+          committedAt = Date.now()
+          activeSpeculative.promote(text)
+          return
+        }
+        cancelSpeculativeTurn()
+
         committed = text
         committedAt = Date.now()
         handleUtterance(text, finalConfidence)
@@ -1108,9 +1218,22 @@ export function createCascadeSession({
         pendingInterim = interim.trim()
         clearEndpoint()
 
+        const q = pendingInterim.trim()
+
+        // ── Speculative Turn Start on syntactically complete interim (Horizon 2 Item 7) ──
+        if (!turnLock && !thinking && !speaking && !muted) {
+          if (activeSpeculative) {
+            if (!sameUtterance(q, activeSpeculative.text)) {
+              cancelSpeculativeTurn()
+            }
+          }
+          if (!activeSpeculative && isSyntacticallyComplete(q)) {
+            startSpeculativeTurn(q)
+          }
+        }
+
         // Speculative Parallel Pre-Search (SPPS) — debounced & deduped:
         clearTimeout(sppsTimer)
-        const q = pendingInterim.trim()
         if (isRealtimeOrSearchQuery(q) && q.split(/\s+/).length >= 4 && q !== sppsLastQuery) {
           sppsTimer = setTimeout(() => {
             sppsLastQuery = q
@@ -1126,6 +1249,15 @@ export function createCascadeSession({
           clearTimeout(sppsTimer)
           sppsTimer = null
           if (text.length >= 2) {
+            // Speculative turn promotion on adaptive silence endpoint
+            if (activeSpeculative && sameUtterance(text, activeSpeculative.text)) {
+              committed = text
+              committedAt = Date.now()
+              activeSpeculative.promote(text)
+              return
+            }
+            cancelSpeculativeTurn()
+
             committed = text
             committedAt = Date.now()
             handleUtterance(text, 0)
@@ -1252,6 +1384,7 @@ export function createCascadeSession({
     }
     if (closed) return
     closed = true
+    cancelSpeculativeTurn()
     document.removeEventListener('visibilitychange', onVisibility)
     if (recog) {
       recog.onend = null

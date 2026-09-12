@@ -50,3 +50,23 @@ export function dashboardKeyFromPath(pathname) {
   const m = clean.match(/^\/app\/([a-z-]+)$/)
   return m && DASHBOARD_KEYS.includes(m[1]) ? m[1] : null
 }
+
+export const LEGACY_SHORTCUTS = [
+  '/billing', '/agents', '/skills', '/mcp', '/plugins',
+  '/diagnostics', '/usage', '/capabilities', '/tools-picker', '/settings',
+]
+
+export const STATIC_PAGES = [
+  '/platforms', '/guide', '/tools', '/how-it-works', '/faq',
+  '/privacy', '/terms', '/pricing', '/refunds', '/checkout',
+]
+
+/** Checks if a path is a known valid route in Yogatik. */
+export function isValidRoute(pathname) {
+  const clean = (pathname || '').toLowerCase().replace(/\/+$/, '')
+  if (!clean || clean === '/live') return true
+  if (dashboardKeyFromPath(clean)) return true
+  if (LEGACY_SHORTCUTS.includes(clean)) return true
+  if (STATIC_PAGES.includes(clean)) return true
+  return false
+}

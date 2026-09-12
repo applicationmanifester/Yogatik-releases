@@ -14,12 +14,19 @@ import { askLocalVLM, DEFAULT_LOCAL_VLM } from './localVLM'
 import { ocrTool } from '../tools/ocr'
 import { analyseImage, describeStructure } from './imageStats'
 import { classifyZeroShot, detectObjects, summariseDetections, describePosition } from './detect'
+import {
+  createSessionObjectMemory,
+  recordDetections,
+  resolveReference,
+  clearSessionObjectMemory,
+} from './sessionObjectMemory'
 import { assessReadability, shouldTrustDescription } from './readable'
 import { queryMoondream } from './moondream'
 
 // ─── Shared source ───────────────────────────────────────────────────────────
 
 let shared = null
+let sharedObjectMemory = createSessionObjectMemory()
 
 /** Register the stream that owns the camera (the Live session, normally). */
 export function setSharedVisualSource(src) { shared = src || null }
@@ -29,6 +36,17 @@ export function getSharedVisualSource() {
 /** Clear, but only if `src` is still the registered one (avoids racing teardown). */
 export function clearSharedVisualSource(src) {
   if (!src || shared === src) shared = null
+}
+
+/** Get active session object memory tracker. */
+export function getSharedObjectMemory() {
+  if (!sharedObjectMemory) sharedObjectMemory = createSessionObjectMemory()
+  return sharedObjectMemory
+}
+
+/** Reset active session object memory. */
+export function resetSharedObjectMemory() {
+  if (sharedObjectMemory) clearSessionObjectMemory(sharedObjectMemory)
 }
 
 // ─── Question classification ─────────────────────────────────────────────────
@@ -166,10 +184,22 @@ export async function describeWithoutModel(image, question = '') {
   }
 
   if (objects?.length) {
+    try { recordDetections(getSharedObjectMemory(), objects) } catch {}
     const summary = summariseDetections(objects)
     const placed = objects.slice(0, 8).map(o => `${o.label} (${describePosition(o.box)})`).join(', ')
     parts.push(`OBJECTS: ${summary}. Positions: ${placed}.`)
     sources.push('detection')
+
+    // Referential grounding for spatial questions ("the one on the left", etc.)
+    if (question) {
+      try {
+        const ref = resolveReference(getSharedObjectMemory(), question)
+        if (ref.resolved) {
+          parts.push(`REFERENTIAL GROUNDING: ${ref.explanation}`)
+          sources.push('referential-grounding')
+        }
+      } catch {}
+    }
   }
 
   if (vlm) {

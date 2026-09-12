@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Yogatik — Download for Desktop</title>
-  <meta name="description" content="Get Yogatik on your desktop: a private AI assistant with local Ollama models, local-file editing, live web research and 65+ free tools. Runs on your machine." />
+  <meta name="description" content="Get Yogatik on your desktop: a private AI assistant with local Ollama models, local-file editing, live web research and 177 free tools. Runs on your machine." />
   <meta property="og:title" content="Yogatik for Desktop" />
-  <meta property="og:description" content="Private AI on your machine — local Ollama models, local-file editing, 65+ free tools." />
+  <meta property="og:description" content="Private AI on your machine — local Ollama models, local-file editing, 177 free tools." />
   <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
   <link rel="canonical" href="https://yogatik.web.app/platforms" />
   <meta name="google-adsense-account" content="ca-pub-8240433260986072" />
@@ -240,8 +240,8 @@
         <div class="feature"><div class="ic">📂</div><h3>Local-file agent</h3><p>Grant one folder and the agent can read, search, create and edit files inside it — refactors, summaries, batch renames — Cowork-style, scoped and safe.</p></div>
         <div class="feature"><div class="ic">🔎</div><h3>Live web research</h3><p>Metasearch across multiple engines with parallel page reads and cited sources, right inside the conversation.</p></div>
         <div class="feature"><div class="ic">🧠</div><h3>On-device models &amp; vision</h3><p>Run small LLMs and vision models on your GPU via WebGPU. Private by default, works offline after first load.</p></div>
-        <div class="feature"><div class="ic">🛠️</div><h3>65+ built-in tools</h3><p>Code execution, image &amp; video generation, OCR, PDF Q&amp;A, diagrams, charts, translation, TTS and much more.</p></div>
-        <div class="feature"><div class="ic">🔒</div><h3>Private by design</h3><p>Conversations and keys live in your browser/device. Bring your own free API key; no backend holds your data.</p></div>
+        <div class="feature"><div class="ic">🛠️</div><h3>177 built-in tools</h3><p>Code execution, image &amp; video generation, OCR, PDF Q&amp;A, diagrams, charts, translation, TTS and much more.</p></div>
+        <div class="feature"><div class="ic">🔒</div><h3>Private by design</h3><p>Conversations and keys stay on your machine by default. Connect your chosen provider directly, or run 100% offline with local models.</p></div>
       </div>
     </section>
 
@@ -440,11 +440,40 @@
     (function () {
       var RELEASES = [
   {
+    "version": "8.2.0",
+    "title": "Yogatik 8.2.0: Streamlined Core — First-Impression Focus, Strict CSP & 177 Tools Transparency",
+    "date": "September 12, 2026",
+    "codename": "Streamlined Core",
+    "isLatest": true,
+    "highlights": [
+      [
+        "Focused First Impression",
+        "Streamlined onboarding centered on 'Choose a provider or run locally' with clear Cloud vs On-Device paths"
+      ],
+      [
+        "Above-The-Fold Privacy Disclosure",
+        "Full transparency on local-first storage, developer proxy for CORS-limited providers, and optional Firebase sync"
+      ],
+      [
+        "Strict Content Security Policy",
+        "Promoted CSP from Report-Only to enforced blocking headers protecting user API keys and client storage integrity"
+      ],
+      [
+        "Real 404 Route Handling",
+        "Dedicated static 404 page and scoped Firebase rewrites returning genuine HTTP 404 status codes for unknown URLs"
+      ],
+      [
+        "Metadata & Tool Count Sync",
+        "Unified tool count across metadata, OpenGraph, platforms guide, and PWA manifest to 177 tools"
+      ]
+    ]
+  },
+  {
     "version": "8.1.0",
     "title": "Yogatik 8.1.0: Apex Frontier — Full Modal Control, Ambient Telemetry & Action Chips",
     "date": "September 11, 2026",
     "codename": "Apex Frontier",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Frontier & Next-Gen Model Readiness",
