@@ -76,7 +76,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.12",
     "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.5.4",
+    "autoprefixer": "^10.5.5",
     "electron": "43.5.0",
     "electron-builder": "^26.15.3",
     "electron-rebuild": "^3.2.9",
