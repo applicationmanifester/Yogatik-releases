@@ -161,6 +161,14 @@ export function LiveView({
     breathingPhase: 0,
   })
 
+  // Destructure for convenience in render and early hooks
+  const {
+    state, error, muted, speakerMuted, camOn, screenOn, visionMode, speaking, thinking, tool,
+    liveStatusText, reasoningText, showReasoning,
+    lines, transcript, showTranscript, copiedIdx, frameSent, liveVoice,
+    activeProvider, connectionState, userLevel, assistantLevel, breathingPhase,
+  } = uiState
+
   // Vision Modal State
   const [visionState, setVisionState] = useState({
     open: false,
@@ -326,13 +334,7 @@ export function LiveView({
   const transcriptEndRef = useRef(null)
   const frameTimerRef = useRef(null)
 
-  // Destructure for convenience in render
-  const {
-    state, error, muted, speakerMuted, camOn, screenOn, visionMode, speaking, thinking, tool,
-    liveStatusText, reasoningText, showReasoning,
-    lines, transcript, showTranscript, copiedIdx, frameSent, liveVoice,
-    activeProvider, connectionState, userLevel, assistantLevel, breathingPhase,
-  } = uiState
+
 
   const curProvider = activeProvider?.provider || provider || 'gemini'
   const isCurProviderReady = isProviderReady(curProvider, allProviders?.[curProvider])
