@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import {
   generateWordDoc,
+  generateExcelWorkbook,
+  parseMarkdownTable,
   generateSlideDeck,
   generateInvoice,
   generateCertificate,
@@ -12,16 +14,71 @@ import {
 
 describe('docGenerator suite (Independent Document Generation)', () => {
   describe('Word Document (.doc/.docx XML)', () => {
-    it('generates standard Word document with HTML/MHTML styling', () => {
+    it('generates standard Word document with docx format by default', () => {
       const res = generateWordDoc({
         title: 'Project Roadmap',
         content: '# Phase 1\n- Task A\n- Task B\n\n| Item | Cost |\n|---|---|\n| Server | $100 |',
         author: 'Lead Architect',
       })
       expect(res.success).toBe(true)
+      expect(res.format).toBe('docx')
+      expect(res.filename).toBe('project_roadmap.docx')
+      expect(res.data_url).toContain('data:application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    })
+
+    it('generates legacy .doc format when explicitly specified', () => {
+      const res = generateWordDoc({
+        title: 'Legacy Memo',
+        content: 'Memo text',
+        format: 'doc',
+      })
+      expect(res.success).toBe(true)
       expect(res.format).toBe('doc')
-      expect(res.filename).toBe('project_roadmap.doc')
+      expect(res.filename).toBe('legacy_memo.doc')
       expect(res.data_url).toContain('data:application/msword;charset=utf-8,')
+    })
+  })
+
+  describe('Standard Excel Workbook (.xlsx Office XML Spreadsheet)', () => {
+    it('generates valid multi-column XML Spreadsheet from rows and columns', () => {
+      const res = generateExcelWorkbook({
+        title: 'Q3 Financials',
+        columns: ['Department', 'Budget', 'Actual', 'Variance'],
+        rows: [
+          ['Engineering', 120000, 115000, 5000],
+          ['Marketing', 45000, 48000, -3000],
+          ['Operations', 30000, 29500, 500],
+        ],
+        includeSummary: true,
+      })
+      expect(res.success).toBe(true)
+      expect(res.format).toBe('xlsx')
+      expect(res.filename).toBe('q3_financials.xlsx')
+      expect(res.xml).toContain('urn:schemas-microsoft-com:office:spreadsheet')
+      expect(res.xml).toContain('<Worksheet ss:Name="Q3 Financials">')
+      expect(res.xml).toContain('ss:StyleID="Header"')
+      expect(res.xml).toContain('Total')
+    })
+
+    it('parses markdown tables and converts directly into styled Excel workbook', () => {
+      const mdTable = `
+| Quarter | Target Revenue | Actual Revenue | Growth |
+| :--- | :--- | :--- | :--- |
+| Q1 2026 | $100,000 | $108,000 | 8% |
+| Q2 2026 | $130,000 | $142,000 | 9.2% |
+`
+      const parsed = parseMarkdownTable(mdTable)
+      expect(parsed).not.toBeNull()
+      expect(parsed.headers).toEqual(['Quarter', 'Target Revenue', 'Actual Revenue', 'Growth'])
+      expect(parsed.rows.length).toBe(2)
+
+      const res = generateExcelWorkbook({
+        title: 'Quarterly Growth',
+        content: mdTable,
+      })
+      expect(res.success).toBe(true)
+      expect(res.rows_count).toBe(2)
+      expect(res.filename).toBe('quarterly_growth.xlsx')
     })
   })
 
@@ -145,7 +202,24 @@ describe('docGenerator suite (Independent Document Generation)', () => {
         save_to_workspace: false,
       })
       expect(res.success).toBe(true)
-      expect(res.format).toBe('doc')
+      expect(res.format).toBe('docx')
+      expect(res.filename).toBe('summary_report.docx')
+    })
+
+    it('dispatches to excel_workbook', async () => {
+      const res = await documentGeneratorTool.execute({
+        document_type: 'excel_workbook',
+        title: 'Sales Forecast',
+        spreadsheet_columns: ['Month', 'Sales', 'Target'],
+        spreadsheet_rows: [
+          ['January', 12000, 10000],
+          ['February', 15000, 13000],
+        ],
+        save_to_workspace: false,
+      })
+      expect(res.success).toBe(true)
+      expect(res.format).toBe('xlsx')
+      expect(res.filename).toBe('sales_forecast.xlsx')
     })
 
     it('dispatches to csv_spreadsheet', async () => {

@@ -1236,17 +1236,17 @@ export async function exportPptx(content, filename = 'presentation.pptx', autoDo
 export const docExportTool = {
   schema: {
     description:
-      'Convert Markdown or structured text into Microsoft Word (.doc), PowerPoint presentation (.pptx), CSV spreadsheet (.csv), HTML, or formatted JSON for 1-click downloading. ' +
-      'Use when the user asks to "export as Word", "create PowerPoint / PPT", "download CSV spreadsheet", "export HTML", or "save document". ' +
-      'For PDF output use the md_to_pdf tool instead.',
+      'Convert Markdown or structured text into standard Microsoft Excel (.xlsx), Word (.docx), PowerPoint presentation (.pptx), PDF (.pdf), Markdown (.md), CSV (.csv), HTML, or formatted JSON for 1-click downloading. ' +
+      'Use when the user asks to "export as Word", "export Excel", "create PowerPoint / PPT", "download CSV spreadsheet", "export Markdown", or "save document". ' +
+      'For PDF output this will generate high-resolution print-quality PDF.',
     parameters: {
       type: 'object',
       properties: {
         filename: { type: 'string', description: 'Desired output filename without extension' },
         format: {
           type: 'string',
-          enum: ['doc', 'docx', 'ppt', 'pptx', 'presentation', 'csv', 'html', 'json', 'rtf'],
-          description: 'Format to convert to (use "doc" for Word, "pptx" for PowerPoint, "csv" for spreadsheets)',
+          enum: ['docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt', 'pdf', 'md', 'markdown', 'csv', 'html', 'json'],
+          description: 'Format to convert to (use "xlsx" for Excel, "docx" for Word, "pptx" for PowerPoint, "pdf" for PDF, "md" for Markdown)',
         },
         content: { type: 'string', description: 'Content or Markdown text to convert' },
       },
@@ -1277,20 +1277,32 @@ export const docExportTool = {
 
     // Format follows the explicit argument, else the extension already on the
     // name, else a Word document.
-    const extFromName = (name.match(/\\.([a-z0-9]{2,5})$/i) || [])[1]
-    const requestedExt = String(format || extFromName || 'doc').toLowerCase()
+    const extFromName = (name.match(/\.([a-z0-9]{2,5})$/i) || [])[1]
+    const requestedExt = String(format || extFromName || 'docx').toLowerCase()
     if (!extFromName) name = `${name}.${requestedExt}`
 
     filename = name
     content = body
     let outContent = content
-    let mimeType = 'application/msword'
+    let mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
     if (['pdf'].includes(requestedExt)) {
-      // Delegate to the dedicated md_to_pdf tool so the model gets a real downloadable PDF,
-      // not a base64-encoded .doc file with manual conversion instructions.
       const pdfName = name.replace(/\.pdf$/i, '') + '.pdf'
       return mdToPdfTool.execute({ markdown: content, filename: pdfName })
+    } else if (['xlsx', 'xls', 'excel', 'sheet'].includes(requestedExt)) {
+      const { generateExcelWorkbook } = await import('./docGenerator')
+      const cleanTitle = filename.replace(/\.(xlsx|xls|csv)$/i, '')
+      const excelRes = generateExcelWorkbook({ title: cleanTitle, content })
+      return {
+        success: true,
+        tool: 'doc_export',
+        filename: excelRes.filename,
+        format: 'xlsx',
+        mime_type: 'application/vnd.ms-excel;charset=utf-8',
+        data_url: excelRes.data_url,
+        rows_count: excelRes.rows_count,
+        exported_text: content,
+      }
     } else if (['ppt', 'pptx', 'powerpoint', 'presentation', 'slides'].includes(requestedExt)) {
       const pptResult = await exportPptx(content, filename, false)
       if (pptResult.success) {
@@ -1304,11 +1316,34 @@ export const docExportTool = {
           exported_text: content,
         }
       }
-    } else if (['doc', 'docx', 'word', 'rtf', 'text', 'txt'].includes(requestedExt)) {
-      mimeType = 'application/msword'
+    } else if (['doc', 'docx', 'word', 'rtf'].includes(requestedExt)) {
+      const { generateWordDoc } = await import('./docGenerator')
       const cleanTitle = filename.replace(/\.(rtf|doc|docx|txt)$/i, '')
-      const htmlBody = mdToHtml(content)
-      outContent = `<!DOCTYPE html><html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>${cleanTitle}</title><style>body{font-family:'Calibri','Segoe UI',sans-serif;font-size:11pt;line-height:1.6;color:#1e293b;margin:1in;}h1{font-size:22pt;color:#0f172a;border-bottom:2px solid #38bdf8;padding-bottom:6pt;margin-top:14pt;margin-bottom:12pt;}h2{font-size:16pt;color:#1e3a8a;margin-top:14pt;border-bottom:1px solid #cbd5e1;padding-bottom:4pt;margin-bottom:8pt;}h3{font-size:13pt;color:#0284c7;margin-top:10pt;}p{margin-bottom:8pt;}ul,ol{margin:6pt 0 8pt 20pt;}li{margin-bottom:3pt;}code{font-family:Consolas,monospace;background:#f1f5f9;padding:2px 5px;border-radius:3px;color:#0f172a;}pre{background:#0f172a;color:#f8fafc;padding:12px;border-radius:6px;}table{border-collapse:collapse;width:100%;margin:12pt 0;}th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left;}th{background:#1e293b;color:#ffffff;font-weight:bold;}tr:nth-child(even){background:#f8fafc;}blockquote{border-left:4px solid #38bdf8;background:#f0f9ff;margin:10pt 0;padding:8pt 12pt;color:#0369a1;font-style:italic;}</style></head><body><h1>${cleanTitle}</h1><p style='color:#64748b;font-size:9.5pt;margin-bottom:18pt;'>Generated by Yogatik Intelligence Engine • ${new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p><hr style='border:none;border-top:1px solid #e2e8f0;margin-bottom:18pt;'/>${htmlBody}</body></html>`
+      const wordRes = generateWordDoc({ title: cleanTitle, content, format: requestedExt === 'doc' ? 'doc' : 'docx' })
+      return {
+        success: true,
+        tool: 'doc_export',
+        filename: wordRes.filename,
+        format: wordRes.format,
+        mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document;charset=utf-8',
+        data_url: wordRes.data_url,
+        exported_text: content,
+      }
+    } else if (['md', 'markdown'].includes(requestedExt)) {
+      mimeType = 'text/markdown;charset=utf-8;'
+      const cleanTitle = filename.replace(/\.md$/i, '')
+      const dateStr = new Date().toISOString().split('T')[0]
+      if (!content.startsWith('---')) {
+        outContent = `---\ntitle: "${cleanTitle}"\nauthor: "Yogatik AI"\ndate: "${dateStr}"\nversion: "1.0.0"\n---\n\n${content}`
+      }
+      return {
+        success: true,
+        tool: 'doc_export',
+        filename: `${cleanTitle}.md`,
+        format: 'md',
+        mime_type: mimeType,
+        exported_text: outContent,
+      }
     } else if (requestedExt === 'csv') {
       mimeType = 'text/csv;charset=utf-8;'
       // Convert Markdown tables to CSV lines automatically if markdown table detected
@@ -1331,12 +1366,12 @@ export const docExportTool = {
       }
     }
 
-    const outputExt = ['ppt', 'pptx', 'powerpoint', 'presentation', 'slides'].includes(requestedExt) ? 'ppt' : ['html', 'csv', 'json'].includes(requestedExt) ? requestedExt : 'doc'
+    const outputExt = ['ppt', 'pptx', 'powerpoint', 'presentation', 'slides'].includes(requestedExt) ? 'pptx' : ['xlsx', 'xls', 'html', 'csv', 'json', 'md'].includes(requestedExt) ? requestedExt : 'docx'
 
     return {
       success: true,
       tool: 'doc_export',
-      filename: `${filename.replace(/\.(rtf|doc|docx|ppt|pptx|csv|txt)$/i, '')}.${outputExt}`,
+      filename: `${filename.replace(/\.(rtf|doc|docx|ppt|pptx|xlsx|xls|csv|txt|md)$/i, '')}.${outputExt}`,
       format: outputExt,
       mime_type: mimeType,
       exported_text: outContent,

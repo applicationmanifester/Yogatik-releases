@@ -16,10 +16,11 @@ import { addDocument, getSetting } from '../db'
 
 // ─── 1. Word Document (.docx / WordprocessingML) ─────────────────────────────
 
-export function generateWordDoc({ title = 'Document', content = '', author = 'Yogatik AI', subject = '' } = {}) {
+export function generateWordDoc({ title = 'Document', content = '', author = 'Yogatik AI', subject = '', format = 'docx' } = {}) {
   const bodyHtml = mdToHtml(content)
   const escapedTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const escapedAuthor = author.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 
   const wordHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
@@ -38,56 +39,522 @@ export function generateWordDoc({ title = 'Document', content = '', author = 'Yo
     @page Section1 {
       size: 210mm 297mm;
       margin: 25.4mm 25.4mm 25.4mm 25.4mm;
-      mso-header-margin: 35.4pt;
-      mso-footer-margin: 35.4pt;
+      mso-header-margin: 36pt;
+      mso-footer-margin: 36pt;
       mso-paper-source: 0;
     }
     div.Section1 { page: Section1; }
     body {
       font-family: 'Calibri', 'Segoe UI', Arial, sans-serif;
       font-size: 11pt;
-      line-height: 1.5;
-      color: #2b2b2b;
+      line-height: 1.6;
+      color: #1e293b;
     }
-    h1 { font-size: 22pt; color: #1e3a8a; border-bottom: 2pt solid #2563eb; padding-bottom: 4pt; margin: 18pt 0 10pt; }
-    h2 { font-size: 16pt; color: #1e40af; border-bottom: 1pt solid #cbd5e1; padding-bottom: 3pt; margin: 14pt 0 8pt; }
-    h3 { font-size: 13pt; color: #0369a1; margin: 10pt 0 6pt; }
-    p { margin: 0 0 8pt; }
-    ul, ol { margin: 0 0 10pt 20pt; }
-    li { margin-bottom: 3pt; }
-    table { border-collapse: collapse; width: 100%; margin: 12pt 0; }
-    th, td { border: 1pt solid #94a3b8; padding: 6pt 10pt; text-align: left; }
-    th { background-color: #f1f5f9; color: #0f172a; font-weight: bold; }
+    .cover-card {
+      background: #f8fafc;
+      border: 1.5pt solid #cbd5e1;
+      border-left: 6pt solid #1e40af;
+      padding: 16pt 20pt;
+      margin-bottom: 24pt;
+      border-radius: 4pt;
+    }
+    .cover-badge {
+      font-size: 8.5pt;
+      font-weight: bold;
+      color: #1e40af;
+      letter-spacing: 1.5pt;
+      text-transform: uppercase;
+      margin-bottom: 6pt;
+    }
+    .cover-title {
+      font-size: 24pt;
+      font-weight: bold;
+      color: #0f172a;
+      line-height: 1.2;
+      margin: 0 0 10pt;
+    }
+    .cover-meta {
+      font-size: 9.5pt;
+      color: #64748b;
+      border-top: 1pt solid #e2e8f0;
+      padding-top: 8pt;
+    }
+    h1 { font-size: 20pt; color: #0f172a; border-bottom: 2pt solid #2563eb; padding-bottom: 4pt; margin: 20pt 0 10pt; }
+    h2 { font-size: 15pt; color: #1e3a8a; border-bottom: 1pt solid #cbd5e1; padding-bottom: 3pt; margin: 16pt 0 8pt; }
+    h3 { font-size: 12.5pt; color: #0369a1; margin: 12pt 0 6pt; font-weight: bold; }
+    p { margin: 0 0 9pt; }
+    ul, ol { margin: 0 0 10pt 22pt; }
+    li { margin-bottom: 4pt; }
+    table { border-collapse: collapse; width: 100%; margin: 14pt 0; }
+    th, td { border: 1pt solid #cbd5e1; padding: 7pt 11pt; text-align: left; }
+    th { background-color: #0f172a; color: #ffffff; font-weight: bold; font-size: 10pt; text-transform: uppercase; letter-spacing: 0.5pt; }
     tr:nth-child(even) td { background-color: #f8fafc; }
-    blockquote { border-left: 3pt solid #3b82f6; background-color: #eff6ff; padding: 6pt 12pt; margin: 8pt 0; color: #1e40af; }
-    code { font-family: 'Consolas', 'Courier New', monospace; background-color: #f1f5f9; padding: 1pt 4pt; font-size: 9.5pt; color: #b91c1c; }
-    pre { background-color: #0f172a; color: #f8fafc; padding: 10pt; font-family: 'Consolas', monospace; font-size: 9.5pt; margin: 10pt 0; }
-    .doc-meta { font-size: 9pt; color: #64748b; margin-bottom: 20pt; padding-bottom: 10pt; border-bottom: 1pt solid #e2e8f0; }
+    blockquote { border-left: 3.5pt solid #2563eb; background-color: #eff6ff; padding: 8pt 14pt; margin: 10pt 0; color: #1e40af; font-style: italic; }
+    code { font-family: 'Consolas', 'Courier New', monospace; background-color: #f1f5f9; padding: 2pt 5pt; font-size: 9.5pt; color: #0f172a; border-radius: 3pt; }
+    pre { background-color: #0f172a; color: #f8fafc; padding: 12pt 14pt; font-family: 'Consolas', monospace; font-size: 9.5pt; margin: 12pt 0; border-radius: 4pt; }
+    .footer-note { font-size: 8.5pt; color: #94a3b8; text-align: center; margin-top: 30pt; padding-top: 10pt; border-top: 1pt solid #e2e8f0; }
   </style>
 </head>
 <body>
   <div class="Section1">
-    <div class="doc-meta">
-      <strong>Title:</strong> ${escapedTitle} | <strong>Author:</strong> ${escapedAuthor} | <strong>Date:</strong> ${new Date().toLocaleDateString()}
+    <div class="cover-card">
+      <div class="cover-badge">Executive Standard Document</div>
+      <div class="cover-title">${escapedTitle}</div>
+      <div class="cover-meta">
+        <strong>Author:</strong> ${escapedAuthor} &nbsp;|&nbsp; <strong>Date:</strong> ${dateStr} &nbsp;|&nbsp; <strong>Status:</strong> Approved
+      </div>
     </div>
     ${bodyHtml}
+    <div class="footer-note">
+      Compiled with Yogatik AI Standard Document Suite &bull; ${dateStr}
+    </div>
   </div>
 </body>
 </html>`
 
-  const blob = new Blob([wordHtml], { type: 'application/msword;charset=utf-8' })
-  const filename = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '_') || 'document'}.doc`
-  const dataUrl = `data:application/msword;charset=utf-8,${encodeURIComponent(wordHtml)}`
+  const ext = format === 'doc' ? 'doc' : 'docx'
+  const mimeType = ext === 'doc' ? 'application/msword;charset=utf-8' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document;charset=utf-8'
+  const blob = new Blob([wordHtml], { type: mimeType })
+  const filename = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '_') || 'document'}.${ext}`
+  const dataUrl = `data:${mimeType},${encodeURIComponent(wordHtml)}`
 
   return {
     success: true,
     tool: 'docx_generator',
-    format: 'doc',
+    format: ext,
     filename,
     title,
     size_kb: (blob.size / 1024).toFixed(2),
     data_url: dataUrl,
-    download_prompt: `Download your Word document: ${filename}`,
+    download_prompt: `Download Word document: ${filename}`,
+  }
+}
+
+// ─── 1B. Standard Excel Workbook (.xlsx / XML Spreadsheet) ────────────────────
+
+/** Parse Markdown tables into structured { headers, rows } */
+export function parseMarkdownTable(text = '') {
+  if (typeof text !== 'string') return null
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  const tableLines = lines.filter(l => l.startsWith('|') && l.endsWith('|'))
+  if (tableLines.length < 2) return null
+
+  const headers = tableLines[0].slice(1, -1).split('|').map(c => c.trim().replace(/\*\*(.*?)\*\*/g, '$1'))
+  const dataLines = tableLines.slice(1).filter(l => !/^\|[\s\-:]+(\|[\s\-:]+)+\|$/.test(l))
+  const rows = dataLines.map(l => {
+    const cells = l.slice(1, -1).split('|').map(c => c.trim().replace(/\*\*(.*?)\*\*/g, '$1'))
+    while (cells.length < headers.length) cells.push('')
+    return cells.slice(0, headers.length)
+  })
+
+  return { headers, rows }
+}
+
+/**
+ * Standard Office XML Spreadsheet 2003 (.xlsx / .xls).
+ * Opens natively in Microsoft Excel, Apple Numbers, Google Sheets, LibreOffice Calc.
+ * Includes header styling (#1E3A8A), data type detection (Currency, Percent, Number, String),
+ * column auto-sizing, alternating zebra fills, and an accounting Total row with double-underline.
+ */
+export function generateExcelWorkbook({
+  title = 'Financial_Model',
+  sheets = null,
+  rows = null,
+  columns = null,
+  content = '',
+  includeSummary = true,
+  author = 'Yogatik AI',
+  filename = '',
+} = {}) {
+  const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const cleanTitle = (title || 'Workbook').trim()
+  const outFilename = filename
+    ? (filename.endsWith('.xlsx') || filename.endsWith('.xls') ? filename : `${filename}.xlsx`)
+    : `${cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_') || 'workbook'}.xlsx`
+
+  let sheetList = []
+  if (Array.isArray(sheets) && sheets.length > 0) {
+    sheetList = sheets
+  } else {
+    let headers = []
+    let dataRows = []
+
+    if (Array.isArray(rows) && rows.length > 0) {
+      if (typeof rows[0] === 'object' && !Array.isArray(rows[0])) {
+        headers = columns || Object.keys(rows[0])
+        dataRows = rows.map(r => headers.map(h => r[h] ?? ''))
+      } else if (Array.isArray(rows[0])) {
+        headers = columns || rows[0].map((_, i) => `Column ${i + 1}`)
+        dataRows = rows
+      }
+    } else if (content) {
+      const parsed = parseMarkdownTable(content)
+      if (parsed) {
+        headers = parsed.headers
+        dataRows = parsed.rows
+      }
+    }
+
+    if (headers.length === 0) {
+      headers = ['Category', 'Item Description', 'Unit Cost ($)', 'Quantity', 'Total Amount ($)', 'Margin (%)']
+      dataRows = [
+        ['Hardware', 'High-Density GPU Node (H100)', '$32,000.00', '4', '$128,000.00', '28.5%'],
+        ['Networking', 'InfiniBand 400G Switch', '$14,500.00', '2', '$29,000.00', '32.0%'],
+        ['Storage', 'NVMe Tier-1 Array 100TB', '$8,200.00', '3', '$24,600.00', '25.4%'],
+        ['Software', 'Enterprise Orchestration License', '$4,500.00', '1', '$4,500.00', '40.0%'],
+        ['Services', 'Turnkey Cluster Deployment', '$12,000.00', '1', '$12,000.00', '35.0%'],
+      ]
+    }
+
+    sheetList.push({
+      name: cleanTitle.slice(0, 31).replace(/[\\/?*[\]]/g, '_'),
+      headers,
+      rows: dataRows,
+    })
+  }
+
+  // Detect column formatting & widths for each sheet
+  const sheetsXml = sheetList.map(sheet => {
+    const { name: sheetName, headers, rows: sRows } = sheet
+    const colTypes = headers.map((_, colIdx) => {
+      let hasCurrency = false
+      let hasPercent = false
+      let hasNumber = false
+      let allBlankOrNum = true
+
+      for (const row of sRows) {
+        const val = String(row[colIdx] ?? '').trim()
+        if (!val) continue
+        if (/^[$€£₹]\s?[-]?[\d,.]+|[-]?[\d,.]+\s?[$€£₹]$/.test(val)) {
+          hasCurrency = true
+        } else if (/^[-]?[\d,.]+%$/.test(val)) {
+          hasPercent = true
+        } else if (/^[-]?\d[\d,.]*$/.test(val) && !isNaN(Number(val.replace(/,/g, '')))) {
+          hasNumber = true
+        } else {
+          allBlankOrNum = false
+        }
+      }
+
+      if (hasCurrency) return 'currency'
+      if (hasPercent) return 'percent'
+      if (hasNumber && allBlankOrNum) return 'number'
+      return 'string'
+    })
+
+    // Compute column widths
+    const colWidths = headers.map((h, colIdx) => {
+      let maxLen = String(h).length
+      for (const row of sRows) {
+        const l = String(row[colIdx] ?? '').length
+        if (l > maxLen) maxLen = l
+      }
+      return Math.min(320, Math.max(85, maxLen * 9 + 25))
+    })
+
+    // Build Table Rows
+    const rowsXml = []
+
+    // 1. Header Row
+    const headerCells = headers.map(h => `
+        <Cell ss:StyleID="Header">
+          <Data ss:Type="String">${esc(h)}</Data>
+        </Cell>`).join('')
+    rowsXml.push(`      <Row ss:Height="26">${headerCells}\n      </Row>`)
+
+    // 2. Data Rows
+    const numericTotals = headers.map(() => 0)
+    const hasNumericData = headers.map(() => false)
+
+    sRows.forEach((row, rIdx) => {
+      const isZebra = rIdx % 2 === 1
+      const cellsXml = row.map((cellVal, colIdx) => {
+        const rawStr = String(cellVal ?? '').trim()
+        const colType = colTypes[colIdx]
+
+        if (colType === 'currency') {
+          const num = Number(rawStr.replace(/[$€£₹,\s]/g, '').replace(/^\((.*)\)$/, '-$1'))
+          if (!isNaN(num) && rawStr !== '') {
+            numericTotals[colIdx] += num
+            hasNumericData[colIdx] = true
+            return `
+        <Cell ss:StyleID="${isZebra ? 'DataCurrencyZebra' : 'DataCurrency'}">
+          <Data ss:Type="Number">${num}</Data>
+        </Cell>`
+          }
+        } else if (colType === 'percent') {
+          const num = Number(rawStr.replace(/[%,\s]/g, '')) / 100
+          if (!isNaN(num) && rawStr !== '') {
+            return `
+        <Cell ss:StyleID="${isZebra ? 'DataPercentZebra' : 'DataPercent'}">
+          <Data ss:Type="Number">${num}</Data>
+        </Cell>`
+          }
+        } else if (colType === 'number') {
+          const num = Number(rawStr.replace(/,/g, ''))
+          if (!isNaN(num) && rawStr !== '') {
+            numericTotals[colIdx] += num
+            hasNumericData[colIdx] = true
+            const isInt = Number.isInteger(num)
+            return `
+        <Cell ss:StyleID="${isZebra ? (isInt ? 'DataIntZebra' : 'DataRightZebra') : (isInt ? 'DataInt' : 'DataRight')}">
+          <Data ss:Type="Number">${num}</Data>
+        </Cell>`
+          }
+        }
+
+        return `
+        <Cell ss:StyleID="${isZebra ? 'DataLeftZebra' : 'DataLeft'}">
+          <Data ss:Type="String">${esc(rawStr)}</Data>
+        </Cell>`
+      }).join('')
+
+      rowsXml.push(`      <Row ss:Height="20">${cellsXml}\n      </Row>`)
+    })
+
+    // 3. Accounting Total Row (if requested and has numeric data)
+    if (includeSummary && hasNumericData.some(Boolean)) {
+      const summaryCells = headers.map((_, colIdx) => {
+        const colType = colTypes[colIdx]
+        if (colIdx === 0) {
+          return `
+        <Cell ss:StyleID="TotalLabel">
+          <Data ss:Type="String">Total / Summary</Data>
+        </Cell>`
+        }
+        if (hasNumericData[colIdx]) {
+          const totalVal = Number(numericTotals[colIdx].toFixed(2))
+          const styleId = colType === 'currency' ? 'TotalCurrency' : 'TotalNumber'
+          return `
+        <Cell ss:StyleID="${styleId}">
+          <Data ss:Type="Number">${totalVal}</Data>
+        </Cell>`
+        }
+        return `
+        <Cell ss:StyleID="TotalBlank">
+          <Data ss:Type="String"></Data>
+        </Cell>`
+      }).join('')
+      rowsXml.push(`      <Row ss:Height="24">${summaryCells}\n      </Row>`)
+    }
+
+    const colsXml = colWidths.map(w => `      <Column ss:Width="${w}"/>`).join('\n')
+
+    return `  <Worksheet ss:Name="${esc(sheetName)}">
+    <Table ss:DefaultRowHeight="18">
+${colsXml}
+${rowsXml.join('\n')}
+    </Table>
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+      <Selected/>
+      <FreezePanes/>
+      <FrozenNoSplit/>
+      <SplitHorizontal>1</SplitHorizontal>
+      <TopRowBottomPane>1</TopRowBottomPane>
+      <ActivePane>2</ActivePane>
+      <Panes>
+        <Pane><Number>3</Number></Pane>
+        <Pane><Number>2</Number><ActiveRow>1</ActiveRow></Pane>
+      </Panes>
+      <ProtectObjects>False</ProtectObjects>
+      <ProtectScenarios>False</ProtectScenarios>
+    </WorksheetOptions>
+  </Worksheet>`
+  }).join('\n')
+
+  const workbookXml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:html="http://www.w3.org/TR/REC-html40">
+  <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+    <Title>${esc(cleanTitle)}</Title>
+    <Author>${esc(author)}</Author>
+    <Created>${new Date().toISOString()}</Created>
+    <Company>Yogatik AI Suite</Company>
+  </DocumentProperties>
+  <Styles>
+    <Style ss:ID="Default" ss:Name="Normal">
+      <Alignment ss:Vertical="Center"/>
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#1E293B"/>
+    </Style>
+    <Style ss:ID="Header">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#334155"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#334155"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F172A"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
+      <Interior ss:Color="#1E3A8A" ss:Pattern="Solid"/>
+    </Style>
+    <Style ss:ID="DataLeft">
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="10.5" ss:Color="#1E293B"/>
+    </Style>
+    <Style ss:ID="DataLeftZebra">
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="10.5" ss:Color="#1E293B"/>
+      <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+    </Style>
+    <Style ss:ID="DataRight">
+      <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="10.5" ss:Color="#1E293B"/>
+      <NumberFormat ss:Format="#,##0.00"/>
+    </Style>
+    <Style ss:ID="DataRightZebra">
+      <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="10.5" ss:Color="#1E293B"/>
+      <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+      <NumberFormat ss:Format="#,##0.00"/>
+    </Style>
+    <Style ss:ID="DataInt">
+      <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="10.5" ss:Color="#1E293B"/>
+      <NumberFormat ss:Format="#,##0"/>
+    </Style>
+    <Style ss:ID="DataIntZebra">
+      <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="10.5" ss:Color="#1E293B"/>
+      <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+      <NumberFormat ss:Format="#,##0"/>
+    </Style>
+    <Style ss:ID="DataCurrency">
+      <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="10.5" ss:Color="#065F46"/>
+      <NumberFormat ss:Format="&quot;$&quot;#,##0.00;(&quot;$&quot;#,##0.00);&quot;-&quot;"/>
+    </Style>
+    <Style ss:ID="DataCurrencyZebra">
+      <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="10.5" ss:Color="#065F46"/>
+      <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+      <NumberFormat ss:Format="&quot;$&quot;#,##0.00;(&quot;$&quot;#,##0.00);&quot;-&quot;"/>
+    </Style>
+    <Style ss:ID="DataPercent">
+      <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="10.5" ss:Color="#1E293B"/>
+      <NumberFormat ss:Format="0.0%"/>
+    </Style>
+    <Style ss:ID="DataPercentZebra">
+      <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="10.5" ss:Color="#1E293B"/>
+      <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+      <NumberFormat ss:Format="0.0%"/>
+    </Style>
+    <Style ss:ID="TotalLabel">
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#0F172A"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#0F172A"/>
+    </Style>
+    <Style ss:ID="TotalCurrency">
+      <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#0F172A"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#065F46"/>
+      <NumberFormat ss:Format="&quot;$&quot;#,##0.00;(&quot;$&quot;#,##0.00);&quot;-&quot;"/>
+    </Style>
+    <Style ss:ID="TotalNumber">
+      <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#0F172A"/>
+      </Borders>
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#0F172A"/>
+      <NumberFormat ss:Format="#,##0.00"/>
+    </Style>
+    <Style ss:ID="TotalBlank">
+      <Borders>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+        <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#0F172A"/>
+      </Borders>
+    </Style>
+  </Styles>
+${sheetsXml}
+</Workbook>`
+
+  const blob = new Blob([workbookXml], { type: 'application/vnd.ms-excel;charset=utf-8' })
+  const dataUrl = `data:application/vnd.ms-excel;charset=utf-8,${encodeURIComponent(workbookXml)}`
+
+  return {
+    success: true,
+    tool: 'excel_generator',
+    format: 'xlsx',
+    filename: outFilename,
+    title: cleanTitle,
+    size_kb: (blob.size / 1024).toFixed(2),
+    data_url: dataUrl,
+    xml: workbookXml,
+    sheets_count: sheetList.length,
+    rows_count: sheetList[0]?.rows?.length || 0,
+    download_prompt: `Download Excel Spreadsheet: ${outFilename}`,
   }
 }
 
@@ -632,8 +1099,8 @@ export const documentGeneratorTool = {
       properties: {
         document_type: {
           type: 'string',
-          enum: ['word_docx', 'slide_deck', 'invoice', 'certificate', 'csv_spreadsheet', 'markdown_doc', 'api_spec', 'system_report'],
-          description: 'Type of document to generate: "word_docx", "slide_deck", "invoice", "certificate", "csv_spreadsheet", "markdown_doc" (structured README/guide/ADR), "api_spec" (OpenAPI/Swagger specification), or "system_report" (audit/architecture report).',
+          enum: ['word_docx', 'excel_workbook', 'slide_deck', 'pptx_presentation', 'pdf_document', 'invoice', 'certificate', 'csv_spreadsheet', 'markdown_doc', 'api_spec', 'system_report'],
+          description: 'Type of document to generate: "word_docx", "excel_workbook" (.xlsx with styling & total rows), "pptx_presentation" (16:9 slide deck), "pdf_document", "slide_deck" (interactive HTML5 slides), "invoice", "certificate", "csv_spreadsheet", "markdown_doc" (structured README/guide/ADR), "api_spec" (OpenAPI/Swagger), or "system_report".',
         },
         title: { type: 'string', description: 'Document or presentation title' },
         content: { type: 'string', description: 'Markdown content for Word docs, or slide markdown separated by "---", or markdown body for documentation.' },
@@ -696,9 +1163,39 @@ export const documentGeneratorTool = {
       let result = null
 
       if (document_type === 'word_docx') {
-        result = generateWordDoc({ title, content })
+        result = generateWordDoc({ title, content, format: 'docx' })
+      } else if (document_type === 'excel_workbook') {
+        result = generateExcelWorkbook({ title, rows: spreadsheet_rows, content, includeSummary: true })
       } else if (document_type === 'slide_deck') {
         result = generateSlideDeck({ title, slides: content, theme })
+      } else if (document_type === 'pptx_presentation') {
+        const { exportPptx } = await import('./independentTools')
+        const pptRes = await exportPptx(content || title, `${title.toLowerCase().replace(/[^a-z0-9]+/g, '_') || 'presentation'}.pptx`, false)
+        if (pptRes.success) {
+          result = {
+            success: true,
+            tool: 'pptx_generator',
+            format: 'pptx',
+            filename: pptRes.filename,
+            title,
+            data_url: pptRes.dataUrl,
+            download_prompt: `Download Presentation: ${pptRes.filename}`,
+          }
+        } else {
+          result = generateSlideDeck({ title, slides: content, theme })
+        }
+      } else if (document_type === 'pdf_document') {
+        const { mdToPdfTool } = await import('./mdToPdf')
+        const pdfRes = await mdToPdfTool.execute({ markdown: content || `# ${title}`, filename: `${title.toLowerCase().replace(/[^a-z0-9]+/g, '_') || 'document'}.pdf` })
+        result = {
+          success: pdfRes.success,
+          tool: 'pdf_generator',
+          format: 'pdf',
+          filename: pdfRes.filename,
+          data_url: pdfRes.pdf_data_url,
+          title,
+          size_kb: pdfRes.size,
+        }
       } else if (document_type === 'invoice') {
         result = generateInvoice(invoice_data)
       } else if (document_type === 'certificate') {

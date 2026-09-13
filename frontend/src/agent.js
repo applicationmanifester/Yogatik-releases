@@ -140,7 +140,17 @@ export function isDocumentQuery(text) {
 
 export function isSpreadsheetQuery(text) {
   if (!text || typeof text !== 'string') return false
-  return /\b(csv|spreadsheet|excel sheet|data table|export to csv|generate spreadsheet)\b/i.test(text.slice(0, 150))
+  return /\b(xlsx|xls|excel|csv|spreadsheet|excel sheet|data table|financial model|budget model|export to csv|generate spreadsheet)\b/i.test(text.slice(0, 150))
+}
+
+export function isPdfQuery(text) {
+  if (!text || typeof text !== 'string') return false
+  return /\b(pdf|generate pdf|create pdf|export to pdf|make a pdf|download as pdf)\b/i.test(text.slice(0, 150))
+}
+
+export function isMarkdownQuery(text) {
+  if (!text || typeof text !== 'string') return false
+  return /\b(markdown|\.md\b|readme|adr|architecture decision record|spec document|specs document|markdown guide|generate md)\b/i.test(text.slice(0, 150))
 }
 
 export function isSocialQuery(text) {
@@ -792,8 +802,23 @@ export async function runAgent({
       `# Slide 4: ... (Provide at least 6-8 structured slides with deep analytical content)\n\n` +
       `At the end of your answer, include this direct download link:\n` +
       `[Download Presentation (.pptx)](presentation.pptx)\n`
+  } else if (isPdfQuery(userMessage)) {
+    messages[0].content += `\n\n[CRITICAL PDF PUBLICATION INSTRUCTION]:\n` +
+      `The user requested a publication-grade PDF document.\n` +
+      `Format your output with executive typography and strict A4 page-break discipline:\n` +
+      `# [Publication Document Title]\n` +
+      `*Author: Yogatik Executive Suite · Published: ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} · Classification: Confidential / Strategic*\n\n` +
+      `> **Executive Summary**: High-density thesis, quantified benchmarks, and target outcomes.\n\n` +
+      `## 1. Context & Problem Framing\n` +
+      `Detailed industry analysis with operational metrics.\n\n` +
+      `## 2. Comparative Matrix\n` +
+      `Provide a neatly aligned Markdown comparison table with at least 4 columns and clear data points.\n\n` +
+      `## 3. Strategic Recommendations & Timeline\n` +
+      `Numbered implementation phases with clear ownership and KPIs.\n\n` +
+      `At the end of your answer, include these direct download links:\n` +
+      `[Download PDF (.pdf)](document.pdf) · [Download Word Document (.docx)](document.docx)\n`
   } else if (isDocumentQuery(userMessage)) {
-    messages[0].content += `\n\n[CRITICAL EXECUTIVE DOCUMENT INSTRUCTION]:\n` +
+    messages[0].content += `\n\n[CRITICAL EXECUTIVE WORD DOCUMENT INSTRUCTION]:\n` +
       `The user requested a formal Word Document / Whitepaper / Executive Report.\n` +
       `Structure the report with McKinsey/Bain-level quality:\n` +
       `# [Executive Report Title]\n` +
@@ -807,13 +832,25 @@ export async function runAgent({
       `## 4. Risk Assessment & Mitigations\n` +
       `Actionable mitigation table.\n\n` +
       `At the end of your answer, include these direct download links:\n` +
-      `[Download Word Document (.doc)](document.doc) · [Download PDF (.pdf)](document.pdf)\n`
+      `[Download Word Document (.docx)](document.docx) · [Download PDF (.pdf)](document.pdf)\n`
   } else if (isSpreadsheetQuery(userMessage)) {
-    messages[0].content += `\n\n[CRITICAL SPREADSHEET / CSV INSTRUCTION]:\n` +
-      `The user requested a structured Spreadsheet / CSV data table.\n` +
-      `Provide a comprehensive multi-column Markdown table with at least 5 columns and 8+ realistic data rows, including headers, formatted numbers, and a Summary/Total calculation row at the bottom.\n\n` +
+    messages[0].content += `\n\n[CRITICAL SPREADSHEET / EXCEL INSTRUCTION]:\n` +
+      `The user requested a structured Excel Workbook / Spreadsheet data model.\n` +
+      `Provide a comprehensive multi-column Markdown table with at least 5 columns and 8+ realistic data rows.\n` +
+      `Include explicit headers, formatted numbers (e.g. currency $ or percentages %), and an accounting **Total** or Summary row at the bottom.\n\n` +
+      `At the end of your answer, include these direct download links:\n` +
+      `[Download Excel Workbook (.xlsx)](spreadsheet.xlsx) · [Download CSV (.csv)](spreadsheet.csv)\n`
+  } else if (isMarkdownQuery(userMessage)) {
+    messages[0].content += `\n\n[CRITICAL MARKDOWN DOCUMENT INSTRUCTION]:\n` +
+      `The user requested a standardized, clean Markdown (.md) document / specification.\n` +
+      `Structure the output following strict GitHub-Flavored Markdown best practices:\n` +
+      `1. Include a YAML frontmatter header block with title, date, author, and version.\n` +
+      `2. Include a Table of Contents (TOC) with linked anchor headers.\n` +
+      `3. Use standard GitHub alert callouts (> [!NOTE], > [!IMPORTANT], > [!TIP]) where relevant.\n` +
+      `4. Include well-formatted Markdown tables with explicit column alignment colons.\n` +
+      `5. Provide fenced code blocks with language identifiers.\n\n` +
       `At the end of your answer, include this direct download link:\n` +
-      `[Download CSV Spreadsheet (.csv)](spreadsheet.csv)\n`
+      `[Download Markdown (.md)](document.md)\n`
   }
 
   // Every distinct tool call made this turn, keyed by name + arguments, so an

@@ -77,25 +77,60 @@ export function mdToHtml(md) {
 }
 
 const PRINT_CSS = `
+  @page {
+    size: A4 portrait;
+    margin: 18mm 16mm 20mm 16mm;
+  }
   * { box-sizing: border-box; }
-  body { font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1e293b; font-size: 11.5pt; line-height: 1.6; }
-  h1 { font-size: 22pt; color: #0f172a; border-bottom: 2px solid #38bdf8; padding-bottom: 6px; margin: 0 0 .5em; }
-  h2 { font-size: 16pt; color: #1e3a8a; margin: 1.2em 0 .3em; border-bottom: 1px solid #e2e8f0; padding-bottom: .2em; page-break-after: avoid; }
-  h3 { font-size: 13.5pt; color: #0284c7; margin: 1em 0 .3em; page-break-after: avoid; }
-  h4 { font-size: 12pt; color: #334155; }
-  p { margin: .5em 0; } ul, ol { margin: .5em 0 .5em 1.4em; } li { margin: .25em 0; }
-  figure { page-break-inside: avoid; }
-  img { max-width: 100%; height: auto; }
-  code { font-family: 'SFMono-Regular', Consolas, Monaco, monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 90%; color: #0f172a; }
-  pre { background: #0f172a; color: #f8fafc; padding: 12px 16px; border-radius: 8px; overflow: auto; page-break-inside: avoid; font-size: 9.5pt; }
+  body {
+    font-family: 'Calibri', 'Segoe UI', Inter, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    color: #1e293b;
+    font-size: 11pt;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+  }
+  .doc-header-banner {
+    border-bottom: 2px solid #0f172a;
+    padding-bottom: 12px;
+    margin-bottom: 22px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .doc-header-title {
+    font-size: 20pt;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0;
+  }
+  .doc-header-meta {
+    font-size: 8.5pt;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  h1 { font-size: 20pt; color: #0f172a; border-bottom: 2px solid #2563eb; padding-bottom: 6px; margin: 20px 0 10px; page-break-after: avoid; }
+  h2 { font-size: 15pt; color: #1e3a8a; margin: 18px 0 8px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; page-break-after: avoid; }
+  h3 { font-size: 12.5pt; color: #0284c7; margin: 14px 0 6px; page-break-after: avoid; }
+  h4 { font-size: 11pt; color: #334155; margin: 10px 0 4px; page-break-after: avoid; }
+  p { margin: 0 0 9pt; }
+  ul, ol { margin: 0 0 10pt 22pt; }
+  li { margin-bottom: 3.5pt; }
+  figure { page-break-inside: avoid; margin: 14px 0; }
+  img { max-width: 100%; height: auto; border-radius: 6px; }
+  code { font-family: 'SFMono-Regular', Consolas, Monaco, monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 88%; color: #0f172a; }
+  pre { background: #0f172a; color: #f8fafc; padding: 12px 16px; border-radius: 8px; overflow: auto; page-break-inside: avoid; font-size: 9pt; line-height: 1.45; }
   pre code { background: none; color: inherit; padding: 0; }
-  table { border-collapse: collapse; width: 100%; margin: 1em 0; page-break-inside: avoid; font-size: 90%; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; page-break-inside: avoid; font-size: 9.5pt; }
   th, td { border: 1px solid #cbd5e1; padding: 7px 11px; text-align: left; }
-  th { background: #1e293b; color: #ffffff; font-weight: bold; }
+  th { background: #0f172a; color: #ffffff; font-weight: bold; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.5px; }
   tr:nth-child(even) { background: #f8fafc; }
-  blockquote { border-left: 4px solid #38bdf8; background: #f0f9ff; margin: .8em 0; padding: .4em .8em .4em 14px; color: #0369a1; page-break-inside: avoid; }
-  hr { border: none; border-top: 1px solid #e2e8f0; margin: 1.2em 0; }
-  a { color: #0284c7; text-decoration: none; } h1, h2, h3 { page-break-after: avoid; }
+  blockquote { border-left: 4px solid #2563eb; background: #eff6ff; margin: 10pt 0; padding: 8pt 14pt; color: #1e40af; page-break-inside: avoid; font-style: italic; border-radius: 0 6px 6px 0; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 18px 0; }
+  a { color: #0284c7; text-decoration: none; }
+  .doc-footer { margin-top: 30px; padding-top: 10px; border-top: 1px solid #e2e8f0; font-size: 8.5pt; color: #94a3b8; display: flex; justify-content: space-between; }
 `
 
 export const mdToPdfTool = {

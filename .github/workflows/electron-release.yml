@@ -122,23 +122,24 @@ jobs:
       # repo need an authenticated account — a public download link cannot work
       # against it. The mirror holds binaries only, so the source stays private
       # while downloads stay free and unmetered.
-      #
-      # Requires a secret RELEASE_TOKEN: a fine-grained PAT with Contents:
-      # read-write on applicationmanifester/Yogatik-releases. The built-in
-      # GITHUB_TOKEN cannot write to another repository.
+      - name: Extract release tag version
+        id: release-version
+        shell: bash
+        run: |
+          ver=$(node -p "require('./frontend/package.json').version")
+          echo "pkg_tag=v${ver}" >> $GITHUB_OUTPUT
+
+      # All three runners publish into the SAME release on the PUBLIC MIRROR
+      # repo. When running directly on the public mirror (applicationmanifester/Yogatik-releases)
+      # or when RELEASE_TOKEN is provided, publish assets automatically into the release.
       - name: Publish to public mirror Release
-        if: env.RELEASE_TOKEN != ''
+        if: env.RELEASE_TOKEN != '' || github.repository == 'applicationmanifester/Yogatik-releases'
         uses: softprops/action-gh-release@v2
         with:
           repository: applicationmanifester/Yogatik-releases
-          token: ${{ secrets.RELEASE_TOKEN }}
-          # A tag push uses its own tag. A MANUAL run has no tag context, so it
-          # used to fall back to 'desktop-latest' — which creates a SECOND
-          # release that takes over releases/latest and orphans the assets
-          # already published under the real version. The optional `tag` input
-          # lets a manual run publish into an existing release instead.
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'desktop-latest' }}
-          name: 'Yogatik Desktop ${{ github.ref_type == ''tag'' && github.ref_name || inputs.tag || ''(latest)'' }}'
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || steps.release-version.outputs.pkg_tag }}
+          name: 'Yogatik ${{ github.ref_type == ''tag'' && github.ref_name || inputs.tag || steps.release-version.outputs.pkg_tag }}'
           body: |
             Desktop builds for Windows, macOS and Linux — download under Assets.
 
@@ -162,10 +163,10 @@ jobs:
             frontend/release-electron/*.blockmap
             frontend/release-electron/latest*.yml
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Warn when the mirror token is missing
-        if: env.RELEASE_TOKEN == ''
+        if: env.RELEASE_TOKEN == '' && github.repository != 'applicationmanifester/Yogatik-releases'
         run: |
           echo "::warning::RELEASE_TOKEN is not set, so nothing was published."
           echo "Binaries are still attached to this run as artefacts."
