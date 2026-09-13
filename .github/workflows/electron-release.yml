@@ -134,7 +134,7 @@ jobs:
       # or when RELEASE_TOKEN is provided, publish assets automatically into the release.
       - name: Publish to public mirror Release
         if: env.RELEASE_TOKEN != '' || github.repository == 'applicationmanifester/Yogatik-releases'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           repository: applicationmanifester/Yogatik-releases
           token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
