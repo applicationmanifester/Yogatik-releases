@@ -1,12 +1,16 @@
 import React, { useState, useMemo } from 'react'
-import { Eye, Code as CodeIcon, X, Download, Copy, Check, ExternalLink, Sparkles, CheckCheck } from 'lucide-react'
-import { htmlToSvgDataUrl } from '../tools/visualVerify'
+import {
+  Eye, Code as CodeIcon, X, Download, Copy, Check, ExternalLink, Sparkles, CheckCheck,
+  Monitor, Tablet, Smartphone, RefreshCw,
+} from 'lucide-react'
 
 export function ArtifactPanel({ artifact, onClose }) {
   const [activeTab, setActiveTab] = useState('preview')
   const [copied, setCopied] = useState(false)
   const [showVerify, setShowVerify] = useState(false)
   const [verifyCopied, setVerifyCopied] = useState(false)
+  const [viewportMode, setViewportMode] = useState('desktop') // 'desktop' | 'tablet' | 'mobile'
+  const [reloadKey, setReloadKey] = useState(0)
 
   const code = artifact?.code
   const language = artifact?.language
@@ -26,10 +30,10 @@ export function ArtifactPanel({ artifact, onClose }) {
       charCount,
       hasStyles,
       elementCount,
-      estimatedViewport: '800 x 600 px',
+      estimatedViewport: viewportMode === 'mobile' ? '375 x 667 px' : viewportMode === 'tablet' ? '768 x 1024 px' : '100% responsive',
       status: elementCount > 0 || lineCount > 1 ? 'Valid Structure' : 'Minimal Content',
     }
-  }, [code, language])
+  }, [code, language, viewportMode])
 
   if (!artifact) return null
 
@@ -43,7 +47,7 @@ export function ArtifactPanel({ artifact, onClose }) {
 
   const handleDownload = () => {
     const extMap = { html: 'html', svg: 'svg', javascript: 'js', python: 'py', css: 'css', json: 'json' }
-    const ext = extMap[language.toLowerCase()] || 'txt'
+    const ext = extMap[(language || '').toLowerCase()] || 'txt'
     const blob = new Blob([code], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -65,14 +69,38 @@ export function ArtifactPanel({ artifact, onClose }) {
 
   const renderPreview = () => {
     const lang = (language || '').toLowerCase()
+    const iframeWidth = viewportMode === 'mobile' ? '375px' : viewportMode === 'tablet' ? '768px' : '100%'
+
     if (lang === 'html' || lang === 'svg' || lang === 'xml') {
       return (
-        <iframe
-          title="HTML Artifact Preview"
-          srcDoc={code}
-          sandbox="allow-scripts allow-modals allow-forms"
-          className="artifact-iframe"
-        />
+        <div style={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'stretch',
+          background: viewportMode === 'desktop' ? 'transparent' : 'rgba(0,0,0,0.3)',
+          overflow: 'auto',
+          padding: viewportMode === 'desktop' ? '0' : '16px 0',
+        }}>
+          <iframe
+            key={reloadKey}
+            title="HTML Artifact Preview"
+            srcDoc={code}
+            sandbox="allow-scripts allow-modals allow-forms"
+            className="artifact-iframe"
+            style={{
+              width: iframeWidth,
+              maxWidth: '100%',
+              height: '100%',
+              border: viewportMode === 'desktop' ? 'none' : '1px solid rgba(255,255,255,0.15)',
+              borderRadius: viewportMode === 'desktop' ? '0' : '8px',
+              boxShadow: viewportMode === 'desktop' ? 'none' : '0 10px 25px rgba(0,0,0,0.5)',
+              background: '#ffffff',
+              transition: 'width 0.2s ease',
+            }}
+          />
+        </div>
       )
     }
     return (
@@ -91,6 +119,45 @@ export function ArtifactPanel({ artifact, onClose }) {
           <span className="artifact-lang-tag">{language}</span>
         </div>
         <div className="artifact-actions">
+          {activeTab === 'preview' && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', background: 'rgba(255,255,255,0.06)', borderRadius: '6px', padding: '2px', marginRight: '6px' }}>
+              <button
+                className={`artifact-btn ${viewportMode === 'desktop' ? 'active' : ''}`}
+                onClick={() => setViewportMode('desktop')}
+                title="Desktop View (100%)"
+                aria-label="Desktop viewport"
+                style={viewportMode === 'desktop' ? { background: 'rgba(255,255,255,0.15)', color: '#60a5fa' } : undefined}
+              >
+                <Monitor size={13} />
+              </button>
+              <button
+                className={`artifact-btn ${viewportMode === 'tablet' ? 'active' : ''}`}
+                onClick={() => setViewportMode('tablet')}
+                title="Tablet View (768px)"
+                aria-label="Tablet viewport"
+                style={viewportMode === 'tablet' ? { background: 'rgba(255,255,255,0.15)', color: '#60a5fa' } : undefined}
+              >
+                <Tablet size={13} />
+              </button>
+              <button
+                className={`artifact-btn ${viewportMode === 'mobile' ? 'active' : ''}`}
+                onClick={() => setViewportMode('mobile')}
+                title="Mobile View (375px)"
+                aria-label="Mobile viewport"
+                style={viewportMode === 'mobile' ? { background: 'rgba(255,255,255,0.15)', color: '#60a5fa' } : undefined}
+              >
+                <Smartphone size={13} />
+              </button>
+              <button
+                className="artifact-btn"
+                onClick={() => setReloadKey(k => k + 1)}
+                title="Reload Preview"
+                aria-label="Reload preview"
+              >
+                <RefreshCw size={12} />
+              </button>
+            </div>
+          )}
           <button
             className={`artifact-btn ${showVerify ? 'active' : ''}`}
             onClick={() => setShowVerify(v => !v)}

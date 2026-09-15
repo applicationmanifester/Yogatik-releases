@@ -1,5 +1,29 @@
 # Changelog
 
+## v8.3.0 — Sovereign AI Workstation (2026-09-16)
+
+### ⚡ Sovereign Multi-Agent Swarms & Self-Healing Loop
+- **Hierarchical Swarm Coordinator** — Introduced `agentSwarm.js` and `agent_swarm` tool for multi-agent DAG task decomposition across Planner, Coder, Critic, and QA Tester roles.
+- **Shared Working Memory** — Integrated high-speed shared blackboard (`AgentBlackboard`) for facts, discoveries, and code snippets across subagents without duplicate token consumption.
+- **Automated Self-Healing Loop** — Automatic retry and self-healing intercepting task and validation failures with targeted contextual diagnosis before surfacing errors.
+
+### 🛡️ Cryptographic Action Journal & Time-Machine Rollback
+- **Merkle Hash Chaining** — Created `actionJournal.js` and `action_journal` tool providing verifiable SHA-256 chained audit trails for all modifying file and shell operations.
+- **Time-Machine Rollback** — Single-click session rollback restoring files and states in reverse chronological order to pre-modification snapshots.
+- **Compliance Audit Exports** — Exportable SOC2 and HIPAA ready audit logs formatted in structured JSON and Markdown tables.
+
+### 👁️ Ambient Screen Intelligence & Proactive Action Chips
+- **Optical Screen Diffing** — Integrated Hamming distance perceptual hash thresholding (`screenHashDiffers`) detecting substantive screen changes while filtering anti-aliasing variations.
+- **Proactive 1-Click Action Chips** — Silent, contextual quick-actions (`[Fix Detected Error]`, `[Run Test Suite]`, `[Audit Contract Risks]`, `[Summarize Key Takeaways]`) surfaced with an idle guard and 45-second cooldown.
+
+### 🎨 Interactive Artifact Studio Canvas & Auto-Skills
+- **Multi-Device Viewport Switcher** — Real-time toggle between Desktop (100%), Tablet (768px), and Mobile (375px) in `ArtifactPanel.jsx` with live preview reload.
+- **Auto-Skill Distillation** — Enhanced `autoSkills.js` to automatically distill multi-turn successful sessions into spec-compliant `SKILL.md` documents with YAML frontmatter.
+
+### 🛠 Infrastructure
+- **Version bump** — 8.2.0 → 8.3.0
+- **Automated verification** — 250 test files, 2,700 passed unit tests with 100% pass rate.
+
 ## v8.2.0 — Streamlined Core (2026-09-12)
 
 ### 🎯 Focused First-Impression & Streamlined Onboarding

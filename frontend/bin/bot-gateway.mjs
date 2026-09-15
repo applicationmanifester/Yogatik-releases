@@ -407,7 +407,7 @@ export function createBotServer(engine, port = 8787) {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       return res.end(JSON.stringify({
         status: 'ok',
-        version: '8.2.0',
+        version: '8.3.0',
         activeProvider: engine.activeProvider,
         activeModel: engine.activeModel,
         activeAgent: engine.agent,

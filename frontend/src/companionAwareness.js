@@ -110,3 +110,101 @@ export function isSilentReply(text = '') {
   // Models often wrap the sentinel in politeness despite instructions.
   return /^\W*silent\W*$/i.test(t)
 }
+
+/** Minimum interval between offering silent proactive action chips. */
+export const CHIPS_COOLDOWN_MS = 45000
+
+/**
+ * Optical screen diffing: checks if perceptual hash difference exceeds threshold.
+ * Prevents re-analyzing static screens or subtle font smoothing differences.
+ */
+export function screenHashDiffers(hashA, hashB, threshold = 0.08) {
+  if (!hashA || !hashB) return Boolean(hashA || hashB)
+  if (hashA === hashB) return false
+
+  // Compute normalized Hamming distance between hex string hashes
+  let diffCount = 0
+  const maxLen = Math.max(hashA.length, hashB.length)
+  for (let i = 0; i < maxLen; i++) {
+    if (hashA[i] !== hashB[i]) diffCount++
+  }
+
+  const distance = diffCount / maxLen
+  return distance >= threshold
+}
+
+/**
+ * Decides whether to silently surface non-intrusive action chips without speaking
+ */
+export function shouldOfferChips({
+  screenChanged = false,
+  userIdleMs = 0,
+  lastChipsAt = null,
+  now = Date.now(),
+  cooldownMs = CHIPS_COOLDOWN_MS,
+  minIdleMs = 2500,
+} = {}) {
+  if (!screenChanged) return false
+  if (userIdleMs < minIdleMs) return false
+  if (lastChipsAt && now - lastChipsAt < cooldownMs) return false
+  return true
+}
+
+/**
+ * Generate contextual 1-click action chips based on detected screen/window state
+ */
+export function generateProactiveActionChips(context = {}) {
+  const chips = []
+  const text = String(context.screenText || context.title || '').toLowerCase()
+  const app = String(context.appName || '').toLowerCase()
+
+  // 1. Code debugging & compiler errors
+  if (
+    /typeerror|syntaxerror|referenceerror|fatal|exception|failed with exit code|err!/i.test(text) ||
+    app.includes('code') ||
+    app.includes('terminal')
+  ) {
+    if (/error|failed|exception/i.test(text)) {
+      chips.push({
+        id: 'chip_fix_error',
+        label: 'Fix Detected Error',
+        action: 'diagnose_error',
+        prompt: 'Analyze the error displayed on screen, identify the root cause, and apply the minimal correct fix.',
+        priority: 'high',
+      })
+    }
+    chips.push({
+      id: 'chip_run_tests',
+      label: 'Run Test Suite',
+      action: 'run_tests',
+      prompt: 'Run the project test suite and verify all unit tests pass.',
+      priority: 'medium',
+    })
+  }
+
+  // 2. Legal / contract review
+  if (/agreement|contract|nda|terms|clause|confidentiality/i.test(text)) {
+    chips.push({
+      id: 'chip_summarize_risks',
+      label: 'Audit Contract Risks',
+      action: 'audit_contract',
+      prompt: 'Review this document for unusual indemnities, governing law, and non-standard liabilities.',
+      priority: 'high',
+    })
+  }
+
+  // 3. Web browser research & synthesis
+  if (app.includes('chrome') || app.includes('edge') || app.includes('browser') || app.includes('firefox')) {
+    chips.push({
+      id: 'chip_summarize_page',
+      label: 'Summarize Key Takeaways',
+      action: 'summarize',
+      prompt: 'Provide a 3-bullet executive summary of the content currently on screen.',
+      priority: 'low',
+    })
+  }
+
+  // Always capped at 3 chips to prevent visual clutter
+  return chips.slice(0, 3)
+}
+

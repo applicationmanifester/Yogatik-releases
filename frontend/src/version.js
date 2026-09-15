@@ -3,16 +3,44 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '8.2.0'
+export const APP_VERSION = '8.3.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 8.2.0 — Streamlined Core: First-Impression Focus, Strict CSP & 177 Tools Transparency'
+export const APP_CODENAME = 'Yogatik 8.3.0 — Sovereign AI Workstation: Multi-Agent Swarms, Action Journal & Artifact Studio'
 
 export const APP_RELEASES = [
+  {
+    "version": "8.3.0",
+    "title": "Yogatik 8.3.0: Sovereign AI Workstation — Multi-Agent Swarms, Action Journal & Artifact Studio",
+    "date": "September 16, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Autonomous Multi-Agent Swarms: Hierarchical DAG scheduling with Planner, Coder, Critic, and QA roles plus self-healing retry loops",
+      "Cryptographic Action Journal: Merkle hash-chained audit logging and 1-click time-machine state rollback for all file modifications",
+      "Ambient Screen Intelligence: Optical diffing via Hamming distance perceptual hashing and silent proactive action chips",
+      "Auto-Skill Synthesis: Automatically distills successful multi-turn tool sessions into standard, spec-compliant SKILL.md documents",
+      "Interactive Artifact Studio Canvas: Responsive multi-device viewport switching (Desktop, Tablet, Mobile) with live preview reload"
+    ],
+    "sections": [
+      {
+        "category": "⚡ Sovereign Multi-Agent & Governance",
+        "items": [
+          {
+            "title": "Hierarchical Multi-Agent Swarm Coordinator",
+            "description": "Orchestrates concurrent specialized agents over a shared blackboard with dependency DAG resolution and automated self-healing error recovery."
+          },
+          {
+            "title": "Merkle-Chained Action Journal & Rollback",
+            "description": "Cryptographically verifies every file write, deletion, and shell execution with SHA-256 chaining and enables single-click time-machine rollback."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "8.2.0",
     "title": "Yogatik 8.2.0: Streamlined Core — First-Impression Focus, Strict CSP & 177 Tools Transparency",
     "date": "September 12, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Focused First Impression: Streamlined onboarding centered on 'Choose a provider or run locally' with clear Cloud vs On-Device paths",
       "Above-the-Fold Privacy Transparency: Honest disclosures on local storage, transparent developer CORS proxy, and optional Firebase cloud sync",

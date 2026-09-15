@@ -1,6 +1,6 @@
 {
   "name": "yogatik-monorepo",
-  "version": "8.2.0",
+  "version": "8.3.0",
   "private": true,
   "description": "Yogatik Studio — Standalone Unrestricted AI Agentic Assistant & Desktop Environment. The application lives in frontend/ — see CLAUDE.md.",
   "workspaces": [

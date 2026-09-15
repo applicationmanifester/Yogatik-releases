@@ -388,3 +388,42 @@ export async function setAutoSkillLearning(enabled) {
 export async function getAutoSkillLearning() {
   return (await getSetting('auto_skill_learning', true)) === true
 }
+
+/**
+ * Distill an auto-generated skill into the standard Agent Skill Specification (SKILL.md)
+ */
+export function distillWorkflowToSkillMarkdown(skillCandidate) {
+  if (!skillCandidate) return ''
+
+  const name = (skillCandidate.name || 'custom-skill')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+
+  const description = skillCandidate.description || 'Auto-generated skill from successful session'
+  const tools = Array.isArray(skillCandidate.tools) ? skillCandidate.tools.join(', ') : 'none'
+  const starters = (skillCandidate.starters || []).map(s => `- \`${s}\``).join('\n')
+
+  return [
+    '---',
+    `name: ${name}`,
+    `description: "${description}"`,
+    `tools: [${tools}]`,
+    `confidence: ${skillCandidate.confidence ?? 1.0}`,
+    `created_at: ${skillCandidate.createdAt || new Date().toISOString()}`,
+    '---',
+    '',
+    `# ${skillCandidate.name || 'Custom Skill'}`,
+    '',
+    description,
+    '',
+    '## System Instructions',
+    '',
+    skillCandidate.system || 'Execute the workflow following established tool patterns.',
+    '',
+    '## Recommended Starters',
+    '',
+    starters || '- `Execute workflow`',
+    '',
+  ].join('\n')
+}

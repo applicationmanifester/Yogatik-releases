@@ -110,6 +110,8 @@ import { socialSearchTool } from './socialSearch'
 import { jobSearchTool } from './jobSearch'
 import { socialPostTool } from './socialPost'
 import { autoSkillsTool } from './autoSkills'
+import { actionJournalTool } from './actionJournalTool'
+import { agentSwarmTool } from './agentSwarmTool'
 import { subAgentRunnerTool } from './subAgentRunner'
 import { documentGeneratorTool } from './docGenerator'
 import { crewOrchestratorTool } from './crewRunner'
@@ -413,6 +415,10 @@ const ALL_TOOLS = {
   alarm: timerTool,
   // Auto-Skill Generator
   auto_skills: autoSkillsTool,
+  // Cryptographic Action Journal & Time-Machine Rollback
+  action_journal: actionJournalTool,
+  // Sovereign Autonomous Multi-Agent Swarm with Self-Healing
+  agent_swarm: agentSwarmTool,
   // Sub-Agent Runner (isolated processes + Python RPC)
   sub_agent_runner: subAgentRunnerTool,
   // Multi-agent delegation: hand focused sub-tasks to specialist sub-agents.
@@ -573,6 +579,14 @@ export const TOOL_ALIASES = {
   state_graph: 'langgraph_flow',
   agent_graph: 'langgraph_flow',
   multi_agent_flow: 'langgraph_flow',
+  // Agent Swarm & Action Journal aliases
+  swarm: 'agent_swarm',
+  multi_agent_swarm: 'agent_swarm',
+  swarm_orchestrator: 'agent_swarm',
+  action_journal_rollback: 'action_journal',
+  time_machine: 'action_journal',
+  time_machine_rollback: 'action_journal',
+  merkle_audit: 'action_journal',
   // Semantica aliases
   record_decision: 'semantica_record_decision',
   trace_decision: 'semantica_trace_causal_chain',

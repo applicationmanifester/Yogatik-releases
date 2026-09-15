@@ -369,38 +369,3 @@ export function validatePath(inputPath: string, safeRoot?: string): string {
 
   return resolvedInput
 }
-
-// ---- Browser Rate Limiter (for browserBridge.ts) ----
-// Simple token bucket for browser operations
-const browserRateLimitBuckets = new Map<string, { tokens: number; lastRefill: number }>()
-
-export const browserRateLimiter = {
-  tryConsume(key: string, maxTokens = 10, refillRate = 2): boolean {
-    const now = Date.now()
-    let bucket = browserRateLimitBuckets.get(key)
-
-    if (!bucket) {
-      bucket = { tokens: maxTokens, lastRefill: now }
-      browserRateLimitBuckets.set(key, bucket)
-    }
-
-    const elapsedSeconds = (now - bucket.lastRefill) / 1000
-    bucket.tokens = Math.min(maxTokens, bucket.tokens + elapsedSeconds * refillRate)
-    bucket.lastRefill = now
-
-    if (bucket.tokens >= 1) {
-      bucket.tokens -= 1
-      return true
-    }
-
-    return false
-  },
-
-  resetBucket(key: string): void {
-    browserRateLimitBuckets.delete(key)
-  },
-
-  resetAllBuckets(): void {
-    browserRateLimitBuckets.clear()
-  }
-}

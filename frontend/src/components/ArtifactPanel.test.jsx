@@ -43,4 +43,23 @@ describe('ArtifactPanel Component', () => {
     fireEvent.click(copyReportBtn)
     expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining('Artifact Layout Report'))
   })
+
+  it('supports responsive viewport switching between desktop, tablet, and mobile', () => {
+    render(<ArtifactPanel artifact={sampleArtifact} onClose={vi.fn()} />)
+
+    const tabletBtn = screen.getByLabelText('Tablet viewport')
+    const mobileBtn = screen.getByLabelText('Mobile viewport')
+    const desktopBtn = screen.getByLabelText('Desktop viewport')
+    const reloadBtn = screen.getByLabelText('Reload preview')
+
+    expect(tabletBtn).toBeDefined()
+    expect(mobileBtn).toBeDefined()
+    expect(desktopBtn).toBeDefined()
+    expect(reloadBtn).toBeDefined()
+
+    fireEvent.click(mobileBtn)
+    fireEvent.click(tabletBtn)
+    fireEvent.click(desktopBtn)
+    fireEvent.click(reloadBtn)
+  })
 })
