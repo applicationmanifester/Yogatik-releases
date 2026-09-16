@@ -1,5 +1,21 @@
 # Changelog
 
+## v8.4.0 — High-Resilience Agent Suite (2026-09-17)
+
+### 🛠️ High-Resilience Developer & Agent Tools
+- **Unlimited JS Execution** — Integrated `desktop:eval-js` direct Electron Node VM runner completely bypassing Windows cmd.exe 8,191-character command line limits and shell escaping. Supports large scripts, data transformations, and algorithms.
+- **Fuzzy-Tolerant Filesystem Matching** — Re-engineered `applyEdit` and `findFuzzyLineMatches` in `fsCore.cjs` with multi-pass tolerance for quotes (`'` vs `"` vs backticks), blank lines, indentation, and trailing semicolons/commas, with actionable closest-match line numbers on mismatch.
+- **Pre-Flight Syntax Validation (`code_validate`)** — Added dedicated `codeValidate.js` tool providing instant in-memory AST and structural checking for JS, JSX, TS, TSX, JSON, HTML, CSS, and Markdown. Catches delimiter mismatches, unclosed JSX tags, and invalid JSON with exact line/column indicators.
+- **Self-Correction Reflection Engine** — Refined `toolReflection.js` to accurately diagnose `fs_edit` mismatches and guide models to inspect lines via `fs_read` or patch via `fs_patch`.
+
+### ⚡ Uncapped Autonomy & Live Telemetry
+- **Uncapped Turn Autonomy** — Removed hidden tool round limits (`Infinity` rounds) in `agent.js` enabling deep, multi-phase autonomous execution loops.
+- **Reflex Prefetch Monitor** — Added live Reflex Prefetch card in `DiagnosticsModal.jsx` and real-time metrics tracking in `live/metrics.js` measuring cache hit rates and prefetch latency gains.
+
+### 🛠 Infrastructure
+- **Version bump** — 8.3.0 → 8.4.0
+- **Automated verification** — All Vitest test suites, build guards, and Electron FS bridge tests passing with 100% success rate.
+
 ## v8.3.0 — Sovereign AI Workstation (2026-09-16)
 
 ### ⚡ Sovereign Multi-Agent Swarms & Self-Healing Loop

@@ -64,6 +64,7 @@ import { visualVerifyTool } from './visualVerify'
 import { askUserTool, setUserQuestionHandler } from './askUser'
 import { fsPatchTool } from './fsPatch'
 import { codeOutlineTool } from './codeOutline'
+import { codeValidateTool } from './codeValidate'
 import { fsOutlineTool, fsSmartReadTool } from './fsSmartRead'
 import { fsSkimTool } from './fsSkim'
 import { pushAmbientSignal, popAmbientSignal } from './http'
@@ -359,6 +360,7 @@ const ALL_TOOLS = {
   fs_multi_replace: fsMultiReplaceTool,
   fs_patch: fsPatchTool,
   code_outline: codeOutlineTool,
+  code_validate: codeValidateTool,
   fs_outline: fsOutlineTool,
   fs_smart_read: fsSmartReadTool,
   fs_skim: fsSkimTool,
@@ -877,6 +879,10 @@ export const TOOL_ALIASES = {
   calc: 'calculator',
   math: 'calculator',
   format_code: 'code_format',
+  validate_code: 'code_validate',
+  check_syntax: 'code_validate',
+  syntax_check: 'code_validate',
+  code_lint: 'code_validate',
   text_to_speech: 'tts',
   speak: 'tts',
   read_aloud: 'tts',
@@ -1233,9 +1239,13 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   if (/\b(code|python|javascript|script|function|program|bug|error|diff|regex|terminal|run)\b/i.test(text)) {
     scores['code_execute'] = 200
     scores['js_execute'] = 180
+    scores['code_validate'] = 170
     scores['code_format'] = 150
     scores['diff'] = 140
     scores['terminal_run'] = 120
+  }
+  if (/\b(syntax|validate|check syntax|lint|bracket|tag|unclosed|malformed)\b/i.test(text)) {
+    scores['code_validate'] = 250
   }
   if (/\b(diagram|flowchart|lifecycle|mindmap|sequence diagram|architecture|er diagram|class diagram|process flow|schema)\b/i.test(text)) {
     scores['diagram'] = 250

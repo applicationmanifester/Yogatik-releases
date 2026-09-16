@@ -51,20 +51,55 @@ export const jsExecTool = {
   async execute({ code, timeout_ms = 5000 }) {
     if (!code?.trim()) return { success: false, error: 'No code provided' }
 
-    // In Desktop Electron, run directly through Node CLI for 100% unrestricted JS execution (0 CSP issues)
+    // In Desktop Electron, prioritize direct VM eval or safe script runner (0 command-line length limit)
     if (isDesktop()) {
       try {
+        const desktopBridge = typeof window !== 'undefined' ? window.__YOGATIK_DESKTOP__ : null
+        if (desktopBridge?.evalJs) {
+          const res = await desktopBridge.evalJs(code, timeout_ms)
+          if (res.success) {
+            return {
+              success: true,
+              tool: 'js_execute',
+              result: res.result,
+              output: res.output || (typeof res.result === 'string' ? res.result : JSON.stringify(res.result)),
+              logs: res.logs || [],
+            }
+          }
+          return {
+            success: false,
+            tool: 'js_execute',
+            error: res.error || 'Execution failed',
+            logs: res.logs || [],
+          }
+        }
+
+        // Fallback: execute via Node terminal runner with temp file if code is large, avoiding cmd.exe length limit
         const wrapped = `(async () => {\n${code}\n})().then(v => { if (v !== undefined) console.log(typeof v === 'object' ? JSON.stringify(v, null, 2) : v); }).catch(e => { console.error(e && e.stack || e); process.exit(1); })`
-        const base64Code = typeof globalThis.Buffer !== 'undefined'
-          ? globalThis.Buffer.from(wrapped, 'utf8').toString('base64')
-          : btoa(unescape(encodeURIComponent(wrapped)))
-        const res = await terminalRunTool.execute({ command: `node -e "eval(Buffer.from('${base64Code}','base64').toString('utf8'))"`, timeout_ms })
-        if (res.exit_code === 0 || res.exitCode === 0) {
+        
+        let res
+        if (wrapped.length > 500) {
+          const { fsWriteTool, fsDeleteTool } = await import('./localFs')
+          const tmpFile = `.tmp_exec_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.cjs`
+          try {
+            await fsWriteTool.execute({ path: tmpFile, content: wrapped })
+            res = await terminalRunTool.execute({ command: `node "${tmpFile}"`, timeout_ms })
+          } finally {
+            try { await fsDeleteTool.execute({ path: tmpFile }) } catch { /* best effort */ }
+          }
+        } else {
+          const base64Code = typeof globalThis.Buffer !== 'undefined'
+            ? globalThis.Buffer.from(wrapped, 'utf8').toString('base64')
+            : btoa(unescape(encodeURIComponent(wrapped)))
+          res = await terminalRunTool.execute({ command: `node -e "eval(Buffer.from('${base64Code}','base64').toString('utf8'))"`, timeout_ms })
+        }
+
+        if (res?.exit_code === 0 || res?.exitCode === 0) {
           const out = (res.stdout || res.output || '').trim()
           return { success: true, tool: 'js_execute', result: out, output: out, logs: out ? out.split('\n') : [] }
         }
-        const err = (res.stderr || res.stdout || res.error || '').trim()
-        return { success: false, tool: 'js_execute', error: err || `Node process exited with code ${res.exitCode ?? 1}`, logs: err ? err.split('\n') : [] }
+        const err = (res?.stderr || res?.stdout || res?.error || '').trim()
+        return { success: false, tool: 'js_execute', error: err || `Node process exited with code ${res?.exitCode ?? 1}`, logs: err ? err.split('\n') : [] }
       } catch (err) {
         return { success: false, tool: 'js_execute', error: String(err && err.message || err) }
       }

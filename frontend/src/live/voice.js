@@ -58,6 +58,7 @@ export function createSpeaker({
   onStart = () => {},
   onEnd = () => {},
   onEngine = () => {},
+  onLevel = () => {},
   // Injected in tests.
   synth = synthesize,
   preload = loadNarrator,
@@ -116,22 +117,50 @@ export function createSpeaker({
     return audioCtx
   }
 
-  const began = () => { if (!speaking) { speaking = true; onStart() } }
+  const activeUtterances = new Set()
+  let pulseTimer = null
+
+  const began = () => {
+    if (!speaking) {
+      speaking = true
+      onStart()
+      if (!pulseTimer) {
+        pulseTimer = setInterval(() => {
+          if (!speaking) { clearInterval(pulseTimer); pulseTimer = null; return }
+          onLevel(0.35 + Math.random() * 0.35)
+        }, 80)
+      }
+    }
+  }
+
   function speakSystem(text) {
     return new Promise((resolve) => {
       const u = new SpeechSynthesisUtterance(text)
       u.lang = lang
       u.rate = rate
       const hint = SYSTEM_HINT[voice]
-      if (hint) {
+      if (hint && typeof speechSynthesis !== 'undefined' && speechSynthesis.getVoices) {
         const v = speechSynthesis.getVoices()
           .find(x => hint.test(`${x.name} ${x.lang}`) && x.lang.startsWith(lang.slice(0, 2)))
         if (v) u.voice = v
       }
+      activeUtterances.add(u)
+      const cleanup = () => {
+        activeUtterances.delete(u)
+        resolve()
+      }
       u.onstart = began
-      u.onend = resolve
-      u.onerror = resolve
-      speechSynthesis.speak(u)
+      u.onend = cleanup
+      u.onerror = cleanup
+
+      if (typeof speechSynthesis !== 'undefined') {
+        try {
+          if (speechSynthesis.paused) speechSynthesis.resume()
+        } catch {}
+        speechSynthesis.speak(u)
+      } else {
+        resolve()
+      }
     })
   }
 
@@ -181,6 +210,8 @@ export function createSpeaker({
             } finally {
               if (!cancelled && queue.length === 0 && speaking) {
                 speaking = false
+                if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null }
+                onLevel(0)
                 onEnd()
               }
             }
@@ -193,6 +224,8 @@ export function createSpeaker({
     /** Barge-in: stop mid-word and drop everything still queued. */
     cancel() {
       cancelled = true
+      if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null }
+      activeUtterances.clear()
       try { speechSynthesis.cancel() } catch { /* not started */ }
       try { current?.stop() } catch { /* already finished */ }
       current = null
@@ -204,6 +237,8 @@ export function createSpeaker({
 
     close() {
       cancelled = true
+      if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null }
+      activeUtterances.clear()
       try { speechSynthesis.cancel() } catch { /* not started */ }
       try { current?.stop() } catch { /* already finished */ }
       audioCtx?.close().catch(() => {})

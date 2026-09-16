@@ -21,25 +21,60 @@ const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX'
 
 export const SAMPLE_RATE = 24000
 
-/** A useful spread rather than all 28 — the model picks from these. */
-export const VOICES = {
+/** A useful spread rather than all 28 — the model picks from these. */export const VOICES = {
   af_heart: 'Warm American female (default)',
   af_nova: 'Bright American female',
+  af_sky: 'Sky — calm, female',
+  af_bella: 'Bella — lively, female',
+  af_sarah: 'Sarah — warm, female',
+  af_alloy: 'Alloy — warm',
+  af_aoede: 'Aoede — expressive',
+  af_jessica: 'Jessica — clear',
+  af_kore: 'Kore — balanced',
+  af_nicole: 'Nicole — warm',
+  af_river: 'River — calm',
   am_michael: 'Steady American male',
   am_puck: 'Lively American male',
+  am_adam: 'Adam — steady, male',
+  am_ryan: 'Ryan — friendly, male',
+  am_echo: 'Echo — steady',
+  am_fenrir: 'Fenrir — lively',
+  am_liam: 'Liam — friendly',
+  am_onyx: 'Onyx — deep',
+  am_santa: 'Santa — cheerful',
   bf_emma: 'British female',
+  bf_lily: 'Lily — British, female',
   bm_george: 'British male',
+  bm_lewis: 'Lewis — British, male',
 }
 
-/** Short labels for the settings picker. */
-export const VOICE_LABELS = {
+/** Short labels for the settings picker. */export const VOICE_LABELS = {
   af_heart: 'Heart — warm, female',
   af_nova: 'Nova — bright, female',
-  bf_emma: 'Emma — British, female',
+  af_sky: 'Sky — calm, female',
+  af_bella: 'Bella — lively, female',
+  af_sarah: 'Sarah — warm, female',
+  af_alloy: 'Alloy — warm',
+  af_aoede: 'Aoede — expressive',
+  af_jessica: 'Jessica — clear',
+  af_kore: 'Kore — balanced',
+  af_nicole: 'Nicole — warm',
+  af_river: 'River — calm',
   am_michael: 'Michael — calm, male',
   am_puck: 'Puck — lively, male',
+  am_adam: 'Adam — steady, male',
+  am_ryan: 'Ryan — friendly, male',
+  am_echo: 'Echo — steady',
+  am_fenrir: 'Fenrir — lively',
+  am_liam: 'Liam — friendly',
+  am_onyx: 'Onyx — deep',
+  am_santa: 'Santa — cheerful',
+  bf_emma: 'Emma — British, female',
+  bf_lily: 'Lily — British, female',
   bm_george: 'George — British, male',
+  bm_lewis: 'Lewis — British, male',
 }
+
 export const DEFAULT_VOICE = 'af_heart'
 
 let tts = null
@@ -61,8 +96,7 @@ export function isNarratorReady() { return !!tts }
 
 export { webgpuDevice }
 
-/** Download + compile. ~90MB on first call, then served from browser cache. */
-export async function loadNarrator(onProgress) {
+/** Download + compile. ~90MB on first call, then served from browser cache. */export async function loadNarrator(onProgress) {
   if (tts) return tts
   if (loading) return loading
 
@@ -92,8 +126,7 @@ export async function loadNarrator(onProgress) {
 
 export function unloadNarrator() { tts = null }
 
-/** Pre-warm the neural narrator in the background during idle time. */
-export function prewarmNarrator() {
+/** Pre-warm the neural narrator in the background during idle time. */export function prewarmNarrator() {
   if (!tts && !loading && narratorCached()) {
     loadNarrator().catch(() => {})
   }
@@ -123,12 +156,12 @@ export async function synthesize(text, { voice = DEFAULT_VOICE, speed = 1, onPro
  */
 export function cleanForSpeech(text) {
   return String(text ?? '')
-    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/```[\\s\\S]*?```/g, ' ')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/https?:\/\/\S+/g, ' ')
     .replace(/[*_`#>|]/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/\\s+/g, ' ')
     .trim()
 }
 

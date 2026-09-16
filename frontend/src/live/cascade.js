@@ -389,11 +389,63 @@ export function createCascadeSession({
   let spokenAloud = ''   // rolling record of what the speakers emitted (echo guard)
   let firstChunk = true
 
+  let micMonitorStream = null
+  let micAudioCtx = null
+  let micAnalyser = null
+  let micLevelTimer = null
+
+  async function startMicMonitor() {
+    if (micMonitorStream || closed || typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return
+    try {
+      micMonitorStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const AC = window.AudioContext || window.webkitAudioContext
+      if (!AC) return
+      micAudioCtx = new AC()
+      const src = micAudioCtx.createMediaStreamSource(micMonitorStream)
+      micAnalyser = micAudioCtx.createAnalyser()
+      micAnalyser.fftSize = 256
+      src.connect(micAnalyser)
+      const data = new Uint8Array(micAnalyser.frequencyBinCount)
+
+      micLevelTimer = setInterval(() => {
+        if (closed || muted || !micAnalyser || speaking) {
+          if (!speaking && !muted) emit({ type: 'level', who: 'user', value: 0 })
+          return
+        }
+        micAnalyser.getByteFrequencyData(data)
+        let sum = 0
+        for (let i = 0; i < data.length; i++) sum += data[i]
+        const avg = sum / (data.length * 255)
+        if (avg > 0.02) {
+          emit({ type: 'level', who: 'user', value: Math.min(1, avg * 3.2) })
+        } else {
+          emit({ type: 'level', who: 'user', value: 0 })
+        }
+      }, 75)
+    } catch {
+      // Audio capture permission prompt dismissed or unavailable
+    }
+  }
+
+  function stopMicMonitor() {
+    if (micLevelTimer) { clearInterval(micLevelTimer); micLevelTimer = null }
+    try {
+      micMonitorStream?.getTracks()?.forEach(t => t.stop())
+    } catch {}
+    micMonitorStream = null
+    try {
+      micAudioCtx?.close()?.catch(() => {})
+    } catch {}
+    micAudioCtx = null
+    micAnalyser = null
+  }
+
   const speaker = createSpeaker({
     engine: voiceEngine, voice, lang, rate,
     onStart: () => { speaking = true; emit({ type: 'speaking', value: true }) },
-    onEnd: () => { speaking = false; speechEndedAt = Date.now(); emit({ type: 'speaking', value: false }) },
+    onEnd: () => { speaking = false; speechEndedAt = Date.now(); emit({ type: 'speaking', value: false }); emit({ type: 'level', who: 'assistant', value: 0 }) },
     onEngine: (e) => emit({ type: 'voice', engine: e }),
+    onLevel: (l) => emit({ type: 'level', who: 'assistant', value: l }),
   })
 
   const speak = (text) => {
@@ -1221,6 +1273,7 @@ export function createCascadeSession({
         clearTimeout(sppsTimer)
         sppsTimer = null
         pendingInterim = ''
+        emit({ type: 'level', who: 'user', value: 0 })
         // Drop the final if the endpoint timer already sent this.
         if (Date.now() - committedAt < COMMIT_ECHO_MS && sameUtterance(text, committed)) return
 
@@ -1241,6 +1294,10 @@ export function createCascadeSession({
       if (interim.trim()) {
         pendingInterim = interim.trim()
         clearEndpoint()
+        if (!muted && !speaking) {
+          emit({ type: 'level', who: 'user', value: Math.min(0.85, 0.35 + interim.length * 0.02) })
+          emit({ type: 'transcript', role: 'user', text: interim.trim() })
+        }
 
         const q = pendingInterim.trim()
 
@@ -1290,6 +1347,16 @@ export function createCascadeSession({
       }
     }
 
+    recog.onaudiostart = () => {
+      if (!muted && !speaking) emit({ type: 'level', who: 'user', value: 0.25 })
+    }
+    recog.onspeechstart = () => {
+      if (!muted && !speaking) emit({ type: 'level', who: 'user', value: 0.5 })
+    }
+    recog.onspeechend = () => {
+      if (!muted && !speaking) emit({ type: 'level', who: 'user', value: 0 })
+    }
+
     recog.onerror = (e) => {
       clearEndpoint()
       const verdict = classifySpeechError(e.error, networkFails)
@@ -1306,7 +1373,8 @@ export function createCascadeSession({
       }
       if (e.error === 'network' || e.error === 'service-not-available') networkFails++
       restartDelay = Math.min(restartDelay ? restartDelay * 2 : 500, 8000)
-      emit({ type: 'status', message: `Reconnecting speech recognition (${e.error})…` })
+      const reconnectMsg = `Reconnecting speech recognition (${e.error})…`
+      emit({ type: 'status', text: reconnectMsg, message: reconnectMsg })
     }
 
     // Recognition stops itself constantly (silence, tab focus). Restart it, or
@@ -1354,6 +1422,7 @@ export function createCascadeSession({
       }
     }
     startRecognition()
+    startMicMonitor()
     document.addEventListener('visibilitychange', onVisibility)
     emit({ type: 'ready' })
   }
@@ -1422,6 +1491,7 @@ export function createCascadeSession({
     // leaking those keeps the OS mic indicator lit after the call ends.
     try { localRecognizer?.stop() } catch { /* already stopped */ }
     localRecognizer = null
+    stopMicMonitor()
     speaker.close()
     abort?.abort()
     clearSharedVisualSource(cam)
@@ -1504,7 +1574,16 @@ export function createCascadeSession({
     },
     setProvider: (newProvider, newApiKey, newModel, newModelCanSee) => {
       if (newProvider) active.provider = newProvider
-      if (newApiKey !== undefined) active.apiKey = newApiKey
+      if (newApiKey !== undefined && newApiKey !== '') {
+        active.apiKey = newApiKey
+      } else if (newProvider && (!active.apiKey || active.provider !== newProvider)) {
+        try {
+          if (typeof localStorage !== 'undefined') {
+            const lsKey = localStorage.getItem(`apikey_${newProvider}`)
+            if (lsKey) active.apiKey = lsKey
+          }
+        } catch {}
+      }
       if (newModel) active.model = newModel
       if (typeof newModelCanSee === 'boolean') active.modelCanSee = newModelCanSee
       emit({ type: 'provider', provider: active.provider, model: active.model })

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { getErrorLog, clearErrorLog, getDiagnosticsReport, diagnoseError } from '../errorLog'
 import { latencyReport } from '../telemetry'
-import { report as liveReport } from '../live/metrics'
+import { report as liveReport, getReflexStats } from '../live/metrics'
 import { runSafetyScreenEval, runAndRecordEval } from '../evalHarness'
 import { db, getAgentTraces } from '../db'
 
@@ -50,6 +50,7 @@ export function DiagnosticsModal({ onClose, embedded = false }) {
   // Live had no instrumentation at all, so every decision about that module
   // was a guess. These are the six numbers from the roadmap and nothing else.
   const live = useMemo(() => liveReport(), [logs])
+  const reflex = useMemo(() => live?.reflex || getReflexStats(), [live, logs])
   const latTarget = perf.total.p95 != null && perf.total.p95 < 2000
 
   useEffect(() => {
@@ -264,6 +265,23 @@ export function DiagnosticsModal({ onClose, embedded = false }) {
                 ) : (
                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>running…</div>
                 )}
+              </div>
+              <div style={{ flex: '1 1 160px', background: 'var(--bg-tertiary, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: 8, padding: '8px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  <Zap size={13} style={{ color: '#10b981' }} /> <strong style={{ color: 'var(--text-primary)' }}>Reflex Prefetch</strong>
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)' }}>
+                    {reflex?.triggered ? `${reflex.triggered} run${reflex.triggered === 1 ? '' : 's'}` : 'speculative'}
+                  </span>
+                </div>
+                <div style={{ color: 'var(--text-secondary)' }}>
+                  Hit rate: <strong style={{ color: (reflex?.hitRate || 0) >= 0.5 ? '#10b981' : reflex?.triggered ? '#f59e0b' : 'var(--text-primary)' }}>
+                    {Math.round((reflex?.hitRate || 0) * 100)}%
+                  </strong> ({reflex?.hits || 0} hits / {reflex?.misses || 0} misses)
+                </div>
+                <div style={{ color: 'var(--text-secondary)' }}>
+                  Avg saved: <strong style={{ color: (reflex?.avgSavedMs || 0) > 0 ? '#10b981' : 'var(--text-primary)' }}>{reflex?.avgSavedMs ? `${reflex.avgSavedMs}ms` : '—'}</strong>
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>unit · calc · weather · tz · translate</div>
               </div>
             </div>
 

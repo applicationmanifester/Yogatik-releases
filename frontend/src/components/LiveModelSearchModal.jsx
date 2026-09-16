@@ -47,7 +47,9 @@ export function LiveModelSearchModal({
       const isReady = checkProviderReady(provId)
 
       for (const m of models) {
-        const lowerM = m.toLowerCase()
+        const rawM = typeof m === 'string' ? m : (m?.id || m?.name || String(m || ''))
+        if (!rawM) continue
+        const lowerM = rawM.toLowerCase()
         const isVision = lowerM.includes('vision') || lowerM.includes('vl') || lowerM.includes('flash') || lowerM.includes('omni') || lowerM.includes('4o') || lowerM.includes('gemini')
         const isReasoning = lowerM.includes('r1') || lowerM.includes('reason') || lowerM.includes('thinking') || lowerM.includes('qwq') || lowerM.includes('nemotron')
         const isFast = lowerM.includes('fast') || lowerM.includes('flash') || lowerM.includes('turbo') || lowerM.includes('mini') || lowerM.includes('instant') || provId === 'groq'
@@ -55,8 +57,8 @@ export function LiveModelSearchModal({
         list.push({
           provider: provId,
           providerName: provName,
-          model: m,
-          displayName: m.split('/').pop(),
+          model: rawM,
+          displayName: rawM.split('/').pop(),
           isAvailable,
           isReady,
           isVision,
@@ -68,24 +70,29 @@ export function LiveModelSearchModal({
     return list
   }, [allProviders, checkProviderReady])
 
-  // Filtered list based on search query and provider tab
+  // Filtered list based on search query and provider tab (multi-term matching)
   const filteredModels = useMemo(() => {
     const q = query.trim().toLowerCase()
+    const terms = q.split(/\s+/).filter(Boolean)
     return allModelItems.filter(item => {
       if (selectedProviderFilter === 'fast') {
         if (!item.isFast) return false
       } else if (selectedProviderFilter !== 'all' && item.provider !== selectedProviderFilter) {
         return false
       }
-      if (!q) return true
-      return (
-        item.model.toLowerCase().includes(q) ||
-        item.displayName.toLowerCase().includes(q) ||
-        item.providerName.toLowerCase().includes(q) ||
-        item.provider.toLowerCase().includes(q) ||
-        (item.isVision && 'vision camera image'.includes(q)) ||
-        (item.isReasoning && 'thinking reasoning math deep'.includes(q)) ||
-        (item.isFast && 'fast lightning quick speed'.includes(q))
+      if (terms.length === 0) return true
+      const mLow = item.model.toLowerCase()
+      const dLow = item.displayName.toLowerCase()
+      const pLow = item.provider.toLowerCase()
+      const pnLow = item.providerName.toLowerCase()
+      return terms.every(term =>
+        mLow.includes(term) ||
+        dLow.includes(term) ||
+        pLow.includes(term) ||
+        pnLow.includes(term) ||
+        (item.isVision && ('vision'.includes(term) || 'camera'.includes(term) || 'image'.includes(term))) ||
+        (item.isReasoning && ('reasoning'.includes(term) || 'thinking'.includes(term) || 'r1'.includes(term) || 'deep'.includes(term))) ||
+        (item.isFast && ('fast'.includes(term) || 'lightning'.includes(term) || 'quick'.includes(term) || 'speed'.includes(term) || 'flash'.includes(term)))
       )
     })
   }, [allModelItems, query, selectedProviderFilter])
@@ -135,7 +142,7 @@ export function LiveModelSearchModal({
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
         zIndex: 9999,
@@ -143,7 +150,7 @@ export function LiveModelSearchModal({
         alignItems: 'center',
         justifyContent: 'center',
         padding: '16px',
-        animation: 'liveFadeIn 0.15s ease-out',
+        animation: 'fadeIn 0.15s ease-out',
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
@@ -155,16 +162,16 @@ export function LiveModelSearchModal({
           width: '100%',
           maxWidth: '560px',
           maxHeight: '82vh',
-          backgroundColor: 'var(--live-modal-bg, rgba(20,24,34,.96))',
+          backgroundColor: 'var(--live-modal-bg, #ffffff)',
           backdropFilter: 'blur(24px)',
           WebkitBackdropFilter: 'blur(24px)',
-          border: '1px solid var(--live-modal-border, rgba(255, 255, 255, 0.15))',
+          border: '1px solid var(--live-modal-border, rgba(148, 163, 184, 0.25))',
           borderRadius: '18px',
-          boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.3), 0 0 20px rgba(56, 189, 248, 0.1)',
+          boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.25), 0 0 20px rgba(56, 189, 248, 0.12)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          color: 'var(--live-text, #f8fafc)',
+          color: 'var(--live-text, #0f172a)',
           fontFamily: 'inherit',
         }}
       >
@@ -172,16 +179,17 @@ export function LiveModelSearchModal({
         <div
           style={{
             padding: '16px 20px 12px',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            borderBottom: '1px solid var(--live-modal-border, rgba(148, 163, 184, 0.18))',
             display: 'flex',
             flexDirection: 'column',
             gap: '12px',
+            background: 'var(--live-modal-header, rgba(0, 0, 0, 0.02))',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Sparkles size={18} style={{ color: '#38bdf8' }} />
-              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, letterSpacing: '-0.01em' }}>
+              <Sparkles size={18} style={{ color: '#0ea5e9' }} />
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--live-text, #0f172a)' }}>
                 Search & Switch AI Model
               </h3>
             </div>
@@ -189,9 +197,9 @@ export function LiveModelSearchModal({
               type="button"
               onClick={onClose}
               style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: 'none',
-                color: '#94a3b8',
+                background: 'var(--live-btn-bg, rgba(0, 0, 0, 0.05))',
+                border: '1px solid var(--live-btn-border, rgba(0, 0, 0, 0.08))',
+                color: 'var(--live-text-dim, #64748b)',
                 borderRadius: '50%',
                 width: '28px',
                 height: '28px',
@@ -212,13 +220,13 @@ export function LiveModelSearchModal({
               position: 'relative',
               display: 'flex',
               alignItems: 'center',
-              background: 'rgba(255, 255, 255, 0.06)',
+              background: 'var(--live-vm-input-bg, rgba(0, 0, 0, 0.04))',
               borderRadius: '12px',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
+              border: '1px solid var(--live-vm-input-border, rgba(148, 163, 184, 0.28))',
               padding: '0 12px',
             }}
           >
-            <Search size={16} style={{ color: '#94a3b8', marginRight: '8px', flexShrink: 0 }} />
+            <Search size={16} style={{ color: 'var(--live-text-faint, #94a3b8)', marginRight: '8px', flexShrink: 0 }} />
             <input
               ref={inputRef}
               type="text"
@@ -233,7 +241,7 @@ export function LiveModelSearchModal({
                 background: 'transparent',
                 border: 'none',
                 outline: 'none',
-                color: '#fff',
+                color: 'var(--live-text, #0f172a)',
                 fontSize: '13px',
                 padding: '10px 0',
                 fontFamily: 'inherit',
@@ -249,7 +257,7 @@ export function LiveModelSearchModal({
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#94a3b8',
+                  color: 'var(--live-text-dim, #64748b)',
                   cursor: 'pointer',
                   padding: '4px',
                   display: 'flex',
@@ -278,13 +286,13 @@ export function LiveModelSearchModal({
                 setFocusedIdx(0)
               }}
               style={{
-                background: selectedProviderFilter === 'all' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.05)',
-                color: selectedProviderFilter === 'all' ? '#38bdf8' : '#94a3b8',
-                border: selectedProviderFilter === 'all' ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid rgba(255,255,255,0.08)',
+                background: selectedProviderFilter === 'all' ? 'rgba(14, 165, 233, 0.16)' : 'var(--live-btn-bg, rgba(0,0,0,0.04))',
+                color: selectedProviderFilter === 'all' ? 'var(--live-text-accent-info, #0284c7)' : 'var(--live-text-dim, #475569)',
+                border: selectedProviderFilter === 'all' ? '1px solid rgba(14, 165, 233, 0.55)' : '1px solid var(--live-btn-border, rgba(0,0,0,0.08))',
                 borderRadius: '8px',
-                padding: '3px 10px',
+                padding: '4px 10px',
                 fontSize: '11px',
-                fontWeight: 500,
+                fontWeight: 600,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 transition: 'all 0.15s ease',
@@ -299,11 +307,11 @@ export function LiveModelSearchModal({
                 setFocusedIdx(0)
               }}
               style={{
-                background: selectedProviderFilter === 'fast' ? 'rgba(34, 197, 94, 0.25)' : 'rgba(34, 197, 94, 0.1)',
-                color: selectedProviderFilter === 'fast' ? '#4ade80' : '#86efac',
-                border: selectedProviderFilter === 'fast' ? '1px solid rgba(74, 222, 128, 0.6)' : '1px solid rgba(74, 222, 128, 0.25)',
+                background: selectedProviderFilter === 'fast' ? 'rgba(34, 197, 94, 0.18)' : 'var(--live-btn-bg, rgba(0,0,0,0.04))',
+                color: selectedProviderFilter === 'fast' ? 'var(--live-text-accent-success, #15803d)' : 'var(--live-text-dim, #475569)',
+                border: selectedProviderFilter === 'fast' ? '1px solid rgba(34, 197, 94, 0.55)' : '1px solid var(--live-btn-border, rgba(0,0,0,0.08))',
                 borderRadius: '8px',
-                padding: '3px 10px',
+                padding: '4px 10px',
                 fontSize: '11px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -314,7 +322,7 @@ export function LiveModelSearchModal({
                 gap: '4px',
               }}
             >
-              <Zap size={11} style={{ color: '#4ade80' }} />
+              <Zap size={11} style={{ color: '#16a34a' }} />
               Fast for Live ({allModelItems.filter(m => m.isFast).length})
             </button>
             {providerList.map(p => {
@@ -331,11 +339,11 @@ export function LiveModelSearchModal({
                     setFocusedIdx(0)
                   }}
                   style={{
-                    background: isSelected ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.05)',
-                    color: isSelected ? '#38bdf8' : '#94a3b8',
-                    border: isSelected ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid rgba(255,255,255,0.08)',
+                    background: isSelected ? 'rgba(14, 165, 233, 0.16)' : 'var(--live-btn-bg, rgba(0,0,0,0.04))',
+                    color: isSelected ? 'var(--live-text-accent-info, #0284c7)' : 'var(--live-text-dim, #475569)',
+                    border: isSelected ? '1px solid rgba(14, 165, 233, 0.55)' : '1px solid var(--live-btn-border, rgba(0,0,0,0.08))',
                     borderRadius: '8px',
-                    padding: '3px 10px',
+                    padding: '4px 10px',
                     fontSize: '11px',
                     fontWeight: 500,
                     cursor: 'pointer',
@@ -352,7 +360,7 @@ export function LiveModelSearchModal({
                       width: '6px',
                       height: '6px',
                       borderRadius: '50%',
-                      backgroundColor: isReady ? '#22c55e' : 'rgba(148, 163, 184, 0.35)',
+                      backgroundColor: isReady ? '#22c55e' : 'rgba(148, 163, 184, 0.45)',
                       boxShadow: isReady ? '0 0 6px #22c55e' : 'none',
                       display: 'inline-block',
                       flexShrink: 0,
@@ -379,9 +387,9 @@ export function LiveModelSearchModal({
           }}
         >
           {filteredModels.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '36px 16px', color: '#64748b' }}>
-              <p style={{ margin: '0 0 6px', fontSize: '13px' }}>No models matching &ldquo;{query}&rdquo;</p>
-              <span style={{ fontSize: '11px' }}>Try searching by provider name or clear filters</span>
+            <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--live-text-dim, #64748b)' }}>
+              <p style={{ margin: '0 0 6px', fontSize: '13px', fontWeight: 500 }}>No models matching &ldquo;{query}&rdquo;</p>
+              <span style={{ fontSize: '11px' }}>Try searching by provider name, model tag, or clear filters</span>
             </div>
           ) : (
             filteredModels.map((item, idx) => {
@@ -404,14 +412,14 @@ export function LiveModelSearchModal({
                     padding: '8px 12px',
                     borderRadius: '10px',
                     background: isActive
-                      ? 'rgba(16, 185, 129, 0.15)'
+                      ? 'rgba(16, 185, 129, 0.12)'
                       : isFocused
-                      ? 'rgba(255, 255, 255, 0.08)'
+                      ? 'var(--live-btn-hover, rgba(0, 0, 0, 0.05))'
                       : 'transparent',
                     border: isActive
-                      ? '1px solid rgba(16, 185, 129, 0.35)'
+                      ? '1px solid rgba(16, 185, 129, 0.45)'
                       : isFocused
-                      ? '1px solid rgba(255, 255, 255, 0.12)'
+                      ? '1px solid var(--live-btn-border, rgba(0, 0, 0, 0.12))'
                       : '1px solid transparent',
                     cursor: 'pointer',
                     transition: 'background 0.1s ease, border 0.1s ease',
@@ -423,12 +431,12 @@ export function LiveModelSearchModal({
                         width: '24px',
                         height: '24px',
                         borderRadius: '6px',
-                        background: isActive ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.06)',
+                        background: isActive ? 'rgba(16, 185, 129, 0.22)' : 'var(--live-btn-bg, rgba(0, 0, 0, 0.05))',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         flexShrink: 0,
-                        color: isActive ? '#34d399' : '#94a3b8',
+                        color: isActive ? '#059669' : 'var(--live-text-faint, #94a3b8)',
                       }}
                     >
                       {isActive ? <Check size={14} /> : <ChevronRight size={13} />}
@@ -440,7 +448,7 @@ export function LiveModelSearchModal({
                           style={{
                             fontSize: '13px',
                             fontWeight: isActive ? 600 : 500,
-                            color: isActive ? '#6ee7b7' : '#f1f5f9',
+                            color: isActive ? 'var(--live-text-accent-success, #059669)' : 'var(--live-text, #0f172a)',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -455,7 +463,7 @@ export function LiveModelSearchModal({
                               padding: '1px 5px',
                               borderRadius: '4px',
                               background: '#10b981',
-                              color: '#022c22',
+                              color: '#ffffff',
                               fontWeight: 700,
                               textTransform: 'uppercase',
                             }}
@@ -463,19 +471,35 @@ export function LiveModelSearchModal({
                             Active
                           </span>
                         )}
+                        {!item.isReady && (
+                          <span
+                            style={{
+                              fontSize: '9px',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              background: 'rgba(239, 68, 68, 0.12)',
+                              color: '#dc2626',
+                              border: '1px solid rgba(239, 68, 68, 0.25)',
+                              fontWeight: 600,
+                            }}
+                            title="Needs API key in Settings"
+                          >
+                            Needs Key
+                          </span>
+                        )}
                       </div>
-                      <span style={{ fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--live-text-dim, #64748b)', display: 'flex', alignItems: 'center', gap: '5px' }}>
                         <span
                           style={{
                             width: '6px',
                             height: '6px',
                             borderRadius: '50%',
-                            backgroundColor: item.isReady ? '#22c55e' : 'rgba(148, 163, 184, 0.35)',
+                            backgroundColor: item.isReady ? '#22c55e' : 'rgba(148, 163, 184, 0.45)',
                             boxShadow: item.isReady ? '0 0 6px #22c55e' : 'none',
                             display: 'inline-block',
                             flexShrink: 0,
                           }}
-                          title={item.isReady ? 'API Key updated & ready' : 'Needs API Key'}
+                          title={item.isReady ? 'API Key configured & ready' : 'Needs API Key'}
                         />
                         {item.providerName}
                       </span>
@@ -494,9 +518,10 @@ export function LiveModelSearchModal({
                           fontSize: '10px',
                           padding: '2px 6px',
                           borderRadius: '6px',
-                          background: 'rgba(56, 189, 248, 0.12)',
-                          color: '#38bdf8',
-                          border: '1px solid rgba(56, 189, 248, 0.25)',
+                          background: 'rgba(14, 165, 233, 0.12)',
+                          color: 'var(--live-text-accent-info, #0284c7)',
+                          border: '1px solid rgba(14, 165, 233, 0.25)',
+                          fontWeight: 500,
                         }}
                       >
                         <Eye size={10} /> Vision
@@ -513,8 +538,9 @@ export function LiveModelSearchModal({
                           padding: '2px 6px',
                           borderRadius: '6px',
                           background: 'rgba(168, 85, 247, 0.12)',
-                          color: '#c084fc',
+                          color: '#7e22ce',
                           border: '1px solid rgba(168, 85, 247, 0.25)',
+                          fontWeight: 500,
                         }}
                       >
                         <Brain size={10} /> Reasoning
@@ -531,8 +557,9 @@ export function LiveModelSearchModal({
                           padding: '2px 6px',
                           borderRadius: '6px',
                           background: 'rgba(234, 179, 8, 0.12)',
-                          color: '#facc15',
+                          color: '#a16207',
                           border: '1px solid rgba(234, 179, 8, 0.25)',
+                          fontWeight: 500,
                         }}
                       >
                         <Zap size={10} /> Fast
@@ -549,12 +576,13 @@ export function LiveModelSearchModal({
         <div
           style={{
             padding: '10px 16px',
-            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+            borderTop: '1px solid var(--live-modal-border, rgba(148, 163, 184, 0.18))',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             fontSize: '11px',
-            color: '#64748b',
+            color: 'var(--live-text-dim, #64748b)',
+            background: 'var(--live-modal-header, rgba(0, 0, 0, 0.02))',
           }}
         >
           <span>Use ↑↓ to navigate, Enter to select, Esc to close</span>

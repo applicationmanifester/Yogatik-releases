@@ -1,12 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
-  DASHBOARD_KEYS,
-  DASHBOARD_TITLES,
   dashboardPath,
   dashboardKeyFromPath,
   isValidRoute,
-  LEGACY_SHORTCUTS,
-  STATIC_PAGES,
 } from './dashboardRoutes'
 
 describe('dashboardRoutes', () => {
@@ -18,6 +14,8 @@ describe('dashboardRoutes', () => {
   it('parses valid dashboard paths', () => {
     expect(dashboardKeyFromPath('/app/settings')).toBe('settings')
     expect(dashboardKeyFromPath('/app/providers/')).toBe('providers')
+    expect(dashboardKeyFromPath('#/app/settings')).toBe('settings')
+    expect(dashboardKeyFromPath('#/app/providers/')).toBe('providers')
     expect(dashboardKeyFromPath('/app/unknown-tab')).toBeNull()
     expect(dashboardKeyFromPath('/settings')).toBeNull()
   })
@@ -31,6 +29,10 @@ describe('dashboardRoutes', () => {
     expect(isValidRoute('/guide')).toBe(true)
     expect(isValidRoute('/tools')).toBe(true)
     expect(isValidRoute('/billing')).toBe(true)
+    expect(isValidRoute('/index.html')).toBe(true)
+    expect(isValidRoute('/c:/users/bharg_4mtuttl/appdata/local/programs/yogatik/resources/app.asar/dist-electron/index.html')).toBe(true)
+    expect(isValidRoute('/Applications/Yogatik.app/Contents/Resources/app.asar/dist-electron/index.html')).toBe(true)
+    expect(isValidRoute('c:\\users\\app\\dist-electron\\index.html')).toBe(true)
   })
 
   it('rejects unknown routes', () => {

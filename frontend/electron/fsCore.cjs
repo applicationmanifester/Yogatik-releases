@@ -138,28 +138,51 @@ function replaceAllLiteral(haystack, needle, replacement) {
  * insert the replacement between every character of the file, which is what
  * the old implementation actually did.
  */
+function normalizeQuotes(s) {
+  return String(s || '').replace(/[\u2018\u2019`"]/g, "'")
+}
+
+function normalizePunct(s) {
+  return String(s || '').replace(/[;,]\s*$/, '')
+}
+
+/**
+ * Robust fuzzy line matching:
+ * Pass 1: Trimmed line matching
+ * Pass 2: Internal whitespace normalization (collapses multiple spaces/tabs)
+ * Pass 3: Quote-agnostic matching (' vs " vs `)
+ * Pass 4: Trailing punctuation tolerance (; and ,)
+ * Pass 5: Blank-line-tolerant non-empty line sequence matching
+ */
 function findFuzzyLineMatches(fileLines, oldString) {
-  const oldLines = toLf(oldString).split('\n').map(l => l.trim()).filter(Boolean)
-  if (!oldLines.length) return []
+  const oldRawLines = toLf(oldString).split('\n')
+  const oldTrimmed = oldRawLines.map(l => l.trim())
+  if (!oldTrimmed.filter(Boolean).length) return []
+
   const matches = []
 
-  // Pass 1: Trimmed line matching
-  for (let i = 0; i <= fileLines.length - oldLines.length; i++) {
+  // Helper to record match range { startIdx, lineCount }
+  const addMatch = (startIdx, lineCount) => {
+    if (!matches.some(m => m.startIdx === startIdx)) {
+      matches.push({ startIdx, lineCount })
+    }
+  }
+
+  // Pass 1: Direct trimmed line matching (same line count)
+  for (let i = 0; i <= fileLines.length - oldTrimmed.length; i++) {
     let matched = true
-    for (let j = 0; j < oldLines.length; j++) {
-      if (fileLines[i + j].trim() !== oldLines[j]) {
+    for (let j = 0; j < oldTrimmed.length; j++) {
+      if (fileLines[i + j].trim() !== oldTrimmed[j]) {
         matched = false
         break
       }
     }
-    if (matched) {
-      matches.push(i)
-    }
+    if (matched) addMatch(i, oldTrimmed.length)
   }
   if (matches.length > 0) return matches
 
   // Pass 2: Internal whitespace normalization (collapses multiple spaces/tabs)
-  const normOld = oldLines.map(l => l.replace(/\s+/g, ' ').trim())
+  const normOld = oldTrimmed.map(l => l.replace(/\s+/g, ' ').trim())
   for (let i = 0; i <= fileLines.length - normOld.length; i++) {
     let matched = true
     for (let j = 0; j < normOld.length; j++) {
@@ -168,12 +191,102 @@ function findFuzzyLineMatches(fileLines, oldString) {
         break
       }
     }
-    if (matched) {
-      matches.push(i)
+    if (matched) addMatch(i, normOld.length)
+  }
+  if (matches.length > 0) return matches
+
+  // Pass 3: Quote-agnostic matching (' vs " vs `)
+  const quoteOld = normOld.map(normalizeQuotes)
+  for (let i = 0; i <= fileLines.length - quoteOld.length; i++) {
+    let matched = true
+    for (let j = 0; j < quoteOld.length; j++) {
+      if (normalizeQuotes(fileLines[i + j].replace(/\s+/g, ' ').trim()) !== quoteOld[j]) {
+        matched = false
+        break
+      }
+    }
+    if (matched) addMatch(i, quoteOld.length)
+  }
+  if (matches.length > 0) return matches
+
+  // Pass 4: Trailing punctuation tolerance (; and ,)
+  const punctOld = quoteOld.map(normalizePunct)
+  for (let i = 0; i <= fileLines.length - punctOld.length; i++) {
+    let matched = true
+    for (let j = 0; j < punctOld.length; j++) {
+      const fLine = normalizePunct(normalizeQuotes(fileLines[i + j].replace(/\s+/g, ' ').trim()))
+      if (fLine !== punctOld[j]) {
+        matched = false
+        break
+      }
+    }
+    if (matched) addMatch(i, punctOld.length)
+  }
+  if (matches.length > 0) return matches
+
+  // Pass 5: Blank-line-tolerant matching (compare non-empty lines, preserve file bounds)
+  const nonBlankOld = []
+  for (let j = 0; j < oldTrimmed.length; j++) {
+    if (oldTrimmed[j]) nonBlankOld.push(normalizePunct(normalizeQuotes(normOld[j])))
+  }
+  if (nonBlankOld.length > 0) {
+    const nonBlankFile = []
+    for (let i = 0; i < fileLines.length; i++) {
+      const t = fileLines[i].trim()
+      if (t) {
+        nonBlankFile.push({
+          idx: i,
+          norm: normalizePunct(normalizeQuotes(fileLines[i].replace(/\s+/g, ' ').trim())),
+        })
+      }
+    }
+    for (let i = 0; i <= nonBlankFile.length - nonBlankOld.length; i++) {
+      let matched = true
+      for (let j = 0; j < nonBlankOld.length; j++) {
+        if (nonBlankFile[i + j].norm !== nonBlankOld[j]) {
+          matched = false
+          break
+        }
+      }
+      if (matched) {
+        const startIdx = nonBlankFile[i].idx
+        const endIdx = nonBlankFile[i + nonBlankOld.length - 1].idx
+        addMatch(startIdx, endIdx - startIdx + 1)
+      }
     }
   }
 
   return matches
+}
+
+/**
+ * Finds the closest matching snippet in file lines for actionable error diagnostics.
+ */
+function findClosestSnippet(fileLines, oldString) {
+  const oldTokens = new Set(toLf(oldString).toLowerCase().match(/\b[a-z0-9_$]{3,}\b/g) || [])
+  if (!oldTokens.size || !fileLines.length) return null
+
+  let bestScore = 0
+  let bestIdx = 0
+  const windowSize = Math.max(1, Math.min(toLf(oldString).split('\n').length, 10))
+
+  for (let i = 0; i <= fileLines.length - windowSize; i++) {
+    const slice = fileLines.slice(i, i + windowSize).join(' ').toLowerCase()
+    let score = 0
+    for (const token of oldTokens) {
+      if (slice.includes(token)) score++
+    }
+    if (score > bestScore) {
+      bestScore = score
+      bestIdx = i
+    }
+  }
+
+  if (bestScore > 0) {
+    const excerpt = fileLines.slice(bestIdx, Math.min(fileLines.length, bestIdx + windowSize)).join('\n')
+    return { line: bestIdx + 1, excerpt }
+  }
+  return null
 }
 
 /**
@@ -204,13 +317,12 @@ function applyEdit(text, oldString, newString, replaceAll = false, { startLine =
       // Fuzzy line match fallback inside slice
       const fuzzyMatches = findFuzzyLineMatches(sliceLines, oldString)
       if (fuzzyMatches.length === 1) {
-        const matchLineIdx = fuzzyMatches[0]
-        const oldLinesCount = toLf(oldString).split('\n').map(l => l.trim()).filter(Boolean).length
+        const { startIdx: matchLineIdx, lineCount } = fuzzyMatches[0]
         const replacementLines = toLf(newString ?? '').split('\n')
         const newSlice = [
           ...sliceLines.slice(0, matchLineIdx),
           ...replacementLines,
-          ...sliceLines.slice(matchLineIdx + oldLinesCount),
+          ...sliceLines.slice(matchLineIdx + lineCount),
         ]
         const result = [
           ...allLines.slice(0, startIdx),
@@ -222,7 +334,9 @@ function applyEdit(text, oldString, newString, replaceAll = false, { startLine =
       if (fuzzyMatches.length > 1 && !replaceAll) {
         throw new Error(`old_string is not unique (${fuzzyMatches.length} fuzzy matches) within lines ${startLine || 1} to ${endLine || allLines.length}; add more surrounding context`)
       }
-      throw new Error(`old_string not found within lines ${startLine || 1} to ${endLine || allLines.length}`)
+      const close = findClosestSnippet(sliceLines, oldString)
+      const closeHint = close ? ` Closest match near line ${startIdx + close.line}:\n${close.excerpt}` : ''
+      throw new Error(`old_string not found within lines ${startLine || 1} to ${endLine || allLines.length}.${closeHint}`)
     }
 
     if (count > 1 && !replaceAll) {
@@ -250,20 +364,21 @@ function applyEdit(text, oldString, newString, replaceAll = false, { startLine =
     // Fuzzy line-by-line fallback across entire file
     const fuzzyMatches = findFuzzyLineMatches(allLines, oldString)
     if (fuzzyMatches.length === 1) {
-      const matchLineIdx = fuzzyMatches[0]
-      const oldLinesCount = toLf(oldString).split('\n').map(l => l.trim()).filter(Boolean).length
+      const { startIdx: matchLineIdx, lineCount } = fuzzyMatches[0]
       const replacementLines = toLf(newString ?? '').split('\n')
       const result = [
         ...allLines.slice(0, matchLineIdx),
         ...replacementLines,
-        ...allLines.slice(matchLineIdx + oldLinesCount),
+        ...allLines.slice(matchLineIdx + lineCount),
       ].join('\n')
       return { text: result, replaced: 1 }
     }
     if (fuzzyMatches.length > 1 && !replaceAll) {
       throw new Error(`old_string is not unique (${fuzzyMatches.length} fuzzy whitespace matches); set replace_all or add more surrounding context`)
     }
-    throw new Error('old_string not found in file')
+    const close = findClosestSnippet(allLines, oldString)
+    const closeHint = close ? ` Closest match near line ${close.line}:\n${close.excerpt}` : ''
+    throw new Error(`old_string not found in file.${closeHint}`)
   }
 
   if (count > 1 && !replaceAll) {

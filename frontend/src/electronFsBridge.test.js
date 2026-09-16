@@ -367,3 +367,37 @@ describe('journal housekeeping stays off the boot path', () => {
     fs.rmSync(store, { recursive: true, force: true })
   })
 })
+
+describe('fs_edit resilient fuzzy matching & diagnostics', () => {
+  it('matches across quote differences (single vs double vs backticks)', async () => {
+    const f = path.join(dir, 'quotes.js')
+    fs.writeFileSync(f, 'const greeting = "hello world";\nconst name = "yogatik";\n')
+    await call('fs_edit', {
+      path: 'quotes.js',
+      oldString: "const greeting = 'hello world';",
+      newString: "const greeting = 'hi world';",
+    })
+    expect(fs.readFileSync(f, 'utf8')).toContain("const greeting = 'hi world';")
+  })
+
+  it('matches across blank line variations and trailing semicolons', async () => {
+    const f = path.join(dir, 'blanklines.js')
+    fs.writeFileSync(f, 'function calc() {\n\n  const x = 1;\n  return x\n}\n')
+    await call('fs_edit', {
+      path: 'blanklines.js',
+      oldString: 'function calc() {\n  const x = 1\n  return x;\n}',
+      newString: 'function calc() {\n  return 42;\n}',
+    })
+    expect(fs.readFileSync(f, 'utf8')).toBe('function calc() {\n  return 42;\n}\n')
+  })
+
+  it('provides closest match line and excerpt on edit failure', async () => {
+    const f = path.join(dir, 'miss.js')
+    fs.writeFileSync(f, 'const alpha = 100;\nconst beta = 200;\nconst gamma = 300;\n')
+    await expect(call('fs_edit', {
+      path: 'miss.js',
+      oldString: 'const beta_incorrect = 999;\n',
+      newString: 'const beta = 999;\n',
+    })).rejects.toThrow(/old_string not found in file.*Closest match near line/i)
+  })
+})

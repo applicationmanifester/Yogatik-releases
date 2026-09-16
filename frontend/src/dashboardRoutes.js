@@ -44,10 +44,10 @@ export function dashboardPath(key) {
   return `${DASHBOARD_PATH_PREFIX}/${key}`
 }
 
-/** Parses `/app/<key>` back into a validated key, or null for anything else. */
+/** Parses `/app/<key>` or `#/app/<key>` back into a validated key, or null for anything else. */
 export function dashboardKeyFromPath(pathname) {
   const clean = (pathname || '').toLowerCase().replace(/\/+$/, '')
-  const m = clean.match(/^\/app\/([a-z-]+)$/)
+  const m = clean.match(/^(?:#|\/?#)?\/app\/([a-z-]+)$/) || clean.match(/^\/app\/([a-z-]+)$/)
   return m && DASHBOARD_KEYS.includes(m[1]) ? m[1] : null
 }
 
@@ -65,6 +65,10 @@ export const STATIC_PAGES = [
 export function isValidRoute(pathname) {
   const clean = (pathname || '').toLowerCase().replace(/\/+$/, '')
   if (!clean || clean === '/live') return true
+  // In packaged desktop builds (Electron/Tauri) or static previews loaded via file://,
+  // the pathname is the full path to index.html (e.g. /.../dist-electron/index.html or c:\...\index.html).
+  // Also on web, direct /index.html requests are the root chat route.
+  if (clean === '/index.html' || clean.endsWith('/index.html') || clean.endsWith('\\index.html')) return true
   if (dashboardKeyFromPath(clean)) return true
   if (LEGACY_SHORTCUTS.includes(clean)) return true
   if (STATIC_PAGES.includes(clean)) return true

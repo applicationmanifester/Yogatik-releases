@@ -7,8 +7,8 @@ import { looksVisionCapable } from '../vision/capability'
 // component: a shared constant that lives in a React file drags the whole
 // panel into this chunk for the sake of six strings.
 const GENDER = {
-  female: ['af_heart', 'af_nova', 'bf_emma'],
-  male: ['am_michael', 'am_puck', 'bm_george'],
+  female: ['af_heart', 'af_nova', 'af_alloy', 'af_aoede', 'af_jessica', 'af_kore', 'af_nicole', 'af_river', 'bf_emma', 'bf_lily'],
+  male: ['am_michael', 'am_puck', 'am_echo', 'am_fenrir', 'am_liam', 'am_onyx', 'am_santa', 'bm_george', 'bm_lewis'],
 }
 
 /**

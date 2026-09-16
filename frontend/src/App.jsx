@@ -832,10 +832,16 @@ export default function App() {
       try { window.history.back(); return } catch {}
     }
     try {
-      const url = new URL(window.location.href)
-      url.pathname = '/'
-      url.search = ''
-      window.history.replaceState(null, '', url.pathname + url.hash)
+      if (window.location.protocol === 'file:') {
+        const url = new URL(window.location.href)
+        url.hash = ''
+        window.history.replaceState(null, '', url.pathname + url.search)
+      } else {
+        const url = new URL(window.location.href)
+        url.pathname = '/'
+        url.search = ''
+        window.history.replaceState(null, '', url.pathname + url.hash)
+      }
     } catch {}
   }, [])
 
@@ -862,15 +868,25 @@ export default function App() {
     try { document.title = `${DASHBOARD_TITLES[key] || key} — Yogatik` } catch {}
     if (dashSyncingFromPopRef.current) return // URL already correct; only the state needed syncing
     try {
-      const url = new URL(window.location.href)
-      url.pathname = dashboardPath(key)
-      url.search = ''
-      const target = url.pathname + url.hash
-      if (!wasOpen) {
-        window.history.pushState({ dash: key }, '', target)
-        dashOwnedEntryRef.current = true
+      if (window.location.protocol === 'file:') {
+        const target = `${window.location.pathname}#${dashboardPath(key)}`
+        if (!wasOpen) {
+          window.history.pushState({ dash: key }, '', target)
+          dashOwnedEntryRef.current = true
+        } else {
+          window.history.replaceState({ dash: key }, '', target)
+        }
       } else {
-        window.history.replaceState({ dash: key }, '', target)
+        const url = new URL(window.location.href)
+        url.pathname = dashboardPath(key)
+        url.search = ''
+        const target = url.pathname + url.hash
+        if (!wasOpen) {
+          window.history.pushState({ dash: key }, '', target)
+          dashOwnedEntryRef.current = true
+        } else {
+          window.history.replaceState({ dash: key }, '', target)
+        }
       }
     } catch {}
   }, [])
@@ -888,7 +904,7 @@ export default function App() {
         setNotFoundRoute(raw)
       } else {
         setNotFoundRoute(null)
-        const key = dashboardKeyFromPath(window.location.pathname)
+        const key = dashboardKeyFromPath(window.location.pathname) || dashboardKeyFromPath(window.location.hash)
         dashOwnedEntryRef.current = !!key
         if (key) navigateDashboard(key)
         else closeDashboard()
@@ -1258,9 +1274,13 @@ export default function App() {
       setErrorModalMsg('Live needs a model to talk to.\n\nAdd a key for any provider in Settings, or add a Gemini key for the realtime engine (lowest latency, true interruption). Free Gemini keys: aistudio.google.com/apikey')
       return
     }
-    if (typeof window !== 'undefined' && window.location.pathname !== '/live') {
+    if (typeof window !== 'undefined' && window.location.pathname !== '/live' && window.location.hash !== '#live') {
       try {
-        window.history.pushState({ live: true }, '', '/live')
+        if (window.location.protocol === 'file:') {
+          window.history.pushState({ live: true }, '', `${window.location.pathname}#live`)
+        } else {
+          window.history.pushState({ live: true }, '', '/live')
+        }
       } catch {}
     }
     setLiveConfig({ ...cfg, persona: getSystemPrompt() })
@@ -1406,7 +1426,8 @@ export default function App() {
   useEffect(() => {
     const handlePopState = () => {
       const path = (window.location.pathname || '').toLowerCase().replace(/\/+$/, '')
-      if (path === '/live') {
+      const hash = (window.location.hash || '').toLowerCase()
+      if (path === '/live' || hash === '#live' || hash === '#/live') {
         if (!liveConfig) startLive()
       } else {
         if (liveConfig) setLiveConfig(null)
@@ -1597,6 +1618,7 @@ export default function App() {
     } else {
       setNotFoundRoute(null)
       const tabFromPath = dashboardKeyFromPath(rawPath)
+        || dashboardKeyFromPath(location.hash)
         || (rawPath === '/settings' ? 'settings'
         : rawPath === '/billing' ? 'billing'
         : rawPath === '/agents' ? 'agents'
@@ -4908,7 +4930,13 @@ export default function App() {
                 <button
                   className="hero-btn primary"
                   onClick={() => {
-                    try { window.history.pushState(null, '', '/') } catch {}
+                    try {
+                      if (window.location.protocol === 'file:') {
+                        window.history.pushState(null, '', window.location.pathname)
+                      } else {
+                        window.history.pushState(null, '', '/')
+                      }
+                    } catch {}
                     setNotFoundRoute(null)
                     closeDashboard()
                   }}
@@ -4924,7 +4952,13 @@ export default function App() {
                 >
                   Open Providers &amp; Keys
                 </button>
-                <a className="hero-btn secondary" href="/tools" style={{ textDecoration: 'none' }}>
+                <a
+                  className="hero-btn secondary"
+                  href={typeof window !== 'undefined' && window.location.protocol === 'file:' ? 'https://yogatik.web.app/tools' : '/tools'}
+                  target={typeof window !== 'undefined' && window.location.protocol === 'file:' ? '_blank' : undefined}
+                  rel={typeof window !== 'undefined' && window.location.protocol === 'file:' ? 'noopener noreferrer' : undefined}
+                  style={{ textDecoration: 'none' }}
+                >
                   Browse 177 Tools
                 </a>
               </div>
@@ -5632,62 +5666,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Phase 6: Multimodal Modality Bar */}
-          <div className="modality-bar" role="toolbar" aria-label="Input modalities">
-            <button
-              type="button"
-              className="modality-toggle active"
-              onClick={() => textareaRef.current?.focus()}
-              title="Text chat mode"
-              aria-label="Text chat"
-            >
-              <FileText size={14} />
-            </button>
-            <label
-              className={`modality-toggle ${attachedImage ? 'active' : ''}`}
-              title={attachedImage ? 'Image attached (Vision)' : 'Attach image for Vision'}
-              aria-label="Attach image"
-              style={{ position: 'relative', cursor: 'pointer' }}
-            >
-              <Camera size={14} />
-              {attachedImage && <span className="modality-dot" aria-hidden="true" />}
-              <input type="file" hidden accept="image/*" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) attachImage(f) }} />
-            </label>
-            {recognitionRef.current && (
-              <button
-                type="button"
-                className={`modality-toggle ${listening ? 'active' : ''}`}
-                onClick={toggleVoiceInput}
-                title={listening ? 'Dictation listening' : 'Voice dictation'}
-                aria-label="Voice input"
-                style={{ position: 'relative' }}
-              >
-                <Mic size={14} />
-                {listening && <span className="modality-dot" aria-hidden="true" />}
-              </button>
-            )}
-            <button
-              type="button"
-              className="modality-toggle"
-              onClick={() => { if (!liveConfig) startLive() }}
-              title="Start real-time Live session (voice & vision)"
-              aria-label="Start Live session"
-            >
-              <Radio size={14} />
-            </button>
-            <button
-              type="button"
-              className={`modality-toggle ${(conv?.tools !== undefined ? conv.tools : tools) ? 'active' : ''}`}
-              onClick={() => setToolsEnabled(t => !t)}
-              title={(conv?.tools !== undefined ? conv.tools : tools) ? 'AI Tools active' : 'AI Tools disabled'}
-              aria-label="Toggle AI Tools"
-              style={{ position: 'relative' }}
-            >
-              <Wrench size={14} />
-              {(conv?.tools !== undefined ? conv.tools : tools) && <span className="modality-dot" aria-hidden="true" />}
-            </button>
-          </div>
-
           <div className="input-wrapper" style={{ position: 'relative' }}>
             {showSlashMenu && (
               <React.Suspense fallback={null}>
@@ -5881,8 +5859,10 @@ export default function App() {
             const status = await getVisionStatus(newProvider, newModel).catch(() => ({ cached: false, guessed: false }))
             const visionCapable = status.cached ?? status.guessed
             const key = keyInfo[newProvider]?.key || ''
+            const isGemini = newProvider === 'gemini'
             setLiveConfig(prev => prev ? {
               ...prev,
+              engine: isGemini ? 'gemini' : 'cascade',
               provider: newProvider,
               model: newModel,
               apiKey: key,
@@ -5900,9 +5880,15 @@ export default function App() {
               } : c))
               showToast('🎙️ Live session recap & deliverables saved to chat!')
             }
-            if (typeof window !== 'undefined' && window.location.pathname === '/live') {
+            if (typeof window !== 'undefined' && (window.location.pathname === '/live' || window.location.hash === '#live' || window.location.hash === '#/live')) {
               try {
-                window.history.pushState(null, '', '/')
+                if (window.location.protocol === 'file:') {
+                  const url = new URL(window.location.href)
+                  url.hash = ''
+                  window.history.replaceState(null, '', url.pathname + url.search)
+                } else {
+                  window.history.pushState(null, '', '/')
+                }
               } catch {}
             }
             setLiveConfig(null)

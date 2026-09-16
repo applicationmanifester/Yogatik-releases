@@ -48,8 +48,8 @@ const FIRST_PARTY = [
   /^https:\/\/identitytoolkit\.googleapis\.com\//,
 ]
 
-// Studio docks and interactive browser auth (Grok, Gemini, xAI, Google, X/Twitter).
-// Cookies and credentials must persist across sessions so the user stays logged in.
+// Studio docks and interactive browser auth (Grok, Gemini, xAI, Google, X/Twitter, YouTube, streaming).
+// Cookies and credentials must persist across sessions so the user stays logged in and media streams play.
 const STUDIO_AUTH_PATTERNS = [
   /^https:\/\/(?:[^/]*\.)?grok\.com\//,
   /^https:\/\/(?:[^/]*\.)?x\.ai\//,
@@ -58,6 +58,12 @@ const STUDIO_AUTH_PATTERNS = [
   /^https:\/\/(?:[^/]*\.)?google\.com\//,
   /^https:\/\/(?:[^/]*\.)?googleusercontent\.com\//,
   /^https:\/\/(?:[^/]*\.)?gstatic\.com\//,
+  /^https:\/\/(?:[^/]*\.)?youtube\.com\//,
+  /^https:\/\/(?:[^/]*\.)?googlevideo\.com\//,
+  /^https:\/\/(?:[^/]*\.)?ytimg\.com\//,
+  /^https:\/\/(?:[^/]*\.)?vimeo\.com\//,
+  /^https:\/\/(?:[^/]*\.)?dailymotion\.com\//,
+  /^https:\/\/(?:[^/]*\.)?twitch\.tv\//,
 ]
 
 const ALL_URLS = { urls: ['http://*/*', 'https://*/*'] }
@@ -67,6 +73,23 @@ const isProvider = (url) => PROVIDER_PATTERNS.some(re => re.test(url))
 const isFirstParty = (url) => FIRST_PARTY.some(re => re.test(url))
 const isStudioAuth = (url) => STUDIO_AUTH_PATTERNS.some(re => re.test(url))
 
+/**
+ * Distinguishes user-facing web browsing (Yogatik Browser, media streaming, web apps)
+ * from headless AI tool fetches originating from the file:// app renderer.
+ */
+function isInteractive(details) {
+  const url = details.url || ''
+  // 1. Navigation requests
+  if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame') return true
+  // 2. Video and audio media streaming (YouTube MSE chunks, MP4/WebM, audio)
+  if (details.resourceType === 'media') return true
+  // 3. Known interactive services (YouTube, Grok, Google, X, Vimeo, etc.)
+  if (isStudioAuth(url) || isFirstParty(url)) return true
+  // 4. Any subresource fetch or XHR initiated by a genuine web origin (https:// / http://)
+  if (details.initiator && /^https?:/i.test(details.initiator)) return true
+  return false
+}
+
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
 
@@ -74,12 +97,9 @@ function enableProviderCors() {
   const wr = session.defaultSession.webRequest
 
   wr.onHeadersReceived(ALL_URLS, (details, cb) => {
-    const url = details.url || ''
-    const isNavigation = details.resourceType === 'mainFrame' || details.resourceType === 'subFrame'
-
     // Interactive user browsing in Yogatik Browser and Studio Docks must receive genuine
     // server headers without CORS mutations or stripping of Set-Cookie / Credentials.
-    if (isNavigation || isStudioAuth(url)) {
+    if (isInteractive(details)) {
       cb({ responseHeaders: details.responseHeaders })
       return
     }
@@ -103,7 +123,6 @@ function enableProviderCors() {
   wr.onBeforeSendHeaders(ALL_URLS, (details, cb) => {
     const h = details.requestHeaders
     const url = details.url || ''
-    const isNavigation = details.resourceType === 'mainFrame' || details.resourceType === 'subFrame'
 
     // Use a genuine, modern Chrome User-Agent across requests so Google and xAI
     // do not flag the session as an insecure embedded webview.
@@ -118,8 +137,8 @@ function enableProviderCors() {
       } catch {
         h['Origin'] = 'http://127.0.0.1:11434'
       }
-    } else if (isNavigation || isStudioAuth(url) || isFirstParty(url) || isProvider(url)) {
-      // Interactive user browsing, OAuth flows, and Studio docks MUST keep cookies and credentials intact
+    } else if (isInteractive(details) || isProvider(url)) {
+      // Interactive user browsing, OAuth flows, and media streams MUST keep cookies and credentials intact
     } else {
       // General web read via tool (web_extract, scrapling, etc.): go anonymously.
       delete h['Cookie']

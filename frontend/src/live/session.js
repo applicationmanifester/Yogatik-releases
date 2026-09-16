@@ -78,6 +78,7 @@ export function createLiveSession({
 }) {
   let ws = null
   let mic = null
+  let micLevelTimer = null
   let currentNoiseSuppression = noiseSuppression
   let cam = null
   let screen = null
@@ -216,6 +217,15 @@ You can see them through their camera and hear them through their microphone. Be
     })
     emit({ type: 'mic', stream: mic.stream })
 
+    if (micLevelTimer) clearInterval(micLevelTimer)
+    micLevelTimer = setInterval(() => {
+      if (closed || !mic || mic.isMuted()) return
+      const stats = mic.getVoiceStats?.()
+      if (stats?.rms !== undefined) {
+        emit({ type: 'level', who: 'user', value: Math.min(1, stats.rms * 3.2) })
+      }
+    }, 80)
+
     if (camera) {
       try { await enableCamera(true) } catch (camErr) {
         console.warn('Live: camera unavailable, starting audio-only', camErr)
@@ -283,6 +293,7 @@ You can see them through their camera and hear them through their microphone. Be
   function stop() {
     if (closed) return
     closed = true
+    if (micLevelTimer) { clearInterval(micLevelTimer); micLevelTimer = null }
     clearInterval(frameTimer)
     clearInterval(screenTimer)
     try { ws?.close() } catch {}
@@ -403,6 +414,9 @@ You can see them through their camera and hear them through their microphone. Be
     isSpeakerMuted: () => !!player?.isMuted(),
     setModel: (newModel) => {
       emit({ type: 'provider', provider: 'gemini', model: newModel })
+    },
+    setProvider: (newProvider, newApiKey, newModel) => {
+      emit({ type: 'provider', provider: newProvider || 'gemini', model: newModel })
     },
     interrupt: () => { player?.flush(); emit({ type: 'speaking', value: false }); emit({ type: 'thinking', value: false }) },
     stopTurn: () => { player?.flush(); emit({ type: 'speaking', value: false }); emit({ type: 'thinking', value: false }) },

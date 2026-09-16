@@ -54,6 +54,7 @@ import { getTodos } from './tools/todo'
 // Synchronous by design: buildSystemPrompt runs mid-turn and cannot await.
 import { isLocked as isEntitlementLocked, entitlement as entitlementSnapshot } from './entitlement'
 import { detectReflexCandidate } from './agentReflex'
+import { recordReflexEvent } from './live/metrics'
 import { detectMcpNeed } from './mcpRegistry'
 import * as mcpMod from './mcp'
 import { assessResponse, regenerationPrompt, continuationPrompt as watchdogContinuationPrompt } from './responseWatchdog'
@@ -556,6 +557,7 @@ export async function runAgent({
   })
 
   const traceRef = []
+  let reflexTrack = null
 
   // Web research is only truly available if tools are on, the toggle is on,
   // and the research tools themselves have not been disabled.
@@ -577,12 +579,18 @@ export async function runAgent({
   // forced-final synthesis pass can never fire, and the bill is on the user's
   // own API key. A high ceiling gives long tasks room; no ceiling removes the
   // only thing that ends a runaway turn.
-  const configuredRounds = Math.floor(Number(chatPrefs.max_tool_rounds))
+  const rawConfiguredRounds = chatPrefs.max_tool_rounds !== undefined && chatPrefs.max_tool_rounds !== null
+    ? Number(chatPrefs.max_tool_rounds)
+    : null
+  // In PersonalisePanel, 0, null/undefined, or >= 100 represents Unlimited (∞).
+  const isUnlimitedRounds = rawConfiguredRounds === 0 || rawConfiguredRounds == null || rawConfiguredRounds >= 100
   const maxRounds = explicitMaxRounds != null
     ? explicitMaxRounds
-    : (Number.isFinite(configuredRounds) && configuredRounds > 0
-      ? Math.min(100, configuredRounds)
-      : 25)
+    : (isUnlimitedRounds
+      ? Infinity
+      : (Number.isFinite(rawConfiguredRounds) && rawConfiguredRounds > 0
+        ? rawConfiguredRounds
+        : Infinity))
 
   // An active Skill shapes the assistant: its system prompt is appended, and its
   // optional tool allowlist scopes what the model may call this turn.
@@ -886,6 +894,7 @@ export async function runAgent({
   // prefetch that could ever need gating before the model has even been
   // asked is not worth the harmlessness it has everywhere else.
   const reflexCache = new Map()
+  reflexTrack = null
   if (toolsEnabled && !isLocalProvider &&
     typeof window !== 'undefined' && typeof window.__YOGATIK_ACTION_GATE__ !== 'function') {
     const candidate = detectReflexCandidate(userMessage)
@@ -896,6 +905,7 @@ export async function runAgent({
     // never-consulted fetch, never a wrong answer.
     if (candidate && !disabledTools.includes(candidate.name)) {
       const sig = callSignature(candidate.name, candidate.args)
+      reflexTrack = { sig, tool: candidate.name, startTime: Date.now(), hit: false }
       reflexCache.set(sig, executeTool(candidate.name, candidate.args, {
         signal,
         ...(executionCtx.conversationId || executionCtx.projectId ? { ctx: executionCtx } : {}),
@@ -1340,7 +1350,11 @@ export async function runAgent({
             // paying for a second, redundant execution. The gate already ran
             // just above: speculation shortcuts the network/compute, never
             // the permission rail.
-            const result = reflexCache.has(sig)
+            const isReflexHit = reflexCache.has(sig)
+            if (isReflexHit && reflexTrack && reflexTrack.sig === sig) {
+              reflexTrack.hit = true
+            }
+            const result = isReflexHit
               ? await reflexCache.get(sig)
               : await executeTool(tc.name, args, {
                 signal,
@@ -1482,7 +1496,7 @@ export async function runAgent({
       tools = null // Crucial: strip tool schemas so LLM is forced to generate prose synthesis
       messages.push({
         role: 'user',
-        content: 'You have reached the tool-use limit for this turn. Do NOT request any ' +
+        content: 'You have completed the tool exploration for this turn. Do NOT request any ' +
           'more tools. Give your best, complete final answer now in clear markdown using everything gathered ' +
           'so far, and note briefly if anything remained uncertain.',
       })
@@ -1628,10 +1642,27 @@ export async function runAgent({
       break
     }
 
+    if (reflexTrack) {
+      const savedMs = reflexTrack.hit ? Math.max(0, Date.now() - reflexTrack.startTime) : 0
+      recordReflexEvent({
+        hit: reflexTrack.hit,
+        savedMs,
+        tool: reflexTrack.tool,
+      })
+    }
+
     const leak = checkCanaryForLeak(canaryToken, cleanedContent, executionCtx.conversationId)
     if (leak.redacted) cleanedContent = leak.text
     onDone?.({ content: cleanedContent, toolResults, sources, toolMode, promptLeakDetected: leak.leaked, watchdogEscalate, trace: traceRef ? [...traceRef] : undefined })
   } catch (err) {
+    if (reflexTrack) {
+      const savedMs = reflexTrack.hit ? Math.max(0, Date.now() - reflexTrack.startTime) : 0
+      recordReflexEvent({
+        hit: reflexTrack.hit,
+        savedMs,
+        tool: reflexTrack.tool,
+      })
+    }
     let cleanedContent = stripToolCallSyntax(fullContent)
     if (err?.name === 'AbortError' || signal?.aborted) {
       // User pressed Stop or turn was aborted: keep whatever was generated instead of dropping it.

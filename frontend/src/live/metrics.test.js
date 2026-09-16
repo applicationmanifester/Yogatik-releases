@@ -8,6 +8,7 @@ import {
   markTool, markCameraOn, markBargeIn, report, percentile, currentSession,
   sessions, _resetLiveMetrics, END_REASON,
   checkSLO, latencyGrade, recordLatency, shouldSuggestTextFallback,
+  recordReflexEvent, getReflexStats, _resetReflexMetrics,
   VOICE_SLO_MS, MULTIMODAL_SLO_MS, TEXT_SLO_MS,
 } from './metrics'
 
@@ -119,6 +120,27 @@ describe('latency SLOs', () => {
     // A compliant latency clears consecutive count
     recordLatency(200, 'voice')
     expect(shouldSuggestTextFallback(3)).toBe(false)
+  })
+
+  it('tracks reflex prefetch hits, misses, and saved latency', () => {
+    expect(getReflexStats()).toEqual({ triggered: 0, hits: 0, misses: 0, savedMsTotal: 0, hitRate: 0, avgSavedMs: 0 })
+
+    recordReflexEvent({ hit: true, savedMs: 400, tool: 'calculator' })
+    recordReflexEvent({ hit: true, savedMs: 600, tool: 'weather' })
+    recordReflexEvent({ hit: false, tool: 'timezone' })
+
+    const stats = getReflexStats()
+    expect(stats.triggered).toBe(3)
+    expect(stats.hits).toBe(2)
+    expect(stats.misses).toBe(1)
+    expect(stats.hitRate).toBe(0.67)
+    expect(stats.avgSavedMs).toBe(500)
+
+    const rep = report()
+    expect(rep.reflex).toEqual(stats)
+
+    _resetReflexMetrics()
+    expect(getReflexStats().triggered).toBe(0)
   })
 })
 

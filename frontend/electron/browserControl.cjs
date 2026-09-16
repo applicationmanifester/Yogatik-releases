@@ -21,6 +21,7 @@ const {
   normalizeAddressInput, stepZoom,
   findRelocationMatch, relocateScanSource, relocateResolverSource,
 } = require('./browserTree.cjs')
+const { injectAdShield } = require('./adBlocker.cjs')
 
 const NEW_TAB_URL = pathToFileURL(path.join(__dirname, 'newtab.html')).href
 
@@ -236,7 +237,12 @@ function setMode(s, mode) {
 
 function createTab(s, url) {
   const view = new WebContentsView({
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      autoplayPolicy: 'no-user-gesture-required',
+    },
   })
   const tabId = newTabId()
   // `console` is a ring of the page's own console output and uncaught errors.
@@ -252,6 +258,7 @@ function createTab(s, url) {
   s.activeTabId = tabId
 
   const wc = view.webContents
+  injectAdShield(wc)
   try {
     const defaultUA = wc.getUserAgent()
     const cleanedUA = defaultUA.replace(/Electron\/[0-9\.]+\s?/g, '').replace(/Yogatik\/[0-9\.]+\s?/g, '')

@@ -3,16 +3,61 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '8.3.0'
+export const APP_VERSION = '8.4.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 8.3.0 — Sovereign AI Workstation: Multi-Agent Swarms, Action Journal & Artifact Studio'
+export const APP_CODENAME = 'Yogatik 8.4.0 — High-Resilience Agent Suite: Unlimited JS Execution, Fuzzy Filesystem Edits & Pre-Flight Syntax Validation'
 
 export const APP_RELEASES = [
+  {
+    "version": "8.4.0",
+    "title": "Yogatik 8.4.0: High-Resilience Agent Suite — Unlimited JS Execution, Fuzzy Filesystem Edits & Pre-Flight Syntax Validation",
+    "date": "September 17, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Unlimited JS Execution: Native Electron VM direct execution eliminates Windows cmd.exe 8,191-character command line limit for large scripts and computations",
+      "Fuzzy-Tolerant Filesystem Matching: Multi-pass tolerance for quotes, blank lines, and trailing semicolons/commas with surrounding context diagnostics on mismatch",
+      "Pre-Flight Syntax Validation (code_validate): Instant in-memory AST and structural checking for JS, JSX, TS, TSX, JSON, HTML, CSS, and Markdown",
+      "Uncapped Agent Autonomy: Removed arbitrary tool round limits (Infinity rounds) for deep long-running autonomous workflows",
+      "Real-Time Reflex Prefetch Telemetry: Bi-directional telemetry cards in DiagnosticsModal monitoring prefetch cache hits and latency reduction"
+    ],
+    "sections": [
+      {
+        "category": "🛠️ High-Resilience Developer & Agent Tools",
+        "items": [
+          {
+            "title": "Native Electron VM JavaScript Runner",
+            "description": "Executes JavaScript in Node.js VM context directly via desktop IPC, removing Windows command-line length limits and shell escaping issues."
+          },
+          {
+            "title": "Resilient Filesystem Fuzzy Matcher",
+            "description": "Multi-pass fuzzy line matching tolerates quotes, blank lines, indentation, and trailing punctuation, providing closest-match line context on failure."
+          },
+          {
+            "title": "Instant Structural Syntax Validator (code_validate)",
+            "description": "Fast multi-language parser checks balanced delimiters, unclosed JSX tags, and invalid JSON with exact line and column pointers."
+          }
+        ]
+      },
+      {
+        "category": "⚡ Autonomy & Live Telemetry",
+        "items": [
+          {
+            "title": "Uncapped Execution Rounds",
+            "description": "Agents execute multi-step plans without arbitrary turn-round clamp constraints."
+          },
+          {
+            "title": "Reflex Prefetch Monitor",
+            "description": "Interactive diagnostics card visualizing prefetch cache hit rates, predictive fetches, and response latency gains."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "8.3.0",
     "title": "Yogatik 8.3.0: Sovereign AI Workstation — Multi-Agent Swarms, Action Journal & Artifact Studio",
     "date": "September 16, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Autonomous Multi-Agent Swarms: Hierarchical DAG scheduling with Planner, Coder, Critic, and QA roles plus self-healing retry loops",
       "Cryptographic Action Journal: Merkle hash-chained audit logging and 1-click time-machine state rollback for all file modifications",

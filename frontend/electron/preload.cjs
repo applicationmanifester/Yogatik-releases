@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('__YOGATIK_DESKTOP__', {
   openPath: (fullPath) => ipcRenderer.invoke('desktop:openPath', fullPath),
   openExternal: (url) => ipcRenderer.invoke('desktop:openExternal', url),
   loginWithGoogle: () => ipcRenderer.invoke('auth:google-desktop'),
+  evalJs: (code, timeoutMs) => ipcRenderer.invoke('desktop:eval-js', { code, timeoutMs }),
 })
 
 // Desktop AI Companion & Screen-Watcher bridge

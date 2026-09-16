@@ -212,6 +212,11 @@ export function LiveView({
   const [liveEngine, setLiveEngine] = useState(voiceEngine || 'system')
   const [showCaptions, setShowCaptions] = useState(features.liveCaptions !== false)
   const [responseMinimized, setResponseMinimized] = useState(false)
+
+  // Keep showCaptions in sync with features.liveCaptions changes (e.g., from LiveSettings)
+  useEffect(() => {
+    setShowCaptions(features.liveCaptions !== false)
+  }, [features.liveCaptions])
   const [copiedResponse, setCopiedResponse] = useState(false)
   const [showLiveReasoning, setShowLiveReasoning] = useState(false)
   const centerResponseRef = useRef(null)
@@ -476,31 +481,43 @@ export function LiveView({
     if (!newProvider || newProvider === (activeProvider.provider || provider)) return
     const provModels = allProviders[newProvider]?.models || []
     const newModel = provModels[0] || ''
+    const newKey = keyInfo?.[newProvider]?.key || ''
     setState(prev => ({
       ...prev,
       activeProvider: { provider: newProvider, model: newModel }
     }))
-    sessionRef.current?.setProvider?.(newProvider, undefined, newModel, modelCanSee)
+    sessionRef.current?.setProvider?.(newProvider, newKey, newModel, modelCanSee)
     onProviderChange?.(newProvider, newModel)
-    showHudNotice(`Provider: ${allProviders[newProvider]?.name || newProvider}`)
-  }, [activeProvider.provider, provider, allProviders, modelCanSee, onProviderChange, showHudNotice])
+    if (!isProviderReady(newProvider, allProviders[newProvider])) {
+      showHudNotice(`⚠️ ${allProviders[newProvider]?.name || newProvider} needs an API key in Settings`)
+    } else {
+      showHudNotice(`Provider: ${allProviders[newProvider]?.name || newProvider}`)
+    }
+  }, [activeProvider.provider, provider, allProviders, keyInfo, isProviderReady, modelCanSee, onProviderChange, showHudNotice])
 
   const handlePickModelFromSearch = useCallback((targetProvider, targetModel) => {
     if (!targetModel) return
     const isDiffProv = targetProvider && targetProvider !== (activeProvider.provider || provider)
+    const effProvider = targetProvider || activeProvider.provider || provider
+    const targetKey = keyInfo?.[effProvider]?.key || ''
     setState(prev => ({
       ...prev,
-      activeProvider: { provider: targetProvider || activeProvider.provider || provider, model: targetModel }
+      activeProvider: { provider: effProvider, model: targetModel }
     }))
     if (isDiffProv) {
-      sessionRef.current?.setProvider?.(targetProvider, undefined, targetModel, modelCanSee)
+      sessionRef.current?.setProvider?.(targetProvider, targetKey, targetModel, modelCanSee)
       onProviderChange?.(targetProvider, targetModel)
+      if (!isProviderReady(targetProvider, allProviders[targetProvider])) {
+        showHudNotice(`⚠️ ${allProviders[targetProvider]?.name || targetProvider} needs an API key in Settings`)
+      } else {
+        showHudNotice(`Model: ${targetModel.split('/').pop().slice(0, 24)} (${allProviders[targetProvider]?.name || targetProvider})`)
+      }
     } else {
       sessionRef.current?.setModel?.(targetModel, modelCanSee)
       onModelChange?.(targetModel)
+      showHudNotice(`Model: ${targetModel.split('/').pop().slice(0, 24)}`)
     }
-    showHudNotice(`Model: ${targetModel.split('/').pop().slice(0, 24)}`)
-  }, [activeProvider.provider, provider, modelCanSee, onProviderChange, onModelChange, showHudNotice])
+  }, [activeProvider.provider, provider, allProviders, keyInfo, isProviderReady, modelCanSee, onProviderChange, onModelChange, showHudNotice])
 
   const handleAutoPickFastest = useCallback(async () => {
     if (isAutoPickingFastest) return
@@ -655,18 +672,20 @@ export function LiveView({
               setState(prev => (prev.liveStatusText === '⏹️ Stopped' ? { ...prev, liveStatusText: '' } : prev))
             }, 2500)
             break
-          case 'status':
+          case 'status': {
+            const statusMsg = e.text || e.message || ''
             setState(prev => ({
               ...prev,
-              liveStatusText: e.text,
-              transcript: [...prev.transcript, { type: 'status', text: e.text, time: Date.now() }],
+              liveStatusText: statusMsg,
+              transcript: [...prev.transcript, { type: 'status', text: statusMsg, time: Date.now() }],
             }))
-            if (e.text && (e.text === '⏹️ Stopped' || e.text.includes('Stopped'))) {
+            if (statusMsg && (statusMsg === '⏹️ Stopped' || statusMsg.includes('Stopped'))) {
               setTimeout(() => {
-                setState(prev => (prev.liveStatusText === e.text ? { ...prev, liveStatusText: '' } : prev))
+                setState(prev => (prev.liveStatusText === statusMsg ? { ...prev, liveStatusText: '' } : prev))
               }, 2500)
             }
             break
+          }
           case 'reasoning':
             setState(prev => {
               const full = e.text || (prev.reasoningText + (e.delta || ''))
@@ -2042,6 +2061,14 @@ export function LiveView({
               <Square size={18} fill="currentColor" />
             </button>
           )}
+          <button
+            className="live-btn"
+            onClick={() => setShowCaptions(!showCaptions)}
+            aria-label={showCaptions ? 'Hide captions' : 'Show captions'}
+            title={showCaptions ? 'Hide captions' : 'Show captions'}
+          >
+            {showCaptions ? <VideoOff size={20} /> : <Video size={20} />}
+          </button>
           <button
             className="live-btn end"
             onClick={() => setEndConfirm(true)}

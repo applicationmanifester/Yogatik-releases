@@ -157,7 +157,52 @@ export function endSession(reason = END_REASON.USER, now = Date.now()) {
 
 export function currentSession() { return current }
 export function sessions() { return finished.slice() }
-export function _resetLiveMetrics() { current = null; finished.length = 0 }
+export function _resetLiveMetrics() {
+  current = null
+  finished.length = 0
+  _resetReflexMetrics()
+}
+
+/* ── Reflex Prefetch instrumentation ────────────────────────────────────── */
+
+let reflexMetrics = {
+  triggered: 0,
+  hits: 0,
+  misses: 0,
+  savedMsTotal: 0,
+}
+
+/**
+ * Record a reflex prefetch event (triggered, hit or miss, and time saved in ms).
+ * @param {{ hit?: boolean, savedMs?: number, tool?: string }} event
+ */
+export function recordReflexEvent({ hit = false, savedMs = 0, tool = '' } = {}) {
+  reflexMetrics.triggered++
+  if (hit) {
+    reflexMetrics.hits++
+    reflexMetrics.savedMsTotal += Math.max(0, savedMs)
+  } else {
+    reflexMetrics.misses++
+  }
+}
+
+/**
+ * Snapshot of reflex prefetch metrics.
+ */
+export function getReflexStats() {
+  const hitRate = reflexMetrics.triggered > 0 ? reflexMetrics.hits / reflexMetrics.triggered : 0
+  const avgSavedMs = reflexMetrics.hits > 0 ? Math.round(reflexMetrics.savedMsTotal / reflexMetrics.hits) : 0
+  return {
+    ...reflexMetrics,
+    hitRate: round(hitRate) || 0,
+    avgSavedMs,
+  }
+}
+
+/** Reset reflex metrics (for tests). */
+export function _resetReflexMetrics() {
+  reflexMetrics = { triggered: 0, hits: 0, misses: 0, savedMsTotal: 0 }
+}
 
 /**
  * Record a latency observation and track SLO violations for the current session.
@@ -200,7 +245,7 @@ export function percentile(values, p) {
  * Live is a voice app competing on latency, which is the race it cannot win.
  */
 export function report(list = finished) {
-  if (!list.length) return { sessions: 0 }
+  if (!list.length) return { sessions: 0, reflex: getReflexStats() }
   const durations = list.map(s => Math.max(0, (s.endedAt || s.startedAt) - s.startedAt) / 1000)
   const firstWords = list.flatMap(s => s.firstWordMs)
   const turns = list.reduce((a, s) => a + s.turns, 0)
@@ -225,6 +270,7 @@ export function report(list = finished) {
       acc[k] = (acc[k] || 0) + 1
       return acc
     }, {}),
+    reflex: getReflexStats(),
   }
 }
 

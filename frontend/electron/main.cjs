@@ -17,6 +17,7 @@ const { safeSend, safeWin, alive } = require('./safeWindow.cjs')
 const entitlement = require('./entitlement.cjs')
 const { registerRootsIpc, rootPathsFor, resolvePath, getTrustState } = require('./roots.cjs')
 const { enableProviderCors } = require('./cors.cjs')
+const { enableAdBlocker } = require('./adBlocker.cjs')
 const { buildMenu } = require('./menu.cjs')
 const { registerDeepLink, handleSecondInstance } = require('./deepLink.cjs')
 const { createTray } = require('./tray.cjs')
@@ -104,7 +105,11 @@ app.commandLine.appendSwitch('enable-gpu-rasterization')
 app.commandLine.appendSwitch('enable-zero-copy')
 app.commandLine.appendSwitch('ignore-gpu-blocklist')
 app.commandLine.appendSwitch('enable-webgl2-compute-context')
-app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder,WebGPU,CanvasOopRasterization')
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+const videoFeatures = process.platform === 'win32'
+  ? 'MediaFoundationVideoDecoder,D3D11VideoDecoder,WebGPU,CanvasOopRasterization'
+  : 'VaapiVideoDecoder,WebGPU,CanvasOopRasterization'
+app.commandLine.appendSwitch('enable-features', videoFeatures)
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=8192')
 app.commandLine.appendSwitch('enable-hardware-overlays')
 
@@ -162,6 +167,12 @@ function createWindow() {
     if (/^https?:/.test(url) && !url.startsWith('http://localhost:5173')) {
       event.preventDefault()
       shell.openExternal(url)
+    } else if (url.startsWith('file://') && !url.includes('index.html')) {
+      event.preventDefault()
+      const parts = url.split(/[/\\]/).filter(Boolean)
+      const lastPart = parts[parts.length - 1] || ''
+      const cleanPath = lastPart.replace(/\.html$/i, '')
+      shell.openExternal(`https://yogatik.web.app/${cleanPath}`)
     }
   })
 
@@ -265,6 +276,7 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     enableProviderCors()
+    enableAdBlocker()
 
     // ── The gate goes FIRST, before any handler exists ──────────────────────
     // installGate wraps ipcMain.handle itself, so every channel registered
@@ -402,6 +414,46 @@ if (!gotLock) {
         }
       } catch { /* ignore */ }
       return false
+    })
+
+    ipcMain.handle('desktop:eval-js', async (_, { code, timeoutMs = 5000 }) => {
+      if (!code || typeof code !== 'string') return { success: false, error: 'No code provided' }
+      const vm = require('vm')
+      const logs = []
+      const customConsole = {
+        log: (...args) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ')),
+        info: (...args) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ')),
+        warn: (...args) => logs.push('[WARN] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ')),
+        error: (...args) => logs.push('[ERROR] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ')),
+      }
+      const sandbox = {
+        console: customConsole,
+        Buffer,
+        process: { env: { ...process.env }, platform: process.platform, version: process.version, cwd: () => process.cwd() },
+        setTimeout, clearTimeout, setInterval, clearInterval,
+        URL, URLSearchParams,
+        require: (mod) => require(mod),
+      }
+      const context = vm.createContext(sandbox)
+      const wrappedCode = `(async () => {\n${code}\n})()`
+      try {
+        const script = new vm.Script(wrappedCode)
+        const promise = script.runInContext(context, { timeout: Math.min(Math.max(250, Number(timeoutMs) || 5000), 30000) })
+        const result = await promise
+        const out = logs.join('\n').trim()
+        return {
+          success: true,
+          result: result !== undefined ? (typeof result === 'object' ? JSON.stringify(result, null, 2) : result) : out,
+          logs,
+          output: out,
+        }
+      } catch (err) {
+        return {
+          success: false,
+          error: err && (err.stack || err.message) ? String(err.stack || err.message) : String(err),
+          logs,
+        }
+      }
     })
 
     // IPC for local search

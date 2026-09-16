@@ -25,6 +25,7 @@ const { getToolSchemas, executeTool } = await import('./tools/index')
 const { describeWithoutModel } = await import('./vision/source')
 const { getMcpServers, setMcpServers, refreshMcpTools } = await import('./mcp')
 const { runAgent } = await import('./agent')
+const { getReflexStats, _resetReflexMetrics } = await import('./live/metrics')
 
 /** Queue a scripted response per LLM round. */
 function scriptRounds(rounds) {
@@ -228,6 +229,23 @@ describe('tool round-trip', () => {
     // The last call must instruct the model to stop requesting tools.
     const last = streamChat.mock.calls.at(-1)[0]
     expect(last.messages.at(-1).content).toMatch(/tool-use limit|final answer/i)
+  })
+
+  it('does not artificially cap at 25 rounds when unlimited rounds are configured', async () => {
+    let roundCount = 0
+    streamChat.mockImplementation(async (opts) => {
+      roundCount++
+      if (roundCount <= 28) {
+        opts.onToolCall({ id: `call_${roundCount}`, name: 'calc', parsedArgs: { q: roundCount } })
+      } else {
+        opts.onToken('Final synthesized answer.')
+      }
+      opts.onDone()
+    })
+    const onDone = vi.fn()
+    await runAgent({ ...base, onDone })
+    expect(roundCount).toBeGreaterThan(25)
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining('Final synthesized answer') }))
   })
 
   it('excludes disabled tools from the schema list', async () => {
@@ -1014,12 +1032,14 @@ describe('Reflex Prefetch (agentReflex.js) — background speculative execution'
   const callsTo = (name) => executeTool.mock.calls.filter((c) => c[0] === name)
 
   it("runs the matching tool only once when the model's real call matches the speculation", async () => {
+    _resetReflexMetrics()
     scriptRounds([
       { toolCalls: [{ id: '1', name: 'weather', parsedArgs: { location: 'Tokyo' } }] },
       { tokens: ['Sunny in Tokyo.'] },
     ])
     await runAgent({ ...base, userMessage: 'weather in Tokyo', onDone: vi.fn() })
     expect(callsTo('weather')).toHaveLength(1)
+    expect(getReflexStats().hits).toBe(1)
   })
 
   it('fires no speculative call at all for an ordinary message that matches nothing', async () => {
