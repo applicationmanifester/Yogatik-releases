@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { TrendingUp, Shield, AlertTriangle, RefreshCw, CheckCircle2, XCircle, Bot, Key } from 'lucide-react'
 import { Modal } from './Modal'
 import { getTradingConfig, saveTradingConfig, resetPaperPortfolio } from '../trading/tradingStorage'
-import { getKiteLoginUrl, generateSessionToken } from '../trading/zerodhaClient'
+import { getKiteLoginUrl, generateSessionToken, extractRequestToken } from '../trading/zerodhaClient'
 
 export function TradingModal({ isOpen, onClose }) {
   const [config, setConfig] = useState(getTradingConfig())
@@ -16,6 +16,20 @@ export function TradingModal({ isOpen, onClose }) {
       setConfig(getTradingConfig())
       setAuthStatus(null)
       setSaveSuccess(false)
+
+      // Auto-detect request_token from current URL if user was redirected back to Yogatik
+      try {
+        if (typeof window !== 'undefined' && window.location?.search) {
+          const params = new URLSearchParams(window.location.search)
+          const tok = params.get('request_token')
+          if (tok) {
+            setRequestToken(tok.trim())
+            // Clean up the URL search bar cleanly without reload
+            const cleanUrl = window.location.origin + window.location.pathname
+            window.history.replaceState({}, document.title, cleanUrl)
+          }
+        }
+      } catch {}
     }
   }, [isOpen])
 
@@ -38,7 +52,8 @@ export function TradingModal({ isOpen, onClose }) {
   }
 
   const handleExchangeToken = async () => {
-    if (!requestToken.trim()) {
+    const cleanToken = extractRequestToken(requestToken)
+    if (!cleanToken) {
       alert('Please paste the request_token from the redirected URL after logging in.')
       return
     }
@@ -48,7 +63,7 @@ export function TradingModal({ isOpen, onClose }) {
       const session = await generateSessionToken({
         apiKey: config.zerodhaApiKey,
         apiSecret: config.zerodhaApiSecret,
-        requestToken: requestToken.trim(),
+        requestToken: cleanToken,
       })
       const next = saveTradingConfig({
         zerodhaAccessToken: session.accessToken,
@@ -258,8 +273,11 @@ export function TradingModal({ isOpen, onClose }) {
               <input
                 type="text"
                 value={requestToken}
-                onChange={(e) => setRequestToken(e.target.value)}
-                placeholder="Paste request_token from redirect URL"
+                onChange={(e) => {
+                  const val = e.target.value
+                  setRequestToken(extractRequestToken(val))
+                }}
+                placeholder="Paste request_token or full redirect URL"
                 style={{
                   flex: 1,
                   padding: '8px 10px',
@@ -289,6 +307,9 @@ export function TradingModal({ isOpen, onClose }) {
               >
                 {loading ? 'Validating...' : 'Generate Token'}
               </button>
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '6px', lineHeight: 1.4 }}>
+              💡 You can paste either the pure <strong>request_token</strong> or the <strong>entire redirect URL</strong> from your browser — Yogatik will automatically extract the token for you.
             </div>
 
             {authStatus && (

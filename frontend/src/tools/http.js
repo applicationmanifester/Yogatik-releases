@@ -56,6 +56,12 @@ export function resetRelayHealth() {
   try { sessionStorage.removeItem(STORE) } catch { /* ignore */ }
 }
 
+/** Clear cooldown on a specific host (e.g. for authenticated financial APIs) */
+export function unblockHost(urlOrHost) {
+  const host = hostOf(urlOrHost) || urlOrHost
+  if (host) deadHosts.delete(host)
+}
+
 const activeSignals = new Set()
 export function pushAmbientSignal(s) { if (s) activeSignals.add(s) }
 export function popAmbientSignal(s) { if (s) activeSignals.delete(s) }

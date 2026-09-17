@@ -3,9 +3,31 @@
  * Implements authentication, margins, holdings, positions, and order placement.
  */
 
-import { proxyJson } from '../tools/http'
+import { proxyJson, unblockHost } from '../tools/http'
 
 const KITE_API_BASE = 'https://api.kite.trade'
+
+/**
+ * Extracts pure request_token from whatever the user pastes, whether:
+ *  - "https://yogatik.web.app/?action=login&type=login&status=success&request_token=XXXX"
+ *  - "?request_token=XXXX"
+ *  - "request_token=XXXX"
+ *  - "XXXX"
+ */
+export function extractRequestToken(raw) {
+  if (!raw) return ''
+  const str = String(raw).trim()
+  if (str.includes('request_token=')) {
+    try {
+      const url = new URL(str.startsWith('http') ? str : `https://dummy.local/?${str.replace(/^\?/, '')}`)
+      const token = url.searchParams.get('request_token')
+      if (token) return token.trim()
+    } catch {}
+    const match = str.match(/request_token=([a-zA-Z0-9_-]+)/)
+    if (match) return match[1].trim()
+  }
+  return str
+}
 
 /**
  * Computes SHA-256 hex string for Kite session token checksum.
@@ -36,22 +58,51 @@ export function getKiteLoginUrl(apiKey) {
 }
 
 /**
+ * Dispatches an HTTP request to Kite API.
+ * In Electron or environments where CORS is bypassed, direct fetch gets the genuine
+ * response without failing over to public relays.
+ */
+async function dispatchKite(url, { method = 'GET', headers = {}, body = null } = {}) {
+  unblockHost('api.kite.trade')
+
+  // In Electron desktop apps, main process strips CORS so direct fetch is used without proxy
+  if (typeof window !== 'undefined' && window.__YOGATIK_ELECTRON__) {
+    try {
+      const directResp = await fetch(url, {
+        method,
+        headers,
+        body,
+      })
+      const json = await directResp.json().catch(() => null)
+      if (json) return json
+      if (directResp.ok) return { status: 'success' }
+    } catch (directErr) {
+      // fallback
+    }
+  }
+
+  // In web browsers or unit test environments, route through proxyJson
+  return await proxyJson(url, { method, headers, body })
+}
+
+/**
  * Exchanges daily request_token for an active access_token.
  */
 export async function generateSessionToken({ apiKey, apiSecret, requestToken }) {
-  if (!apiKey || !apiSecret || !requestToken) {
+  const cleanToken = extractRequestToken(requestToken)
+  if (!apiKey || !apiSecret || !cleanToken) {
     throw new Error('apiKey, apiSecret, and requestToken are required to generate a session.')
   }
 
-  const checksum = await sha256Hex(`${apiKey}${requestToken}${apiSecret}`)
+  const checksum = await sha256Hex(`${apiKey}${cleanToken}${apiSecret}`)
   const url = `${KITE_API_BASE}/session/token`
 
   const bodyParams = new URLSearchParams()
   bodyParams.append('api_key', apiKey)
-  bodyParams.append('request_token', requestToken)
+  bodyParams.append('request_token', cleanToken)
   bodyParams.append('checksum', checksum)
 
-  const res = await proxyJson(url, {
+  const res = await dispatchKite(url, {
     method: 'POST',
     headers: {
       'X-Kite-Version': '3',
@@ -103,7 +154,7 @@ async function kiteRequest(endpoint, { apiKey, accessToken, method = 'GET', body
     }
   }
 
-  const res = await proxyJson(url, { method, headers, body: reqBody })
+  const res = await dispatchKite(url, { method, headers, body: reqBody })
   if (res?.status === 'success') {
     return res.data
   }
