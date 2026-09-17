@@ -212,3 +212,53 @@ export async function getPaperPortfolio() {
     recentOrders: config.paperOrders || [],
   }
 }
+
+/**
+ * Immediately exits (squares off) an existing paper holding at current market price.
+ */
+export async function squareOffPaperPosition(symbol) {
+  const cleanSym = String(symbol || '').trim().toUpperCase()
+  const config = getTradingConfig()
+  const holdings = config.paperHoldings || {}
+
+  let foundKey = null
+  for (const k of Object.keys(holdings)) {
+    if (k.toUpperCase() === cleanSym || k.replace(/^(NSE|BSE):/i, '').toUpperCase() === cleanSym.replace(/^(NSE|BSE):/i, '')) {
+      foundKey = k
+      break
+    }
+  }
+
+  if (!foundKey || !holdings[foundKey]?.qty) {
+    throw new Error(`No open paper position found for ${symbol}`)
+  }
+
+  const h = holdings[foundKey]
+  return executePaperOrder({
+    symbol: foundKey,
+    side: 'SELL',
+    quantity: h.qty,
+    orderType: 'MARKET',
+  })
+}
+
+/**
+ * Cancels a pending paper order by ID.
+ */
+export function cancelPaperOrder(orderId) {
+  const config = getTradingConfig()
+  const orders = config.paperOrders || []
+  let found = false
+  const updatedOrders = orders.map(ord => {
+    if (ord.orderId === orderId && ord.status === 'OPEN') {
+      found = true
+      return { ...ord, status: 'CANCELLED', cancelledAt: new Date().toISOString() }
+    }
+    return ord
+  })
+  if (found) {
+    saveTradingConfig({ paperOrders: updatedOrders })
+    return { success: true, orderId, status: 'CANCELLED' }
+  }
+  return { success: false, error: 'Order not found or not in OPEN state' }
+}

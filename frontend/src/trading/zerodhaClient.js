@@ -347,3 +347,20 @@ export async function getQuotes(arg1 = [], arg2, arg3) {
     ...(res || {})
   }
 }
+
+/**
+ * Squares off an open position with an opposing market order.
+ */
+export async function squareOffPosition({ tradingsymbol, exchange = 'NSE', product = 'MIS', quantity, side = 'BUY' }, apiKeyOrOpts, maybeAccessToken) {
+  const apiKey = typeof apiKeyOrOpts === 'object' ? apiKeyOrOpts?.apiKey : apiKeyOrOpts
+  const accessToken = typeof apiKeyOrOpts === 'object' ? apiKeyOrOpts?.accessToken : maybeAccessToken
+  const transactionType = String(side).toUpperCase() === 'BUY' ? 'SELL' : 'BUY'
+  return placeOrder({
+    exchange,
+    tradingsymbol,
+    transactionType,
+    quantity: Math.abs(quantity),
+    orderType: 'MARKET',
+    product,
+  }, apiKey, accessToken)
+}

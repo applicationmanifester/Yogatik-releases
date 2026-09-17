@@ -1412,6 +1412,11 @@ html, body {
   overscroll-behavior: contain;
   pointer-events: auto;
 }
+.trading-modal {
+  width: 860px;
+  max-width: min(860px, calc(100vw - 24px));
+  max-height: 88vh;
+}
 /* `.modal-content` / `.modal-card` are the same dialog box under other names —
    SchedulerPanel's log viewer used .modal-content and had no rule at all, so
    it rendered as unstyled text straight onto the blurred backdrop. */
