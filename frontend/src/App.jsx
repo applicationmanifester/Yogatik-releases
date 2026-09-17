@@ -5818,7 +5818,7 @@ export default function App() {
           activeModel={conv?.model !== undefined ? conv.model : model}
           onSelectProvider={(pid) => setProvider(pid)}
           onSelectModel={(m, pid) => chooseModel(m, pid)}
-          onProviderSaved={() => refreshModels()}
+          onProviderSaved={() => { refreshModels(); refreshKeys(); loadConversations() }}
           temperature={conv?.temperature !== undefined ? conv.temperature : (temperature ?? 1.0)}
           onTemperatureChange={(t) => setTemperature(t)}
           autoRoute={autoRoute}

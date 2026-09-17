@@ -251,9 +251,11 @@ export function SettingsModal({
     setSyncState(s => ({ ...s, syncing: true }))
     try {
       await syncCloudKeys()
+      await pullCloudData('merge')
       await pushCloudData()
       const st = await cloudSyncStatus()
       setSyncState(s => ({ ...s, ...st, syncing: false }))
+      onProviderSaved?.()
     } catch {
       setSyncState(s => ({ ...s, syncing: false }))
     }
