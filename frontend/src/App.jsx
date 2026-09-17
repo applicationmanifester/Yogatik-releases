@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera, TrendingUp } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { setUserQuestionHandler } from './tools/askUser'
@@ -132,6 +132,7 @@ const SlashCommandsMenu = safeLazy(() => import('./components/SlashCommandsMenu'
 const StarterCards = safeLazy(() => import('./components/StarterCards').then(m => ({ default: m.StarterCards })))
 const CitationGraphModal = safeLazy(() => import('./components/CitationGraphModal').then(m => ({ default: m.CitationGraphModal })))
 const EvalDashboard = safeLazy(() => import('./components/EvalDashboard').then(m => ({ default: m.EvalDashboard })))
+const TradingModal = safeLazy(() => import('./components/TradingModal').then(m => ({ default: m.TradingModal })))
 
 
 // ─── Main App ───
@@ -258,6 +259,7 @@ export default function App() {
   const [showShortcutsModal, setShowShortcutsModal] = useState(false)
   const [showCitationGraph, setShowCitationGraph] = useState(false)
   const [showEvalDashboard, setShowEvalDashboard] = useState(false)
+  const [showTradingModal, setShowTradingModal] = useState(false)
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
   // Entitlement. The GATE is in the main process; this is only what the UI says.
@@ -3816,6 +3818,7 @@ export default function App() {
       // Desktop-only surfaces. They are listed on the web too and say so when
       // opened, rather than being silently absent depending on the build.
       { id: 'terminal', group: 'Tools', label: '⌨️ Terminal — watch the assistant, run your own', hint: 'Ctrl+`', run: () => setShowTerminal(true) },
+      { id: 'indian-stock-trading', group: 'Trading', label: '📈 Zerodha & Indian Stock Trading (NSE/BSE)', hint: 'Live & Paper Trading', run: () => setShowTradingModal(true) },
       { id: 'file-editor', group: 'Tools', label: '📝 Create or edit a file in the workspace', hint: isDesktop() ? 'Workspace' : 'Desktop app', run: () => setShowFileEditor(true) },
       { id: 'workspace', group: 'View', label: '🗂️ File explorer & changes', hint: isDesktop() ? 'Ctrl+B' : 'Desktop app', run: () => setShowWorkspace(v => !v) },
       { id: 'workspace-scm', group: 'View', label: '🔀 Review the agent’s file changes', hint: isDesktop() ? 'Source control' : 'Desktop app', run: () => setShowWorkspace(true) },
@@ -4823,6 +4826,15 @@ export default function App() {
               aria-pressed={showActivity}
             >
               <Activity size={17} />
+            </button>
+            <button
+              className={`icon-btn${showTradingModal ? ' active' : ''}`}
+              onClick={() => setShowTradingModal(v => !v)}
+              title="Zerodha & Indian Stock Trading Terminal (NSE/BSE)"
+              aria-label="Toggle Zerodha & Indian stock trading modal"
+              aria-pressed={showTradingModal}
+            >
+              <TrendingUp size={17} />
             </button>
             {isDesktop() && (
               <div ref={rootsWrapRef} className="desktop-folder-indicator" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginRight: 8, color: 'var(--text-secondary)' }}>
@@ -6566,6 +6578,15 @@ export default function App() {
             onClose={() => setShowTerminal(false)}
             conversationId={conv?.clientId || conv?.id || null}
             onUpgrade={() => setShowUpgrade(true)}
+          />
+        </React.Suspense>
+      )}
+
+      {showTradingModal && (
+        <React.Suspense fallback={null}>
+          <TradingModal
+            isOpen={showTradingModal}
+            onClose={() => setShowTradingModal(false)}
           />
         </React.Suspense>
       )}

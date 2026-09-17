@@ -3,16 +3,57 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '8.4.0'
+export const APP_VERSION = '8.5.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 8.4.0 — High-Resilience Agent Suite: Unlimited JS Execution, Fuzzy Filesystem Edits & Pre-Flight Syntax Validation'
+export const APP_CODENAME = 'Yogatik 8.5.0 — Autonomous Quantitative Profit Engine & Zerodha Live Trading Suite'
 
 export const APP_RELEASES = [
+  {
+    "version": "8.5.0",
+    "title": "Yogatik 8.5.0: Autonomous Quantitative Profit Engine & Zerodha Live Trading Suite",
+    "date": "September 17, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Zerodha Kite Connect v3 Integration: Secure session exchange (SHA-256), live margin requirements, real-time quotes, holdings & positions fetching",
+      "Autonomous Quantitative Profit Engine: Continuous market scanner with technical confluence (RSI, MACD, EMA 20/50, Bollinger Bands, ATR) and EV-maximizing profit targets",
+      "Zero-Risk Virtual Paper Simulator: Full simulated order execution with ₹1,00,000 starting cash, real-time unrealized P&L, trade logs, and instant reset",
+      "Human-in-the-Loop Trade Confirmations: Interactive trade confirmation tickets in chat with auto-calculated stop-loss, target, and risk/reward preview",
+      "Algorithmic Trading Dashboard: Dedicated modal for Zerodha 2FA token generation, auto-trader controls, and portfolio analytics"
+    ],
+    "sections": [
+      {
+        "category": "📈 Live & Paper Stock Trading",
+        "items": [
+          {
+            "title": "Zerodha Kite Connect v3 REST Client",
+            "description": "Direct integration with Zerodha Kite Connect API supporting orders (CNC, MIS, NRML), market/limit pricing, margin queries, and holdings."
+          },
+          {
+            "title": "Zero-Risk Paper Trading Simulator",
+            "description": "Realistic paper engine with virtual ₹1,00,000 wallet, real-time price updates, position tracking, and historical trade ledger."
+          }
+        ]
+      },
+      {
+        "category": "🤖 Autonomous AI Profit Optimizer",
+        "items": [
+          {
+            "title": "Multi-Indicator Confluence Scanner",
+            "description": "Evaluates RSI, MACD crossovers, EMA 20/50 trends, Bollinger Band volatility, and ATR for a composite 0-100 algorithmic score."
+          },
+          {
+            "title": "Positive Expected Value (EV) Execution",
+            "description": "Only triggers trades with positive mathematical expected value, enforcing strict 1:2+ risk/reward, automated profit locking, and stop-loss trailing."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "8.4.0",
     "title": "Yogatik 8.4.0: High-Resilience Agent Suite — Unlimited JS Execution, Fuzzy Filesystem Edits & Pre-Flight Syntax Validation",
     "date": "September 17, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Unlimited JS Execution: Native Electron VM direct execution eliminates Windows cmd.exe 8,191-character command line limit for large scripts and computations",
       "Fuzzy-Tolerant Filesystem Matching: Multi-pass tolerance for quotes, blank lines, and trailing semicolons/commas with surrounding context diagnostics on mismatch",

@@ -96,6 +96,7 @@ import { fileDialogTool } from './fileDialog'
 import { todoTool } from './todo'
 import { financeTool } from './finance'
 import { marketDataTool } from './marketData'
+import { zerodhaTradeTool } from './zerodhaTrade'
 import { videoEditTool } from './videoEdit'
 import {
   gitStatusTool, gitLogTool, gitDiffTool,
@@ -383,6 +384,7 @@ const ALL_TOOLS = {
   todo: todoTool,
   finance_analytics: financeTool,
   market_data: marketDataTool,
+  zerodha_trade: zerodhaTradeTool,
   // MCP: use resources & prompt templates published by connected servers + dynamic tool search.
   mcp_resource: mcpResourceTool,
   mcp_prompt: mcpPromptTool,
@@ -883,6 +885,12 @@ export const TOOL_ALIASES = {
   check_syntax: 'code_validate',
   syntax_check: 'code_validate',
   code_lint: 'code_validate',
+  kite_trade: 'zerodha_trade',
+  trade_indian_stock: 'zerodha_trade',
+  paper_trade: 'zerodha_trade',
+  zerodha: 'zerodha_trade',
+  kite: 'zerodha_trade',
+  indian_stocks: 'zerodha_trade',
   text_to_speech: 'tts',
   speak: 'tts',
   read_aloud: 'tts',
@@ -1246,6 +1254,11 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   }
   if (/\b(syntax|validate|check syntax|lint|bracket|tag|unclosed|malformed)\b/i.test(text)) {
     scores['code_validate'] = 250
+  }
+  if (/\b(zerodha|kite|nse|bse|indian stock|stock trade|paper trade|buy shares|sell shares|trade live|broker|portfolio|margins)\b/i.test(text)) {
+    scores['zerodha_trade'] = 260
+    scores['market_data'] = 200
+    scores['finance_analytics'] = 170
   }
   if (/\b(diagram|flowchart|lifecycle|mindmap|sequence diagram|architecture|er diagram|class diagram|process flow|schema)\b/i.test(text)) {
     scores['diagram'] = 250

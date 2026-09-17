@@ -7,13 +7,14 @@ import {
   BookOpen, GraduationCap, MessageSquare, Archive, BookA, Library,
   Package, BookMarked, Banknote, Activity, Film, Sparkles, Copy, Check, Users, Clock,
   Briefcase, Share2, AlarmClock, Bell, Plug, Monitor, MousePointer, Compass, Laptop,
-  AlertTriangle, ChevronDown, RotateCcw
+  AlertTriangle, ChevronDown, RotateCcw, TrendingUp
 } from 'lucide-react'
 import { getMedia } from '../db'
 import { diagnoseError, logError } from '../errorLog'
 import { sanitizeSvg } from '../sanitize'
 import { listSnapshots, rollbackSnapshot } from '../workspaceTimeMachine'
 import { fsWriteTool } from '../tools/localFs'
+import { TradeConfirmationCard } from './TradeConfirmationCard'
 
 // Standardised, friendly failure card: a plain-language line from diagnoseError
 // plus a collapsible "View details" holding the raw error for debugging.
@@ -95,6 +96,11 @@ export const TOOL_ICONS = {
   browser_autopilot: Compass,
   background_task: Sparkles,
   background_task_spawn: Sparkles,
+  zerodha_trade: TrendingUp,
+  kite_trade: TrendingUp,
+  paper_trade: TrendingUp,
+  trade_indian_stock: TrendingUp,
+  zerodha: TrendingUp,
 }
 
 /**
@@ -1572,6 +1578,89 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
         )}
       </div>
     )
+  }
+
+  // ── Zerodha / Indian Stock Trade Confirmation & Execution ───────────────────
+  if ((tool === 'zerodha_trade' || tool === 'kite_trade' || tool === 'paper_trade' || tool === 'trade_indian_stock') && result) {
+    if (result.setupScore !== undefined) {
+      const isBull = result.setupScore >= 60
+      const isBear = result.setupScore <= 40
+      const scoreColor = isBull ? '#10b981' : isBear ? '#ef4444' : '#f59e0b'
+      return (
+        <div className="tool-result-card" style={{ borderLeft: `3px solid ${scoreColor}` }}>
+          <div className="tool-result-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <TrendingUp size={15} style={{ color: scoreColor }} />
+              <strong style={{ fontSize: '13.5px' }}>{result.symbol} — Algorithmic Setup</strong>
+            </div>
+            <span style={{
+              background: `${scoreColor}20`,
+              color: scoreColor,
+              fontWeight: 700,
+              fontSize: '11px',
+              padding: '2px 8px',
+              borderRadius: '6px',
+            }}>
+              {result.recommendation}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', margin: '10px 0', padding: '8px 10px', background: 'var(--bg-input, rgba(0,0,0,0.2))', borderRadius: '8px' }}>
+            <div>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)', textTransform: 'uppercase' }}>Setup Score</div>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: scoreColor }}>{result.setupScore}<span style={{ fontSize: '12px', fontWeight: 500, color: '#94a3b8' }}>/100</span></div>
+            </div>
+            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '12px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)', textTransform: 'uppercase' }}>Current Price</div>
+              <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>₹{result.currentPrice?.toLocaleString('en-IN')}</div>
+            </div>
+            {result.keyLevels?.riskRewardRatio && (
+              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '12px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)', textTransform: 'uppercase' }}>Risk/Reward</div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: '#38bdf8' }}>{result.keyLevels.riskRewardRatio}</div>
+              </div>
+            )}
+          </div>
+
+          {result.keyLevels && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', fontSize: '11.5px', marginBottom: '10px' }}>
+              <div style={{ padding: '6px 8px', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                <div style={{ color: '#ef4444', fontWeight: 600, fontSize: '10px' }}>STOP LOSS</div>
+                <div style={{ fontWeight: 700 }}>₹{result.keyLevels.stopLoss}</div>
+              </div>
+              <div style={{ padding: '6px 8px', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                <div style={{ color: '#10b981', fontWeight: 600, fontSize: '10px' }}>TARGET 1</div>
+                <div style={{ fontWeight: 700 }}>₹{result.keyLevels.target1}</div>
+              </div>
+              <div style={{ padding: '6px 8px', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                <div style={{ color: '#10b981', fontWeight: 600, fontSize: '10px' }}>TARGET 2</div>
+                <div style={{ fontWeight: 700 }}>₹{result.keyLevels.target2}</div>
+              </div>
+            </div>
+          )}
+
+          {Array.isArray(result.reasons) && result.reasons.length > 0 && (
+            <div style={{ fontSize: '11.5px', color: 'var(--text-secondary, #94a3b8)', marginTop: '6px' }}>
+              {result.reasons.map((r, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: '6px', marginBottom: '3px' }}>
+                  <span>•</span>
+                  <span>{r}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    const ticket = result.ticket || result.orderTicket
+    if (result.status === 'PENDING_CONFIRMATION' && ticket) {
+      return (
+        <div className="tool-result-card" style={{ borderLeft: '3px solid #f97316' }}>
+          <TradeConfirmationCard ticket={ticket} mode={result.mode || 'paper'} />
+        </div>
+      )
+    }
   }
 
   // Generic fallback for other tools

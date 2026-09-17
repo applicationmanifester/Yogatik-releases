@@ -156,12 +156,12 @@ export async function synthesize(text, { voice = DEFAULT_VOICE, speed = 1, onPro
  */
 export function cleanForSpeech(text) {
   return String(text ?? '')
-    .replace(/```[\\s\\S]*?```/g, ' ')
+    .replace(/```[\s\S]*?```/g, ' ')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/https?:\/\/\S+/g, ' ')
     .replace(/[*_`#>|]/g, ' ')
-    .replace(/\\s+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
 }
 

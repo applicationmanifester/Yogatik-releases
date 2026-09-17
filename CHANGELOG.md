@@ -1,5 +1,23 @@
 # Changelog
 
+## v8.5.0 — Autonomous Quantitative Profit Engine & Zerodha Live Trading Suite (2026-09-17)
+
+### 📈 Indian Stock Trading & Zerodha Kite Connect Integration
+- **Zerodha Kite Connect v3 REST Client (`zerodhaClient.js`)** — Full Kite Connect v3 API suite supporting SHA-256 session exchange, margins retrieval (equity, commodity), real-time LTP quotes, and order lifecycle management (CNC, MIS, NRML; MARKET, LIMIT, SL, SL-M).
+- **Zero-Risk Virtual Paper Trading Engine (`paperEngine.js`)** — Realistic simulation environment with ₹1,00,000 starting cash, real-time unrealized P&L calculations, portfolio holdings & positions tracking, and single-click wallet reset.
+- **Unified Tool Interface (`zerodhaTrade.js`)** — Registered AI tool `zerodha_trade` with actions: `quote`, `margins`, `portfolio`, `orders`, `place_order`, `cancel_order`, `set_mode`, `analyze`, `scan`, and `auto_trade`.
+- **Human-in-the-Loop Trade Confirmations (`TradeConfirmationCard.jsx`)** — Interactive confirmation cards in chat with automated risk/reward calculations, stop-loss and profit target preview, and 1-click execution.
+- **Dedicated Trading Dashboard Modal (`TradingModal.jsx`)** — Quick access modal for Zerodha 2FA token setup, live vs paper switching, portfolio health inspection, and auto-trader scanner configuration.
+
+### 🤖 Autonomous Quantitative Profit Engine
+- **Multi-Indicator Confluence Scanner (`autoTrader.js`)** — Scans watchlists evaluating RSI, MACD crossovers, EMA 20/50 trends, Bollinger Band expansion/contraction, and ATR for composite technical scores (0-100).
+- **Positive Expected Value (EV) Optimizer** — Mathematical win-rate and payout modeling (`EV = (winRate * targetGain) - ((1 - winRate) * stopLossRisk)`) preventing trades with non-positive edge.
+- **Automated Profit Locking & Loss Cutting** — Dynamic position monitoring with automated profit taking at predefined targets (1:2+ R:R) and trailing stop-loss enforcement.
+
+### 🛠 Infrastructure
+- **Version bump** — 8.4.0 → 8.5.0 across monorepo, web platforms, and bot gateway.
+- **Test coverage** — 100% passing Vitest suites for Zerodha client, Paper Engine, AutoTrader, Trade Confirmation, and build guards.
+
 ## v8.4.0 — High-Resilience Agent Suite (2026-09-17)
 
 ### 🛠️ High-Resilience Developer & Agent Tools
