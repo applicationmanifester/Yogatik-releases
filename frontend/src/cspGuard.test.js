@@ -82,4 +82,18 @@ describe('index.html CSP', () => {
     const headerCsp = allHeaders.find((h) => h.key.includes('Content-Security-Policy'))?.value
     expect(headerCsp).toContain("frame-ancestors 'none'")
   })
+
+  it('permits gstatic and google apis in script-src for Firebase SDK and auth', () => {
+    const script = directive('script-src')
+    expect(script).toContain('https://www.gstatic.com')
+    expect(script).toContain('https://*.gstatic.com')
+    expect(script).toContain('https://apis.google.com')
+
+    const firebaseJson = JSON.parse(fs.readFileSync(path.join(ROOT, '..', 'firebase.json'), 'utf8'))
+    const allHeaders = firebaseJson.hosting?.headers?.flatMap((h) => h.headers || []) || []
+    const headerCsp = allHeaders.find((h) => h.key.includes('Content-Security-Policy'))?.value
+    expect(headerCsp).toContain('https://www.gstatic.com')
+    expect(headerCsp).toContain('https://*.gstatic.com')
+    expect(headerCsp).toContain('https://apis.google.com')
+  })
 })
