@@ -3,16 +3,57 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '8.5.0'
+export const APP_VERSION = '8.5.2'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 8.5.0 — Autonomous Quantitative Profit Engine & Zerodha Live Trading Suite'
+export const APP_CODENAME = 'Yogatik 8.5.2 — Desktop Entitlement Hardening, Multi-Device Cloud Sync & Live Trading Suite'
 
 export const APP_RELEASES = [
+  {
+    "version": "8.5.2",
+    "title": "Yogatik 8.5.2: Desktop Entitlement Hardening, Multi-Device Cloud Sync & Live Trading Resilience",
+    "date": "September 17, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Desktop Entitlement & In-App Browser Hardening: Direct user notification and automatic license upgrade dialog if opening the built-in autonomous browser without active Pro entitlement",
+      "Cross-Platform Account Synchronization: Reliable multi-device cloud persistence for chats, preferences, API configurations, and custom agent states via Firebase Auth",
+      "Zerodha Kite Connect 2FA & Token Setup Guide: Streamlined request-token auto-capture, instant SHA-256 session generation, and comprehensive in-app setup instructions",
+      "Adaptive System Theme Alignment: Polished dark/light mode switching and high-contrast accessibility across all interactive modals and tool panels"
+    ],
+    "sections": [
+      {
+        "category": "🛡️ Desktop Security & Entitlements",
+        "items": [
+          {
+            "title": "Pro Browser Entitlement Verification",
+            "description": "Integrated direct entitlement inspection when launching the autonomous built-in browser window, with proactive toast feedback and upgrade modal invocation."
+          }
+        ]
+      },
+      {
+        "category": "☁️ Cloud Synchronization & Persistence",
+        "items": [
+          {
+            "title": "Multi-Device Account Sync",
+            "description": "Seamless state synchronization across web, desktop, and mobile platforms with real-time Firebase Auth session resilience."
+          }
+        ]
+      },
+      {
+        "category": "📈 Zerodha Trading Suite Resilience",
+        "items": [
+          {
+            "title": "Kite Connect Token Helper & Diagnostics",
+            "description": "Automated URL parameter parsing for Zerodha redirect tokens and built-in interactive helper for fast daily authentication."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "8.5.0",
     "title": "Yogatik 8.5.0: Autonomous Quantitative Profit Engine & Zerodha Live Trading Suite",
     "date": "September 17, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Zerodha Kite Connect v3 Integration: Secure session exchange (SHA-256), live margin requirements, real-time quotes, holdings & positions fetching",
       "Autonomous Quantitative Profit Engine: Continuous market scanner with technical confluence (RSI, MACD, EMA 20/50, Bollinger Bands, ATR) and EV-maximizing profit targets",

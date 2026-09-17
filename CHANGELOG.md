@@ -1,5 +1,20 @@
 # Changelog
 
+## v8.5.2 — Desktop Entitlement Hardening, Multi-Device Cloud Sync & Live Trading Resilience (2026-09-17)
+
+### 🛡️ Desktop Security & Built-in Browser Entitlement
+- **Pro Browser Entitlement Verification (`App.jsx`)** — Re-engineered `handleOpenBrowser` to asynchronously inspect Electron's IPC entitlement response. If locked, immediately notifies users that Yogatik Pro is required and opens the license activation modal instead of failing silently.
+
+### ☁️ Cross-Platform Account Sync & Persistence
+- **Cloud Account Sync Resilience (`firebaseAuth.js`)** — Hardened multi-device state synchronization across web, desktop, and mobile platforms with real-time Firebase Auth session resilience.
+
+### 📈 Indian Stock Trading & Zerodha Kite Connect
+- **Zerodha Kite Connect 2FA & Token Setup Guide** — Streamlined request-token auto-capture from callback URLs, instant SHA-256 session exchange, and in-depth step-by-step documentation for daily token renewal.
+
+### 🛠 Infrastructure & Polishing
+- **Version bump** — 8.5.0 → 8.5.2 across monorepo, web platforms, and bot gateway.
+- **Theme Adaptivity** — Polished dark/light mode switching and high-contrast accessibility across all interactive modals and tool panels.
+
 ## v8.5.0 — Autonomous Quantitative Profit Engine & Zerodha Live Trading Suite (2026-09-17)
 
 ### 📈 Indian Stock Trading & Zerodha Kite Connect Integration
