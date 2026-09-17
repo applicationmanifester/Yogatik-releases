@@ -686,11 +686,20 @@ export default function App() {
     showAccount || showProviders || showPrivacy
   )
 
-  const handleOpenBrowser = useCallback((url) => {
+  const handleOpenBrowser = useCallback(async (url) => {
     const b = typeof window !== 'undefined' ? window.__YOGATIK_BROWSER__ : null
     if (b?.navigate) {
-      b.navigate({ url: url || '', display: 'window' })
-      showToast('Opened Yogatik Browser')
+      try {
+        const res = await b.navigate({ url: url || '', display: 'window' })
+        if (res?.locked) {
+          showToast('Yogatik Pro is required for the built-in browser')
+          setShowUpgrade(true)
+          return
+        }
+        showToast('Opened Yogatik Browser')
+      } catch (err) {
+        showToast(err?.message || 'Could not open browser')
+      }
     } else if (window.__YOGATIK_DESKTOP__?.openExternal && url) {
       window.__YOGATIK_DESKTOP__.openExternal(url)
     } else {
