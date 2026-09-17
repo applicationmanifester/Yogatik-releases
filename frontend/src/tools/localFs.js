@@ -170,11 +170,17 @@ export async function listRoots() {
 }
 export async function removeRoot(rootId) {
   if (!isDesktop()) return []
-  try { return (await invoke('roots_remove', { rootId })) || [] } catch { return [] }
+  try {
+    const res = await invoke('roots_remove', { rootId })
+    return Array.isArray(res) ? res : []
+  } catch { return [] }
 }
 export async function setPrimaryRoot(rootId) {
   if (!isDesktop()) return []
-  try { return (await invoke('roots_set_primary', { rootId })) || [] } catch { return [] }
+  try {
+    const res = await invoke('roots_set_primary', { rootId })
+    return Array.isArray(res) ? res : []
+  } catch { return [] }
 }
 /** A draft chat has no DB id; move its folders across once it is saved. */
 export async function rebindChatRoots(oldId, newId) {
@@ -204,7 +210,10 @@ export async function clearGrantedFolder() {
 /** Undo journal (Electron only) — every fs mutation is snapshotted first. */
 export async function listJournal() {
   if (!isDesktop()) return []
-  try { return (await invoke('journal_list')) || [] } catch { return [] }
+  try {
+    const res = await invoke('journal_list')
+    return Array.isArray(res) ? res : []
+  } catch { return [] }
 }
 export async function revertJournalEntry(id) {
   if (!isDesktop()) return { success: false, error: 'Desktop app only.' }

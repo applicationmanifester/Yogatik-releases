@@ -1605,19 +1605,19 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
             </span>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', margin: '10px 0', padding: '8px 10px', background: 'var(--bg-input, rgba(0,0,0,0.2))', borderRadius: '8px' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', margin: '10px 0', padding: '8px 10px', background: 'var(--bg-input)', borderRadius: '8px', border: '1px solid var(--border)' }}>
             <div>
-              <div style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)', textTransform: 'uppercase' }}>Setup Score</div>
-              <div style={{ fontSize: '20px', fontWeight: 800, color: scoreColor }}>{result.setupScore}<span style={{ fontSize: '12px', fontWeight: 500, color: '#94a3b8' }}>/100</span></div>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Setup Score</div>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: scoreColor }}>{result.setupScore}<span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>/100</span></div>
             </div>
-            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '12px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)', textTransform: 'uppercase' }}>Current Price</div>
+            <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: '12px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Current Price</div>
               <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>₹{result.currentPrice?.toLocaleString('en-IN')}</div>
             </div>
             {result.keyLevels?.riskRewardRatio && (
-              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '12px' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)', textTransform: 'uppercase' }}>Risk/Reward</div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: '#38bdf8' }}>{result.keyLevels.riskRewardRatio}</div>
+              <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: '12px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Risk/Reward</div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent)' }}>{result.keyLevels.riskRewardRatio}</div>
               </div>
             )}
           </div>

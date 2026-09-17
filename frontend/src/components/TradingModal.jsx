@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import { TrendingUp, Shield, AlertTriangle, RefreshCw, CheckCircle2, XCircle, Bot, Key } from 'lucide-react'
+import { Modal } from './Modal'
 import { getTradingConfig, saveTradingConfig, resetPaperPortfolio } from '../trading/tradingStorage'
 import { getKiteLoginUrl, generateSessionToken } from '../trading/zerodhaClient'
 
@@ -71,59 +73,36 @@ export function TradingModal({ isOpen, onClose }) {
     }
   }
 
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        backdropFilter: 'blur(6px)',
-        zIndex: 9999,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '16px',
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div style={{
-        background: 'var(--panel, #121824)',
-        border: '1px solid var(--line, rgba(255,255,255,0.1))',
-        borderRadius: '16px',
-        maxWidth: '560px',
-        width: '100%',
-        maxHeight: '90vh',
-        overflowY: 'auto',
-        padding: '24px',
-        boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-        color: 'var(--text, #e2e8f0)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>📈</span>
-            <span>Indian Stock Trading & Zerodha Kite</span>
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--muted, #94a3b8)',
-              fontSize: '20px',
-              cursor: 'pointer',
-            }}
-          >
-            ×
-          </button>
-        </div>
+  const isLive = config.mode === 'live'
 
+  return (
+    <Modal
+      onClose={onClose}
+      title="Indian Stock Trading & Zerodha Kite"
+      icon={<TrendingUp size={20} style={{ color: 'var(--accent)' }} />}
+      className="trading-modal"
+    >
+      <div style={{ padding: '8px 0 16px', color: 'var(--text-primary)' }}>
         {/* Mode Selector */}
-        <div style={{ marginBottom: '20px', background: 'rgba(255,255,255,0.03)', padding: '14px', borderRadius: '12px', border: '1px solid var(--line, rgba(255,255,255,0.08))' }}>
-          <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted, #94a3b8)', marginBottom: '8px' }}>
+        <div style={{
+          marginBottom: '20px',
+          background: 'var(--bg-tertiary)',
+          padding: '16px',
+          borderRadius: '12px',
+          border: '1px solid var(--border)',
+        }}>
+          <label style={{
+            display: 'block',
+            fontSize: '11px',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            color: 'var(--text-secondary)',
+            marginBottom: '10px'
+          }}>
             Execution Mode
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <button
               type="button"
               onClick={() => {
@@ -131,16 +110,22 @@ export function TradingModal({ isOpen, onClose }) {
                 setConfig(next)
               }}
               style={{
-                padding: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '12px',
                 borderRadius: '8px',
-                border: config.mode === 'paper' ? '2px solid var(--brand, #ff6b35)' : '1px solid var(--line, rgba(255,255,255,0.1))',
-                background: config.mode === 'paper' ? 'rgba(255,107,53,0.1)' : 'transparent',
-                color: config.mode === 'paper' ? 'var(--brand2, #ff9142)' : 'var(--text, #e2e8f0)',
+                border: !isLive ? '2px solid var(--accent)' : '1px solid var(--border)',
+                background: !isLive ? 'var(--accent-glow)' : 'var(--bg-secondary)',
+                color: !isLive ? 'var(--accent)' : 'var(--text-secondary)',
                 fontWeight: 700,
+                fontSize: '13px',
                 cursor: 'pointer',
+                transition: 'all 0.15s ease',
               }}
             >
-              🛡️ Paper Simulator
+              <Shield size={16} /> Paper Simulator
             </button>
             <button
               type="button"
@@ -149,31 +134,56 @@ export function TradingModal({ isOpen, onClose }) {
                 setConfig(next)
               }}
               style={{
-                padding: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '12px',
                 borderRadius: '8px',
-                border: config.mode === 'live' ? '2px solid #ef4444' : '1px solid var(--line, rgba(255,255,255,0.1))',
-                background: config.mode === 'live' ? 'rgba(239,68,68,0.1)' : 'transparent',
-                color: config.mode === 'live' ? '#ef4444' : 'var(--text, #e2e8f0)',
+                border: isLive ? '2px solid var(--error, #ef4444)' : '1px solid var(--border)',
+                background: isLive ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-secondary)',
+                color: isLive ? 'var(--error, #ef4444)' : 'var(--text-secondary)',
                 fontWeight: 700,
+                fontSize: '13px',
                 cursor: 'pointer',
+                transition: 'all 0.15s ease',
               }}
             >
-              ⚠️ Live Zerodha Kite
+              <AlertTriangle size={16} /> Live Zerodha Kite
             </button>
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--muted, #94a3b8)', marginTop: '8px' }}>
-            {config.mode === 'paper'
+          <p style={{
+            fontSize: '12px',
+            color: 'var(--text-secondary)',
+            marginTop: '10px',
+            marginBottom: 0,
+            lineHeight: 1.5,
+          }}>
+            {!isLive
               ? 'Zero-risk mode: uses virtual funds (₹1,00,000) with real-time NSE/BSE stock quotes.'
               : 'Real money mode: transmits orders directly to your Zerodha Demat/Trading account via Kite Connect.'}
-          </div>
+          </p>
         </div>
 
         {/* Zerodha Credentials */}
         <form onSubmit={handleSave}>
-          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px' }}>Zerodha Kite Connect v3 Credentials</h3>
-          
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '12px',
+            fontWeight: 700,
+            fontSize: '14px',
+            color: 'var(--text-primary)',
+          }}>
+            <Key size={16} style={{ color: 'var(--accent)' }} />
+            <span>Zerodha Kite Connect v3 Credentials</span>
+          </div>
+
           <div style={{ marginBottom: '12px' }}>
-            <label style={{ display: 'block', fontSize: '12px', color: 'var(--muted, #94a3b8)', marginBottom: '4px' }}>Kite API Key</label>
+            <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
+              Kite API Key
+            </label>
             <input
               type="text"
               value={config.zerodhaApiKey || ''}
@@ -183,16 +193,19 @@ export function TradingModal({ isOpen, onClose }) {
                 width: '100%',
                 padding: '9px 12px',
                 borderRadius: '8px',
-                background: 'rgba(0,0,0,0.3)',
-                border: '1px solid var(--line, rgba(255,255,255,0.15))',
-                color: 'var(--text, #fff)',
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-primary)',
                 fontSize: '13px',
+                boxSizing: 'border-box',
               }}
             />
           </div>
 
           <div style={{ marginBottom: '14px' }}>
-            <label style={{ display: 'block', fontSize: '12px', color: 'var(--muted, #94a3b8)', marginBottom: '4px' }}>Kite API Secret</label>
+            <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
+              Kite API Secret
+            </label>
             <input
               type="password"
               value={config.zerodhaApiSecret || ''}
@@ -202,30 +215,40 @@ export function TradingModal({ isOpen, onClose }) {
                 width: '100%',
                 padding: '9px 12px',
                 borderRadius: '8px',
-                background: 'rgba(0,0,0,0.3)',
-                border: '1px solid var(--line, rgba(255,255,255,0.15))',
-                color: 'var(--text, #fff)',
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-primary)',
                 fontSize: '13px',
+                boxSizing: 'border-box',
               }}
             />
           </div>
 
           {/* Daily Login Flow */}
-          <div style={{ background: 'rgba(0,0,0,0.25)', padding: '12px', borderRadius: '10px', marginBottom: '16px', border: '1px solid var(--line, rgba(255,255,255,0.06))' }}>
-            <div style={{ fontSize: '12.5px', fontWeight: 600, marginBottom: '8px' }}>Daily SEBI 2FA Authentication</div>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+          <div style={{
+            background: 'var(--bg-tertiary)',
+            padding: '14px',
+            borderRadius: '10px',
+            marginBottom: '18px',
+            border: '1px solid var(--border)',
+          }}>
+            <div style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '8px', color: 'var(--text-primary)' }}>
+              Daily SEBI 2FA Authentication
+            </div>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
               <button
                 type="button"
                 onClick={handleKiteLogin}
                 style={{
                   padding: '8px 14px',
-                  background: 'var(--brand, #ff6b35)',
+                  background: 'var(--accent)',
                   color: '#fff',
                   border: 'none',
                   borderRadius: '6px',
                   fontWeight: 600,
                   fontSize: '12.5px',
                   cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
                 }}
               >
                 1. Open Zerodha Login
@@ -239,12 +262,13 @@ export function TradingModal({ isOpen, onClose }) {
                 placeholder="Paste request_token from redirect URL"
                 style={{
                   flex: 1,
-                  padding: '7px 10px',
+                  padding: '8px 10px',
                   borderRadius: '6px',
-                  background: 'rgba(0,0,0,0.3)',
-                  border: '1px solid var(--line, rgba(255,255,255,0.15))',
-                  color: 'var(--text, #fff)',
-                  fontSize: '12px',
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-primary)',
+                  fontSize: '12.5px',
+                  boxSizing: 'border-box',
                 }}
               />
               <button
@@ -252,14 +276,15 @@ export function TradingModal({ isOpen, onClose }) {
                 onClick={handleExchangeToken}
                 disabled={loading}
                 style={{
-                  padding: '7px 14px',
-                  background: '#10b981',
+                  padding: '8px 14px',
+                  background: 'var(--success, #22c55e)',
                   color: '#fff',
                   border: 'none',
                   borderRadius: '6px',
                   fontWeight: 600,
-                  fontSize: '12px',
+                  fontSize: '12.5px',
                   cursor: loading ? 'wait' : 'pointer',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {loading ? 'Validating...' : 'Generate Token'}
@@ -267,17 +292,33 @@ export function TradingModal({ isOpen, onClose }) {
             </div>
 
             {authStatus && (
-              <div style={{ marginTop: '8px', fontSize: '12px', color: authStatus.success ? '#10b981' : '#ef4444' }}>
-                {authStatus.message}
+              <div style={{
+                marginTop: '10px',
+                fontSize: '12px',
+                padding: '6px 10px',
+                borderRadius: '6px',
+                background: authStatus.success ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                border: `1px solid ${authStatus.success ? 'var(--success, #22c55e)' : 'var(--error, #ef4444)'}`,
+                color: authStatus.success ? 'var(--success, #22c55e)' : 'var(--error, #ef4444)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}>
+                {authStatus.success ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                <span>{authStatus.message}</span>
               </div>
             )}
           </div>
 
           {/* Risk Limits */}
-          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px' }}>Risk & Safety Limits</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px', color: 'var(--text-primary)' }}>
+            Risk & Safety Limits
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '18px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #94a3b8)', marginBottom: '4px' }}>Max Value Per Trade (₹)</label>
+              <label style={{ display: 'block', fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
+                Max Value Per Trade (₹)
+              </label>
               <input
                 type="number"
                 value={config.riskLimits?.maxOrderValue || 25000}
@@ -289,15 +330,18 @@ export function TradingModal({ isOpen, onClose }) {
                   width: '100%',
                   padding: '8px 10px',
                   borderRadius: '6px',
-                  background: 'rgba(0,0,0,0.3)',
-                  border: '1px solid var(--line, rgba(255,255,255,0.15))',
-                  color: 'var(--text, #fff)',
-                  fontSize: '12.5px',
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-primary)',
+                  fontSize: '13px',
+                  boxSizing: 'border-box',
                 }}
               />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #94a3b8)', marginBottom: '4px' }}>Virtual Paper Balance</label>
+              <label style={{ display: 'block', fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
+                Virtual Paper Balance
+              </label>
               <button
                 type="button"
                 onClick={handleResetPaper}
@@ -305,32 +349,47 @@ export function TradingModal({ isOpen, onClose }) {
                   width: '100%',
                   padding: '8px 10px',
                   borderRadius: '6px',
-                  background: 'transparent',
-                  border: '1px solid var(--line, rgba(255,255,255,0.2))',
-                  color: 'var(--text, #fff)',
-                  fontSize: '12px',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-primary)',
+                  fontSize: '12.5px',
+                  fontWeight: 600,
                   cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
                 }}
               >
-                Reset (₹1,00,000)
+                <RefreshCw size={13} /> Reset (₹1,00,000)
               </button>
             </div>
           </div>
 
           {/* Autonomous Profit Optimizer & Scanner */}
-          <div style={{ background: 'rgba(56, 189, 248, 0.05)', border: '1px solid rgba(56, 189, 248, 0.2)', padding: '14px', borderRadius: '10px', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <div style={{
+            background: 'var(--bg-tertiary)',
+            border: '1px solid var(--border)',
+            padding: '16px',
+            borderRadius: '12px',
+            marginBottom: '20px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <div>
-                <strong style={{ fontSize: '13px', color: '#38bdf8' }}>🤖 Autonomous Market Scanner & Profit Engine</strong>
-                <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: 'var(--muted, #94a3b8)' }}>
+                <strong style={{ fontSize: '13.5px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Bot size={16} /> Autonomous Market Scanner & Profit Engine
+                </strong>
+                <p style={{ margin: '4px 0 0 0', fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                   Evaluates Nifty stocks on quantitative setups (RSI, MACD, EMA, Bollinger, ATR) and executes only high-probability trades with positive expected value.
                 </p>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', margin: '10px 0' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginTop: '12px' }}>
               <div>
-                <label style={{ fontSize: '10.5px', color: '#94a3b8' }}>Min Score (0-100)</label>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px', fontWeight: 600 }}>
+                  Min Score (0-100)
+                </label>
                 <input
                   type="number"
                   value={config.autoTrader?.minSetupScore || 75}
@@ -338,11 +397,22 @@ export function TradingModal({ isOpen, onClose }) {
                     ...config,
                     autoTrader: { ...(config.autoTrader || {}), minSetupScore: Number(e.target.value) || 75 },
                   })}
-                  style={{ width: '100%', padding: '6px 8px', fontSize: '12px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    fontSize: '12.5px',
+                    borderRadius: '6px',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    boxSizing: 'border-box',
+                  }}
                 />
               </div>
               <div>
-                <label style={{ fontSize: '10.5px', color: '#94a3b8' }}>Take Profit Target (%)</label>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px', fontWeight: 600 }}>
+                  Take Profit (%)
+                </label>
                 <input
                   type="number"
                   step="0.5"
@@ -351,11 +421,22 @@ export function TradingModal({ isOpen, onClose }) {
                     ...config,
                     autoTrader: { ...(config.autoTrader || {}), profitTargetPercent: Number(e.target.value) || 3.5 },
                   })}
-                  style={{ width: '100%', padding: '6px 8px', fontSize: '12px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    fontSize: '12.5px',
+                    borderRadius: '6px',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    boxSizing: 'border-box',
+                  }}
                 />
               </div>
               <div>
-                <label style={{ fontSize: '10.5px', color: '#94a3b8' }}>Stop Loss Limit (%)</label>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px', fontWeight: 600 }}>
+                  Stop Loss (%)
+                </label>
                 <input
                   type="number"
                   step="0.5"
@@ -364,26 +445,46 @@ export function TradingModal({ isOpen, onClose }) {
                     ...config,
                     autoTrader: { ...(config.autoTrader || {}), stopLossPercent: Number(e.target.value) || 2.0 },
                   })}
-                  style={{ width: '100%', padding: '6px 8px', fontSize: '12px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    fontSize: '12.5px',
+                    borderRadius: '6px',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    boxSizing: 'border-box',
+                  }}
                 />
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '12px', borderTop: '1px solid var(--line, rgba(255,255,255,0.1))' }}>
-            {saveSuccess && <span style={{ color: '#10b981', fontSize: '12.5px' }}>✓ Settings saved locally</span>}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingTop: '14px',
+            borderTop: '1px solid var(--border)',
+          }}>
+            {saveSuccess && (
+              <span style={{ color: 'var(--success, #22c55e)', fontSize: '12.5px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <CheckCircle2 size={14} /> Settings saved
+              </span>
+            )}
             <button
               type="submit"
               style={{
                 marginLeft: 'auto',
                 padding: '9px 18px',
-                background: 'var(--brand, #ff6b35)',
+                background: 'var(--accent)',
                 color: '#fff',
                 border: 'none',
                 borderRadius: '8px',
                 fontWeight: 700,
                 fontSize: '13px',
                 cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
               }}
             >
               Save Configuration
@@ -391,6 +492,6 @@ export function TradingModal({ isOpen, onClose }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   )
 }

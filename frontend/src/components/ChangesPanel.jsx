@@ -135,8 +135,9 @@ function GitView() {
     )
   }
 
-  const staged = status.files.filter(f => f.staged && !f.untracked)
-  const changed = status.files.filter(f => (f.unstaged || f.untracked))
+  const files = Array.isArray(status?.files) ? status.files : []
+  const staged = files.filter(f => f.staged && !f.untracked)
+  const changed = files.filter(f => (f.unstaged || f.untracked))
 
   const Row = ({ f, group }) => (
     <div
@@ -193,7 +194,7 @@ function GitView() {
           })}
         >
           {status.detached && <option value="">detached HEAD</option>}
-          {(status.branches || []).map(b => <option key={b} value={b}>{b}</option>)}
+          {(Array.isArray(status?.branches) ? status.branches : []).map(b => <option key={b} value={b}>{b}</option>)}
         </select>
 
         {/* Ahead/behind is the answer to "do I need to push", which the panel
@@ -353,7 +354,8 @@ function JournalView({ root }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    setEntries(await listJournal())
+    const list = await listJournal()
+    setEntries(Array.isArray(list) ? list : [])
     setLoading(false)
   }, [])
 

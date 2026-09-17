@@ -60,7 +60,8 @@ export function compareEntries(a, b) {
 
 /** Fresh state. `roots` is the roots_list reply: [{ id, path, label, primary }]. */
 export function createTree(roots = []) {
-  const list = (roots || []).filter(Boolean).map(r => ({
+  const safeRoots = Array.isArray(roots) ? roots : []
+  const list = safeRoots.filter(Boolean).map(r => ({
     id: String(r.id ?? r.path),
     path: r.path,
     label: r.label || baseName(String(r.path || '').split('\\').join('/')) || r.path,
@@ -118,8 +119,10 @@ export function setChildren(state, rootId, dirPath, entries, rootAbsPath) {
   const kids = []
 
   const absRoot = normPath(rootAbsPath || state.roots.find(r => r.id === rootId)?.path || '')
+  const safeEntries = Array.isArray(entries) ? entries : []
 
-  for (const e of entries || []) {
+  for (const e of safeEntries) {
+    if (!e || typeof e !== 'object') continue
     // fs_list returns ABSOLUTE paths. Re-derive the root-relative one rather
     // than trusting a `name` join, which loses nested results on a recursive
     // listing.
@@ -240,7 +243,9 @@ export function setDecorations(state, { rootId, gitFiles = [], agentPaths = [] }
     decorations[id] = { ...(decorations[id] || {}), ...patch }
   }
 
-  for (const f of gitFiles || []) {
+  const safeGitFiles = Array.isArray(gitFiles) ? gitFiles : []
+  for (const f of safeGitFiles) {
+    if (!f || typeof f !== 'object') continue
     const rel = normPath(f.path)
     if (!rel) continue
     put(rel, { git: gitBadge(f) })
@@ -253,7 +258,9 @@ export function setDecorations(state, { rootId, gitFiles = [], agentPaths = [] }
     }
   }
 
-  for (const p of agentPaths || []) {
+  const safeAgentPaths = Array.isArray(agentPaths) ? agentPaths : []
+  for (const p of safeAgentPaths) {
+    if (!p) continue
     const rel = normPath(p)
     if (!rel) continue
     put(rel, { agent: true })

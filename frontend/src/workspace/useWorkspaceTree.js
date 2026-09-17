@@ -53,6 +53,14 @@ export function useWorkspaceTree({ enabled = true, conversationId = null } = {})
         : (rel ? `${rootAbs}/${rel}` : rootAbs)
       const entries = await wsList(arg)
       if (!mounted.current) return
+      if (!Array.isArray(entries)) {
+        if (entries && typeof entries === 'object' && entries.error) {
+          setState(s => setError(s, rootId, rel, entries.error))
+        } else {
+          setState(s => setChildren(s, rootId, rel, [], rootAbs))
+        }
+        return
+      }
       setState(s => setChildren(s, rootId, rel, entries, rootAbs))
     } catch (e) {
       if (!mounted.current) return
@@ -79,8 +87,9 @@ export function useWorkspaceTree({ enabled = true, conversationId = null } = {})
     if (!enabled || !isDesktop()) return
     const roots = await listRoots()
     if (!mounted.current) return
+    const safeRoots = Array.isArray(roots) ? roots : []
     setState(s => {
-      const next = setRoots(s, roots)
+      const next = setRoots(s, safeRoots)
       // Auto-open the primary root: an explorer that opens showing one
       // collapsed line is a worse first impression than one extra listing.
       const primary = next.roots.find(r => r.primary) || next.roots[0]
@@ -88,7 +97,7 @@ export function useWorkspaceTree({ enabled = true, conversationId = null } = {})
       const rid = nodeId(primary.id, ROOT_PARENT)
       return next.expanded[rid] ? next : expand(next, rid, true)
     })
-    const primary = roots.find(r => r.primary) || roots[0]
+    const primary = safeRoots.find(r => r.primary) || safeRoots[0]
     if (primary) loadDir(String(primary.id ?? primary.path), ROOT_PARENT)
   }, [enabled, loadDir])
 
@@ -106,18 +115,19 @@ export function useWorkspaceTree({ enabled = true, conversationId = null } = {})
     if (!mounted.current) return
 
     const rootAbs = normPath(primary.path)
+    const journalList = Array.isArray(journal) ? journal : []
     // Journal targets are ABSOLUTE. Only the ones inside this root can be shown
     // against a tree row, and silently mapping the rest to a wrong row would be
     // worse than not decorating them.
-    const agentPaths = (journal || [])
-      .map(e => normPath(e.target))
-      .filter(p => rootAbs && (p === rootAbs || p.startsWith(rootAbs + '/')))
+    const agentPaths = journalList
+      .map(e => (e && e.target) ? normPath(e.target) : null)
+      .filter(p => p && rootAbs && (p === rootAbs || p.startsWith(rootAbs + '/')))
       .map(p => p.slice(rootAbs.length + 1))
       .filter(Boolean)
 
     setState(s => setDecorations(s, {
       rootId: String(primary.id ?? primary.path),
-      gitFiles: git?.success ? git.files : [],
+      gitFiles: Array.isArray(git?.files) ? git.files : [],
       agentPaths,
     }))
   }, [enabled])
