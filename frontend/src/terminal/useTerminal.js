@@ -60,7 +60,7 @@ export function useTerminal({ conversationId, enabled = true } = {}) {
     const b = bridge()
     if (!enabled || !isDesktop() || !b?.session) return
     try {
-      const res = await b.session(getWorkspaceCtx())
+      const res = await b.session(getWorkspaceCtx({ conversationId: chatId }))
       if (!res?.success) { setError(res?.error || null); return }
       store.setSession(chatId, res.blocks || [])
       setPtyAvailable(!!res.ptyAvailable)
@@ -83,12 +83,12 @@ export function useTerminal({ conversationId, enabled = true } = {}) {
     setHistoryIndex(-1)
     setBusy(true)
     try {
-      const res = await b.run({ ctx: getWorkspaceCtx(), command: cmd })
+      const res = await b.run({ ctx: getWorkspaceCtx({ conversationId: chatId }), command: cmd })
       // The block already arrived over the stream; only a hard refusal (no
       // folder granted, locked capability) needs surfacing here.
       if (res?.error && !res.block) setError(res.error)
     } catch (e) { setError(e?.message || String(e)) } finally { setBusy(false) }
-  }, [])
+  }, [chatId])
 
   /** Interrupt a running block — the agent's included. */
   const stop = useCallback(async (id) => {
@@ -101,7 +101,7 @@ export function useTerminal({ conversationId, enabled = true } = {}) {
     const b = bridge()
     if (!b?.clear) return
     try {
-      const res = await b.clear(getWorkspaceCtx())
+      const res = await b.clear(getWorkspaceCtx({ conversationId: chatId }))
       // Running blocks survive a clear, so trust main's answer rather than
       // emptying locally and losing the Stop button for a live command.
       store.setSession(chatId, res?.blocks || [])

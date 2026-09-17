@@ -352,18 +352,6 @@ export default function App() {
     else if (outcome === 'failed') setShowShareSheet(true)
   }, [showToast])
 
-  const handleAddFolder = useCallback(async () => {
-    const added = await addRoot()
-    if (added) setChatRoots(await listRoots())
-  }, [])
-  const handleRemoveFolder = useCallback(async (rootId) => {
-    const updated = await removeRoot(rootId)
-    setChatRoots(updated || [])
-  }, [])
-  const handleMakePrimary = useCallback(async (rootId) => {
-    const updated = await setPrimaryRoot(rootId)
-    setChatRoots(updated || [])
-  }, [])
   const features = useMemo(() => resolveFeatures(prefs.features), [prefs.features])
 
   // Push the sound preference into the (non-React) cue module whenever it
@@ -652,6 +640,22 @@ export default function App() {
     projectId: activeProject ?? null,
   }
 
+  const handleAddFolder = useCallback(async () => {
+    const ctx = { conversationId: scopeId, projectId: activeProject }
+    const added = await addRoot(ctx)
+    if (added) setChatRoots(await listRoots(ctx))
+  }, [scopeId, activeProject])
+  const handleRemoveFolder = useCallback(async (rootId) => {
+    const ctx = { conversationId: scopeId, projectId: activeProject }
+    const updated = await removeRoot(rootId, ctx)
+    setChatRoots(updated || [])
+  }, [scopeId, activeProject])
+  const handleMakePrimary = useCallback(async (rootId) => {
+    const ctx = { conversationId: scopeId, projectId: activeProject }
+    const updated = await setPrimaryRoot(rootId, ctx)
+    setChatRoots(updated || [])
+  }, [scopeId, activeProject])
+
 
   // A browsing session carries logged-in state. It must not follow the user into
   // an unrelated chat, so switching conversations ends it.
@@ -727,8 +731,8 @@ export default function App() {
   // makes switching chats switch the working folder.
   useEffect(() => {
     if (!isDesktop()) return
-    listRoots().then(setChatRoots).catch(() => setChatRoots([]))
-  }, [conv?.id, conv?.clientId, activeProject])
+    listRoots({ conversationId: scopeId, projectId: activeProject }).then(setChatRoots).catch(() => setChatRoots([]))
+  }, [scopeId, activeProject])
 
   // clientId, NOT id. A turn publishes its reasoning and tool steps under
   // targetClientId, and every other per-chat map here (loadingMap, streamingMap,
@@ -4738,7 +4742,7 @@ export default function App() {
             open={showWorkspace}
             onUpgrade={() => setShowUpgrade(true)}
             onClose={() => setShowWorkspace(false)}
-            conversationId={conv?.clientId || conv?.id || null}
+            conversationId={scopeId}
             dark={theme !== 'light'}
           />
         </React.Suspense>
@@ -6585,7 +6589,7 @@ export default function App() {
           <TerminalDrawer
             open={showTerminal}
             onClose={() => setShowTerminal(false)}
-            conversationId={conv?.clientId || conv?.id || null}
+            conversationId={scopeId}
             onUpgrade={() => setShowUpgrade(true)}
           />
         </React.Suspense>

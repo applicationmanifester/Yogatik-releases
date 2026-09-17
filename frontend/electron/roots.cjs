@@ -39,6 +39,7 @@ function load() {
 
   const pruned = core.pruneMissing(state)
   state = pruned.state
+  state = core.cleanPollutedDefault(state)
 
   // A fresh install has granted nothing, so the app provides its own folder and
   // binds it as the global default — every chat inherits it and file work works

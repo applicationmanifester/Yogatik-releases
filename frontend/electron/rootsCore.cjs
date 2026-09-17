@@ -36,14 +36,30 @@ function bindingKeys(ctx = {}) {
  * First binding that yields at least one REGISTERED root. Unknown ids are
  * dropped: the registry is the only authority, so a forged or stale id can
  * never widen access.
+ *
+ * If a chat has an explicit binding entry (even an empty array []), that
+ * explicit empty binding is respected and does not fall back to default,
+ * ensuring that removing folders from a chat does not resurrect default roots.
  */
 function resolveRootIds(state, ctx) {
   const st = state || emptyState()
-  for (const key of bindingKeys(ctx)) {
-    const ids = (st.bindings?.[key] || []).filter(id => !!st.roots?.[id])
-    if (ids.length) return ids
+  const cKey = chatKey(ctx)
+  if (cKey && Array.isArray(st.bindings?.[cKey])) {
+    const list = st.bindings[cKey]
+    if (list.length === 0) return []
+    const valid = list.filter(id => !!st.roots?.[id])
+    if (valid.length > 0) return valid
   }
-  return []
+  if (ctx?.projectId != null && ctx.projectId !== '') {
+    const pKey = `project:${ctx.projectId}`
+    if (Array.isArray(st.bindings?.[pKey])) {
+      const list = st.bindings[pKey]
+      if (list.length === 0) return []
+      const valid = list.filter(id => !!st.roots?.[id])
+      if (valid.length > 0) return valid
+    }
+  }
+  return (st.bindings?.['default'] || []).filter(id => !!st.roots?.[id])
 }
 
 function resolveRootPaths(state, ctx) {
@@ -120,11 +136,6 @@ function resolveWithin(rootPaths, target) {
 
 function clone(state) {
   const st = state || emptyState()
-  // Spread the WHOLE state first. Rebuilding only {version, roots, bindings}
-  // dropped every other top-level key, and since roots.cjs assigns the result
-  // back over the live state, any addRoot/removeRoot silently wiped
-  // trustedHookRoots — hook trust revoking itself with no user action. It also
-  // would have eaten autoDefaultCreated, resurrecting a folder the user removed.
   return { ...st, version: 1, roots: { ...st.roots }, bindings: { ...st.bindings } }
 }
 
@@ -134,15 +145,21 @@ function chatKey(ctx) {
 }
 
 /**
- * Give this chat its OWN binding, seeded from whatever it currently inherits.
- * Every mutation goes through here, so editing one chat's folders can never
- * silently rewrite a project or global default.
+ * Give this chat its OWN binding, seeded from whatever project it inherits.
+ * A chat never seeds from the global default when materialising its own folders,
+ * preventing cross-chat folder leakage.
  */
 function materialise(state, ctx) {
   const st = clone(state)
   const key = chatKey(ctx)
   if (!key) return st
-  if (!Array.isArray(st.bindings[key])) st.bindings[key] = resolveRootIds(st, ctx)
+  if (!Array.isArray(st.bindings[key])) {
+    const projectKey = ctx?.projectId ? `project:${ctx.projectId}` : null
+    const projectRoots = projectKey && Array.isArray(st.bindings[projectKey])
+      ? st.bindings[projectKey].filter(id => !!st.roots?.[id])
+      : []
+    st.bindings[key] = projectRoots
+  }
   return st
 }
 
@@ -156,10 +173,6 @@ function addRoot(state, ctx, absPath) {
   const key = chatKey(ctx) || 'default'
   const list = st.bindings[key] || []
   st.bindings[key] = list.includes(id) ? list : [...list, id]
-  // Only initialize default if default is completely empty
-  if (!Array.isArray(st.bindings['default']) || st.bindings['default'].length === 0) {
-    st.bindings['default'] = [id]
-  }
   return { state: st, root: { id, ...st.roots[id] } }
 }
 
@@ -277,9 +290,23 @@ function pruneMissing(state) {
   return { state: st, removed }
 }
 
+/** Remove any chat roots that leaked into default from older versions */
+function cleanPollutedDefault(state) {
+  const st = clone(state)
+  if (!st || !st.bindings || !Array.isArray(st.bindings.default)) return st
+  const chatRootIds = new Set()
+  for (const [k, list] of Object.entries(st.bindings)) {
+    if (k.startsWith('chat:') && Array.isArray(list)) {
+      for (const id of list) chatRootIds.add(id)
+    }
+  }
+  st.bindings.default = st.bindings.default.filter(id => !chatRootIds.has(id))
+  return st
+}
+
 module.exports = {
   rootIdFor, emptyState, bindingKeys, resolveRootIds, resolveRootPaths,
   containingRoot, resolveWithin,
   materialise, addRoot, removeRoot, setPrimary, rebindChat, unbindChat, migrateLegacyGrant, pruneMissing,
-  ensureDefaultRoot,
+  ensureDefaultRoot, cleanPollutedDefault,
 }

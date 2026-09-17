@@ -51,7 +51,8 @@ export function useWorkspaceTree({ enabled = true, conversationId = null } = {})
       const arg = rootId === primary || !rootAbs
         ? rel
         : (rel ? `${rootAbs}/${rel}` : rootAbs)
-      const entries = await wsList(arg)
+      const ctx = conversationId ? { conversationId } : undefined
+      const entries = await wsList(arg, { ctx })
       if (!mounted.current) return
       if (!Array.isArray(entries)) {
         if (entries && typeof entries === 'object' && entries.error) {
@@ -66,7 +67,7 @@ export function useWorkspaceTree({ enabled = true, conversationId = null } = {})
       if (!mounted.current) return
       setState(s => setError(s, rootId, rel, e?.message || String(e)))
     }
-  }, [])
+  }, [conversationId])
 
   const toggleDir = useCallback((row) => {
     const id = row.id
@@ -85,7 +86,8 @@ export function useWorkspaceTree({ enabled = true, conversationId = null } = {})
 
   const refreshRoots = useCallback(async () => {
     if (!enabled || !isDesktop()) return
-    const roots = await listRoots()
+    const ctx = conversationId ? { conversationId } : undefined
+    const roots = await listRoots(ctx)
     if (!mounted.current) return
     const safeRoots = Array.isArray(roots) ? roots : []
     setState(s => {
@@ -99,9 +101,12 @@ export function useWorkspaceTree({ enabled = true, conversationId = null } = {})
     })
     const primary = safeRoots.find(r => r.primary) || safeRoots[0]
     if (primary) loadDir(String(primary.id ?? primary.path), ROOT_PARENT)
-  }, [enabled, loadDir])
+  }, [enabled, loadDir, conversationId])
 
-  useEffect(() => { refreshRoots() }, [refreshRoots, conversationId])
+  useEffect(() => {
+    setState(createTree([]))
+    refreshRoots()
+  }, [refreshRoots, conversationId])
 
   /* ── decorations (git + agent journal) ────────────────────────────────── */
 

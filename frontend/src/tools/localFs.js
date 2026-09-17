@@ -91,6 +91,13 @@ function workspaceCtx(override) {
     )
   }
 
+  // Prioritize active UI conversation if available so background agent turns
+  // in another chat cannot hijack the user's foreground workspace actions.
+  try {
+    const active = ctxProvider() || {}
+    if (active.conversationId || active.projectId) return active
+  } catch {}
+
   if (ambientCtx?.conversationId || ambientCtx?.projectId) return ambientCtx
   try { return ctxProvider() || {} } catch { return {} }
 }
@@ -148,37 +155,37 @@ function asRoot(p, source) {
 /** UI helpers (desktop only) — manage THIS chat's working folders.
  *  The Tauri shell has no roots_* commands and REJECTS unknown ones, so each
  *  falls back to the single-root fs_* command rather than silently doing nothing. */
-export async function addRoot() {
+export async function addRoot(ctxOverride) {
   if (!isDesktop()) return null
-  try { return await invoke('roots_add') }
+  try { return await invoke('roots_add', {}, ctxOverride) }
   catch {
-    try { return asRoot(await invoke('fs_grant'), 'chat') } catch { return null }
+    try { return asRoot(await invoke('fs_grant', {}, ctxOverride), 'chat') } catch { return null }
   }
 }
-export async function listRoots() {
+export async function listRoots(ctxOverride) {
   if (!isDesktop()) return []
   try {
-    const list = await invoke('roots_list')
+    const list = await invoke('roots_list', {}, ctxOverride)
     return Array.isArray(list) ? list.filter(r => r && (r.path || r.label)) : []
   }
   catch {
     try {
-      const one = asRoot(await invoke('fs_granted_root'), 'default')
+      const one = asRoot(await invoke('fs_granted_root', {}, ctxOverride), 'default')
       return one ? [one] : []
     } catch { return [] }
   }
 }
-export async function removeRoot(rootId) {
+export async function removeRoot(rootId, ctxOverride) {
   if (!isDesktop()) return []
   try {
-    const res = await invoke('roots_remove', { rootId })
+    const res = await invoke('roots_remove', { rootId }, ctxOverride)
     return Array.isArray(res) ? res : []
   } catch { return [] }
 }
-export async function setPrimaryRoot(rootId) {
+export async function setPrimaryRoot(rootId, ctxOverride) {
   if (!isDesktop()) return []
   try {
-    const res = await invoke('roots_set_primary', { rootId })
+    const res = await invoke('roots_set_primary', { rootId }, ctxOverride)
     return Array.isArray(res) ? res : []
   } catch { return [] }
 }
@@ -246,16 +253,17 @@ export async function setHookTrust(trusted) {
  */
 
 /** Direct children of one directory. Throws on failure; the panel shows it. */
-export async function wsList(path = '', { recursive = false, includeIgnored = true } = {}) {
-  return invoke('fs_list', { path, recursive, includeIgnored })
+export async function wsList(path = '', { recursive = false, includeIgnored = true, ctx = null } = {}) {
+  return invoke('fs_list', { path, recursive, includeIgnored }, ctx)
 }
 
 export async function wsRead(path, opts = {}) {
-  return invoke('fs_read', { path, ...opts })
+  const { ctx, ...rest } = opts || {}
+  return invoke('fs_read', { path, ...rest }, ctx)
 }
 
-export async function wsWrite(path, content, { expectedHash = null } = {}) {
-  return invoke('fs_write', { path, content, expectedHash })
+export async function wsWrite(path, content, { expectedHash = null, ctx = null } = {}) {
+  return invoke('fs_write', { path, content, expectedHash }, ctx)
 }
 
 export async function wsStat(path) { return invoke('fs_stat', { path }) }

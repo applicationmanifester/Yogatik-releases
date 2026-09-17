@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import {
   rootIdFor, emptyState, resolveRootIds, resolveWithin,
   materialise, addRoot, removeRoot, setPrimary, rebindChat, unbindChat, migrateLegacyGrant,
-  ensureDefaultRoot, resolveRootPaths,
+  ensureDefaultRoot, resolveRootPaths, cleanPollutedDefault,
 } from '../electron/rootsCore.cjs'
 import os from 'node:os'
 import nodePath from 'node:path'
@@ -189,26 +189,45 @@ describe('state transforms', () => {
     expect(st.bindings['chat:42']).toBeUndefined()
   })
 
-  it('removeRoot from a chat does not wipe default roots or affect other chats', () => {
+  it('keeps folders strictly isolated between chats and never pollutes default', () => {
     let st = emptyState()
     const { state: s1, root: root1 } = addRoot(st, { conversationId: 'chat1' }, '/folder1')
     st = s1
+    // Chat 1 has folder1
     expect(resolveRootPaths(st, { conversationId: 'chat1' })).toEqual([nodePath.resolve('/folder1')])
+    // Default binding is NOT polluted with Chat 1's folder
+    expect(st.bindings.default).toBeUndefined()
 
-    // User creates chat2 and inherits or adds a new folder
+    // User creates chat2 and adds a new folder
     const { state: s2, root: root2 } = addRoot(st, { conversationId: 'chat2' }, '/folder2')
     st = s2
-    expect(resolveRootPaths(st, { conversationId: 'chat2' })).toEqual([nodePath.resolve('/folder1'), nodePath.resolve('/folder2')])
-
-    // User removes folder1 in chat2
-    st = removeRoot(st, { conversationId: 'chat2' }, root1.id)
-
-    // Chat2 only has folder2
+    // Chat 2 ONLY has folder2 — NEVER inherits Chat 1's folder!
     expect(resolveRootPaths(st, { conversationId: 'chat2' })).toEqual([nodePath.resolve('/folder2')])
 
-    // Chat1 STILL has folder1!
+    // Chat 1 STILL only has folder1
+    expect(resolveRootPaths(st, { conversationId: 'chat1' })).toEqual([nodePath.resolve('/folder1')])
+
+    // User removes folder2 in chat2
+    st = removeRoot(st, { conversationId: 'chat2' }, root2.id)
+
+    // Chat2 has 0 folders and does NOT fall back to default or chat1
+    expect(resolveRootPaths(st, { conversationId: 'chat2' })).toEqual([])
+
+    // Chat1 STILL has folder1
     expect(resolveRootPaths(st, { conversationId: 'chat1' })).toEqual([nodePath.resolve('/folder1')])
     expect(st.roots[root1.id]).toBeTruthy()
+  })
+
+  it('cleanPollutedDefault strips any chat-bound root IDs from default bindings', () => {
+    let st = emptyState()
+    const { state: s1, root: root1 } = addRoot(st, { conversationId: 'chat1' }, '/folder1')
+    st = s1
+    // Simulate legacy polluted state where chat1's root leaked into default
+    st.bindings.default = [root1.id]
+    expect(st.bindings.default).toEqual([root1.id])
+
+    const cleaned = cleanPollutedDefault(st)
+    expect(cleaned.bindings.default).toEqual([])
   })
 
   it('migrateLegacyGrant makes the old single root the default', () => {
