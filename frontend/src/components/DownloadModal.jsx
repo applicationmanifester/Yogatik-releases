@@ -130,7 +130,7 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
             </div>
 
             <a
-              href="https://github.com/applicationmanifester/Yogatik-releases/releases/download/v1.0.0/YogatikBrowser-Setup.exe"
+              href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser-Setup.exe"
               target="_blank"
               rel="noreferrer"
               className="btn-primary"
