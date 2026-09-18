@@ -229,8 +229,46 @@
       z-index: 50;
       padding: 8px;
     }
-    .shield-menu, .bkmk-menu, .theme-menu { width: 280px; }
-    .dl-menu { width: 280px; max-height: 320px; overflow-y: auto; }
+    .dl-menu { width: 330px; max-height: 380px; overflow-y: auto; }
+    .dl-list { display: flex; flex-direction: column; gap: 6px; }
+    .dl-item {
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .dl-info { display: flex; flex-direction: column; gap: 2px; }
+    .dl-name { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
+    .dl-progress-wrap { height: 4px; background: var(--bg-hover); border-radius: 999px; overflow: hidden; margin-top: 3px; }
+    .dl-progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s; border-radius: 999px; }
+    .dl-progress-bar.completed { background: #10b981; }
+    .dl-progress-bar.cancelled, .dl-progress-bar.interrupted { background: #ef4444; }
+    .dl-meta { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-muted); }
+    .dl-actions { display: flex; gap: 6px; margin-top: 4px; }
+    .dl-btn-action {
+      background: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .dl-btn-action:hover { background: var(--bg-active); border-color: var(--border-focus); }
+    .dl-empty { text-align: center; padding: 24px 12px; color: var(--text-muted); font-size: 11px; }
+
+    .tab.hibernating {
+      opacity: 0.65;
+    }
+    .tab.hibernating span::after {
+      content: ' 💤';
+      font-size: 9px;
+      opacity: 0.8;
+    }
 
     .menu-header {
       display: flex;
@@ -608,7 +646,15 @@
     <!-- Downloads Wrap -->
     <div class="popover-wrap" id="dl-wrap">
       <button class="nav-btn" id="dl-btn" title="Downloads">&#8595;<span class="badge dl-badge" id="dl-badge" hidden>0</span></button>
-      <div class="menu-dropdown dl-menu" id="dl-menu" hidden></div>
+      <div class="menu-dropdown dl-menu" id="dl-menu" hidden>
+        <div class="menu-header">
+          <span>📥 Downloads</span>
+          <button id="dl-clear-btn" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;cursor:pointer;">Clear</button>
+        </div>
+        <div class="dl-list" id="dl-list">
+          <div class="dl-empty">No downloads yet</div>
+        </div>
+      </div>
     </div>
 
     <!-- Theme Switcher -->
@@ -1170,70 +1216,115 @@
 
     // ── Downloads ──
     const downloadsById = new Map()
+    const dlList = document.getElementById('dl-list')
+    const dlClearBtn = document.getElementById('dl-clear-btn')
+    if (dlClearBtn) {
+      dlClearBtn.onclick = () => {
+        downloadsById.clear()
+        renderDownloads()
+      }
+    }
+
     const fmtBytes = (n) => {
       if (!Number.isFinite(n) || n < 0) return ''
       if (n < 1024) return n + ' B'
       if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB'
       return (n / (1024 * 1024)).toFixed(1) + ' MB'
     }
+
     const renderDownloads = () => {
-      const list = [...downloadsById.values()].sort((a, b) => b.startedAt - a.startedAt)
+      const list = [...downloadsById.values()].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
       const inProgress = list.filter((d) => d.state === 'progressing').length
       dlBadge.hidden = list.length === 0
       dlBadge.textContent = inProgress || list.length
-      dlMenu.textContent = ''
+
+      if (!dlList) return
+      dlList.textContent = ''
+
       if (list.length === 0) {
         const empty = document.createElement('div')
-        empty.className = 'stat-row'
-        empty.style.padding = '12px'
+        empty.className = 'dl-empty'
         empty.textContent = 'No downloads yet'
-        dlMenu.appendChild(empty)
+        dlList.appendChild(empty)
         return
       }
+
       for (const d of list) {
-        const row = document.createElement('div')
-        row.className = 'bkmk-item'
+        const item = document.createElement('div')
+        item.className = 'dl-item'
+
         const info = document.createElement('div')
-        info.style.display = 'flex'
-        info.style.flexDirection = 'column'
-        info.style.overflow = 'hidden'
-        info.style.flex = '1'
-        const name = document.createElement('span')
-        name.textContent = d.filename || ''
+        info.className = 'dl-info'
+
+        const name = document.createElement('div')
+        name.className = 'dl-name'
+        name.textContent = d.filename || 'download'
         name.title = d.filename || ''
-        const meta = document.createElement('span')
-        meta.style.fontSize = '10px'
-        meta.style.color = 'var(--text-muted)'
-        if (d.state === 'progressing') {
-          const pct = d.totalBytes > 0 ? Math.round((d.receivedBytes / d.totalBytes) * 100) + '% · ' : ''
-          meta.textContent = pct + fmtBytes(d.receivedBytes)
-        } else {
-          meta.textContent = d.state
-        }
         info.appendChild(name)
-        info.appendChild(meta)
-        row.appendChild(info)
-        const actions = document.createElement('div')
-        if (d.state === 'progressing') {
-          const cancel = document.createElement('button')
-          cancel.className = 'bkmk-del'
-          cancel.textContent = '×'
-          cancel.title = 'Cancel'
-          cancel.onclick = () => act('cancel-download', d.id)
-          actions.appendChild(cancel)
-        } else if (d.state === 'completed') {
-          const open = document.createElement('button')
-          open.className = 'shield-toggle-btn'
-          open.textContent = 'Open'
-          open.onclick = () => act('open-download', d.id)
-          actions.appendChild(open)
+
+        const pct = d.totalBytes > 0 ? Math.min(100, Math.round((d.receivedBytes / d.totalBytes) * 100)) : (d.state === 'completed' ? 100 : 0)
+
+        const progWrap = document.createElement('div')
+        progWrap.className = 'dl-progress-wrap'
+        const barEl = document.createElement('div')
+        barEl.className = 'dl-progress-bar' + (d.state ? ' ' + d.state : '')
+        barEl.style.width = pct + '%'
+        progWrap.appendChild(barEl)
+        info.appendChild(progWrap)
+
+        const meta = document.createElement('div')
+        meta.className = 'dl-meta'
+        const sizeSpan = document.createElement('span')
+        if (d.totalBytes > 0) {
+          sizeSpan.textContent = `${fmtBytes(d.receivedBytes)} / ${fmtBytes(d.totalBytes)} (${pct}%)`
+        } else {
+          sizeSpan.textContent = fmtBytes(d.receivedBytes)
         }
-        row.appendChild(actions)
-        dlMenu.appendChild(row)
+        const stateSpan = document.createElement('span')
+        stateSpan.textContent = d.state || 'pending'
+        meta.appendChild(sizeSpan)
+        meta.appendChild(stateSpan)
+        info.appendChild(meta)
+
+        item.appendChild(info)
+
+        const actions = document.createElement('div')
+        actions.className = 'dl-actions'
+        if (d.state === 'progressing') {
+          const cancelBtn = document.createElement('button')
+          cancelBtn.className = 'dl-btn-action'
+          cancelBtn.textContent = 'Cancel'
+          cancelBtn.onclick = () => act('cancel-download', d.id)
+          actions.appendChild(cancelBtn)
+        } else if (d.state === 'completed') {
+          const openBtn = document.createElement('button')
+          openBtn.className = 'dl-btn-action'
+          openBtn.textContent = 'Open'
+          openBtn.onclick = () => act('open-download', d.id)
+          actions.appendChild(openBtn)
+
+          const showBtn = document.createElement('button')
+          showBtn.className = 'dl-btn-action'
+          showBtn.textContent = 'Show in Folder'
+          showBtn.onclick = () => act('show-download', d.id)
+          actions.appendChild(showBtn)
+        }
+        if (actions.children.length > 0) {
+          item.appendChild(actions)
+        }
+
+        dlList.appendChild(item)
       }
     }
-    window.__setDownload = (rec) => { if (rec && rec.id) { downloadsById.set(rec.id, rec); renderDownloads() } }
-    document.getElementById('dl-btn').onclick = () => { dlMenu.hidden = !dlMenu.hidden }
+
+    window.__setDownload = (rec) => {
+      if (rec && rec.id) {
+        downloadsById.set(rec.id, rec)
+        renderDownloads()
+      }
+    }
+    const dlBtn = document.getElementById('dl-btn')
+    if (dlBtn) dlBtn.onclick = () => { dlMenu.hidden = !dlMenu.hidden }
 
     document.addEventListener('mousedown', (e) => {
       if (!dlWrap.contains(e.target)) dlMenu.hidden = true
@@ -1250,7 +1341,12 @@
       let activeTitle = 'New tab'
       for (const t of tabs) {
         const el = document.createElement('div')
-        el.className = 'tab' + (t.tabId === activeId ? ' active' : '')
+        let classes = 'tab' + (t.tabId === activeId ? ' active' : '')
+        if (t.hibernating) {
+          classes += ' hibernating'
+          el.title = 'Sleeping in background (click to wake)'
+        }
+        el.className = classes
         if (t.tabId === activeId) activeTitle = t.title || t.url || 'New tab'
         const label = document.createElement('span')
         label.textContent = t.title || t.url || 'New tab'

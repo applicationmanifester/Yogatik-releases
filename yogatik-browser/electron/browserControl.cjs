@@ -24,6 +24,8 @@ const {
 } = require('./browserTree.cjs')
 const { injectAdShield, getAdShieldStats, isAdShieldEnabled, setAdShieldEnabled } = require('./adBlocker.cjs')
 const { toggleReaderMode } = require('./readerMode.cjs')
+const { load: loadSettings, get: getSetting, set: setSetting } = require('./settings/store.cjs')
+const { injectExtensions } = require('./extensions.cjs')
 
 const NEW_TAB_URL = pathToFileURL(path.join(__dirname, 'newtab.html')).href
 
@@ -31,6 +33,102 @@ function isNewTabUrl(u) {
   if (!u) return true
   const str = String(u)
   return str === 'about:blank' || str === 'yogatik://newtab' || str === NEW_TAB_URL || str.includes('newtab.html')
+}
+
+
+// ── Tab Hibernation & Memory Management ───────────────────────────────────
+const HIBERNATE_AFTER_MS = 5 * 60 * 1000 // 5 minutes
+const hibernationTimers = new Map() // tabId -> timeoutId
+
+function scheduleTabHibernation(s, tabId) {
+  if (!tabId || tabId === s.activeTabId) return
+  if (hibernationTimers.has(tabId)) clearTimeout(hibernationTimers.get(tabId))
+
+  hibernationTimers.set(tabId, setTimeout(() => {
+    hibernateTab(s, tabId)
+  }, HIBERNATE_AFTER_MS))
+}
+
+async function hibernateTab(s, tabId) {
+  const tab = s.tabs.get(tabId)
+  if (!tab || tab.hibernating || tabId === s.activeTabId || !tab.view) return
+
+  try {
+    tab.savedUrl = safe(() => tab.view.webContents.getURL(), tab._pendingUrl || '')
+    tab.savedTitle = safe(() => tab.view.webContents.getTitle(), '')
+    if (isNewTabUrl(tab.savedUrl)) return
+
+    tab.savedScroll = await tab.view.webContents.executeJavaScript(
+      '({ x: window.scrollX || 0, y: window.scrollY || 0 })'
+    ).catch(() => ({ x: 0, y: 0 }))
+  } catch {}
+
+  const h = host(s)
+  if (h && !h.isDestroyed() && tab.view) {
+    if (h.contentView.children.includes(tab.view)) {
+      h.contentView.removeChildView(tab.view)
+    }
+  }
+  try {
+    tab.view.webContents.destroy()
+  } catch {}
+  tab.view = null
+  tab.hibernating = true
+  syncTabBar(s)
+}
+
+async function restoreTab(s, tabId) {
+  const tab = s.tabs.get(tabId)
+  if (!tab || !tab.hibernating || tab.view) return
+
+  const webPrefs = {
+    preload: path.join(__dirname, 'browserWindowPreload.cjs'),
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true,
+    autoplayPolicy: 'no-user-gesture-required',
+  }
+  tab.view = new WebContentsView({ webPreferences: webPrefs })
+  const wc = tab.view.webContents
+  injectAdShield(wc)
+  try {
+    const defaultUA = wc.getUserAgent()
+    const cleanedUA = defaultUA
+      .replace(/Electron\/[0-9\.]+\s?/gi, '')
+      .replace(/Yogatik[A-Za-z0-9_-]*\/[0-9\.]+\s?/gi, '')
+      .trim()
+    wc.setUserAgent(cleanedUA)
+  } catch {}
+
+  wireTabListeners(s, tabId, tab)
+  tab.hibernating = false
+
+  const targetUrl = tab.savedUrl || NEW_TAB_URL
+  wc.loadURL(targetUrl).catch(() => {})
+
+  if (tab.savedScroll && (tab.savedScroll.x > 0 || tab.savedScroll.y > 0)) {
+    wc.once('did-finish-load', () => {
+      wc.executeJavaScript(`window.scrollTo(${tab.savedScroll.x}, ${tab.savedScroll.y})`).catch(() => {})
+    })
+  }
+}
+
+async function activateTab(s, tabId) {
+  if (!s || !tabId || !s.tabs.has(tabId)) return
+  if (tabId === s.activeTabId) return
+
+  const prevId = s.activeTabId
+  if (prevId && prevId !== tabId) {
+    scheduleTabHibernation(s, prevId)
+  }
+
+  const targetTab = s.tabs.get(tabId)
+  if (targetTab?.hibernating) {
+    await restoreTab(s, tabId)
+  }
+
+  s.activeTabId = tabId
+  showActive(s)
 }
 
 // Window-mode chrome height: the toolbar (back/forward/reload/address bar)
@@ -81,15 +179,16 @@ function tabFor(s, tabId) {
 
 function listTabs(s) {
   return [...s.tabs.entries()].map(([tabId, t]) => {
-    const rawUrl = safe(() => t.view.webContents.getURL(), '')
+    const rawUrl = t.hibernating ? (t.savedUrl || '') : safe(() => t.view.webContents.getURL(), '')
     const isHome = isNewTabUrl(rawUrl)
     return {
       tabId,
       url: isHome ? '' : rawUrl,
-      title: isHome ? 'New Tab' : (safe(() => t.view.webContents.getTitle(), '') || 'New Tab'),
+      title: isHome ? 'New Tab' : (t.hibernating ? (t.savedTitle || 'Tab') : (safe(() => t.view.webContents.getTitle(), '') || 'New Tab')),
       active: tabId === s.activeTabId,
-      audible: safe(() => t.view.webContents.isCurrentlyAudible(), false),
-      muted: safe(() => t.view.webContents.isAudioMuted(), false),
+      hibernating: !!t.hibernating,
+      audible: t.hibernating ? false : safe(() => t.view.webContents.isCurrentlyAudible(), false),
+      muted: t.hibernating ? false : safe(() => t.view.webContents.isAudioMuted(), false),
     }
   })
 }
@@ -108,7 +207,7 @@ function createWindowSurface(s) {
         if (s.isHtmlFullScreen) {
           s.isHtmlFullScreen = false
           const t = activeTab(s)
-          if (t) {
+          if (t && t.view) {
             t.view.webContents.executeJavaScript('document.exitFullscreen ? document.exitFullscreen() : (document.webkitExitFullscreen && document.webkitExitFullscreen())').catch(() => {})
           }
           if (s.win && !s.win.isDestroyed()) {
@@ -142,10 +241,6 @@ function createWindowSurface(s) {
   s.win.loadFile(path.join(__dirname, 'browserWindow.html'))
   s.win.webContents.on('did-finish-load', () => {
     syncTabBar(s)
-    // Individual downloads are pushed one-at-a-time as they progress
-    // (broadcastDownload) — a window that opens (or reopens) AFTER some of
-    // that already happened needs the backlog seeded once, or its list stays
-    // empty until the next byte arrives on an in-flight download.
     const { downloads: existing } = listDownloads(s.key === '__default__' ? null : s.key, {})
     for (const rec of existing) {
       s.win.webContents
@@ -159,7 +254,7 @@ function createWindowSurface(s) {
     if (s.isHtmlFullScreen) {
       s.isHtmlFullScreen = false
       const t = activeTab(s)
-      if (t) {
+      if (t && t.view) {
         t.view.webContents.executeJavaScript('document.exitFullscreen ? document.exitFullscreen() : (document.webkitExitFullscreen && document.webkitExitFullscreen())').catch(() => {})
       }
       if (s.win && !s.win.isDestroyed()) {
@@ -184,7 +279,7 @@ function host(s) {
 function layout(s) {
   const t = activeTab(s)
   const h = host(s)
-  if (!t || !h || h.isDestroyed()) return
+  if (!t || !t.view || !h || h.isDestroyed()) return
   if (s.mode === 'panel') {
     if (s.detached || !s.bounds) return
     t.view.setBounds(s.bounds)
@@ -203,6 +298,7 @@ function showActive(s) {
   const h = host(s)
   if (!h || h.isDestroyed()) return
   for (const [tabId, t] of s.tabs) {
+    if (!t.view) continue
     const attached = h.contentView.children.includes(t.view)
     const shouldShow = tabId === s.activeTabId && !s.detached
     if (shouldShow && !attached) h.contentView.addChildView(t.view)
@@ -218,17 +314,17 @@ function showActive(s) {
 // to, and back/forward would have no way to grey out.
 function navSnapshot(s) {
   const t = activeTab(s)
-  const rawUrl = t ? (t._pendingUrl || safe(() => t.view.webContents.getURL(), '')) : ''
+  const rawUrl = t ? (t._pendingUrl || (t.hibernating ? (t.savedUrl || '') : safe(() => t.view.webContents.getURL(), ''))) : ''
   const isHome = isNewTabUrl(rawUrl)
   return {
     conversationId: s.key === '__default__' ? null : s.key,
     tabs: listTabs(s),
     activeTabId: s.activeTabId,
     url: isHome ? '' : rawUrl,
-    canGoBack: t ? safe(() => t.view.webContents.navigationHistory.canGoBack(), false) : false,
-    canGoForward: t ? safe(() => t.view.webContents.navigationHistory.canGoForward(), false) : false,
-    loading: t ? safe(() => t.view.webContents.isLoading(), false) : false,
-    zoomPercent: t ? Math.round(safe(() => t.view.webContents.getZoomFactor(), 1) * 100) : 100,
+    canGoBack: t && !t.hibernating ? safe(() => t.view.webContents.navigationHistory.canGoBack(), false) : false,
+    canGoForward: t && !t.hibernating ? safe(() => t.view.webContents.navigationHistory.canGoForward(), false) : false,
+    loading: t && !t.hibernating ? safe(() => t.view.webContents.isLoading(), false) : false,
+    zoomPercent: t && !t.hibernating ? Math.round(safe(() => t.view.webContents.getZoomFactor(), 1) * 100) : 100,
     shield: getAdShieldStats(),
     aiPanelOpen: !!s.aiPanelOpen,
     humanControl: !!t?.humanControl,
@@ -325,6 +421,16 @@ function createTab(s, url, opts = {}) {
       .trim()
     wc.setUserAgent(cleanedUA)
   } catch {}
+  wireTabListeners(s, tabId, tab)
+
+  showActive(s)
+  const targetUrl = isNewTabUrl(url) ? NEW_TAB_URL : url
+  navigate(s, tabId, targetUrl)
+  return tabId
+}
+
+function wireTabListeners(s, tabId, tab) {
+  const wc = tab.view.webContents
   // A fresh document invalidates every ref issued against the old one.
   wc.on('did-start-navigation', (_e, navUrl, _inPlace, isMainFrame) => {
     if (isMainFrame) {
@@ -344,19 +450,12 @@ function createTab(s, url, opts = {}) {
         tab._pendingUrl = null
       }
     }
-    // The address bar should track the location the instant a navigation
-    // starts (loading state, and the URL for a redirect chain), not only
-    // once the page finishes — a slow page left the toolbar showing the
-    // PREVIOUS url/spinner state for however long it took to load.
     syncTabBar(s)
   })
   wc.on('did-navigate', () => {
     tab._pendingUrl = null
     syncTabBar(s)
   })
-  // pushState/replaceState/hash changes never fire did-start-navigation or
-  // did-finish-load at all (there is no real navigation), so an SPA route
-  // change left the address bar showing the URL the tab was created with.
   wc.on('did-navigate-in-page', () => {
     tab._pendingUrl = null
     syncTabBar(s)
@@ -365,13 +464,9 @@ function createTab(s, url, opts = {}) {
   const LEVELS = ['debug', 'info', 'warning', 'error']
   const pushLog = (entry) => {
     tab.console.push(entry)
-    // A render loop can emit thousands of identical warnings; keep the tail.
     if (tab.console.length > 300) tab.console.splice(0, tab.console.length - 300)
   }
   wc.on('console-message', (...args) => {
-    // Electron changed this signature: newer versions pass ONE event object,
-    // older ones pass (event, level, message, line, sourceId). Handling only
-    // one shape means the capture silently records nothing on the other.
     const e = args[0]
     const modern = e && typeof e === 'object' && ('message' in e || 'level' in e)
     const level = modern ? e.level : args[1]
@@ -386,13 +481,10 @@ function createTab(s, url, opts = {}) {
       at: Date.now(),
     })
   })
-  // A page that throws during render logs nothing to the console in some
-  // frameworks — this is the other half of "did the UI actually work".
   wc.on('preload-error', (_e, preloadPath, error) => {
     pushLog({ level: 'error', message: `Preload failed: ${error?.message || error}`, source: preloadPath, line: null, at: Date.now() })
   })
   wc.on('did-fail-load', (_e, code, desc, failedUrl, isMainFrame) => {
-    // -3 is ERR_ABORTED, which same-page redirects raise routinely.
     if (code === -3) return
     tab.failed.push({ code, description: desc, url: failedUrl, mainFrame: !!isMainFrame, at: Date.now() })
     if (tab.failed.length > 50) tab.failed.shift()
@@ -400,6 +492,13 @@ function createTab(s, url, opts = {}) {
   wc.on('page-title-updated', () => syncTabBar(s))
   wc.on('did-finish-load', () => {
     syncTabBar(s)
+
+    // User script and custom extension injection
+    const pageUrl = safe(() => wc.getURL(), '')
+    if (pageUrl && (pageUrl.startsWith('http://') || pageUrl.startsWith('https://'))) {
+      injectExtensions(wc, pageUrl).catch(() => {})
+    }
+
     // Automated Challenge / 2FA Detection for agent tabs (OpenBot pattern)
     if (tab.isAgent && !tab.humanControl) {
       wc.executeJavaScript(`
@@ -430,8 +529,6 @@ function createTab(s, url, opts = {}) {
   wc.on('media-paused', () => syncTabBar(s))
 
   // HTML5 Fullscreen (YouTube, video players, games, presentations)
-  // When a video goes fullscreen, the WebContentsView must expand to cover the
-  // entire window (y: 0, height: hh), covering the top toolbar and tab strip.
   wc.on('enter-html-full-screen', () => {
     s.isHtmlFullScreen = true
     if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
@@ -459,7 +556,6 @@ function createTab(s, url, opts = {}) {
   wc.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return
 
-    // Escape exits HTML fullscreen if currently active
     if (input.key === 'Escape' && s.isHtmlFullScreen) {
       wc.executeJavaScript('document.exitFullscreen ? document.exitFullscreen() : (document.webkitExitFullscreen && document.webkitExitFullscreen())').catch(() => {})
       return
@@ -468,14 +564,12 @@ function createTab(s, url, opts = {}) {
     const mod = process.platform === 'darwin' ? input.meta : input.control
     const key = String(input.key || '').toLowerCase()
 
-    // F11: toggle window fullscreen
     if (input.key === 'F11' && s.mode === 'window' && s.win && !s.win.isDestroyed()) {
       event.preventDefault()
       s.win.setFullScreen(!s.win.isFullScreen())
       return
     }
 
-    // Ctrl/Cmd+T: New Tab
     if (mod && !input.alt && key === 't') {
       event.preventDefault()
       const id = createTab(s, null)
@@ -484,21 +578,18 @@ function createTab(s, url, opts = {}) {
       return
     }
 
-    // Ctrl/Cmd+W: Close current tab
     if (mod && !input.alt && key === 'w') {
       event.preventDefault()
       if (s.activeTabId) closeTab(s, s.activeTabId)
       return
     }
 
-    // Ctrl/Cmd+R or F5: Reload
     if ((mod && !input.alt && key === 'r') || input.key === 'F5') {
       event.preventDefault()
       wc.reload()
       return
     }
 
-    // Ctrl/Cmd+L or Alt+D: Focus address bar in window mode
     if ((mod && !input.alt && key === 'l') || (input.alt && key === 'd')) {
       if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
         event.preventDefault()
@@ -507,7 +598,6 @@ function createTab(s, url, opts = {}) {
       }
     }
 
-    // Ctrl/Cmd+F: Find in page
     if (mod && !input.alt && key === 'f') {
       event.preventDefault()
       if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
@@ -518,7 +608,6 @@ function createTab(s, url, opts = {}) {
       return
     }
 
-    // Ctrl/Cmd+I: Toggle AI Companion side panel
     if (mod && !input.alt && key === 'i') {
       event.preventDefault()
       if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
@@ -529,7 +618,6 @@ function createTab(s, url, opts = {}) {
       return
     }
 
-    // Ctrl/Cmd+D: Bookmark active tab
     if (mod && !input.alt && key === 'd') {
       if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
         event.preventDefault()
@@ -538,7 +626,6 @@ function createTab(s, url, opts = {}) {
       }
     }
 
-    // Ctrl/Cmd + Plus/Equals: Zoom in
     if (mod && !input.alt && (key === '=' || key === '+')) {
       event.preventDefault()
       stepZoom(wc, 'in')
@@ -546,7 +633,6 @@ function createTab(s, url, opts = {}) {
       return
     }
 
-    // Ctrl/Cmd + Minus: Zoom out
     if (mod && !input.alt && (key === '-' || key === '_')) {
       event.preventDefault()
       stepZoom(wc, 'out')
@@ -554,7 +640,6 @@ function createTab(s, url, opts = {}) {
       return
     }
 
-    // Ctrl/Cmd + 0: Reset zoom
     if (mod && !input.alt && key === '0') {
       event.preventDefault()
       stepZoom(wc, 'reset')
@@ -562,8 +647,7 @@ function createTab(s, url, opts = {}) {
       return
     }
   })
-  // Pop-ups become real tabs, but OAuth/SSO login flows (Google, X, etc.) need native child popups
-  // so window.opener is preserved for token exchanges without 'exchange-token-error'.
+
   wc.setWindowOpenHandler(({ url: target }) => {
     const isOAuth = /accounts\.(google|x|youtube)\.com|accounts\.x\.ai|(api\.)?twitter\.com|x\.com\/i\/flow|appleid\.apple\.com|login\.microsoftonline\.com|github\.com\/login\/oauth/i.test(target)
     if (isOAuth) {
@@ -588,27 +672,17 @@ function createTab(s, url, opts = {}) {
     }
     return { action: 'deny' }
   })
+
   wc.on('render-process-gone', () => {
-    // Mirror closeTab's cleanup order: detach the view from its host BEFORE
-    // dropping it from s.tabs. showActive() only ever removes/attaches views
-    // for tabIds still present in the map, so deleting first (as this used to)
-    // left a crashed tab's WebContentsView permanently attached to
-    // h.contentView.children with no code path left to ever remove it — an
-    // orphaned, unusable view leaked for the life of the session.
     const t = s.tabs.get(tabId)
     const h = host(s)
-    if (t && h && !h.isDestroyed() && h.contentView.children.includes(t.view)) {
+    if (t && t.view && h && !h.isDestroyed() && h.contentView.children.includes(t.view)) {
       safe(() => h.contentView.removeChildView(t.view))
     }
     s.tabs.delete(tabId)
     if (s.activeTabId === tabId) s.activeTabId = [...s.tabs.keys()][0] || null
     showActive(s)
   })
-
-  showActive(s)
-  const targetUrl = isNewTabUrl(url) ? NEW_TAB_URL : url
-  navigate(s, tabId, targetUrl)
-  return tabId
 }
 
 function navigate(s, tabId, url) {
@@ -2014,6 +2088,14 @@ function registerBrowserControl(first, second) {
     return { success: true }
   })
 
+  // Initialize session-level downloads monitoring
+  wireDownloads()
+
+  // Settings IPC Handlers
+  ipcMain.handle('settings:get', (_e, key) => getSetting(key))
+  ipcMain.handle('settings:set', (_e, key, val) => setSetting(key, val))
+  ipcMain.handle('settings:all', () => loadSettings())
+
   // Clicks and typing in the window-mode toolbar/tab strip. This is real
   // browser chrome now (address bar, back/forward/reload, a manual + button)
   // and not just the tab strip the channel name still describes — kept as
@@ -2029,7 +2111,9 @@ function registerBrowserControl(first, second) {
         if (typeof tabId === 'string') closeTab(s, tabId)
         break
       case 'select':
-        if (typeof tabId === 'string' && s.tabs.has(tabId)) { s.activeTabId = tabId; showActive(s) }
+        if (typeof tabId === 'string' && s.tabs.has(tabId)) {
+          activateTab(s, tabId)
+        }
         break
       case 'new-tab': {
         const id = createTab(s, null)

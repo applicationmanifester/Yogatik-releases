@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('__tabAction', (action, value) => {
   if (TAB_ID_ACTIONS.has(action)) {
     if (typeof value !== 'string') return
     payload.tabId = value
+    payload.arg = value
   } else if (action === 'navigate' || action === 'zoom' || action === 'theme') {
     if (typeof value !== 'string' || !value.trim()) return
     payload.arg = value
@@ -24,4 +25,15 @@ contextBridge.exposeInMainWorld('__tabAction', (action, value) => {
     payload.arg = value
   }
   ipcRenderer.send('browser:tab-action', payload)
+})
+
+contextBridge.exposeInMainWorld('__settings', {
+  get: (key) => ipcRenderer.invoke('settings:get', key),
+  set: (key, val) => ipcRenderer.invoke('settings:set', key, val),
+  all: () => ipcRenderer.invoke('settings:all'),
+})
+
+contextBridge.exposeInMainWorld('__downloadAction', (action, id) => {
+  if (typeof id !== 'string') return
+  ipcRenderer.send('browser:tab-action', { action, arg: id, tabId: id })
 })

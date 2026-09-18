@@ -6,7 +6,7 @@
 // is what makes the interesting logic testable at all.
 
 const MAX_TEXT = 120
-const MAX_NODES = 400
+const MAX_NODES = 800
 
 const INTERACTIVE_ROLES = new Set([
   'button', 'link', 'textbox', 'searchbox', 'checkbox', 'radio', 'combobox',
@@ -135,6 +135,14 @@ function walkerSource(epoch) {
     if (tag === 'li') return 'listitem';
     return 'generic';
   };
+  const selectorOf = (el) => {
+    if (!el || !el.tagName) return '';
+    if (el.id) return '#' + el.id;
+    if (el.name) return el.tagName.toLowerCase() + '[name="' + el.name + '"]';
+    const testId = el.getAttribute && el.getAttribute('data-testid');
+    if (testId) return '[data-testid="' + testId + '"]';
+    return el.tagName.toLowerCase();
+  };
   const nameOf = (el) => {
     const aria = el.getAttribute && el.getAttribute('aria-label');
     if (aria) return aria.trim();
@@ -144,8 +152,12 @@ function walkerSource(epoch) {
       if (t && t.innerText) return t.innerText.trim();
     }
     if (el.tagName === 'IMG') return (el.alt || '').trim();
-    if (el.tagName === 'INPUT') {
-      return (el.getAttribute('aria-label') || el.placeholder || el.value || el.name || '').trim();
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {
+      const label = (el.getAttribute('aria-label') || el.placeholder || el.name || '').trim();
+      const val = typeof el.value === 'string' ? el.value.trim() : '';
+      if (label && val) return label + ' (value: "' + val.slice(0, 80) + '")';
+      if (val) return 'value: "' + val.slice(0, 80) + '"';
+      if (label) return label;
     }
     const title = el.getAttribute && el.getAttribute('title');
     if (title) return title.trim();
@@ -160,7 +172,7 @@ function walkerSource(epoch) {
   const refs = [];
   const nodes = [];
   const walk = (el, depth) => {
-    if (!el || nodes.length > 2000) return;
+    if (!el || nodes.length > 3000) return;
     const tag = el.tagName ? el.tagName.toLowerCase() : '';
     if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'svg') return;
     const role = roleOf(el);
@@ -180,8 +192,13 @@ function walkerSource(epoch) {
           text: own,
           visible,
           interactive: !!interactive,
+          selector: selectorOf(el),
         });
       }
+    }
+    // Pierce Shadow DOM
+    if (el.shadowRoot && el.shadowRoot.children) {
+      for (const sChild of el.shadowRoot.children) walk(sChild, depth + 1);
     }
     for (const child of el.children) walk(child, depth + 1);
   };

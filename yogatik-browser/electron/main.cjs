@@ -136,16 +136,85 @@ function createMainWindow() {
   return mainWin
 }
 
-// ── Security: CSP Headers ─────────────────────────────────────────────────
+// ── Security: CSP Headers & Permission Hardening ─────────────────────────
 function applyCSP() {
   electronSession.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const url = details.url || ''
+    const isChrome = (url.startsWith('file://') || url.startsWith('yogatik://')) &&
+      (url.includes('browserWindow.html') || url.includes('newtab.html') || url.includes('splash.html'))
+
+    if (isChrome) {
+      const csp = [
+        "default-src 'self' 'unsafe-inline' data: blob:;",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval';",
+        "style-src 'self' 'unsafe-inline';",
+        "img-src 'self' data: blob: https:;",
+        "font-src 'self' data:;",
+        "connect-src 'self' https: wss:;",
+        "frame-src 'none';",
+        "object-src 'none';",
+        "base-uri 'none';",
+        "form-action 'none';",
+      ].join(' ')
+
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [csp],
+          'X-Content-Type-Options': ['nosniff'],
+          'X-Frame-Options': ['DENY'],
+          'Referrer-Policy': ['strict-origin-when-cross-origin'],
+          'Permissions-Policy': ['camera=(), microphone=(), geolocation=()'],
+        },
+      })
+      return
+    }
+
+    // For user web content (external sites like YouTube, GitHub, Wikipedia):
+    // Do NOT inject strict application CSP that blocks site assets, Polymer, or video streams.
+    // Ensure standard baseline security headers are preserved.
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        // Allow the browser to load any content (it's a browser after all)
-        // but prevent the chrome itself from being injected
+        'X-Content-Type-Options': ['nosniff'],
+        'Referrer-Policy': ['strict-origin-when-cross-origin'],
       },
     })
+  })
+}
+
+function setupPermissionHandler() {
+  electronSession.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const url = webContents ? webContents.getURL() : ''
+    const isInternal = url.startsWith('file:') || url.startsWith('yogatik:') || url.startsWith('http://localhost')
+
+    // Internal app chrome permissions can be granted
+    if (isInternal) {
+      callback(true)
+      return
+    }
+
+    // Auto-deny sensitive device and privacy permissions on untrusted external origins
+    const sensitive = [
+      'camera',
+      'microphone',
+      'geolocation',
+      'notifications',
+      'clipboard-read',
+      'clipboard-sanitized-write',
+      'mediaKeySystem',
+      'screen-wake-lock',
+      'midi',
+      'openExternal',
+    ]
+
+    if (sensitive.includes(permission)) {
+      callback(false)
+      return
+    }
+
+    // Safe default for others
+    callback(false)
   })
 }
 
@@ -213,8 +282,9 @@ app.whenReady().then(() => {
   // Enable ad/tracker blocking
   enableAdBlocker()
 
-  // Apply security headers
+  // Apply security headers & permission hardening
   applyCSP()
+  setupPermissionHandler()
 
   // Register browser IPC handlers
   registerBrowserControl(ipcMain, () => mainWin)
