@@ -1,6 +1,6 @@
 import React from 'react'
 import { Modal } from './Modal'
-import { Download, Monitor, Smartphone, Check } from 'lucide-react'
+import { Download, Monitor, Smartphone, Check, Compass } from 'lucide-react'
 
 export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
   if (!isOpen) return null
@@ -88,6 +88,69 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
               }}
             >
               <Download size={18} /> Choose your platform
+            </a>
+          </div>
+
+          {/* Yogatik Browser Card */}
+          <div style={{
+            background: 'var(--bg-tertiary)',
+            border: '1px solid rgba(255, 122, 24, 0.45)',
+            borderRadius: 12,
+            padding: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+          }}>
+            <span style={{
+              position: 'absolute',
+              top: -10,
+              right: 20,
+              background: 'linear-gradient(135deg, #ff7a18, #ff9900)',
+              color: '#fff',
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: 10,
+              textTransform: 'uppercase',
+            }}>v1.0.0 New</span>
+            
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <Compass size={24} style={{ color: '#ff7a18' }} />
+                <div>
+                  <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Yogatik Browser</h4>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Standalone AI Privacy Browser</span>
+                </div>
+              </div>
+              <ul style={{ margin: '16px 0', paddingLeft: 18, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                <li><strong style={{ color: 'var(--text-primary)' }}>Hardware AdShield:</strong> Blocks trackers, ads, and skips YouTube video ads.</li>
+                <li><strong style={{ color: 'var(--text-primary)' }}>Distraction-Free Reader:</strong> Reader mode with Dark, Sepia, and Light themes.</li>
+                <li><strong style={{ color: 'var(--text-primary)' }}>Spotlight Command Palette:</strong> Ctrl+K instant search and Theme Engine.</li>
+              </ul>
+            </div>
+
+            <a
+              href="https://github.com/applicationmanifester/Yogatik-releases/releases/download/v1.0.0/YogatikBrowser-Setup.exe"
+              target="_blank"
+              rel="noreferrer"
+              className="btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: '12px 16px',
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                color: '#fff',
+                background: 'linear-gradient(135deg, #ff7a18, #ff9900)',
+                textDecoration: 'none',
+                marginTop: 16,
+                cursor: 'pointer',
+              }}
+            >
+              <Download size={18} /> Download Browser (v1.0.0)
             </a>
           </div>
 

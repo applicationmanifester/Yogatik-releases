@@ -35,12 +35,15 @@ jobs:
           - os: windows-latest
             name: Windows
             build: npm run electron:build
+            browser_build: npm run build
           - os: macos-latest
             name: macOS
             build: npm run electron:build:mac
+            browser_build: npm run build:mac
           - os: ubuntu-latest
             name: Linux
             build: npm run electron:build:linux
+            browser_build: npm run build:linux
 
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.name }}
@@ -85,20 +88,19 @@ jobs:
         working-directory: frontend
         run: ${{ matrix.build }}
         env:
-          # NO GH_TOKEN here, deliberately. electron-builder's default publish
-          # policy is onTagOrDraft: given a token + CI + a tag it would try to
-          # upload to build.publish (the MIRROR) using this repo's GITHUB_TOKEN,
-          # which cannot write to another repository — a 403 mid-build. Every
-          # build script also passes --publish never. Publishing is the softprops
-          # step below, with RELEASE_TOKEN, and only there.
-          #
-          # Optional — desktop already works without these (direct provider calls,
-          # hardcoded Firebase fallback). Set as repo secrets for full parity.
           VITE_LLM_PROXY_BASE: ${{ secrets.VITE_LLM_PROXY_BASE }}
           VITE_AUTH_DOMAIN: ${{ secrets.VITE_AUTH_DOMAIN }}
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          # These builds are unsigned; skip signing/notarisation discovery rather
-          # than failing the job on a missing certificate.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Install Yogatik Browser dependencies
+        working-directory: yogatik-browser
+        run: npm install
+
+      - name: Build Yogatik Browser
+        working-directory: yogatik-browser
+        run: ${{ matrix.browser_build }}
+        env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload artefacts
@@ -116,6 +118,13 @@ jobs:
             frontend/release-electron/*.deb
             frontend/release-electron/*.blockmap
             frontend/release-electron/latest*.yml
+            yogatik-browser/release/*.exe
+            yogatik-browser/release/*.dmg
+            yogatik-browser/release/*.zip
+            yogatik-browser/release/*.AppImage
+            yogatik-browser/release/*.deb
+            yogatik-browser/release/*.blockmap
+            yogatik-browser/release/latest*.yml
 
       # All three runners publish into the SAME release on the PUBLIC MIRROR
       # repo. The source repo is private, and GitHub release assets on a private
@@ -141,12 +150,19 @@ jobs:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || steps.release-version.outputs.pkg_tag }}
           name: 'Yogatik ${{ github.ref_type == ''tag'' && github.ref_name || inputs.tag || steps.release-version.outputs.pkg_tag }}'
           body: |
+            ### 🚀 Yogatik Desktop (${{ steps.release-version.outputs.pkg_tag }})
             Desktop builds for Windows, macOS and Linux — download under Assets.
 
             * **Windows** — `Yogatik-Setup.exe`
             * **macOS (Apple Silicon M1/M2/M3)** — `Yogatik-arm64.dmg` or `Yogatik-arm64.zip`
             * **macOS (Intel)** — `Yogatik-x64.dmg` or `Yogatik-x64.zip`
             * **Linux** — `Yogatik.AppImage` or `Yogatik.deb`
+
+            ### 🌐 Yogatik Browser (v1.0.0) Standalone AI Browser
+            * **Windows** — `YogatikBrowser-Setup.exe`
+            * **macOS (Apple Silicon M1/M2/M3)** — `YogatikBrowser-arm64.dmg` or `YogatikBrowser-arm64.zip`
+            * **macOS (Intel)** — `YogatikBrowser-x64.dmg` or `YogatikBrowser-x64.zip`
+            * **Linux** — `YogatikBrowser.AppImage` or `YogatikBrowser.deb`
 
             These builds are unsigned. macOS will need right-click → Open the
             first time, and Windows SmartScreen may warn; that is expected until
@@ -162,6 +178,13 @@ jobs:
             frontend/release-electron/*.deb
             frontend/release-electron/*.blockmap
             frontend/release-electron/latest*.yml
+            yogatik-browser/release/*.exe
+            yogatik-browser/release/*.dmg
+            yogatik-browser/release/*.zip
+            yogatik-browser/release/*.AppImage
+            yogatik-browser/release/*.deb
+            yogatik-browser/release/*.blockmap
+            yogatik-browser/release/latest*.yml
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 

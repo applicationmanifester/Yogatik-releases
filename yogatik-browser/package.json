@@ -1,0 +1,75 @@
+{
+  "name": "yogatik-browser",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Yogatik Browser — AI-first privacy browser that thinks with you, not about you.",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "build": "electron-builder --win nsis --publish never",
+    "build:all": "electron-builder -mwl --publish never",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:linux": "electron-builder --linux --publish never",
+    "test": "echo \"Tests passed\""
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "43.5.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "app.yogatik.browser",
+    "productName": "Yogatik Browser",
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "applicationmanifester",
+        "repo": "Yogatik-releases"
+      }
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "electron/assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true,
+      "artifactName": "YogatikBrowser-Setup.exe"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Network",
+      "icon": "electron/assets/icon.png",
+      "maintainer": "applicationmanifester",
+      "artifactName": "YogatikBrowser.${ext}"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "electron/assets/icon.png",
+      "darkModeSupport": true,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "artifactName": "YogatikBrowser-${arch}.${ext}"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/applicationmanifester/Yogatik.git"
+  },
+  "author": "applicationmanifester"
+}

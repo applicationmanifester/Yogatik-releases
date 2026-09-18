@@ -1,0 +1,21 @@
+{
+  "theme": "midnight",
+  "searchEngine": "DuckDuckGo",
+  "adBlocker": {
+    "enabled": true,
+    "blockTrackers": true,
+    "skipYouTubeAds": true
+  },
+  "privacy": {
+    "isolateSessions": true,
+    "clearOnExit": false,
+    "doNotTrack": true
+  },
+  "newTab": {
+    "showClock": true,
+    "showSpeedDial": true,
+    "showPrivacyStats": true,
+    "showScratchpad": true
+  },
+  "version": "1.0.0"
+}

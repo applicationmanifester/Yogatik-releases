@@ -3,16 +3,57 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '8.5.2'
+export const APP_VERSION = '9.0.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 8.5.2 — Desktop Entitlement Hardening, Multi-Device Cloud Sync & Live Trading Suite'
+export const APP_CODENAME = 'Yogatik 9.0.0 — Standalone Yogatik Browser v1.0.0, AI-First Privacy Architecture & Multi-Platform Hyperdrive'
 
 export const APP_RELEASES = [
+  {
+    "version": "9.0.0",
+    "title": "Yogatik 9.0.0: Standalone Yogatik Browser v1.0.0, AI-First Privacy Engine & Multi-Platform Hyperdrive",
+    "date": "September 18, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Standalone Yogatik Browser v1.0.0: Independent Electron architecture with isolated user data, custom brand DNA, and zero cloud tracking",
+      "Hardware-Accelerated AdShield & Video Skipper: Strict network-level blocker stopping trackers, telemetry, and YouTube ad interruptions",
+      "Distraction-Free Reader Mode (Ctrl+Shift+R): In-place article extraction with Dark, Sepia, and Light themes plus dynamic font size scaling",
+      "Spotlight Command Palette (Ctrl+K) & Multi-Theme Engine: Fast keyboard navigation across open tabs, bookmarks, and actions with 5 curated themes",
+      "Unified Desktop & Browser Distribution Pipeline: Synchronized multi-platform release builder publishing both Yogatik Studio and Yogatik Browser"
+    ],
+    "sections": [
+      {
+        "category": "🌐 Standalone Yogatik Browser v1.0.0",
+        "items": [
+          {
+            "title": "Independent App Architecture & Identity",
+            "description": "Completely separated from the Studio monorepo into yogatik-browser/ with dedicated NSIS installer, persistent geometry, and branded splash screen."
+          },
+          {
+            "title": "Built-in Privacy AdShield & Reader Mode",
+            "description": "Hardware-accelerated network filtering and clean reader overlay with Dark, Sepia, and Light reading modes."
+          },
+          {
+            "title": "Command Palette & Multi-Theme Engine",
+            "description": "Ctrl+K spotlight navigation for tabs, bookmarks, and quick actions, with Midnight, Arctic, Dracula, Solarized, and Cyberpunk themes."
+          }
+        ]
+      },
+      {
+        "category": "🚀 Core System & Performance",
+        "items": [
+          {
+            "title": "Version 9.0.0 Monorepo Alignment",
+            "description": "Synchronized versioning across desktop apps, marketing showcase, bot gateway, and GitHub Actions release pipelines."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "8.5.2",
     "title": "Yogatik 8.5.2: Desktop Entitlement Hardening, Multi-Device Cloud Sync & Live Trading Resilience",
     "date": "September 17, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Desktop Entitlement & In-App Browser Hardening: Direct user notification and automatic license upgrade dialog if opening the built-in autonomous browser without active Pro entitlement",
       "Cross-Platform Account Synchronization: Reliable multi-device cloud persistence for chats, preferences, API configurations, and custom agent states via Firebase Auth",

@@ -1,5 +1,19 @@
 # Changelog
 
+## v9.0.0 — Standalone Yogatik Browser v1.0.0, AI Privacy Engine & High-Performance Hyperdrive (2026-09-18)
+
+### 🌐 Standalone Yogatik Browser Launch (v1.0.0)
+- **Standalone Privacy Browser (`yogatik-browser/`)** — Launched dedicated standalone AI browser with isolated profile, local state persistence, and native cross-platform binaries (Windows, macOS Apple Silicon/Intel, Linux AppImage/deb).
+- **AdShield & Tracker Annihilator** — Built-in zero-latency blocking for invasive tracking scripts, telemetry, intrusive ad popups, and cryptominers.
+- **AI Spotlight Command Palette (`Ctrl+K` / `Cmd+K`)** — Instant omnibar actions for AI page summaries, distraction-free reading, bookmarking, full-page screenshots, and quick search engine routing.
+- **Distraction-Free Reader Mode** — Content extraction engine converting articles into clean typography with Dark, Sepia, and Light reading modes and variable font scaling.
+- **Theme Engine & Customization** — Pre-packaged with Midnight, Arctic, Dracula, Solarized, and Cyberpunk themes with live preview.
+- **Browser Download Center** — Integrated direct download cards on `https://yogatik.web.app/` sidebar, Download modal, and `https://yogatik.web.app/platforms`.
+
+### 🚀 Yogatik Core 9.0.0 & Desktop Release
+- **Unified Multi-Platform CI/CD Pipeline** — Updated GitHub Actions workflow (`electron-release.yml`) to automatically build and release both Yogatik Desktop (9.0.0) and Yogatik Browser (v1.0.0) across Windows, macOS, and Linux into `applicationmanifester/Yogatik-releases`.
+- **Version bump** — 8.5.2 → 9.0.0 across monorepo, web platforms, bot gateway, and metadata.
+
 ## v8.5.2 — Desktop Entitlement Hardening, Multi-Device Cloud Sync & Live Trading Resilience (2026-09-17)
 
 ### 🛡️ Desktop Security & Built-in Browser Entitlement

@@ -53,6 +53,7 @@ terminal/dist-electron-fresh/
 **/release-studio/
 **/release-personal/
 frontend/dist-electron/
+yogatik-browser/release/
 *.exe
 *.blockmap
 *.tsbuildinfo

@@ -4725,6 +4725,16 @@ export default function App() {
             </a>
           )}
 
+          <a
+            className="sidebar-footer-link"
+            href="https://github.com/applicationmanifester/Yogatik-releases/releases/download/v1.0.0/YogatikBrowser-Setup.exe"
+            target="_blank"
+            rel="noreferrer"
+            title="Download Yogatik Browser v1.0.0 (Standalone AI-First Privacy Browser)"
+          >
+            <Compass size={13} style={{ color: '#ff7a18' }} /> <span>Download Yogatik Browser (v1.0.0)</span>
+          </a>
+
           <div className="sidebar-footer-links">
             <button
               className="sidebar-footer-link-btn"
