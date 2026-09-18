@@ -3,16 +3,56 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '9.0.0'
+export const APP_VERSION = '9.1.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 9.0.0 — Standalone Yogatik Browser v1.0.0, AI-First Privacy Architecture & Multi-Platform Hyperdrive'
+export const APP_CODENAME = 'Yogatik 9.1.0 — Real-Time AI Media Studio, YouTube Anti-Adblock Engine & Multi-Platform Hyperdrive'
 
 export const APP_RELEASES = [
+  {
+    "version": "9.1.0",
+    "title": "Yogatik 9.1.0: Real-Time AI Media Studio, YouTube Anti-Adblock Engine & Multi-Platform Hyperdrive",
+    "date": "September 19, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Real-Time AI Media Studio Generation: Live prompt-derived visual generation with Flux AI, dynamic aspect ratios, and Fal.ai / Kling 3 Pro cloud pipeline integration",
+      "YouTube Anti-Adblock & Hydration Resilience: Zero-latency ad skipper without triggering YouTube's Polymer skeleton freeze or telemetry errors",
+      "Yogatik Browser v1.0.0 Standalone Portal: Consistent download architecture across Windows (.exe), macOS (.dmg), and Linux (.AppImage)",
+      "Monorepo Version 9.1.0 Alignment: Unified release matrix across desktop apps, standalone browser, web application, and GitHub Actions pipelines"
+    ],
+    "sections": [
+      {
+        "category": "🎨 Creative Media Studio",
+        "items": [
+          {
+            "title": "Flux AI Real-Time Prompt Visualizer",
+            "description": "Instant generation of rich, prompt-accurate visuals with dynamic aspect ratio scaling and zero black-screen fallback states."
+          },
+          {
+            "title": "Kling 3 Pro & Seedance Cloud GPU Pipeline",
+            "description": "Direct Fal.ai / Kuaishou cloud execution when user platform keys are provided, with resilient error boundaries."
+          }
+        ]
+      },
+      {
+        "category": "🌐 Standalone Yogatik Browser",
+        "items": [
+          {
+            "title": "YouTube AdShield Anti-Detection Refinement",
+            "description": "Eliminated network aborts on internal YouTube telemetry endpoints, allowing instant feed hydration while seamlessly skipping video ads."
+          },
+          {
+            "title": "Uniform Multi-Platform Download Center",
+            "description": "Pixel-perfect layout consistency across Windows, macOS, and Linux download cards at /browser."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "9.0.0",
     "title": "Yogatik 9.0.0: Standalone Yogatik Browser v1.0.0, AI-First Privacy Engine & Multi-Platform Hyperdrive",
     "date": "September 18, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Standalone Yogatik Browser v1.0.0: Independent Electron architecture with isolated user data, custom brand DNA, and zero cloud tracking",
       "Hardware-Accelerated AdShield & Video Skipper: Strict network-level blocker stopping trackers, telemetry, and YouTube ad interruptions",

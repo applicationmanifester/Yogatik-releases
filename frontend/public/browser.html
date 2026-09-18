@@ -191,9 +191,9 @@
       <p>An independent, lightweight desktop browser with hardware AdShield, YouTube video ad skipper, distraction-free reader mode, Spotlight command palette, and local data isolation. No account required.</p>
 
       <div class="release-meta" id="release-meta">
-        <span>Version <b>v1.0.0</b> (Core 9.0.0)</span>
+        <span>Version <b>v1.0.0</b> (Core 9.1.0)</span>
         <span class="dot"></span>
-        <span>Released September 18, 2026</span>
+        <span>Released September 19, 2026</span>
         <span class="dot"></span>
         <span>Windows · macOS · Linux Ready</span>
       </div>
@@ -411,7 +411,7 @@
         var meta = document.getElementById('release-meta');
         if (meta) {
           var exe = (rel.assets || []).find(function (as) { return as.name === 'YogatikBrowser-Setup.exe'; });
-          var bits = ['Version <b>v1.0.0</b> (Core 9.0.0)'];
+          var bits = ['Version <b>v1.0.0</b> (Core 9.1.0)'];
           if (rel.published_at) {
             var d = new Date(rel.published_at);
             if (!isNaN(d)) {
