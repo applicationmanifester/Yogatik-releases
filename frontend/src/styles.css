@@ -7313,6 +7313,113 @@ html, body {
 }
 @media (max-width: 768px) { .roots-popover { position: fixed; left: 8px; right: 8px; min-width: 0; } }
 
+/* Extensions & Power Tools Menu */
+.extensions-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.extensions-popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  z-index: 50;
+  min-width: 250px;
+  max-width: 300px;
+  padding: 8px;
+  background: var(--bg-elevated, #12161f);
+  color: var(--text-primary);
+  border: 1px solid var(--border, #2a3140);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.extensions-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 6px;
+  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  margin-bottom: 2px;
+}
+
+.extensions-popover-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.extensions-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.extensions-item:hover {
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.08));
+  color: var(--accent, #3b82f6);
+}
+
+.extensions-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.05));
+  flex-shrink: 0;
+}
+
+.extensions-item-text {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.extensions-item-title {
+  font-weight: 500;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.extensions-item-desc {
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 768px) {
+  .extensions-popover {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    min-width: 0;
+  }
+}
+
 /* Tool permission approval card */
 .perm-overlay {
   position: fixed; inset: 0; z-index: 200; display: flex;

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera, TrendingUp } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera, TrendingUp, Package } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { setUserQuestionHandler } from './tools/askUser'
@@ -269,6 +269,8 @@ export default function App() {
   const [chatRoots, setChatRoots] = useState([])
   const [rootsOpen, setRootsOpen] = useState(false)
   const rootsWrapRef = useRef(null)
+  const [extensionsOpen, setExtensionsOpen] = useState(false)
+  const extensionsWrapRef = useRef(null)
 
   // Phase 3: Progressive Disclosure & Expertise Level
   const [expertiseLevel, setExpertiseLevel] = useState(getExpertiseLevelSync)
@@ -318,6 +320,20 @@ export default function App() {
       document.removeEventListener('mousedown', onDown)
     }
   }, [rootsOpen])
+
+  useEffect(() => {
+    if (!extensionsOpen) return
+    const onKey = (e) => { if (e.key === 'Escape') setExtensionsOpen(false) }
+    const onDown = (e) => {
+      if (extensionsWrapRef.current && !extensionsWrapRef.current.contains(e.target)) setExtensionsOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+    }
+  }, [extensionsOpen])
 
   // Speculative runtime & tool pre-warming as user types (debounced 300ms)
   useEffect(() => {
@@ -1236,6 +1252,7 @@ export default function App() {
         (chatRoots.length ? chatRoots.map(r => `- ${r.path}${r.primary ? '  (primary)' : ''}`).join('\n') : '- Current workspace directory\n') +
         `\nYOU HAVE REAL, WORKING TOOLS FOR FULL FILE ACCESS:\n` +
         `- fs_list        → list files and directory tree\n` +
+        `- fs_file_tree   → compact recursive project structure and file tree\n` +
         `- fs_find_files  → search and locate files by name or pattern (*.js, *.py, etc.)\n` +
         `- fs_search      → grep search across files and directories\n` +
         `- fs_read        → read file contents or specific line ranges\n` +
@@ -1243,10 +1260,10 @@ export default function App() {
         `- fs_edit        → patch files with exact string replacement\n` +
         `- code_review_scan → deep defect, security, and performance analysis of code\n` +
         `- terminal_run   → run terminal commands, builds, tests, and CLI scripts\n` +
-        `\nSTRICT INSTRUCTIONS ON FILE ACCESS:\n` +
+        `\nSTRICT INSTRUCTIONS ON FILE ACCESS & WORKSPACE AWARENESS:\n` +
         `1. NEVER tell the user that you "do not have access to files", "cannot read local files", "lack file access", or that "as an AI you cannot access files on this computer". You HAVE full file access.\n` +
         `2. NEVER ask the user to paste code or paste files if they are in the workspace or if the user asks to review code/files.\n` +
-        `3. When the user asks to review code, identify bottlenecks, fix bugs, inspect files, or work with their project (even if they did not paste a snippet or specify a path), DO NOT claim you lack the code. Immediately call fs_list or fs_find_files to discover the workspace files, and fs_read to inspect and analyze them directly!\n` +
+        `3. When the user asks to review code, identify bottlenecks, fix bugs, inspect files, or work with their project (even if they did not paste a snippet or specify a path), DO NOT claim you lack the code. Immediately call fs_file_tree, fs_list, or fs_find_files to discover the workspace files, and fs_read to inspect and analyze them directly!\n` +
         `4. Proactively inspect the project structure rather than telling the user to provide code manually.`
       : `\n\nWEB-SESSION FALLBACK RULES (CRITICAL — read before every response):\n` +
         `- You are running in a WEB SESSION (browser). Local fs_* tools are unavailable in web mode.\n` +
@@ -3831,6 +3848,7 @@ export default function App() {
       // Desktop-only surfaces. They are listed on the web too and say so when
       // opened, rather than being silently absent depending on the build.
       { id: 'terminal', group: 'Tools', label: '⌨️ Terminal — watch the assistant, run your own', hint: 'Ctrl+`', run: () => setShowTerminal(true) },
+      { id: 'extensions-menu', group: 'Tools', label: '📦 Extensions & Power Tools (Trading, Torrents, Hub, Browser)', run: () => setExtensionsOpen(true) },
       { id: 'indian-stock-trading', group: 'Trading', label: '📈 Zerodha & Indian Stock Trading (NSE/BSE)', hint: 'Live & Paper Trading', run: () => setShowTradingModal(true) },
       { id: 'file-editor', group: 'Tools', label: '📝 Create or edit a file in the workspace', hint: isDesktop() ? 'Workspace' : 'Desktop app', run: () => setShowFileEditor(true) },
       { id: 'workspace', group: 'View', label: '🗂️ File explorer & changes', hint: isDesktop() ? 'Ctrl+B' : 'Desktop app', run: () => setShowWorkspace(v => !v) },
@@ -4840,15 +4858,6 @@ export default function App() {
             >
               <Activity size={17} />
             </button>
-            <button
-              className={`icon-btn${showTradingModal ? ' active' : ''}`}
-              onClick={() => setShowTradingModal(v => !v)}
-              title="Zerodha & Indian Stock Trading Terminal (NSE/BSE)"
-              aria-label="Toggle Zerodha & Indian stock trading modal"
-              aria-pressed={showTradingModal}
-            >
-              <TrendingUp size={17} />
-            </button>
             {isDesktop() && (
               <div ref={rootsWrapRef} className="desktop-folder-indicator" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginRight: 8, color: 'var(--text-secondary)' }}>
                 <Folder size={15} />
@@ -4908,27 +4917,84 @@ export default function App() {
               >
                 <Plug size={17} />
               </button>
-              {isDesktop() && (
-                <>
-                  <button
-                    className="icon-btn browser-header-btn"
-                    onClick={() => handleOpenBrowser()}
-                    title="Yogatik Browser (Desktop Browser Window)"
-                    aria-label="Yogatik Browser"
-                  >
-                    <Compass size={17} />
-                  </button>
-                  <button
-                    className="icon-btn torrent-header-btn"
-                    onClick={() => setShowTorrentModal(true)}
-                    title="P2P Torrent Downloader (Native Desktop Engine)"
-                    aria-label="P2P Torrent Downloader"
-                  >
-                    <DownloadCloud size={17} />
-                  </button>
-                </>
-              )}
-              <button className="icon-btn domain-hub-header-btn" onClick={() => setShowDomainHub(true)} title="Social Media & Domain Hub (Alt+D)" aria-label="Social Media & Domain Hub"><Globe size={17} /></button>
+              <div ref={extensionsWrapRef} className="extensions-wrap">
+                <button
+                  className={`icon-btn extensions-trigger${extensionsOpen || showTradingModal || showTorrentModal || showDomainHub ? ' active' : ''}`}
+                  onClick={() => setExtensionsOpen(o => !o)}
+                  title="Extensions & Power Tools (Trading, Torrents, Browser, Domain Hub)"
+                  aria-label="Extensions & Power Tools"
+                  aria-haspopup="dialog"
+                  aria-expanded={extensionsOpen}
+                >
+                  <Package size={17} />
+                </button>
+                {extensionsOpen && (
+                  <div className="extensions-popover" role="dialog" aria-label="Extensions & Power Tools">
+                    <div className="extensions-popover-head">
+                      <span className="extensions-popover-title">Extensions & Tools</span>
+                      <button className="icon-btn" onClick={() => setExtensionsOpen(false)} title="Close" aria-label="Close extensions">
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <button
+                      className="extensions-item"
+                      onClick={() => { setShowTradingModal(true); setExtensionsOpen(false) }}
+                      title="Zerodha & Indian Stock Trading Terminal (NSE/BSE)"
+                    >
+                      <div className="extensions-item-icon">
+                        <TrendingUp size={15} color="#10b981" />
+                      </div>
+                      <div className="extensions-item-text">
+                        <span className="extensions-item-title">Zerodha Stock Trading</span>
+                        <span className="extensions-item-desc">Live & Paper Trading (NSE/BSE)</span>
+                      </div>
+                    </button>
+                    {isDesktop() && (
+                      <button
+                        className="extensions-item"
+                        onClick={() => { handleOpenBrowser(); setExtensionsOpen(false) }}
+                        title="Yogatik Browser (Desktop Browser Window)"
+                      >
+                        <div className="extensions-item-icon">
+                          <Compass size={15} color="#3b82f6" />
+                        </div>
+                        <div className="extensions-item-text">
+                          <span className="extensions-item-title">Desktop Browser</span>
+                          <span className="extensions-item-desc">Native browser & web inspection</span>
+                        </div>
+                      </button>
+                    )}
+                    {isDesktop() && (
+                      <button
+                        className="extensions-item"
+                        onClick={() => { setShowTorrentModal(true); setExtensionsOpen(false) }}
+                        title="P2P Torrent Downloader (Native Engine)"
+                      >
+                        <div className="extensions-item-icon">
+                          <DownloadCloud size={15} color="#f59e0b" />
+                        </div>
+                        <div className="extensions-item-text">
+                          <span className="extensions-item-title">Torrent Downloader</span>
+                          <span className="extensions-item-desc">High-speed P2P client</span>
+                        </div>
+                      </button>
+                    )}
+                    <button
+                      className="extensions-item"
+                      onClick={() => { setShowDomainHub(true); setExtensionsOpen(false) }}
+                      title="Social Media & Domain Hub (Alt+D)"
+                    >
+                      <div className="extensions-item-icon">
+                        <Globe size={15} color="#ec4899" />
+                      </div>
+                      <div className="extensions-item-text">
+                        <span className="extensions-item-title">Domain & Social Hub</span>
+                        <span className="extensions-item-desc">YouTube, X, Jobs, Trends (Alt+D)</span>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="header-btn-group" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
               <button className="icon-btn" onClick={() => setShowPalette(true)} title="Universal Search & Commands (Ctrl+K)" aria-label="Universal Search"><Search size={17} /></button>
