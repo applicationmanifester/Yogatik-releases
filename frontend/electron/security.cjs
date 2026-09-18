@@ -17,6 +17,16 @@ const CSP = [
 
 function applyCSP(win) {
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    // Only enforce app CSP on internal app windows (local files, localhost/127.0.0.1 dev server, or custom schemas).
+    // NEVER apply desktop app CSP to external internet browsing traffic (e.g. YouTube, Google, GitHub)!
+    const isAppOrigin = details.url.startsWith('file:') ||
+      details.url.startsWith('http://localhost') ||
+      details.url.startsWith('http://127.0.0.1') ||
+      details.url.startsWith('yogatik:')
+    if (!isAppOrigin) {
+      callback({ responseHeaders: details.responseHeaders })
+      return
+    }
     callback({
       responseHeaders: {
         ...details.responseHeaders,

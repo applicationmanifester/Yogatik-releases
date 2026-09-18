@@ -9,6 +9,7 @@ import {
   generateMarkdownDoc,
   generateApiSpec,
   generateSystemReport,
+  generatePdfDoc,
   documentGeneratorTool,
 } from './docGenerator'
 
@@ -190,6 +191,20 @@ describe('docGenerator suite (Independent Document Generation)', () => {
       expect(res.content).toContain('## 1. Executive Summary')
       expect(res.content).toContain('## 2. Key Findings & Observations')
       expect(res.content).toContain('🟢 2.1 Test Coverage')
+    })
+  })
+
+  describe('Native Offline PDF Document Generator', () => {
+    it('generates a valid PDF with headings, lists, tables, and code blocks', async () => {
+      const res = await generatePdfDoc({
+        title: 'Quarterly Architecture Review',
+        content: '# Overview\nSystem overview paragraph.\n\n## Components\n- Frontend\n- Backend\n\n```javascript\nconst a = 1;\n```\n\n| Feature | Status |\n|---|---|\n| PDF | Working |',
+        author: 'Staff Engineer',
+      })
+      expect(res.success).toBe(true)
+      expect(res.filename).toBe('Quarterly_Architecture_Review.pdf')
+      expect(res.data_url).toContain('data:application/pdf;')
+      expect(res.blob).toBeDefined()
     })
   })
 

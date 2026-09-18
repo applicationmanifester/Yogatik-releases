@@ -123,13 +123,9 @@ export async function downloadChat(conv, format = 'md') {
     return
   }
   if (format === 'pdf') {
-    const { default: html2pdf } = await import('https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/+esm')
-    const holder = document.createElement('div')
-    holder.innerHTML = html
-    await html2pdf().set({
-      margin: 10, filename: `${name}.pdf`,
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' },
-    }).from(holder).save()
+    const { generatePdfDoc } = await import('./tools/docGenerator')
+    const md = conversationToMarkdown(conv)
+    const res = await generatePdfDoc({ title: name, content: md, author: 'Yogatik AI' })
+    triggerDownload(res.blob, res.filename)
   }
 }

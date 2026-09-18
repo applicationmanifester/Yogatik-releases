@@ -57,6 +57,7 @@
     "dompurify": "^3.2.4",
     "electron-updater": "^6.3.9",
     "firebase": "^12.17.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.460.0",
     "mp4-muxer": "^5.2.2",
     "node-pty": "^1.0.0",
@@ -175,4 +176,3 @@
   "description": "Yogatik — private, browser-native AI assistant with local file tools.",
   "author": "applicationmanifester"
 }
-

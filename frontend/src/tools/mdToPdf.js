@@ -148,38 +148,16 @@ export const mdToPdfTool = {
     if (typeof markdown !== 'string' || !markdown.trim()) return { success: false, error: 'markdown is required' }
     const outName = String(filename).endsWith('.pdf') ? filename : `${filename}.pdf`
 
-    const container = document.createElement('div')
-    container.innerHTML = `<style>${PRINT_CSS}</style>${mdToHtml(markdown)}`
-    container.style.cssText = 'padding:16mm 14mm; background:#fff;'
-
-    if (!window.html2pdf) {
-      const s = document.createElement('script')
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js'
-      document.head.appendChild(s)
-      await new Promise((res, rej) => { s.onload = res; s.onerror = rej })
-    }
-    const blob = await window.html2pdf().from(container).set({
-      margin: 0,
-      filename: outName,
-      // 2× raster keeps text sharp; CSS/soft page breaks avoid cutting blocks.
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'] },
-    }).outputPdf('blob')
-
-    const dataUrl = await new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onloadend = () => resolve(reader.result)
-      reader.readAsDataURL(blob)
-    })
+    const { generatePdfDoc } = await import('./docGenerator')
+    const res = await generatePdfDoc({ title: outName, content: markdown, author: 'Yogatik AI' })
 
     return {
       success: true,
       tool: 'md_to_pdf',
-      filename: outName,
-      size: `${(blob.size / 1024).toFixed(1)} KB`,
-      pdf_data_url: dataUrl,
-      message: `PDF '${outName}' generated successfully (${(blob.size / 1024).toFixed(1)} KB). A download button is already presented to the user in the UI. No further tool calls or file writing are required. Summarize your completion to the user.`,
+      filename: res.filename,
+      size: res.size,
+      pdf_data_url: res.data_url,
+      message: `PDF '${res.filename}' generated successfully (${res.size}). A download button is already presented to the user in the UI. No further tool calls or file writing are required. Summarize your completion to the user.`,
     }
   }
 }

@@ -193,7 +193,7 @@ function showActive(s) {
 // to, and back/forward would have no way to grey out.
 function navSnapshot(s) {
   const t = activeTab(s)
-  const rawUrl = t ? safe(() => t.view.webContents.getURL(), '') : ''
+  const rawUrl = t ? (t._pendingUrl || safe(() => t.view.webContents.getURL(), '')) : ''
   const isHome = isNewTabUrl(rawUrl)
   return {
     conversationId: s.key === '__default__' ? null : s.key,
@@ -294,11 +294,14 @@ function createTab(s, url, opts = {}) {
   injectAdShield(wc)
   try {
     const defaultUA = wc.getUserAgent()
-    const cleanedUA = defaultUA.replace(/Electron\/[0-9\.]+\s?/g, '').replace(/Yogatik\/[0-9\.]+\s?/g, '')
+    const cleanedUA = defaultUA
+      .replace(/Electron\/[0-9\.]+\s?/gi, '')
+      .replace(/Yogatik[A-Za-z0-9_-]*\/[0-9\.]+\s?/gi, '')
+      .trim()
     wc.setUserAgent(cleanedUA)
   } catch {}
   // A fresh document invalidates every ref issued against the old one.
-  wc.on('did-start-navigation', (_e, _url, _inPlace, isMainFrame) => {
+  wc.on('did-start-navigation', (_e, navUrl, _inPlace, isMainFrame) => {
     if (isMainFrame) {
       tab.refEpoch++
       // Console output belongs to the DOCUMENT. Carrying warnings from the
@@ -310,6 +313,11 @@ function createTab(s, url, opts = {}) {
       // one is worse than an empty one.
       tab.network = []
       tab.pendingRequests.clear()
+      if (navUrl && !isNewTabUrl(navUrl)) {
+        tab._pendingUrl = navUrl
+      } else {
+        tab._pendingUrl = null
+      }
     }
     // The address bar should track the location the instant a navigation
     // starts (loading state, and the URL for a redirect chain), not only
@@ -317,10 +325,17 @@ function createTab(s, url, opts = {}) {
     // PREVIOUS url/spinner state for however long it took to load.
     syncTabBar(s)
   })
+  wc.on('did-navigate', () => {
+    tab._pendingUrl = null
+    syncTabBar(s)
+  })
   // pushState/replaceState/hash changes never fire did-start-navigation or
   // did-finish-load at all (there is no real navigation), so an SPA route
   // change left the address bar showing the URL the tab was created with.
-  wc.on('did-navigate-in-page', () => syncTabBar(s))
+  wc.on('did-navigate-in-page', () => {
+    tab._pendingUrl = null
+    syncTabBar(s)
+  })
 
   const LEVELS = ['debug', 'info', 'warning', 'error']
   const pushLog = (entry) => {
