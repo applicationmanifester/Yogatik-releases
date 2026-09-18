@@ -16,7 +16,7 @@ const TAB_ID_ACTIONS = new Set(['close', 'select', 'cancel-download', 'open-down
 const VALID_ACTIONS = new Set([
   'close', 'select', 'new-tab', 'back', 'forward', 'reload', 'navigate',
   'zoom', 'find', 'find-stop', 'cancel-download', 'open-download', 'show-download',
-  'pip', 'toggle-mute',
+  'pip', 'toggle-mute', 'toggle-shield', 'toggle-ai-panel', 'ai-query', 'send-to-main-chat',
 ])
 
 contextBridge.exposeInMainWorld('__tabAction', (action, value) => {
@@ -28,10 +28,10 @@ contextBridge.exposeInMainWorld('__tabAction', (action, value) => {
   } else if (action === 'navigate' || action === 'zoom') {
     if (typeof value !== 'string' || !value.trim()) return
     payload.arg = value
-  } else if (action === 'find') {
+  } else if (action === 'find' || action === 'ai-query' || action === 'send-to-main-chat') {
     if (!value || typeof value !== 'object') return
-    payload.arg = { text: String(value.text || ''), forward: !!value.forward, findNext: !!value.findNext }
+    payload.arg = value
   }
-  // 'find-stop' carries no argument at all.
+  // 'find-stop', 'toggle-shield', 'toggle-ai-panel', 'pip' carry no argument or optional argument.
   ipcRenderer.send('browser:tab-action', payload)
 })

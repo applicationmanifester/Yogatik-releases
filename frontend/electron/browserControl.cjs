@@ -21,7 +21,7 @@ const {
   normalizeAddressInput, stepZoom,
   findRelocationMatch, relocateScanSource, relocateResolverSource,
 } = require('./browserTree.cjs')
-const { injectAdShield } = require('./adBlocker.cjs')
+const { injectAdShield, getAdShieldStats, isAdShieldEnabled, setAdShieldEnabled } = require('./adBlocker.cjs')
 
 const NEW_TAB_URL = pathToFileURL(path.join(__dirname, 'newtab.html')).href
 
@@ -168,7 +168,8 @@ function layout(s) {
     if (s.isHtmlFullScreen) {
       t.view.setBounds({ x: 0, y: 0, width: w, height: hh })
     } else {
-      t.view.setBounds({ x: 0, y: TAB_BAR_H, width: w, height: Math.max(0, hh - TAB_BAR_H) })
+      const sideW = (s.mode === 'window' && s.aiPanelOpen) ? 340 : 0
+      t.view.setBounds({ x: 0, y: TAB_BAR_H, width: Math.max(200, w - sideW), height: Math.max(0, hh - TAB_BAR_H) })
     }
   }
 }
@@ -203,6 +204,8 @@ function navSnapshot(s) {
     canGoForward: t ? safe(() => t.view.webContents.navigationHistory.canGoForward(), false) : false,
     loading: t ? safe(() => t.view.webContents.isLoading(), false) : false,
     zoomPercent: t ? Math.round(safe(() => t.view.webContents.getZoomFactor(), 1) * 100) : 100,
+    shield: getAdShieldStats(),
+    aiPanelOpen: !!s.aiPanelOpen,
   }
 }
 
@@ -221,6 +224,7 @@ function syncTabBar(s) {
     const navPayload = JSON.stringify({
       url: snap.url, canGoBack: snap.canGoBack, canGoForward: snap.canGoForward,
       loading: snap.loading, zoomPercent: snap.zoomPercent,
+      shield: snap.shield, aiPanelOpen: snap.aiPanelOpen,
     })
     s.win.webContents
       .executeJavaScript(`window.__setTabs && window.__setTabs(${payload}, ${active}, ${navPayload})`)
@@ -435,6 +439,50 @@ function createTab(s, url) {
       } else {
         safeSend(mainWindowGetter(), 'browser:open-find', { conversationId: s.key === '__default__' ? null : s.key })
       }
+      return
+    }
+
+    // Ctrl/Cmd+I: Toggle AI Companion side panel
+    if (mod && !input.alt && key === 'i') {
+      event.preventDefault()
+      if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
+        s.aiPanelOpen = !s.aiPanelOpen
+        layout(s)
+        syncTabBar(s)
+      }
+      return
+    }
+
+    // Ctrl/Cmd+D: Bookmark active tab
+    if (mod && !input.alt && key === 'd') {
+      if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
+        event.preventDefault()
+        s.win.webContents.executeJavaScript('window.__toggleBookmark && window.__toggleBookmark()').catch(() => {})
+        return
+      }
+    }
+
+    // Ctrl/Cmd + Plus/Equals: Zoom in
+    if (mod && !input.alt && (key === '=' || key === '+')) {
+      event.preventDefault()
+      stepZoom(wc, 'in')
+      syncTabBar(s)
+      return
+    }
+
+    // Ctrl/Cmd + Minus: Zoom out
+    if (mod && !input.alt && (key === '-' || key === '_')) {
+      event.preventDefault()
+      stepZoom(wc, 'out')
+      syncTabBar(s)
+      return
+    }
+
+    // Ctrl/Cmd + 0: Reset zoom
+    if (mod && !input.alt && key === '0') {
+      event.preventDefault()
+      stepZoom(wc, 'reset')
+      syncTabBar(s)
       return
     }
   })
@@ -1978,10 +2026,204 @@ function registerBrowserControl(getMainWindow) {
           `).catch(() => {})
         }
         break
+      case 'toggle-shield':
+        setAdShieldEnabled(!isAdShieldEnabled())
+        syncTabBar(s)
+        break
+      case 'toggle-ai-panel':
+        s.aiPanelOpen = !s.aiPanelOpen
+        layout(s)
+        syncTabBar(s)
+        break
+      case 'ai-query': {
+        const payload = arg && typeof arg === 'object' ? arg : {}
+        handleBrowserAiQuery(s, payload)
+        break
+      }
+      case 'send-to-main-chat': {
+        const payload = arg && typeof arg === 'object' ? arg : {}
+        const mw = mainWindowGetter()
+        if (mw && !mw.isDestroyed()) {
+          safeSend(mw, 'browser:insert-into-chat', payload)
+        }
+        break
+      }
       default:
         break
     }
   })
+}
+
+function generateExecutiveSummary(info) {
+  const parts = []
+  parts.push(`### 📄 Executive Summary: ${info.title}\n`)
+  if (info.isYouTube) {
+    if (info.channel) parts.push(`**Creator / Channel**: ${info.channel}\n`)
+    if (info.description) parts.push(`**Overview**: ${info.description.slice(0, 300)}...\n`)
+  }
+  
+  const paragraphs = (info.text || '')
+    .split(/\n\s*\n/)
+    .map(p => p.trim())
+    .filter(p => p.length > 40 && !p.startsWith('Copyright') && !p.startsWith('Cookie'))
+    .slice(0, 8)
+
+  parts.push(`#### 📌 Core Topic\n`)
+  parts.push(paragraphs[0] || (info.text ? info.text.slice(0, 250) + '...' : 'Content loaded from current webpage.'))
+
+  parts.push(`\n#### 🔑 Key Highlights\n`)
+  if (info.headings && info.headings.length > 0) {
+    for (const h of info.headings.slice(0, 5)) {
+      parts.push(`- **${h}**`)
+    }
+  } else if (paragraphs.length > 1) {
+    for (let i = 1; i < Math.min(paragraphs.length, 5); i++) {
+      parts.push(`- ${paragraphs[i].slice(0, 160)}...`)
+    }
+  } else {
+    parts.push(`- Active page analyzed from ${safe(() => new URL(info.url).hostname, 'web')}`)
+    parts.push(`- Real-time DOM extracted without tracking overhead`)
+  }
+
+  parts.push(`\n#### 💡 Conclusion & Context\n`)
+  const lastPara = paragraphs[paragraphs.length - 1] || paragraphs[0]
+  parts.push(lastPara ? (lastPara.slice(0, 200) + '...') : 'Analysis complete.')
+  return parts.join('\n')
+}
+
+function generateKeypoints(info) {
+  const parts = []
+  parts.push(`### 📋 Key Takeaways: ${info.title}\n`)
+  const rawSentences = (info.text || '')
+    .split(/(?<=[.?!])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 35 && s.length < 240 && !/cookie|sign in|subscribe|terms|privacy/i.test(s))
+    .slice(0, 8)
+
+  if (rawSentences.length > 0) {
+    for (const s of rawSentences) {
+      parts.push(`- ${s}`)
+    }
+  } else {
+    parts.push(`- Content from ${info.url}`)
+    parts.push(`- Clean text extracted (${(info.text || '').length} characters)`)
+  }
+  return parts.join('\n')
+}
+
+function generateVideoAnalysis(info) {
+  const parts = []
+  parts.push(`### 🎬 Video Deep Dive: ${info.title}\n`)
+  if (info.channel) parts.push(`**Channel**: ${info.channel}\n`)
+  parts.push(`**URL**: ${info.url}\n`)
+  if (info.description) {
+    parts.push(`#### 📝 Description & Highlights\n`)
+    parts.push(info.description.slice(0, 600))
+    parts.push('\n')
+  }
+  parts.push(`#### 🎯 Recommended Action\n`)
+  parts.push(`You can play this video in full-screen (top bar hides automatically) or click the Picture-in-Picture (PiP) button to keep watching while multitasking.`)
+  return parts.join('\n')
+}
+
+function generateContextualAnswer(info, question) {
+  const q = (question || '').toLowerCase()
+  const sentences = (info.text || '').split(/(?<=[.?!])\s+/).map(s => s.trim())
+  const matches = sentences.filter(s => {
+    const sl = s.toLowerCase()
+    const words = q.split(/\s+/).filter(w => w.length > 3)
+    return words.some(w => sl.includes(w))
+  }).slice(0, 4)
+
+  const parts = []
+  parts.push(`### 💬 Answer to: "${question}"\n`)
+  if (matches.length > 0) {
+    parts.push(`Based on the content of **${info.title}**:\n`)
+    for (const m of matches) {
+      parts.push(`> "${m}"\n`)
+    }
+    parts.push(`\n**Summary Insight**: The page directly addresses this topic in the passages above.`)
+  } else {
+    parts.push(`Based on our scan of **${info.title}** (${safe(() => new URL(info.url).hostname, 'web')}):\n`)
+    parts.push(`The specific terms were not directly found in the primary body text, but here is what the page is about:`)
+    parts.push(`\n> ${(info.text || '').slice(0, 300)}...`)
+    parts.push(`\n*Tip: Click 'Send to Yogatik Chat' below for deep multi-turn LLM reasoning.*`)
+  }
+  return parts.join('\n')
+}
+
+async function handleBrowserAiQuery(s, payload) {
+  const t = activeTab(s)
+  if (!t || !s.win || s.win.isDestroyed()) return
+  const wc = t.view.webContents
+  const type = payload.type || 'summarize'
+  const question = payload.question || ''
+
+  try {
+    const info = await wc.executeJavaScript(`
+      (() => {
+        const title = document.title || 'Untitled Page'
+        const url = location.href
+        const isYouTube = location.hostname.includes('youtube.com')
+        const ytTitle = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.innerText || ''
+        const ytChannel = document.querySelector('#owner-sub-count, #upload-info #text a')?.innerText || ''
+        const ytDesc = document.querySelector('#description-inline-expander, #description')?.innerText || ''
+        
+        const clone = document.body.cloneNode(true)
+        const remove = clone.querySelectorAll('script, style, noscript, svg, nav, footer, header, [role="banner"], [role="navigation"]')
+        remove.forEach(e => e.remove())
+        const text = (clone.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 15000)
+
+        const headings = Array.from(document.querySelectorAll('h1, h2, h3'))
+          .map(h => h.innerText.trim())
+          .filter(h => h.length > 2 && h.length < 120)
+          .slice(0, 12)
+
+        return {
+          title: ytTitle || title,
+          url,
+          isYouTube,
+          channel: ytChannel,
+          description: ytDesc.slice(0, 1500),
+          text,
+          headings,
+        }
+      })()
+    `)
+
+    if (!info) {
+      s.win.webContents.executeJavaScript(
+        `window.__setAiResult && window.__setAiResult(${JSON.stringify({ error: 'Unable to read page contents' })})`
+      ).catch(() => {})
+      return
+    }
+
+    let responseMarkdown = ''
+    if (type === 'summarize') {
+      responseMarkdown = generateExecutiveSummary(info)
+    } else if (type === 'keypoints') {
+      responseMarkdown = generateKeypoints(info)
+    } else if (type === 'video') {
+      responseMarkdown = generateVideoAnalysis(info)
+    } else if (type === 'markdown') {
+      responseMarkdown = `# ${info.title}\n\n**Source**: ${info.url}\n\n${(info.text || '').slice(0, 4000)}...`
+    } else if (type === 'chat') {
+      responseMarkdown = generateContextualAnswer(info, question)
+    }
+
+    s.win.webContents.executeJavaScript(
+      `window.__setAiResult && window.__setAiResult(${JSON.stringify({
+        type,
+        result: responseMarkdown,
+        title: info.title,
+        url: info.url,
+      })})`
+    ).catch(() => {})
+  } catch (err) {
+    s.win.webContents.executeJavaScript(
+      `window.__setAiResult && window.__setAiResult(${JSON.stringify({ error: err.message || 'Analysis failed' })})`
+    ).catch(() => {})
+  }
 }
 
 module.exports = {

@@ -166,13 +166,33 @@ const YOUTUBE_AD_SKIP_SCRIPT = `
 })();
 `
 
+let adShieldEnabled = true
+let blockedCount = 0
+
+function isAdShieldEnabled() {
+  return adShieldEnabled
+}
+
+function setAdShieldEnabled(enabled) {
+  adShieldEnabled = !!enabled
+  return adShieldEnabled
+}
+
+function getAdShieldStats() {
+  return {
+    enabled: adShieldEnabled,
+    blockedCount,
+  }
+}
+
 /**
  * Register network-level ad blocking on the default Electron session.
  */
 function enableAdBlocker(ses = session.defaultSession) {
   if (!ses?.webRequest) return
   ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (details, cb) => {
-    if (shouldBlockUrl(details.url)) {
+    if (adShieldEnabled && shouldBlockUrl(details.url)) {
+      blockedCount++
       cb({ cancel: true })
       return
     }
@@ -186,7 +206,7 @@ function enableAdBlocker(ses = session.defaultSession) {
 function injectAdShield(wc) {
   if (!wc || typeof wc.on !== 'function') return
   wc.on('did-finish-load', () => {
-    if (wc.isDestroyed()) return
+    if (wc.isDestroyed() || !adShieldEnabled) return
     wc.insertCSS(COSMETIC_AD_CSS).catch(() => {})
     const url = wc.getURL() || ''
     if (url.includes('youtube.com')) {
@@ -199,6 +219,9 @@ module.exports = {
   shouldBlockUrl,
   enableAdBlocker,
   injectAdShield,
+  isAdShieldEnabled,
+  setAdShieldEnabled,
+  getAdShieldStats,
   AD_PATTERNS,
   COSMETIC_AD_CSS,
   YOUTUBE_AD_SKIP_SCRIPT,
