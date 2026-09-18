@@ -33,11 +33,19 @@ const TOOL_CONFIGS = {
 };
 
 export function sanitizeToolOutput(html, toolName = '') {
+  if (!html) return '';
   const config = TOOL_CONFIGS[toolName] || BASE_CONFIG;
-  return DOMPurify.sanitize(html, config);
+  if (DOMPurify && typeof DOMPurify.sanitize === 'function') {
+    return DOMPurify.sanitize(html, config);
+  }
+  return String(html);
 }
 
 export function sanitizeHtmlSync(html, toolName = '') {
+  if (!html) return '';
   const config = TOOL_CONFIGS[toolName] || BASE_CONFIG;
-  return DOMPurify.sanitize(html, config);
+  if (DOMPurify && typeof DOMPurify.sanitize === 'function') {
+    return DOMPurify.sanitize(html, config);
+  }
+  return String(html);
 }
