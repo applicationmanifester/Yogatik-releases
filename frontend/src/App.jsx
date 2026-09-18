@@ -133,6 +133,7 @@ const StarterCards = safeLazy(() => import('./components/StarterCards').then(m =
 const CitationGraphModal = safeLazy(() => import('./components/CitationGraphModal').then(m => ({ default: m.CitationGraphModal })))
 const EvalDashboard = safeLazy(() => import('./components/EvalDashboard').then(m => ({ default: m.EvalDashboard })))
 const TradingModal = safeLazy(() => import('./components/TradingModal').then(m => ({ default: m.TradingModal })))
+const MediaStudioModal = safeLazy(() => import('./components/MediaStudioModal').then(m => ({ default: m.MediaStudioModal })))
 
 
 // ─── Main App ───
@@ -260,6 +261,7 @@ export default function App() {
   const [showCitationGraph, setShowCitationGraph] = useState(false)
   const [showEvalDashboard, setShowEvalDashboard] = useState(false)
   const [showTradingModal, setShowTradingModal] = useState(false)
+  const [showMediaStudio, setShowMediaStudio] = useState(false)
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
   // Entitlement. The GATE is in the main process; this is only what the UI says.
@@ -3850,6 +3852,7 @@ export default function App() {
       { id: 'terminal', group: 'Tools', label: '⌨️ Terminal — watch the assistant, run your own', hint: 'Ctrl+`', run: () => setShowTerminal(true) },
       { id: 'extensions-menu', group: 'Tools', label: '📦 Extensions & Power Tools (Trading, Torrents, Hub, Browser)', run: () => setExtensionsOpen(true) },
       { id: 'indian-stock-trading', group: 'Trading', label: '📈 Zerodha & Indian Stock Trading (NSE/BSE)', hint: 'Live & Paper Trading', run: () => setShowTradingModal(true) },
+      { id: 'creative-media-studio', group: 'Tools', label: '🎬 Creative Media Studio (Kling, Seedance, Soul, Wan, Flux)', hint: 'AI Video & Image', run: () => setShowMediaStudio(true) },
       { id: 'file-editor', group: 'Tools', label: '📝 Create or edit a file in the workspace', hint: isDesktop() ? 'Workspace' : 'Desktop app', run: () => setShowFileEditor(true) },
       { id: 'workspace', group: 'View', label: '🗂️ File explorer & changes', hint: isDesktop() ? 'Ctrl+B' : 'Desktop app', run: () => setShowWorkspace(v => !v) },
       { id: 'workspace-scm', group: 'View', label: '🔀 Review the agent’s file changes', hint: isDesktop() ? 'Source control' : 'Desktop app', run: () => setShowWorkspace(true) },
@@ -4919,9 +4922,9 @@ export default function App() {
               </button>
               <div ref={extensionsWrapRef} className="extensions-wrap">
                 <button
-                  className={`icon-btn extensions-trigger${extensionsOpen || showTradingModal || showTorrentModal || showDomainHub ? ' active' : ''}`}
+                  className={`icon-btn extensions-trigger${extensionsOpen || showTradingModal || showTorrentModal || showDomainHub || showMediaStudio ? ' active' : ''}`}
                   onClick={() => setExtensionsOpen(o => !o)}
-                  title="Extensions & Power Tools (Trading, Torrents, Browser, Domain Hub)"
+                  title="Extensions & Power Tools (Media Studio, Trading, Torrents, Browser, Domain Hub)"
                   aria-label="Extensions & Power Tools"
                   aria-haspopup="dialog"
                   aria-expanded={extensionsOpen}
@@ -4936,6 +4939,19 @@ export default function App() {
                         <X size={14} />
                       </button>
                     </div>
+                    <button
+                      className="extensions-item"
+                      onClick={() => { setShowMediaStudio(true); setExtensionsOpen(false) }}
+                      title="Creative Media Studio (Kling 3, Seedance 2.5, Wan 2.7, Soul Cinema, Flux)"
+                    >
+                      <div className="extensions-item-icon">
+                        <Sparkles size={15} color="#ec4899" />
+                      </div>
+                      <div className="extensions-item-text">
+                        <span className="extensions-item-title">Creative Media Studio</span>
+                        <span className="extensions-item-desc">Kling 3, Seedance, Soul & Flux</span>
+                      </div>
+                    </button>
                     <button
                       className="extensions-item"
                       onClick={() => { setShowTradingModal(true); setExtensionsOpen(false) }}
@@ -6666,6 +6682,15 @@ export default function App() {
           <TradingModal
             isOpen={showTradingModal}
             onClose={() => setShowTradingModal(false)}
+          />
+        </React.Suspense>
+      )}
+
+      {showMediaStudio && (
+        <React.Suspense fallback={null}>
+          <MediaStudioModal
+            isOpen={showMediaStudio}
+            onClose={() => setShowMediaStudio(false)}
           />
         </React.Suspense>
       )}

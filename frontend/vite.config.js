@@ -69,8 +69,23 @@ function llmProxyPlugin() {
   }
 }
 
+// CSP headers for dev server (matches electron/security.cjs)
+const CSP = `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' https://api.openai.com https://api.groq.com https://openrouter.ai https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://api.anthropic.com https://api.elevenlabs.io; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';`;
+
+function cspPlugin() {
+  return {
+    name: 'csp-headers',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        res.setHeader('Content-Security-Policy', CSP);
+        next();
+      });
+    }
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), llmProxyPlugin()],
+  plugins: [react(), llmProxyPlugin(), cspPlugin()],
   resolve: {
     dedupe: ['react', 'react-dom'],
   },

@@ -18,6 +18,7 @@ const entitlement = require('./entitlement.cjs')
 const { registerRootsIpc, rootPathsFor, resolvePath, getTrustState } = require('./roots.cjs')
 const { enableProviderCors } = require('./cors.cjs')
 const { enableAdBlocker } = require('./adBlocker.cjs')
+const { applyCSP } = require('./security.cjs')
 const { buildMenu } = require('./menu.cjs')
 const { registerDeepLink, handleSecondInstance } = require('./deepLink.cjs')
 const { createTray } = require('./tray.cjs')
@@ -38,6 +39,7 @@ const { registerProcesses } = require('./processes.cjs')
 const {
   registerTerminalSession, stopAllTerminals, runBlock: runTerminalBlock,
 } = require('./terminalSession.cjs')
+const { applyCSP } = require('./security.cjs')
 const { registerMcpStdio, killAllMcpStdio } = require('./mcpStdio.cjs')
 const { registerCompanionInput } = require('./companionInput.cjs')
 const { registerBrowserControl, destroyAllSessions } = require('./browserControl.cjs')
@@ -133,6 +135,9 @@ function createWindow() {
       sandbox: false,
     },
   })
+
+  // Apply CSP headers
+  applyCSP(mainWindow)
 
   if (state.maximized) mainWindow.maximize()
   windowState.track(mainWindow)
@@ -307,6 +312,7 @@ if (!gotLock) {
     // roots (which fsBridge resolves every path against), the journal, and the
     // fs bridge itself, because the workspace chip reads them on mount.
     createWindow()
+    applyCSP(mainWindow)
 
     // Registered on the next turn of the loop, so the window is already on
     // screen and painting while these run. They land long before the renderer

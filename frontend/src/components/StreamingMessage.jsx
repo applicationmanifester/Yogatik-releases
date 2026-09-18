@@ -1,9 +1,10 @@
-import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback, useMemo } from 'react'
 import { stripToolCallSyntax } from '../promptedTools'
 import { extractActionChips } from '../actionChips'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useTypewriter } from '../hooks/useTypewriter'
+import { sanitizeHtmlSync } from '../utils/sanitize'
 
 /**
  * The in-flight assistant reply.
@@ -107,6 +108,13 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
     : stripToolCallSyntax(displayedText || '')
 
   const { cleanText, chips } = extractActionChips(displayContent || '')
+
+  // Sanitize the markdown output before rendering (XSS prevention)
+  const sanitizedMarkdown = useMemo(() => {
+    // Get tool name from activeAction if available for tool-specific sanitization
+    const toolName = activeAction?.name || '';
+    return sanitizeHtmlSync(cleanText || '', toolName);
+  }, [cleanText, activeAction?.name]);
   
   const body = (
     <>
@@ -118,7 +126,7 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
       ) : null}
       {cleanText ? (
         <div className="message-content">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleanText}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{sanitizedMarkdown}</ReactMarkdown>
           {!isComplete && <span className="typewriter-cursor" aria-hidden="true">▌</span>}
         </div>
       ) : null}

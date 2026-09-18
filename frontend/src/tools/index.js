@@ -53,6 +53,7 @@ import { podcastGenerateTool } from './podcastGen'
 import { webAutomationTool } from './webAutomation'
 import { seeTool } from './see'
 import { videoRenderTool } from './videoRender'
+import { studioMediaGenTool } from './mediaStudio'
 import { localImageGenTool, localVideoGenTool } from './localGen'
 import { castToTvTool } from './tvCast'
 import {
@@ -327,6 +328,7 @@ const ALL_TOOLS = {
   visual_verify: visualVerifyTool,
   video_render: videoRenderTool,
   video_edit: videoEditTool,
+  studio_media_generate: studioMediaGenTool,
   // Local on-device generation via a user-installed ComfyUI. Desktop only.
   local_image_generate: localImageGenTool,
   local_video_generate: localVideoGenTool,
@@ -1520,6 +1522,9 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
     scores['mcp_resource'] = 210
     scores['mcp_prompt'] = 200
   }
+  if (/\b(kling|seedance|soul cinema|wan video|studio generate|cinematic video|ai video generation|video studio|media studio|generate cinematic)\b/i.test(text)) {
+    scores['studio_media_generate'] = 240
+  }
 
   // Dynamic boost for any discovered MCP tool matching user intent words
   for (const s of schemas) {
@@ -1608,6 +1613,7 @@ export {
   langsmithObservabilityTool,
   langGraphFlowTool,
   appSettingsTool,
+  studioMediaGenTool,
 }
 
 export default ALL_TOOLS
