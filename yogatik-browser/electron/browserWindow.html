@@ -330,6 +330,37 @@
       color: var(--text-primary) !important;
     }
 
+    /* Take the Wheel Button */
+    .wheel-btn {
+      width: auto !important;
+      height: 24px !important;
+      padding: 0 8px !important;
+      gap: 4px;
+      border-radius: 6px;
+      font-size: 11px !important;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      transition: all 0.15s;
+    }
+    .wheel-btn.human-driving {
+      background: rgba(16, 185, 129, 0.2) !important;
+      border: 1px solid rgba(16, 185, 129, 0.5) !important;
+      color: #10b981 !important;
+    }
+    .wheel-btn.challenge-alert {
+      background: rgba(239, 68, 68, 0.2) !important;
+      border: 1px solid rgba(239, 68, 68, 0.5) !important;
+      color: #ef4444 !important;
+      animation: pulse-border 1.5s infinite;
+    }
+    @keyframes pulse-border {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+      70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+
     /* ── Tab Strip ────────────────────────────────────────────────────────── */
     #bar {
       display: flex;
@@ -618,6 +649,9 @@
     <!-- AI Companion Button -->
     <button class="nav-btn ai-toggle-btn" id="ai-panel-btn" title="Yogatik AI Companion">&#10024; AI</button>
 
+    <!-- Take the Wheel (Human in the Loop) -->
+    <button class="nav-btn wheel-btn" id="wheel-btn" title="Take the Wheel (Human in the Loop)" style="display:none;"></button>
+
     <button class="nav-btn" id="new-tab-btn" title="New tab (Ctrl+T)">+</button>
 
     <!-- Inline Find Bar -->
@@ -727,6 +761,24 @@
     let currentTabsList = []
 
     const act = (action, value) => window.__tabAction && window.__tabAction(action, value)
+
+    const wheelBtn = document.getElementById('wheel-btn')
+    if (wheelBtn) {
+      wheelBtn.onclick = () => {
+        if (currentNav?.humanControl) {
+          act('release-wheel')
+        } else {
+          act('take-wheel')
+        }
+      }
+    }
+    window.__notifyHelpRequested = (msg) => {
+      if (wheelBtn) {
+        wheelBtn.style.display = 'inline-flex'
+        wheelBtn.className = 'nav-btn wheel-btn challenge-alert'
+        wheelBtn.innerHTML = '⚠️ Take Wheel'
+      }
+    }
 
     document.getElementById('brand-home-btn').onclick = () => act('new-tab')
 
@@ -1258,6 +1310,22 @@
 
         const isVideo = (nav.url || '').includes('youtube.com') || (nav.url || '').includes('vimeo.com')
         aiActVideo.style.display = isVideo ? 'flex' : 'none'
+
+        if (wheelBtn) {
+          if (nav.humanControl) {
+            wheelBtn.style.display = 'inline-flex'
+            wheelBtn.className = 'nav-btn wheel-btn human-driving'
+            wheelBtn.innerHTML = '🚗 Hand Back'
+            wheelBtn.title = 'Human is driving. Click to hand back to AI agent.'
+          } else if (nav.helpRequested) {
+            wheelBtn.style.display = 'inline-flex'
+            wheelBtn.className = 'nav-btn wheel-btn challenge-alert'
+            wheelBtn.innerHTML = '⚠️ Take Wheel'
+            wheelBtn.title = 'CAPTCHA or challenge detected! Click to take the wheel.'
+          } else {
+            wheelBtn.style.display = 'none'
+          }
+        }
 
         updateBookmarkIcon()
       } else {

@@ -29,6 +29,7 @@ import { isDesktop, DESKTOP_ONLY_TOOLS } from './tools/localFs'
 import { enrichToolError } from './tools/toolReflection'
 import { compactToolResult } from './tools/toolCompactor'
 import { sanitizeExternalContext } from './tools/rebuffGuard'
+import { evaluateActionPolicy } from './actionBoundary'
 // rebuffGuard sanitizes untrusted CONTENT before it reaches the model — the
 // input side. generateCanary/checkCanaryLeak already existed as an opt-in
 // tool the model could choose to call (and therefore never would, on the
@@ -183,7 +184,18 @@ function isDesktopRuntime() {
 //
 // Fails CLOSED: a gate that throws blocks the call. A rail that opens when it
 // breaks is not a rail.
-async function gateAllows(name, args) {
+async function gateAllows(name, args, initiator = 'person') {
+  // 1. Evaluate Pre-Action Security Policy Boundary (OpenBot style)
+  try {
+    const boundaryCheck = await evaluateActionPolicy({ tool: name, args, initiator })
+    if (!boundaryCheck.allowed) {
+      return { allowed: false, reason: boundaryCheck.reason || 'Action denied by security boundary policy.' }
+    }
+  } catch (e) {
+    return { allowed: false, reason: `Security boundary evaluation failed: ${e?.message || e}` }
+  }
+
+  // 2. Evaluate active window action gate (if installed, e.g. companion/autopilot)
   const gate = (typeof window !== 'undefined' && window.__YOGATIK_ACTION_GATE__) || null
   if (typeof gate !== 'function') return { allowed: true }
   try {
@@ -1332,7 +1344,7 @@ export async function runAgent({
                   'materially different arguments, or answer with what you have.',
               }
             }
-            const decision = await gateAllows(tc.name, args)
+            const decision = await gateAllows(tc.name, args, executionCtx.initiator || 'person')
             if (!decision.allowed) {
               // Report it as a normal tool result so the model can adapt —
               // announce, choose another route, or ask the user directly.

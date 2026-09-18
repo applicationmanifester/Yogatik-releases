@@ -310,6 +310,36 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
           >
             {indexState === 'indexed' ? <Check size={14} /> : <Compass size={14} />}
           </button>
+          {/* Take the Wheel / Human-in-the-loop (OpenBot pattern) */}
+          {(nav.helpRequested || nav.humanControl) && (
+            <button
+              className="artifact-btn"
+              onClick={async () => {
+                if (nav.humanControl) {
+                  await br()?.releaseWheel?.({ conversationId, tabId: nav.activeTabId })
+                } else {
+                  await br()?.takeWheel?.({ conversationId, tabId: nav.activeTabId })
+                }
+              }}
+              title={nav.humanControl ? 'Human is driving. Click to hand back to AI agent.' : 'CAPTCHA / Challenge detected! Click to take the wheel.'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '0 8px',
+                height: '24px',
+                fontSize: '11px',
+                fontWeight: 600,
+                borderRadius: '6px',
+                background: nav.humanControl ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.25)',
+                color: nav.humanControl ? '#34d399' : '#f87171',
+                border: `1px solid ${nav.humanControl ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.5)'}`,
+                cursor: 'pointer',
+              }}
+            >
+              {nav.humanControl ? '🚗 Hand Back' : '⚠️ Take Wheel'}
+            </button>
+          )}
           <button className="artifact-btn" onClick={newTab} title="New tab" aria-label="New tab">
             <Plus size={14} />
           </button>

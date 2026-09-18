@@ -139,6 +139,7 @@ const CHANNELS = {
   'browser:zoom': P(CAP.BROWSER), 'browser:find': P(CAP.BROWSER), 'browser:find-stop': P(CAP.BROWSER),
   'browser:downloads': P(CAP.BROWSER), 'browser:cancel-download': P(CAP.BROWSER),
   'browser:open-download': P(CAP.BROWSER), 'browser:show-download': P(CAP.BROWSER),
+  'browser:take-wheel': P(CAP.BROWSER), 'browser:release-wheel': P(CAP.BROWSER),
 
   /* ── control: the screen and other applications ────────────────────── */
   // NATIVE capture only. companion/capture.js already tiers native →

@@ -206,6 +206,8 @@ function navSnapshot(s) {
     zoomPercent: t ? Math.round(safe(() => t.view.webContents.getZoomFactor(), 1) * 100) : 100,
     shield: getAdShieldStats(),
     aiPanelOpen: !!s.aiPanelOpen,
+    humanControl: !!t?.humanControl,
+    helpRequested: !!t?.helpRequested,
   }
 }
 
@@ -225,6 +227,7 @@ function syncTabBar(s) {
       url: snap.url, canGoBack: snap.canGoBack, canGoForward: snap.canGoForward,
       loading: snap.loading, zoomPercent: snap.zoomPercent,
       shield: snap.shield, aiPanelOpen: snap.aiPanelOpen,
+      humanControl: snap.humanControl, helpRequested: snap.helpRequested,
     })
     s.win.webContents
       .executeJavaScript(`window.__setTabs && window.__setTabs(${payload}, ${active}, ${navPayload})`)
@@ -259,15 +262,18 @@ function setMode(s, mode) {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 
-function createTab(s, url) {
-  const view = new WebContentsView({
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      autoplayPolicy: 'no-user-gesture-required',
-    },
-  })
+function createTab(s, url, opts = {}) {
+  const isAgent = !!opts?.isAgent
+  const partition = opts?.partition || (isAgent ? 'persist:agent-workspace' : undefined)
+  const webPrefs = {
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true,
+    autoplayPolicy: 'no-user-gesture-required',
+  }
+  if (partition) webPrefs.partition = partition
+
+  const view = new WebContentsView({ webPreferences: webPrefs })
   const tabId = newTabId()
   // `console` is a ring of the page's own console output and uncaught errors.
   // Without it the model has no way to answer "does the UI work" — it was
@@ -277,6 +283,9 @@ function createTab(s, url) {
     view, refEpoch: 0, console: [], failed: [],
     // CDP (Network domain) request/response capture — see ensureDebugger().
     network: [], debuggerAttached: false, debuggerWired: false, pendingRequests: new Map(),
+    humanControl: false,
+    helpRequested: false,
+    isAgent,
   }
   s.tabs.set(tabId, tab)
   s.activeTabId = tabId
@@ -349,7 +358,34 @@ function createTab(s, url) {
     if (tab.failed.length > 50) tab.failed.shift()
   })
   wc.on('page-title-updated', () => syncTabBar(s))
-  wc.on('did-finish-load', () => syncTabBar(s))
+  wc.on('did-finish-load', () => {
+    syncTabBar(s)
+    // Automated Challenge / 2FA Detection for agent tabs (OpenBot pattern)
+    if (tab.isAgent && !tab.humanControl) {
+      wc.executeJavaScript(`
+        (() => {
+          const isCaptcha = !!(
+            document.querySelector('iframe[src*="challenges.cloudflare.com"]') ||
+            document.querySelector('iframe[src*="recaptcha"]') ||
+            document.querySelector('iframe[src*="hcaptcha"]') ||
+            document.querySelector('[data-sitekey]') ||
+            document.querySelector('#challenge-running') ||
+            document.querySelector('input[autocomplete="one-time-code"]') ||
+            document.querySelector('input[name*="otp" i], input[name*="2fa" i]')
+          )
+          return isCaptcha
+        })()
+      `).then((isChallenge) => {
+        if (isChallenge) {
+          tab.helpRequested = true
+          syncTabBar(s)
+          if (s.win && !s.win.isDestroyed()) {
+            s.win.webContents.executeJavaScript(`window.__notifyHelpRequested && window.__notifyHelpRequested("CAPTCHA / 2FA challenge detected. Please take the wheel to continue.")`).catch(() => {})
+          }
+        }
+      }).catch(() => {})
+    }
+  })
   wc.on('media-started-playing', () => syncTabBar(s))
   wc.on('media-paused', () => syncTabBar(s))
 
@@ -706,6 +742,9 @@ async function resolveTarget(t, { ref, x, y }) {
 async function click(s, { tabId, ref, x, y, button = 'left', double = false } = {}) {
   const t = tabFor(s, tabId)
   if (!t) return { success: false, error: 'No such tab' }
+  if (t.humanControl) {
+    return { success: false, error: 'Action blocked: Human has taken the wheel on this tab. Click "Hand Back" in the toolbar to resume automated control.' }
+  }
   const pt = await resolveTarget(t, { ref, x, y })
   if (pt.error) return { success: false, error: pt.error, stale: !!pt.stale }
   const wc = t.view.webContents
@@ -722,6 +761,9 @@ async function click(s, { tabId, ref, x, y, button = 'left', double = false } = 
 async function typeText(s, { tabId, ref, text, submit = false, clear = false } = {}) {
   const t = tabFor(s, tabId)
   if (!t) return { success: false, error: 'No such tab' }
+  if (t.humanControl) {
+    return { success: false, error: 'Action blocked: Human has taken the wheel on this tab. Click "Hand Back" in the toolbar to resume automated control.' }
+  }
   if (typeof text !== 'string') return { success: false, error: 'text is required' }
   let relocated = false
   if (ref) {
@@ -1931,6 +1973,30 @@ function registerBrowserControl(getMainWindow) {
     return { success: true }
   })
 
+  ipcMain.handle('browser:take-wheel', (_e, p = {}) => {
+    const s = S(p)
+    const t = tabFor(s, p.tabId)
+    if (t) {
+      t.humanControl = true
+      t.helpRequested = false
+      syncTabBar(s)
+      return { success: true, humanControl: true }
+    }
+    return { success: false, error: 'Tab not found' }
+  })
+
+  ipcMain.handle('browser:release-wheel', (_e, p = {}) => {
+    const s = S(p)
+    const t = tabFor(s, p.tabId)
+    if (t) {
+      t.humanControl = false
+      t.helpRequested = false
+      syncTabBar(s)
+      return { success: true, humanControl: false }
+    }
+    return { success: false, error: 'Tab not found' }
+  })
+
   // Clicks and typing in the window-mode toolbar/tab strip. This is real
   // browser chrome now (address bar, back/forward/reload, a manual + button)
   // and not just the tab strip the channel name still describes — kept as
@@ -2029,6 +2095,20 @@ function registerBrowserControl(getMainWindow) {
       case 'toggle-shield':
         setAdShieldEnabled(!isAdShieldEnabled())
         syncTabBar(s)
+        break
+      case 'take-wheel':
+        if (t) {
+          t.humanControl = true
+          t.helpRequested = false
+          syncTabBar(s)
+        }
+        break
+      case 'release-wheel':
+        if (t) {
+          t.humanControl = false
+          t.helpRequested = false
+          syncTabBar(s)
+        }
         break
       case 'toggle-ai-panel':
         s.aiPanelOpen = !s.aiPanelOpen

@@ -148,4 +148,67 @@ describe('ActionJournal & Merkle Time-Machine Rollback', () => {
     expect(audit.markdown).toContain('security.md')
     expect(audit.markdown).toContain('governance_agent')
   })
+
+  it('redacts sensitive API keys and secrets from entries and payloads', async () => {
+    const journal = new ActionJournal('secret-redaction-test')
+
+    const entry = await journal.recordAction({
+      actionType: ACTION_TYPES.FILE_WRITE,
+      target: 'config.json',
+      before: null,
+      after: 'api_key=sk-1234567890abcdef1234567890abcdef and token=ghp_1234567890abcdef1234567890abcdef',
+      metadata: {
+        apiKey: 'sk-abcdef1234567890abcdef1234567890',
+        normalField: 'hello',
+      },
+    })
+
+    expect(entry.after).not.toContain('sk-1234567890abcdef')
+    expect(entry.after).toContain('[REDACTED_SECRET:')
+    expect(entry.metadata.apiKey).toContain('[REDACTED_SECRET:')
+    expect(entry.metadata.normalField).toBe('hello')
+
+    const verification = await journal.verifyIntegrity()
+    expect(verification.valid).toBe(true)
+  })
+
+  it('tracks initiator kinds and filters unattended runs (Nobody Watching)', async () => {
+    const journal = new ActionJournal('initiator-test')
+
+    await journal.recordAction({
+      actionType: ACTION_TYPES.FILE_WRITE,
+      target: 'a.txt',
+      initiator: 'person',
+      agent: 'main',
+    })
+
+    await journal.recordAction({
+      actionType: ACTION_TYPES.FILE_WRITE,
+      target: 'b.txt',
+      initiator: 'routine',
+      agent: 'cron_scheduler',
+    })
+
+    await journal.recordAction({
+      actionType: ACTION_TYPES.TERMINAL_RUN,
+      target: 'npm test',
+      initiator: 'subagent',
+      agent: 'tester',
+    })
+
+    const unattended = journal.filterNobodyWatching()
+    expect(unattended.length).toBe(2)
+    expect(unattended.map(u => u.initiator)).toEqual(['routine', 'subagent'])
+
+    const summary = journal.getAuditSummary()
+    expect(summary.total).toBe(3)
+    expect(summary.person).toBe(1)
+    expect(summary.routine).toBe(1)
+    expect(summary.subagent).toBe(1)
+    expect(summary.handoff).toBe(0)
+
+    const verification = await journal.verifyIntegrity()
+    expect(verification.valid).toBe(true)
+  })
 })
+

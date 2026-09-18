@@ -294,9 +294,10 @@ contextBridge.exposeInMainWorld('__YOGATIK_BROWSER__', {
   showDownload: (p) => ipcRenderer.invoke('browser:show-download', p || {}),
   onDownload: (cb) => {
     const handler = (_e, payload) => { try { cb(payload) } catch { /* ignore */ } }
-    ipcRenderer.on('browser:download', handler)
     return () => ipcRenderer.removeListener('browser:download', handler)
   },
+  takeWheel: (p) => ipcRenderer.invoke('browser:take-wheel', p || {}),
+  releaseWheel: (p) => ipcRenderer.invoke('browser:release-wheel', p || {}),
 })
 
 // The floating companion window (always-on-top mini assistant).
