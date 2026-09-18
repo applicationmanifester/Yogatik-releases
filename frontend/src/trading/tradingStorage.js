@@ -16,9 +16,14 @@ const DEFAULT_CONFIG = {
   zerodhaPublicToken: '',
   zerodhaTokenExpiry: null,
   zerodhaUserId: '',
+  startingDayEquity: 100000,
   riskLimits: {
     maxOrderValue: 25000, // Max ₹25,000 per trade limit
     maxDailyOrders: 10,
+    maxDailyDrawdownPercent: 2.5, // Daily circuit breaker threshold
+    useFractionalKelly: true,
+    kellyMultiplier: 0.5, // Half-Kelly
+    useChandelierStop: true,
     enforceLimitOrders: true,
     requireConfirmation: true,
   },

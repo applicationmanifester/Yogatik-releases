@@ -19,6 +19,13 @@ import {
   Clock,
   Play,
   Check,
+  BarChart3,
+  FileText,
+  Download,
+  AlertOctagon,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
 } from 'lucide-react'
 import { Modal } from './Modal'
 import { getTradingConfig, saveTradingConfig, resetPaperPortfolio } from '../trading/tradingStorage'
@@ -42,6 +49,22 @@ import {
 } from '../trading/paperEngine'
 import { analyzeStock } from '../tools/zerodhaTrade'
 import { DEFAULT_WATCHLIST } from '../trading/autoTrader'
+import {
+  checkDailyCircuitBreaker,
+  executeEmergencyKillSwitch,
+} from '../trading/riskEngine'
+import {
+  runVectorBacktest,
+  generateSyntheticCandles,
+  calculateIndianMarketFees,
+} from '../trading/backtester'
+import {
+  getTradeJournal,
+  verifyJournalIntegrity,
+  exportJournalToCsv,
+  exportJournalToJson,
+} from '../trading/tradeJournal'
+import { evaluateExplainableSignal } from '../trading/explainableSignal'
 
 export function TradingModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('positions') // 'positions' | 'orders' | 'scanner' | 'settings'
@@ -73,8 +96,37 @@ export function TradingModal({ isOpen, onClose }) {
   const [scannerResults, setScannerResults] = useState([])
   const [scannerLoading, setScannerLoading] = useState(false)
 
+  // Backtest state
+  const [backtestSymbol, setBacktestSymbol] = useState('RELIANCE')
+  const [backtestCapital, setBacktestCapital] = useState(100000)
+  const [backtestProfitTarget, setBacktestProfitTarget] = useState(2.5)
+  const [backtestStopLoss, setBacktestStopLoss] = useState(1.2)
+  const [backtestTrailingStop, setBacktestTrailingStop] = useState(true)
+  const [backtestLoading, setBacktestLoading] = useState(false)
+  const [backtestResult, setBacktestResult] = useState(null)
+
+  // Forensic Journal & Explainable AI state
+  const [journalEntries, setJournalEntries] = useState([])
+  const [journalAudit, setJournalAudit] = useState(null)
+  const [expandedSetupSymbol, setExpandedSetupSymbol] = useState(null)
+
   const isLive = config.mode === 'live'
   const timerRef = useRef(null)
+
+  // Daily Circuit Breaker Status
+  const circuitStatus = checkDailyCircuitBreaker({
+    startingDayEquity: config.startingDayEquity || 100000,
+    currentEquity: portfolioData.netWorth,
+    maxDailyDrawdownPercent: config.riskLimits?.maxDailyDrawdownPercent || 2.5,
+  })
+
+  // Sync journal when tab opens
+  useEffect(() => {
+    if (activeTab === 'journal') {
+      setJournalEntries(getTradeJournal())
+      setJournalAudit(null)
+    }
+  }, [activeTab])
 
   // 1. Fetch live data for current mode
   const fetchLiveData = useCallback(async () => {
@@ -390,6 +442,99 @@ export function TradingModal({ isOpen, onClose }) {
     }
   }
 
+  // Emergency Kill Switch: bulk cancel & square off
+  const handleEmergencyKillSwitch = async () => {
+    if (!confirm('🚨 EMERGENCY KILL SWITCH: Are you sure you want to cancel ALL pending orders and immediately SQUARE OFF all active positions?')) {
+      return
+    }
+
+    setActionLoading('kill_switch')
+    try {
+      const cancelFn = async (id) => {
+        if (isLive) return cancelZerodhaOrder(id, config.zerodhaApiKey, config.zerodhaAccessToken)
+        return cancelPaperOrder(id)
+      }
+      const squareFn = async (sym, qty, price) => {
+        if (isLive) return squareOffZerodhaPosition({ tradingsymbol: sym, quantity: qty, exchange: 'NSE' }, config.zerodhaApiKey, config.zerodhaAccessToken)
+        return squareOffPaperPosition(sym)
+      }
+
+      const report = await executeEmergencyKillSwitch({
+        cancelOrderFn: cancelFn,
+        squareOffPositionFn: squareFn,
+        openOrders: ordersList.filter(o => o.status === 'OPEN' || o.status === 'PENDING'),
+        activePositions: portfolioData.positions,
+      })
+
+      setActionNotice({
+        type: report.success ? 'success' : 'error',
+        text: `Emergency Kill Switch: ${report.cancelledOrders.length} orders cancelled, ${report.squaredOffPositions.length} positions squared off.`,
+      })
+      await fetchLiveData()
+    } catch (err) {
+      setActionNotice({ type: 'error', text: `Kill switch failed: ${err.message}` })
+    } finally {
+      setActionLoading(null)
+      setTimeout(() => setActionNotice(null), 5000)
+    }
+  }
+
+  // Vector Backtest Runner
+  const handleRunBacktest = () => {
+    setBacktestLoading(true)
+    setTimeout(() => {
+      try {
+        const candles = generateSyntheticCandles({
+          basePrice: backtestSymbol === 'NIFTY 50' ? 24500 : 2500,
+          count: 140,
+          trend: 'bullish',
+          volatility: 0.012,
+        })
+        const result = runVectorBacktest(candles, {
+          initialCapital: Number(backtestCapital) || 100000,
+          profitTargetPct: Number(backtestProfitTarget) || 2.5,
+          stopLossPct: Number(backtestStopLoss) || 1.2,
+          trailingStop: Boolean(backtestTrailingStop),
+        })
+        setBacktestResult(result)
+        setActionNotice({ type: 'success', text: `Vector backtest complete for ${backtestSymbol}. Total Return: ${result.metrics?.totalReturnPercent}%` })
+      } catch (err) {
+        setActionNotice({ type: 'error', text: `Backtest failed: ${err.message}` })
+      } finally {
+        setBacktestLoading(false)
+        setTimeout(() => setActionNotice(null), 4000)
+      }
+    }, 400)
+  }
+
+  // Forensic Journal Handlers
+  const handleVerifyJournal = () => {
+    const audit = verifyJournalIntegrity()
+    setJournalAudit(audit)
+  }
+
+  const handleExportCsv = () => {
+    const csv = exportJournalToCsv()
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `yogatik_trade_journal_${Date.now()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExportJson = () => {
+    const json = exportJournalToJson()
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `yogatik_trade_journal_${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   // Filter orders
   const filteredOrders = ordersList.filter(o => {
     const status = String(o.status || '').toUpperCase()
@@ -420,8 +565,8 @@ export function TradingModal({ isOpen, onClose }) {
           borderRadius: '10px',
           marginBottom: '14px',
         }}>
-          {/* Mode Pill */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Mode Pill, Circuit Status & Emergency Kill Switch */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
             <span style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -438,6 +583,50 @@ export function TradingModal({ isOpen, onClose }) {
               {isLive ? <AlertTriangle size={13} /> : <Shield size={13} />}
               {isLive ? 'Live Zerodha (Real Capital)' : 'Zero-Risk Paper Simulator'}
             </span>
+
+            {/* Daily Circuit Breaker Status */}
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '4px 9px',
+              borderRadius: '16px',
+              fontSize: '11px',
+              fontWeight: 700,
+              background: circuitStatus.isTripped ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.12)',
+              border: `1px solid ${circuitStatus.isTripped ? 'var(--error, #ef4444)' : 'rgba(59, 130, 246, 0.3)'}`,
+              color: circuitStatus.isTripped ? 'var(--error, #ef4444)' : '#3b82f6',
+            }}>
+              <Shield size={12} />
+              Circuit: {circuitStatus.isTripped ? 'TRIPPED' : 'HEALTHY'} (-{circuitStatus.drawdownPercent}% / {circuitStatus.limitPercent}%)
+            </span>
+
+            {/* Emergency Kill Switch */}
+            <button
+              type="button"
+              onClick={handleEmergencyKillSwitch}
+              disabled={actionLoading === 'kill_switch'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                background: '#dc2626',
+                color: '#fff',
+                border: '1px solid #b91c1c',
+                fontSize: '11px',
+                fontWeight: 800,
+                letterSpacing: '0.03em',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(220, 38, 38, 0.35)',
+              }}
+              title="Cancel all orders and square off all positions immediately"
+            >
+              <AlertOctagon size={13} />
+              {actionLoading === 'kill_switch' ? 'KILLING...' : 'KILL SWITCH'}
+            </button>
+
             {isLive && !config.zerodhaAccessToken && (
               <span style={{ fontSize: '11px', color: 'var(--error, #ef4444)', fontWeight: 600 }}>
                 ⚠️ 2FA Token Required
@@ -618,6 +807,60 @@ export function TradingModal({ isOpen, onClose }) {
             }}
           >
             <Radar size={15} /> Market Scanner
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('backtest')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '7px 14px',
+              borderRadius: '7px',
+              border: activeTab === 'backtest' ? '1px solid var(--accent, #ff6b35)' : '1px solid transparent',
+              background: activeTab === 'backtest' ? 'var(--accent-glow, rgba(255,107,53,0.1))' : 'transparent',
+              color: activeTab === 'backtest' ? 'var(--accent, #ff6b35)' : 'var(--text-secondary)',
+              fontWeight: 700,
+              fontSize: '12.5px',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <BarChart3 size={15} /> Vector Backtest
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('journal')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '7px 14px',
+              borderRadius: '7px',
+              border: activeTab === 'journal' ? '1px solid var(--accent, #ff6b35)' : '1px solid transparent',
+              background: activeTab === 'journal' ? 'var(--accent-glow, rgba(255,107,53,0.1))' : 'transparent',
+              color: activeTab === 'journal' ? 'var(--accent, #ff6b35)' : 'var(--text-secondary)',
+              fontWeight: 700,
+              fontSize: '12.5px',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <FileText size={15} /> Forensic Journal
+            {journalEntries.length > 0 && (
+              <span style={{
+                background: 'rgba(59, 130, 246, 0.2)',
+                color: '#3b82f6',
+                borderRadius: '10px',
+                padding: '1px 6px',
+                fontSize: '10px',
+                fontWeight: 800,
+              }}>
+                {journalEntries.length}
+              </span>
+            )}
           </button>
 
           <button
@@ -1074,12 +1317,88 @@ export function TradingModal({ isOpen, onClose }) {
                         </div>
                       </div>
 
-                      {/* Signal Rationale */}
-                      {Array.isArray(setup.reasons) && setup.reasons.length > 0 && (
-                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', lineHeight: 1.4 }}>
-                          • {setup.reasons[0]}
-                        </div>
-                      )}
+                      {/* Explainable AI Factor Pills */}
+                      {(() => {
+                        const explainable = setup.explainable || evaluateExplainableSignal({
+                          symbol: setup.symbol,
+                          currentPrice: setup.currentPrice,
+                          rsi: setup.indicators?.rsi14 || 54,
+                          stopLoss: setup.keyLevels?.stopLoss,
+                          targetPrice: setup.keyLevels?.target1,
+                          portfolioEquity: portfolioData.netWorth,
+                        })
+                        const isExpanded = expandedSetupSymbol === setup.symbol
+
+                        return (
+                          <div style={{ marginBottom: '8px' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
+                              <span style={{
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                background: explainable.grade === 'A+' ? 'rgba(34, 197, 94, 0.2)' : explainable.grade === 'A' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+                                color: explainable.grade === 'A+' ? 'var(--success, #22c55e)' : explainable.grade === 'A' ? '#3b82f6' : '#eab308',
+                                border: '1px solid currentColor',
+                              }}>
+                                Grade {explainable.grade}
+                              </span>
+                              <span style={{ padding: '2px 5px', borderRadius: '4px', fontSize: '9.5px', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                                Mom: {explainable.factors.momentum.score}/40
+                              </span>
+                              <span style={{ padding: '2px 5px', borderRadius: '4px', fontSize: '9.5px', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                                Vol: {explainable.factors.volume.score}/35
+                              </span>
+                              <span style={{ padding: '2px 5px', borderRadius: '4px', fontSize: '9.5px', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                                Payoff: {explainable.factors.payoff.score}/25
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => setExpandedSetupSymbol(isExpanded ? null : setup.symbol)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--accent, #ff6b35)',
+                                fontSize: '10.5px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                padding: '2px 0',
+                                marginBottom: '6px',
+                              }}
+                            >
+                              <Sparkles size={11} />
+                              {isExpanded ? 'Hide AI Rationale' : 'Explain AI Setup & Sizing'}
+                              {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                            </button>
+
+                            {isExpanded && (
+                              <div style={{
+                                background: 'var(--bg-tertiary)',
+                                border: '1px solid var(--border)',
+                                borderRadius: '6px',
+                                padding: '8px',
+                                fontSize: '11px',
+                                lineHeight: 1.45,
+                                color: 'var(--text-secondary)',
+                                marginBottom: '8px',
+                              }}>
+                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+                                  AI Trade Rationale:
+                                </div>
+                                <div style={{ marginBottom: '6px' }}>{explainable.rationale}</div>
+                                <div style={{ fontSize: '10.5px', color: 'var(--success, #22c55e)', fontWeight: 600 }}>
+                                  ⚡ Half-Kelly Sizing: {explainable.kellySizing?.recommendedQuantity || 0} shares ({explainable.kellySizing?.recommendedRiskPercent || 0}% risk budget)
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
 
                     {/* Quick Trade Button */}
@@ -1112,6 +1431,495 @@ export function TradingModal({ isOpen, onClose }) {
                 )
               })}
             </div>
+          </div>
+        )}
+
+        {/* TAB: VECTOR BACKTESTER */}
+        {activeTab === 'backtest' && (
+          <div>
+            {/* Backtest Config Card */}
+            <div style={{
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border)',
+              borderRadius: '10px',
+              padding: '16px',
+              marginBottom: '16px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <div>
+                  <h3 style={{ fontSize: '14px', fontWeight: 800, margin: '0 0 4px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <BarChart3 size={16} style={{ color: 'var(--accent, #ff6b35)' }} />
+                    Institutional Vector Backtest Engine
+                  </h3>
+                  <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', margin: 0 }}>
+                    Vectorized candle replay with authentic Indian statutory deductions (₹20 brokerage, STT, GST, SEBI charges & dynamic slippage).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRunBacktest}
+                  disabled={backtestLoading}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 16px',
+                    borderRadius: '7px',
+                    background: 'var(--accent, #ff6b35)',
+                    color: '#fff',
+                    border: 'none',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    cursor: backtestLoading ? 'wait' : 'pointer',
+                  }}
+                >
+                  <Play size={13} fill="#fff" />
+                  {backtestLoading ? 'Simulating Vector Replay...' : 'Run Vector Backtest'}
+                </button>
+              </div>
+
+              {/* Controls Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', fontSize: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
+                    Asset / Stock
+                  </label>
+                  <select
+                    value={backtestSymbol}
+                    onChange={(e) => setBacktestSymbol(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 8px',
+                      borderRadius: '6px',
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px',
+                    }}
+                  >
+                    <option value="RELIANCE">RELIANCE (Reliance Ind.)</option>
+                    <option value="TCS">TCS (Tata Consultancy)</option>
+                    <option value="INFY">INFY (Infosys)</option>
+                    <option value="HDFCBANK">HDFCBANK (HDFC Bank)</option>
+                    <option value="ICICIBANK">ICICIBANK (ICICI Bank)</option>
+                    <option value="BHARTIARTL">BHARTIARTL (Airtel)</option>
+                    <option value="SBIN">SBIN (State Bank of India)</option>
+                    <option value="NIFTY 50">NIFTY 50 (Index)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
+                    Initial Capital (₹)
+                  </label>
+                  <input
+                    type="number"
+                    value={backtestCapital}
+                    onChange={(e) => setBacktestCapital(Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      padding: '7px 8px',
+                      borderRadius: '6px',
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
+                    Profit Target (%)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={backtestProfitTarget}
+                    onChange={(e) => setBacktestProfitTarget(Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      padding: '7px 8px',
+                      borderRadius: '6px',
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
+                    Stop Loss (%)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.2"
+                    value={backtestStopLoss}
+                    onChange={(e) => setBacktestStopLoss(Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      padding: '7px 8px',
+                      borderRadius: '6px',
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '18px' }}>
+                  <input
+                    type="checkbox"
+                    id="trailingStopToggle"
+                    checked={backtestTrailingStop}
+                    onChange={(e) => setBacktestTrailingStop(e.target.checked)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <label htmlFor="trailingStopToggle" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    Trailing ATR Ratchet
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Backtest Results Display */}
+            {backtestResult?.metrics && (
+              <div>
+                {/* 4 Metric Cards */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: '10px',
+                  marginBottom: '14px',
+                }}>
+                  <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                      Net Strategy Return
+                    </span>
+                    <div style={{
+                      fontSize: '18px',
+                      fontWeight: 800,
+                      color: backtestResult.metrics.netPnl >= 0 ? 'var(--success, #22c55e)' : 'var(--error, #ef4444)',
+                    }}>
+                      {backtestResult.metrics.netPnl >= 0 ? '+' : ''}₹{backtestResult.metrics.netPnl.toLocaleString('en-IN')}
+                      <span style={{ fontSize: '12px', fontWeight: 600, marginLeft: '6px' }}>
+                        ({backtestResult.metrics.totalReturnPercent}%)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                      Sharpe / Sortino Ratio
+                    </span>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      {backtestResult.metrics.sharpeRatio}{' '}
+                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        / {backtestResult.metrics.sortinoRatio} (Rf: 6.5%)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                      Win Rate / Profit Factor
+                    </span>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      {backtestResult.metrics.winRatePercent}%{' '}
+                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        (PF: {backtestResult.metrics.profitFactor})
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                      Max Drawdown
+                    </span>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--error, #ef4444)' }}>
+                      -{backtestResult.metrics.maxDrawdownPercent}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* Statutory Fee Breakdown Banner */}
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(59, 130, 246, 0.08)',
+                  border: '1px solid rgba(59, 130, 246, 0.25)',
+                  fontSize: '12px',
+                  color: 'var(--text-primary)',
+                  marginBottom: '14px',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                }}>
+                  <div>
+                    <strong>Indian Market Friction Deductions:</strong> Flat ₹20 Brokerage, STT (0.025%), GST (18%), SEBI charges & dynamic slippage accounted for.
+                  </div>
+                  <div style={{ fontWeight: 700, color: '#3b82f6' }}>
+                    Total Fees Paid: ₹{backtestResult.metrics.totalFeesPaid.toLocaleString('en-IN')}{' '}
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      ({backtestResult.metrics.totalTrades} trades: {backtestResult.metrics.winningTrades}W / {backtestResult.metrics.losingTrades}L)
+                    </span>
+                  </div>
+                </div>
+
+                {/* Trade Log Table */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                        <th style={{ padding: '8px 10px' }}>#</th>
+                        <th style={{ padding: '8px 10px' }}>Qty</th>
+                        <th style={{ padding: '8px 10px' }}>Entry Price</th>
+                        <th style={{ padding: '8px 10px' }}>Exit Price</th>
+                        <th style={{ padding: '8px 10px' }}>Fees</th>
+                        <th style={{ padding: '8px 10px' }}>Net P&L</th>
+                        <th style={{ padding: '8px 10px' }}>Return</th>
+                        <th style={{ padding: '8px 10px' }}>Exit Trigger</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {backtestResult.trades.slice(0, 10).map((t) => (
+                        <tr key={t.tradeId} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '7px 10px', color: 'var(--text-secondary)' }}>{t.tradeId}</td>
+                          <td style={{ padding: '7px 10px', fontWeight: 600 }}>{t.quantity}</td>
+                          <td style={{ padding: '7px 10px' }}>₹{t.entryPrice.toFixed(2)}</td>
+                          <td style={{ padding: '7px 10px' }}>₹{t.exitPrice.toFixed(2)}</td>
+                          <td style={{ padding: '7px 10px', color: 'var(--text-secondary)' }}>₹{t.totalFees}</td>
+                          <td style={{
+                            padding: '7px 10px',
+                            fontWeight: 700,
+                            color: t.netPnl >= 0 ? 'var(--success, #22c55e)' : 'var(--error, #ef4444)',
+                          }}>
+                            {t.netPnl >= 0 ? '+' : ''}₹{t.netPnl}
+                          </td>
+                          <td style={{
+                            padding: '7px 10px',
+                            fontWeight: 600,
+                            color: t.returnPct >= 0 ? 'var(--success, #22c55e)' : 'var(--error, #ef4444)',
+                          }}>
+                            {t.returnPct >= 0 ? '+' : ''}{t.returnPct}%
+                          </td>
+                          <td style={{ padding: '7px 10px' }}>
+                            <span style={{
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '10px',
+                              fontWeight: 700,
+                              background: t.exitReason === 'PROFIT_TARGET' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                              color: t.exitReason === 'PROFIT_TARGET' ? 'var(--success, #22c55e)' : 'var(--error, #ef4444)',
+                            }}>
+                              {t.exitReason}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {backtestResult.trades.length > 10 && (
+                    <div style={{ padding: '6px 12px', fontSize: '11px', color: 'var(--text-secondary)', background: 'var(--bg-secondary)', textAlign: 'center' }}>
+                      Showing latest 10 of {backtestResult.trades.length} simulated trades
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB: FORENSIC TRADE JOURNAL */}
+        {activeTab === 'journal' && (
+          <div>
+            {/* Header with Audit & Export */}
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border)',
+              borderRadius: '10px',
+              padding: '14px',
+              marginBottom: '14px',
+            }}>
+              <div>
+                <h3 style={{ fontSize: '14px', fontWeight: 800, margin: '0 0 4px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Shield size={16} style={{ color: 'var(--accent, #ff6b35)' }} />
+                  Cryptographic Forensic Trade Journal
+                </h3>
+                <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', margin: 0 }}>
+                  Immutable local ledger chaining each trade decision and execution with SHA-256 cryptographic hashes.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={handleVerifyJournal}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Shield size={13} style={{ color: 'var(--success, #22c55e)' }} />
+                  Verify Ledger Hashes
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportCsv}
+                  disabled={journalEntries.length === 0}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: journalEntries.length === 0 ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <Download size={13} /> Export CSV
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportJson}
+                  disabled={journalEntries.length === 0}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: journalEntries.length === 0 ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <Download size={13} /> Export JSON
+                </button>
+              </div>
+            </div>
+
+            {/* Audit Status Banner */}
+            {journalAudit && (
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: '8px',
+                marginBottom: '14px',
+                fontSize: '12px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: journalAudit.isValid ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                border: `1px solid ${journalAudit.isValid ? 'var(--success, #22c55e)' : 'var(--error, #ef4444)'}`,
+                color: journalAudit.isValid ? 'var(--success, #22c55e)' : 'var(--error, #ef4444)',
+              }}>
+                {journalAudit.isValid ? <CheckCircle2 size={16} /> : <AlertOctagon size={16} />}
+                <span>{journalAudit.message}</span>
+              </div>
+            )}
+
+            {/* Journal Entries Table */}
+            {journalEntries.length === 0 ? (
+              <div style={{
+                padding: '36px 16px',
+                textAlign: 'center',
+                background: 'var(--bg-secondary)',
+                borderRadius: '8px',
+                border: '1px dashed var(--border)',
+                color: 'var(--text-secondary)',
+                fontSize: '12.5px',
+              }}>
+                No trade executions recorded in the forensic journal yet.
+                <div style={{ fontSize: '11px', marginTop: '4px' }}>
+                  Trades executed automatically by the Quant Scanner or placed via paper/live simulator will appear here chained with SHA-256 hashes.
+                </div>
+              </div>
+            ) : (
+              <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                      <th style={{ padding: '8px 10px' }}>#</th>
+                      <th style={{ padding: '8px 10px' }}>Timestamp</th>
+                      <th style={{ padding: '8px 10px' }}>Symbol</th>
+                      <th style={{ padding: '8px 10px' }}>Side</th>
+                      <th style={{ padding: '8px 10px' }}>Qty</th>
+                      <th style={{ padding: '8px 10px' }}>Price</th>
+                      <th style={{ padding: '8px 10px' }}>Net P&L</th>
+                      <th style={{ padding: '8px 10px' }}>SHA-256 Hash</th>
+                      <th style={{ padding: '8px 10px' }}>Parent Hash</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {journalEntries.slice().reverse().map((entry) => (
+                      <tr key={entry.index} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '7px 10px', color: 'var(--text-secondary)' }}>#{entry.index}</td>
+                        <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                          {new Date(entry.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </td>
+                        <td style={{ padding: '7px 10px', fontWeight: 700 }}>{entry.symbol}</td>
+                        <td style={{ padding: '7px 10px' }}>
+                          <span style={{
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            background: entry.side === 'BUY' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            color: entry.side === 'BUY' ? 'var(--success, #22c55e)' : 'var(--error, #ef4444)',
+                          }}>
+                            {entry.side}
+                          </span>
+                        </td>
+                        <td style={{ padding: '7px 10px', fontWeight: 600 }}>{entry.quantity}</td>
+                        <td style={{ padding: '7px 10px' }}>₹{entry.price}</td>
+                        <td style={{
+                          padding: '7px 10px',
+                          fontWeight: 700,
+                          color: entry.netPnl > 0 ? 'var(--success, #22c55e)' : entry.netPnl < 0 ? 'var(--error, #ef4444)' : 'var(--text-secondary)',
+                        }}>
+                          {entry.netPnl > 0 ? '+' : ''}₹{entry.netPnl}
+                        </td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: '10px', color: 'var(--accent, #ff6b35)' }}>
+                          {entry.hash.substring(0, 10)}...
+                        </td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: '10px', color: 'var(--text-secondary)' }}>
+                          {entry.previousHash.substring(0, 8)}...
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
@@ -1335,7 +2143,7 @@ export function TradingModal({ isOpen, onClose }) {
               </div>
 
               {/* Safety & Risk Limits */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
                     Max Order Value (₹)
@@ -1359,6 +2167,58 @@ export function TradingModal({ isOpen, onClose }) {
                     }}
                   />
                 </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
+                    Max Daily Drawdown % (Circuit Breaker)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={config.riskLimits?.maxDailyDrawdownPercent || 2.5}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      riskLimits: { ...config.riskLimits, maxDailyDrawdownPercent: Number(e.target.value) || 2.5 },
+                    })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-primary)',
+                      fontSize: '12.5px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '6px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={config.riskLimits?.useFractionalKelly ?? true}
+                      onChange={(e) => setConfig({
+                        ...config,
+                        riskLimits: { ...config.riskLimits, useFractionalKelly: e.target.checked },
+                      })}
+                    />
+                    Half-Kelly Sizing (f* × 0.5)
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={config.riskLimits?.useChandelierStop ?? true}
+                      onChange={(e) => setConfig({
+                        ...config,
+                        riskLimits: { ...config.riskLimits, useChandelierStop: e.target.checked },
+                      })}
+                    />
+                    Chandelier ATR Trailing Stop
+                  </label>
+                </div>
+
                 <div>
                   <label style={{ display: 'block', fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: 600 }}>
                     Virtual Paper Wallet

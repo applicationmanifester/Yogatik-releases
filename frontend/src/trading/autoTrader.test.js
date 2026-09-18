@@ -118,4 +118,27 @@ describe('autoTrader engine', () => {
     const config = getTradingConfig()
     expect(config.paperHoldings['NSE:RELIANCE']).toBeUndefined()
   })
+
+  it('halts new entries and locks scanner when daily circuit breaker is tripped', async () => {
+    // Starting equity 100,000, current cash dropped to 97,000 (-3% drawdown, breaches 2.5% default)
+    saveTradingConfig({
+      startingDayEquity: 100000,
+      paperBalance: 97000,
+      paperHoldings: {},
+      riskLimits: { maxDailyDrawdownPercent: 2.5 },
+    })
+
+    const result = await runAutoTraderCycle({
+      watchlist: ['TCS'],
+      minSetupScore: 50,
+    })
+
+    expect(result.circuitBreaker).toBeDefined()
+    expect(result.circuitBreaker.isTripped).toBe(true)
+    expect(result.circuitBreaker.status).toBe('CIRCUIT_TRIPPED')
+    // Actions taken should be 0 because new entries are locked
+    expect(result.actionsTaken.length).toBe(0)
+    expect(result.recentLogs.some(log => log.includes('Daily circuit breaker tripped'))).toBe(true)
+  })
 })
+

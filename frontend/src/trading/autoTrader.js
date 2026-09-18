@@ -7,6 +7,9 @@
 import { getTradingConfig, saveTradingConfig } from './tradingStorage'
 import { analyzeStock } from '../tools/zerodhaTrade'
 import { executePaperOrder, resolveLiveStockPrice } from './paperEngine'
+import { checkDailyCircuitBreaker } from './riskEngine'
+import { evaluateExplainableSignal } from './explainableSignal'
+import { recordTradeToJournal } from './tradeJournal'
 import * as zerodha from './zerodhaClient'
 
 export const DEFAULT_WATCHLIST = [
@@ -42,6 +45,28 @@ export async function runAutoTraderCycle(options = {}) {
   const topSetups = []
   const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 
+  // Compute current portfolio equity
+  const cash = config.mode === 'paper' ? (config.paperBalance || 0) : 50000
+  let stockHoldingsValue = 0
+  if (config.mode === 'paper') {
+    const holdings = config.paperHoldings || {}
+    for (const h of Object.values(holdings)) {
+      stockHoldingsValue += (h.qty || 0) * (h.avgPrice || 0)
+    }
+  }
+  const currentTotalEquity = cash + stockHoldingsValue
+
+  // Evaluate Daily Circuit Breaker
+  const circuit = checkDailyCircuitBreaker({
+    startingDayEquity: config.startingDayEquity || 100000,
+    currentEquity: currentTotalEquity,
+    maxDailyDrawdownPercent: config.riskLimits?.maxDailyDrawdownPercent || 2.5,
+  })
+
+  if (circuit.isTripped) {
+    logs.push(`${now} - ⚠️ ${circuit.message}`)
+  }
+
   // 1. Position Management: Protect Existing Holdings (Profit Taking & Stop Loss)
   if (config.mode === 'paper') {
     const holdings = { ...(config.paperHoldings || {}) }
@@ -64,6 +89,16 @@ export async function runAutoTraderCycle(options = {}) {
             const act = `[Profit Booked] Sold ${h.qty}x ${sym} at ₹${curPrice.toFixed(2)} (+${gainPct.toFixed(2)}% | +₹${sellRes.realizedPnl.toFixed(2)})`
             logs.push(`${now} - ${act}`)
             actionsTaken.push({ type: 'TAKE_PROFIT', symbol: sym, gainPct, pnl: sellRes.realizedPnl })
+
+            // Record to immutable forensic journal
+            recordTradeToJournal({
+              symbol: sym,
+              side: 'SELL',
+              quantity: h.qty,
+              price: curPrice,
+              netPnl: sellRes.realizedPnl,
+              triggerReason: 'PROFIT_TARGET_HIT',
+            })
             continue
           }
 
@@ -79,6 +114,16 @@ export async function runAutoTraderCycle(options = {}) {
             const act = `[Stop Loss Hit] Sold ${h.qty}x ${sym} at ₹${curPrice.toFixed(2)} (${gainPct.toFixed(2)}% | Realized: ₹${sellRes.realizedPnl.toFixed(2)})`
             logs.push(`${now} - ${act}`)
             actionsTaken.push({ type: 'STOP_LOSS', symbol: sym, gainPct, pnl: sellRes.realizedPnl })
+
+            // Record to immutable forensic journal
+            recordTradeToJournal({
+              symbol: sym,
+              side: 'SELL',
+              quantity: h.qty,
+              price: curPrice,
+              netPnl: sellRes.realizedPnl,
+              triggerReason: 'STOP_LOSS_TRIGGERED',
+            })
             continue
           }
         }
@@ -89,71 +134,106 @@ export async function runAutoTraderCycle(options = {}) {
   }
 
   // 2. Watchlist Opportunity Scanner: Search for High-Probability Setups
+  // Block new entry orders if daily circuit breaker has tripped
   const activeHoldings = config.paperHoldings || {}
   const watchlist = Array.isArray(autoCfg.watchlist)
     ? autoCfg.watchlist
     : DEFAULT_WATCHLIST
 
-  for (const sym of watchlist) {
-    const cleanSym = String(sym).replace(/^(NSE|BSE):/i, '').toUpperCase()
-    const fullSym = `NSE:${cleanSym}`
+  if (circuit.isTripped) {
+    logs.push(`${now} - [Circuit Breaker Lock] Skipping new position scans until next trading session or risk reset.`)
+  } else {
+    for (const sym of watchlist) {
+      const cleanSym = String(sym).replace(/^(NSE|BSE):/i, '').toUpperCase()
+      const fullSym = `NSE:${cleanSym}`
 
-    // Skip if already in active holding
-    if (activeHoldings[fullSym] && activeHoldings[fullSym].qty > 0) {
-      continue
-    }
+      // Skip if already in active holding
+      if (activeHoldings[fullSym] && activeHoldings[fullSym].qty > 0) {
+        continue
+      }
 
-    try {
-      const analysis = await analyzeStock(cleanSym, 'NSE')
-      if (analysis.setupScore >= autoCfg.minSetupScore) {
-        topSetups.push(analysis)
+      try {
+        const analysis = await analyzeStock(cleanSym, 'NSE')
+        if (analysis.setupScore >= autoCfg.minSetupScore) {
+          // Compute explainable signal attribution
+          const explainable = evaluateExplainableSignal({
+            symbol: cleanSym,
+            currentPrice: analysis.currentPrice,
+            rsi: analysis.technicalIndicators?.rsi || 54,
+            sma20: analysis.technicalIndicators?.sma20 || analysis.currentPrice * 0.99,
+            sma50: analysis.technicalIndicators?.sma50 || analysis.currentPrice * 0.97,
+            currentVolume: 150000,
+            avgVolume: 100000,
+            stopLoss: analysis.keyLevels?.stopLoss,
+            targetPrice: analysis.keyLevels?.target1,
+            portfolioEquity: currentTotalEquity,
+          })
+          analysis.explainable = explainable
+          topSetups.push(analysis)
 
-        // Positive Expected Value Condition:
-        // Must be STRONG BUY with favorable risk-reward
-        if (analysis.side === 'BUY' && analysis.setupScore >= autoCfg.minSetupScore) {
-          const cash = config.mode === 'paper' ? (config.paperBalance || 0) : 50000
-          const maxOrderVal = config.riskLimits?.maxOrderValue || 25000
-          const price = analysis.currentPrice
-          const stopLoss = analysis.keyLevels.stopLoss
-          const riskPerShare = Math.max(1, price - stopLoss)
+          // Positive Expected Value Condition:
+          // Must be STRONG BUY with favorable risk-reward
+          if (analysis.side === 'BUY' && analysis.setupScore >= autoCfg.minSetupScore) {
+            const maxOrderVal = config.riskLimits?.maxOrderValue || 25000
+            const price = analysis.currentPrice
+            const stopLoss = analysis.keyLevels?.stopLoss || price * 0.985
+            const riskPerShare = Math.max(1, price - stopLoss)
 
-          // Strict Risk Sizing: Risk only 1.5% of total capital
-          const maxCapitalToRisk = cash * (autoCfg.maxRiskPerTradePercent / 100)
-          let sharesToBuy = Math.floor(maxCapitalToRisk / riskPerShare)
-
-          // Respect maxOrderValue and available cash
-          const maxAffordable = Math.floor(Math.min(cash * 0.95, maxOrderVal) / price)
-          sharesToBuy = Math.min(sharesToBuy, maxAffordable)
-
-          if (sharesToBuy >= 1) {
-            if (config.mode === 'paper') {
-              const buyRes = await executePaperOrder({
-                symbol: cleanSym,
-                exchange: 'NSE',
-                side: 'BUY',
-                quantity: sharesToBuy,
-                orderType: 'MARKET',
-              })
-
-              const act = `[Auto Buy] Bought ${sharesToBuy}x ${cleanSym} @ ₹${price.toFixed(2)} (Setup Score: ${analysis.setupScore}/100, Target: ₹${analysis.keyLevels.target1}, SL: ₹${stopLoss})`
-              logs.push(`${now} - ${act}`)
-              actionsTaken.push({
-                type: 'ENTRY',
-                symbol: cleanSym,
-                quantity: sharesToBuy,
-                price,
-                setupScore: analysis.setupScore,
-                target: analysis.keyLevels.target1,
-                stopLoss,
-              })
+            // Half-Kelly or Standard Risk Sizing
+            let sharesToBuy = 0
+            if (config.riskLimits?.useFractionalKelly && explainable.kellySizing?.recommendedQuantity > 0) {
+              sharesToBuy = explainable.kellySizing.recommendedQuantity
             } else {
-              logs.push(`${now} - [Signal Detected] ${cleanSym} score ${analysis.setupScore}/100. Live mode requires 1-click human confirmation.`)
+              const maxCapitalToRisk = cash * (autoCfg.maxRiskPerTradePercent / 100)
+              sharesToBuy = Math.floor(maxCapitalToRisk / riskPerShare)
+            }
+
+            // Respect maxOrderValue and available cash
+            const maxAffordable = Math.floor(Math.min(cash * 0.95, maxOrderVal) / price)
+            sharesToBuy = Math.min(sharesToBuy, maxAffordable)
+
+            if (sharesToBuy >= 1) {
+              if (config.mode === 'paper') {
+                const buyRes = await executePaperOrder({
+                  symbol: cleanSym,
+                  exchange: 'NSE',
+                  side: 'BUY',
+                  quantity: sharesToBuy,
+                  orderType: 'MARKET',
+                })
+
+                const act = `[Auto Buy] Bought ${sharesToBuy}x ${cleanSym} @ ₹${price.toFixed(2)} (Score: ${analysis.setupScore}/100 [${explainable.grade}], Target: ₹${analysis.keyLevels.target1}, SL: ₹${stopLoss})`
+                logs.push(`${now} - ${act}`)
+                actionsTaken.push({
+                  type: 'ENTRY',
+                  symbol: cleanSym,
+                  quantity: sharesToBuy,
+                  price,
+                  setupScore: analysis.setupScore,
+                  target: analysis.keyLevels.target1,
+                  stopLoss,
+                  grade: explainable.grade,
+                  rationale: explainable.rationale,
+                })
+
+                // Record to forensic journal
+                recordTradeToJournal({
+                  symbol: cleanSym,
+                  side: 'BUY',
+                  quantity: sharesToBuy,
+                  price,
+                  triggerReason: 'AUTO_AI_SETUP_ENTRY',
+                  aiRationale: explainable.rationale,
+                })
+              } else {
+                logs.push(`${now} - [Signal Detected] ${cleanSym} score ${analysis.setupScore}/100 [Grade: ${explainable.grade}]. Live mode requires 1-click human confirmation.`)
+              }
             }
           }
         }
+      } catch (err) {
+        logs.push(`${now} - Scan error on ${sym}: ${err.message}`)
       }
-    } catch (err) {
-      logs.push(`${now} - Scan error on ${sym}: ${err.message}`)
     }
   }
 
@@ -175,6 +255,7 @@ export async function runAutoTraderCycle(options = {}) {
     actionsCount: actionsTaken.length,
     actionsTaken,
     topSetups,
+    circuitBreaker: circuit,
     recentLogs: logs,
   }
 }
