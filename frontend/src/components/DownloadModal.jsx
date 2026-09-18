@@ -119,7 +119,7 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
                 <Compass size={24} style={{ color: '#ff7a18' }} />
                 <div>
                   <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Yogatik Browser</h4>
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Standalone AI Privacy Browser</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Windows · macOS · Linux</span>
                 </div>
               </div>
               <ul style={{ margin: '16px 0', paddingLeft: 18, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
@@ -130,7 +130,7 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
             </div>
 
             <a
-              href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser-Setup.exe"
+              href="/browser"
               target="_blank"
               rel="noreferrer"
               className="btn-primary"
@@ -150,7 +150,7 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
                 cursor: 'pointer',
               }}
             >
-              <Download size={18} /> Download Browser (v1.0.0)
+              <Download size={18} /> Choose browser platform
             </a>
           </div>
 

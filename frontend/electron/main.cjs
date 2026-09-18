@@ -39,7 +39,6 @@ const { registerProcesses } = require('./processes.cjs')
 const {
   registerTerminalSession, stopAllTerminals, runBlock: runTerminalBlock,
 } = require('./terminalSession.cjs')
-const { applyCSP } = require('./security.cjs')
 const { registerMcpStdio, killAllMcpStdio } = require('./mcpStdio.cjs')
 const { registerCompanionInput } = require('./companionInput.cjs')
 const { registerBrowserControl, destroyAllSessions } = require('./browserControl.cjs')

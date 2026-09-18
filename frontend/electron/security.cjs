@@ -15,7 +15,7 @@ const CSP = [
   "form-action 'self'"
 ].join('; ');
 
-export function applyCSP(win) {
+function applyCSP(win) {
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -26,4 +26,4 @@ export function applyCSP(win) {
   });
 }
 
-export { CSP };
+module.exports = { applyCSP, CSP };

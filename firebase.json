@@ -16,6 +16,10 @@
         "destination": "/platforms.html"
       },
       {
+        "source": "/browser",
+        "destination": "/browser.html"
+      },
+      {
         "source": "/guide",
         "destination": "/guide.html"
       },
