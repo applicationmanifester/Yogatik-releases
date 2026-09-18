@@ -67,23 +67,24 @@ function shouldBlockUrl(rawUrl) {
 
   const hostname = urlObj.hostname.toLowerCase()
 
-  // 1. YouTube specific ad & tracking endpoints
+  // 1. YouTube specific ad & tracking endpoints (pagead, stats/ads, midrolls, ptracking)
+  // NOTE: We do NOT block /youtubei/v1/log_event because YouTube's Polymer client
+  // halts initial feed hydration with an empty skeleton state if log_event is rejected.
   if (hostname === 'www.youtube.com' || hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) {
     const p = urlObj.pathname.toLowerCase()
     if (
       p.startsWith('/pagead/') ||
       p.startsWith('/api/stats/ads') ||
       p.startsWith('/get_midroll_info') ||
-      p.startsWith('/ptracking') ||
-      p.startsWith('/youtubei/v1/log_event')
+      p.startsWith('/ptracking')
     ) {
       return true
     }
   }
 
-  // 2. Video playback ads (adformat parameter in googlevideo)
+  // 2. Video playback ads (adformat parameter or ctier=A in googlevideo; ctier=L is legitimate content)
   if (hostname.endsWith('.googlevideo.com') || hostname === 'googlevideo.com') {
-    if (urlObj.searchParams.has('adformat') || urlObj.searchParams.has('ctier')) {
+    if (urlObj.searchParams.has('adformat') || urlObj.searchParams.get('ctier') === 'A') {
       return true
     }
   }
@@ -111,8 +112,6 @@ const COSMETIC_AD_CSS = `
   ytd-promoted-video-renderer,
   ytd-banner-promo-renderer,
   ytd-statement-banner-renderer,
-  ytd-in-feed-ad-layout-renderer,
-  ytd-display-ad-renderer,
   ytd-player-legacy-desktop-watch-ads-renderer,
   #masthead-ad,
   #player-ads,
@@ -121,9 +120,7 @@ const COSMETIC_AD_CSS = `
   div[id^="google_ads_"],
   div[id*="_ad_container"],
   .ad-banner,
-  .advertisement,
-  [aria-label="advertisement" i],
-  [aria-label="sponsored" i] {
+  .advertisement {
     display: none !important;
     visibility: hidden !important;
     height: 0 !important;

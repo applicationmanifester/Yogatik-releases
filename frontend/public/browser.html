@@ -54,24 +54,83 @@
     .release-meta b{color:var(--text);font-weight:600}
     .release-meta .dot{width:5px;height:5px;border-radius:50%;background:var(--muted);opacity:.6}
 
-    .platforms{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin:16px 0 16px}
-    .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:18px;padding:30px 24px;text-align:left;transition:border-color .2s ease,transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s ease;position:relative;display:flex;flex-direction:column}
+    .platforms{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:22px;
+      margin:28px 0 20px;
+      align-items:stretch;
+    }
+    @media (max-width: 900px){
+      .platforms{grid-template-columns:1fr}
+    }
+    .card{
+      background:linear-gradient(180deg,var(--panel),var(--panel2));
+      border:1px solid var(--line);
+      border-radius:20px;
+      padding:28px 24px;
+      text-align:left;
+      transition:border-color .2s ease,transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s ease;
+      position:relative;
+      display:flex;
+      flex-direction:column;
+      height:100%;
+      box-sizing:border-box;
+    }
     .card:hover{border-color:rgba(255,107,53,.45);transform:translateY(-4px);box-shadow:0 12px 32px rgba(0,0,0,.28)}
     [data-theme="light"] .card:hover{box-shadow:0 12px 32px rgba(17,24,39,.1)}
-    .card .os{display:flex;align-items:center;gap:12px;font-weight:800;font-size:18px;margin-bottom:6px}
-    .card .os svg{width:24px;height:24px;fill:var(--brand)}
-    .card .sub{font-size:13.5px;color:var(--muted);margin-bottom:20px;min-height:36px}
-    .dl{display:block;text-align:center;background:linear-gradient(135deg,var(--brand),#ff9900);color:#fff;font-weight:700;font-size:15px;padding:13px 16px;border-radius:12px;transition:background .15s ease,transform .1s ease,box-shadow .15s ease;box-shadow:0 3px 14px rgba(255,107,53,.28);margin-top:auto}
+    .card-top{display:flex;flex-direction:column;flex-grow:1}
+    .card .os{display:flex;align-items:center;gap:12px;font-weight:800;font-size:18px;margin-bottom:8px}
+    .card .os svg{width:24px;height:24px;fill:var(--brand);flex-shrink:0}
+    .card .sub{font-size:13.5px;color:var(--muted);margin-bottom:20px;min-height:42px;display:flex;align-items:flex-start}
+    .card-bottom{margin-top:auto;display:flex;flex-direction:column}
+    .dl{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      background:linear-gradient(135deg,var(--brand),#ff9900);
+      color:#fff;
+      font-weight:700;
+      font-size:15px;
+      height:48px;
+      padding:0 16px;
+      border-radius:12px;
+      box-sizing:border-box;
+      transition:background .15s ease,transform .1s ease,box-shadow .15s ease;
+      box-shadow:0 3px 14px rgba(255,107,53,.28);
+    }
     .dl:hover{background:linear-gradient(135deg,var(--brand2),#ffaa22);box-shadow:0 6px 20px rgba(255,107,53,.38)}
     .dl:active{transform:scale(.98)}
     .dl.ghost{background:transparent;border:1px solid var(--line);color:var(--text);box-shadow:none}
     .dl.ghost:hover{border-color:var(--brand)}
     .dl.dl-unavailable{background:transparent;border:1px dashed var(--line);color:var(--muted);cursor:not-allowed}
     .dl.dl-unavailable:hover{background:transparent}
-    .sub-links{display:flex;justify-content:center;gap:12px;margin-top:12px;font-size:12px;color:var(--muted)}
-    .sub-links a{text-decoration:underline;text-underline-offset:2px}
+    .sub-links{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      margin-top:12px;
+      height:24px;
+      font-size:12px;
+      color:var(--muted);
+      box-sizing:border-box;
+    }
+    .sub-links a{text-decoration:underline;text-underline-offset:2px;color:var(--muted)}
     .sub-links a:hover{color:var(--brand)}
-    .note{font-size:12.5px;color:var(--muted);margin-top:12px;line-height:1.5}
+    .note{
+      font-size:12px;
+      color:var(--muted);
+      margin-top:12px;
+      line-height:1.45;
+      min-height:40px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      box-sizing:border-box;
+    }
 
     .diff-banner{
       max-width:860px;margin:32px auto 0;padding:20px 24px;
@@ -143,43 +202,62 @@
       <div class="platforms">
         <!-- Windows -->
         <div class="card">
-          <div class="os">
-            <svg viewBox="0 0 448 512"><path d="M0 93.7l183.6-25.3v177.4H0zm0 324.6l183.6 25.3V268.4H0zm203.8 28L448 480V268.4H203.8zM203.8 66v180.1H448V32z"/></svg>
-            Windows
+          <div class="card-top">
+            <div class="os">
+              <svg viewBox="0 0 448 512"><path d="M0 93.7l183.6-25.3v177.4H0zm0 324.6l183.6 25.3V268.4H0zm203.8 28L448 480V268.4H203.8zM203.8 66v180.1H448V32z"/></svg>
+              Windows
+            </div>
+            <div class="sub">Windows 10 &amp; 11 · 64-bit installer (.exe)</div>
           </div>
-          <div class="sub">Windows 10 &amp; 11 · 64-bit installer (.exe)</div>
-          <a class="dl" id="win-browser-dl" href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser-Setup.exe">Download for Windows</a>
-          <div class="note">Run <code>YogatikBrowser-Setup.exe</code> to install. Auto-updates built in.</div>
+          <div class="card-bottom">
+            <a class="dl" id="win-browser-dl" href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser-Setup.exe">Download for Windows (.exe)</a>
+            <div class="sub-links">
+              <a href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser-Setup.exe">Installer (.exe)</a>
+              <span>•</span>
+              <a href="https://github.com/applicationmanifester/Yogatik-releases/releases">All Releases</a>
+            </div>
+            <div class="note">Run <code>YogatikBrowser-Setup.exe</code> to install. Auto-updates built in.</div>
+          </div>
         </div>
 
         <!-- macOS -->
         <div class="card">
-          <div class="os">
-            <svg viewBox="0 0 384 512"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zM256.6 93.4c25.9-30.8 23.6-58.8 22.9-68.9-22.9 1.3-49.4 15.6-64.5 33.2-16.6 18.9-26.4 42.2-24.3 67.4 24.8 1.9 47.5-10.8 65.9-31.7z"/></svg>
-            macOS
+          <div class="card-top">
+            <div class="os">
+              <svg viewBox="0 0 384 512"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zM256.6 93.4c25.9-30.8 23.6-58.8 22.9-68.9-22.9 1.3-49.4 15.6-64.5 33.2-16.6 18.9-26.4 42.2-24.3 67.4 24.8 1.9 47.5-10.8 65.9-31.7z"/></svg>
+              macOS
+            </div>
+            <div class="sub">Apple Silicon &amp; Intel universal build (.dmg)</div>
           </div>
-          <div class="sub">Universal (Apple Silicon &amp; Intel)</div>
-          <a class="dl" id="mac-browser-dl" href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser-arm64.dmg">Download for macOS (.dmg)</a>
-          <div class="sub-links">
-            <a href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser-x64.dmg">Intel (.dmg)</a>
-            <span>•</span>
-            <a href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser-arm64.zip">ZIP Archive</a>
+          <div class="card-bottom">
+            <a class="dl" id="mac-browser-dl" href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser-arm64.dmg">Download for macOS (.dmg)</a>
+            <div class="sub-links">
+              <a href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser-x64.dmg">Intel (.dmg)</a>
+              <span>•</span>
+              <a href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser-arm64.zip">ZIP Archive</a>
+            </div>
+            <div class="note">Universal Apple Silicon &amp; Intel build. Right-click → <b>Open</b> first time.</div>
           </div>
-          <div class="note">Apple Silicon &amp; Intel universal build. Right-click → <b>Open</b> the first time.</div>
         </div>
 
         <!-- Linux -->
         <div class="card">
-          <div class="os">
-            <svg viewBox="0 0 448 512"><path d="M220.8 123.3c1 .5 1.8 1.7 3 1.7 1.1 0 2.8-.4 2.9-1.5.2-1.4-1.9-2.3-3.2-2.9-1.7-.7-3.9-1-5.5-.1-.4.2-.8.7-.6 1.1.3 1.3 2 1.2 3.4 1.6zm-21.9 1.7c1.2 0 2-1.2 3-1.7 1.4-.4 3.1-.3 3.4-1.6.2-.4-.2-.9-.6-1.1-1.6-.9-3.8-.6-5.5.1-1.3.6-3.4 1.5-3.2 2.9.1 1 1.8 1.5 2.9 1.4zM420 403.8c-3.6-4-5.3-11.6-7.2-19.7-1.8-8.1-3.9-16.8-10.5-22.4-1.3-1.1-2.6-2.1-4-2.9 1.3-6.7 2-13.5 2-20.3 0-104.8-58.6-189.9-131-189.9S138 233.6 138 338.4c0 6.5.6 12.9 1.8 19.3-1.6.9-3.1 2-4.5 3.2-6.6 5.6-8.7 14.3-10.5 22.4-1.9 8.1-3.6 15.7-7.2 19.7-8.4 9.3-9.5 20.9-3.3 32.8 6.1 11.9 20.5 20 42.5 25 7.9 1.8 15.4 3 22.6 3.6 5.1 5.6 12.2 10.9 21.5 13.5 6.5 1.8 13.6 2.7 20.8 2.7s14.3-.9 20.8-2.7c9.3-2.6 16.4-7.9 21.5-13.5 7.2-.6 14.7-1.8 22.6-3.6 22-5 36.4-13.1 42.5-25 6.2-11.9 5.1-23.5-3.4-32.7z"/></svg>
-            Linux
+          <div class="card-top">
+            <div class="os">
+              <svg viewBox="0 0 448 512"><path d="M220.8 123.3c1 .5 1.8 1.7 3 1.7 1.1 0 2.8-.4 2.9-1.5.2-1.4-1.9-2.3-3.2-2.9-1.7-.7-3.9-1-5.5-.1-.4.2-.8.7-.6 1.1.3 1.3 2 1.2 3.4 1.6zm-21.9 1.7c1.2 0 2-1.2 3-1.7 1.4-.4 3.1-.3 3.4-1.6.2-.4-.2-.9-.6-1.1-1.6-.9-3.8-.6-5.5.1-1.3.6-3.4 1.5-3.2 2.9.1 1 1.8 1.5 2.9 1.4zM420 403.8c-3.6-4-5.3-11.6-7.2-19.7-1.8-8.1-3.9-16.8-10.5-22.4-1.3-1.1-2.6-2.1-4-2.9 1.3-6.7 2-13.5 2-20.3 0-104.8-58.6-189.9-131-189.9S138 233.6 138 338.4c0 6.5.6 12.9 1.8 19.3-1.6.9-3.1 2-4.5 3.2-6.6 5.6-8.7 14.3-10.5 22.4-1.9 8.1-3.6 15.7-7.2 19.7-8.4 9.3-9.5 20.9-3.3 32.8 6.1 11.9 20.5 20 42.5 25 7.9 1.8 15.4 3 22.6 3.6 5.1 5.6 12.2 10.9 21.5 13.5 6.5 1.8 13.6 2.7 20.8 2.7s14.3-.9 20.8-2.7c9.3-2.6 16.4-7.9 21.5-13.5 7.2-.6 14.7-1.8 22.6-3.6 22-5 36.4-13.1 42.5-25 6.2-11.9 5.1-23.5-3.4-32.7z"/></svg>
+              Linux
+            </div>
+            <div class="sub">x86_64 AppImage &amp; Debian / Ubuntu (.deb)</div>
           </div>
-          <div class="sub">AppImage &amp; .deb (x86_64)</div>
-          <a class="dl" id="linux-browser-dl" href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser.AppImage">Download for Linux (.AppImage)</a>
-          <div class="sub-links">
-            <a href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser.deb">Debian / Ubuntu (.deb)</a>
+          <div class="card-bottom">
+            <a class="dl" id="linux-browser-dl" href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser.AppImage">Download for Linux (.AppImage)</a>
+            <div class="sub-links">
+              <a href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/YogatikBrowser.deb">Debian / Ubuntu (.deb)</a>
+              <span>•</span>
+              <a href="https://github.com/applicationmanifester/Yogatik-releases/releases">All Releases</a>
+            </div>
+            <div class="note"><code>chmod +x YogatikBrowser.AppImage</code> or install .deb package.</div>
           </div>
-          <div class="note"><code>chmod +x YogatikBrowser.AppImage</code> or install the .deb package.</div>
         </div>
       </div>
 

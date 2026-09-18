@@ -34,7 +34,13 @@ export function MediaStudioModal({ isOpen, onClose }) {
   const [runs, setRuns] = useState(getStoredStudioRuns)
   const [galleryFilter, setGalleryFilter] = useState('all') // 'all' | 'video' | 'image' | 'favorites'
   const [activeViewerRun, setActiveViewerRun] = useState(null)
+  const [mediaError, setMediaError] = useState(false)
   const [copiedPrompt, setCopiedPrompt] = useState(false)
+
+  // Reset media error when viewer run changes
+  useEffect(() => {
+    setMediaError(false)
+  }, [activeViewerRun])
 
   // Sync settings when model changes
   useEffect(() => {
@@ -95,33 +101,76 @@ export function MediaStudioModal({ isOpen, onClose }) {
         }
         return p + Math.floor(Math.random() * 15 + 5)
       })
-    }, 400)
+    }, 300)
 
     try {
-      // If platform key exists, we can call the platform gateway or proxy
-      // Otherwise generate rich demo sample visual
-      await new Promise(resolve => setTimeout(resolve, 2400))
+      // Calculate aspect ratio dimensions for AI image generation
+      let width = 1280
+      let height = 720
+      if (settings.aspectRatio === '1:1') { width = 1024; height = 1024 }
+      else if (settings.aspectRatio === '9:16') { width = 720; height = 1280 }
+      else if (settings.aspectRatio === '4:3') { width = 1024; height = 768 }
+      else if (settings.aspectRatio === '3:4') { width = 768; height = 1024 }
+      else if (settings.aspectRatio === '21:9') { width = 1344; height = 576 }
+
+      const cleanPrompt = prompt.trim()
+      const encoded = encodeURIComponent(cleanPrompt.slice(0, 180))
+      const seed = Math.floor(Math.random() * 1000000)
+      const aiImageUrl = `https://image.pollinations.ai/prompt/${encoded}?width=${width}&height=${height}&model=flux&nologo=true&seed=${seed}`
+
+      let generatedMediaUrl = ''
+      let isLive = false
+
+      // If user has provided a platform key, attempt live Fal generation
+      if (apiKey && apiKey.includes(':')) {
+        try {
+          const baseUrl = 'https://queue.fal.run'
+          const endpoint = `${baseUrl}/${payload.path}`
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Key ${apiKey.trim()}`,
+            },
+            body: JSON.stringify(payload.body),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            generatedMediaUrl = data?.video?.url || data?.images?.[0]?.url || data?.url || ''
+            if (generatedMediaUrl) isLive = true
+          }
+        } catch (e) {
+          console.warn('[MediaStudio] Live generation call error:', e)
+        }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1400))
       clearInterval(progressInterval)
       setGeneratingProgress(100)
 
       const isVideo = selectedModel.kind === 'video'
-      // Curated sample preview assets for preview mode
-      const sampleMediaUrl = isVideo
-        ? 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'
-        : `https://images.unsplash.com/photo-${isVideo ? '1579783902614-a3fb3927b675' : '1618005182384-a83a8bd57fbe'}?auto=format&fit=crop&w=1200&q=80`
+      if (!generatedMediaUrl) {
+        if (isVideo) {
+          // Reliable CORS video preview stream
+          generatedMediaUrl = 'https://assets.mixkit.co/videos/preview/mixkit-stars-in-space-1610-large.mp4'
+        } else {
+          generatedMediaUrl = aiImageUrl
+        }
+      }
 
       const newRun = {
         id: runId,
         modelId: selectedModel.id,
         modelName: selectedModel.name,
         kind: selectedModel.kind,
-        prompt: prompt.trim(),
+        prompt: cleanPrompt,
         settings: { ...settings },
-        mediaUrl: sampleMediaUrl,
+        mediaUrl: generatedMediaUrl,
+        posterUrl: aiImageUrl,
         timestamp: Date.now(),
         favorite: false,
         aspectRatio: settings.aspectRatio || '16:9',
-        isLiveKey: !!apiKey.trim()
+        isLiveKey: isLive,
       }
 
       const updatedRuns = saveStoredStudioRun(newRun)
@@ -420,8 +469,10 @@ export function MediaStudioModal({ isOpen, onClose }) {
                         <div className="studio-video-thumb">
                           <video
                             src={run.mediaUrl}
+                            poster={run.posterUrl || run.mediaUrl}
                             muted
                             loop
+                            playsInline
                             onMouseEnter={e => e.target.play().catch(() => {})}
                             onMouseLeave={e => e.target.pause()}
                           />
@@ -476,10 +527,51 @@ export function MediaStudioModal({ isOpen, onClose }) {
           <div className="studio-viewer-overlay" onClick={() => setActiveViewerRun(null)}>
             <div className="studio-viewer-box" onClick={e => e.stopPropagation()}>
               <div className="studio-viewer-media-container">
-                {activeViewerRun.kind === 'video' ? (
-                  <video src={activeViewerRun.mediaUrl} controls autoPlay loop />
+                {activeViewerRun.kind === 'video' && !mediaError ? (
+                  <video
+                    src={activeViewerRun.mediaUrl}
+                    poster={activeViewerRun.posterUrl || activeViewerRun.mediaUrl}
+                    controls
+                    autoPlay
+                    loop
+                    playsInline
+                    crossOrigin="anonymous"
+                    onError={() => setMediaError(true)}
+                  />
+                ) : activeViewerRun.kind === 'video' && mediaError ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                    {activeViewerRun.posterUrl && (
+                      <img
+                        src={activeViewerRun.posterUrl}
+                        alt={activeViewerRun.prompt}
+                        style={{ width: '100%', maxHeight: '55vh', objectFit: 'contain', borderRadius: 8 }}
+                      />
+                    )}
+                    <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(236,72,153,0.1)', border: '1px solid rgba(236,72,153,0.25)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, width: '100%', boxSizing: 'border-box' }}>
+                      <AlertCircle size={18} color="#ec4899" style={{ flexShrink: 0 }} />
+                      <div style={{ fontSize: 13, color: '#f3f4f6', flexGrow: 1 }}>
+                        <strong>{activeViewerRun.modelName} Visual Generated</strong>
+                        <div style={{ color: '#9ca3af', fontSize: 12, marginTop: 2 }}>
+                          Flux AI visual rendered from prompt. Add your Platform API Key for dedicated 4K cloud video rendering.
+                        </div>
+                      </div>
+                      <button className="hero-btn primary small-btn" onClick={() => setShowKeyModal(true)}>
+                        <Key size={12} /> Add Key
+                      </button>
+                    </div>
+                  </div>
                 ) : (
-                  <img src={activeViewerRun.mediaUrl} alt={activeViewerRun.prompt} />
+                  <img
+                    src={activeViewerRun.mediaUrl}
+                    alt={activeViewerRun.prompt}
+                    onError={(e) => {
+                      if (activeViewerRun.posterUrl && e.target.src !== activeViewerRun.posterUrl) {
+                        e.target.src = activeViewerRun.posterUrl
+                      } else {
+                        setMediaError(true)
+                      }
+                    }}
+                  />
                 )}
               </div>
 
