@@ -50,6 +50,21 @@ const REFUSAL_PATTERNS = [
   /^This (?:request|query|prompt) (?:is|goes|falls) (?:beyond|outside|against)/i,
 ]
 
+const FILE_ACCESS_DENIAL_PATTERNS = [
+  /(?:don'?t|do not|cannot|can'?t|unable to|lack)\s+(?:have\s+)?(?:access(?:\s+to)?|view|read|open|inspect)\s+(?:your\s+)?(?:local\s+)?(?:files?|filesystem|codebase|directory|folder|disk|repo)/i,
+  /(?:as an ai|as a language model)[^.\n]*(?:cannot|can'?t|don'?t|do not)\s+(?:have\s+)?(?:access(?:\s+to)?|view|read|open)\s+(?:your\s+)?(?:local\s+)?(?:files?|filesystem|codebase|directory|folder|disk)/i,
+  /(?:don'?t|do not|cannot|can'?t)\s+see\s+(?:your\s+)?(?:local\s+)?(?:files?|codebase|project|directory)/i,
+  /please (?:share|paste|provide) (?:the |your )?(?:code|file|files|snippet) (?:content )?because I (?:cannot|can'?t|don'?t|do not) have access/i,
+  /if it'?s in a file in your project, let me know the path and i'?ll read it/i,
+]
+
+/** True if the model falsely claims it cannot access files in desktop mode. */
+export function isFalseFileAccessDenial(text) {
+  if (!text) return false
+  const visible = visibleContent(text)
+  return FILE_ACCESS_DENIAL_PATTERNS.some(p => p.test(visible))
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────
 
 /** Strip `<think>…</think>` blocks and return only user-visible content. */
@@ -214,6 +229,20 @@ export function assessResponse(content, meta = {}) {
     return verdict('failed', 'regenerate', `Degenerate repetition loop detected: ${(ratio * 100).toFixed(0)}% of tri-grams are duplicates.`, 'high', 'repetition')
   }
 
+  // ── 5.5 False file access denial in desktop mode ──────────────────
+  if (meta.isDesktop && isFalseFileAccessDenial(visible)) {
+    if (regenerations >= maxRegens) {
+      return verdict('degraded', 'accept_partial', 'Model denied file access in Desktop mode after retries.', 'high', 'file_access_denial')
+    }
+    return verdict(
+      'failed',
+      'regenerate',
+      'You are running in the Yogatik Desktop App with FULL file access. NEVER claim you lack file access or ask the user to paste files. Use your fs_* tools (fs_list, fs_find_files, fs_read) to inspect the workspace files directly.',
+      'critical',
+      'file_access_denial'
+    )
+  }
+
   // ── 6. Pure refusal with no substance ──────────────────────────────
   if (isRefusal(visible)) {
     if (regenerations >= maxRegens) {
@@ -290,6 +319,9 @@ export function continuationPrompt(content) {
  * Build a regeneration system message for the model.
  */
 export function regenerationPrompt(reason) {
+  if (reason && reason.includes('fs_* tools')) {
+    return `${reason} Do not mention or reference the failed attempt.`
+  }
   return `Your previous response did not meet quality standards (${reason}). ` +
     'Please provide a complete, high-quality response to the original question. ' +
     'Do not mention or reference the failed attempt.'

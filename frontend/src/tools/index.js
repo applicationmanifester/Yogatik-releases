@@ -1252,6 +1252,13 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
     scores['diff'] = 140
     scores['terminal_run'] = 120
   }
+  if (/\b(review|bottleneck|audit|inspect|refactor|clean code|code smell|bug risk|defect|snippet)\b/i.test(text)) {
+    scores['code_review_scan'] = 240
+    scores['fs_read'] = 230
+    scores['fs_list'] = 220
+    scores['fs_find_files'] = 210
+    scores['fs_search'] = 200
+  }
   if (/\b(syntax|validate|check syntax|lint|bracket|tag|unclosed|malformed)\b/i.test(text)) {
     scores['code_validate'] = 250
   }

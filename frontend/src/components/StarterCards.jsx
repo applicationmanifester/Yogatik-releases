@@ -15,7 +15,7 @@ export const STARTER_CATEGORIES = [
     title: 'Code & Debugging',
     icon: Code2,
     color: '#3b82f6',
-    prompt: "Review this code snippet, identify bottlenecks or bugs, and provide clean refactored code with explanations.",
+    prompt: "Review this code, identify bottlenecks or bugs, and provide clean refactored code with explanations.",
     description: "Code analysis, refactoring, algorithms & debugging"
   },
   {

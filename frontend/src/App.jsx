@@ -1226,38 +1226,38 @@ export default function App() {
         '- Present comparative data in structured Markdown tables (| Header 1 | Header 2 |) ready for 1-click CSV export.'
     }
 
-    const folderCtx = isDesktop()
-      ? `\n\nWORKING FOLDERS & REPOSITORY ACCESS:\n` +
+    const isPro = ent?.state === 'pro' || (ent?.daysLeft && ent.daysLeft > 0)
+    const desktopMode = isDesktop()
+
+    const desktopProCtx = desktopMode
+      ? `\n\nDESKTOP MODE & WORKSPACE FILE ACCESS (CRITICAL — ${isPro ? 'PRO SUBSCRIBED' : 'DESKTOP APP'}):\n` +
+        `You are running inside the Yogatik DESKTOP APPLICATION${isPro ? ' with an active PRO SUBSCRIPTION' : ''}.\n` +
+        `You have direct, unrestricted native access to this computer's local filesystem and the active workspace folders:\n` +
         (chatRoots.length ? chatRoots.map(r => `- ${r.path}${r.primary ? '  (primary)' : ''}`).join('\n') : '- Current workspace directory\n') +
-        `\nYou have full native file-system access to these folders via the fs_* tools and terminal_run. ` +
-        `Use them proactively when the user asks to inspect, create, read, edit, rename, move, delete files or directories:\n` +
-        `- fs_list   → list contents and directory tree\n` +
-        `- fs_read   → read a file\n` +
-        `- fs_write  → create or overwrite a file\n` +
-        `- fs_edit   → patch a file by exact string replacement\n` +
-        `- fs_search → grep across folders\n` +
-        `- fs_find_files → find files by name / extension\n` +
-        `- fs_delete → delete a file or directory\n` +
-        `- fs_mkdir  → create a directory tree\n` +
-        `- fs_move   → move or rename a file/directory\n` +
-        `- fs_add_folder → pick or grant another folder\n` +
-        `- terminal_run → execute native CLI commands, builds, and tests.\n` +
-        `Never claim you lack file access or ask the user to paste code when you can inspect it directly.`
-      : ''
+        `\nYOU HAVE REAL, WORKING TOOLS FOR FULL FILE ACCESS:\n` +
+        `- fs_list        → list files and directory tree\n` +
+        `- fs_find_files  → search and locate files by name or pattern (*.js, *.py, etc.)\n` +
+        `- fs_search      → grep search across files and directories\n` +
+        `- fs_read        → read file contents or specific line ranges\n` +
+        `- fs_write       → create or write files\n` +
+        `- fs_edit        → patch files with exact string replacement\n` +
+        `- code_review_scan → deep defect, security, and performance analysis of code\n` +
+        `- terminal_run   → run terminal commands, builds, tests, and CLI scripts\n` +
+        `\nSTRICT INSTRUCTIONS ON FILE ACCESS:\n` +
+        `1. NEVER tell the user that you "do not have access to files", "cannot read local files", "lack file access", or that "as an AI you cannot access files on this computer". You HAVE full file access.\n` +
+        `2. NEVER ask the user to paste code or paste files if they are in the workspace or if the user asks to review code/files.\n` +
+        `3. When the user asks to review code, identify bottlenecks, fix bugs, inspect files, or work with their project (even if they did not paste a snippet or specify a path), DO NOT claim you lack the code. Immediately call fs_list or fs_find_files to discover the workspace files, and fs_read to inspect and analyze them directly!\n` +
+        `4. Proactively inspect the project structure rather than telling the user to provide code manually.`
+      : `\n\nWEB-SESSION FALLBACK RULES (CRITICAL — read before every response):\n` +
+        `- You are running in a WEB SESSION (browser). Local fs_* tools are unavailable in web mode.\n` +
+        `- For code tasks without file access → write the code directly in the chat as a code block.\n` +
+        `- For file reading tasks in web mode → ask the user to paste the content or upload the file.\n` +
+        `- The correct fallback chain for blocked tasks is: web_search → web_extract → js_execute → answer from reasoning.\n`
 
     return (
       basePrompt +
-      folderCtx +
+      desktopProCtx +
       queryContext +
-      '\n\nWEB-SESSION FALLBACK RULES (CRITICAL — read before every response):\n' +
-      '- You are running in a WEB SESSION. The fs_* tools (fs_read, fs_write, fs_edit, fs_list, fs_search, terminal_run) are ONLY available when the user has the DESKTOP app open AND has granted folder access.\n' +
-      '- If fs_* tools are NOT available or return an error, DO NOT refuse the task. DO NOT say "I need the desktop app". Instead:\n' +
-      '  1. For research, GitHub repos, trending repos, data lookup → call `web_search` and/or `web_extract` IMMEDIATELY.\n' +
-      '  2. For code tasks without file access → write the code directly in the chat as a code block.\n' +
-      '  3. For file reading tasks → ask the user to paste the content, OR use `web_extract` if the file is at a URL.\n' +
-      '- NEVER output the phrase "I\'m unable to run any fs_* commands" or "requires the Yogatik desktop application" when a web-based alternative exists.\n' +
-      '- NEVER block on fs tools for tasks that are fundamentally about web data (GitHub, news, trending, prices, docs, APIs).\n' +
-      '- The correct fallback chain for ANY blocked task is: web_search → web_extract → js_execute → answer from reasoning.\n' +
       '\n\nTOOL-USE PRIORITY (CRITICAL — always follow these rules):\n' +
       '- ALWAYS call tools before answering from memory when real-time or external data is needed.\n' +
       '- For any question about current events, news, prices, weather, stock data, GitHub repos, trending, or anything after 2023: call `web_search` FIRST — never claim you cannot do it.\n' +
@@ -1277,7 +1277,7 @@ export default function App() {
       '- When explaining processes or workflows, include Mermaid flowcharts using `diagram` or ```mermaid code blocks so diagrams are razor-sharp vector graphics with readable text.\n' +
       '- Keep document exports (Word .doc, PowerPoint .pptx, CSV) structured into clean sections and slides.'
     )
-  }, [promptTemplates, activeTemplate, chatRoots])
+  }, [promptTemplates, activeTemplate, chatRoots, ent])
 
   /**
    * Start a face-to-face call. Live is a websocket protocol only Gemini speaks,

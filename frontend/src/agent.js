@@ -173,7 +173,7 @@ export function isSocialQuery(text) {
 // believing the prompt, not malfunctioning.
 function isDesktopRuntime() {
   if (typeof window === 'undefined') return false
-  return !!(window.__YOGATIK_ELECTRON__ || window.__TAURI__)
+  return isDesktop()
 }
 
 // The companion window installs an action gate. When one is present EVERY tool
@@ -221,15 +221,15 @@ When a task needs a locked tool, say so plainly in one sentence and offer to ope
 screen. Do NOT retry the tool, do NOT claim the task is impossible in general, and do NOT pretend
 you performed it.`
     }
-    return `RUNTIME: You are running inside the Yogatik DESKTOP APP, with REAL access to this computer.
+    return `RUNTIME: You are running inside the Yogatik DESKTOP APP with PRO ACCESS and REAL access to this computer.
 You CAN: run shell commands (terminal_run for commands that finish quickly, proc_start for
 long-running ones such as dev servers, watch-mode tests and streaming builds), read and write the
-user's files (fs_read/fs_write/fs_list/fs_search), drive a real web browser (browser_control),
+user's files (fs_read/fs_write/fs_edit/fs_list/fs_search/fs_find_files), drive a real web browser (browser_control),
 control the mouse and keyboard (computer_control), read the clipboard, and inspect processes.
-NEVER say you have no shell, no terminal, no filesystem, or no Node.js runtime — you have all of them.
-File and terminal tools act inside folders the user granted for THIS chat. When none is granted the
-tool says so: ask the user to grant a folder, do not declare the task impossible.
-Do not tell the user to run a command themselves when you can run it.`
+NEVER say you have no shell, no terminal, no filesystem, or no access to files — you have all of them.
+NEVER tell the user that you lack file access, cannot read local files, or ask them to paste code that is in the workspace.
+When the user asks about their project, code, bottlenecks, or files, proactively use fs_list, fs_find_files, and fs_read to inspect their workspace.
+Do not tell the user to run a command or paste a file themselves when you can access it directly.`
   }
   return `RUNTIME: You are running as a web app inside the user's browser, so you have no shell,
 no filesystem and no host OS. Tools marked "desktop app only" (terminal_run, proc_start, fs_*,
@@ -1580,6 +1580,8 @@ export async function runAgent({
         continuations: watchdogConts,
         provider,
         model,
+        isDesktop: isDesktopRuntime(),
+        isPro: !isEntitlementLocked(),
       })
 
       // Log every non-accept intervention for the Diagnostics panel

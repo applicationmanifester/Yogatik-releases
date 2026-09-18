@@ -13,6 +13,7 @@ import {
   retryDelay,
   continuationPrompt,
   regenerationPrompt,
+  isFalseFileAccessDenial,
 } from './responseWatchdog'
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -257,5 +258,31 @@ describe('regenerationPrompt', () => {
   it('includes the reason', () => {
     const p = regenerationPrompt('empty response')
     expect(p).toMatch(/empty response/)
+  })
+  it('customizes prompt when reason references fs_* tools', () => {
+    const p = regenerationPrompt('Use your fs_* tools (fs_list, fs_find_files, fs_read)')
+    expect(p).toContain('fs_* tools')
+  })
+})
+
+describe('isFalseFileAccessDenial', () => {
+  it('flags statements claiming lack of access to local files', () => {
+    expect(isFalseFileAccessDenial("I don't have access to your local files.")).toBe(true)
+    expect(isFalseFileAccessDenial("As an AI, I cannot access files on your computer.")).toBe(true)
+    expect(isFalseFileAccessDenial("I lack access to your codebase.")).toBe(true)
+    expect(isFalseFileAccessDenial("If it's in a file in your project, let me know the path and I'll read it")).toBe(true)
+  })
+
+  it('does NOT flag valid content', () => {
+    expect(isFalseFileAccessDenial("Here is the refactored code for your function.")).toBe(false)
+  })
+
+  it('triggers regenerate verdict in assessResponse when in desktop mode', () => {
+    const verdict = assessResponse("I don't have access to your files. Please paste the code.", {
+      isDesktop: true,
+      userMessage: 'Review this code snippet, identify bottlenecks',
+    })
+    expect(verdict.action).toBe('regenerate')
+    expect(verdict.check).toBe('file_access_denial')
   })
 })
