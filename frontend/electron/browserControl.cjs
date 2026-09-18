@@ -86,6 +86,8 @@ function listTabs(s) {
       url: isHome ? '' : rawUrl,
       title: isHome ? 'New Tab' : (safe(() => t.view.webContents.getTitle(), '') || 'New Tab'),
       active: tabId === s.activeTabId,
+      audible: safe(() => t.view.webContents.isCurrentlyAudible(), false),
+      muted: safe(() => t.view.webContents.isAudioMuted(), false),
     }
   })
 }
@@ -127,6 +129,20 @@ function createWindowSurface(s) {
     }
   })
   s.win.on('resize', () => layout(s))
+  s.win.on('enter-full-screen', () => layout(s))
+  s.win.on('leave-full-screen', () => {
+    if (s.isHtmlFullScreen) {
+      s.isHtmlFullScreen = false
+      const t = activeTab(s)
+      if (t) {
+        t.view.webContents.executeJavaScript('document.exitFullscreen ? document.exitFullscreen() : (document.webkitExitFullscreen && document.webkitExitFullscreen())').catch(() => {})
+      }
+      if (s.win && !s.win.isDestroyed()) {
+        s.win.webContents.executeJavaScript('document.body.classList.remove("fullscreen-mode")').catch(() => {})
+      }
+    }
+    layout(s)
+  })
   // The user closing the browser ends the session; the next call opens a fresh one.
   s.win.on('closed', () => { s.win = null; destroySession(s.key) })
   return s.win
@@ -149,7 +165,11 @@ function layout(s) {
     t.view.setBounds(s.bounds)
   } else {
     const [w, hh] = h.getContentSize()
-    t.view.setBounds({ x: 0, y: TAB_BAR_H, width: w, height: Math.max(0, hh - TAB_BAR_H) })
+    if (s.isHtmlFullScreen) {
+      t.view.setBounds({ x: 0, y: 0, width: w, height: hh })
+    } else {
+      t.view.setBounds({ x: 0, y: TAB_BAR_H, width: w, height: Math.max(0, hh - TAB_BAR_H) })
+    }
   }
 }
 
@@ -326,19 +346,96 @@ function createTab(s, url) {
   })
   wc.on('page-title-updated', () => syncTabBar(s))
   wc.on('did-finish-load', () => syncTabBar(s))
-  // Ctrl/Cmd+F inside the PAGE never reaches our chrome — the WebContentsView
-  // is its own top-level browsing context, so a keypress there is consumed
-  // by whatever the page itself does with it (usually nothing). before-input
-  // fires on the tab's webContents BEFORE the page sees the key, which is the
-  // only way to intercept it and open OUR find bar instead of a dead shortcut.
-  wc.on('before-input-event', (event, input) => {
-    const mod = process.platform === 'darwin' ? input.meta : input.control
-    if (!mod || input.alt || input.type !== 'keyDown' || String(input.key || '').toLowerCase() !== 'f') return
-    event.preventDefault()
+  wc.on('media-started-playing', () => syncTabBar(s))
+  wc.on('media-paused', () => syncTabBar(s))
+
+  // HTML5 Fullscreen (YouTube, video players, games, presentations)
+  // When a video goes fullscreen, the WebContentsView must expand to cover the
+  // entire window (y: 0, height: hh), covering the top toolbar and tab strip.
+  wc.on('enter-html-full-screen', () => {
+    s.isHtmlFullScreen = true
     if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
-      s.win.webContents.executeJavaScript('window.__openFind && window.__openFind()').catch(() => {})
-    } else {
-      safeSend(mainWindowGetter(), 'browser:open-find', { conversationId: s.key === '__default__' ? null : s.key })
+      s.wasFullScreen = s.win.isFullScreen()
+      if (!s.wasFullScreen) {
+        s.win.setFullScreen(true)
+      }
+      s.win.webContents.executeJavaScript('document.body.classList.add("fullscreen-mode")').catch(() => {})
+    }
+    layout(s)
+  })
+
+  wc.on('leave-html-full-screen', () => {
+    s.isHtmlFullScreen = false
+    if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
+      if (!s.wasFullScreen && s.win.isFullScreen()) {
+        s.win.setFullScreen(false)
+      }
+      s.win.webContents.executeJavaScript('document.body.classList.remove("fullscreen-mode")').catch(() => {})
+    }
+    layout(s)
+  })
+
+  // Keyboard navigation & shortcuts inside the web view
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+
+    // Escape exits HTML fullscreen if currently active
+    if (input.key === 'Escape' && s.isHtmlFullScreen) {
+      wc.executeJavaScript('document.exitFullscreen ? document.exitFullscreen() : (document.webkitExitFullscreen && document.webkitExitFullscreen())').catch(() => {})
+      return
+    }
+
+    const mod = process.platform === 'darwin' ? input.meta : input.control
+    const key = String(input.key || '').toLowerCase()
+
+    // F11: toggle window fullscreen
+    if (input.key === 'F11' && s.mode === 'window' && s.win && !s.win.isDestroyed()) {
+      event.preventDefault()
+      s.win.setFullScreen(!s.win.isFullScreen())
+      return
+    }
+
+    // Ctrl/Cmd+T: New Tab
+    if (mod && !input.alt && key === 't') {
+      event.preventDefault()
+      const id = createTab(s, null)
+      s.activeTabId = id
+      showActive(s)
+      return
+    }
+
+    // Ctrl/Cmd+W: Close current tab
+    if (mod && !input.alt && key === 'w') {
+      event.preventDefault()
+      if (s.activeTabId) closeTab(s, s.activeTabId)
+      return
+    }
+
+    // Ctrl/Cmd+R or F5: Reload
+    if ((mod && !input.alt && key === 'r') || input.key === 'F5') {
+      event.preventDefault()
+      wc.reload()
+      return
+    }
+
+    // Ctrl/Cmd+L or Alt+D: Focus address bar in window mode
+    if ((mod && !input.alt && key === 'l') || (input.alt && key === 'd')) {
+      if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
+        event.preventDefault()
+        s.win.webContents.executeJavaScript('document.getElementById("addr")?.focus(); document.getElementById("addr")?.select();').catch(() => {})
+        return
+      }
+    }
+
+    // Ctrl/Cmd+F: Find in page
+    if (mod && !input.alt && key === 'f') {
+      event.preventDefault()
+      if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
+        s.win.webContents.executeJavaScript('window.__openFind && window.__openFind()').catch(() => {})
+      } else {
+        safeSend(mainWindowGetter(), 'browser:open-find', { conversationId: s.key === '__default__' ? null : s.key })
+      }
+      return
     }
   })
   // Pop-ups become real tabs, but OAuth/SSO login flows (Google, X, etc.) need native child popups
@@ -433,6 +530,13 @@ function navigate(s, tabId, url) {
 function closeTab(s, tabId) {
   const t = s.tabs.get(tabId)
   if (!t) return { success: false, error: 'No such tab' }
+  if (s.isHtmlFullScreen && s.activeTabId === tabId) {
+    s.isHtmlFullScreen = false
+    if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
+      if (!s.wasFullScreen && s.win.isFullScreen()) s.win.setFullScreen(false)
+      s.win.webContents.executeJavaScript('document.body.classList.remove("fullscreen-mode")').catch(() => {})
+    }
+  }
   const h = host(s)
   if (h && !h.isDestroyed() && h.contentView.children.includes(t.view)) {
     h.contentView.removeChildView(t.view)
@@ -1848,6 +1952,31 @@ function registerBrowserControl(getMainWindow) {
         break
       case 'show-download':
         if (typeof arg === 'string') showDownloadById(arg)
+        break
+      case 'toggle-mute':
+        if (typeof tabId === 'string' && s.tabs.has(tabId)) {
+          const tab = s.tabs.get(tabId)
+          if (tab) {
+            tab.view.webContents.setAudioMuted(!tab.view.webContents.isAudioMuted())
+            syncTabBar(s)
+          }
+        }
+        break
+      case 'pip':
+        if (t) {
+          t.view.webContents.executeJavaScript(`
+            (() => {
+              const v = document.querySelector('video')
+              if (v) {
+                if (document.pictureInPictureElement) {
+                  document.exitPictureInPicture().catch(() => {})
+                } else if (v.requestPictureInPicture) {
+                  v.requestPictureInPicture().catch(() => {})
+                }
+              }
+            })()
+          `).catch(() => {})
+        }
         break
       default:
         break

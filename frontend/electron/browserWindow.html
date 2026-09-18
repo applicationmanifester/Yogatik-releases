@@ -65,7 +65,17 @@
   .tab span { overflow: hidden; text-overflow: ellipsis; }
   .tab button { background: none; border: 0; color: #8b93a3; cursor: pointer; font-size: 14px; padding: 0 2px; }
   .tab button:hover { color: #fff; }
+  .tab-audio-btn { background: none; border: 0; color: #10b981; cursor: pointer; font-size: 11px; padding: 0 2px; display: inline-flex; align-items: center; }
+  .tab-audio-btn:hover { color: #34d399; }
+  .tab-audio-btn.muted { color: #ef4444; }
   #hint { margin-left: auto; color: #6b7280; font-size: 11px; padding-right: 4px; flex: 0 0 auto; }
+
+  /* Fullscreen Mode: when HTML5 full-screen activates (e.g. YouTube video),
+     hide the chrome completely so the WebContentsView covers the entire window */
+  body.fullscreen-mode #toolbar,
+  body.fullscreen-mode #bar {
+    display: none !important;
+  }
 </style>
 <div id="toolbar">
   <button class="nav-btn" id="back-btn" title="Back">&#8592;</button>
@@ -76,6 +86,7 @@
   <button id="zoom-pct" title="Reset zoom">100%</button>
   <button class="nav-btn" id="zoom-in-btn" title="Zoom in">+</button>
   <button class="nav-btn" id="find-btn" title="Find in page (Ctrl+F)">&#128269;</button>
+  <button class="nav-btn" id="pip-btn" title="Toggle Picture-in-Picture Video (P)">&#128250;</button>
   <div class="dl-wrap" id="dl-wrap">
     <button class="nav-btn" id="dl-btn" title="Downloads">&#8595;<span class="dl-badge" id="dl-badge" hidden>0</span></button>
     <div class="dl-menu" id="dl-menu" hidden></div>
@@ -119,6 +130,8 @@
   document.getElementById('zoom-out-btn').onclick = () => act('zoom', 'out')
   document.getElementById('zoom-in-btn').onclick = () => act('zoom', 'in')
   zoomPct.onclick = () => act('zoom', 'reset')
+  const pipBtn = document.getElementById('pip-btn')
+  if (pipBtn) pipBtn.onclick = () => act('pip')
 
   // ── Find bar (inline within the toolbar row — see #find-group's CSS
   // comment for why this must never grow the chrome's total height) ──
@@ -233,6 +246,14 @@
       x.title = 'Close tab'
       x.onclick = (e) => { e.stopPropagation(); act('close', t.tabId) }
       el.appendChild(x)
+      if (t.audible || t.muted) {
+        const muteBtn = document.createElement('button')
+        muteBtn.className = 'tab-audio-btn' + (t.muted ? ' muted' : '')
+        muteBtn.textContent = t.muted ? '🔇' : '🔊'
+        muteBtn.title = t.muted ? 'Unmute tab' : 'Mute tab'
+        muteBtn.onclick = (e) => { e.stopPropagation(); act('toggle-mute', t.tabId) }
+        el.appendChild(muteBtn)
+      }
       el.onclick = () => act('select', t.tabId)
       bar.insertBefore(el, hint)
     }

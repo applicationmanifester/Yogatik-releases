@@ -12,10 +12,11 @@ const { contextBridge, ipcRenderer } = require('electron')
 // whatever shape browser:tab-action's main-process switch expects for that
 // action (a direction string, a find payload object, a download id, or
 // nothing at all).
-const TAB_ID_ACTIONS = new Set(['close', 'select', 'cancel-download', 'open-download', 'show-download'])
+const TAB_ID_ACTIONS = new Set(['close', 'select', 'cancel-download', 'open-download', 'show-download', 'toggle-mute'])
 const VALID_ACTIONS = new Set([
   'close', 'select', 'new-tab', 'back', 'forward', 'reload', 'navigate',
   'zoom', 'find', 'find-stop', 'cancel-download', 'open-download', 'show-download',
+  'pip', 'toggle-mute',
 ])
 
 contextBridge.exposeInMainWorld('__tabAction', (action, value) => {
