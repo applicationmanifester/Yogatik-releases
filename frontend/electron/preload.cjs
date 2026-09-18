@@ -12,6 +12,7 @@ const FS_COMMANDS = new Set([
   // is exactly how fs_find_files shipped with a tool, five aliases and no way
   // to reach it. Every new fs_* handler must be added on this line.
   'fs_multi_edit', 'fs_stat', 'fs_copy', 'fs_codebase_map',
+  'fs_exists', 'fs_write_append', 'fs_compute_hash', 'fs_lock', 'fs_unlock', 'fs_atomic_write', 'fs_ping',
   'roots_add', 'roots_list', 'roots_remove', 'roots_set_primary', 'roots_rebind', 'roots_unbind',
   'journal_list', 'journal_revert', 'journal_diff',
   'proc_start', 'proc_output', 'proc_stop', 'proc_list',

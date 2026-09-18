@@ -582,6 +582,166 @@ async function readFileSmart(file, {
   }
 }
 
+// ── Standard Error Codes ────────────────────────────────────────────────────
+
+const FS_ERRORS = Object.freeze({
+  PATH_OUTSIDE_WORKSPACE: 'PATH_OUTSIDE_WORKSPACE',
+  FILE_NOT_FOUND: 'FILE_NOT_FOUND',
+  RESERVED_DEVICE_NAME: 'RESERVED_DEVICE_NAME',
+  IMMUTABLE_ZONE: 'IMMUTABLE_ZONE',
+  PERMISSION_DENIED: 'PERMISSION_DENIED',
+  LOCK_TIMEOUT: 'LOCK_TIMEOUT',
+  VERIFICATION_FAILED: 'VERIFICATION_FAILED',
+  IS_DIRECTORY: 'IS_DIRECTORY',
+  IS_BINARY: 'IS_BINARY',
+})
+
+// ── Automatic Backup Snapshots ──────────────────────────────────────────────
+
+/**
+ * Creates an automatic backup copy in .ai_backups/ inside the workspace root.
+ */
+async function createBackupSnapshot(filePath, rootPath) {
+  try {
+    const exists = await fs.promises.stat(filePath).then(st => st.isFile()).catch(() => false)
+    if (!exists) return null
+
+    const baseDir = rootPath || path.dirname(filePath)
+    const backupDir = path.join(baseDir, '.ai_backups')
+    await fs.promises.mkdir(backupDir, { recursive: true })
+
+    const ts = new Date().toISOString().replace(/[:.]/g, '-')
+    const rand = crypto.randomBytes(3).toString('hex')
+    const backupName = `${ts}_${rand}_${path.basename(filePath)}`
+    const backupPath = path.join(backupDir, backupName)
+
+    await fs.promises.copyFile(filePath, backupPath)
+    return { backupPath, backupName, timestamp: Date.now() }
+  } catch {
+    return null
+  }
+}
+
+// ── Streaming Cryptographic Hash ────────────────────────────────────────────
+
+/**
+ * Streaming cryptographic hash (SHA-256 or MD5) without buffering whole file in RAM.
+ */
+function computeFileHash(filePath, algorithm = 'sha256') {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash(algorithm)
+    const stream = fs.createReadStream(filePath)
+    stream.on('data', chunk => hash.update(chunk))
+    stream.on('end', () => resolve(hash.digest('hex')))
+    stream.on('error', reject)
+  })
+}
+
+// ── Advisory File Locking ───────────────────────────────────────────────────
+
+function lockFilePath(target) {
+  const dir = path.dirname(target)
+  const base = path.basename(target)
+  return path.join(dir, `.${base}.lock`)
+}
+
+async function acquireLock(target, { timeoutMs = 5000, staleMs = 60000 } = {}) {
+  const lockFile = lockFilePath(target)
+  const start = Date.now()
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const handle = await fs.promises.open(lockFile, 'wx')
+      const payload = JSON.stringify({
+        pid: process.pid,
+        time: Date.now(),
+        target,
+      })
+      await handle.writeFile(payload, 'utf8')
+      await handle.close()
+      return { locked: true, lockFile }
+    } catch (e) {
+      if (e.code === 'EEXIST') {
+        try {
+          const raw = await fs.promises.readFile(lockFile, 'utf8')
+          const data = JSON.parse(raw)
+          if (Date.now() - (data.time || 0) > staleMs) {
+            await fs.promises.unlink(lockFile).catch(() => {})
+            continue
+          }
+        } catch {
+          await fs.promises.unlink(lockFile).catch(() => {})
+          continue
+        }
+        await new Promise(r => setTimeout(r, 100))
+      } else {
+        throw e
+      }
+    }
+  }
+  const err = new Error(`Lock acquisition timed out for ${path.basename(target)} after ${timeoutMs}ms`)
+  err.code = FS_ERRORS.LOCK_TIMEOUT
+  throw err
+}
+
+async function releaseLock(target) {
+  const lockFile = lockFilePath(target)
+  try {
+    await fs.promises.unlink(lockFile)
+    return true
+  } catch (e) {
+    if (e.code === 'ENOENT') return true
+    return false
+  }
+}
+
+// ── Immutable Protected Zones ───────────────────────────────────────────────
+
+function isImmutablePath(target, rootPath, immutableZones = ['.git']) {
+  const rel = rootPath ? path.relative(rootPath, target) : target
+  const parts = rel.split(/[\\/]/)
+  for (const part of parts) {
+    if (immutableZones.includes(part.toLowerCase())) return true
+  }
+  return false
+}
+
+// ── Diff Preview for Dry Run ────────────────────────────────────────────────
+
+function generateDiffPreview(oldContent, newContent, filePath = 'file') {
+  const oldLines = toLf(oldContent || '').split('\n')
+  const newLines = toLf(newContent || '').split('\n')
+  const diff = []
+  diff.push(`--- a/${path.basename(filePath)}`)
+  diff.push(`+++ b/${path.basename(filePath)}`)
+
+  let i = 0, j = 0
+  let changes = 0
+  while (i < oldLines.length || j < newLines.length) {
+    if (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) {
+      i++
+      j++
+    } else {
+      if (i < oldLines.length) {
+        diff.push(`- ${oldLines[i]}`)
+        i++
+        changes++
+      }
+      if (j < newLines.length) {
+        diff.push(`+ ${newLines[j]}`)
+        j++
+        changes++
+      }
+    }
+  }
+  return {
+    diff: diff.join('\n'),
+    changes,
+    oldBytes: Buffer.byteLength(oldContent || '', 'utf8'),
+    newBytes: Buffer.byteLength(newContent || '', 'utf8'),
+  }
+}
+
 module.exports = {
   detectBom, decodeBuffer, encodeText, looksBinaryBuffer,
   detectEol, toLf, applyEol,
@@ -589,4 +749,11 @@ module.exports = {
   hashContent,
   writeFileAtomic, existingMode,
   readFileSmart,
+  FS_ERRORS,
+  createBackupSnapshot,
+  computeFileHash,
+  acquireLock,
+  releaseLock,
+  isImmutablePath,
+  generateDiffPreview,
 }

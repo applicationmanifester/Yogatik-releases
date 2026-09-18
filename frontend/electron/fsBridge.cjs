@@ -7,12 +7,14 @@ const { ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { Worker } = require('worker_threads')
-const { resolvePath, rootPathsFor } = require('./roots.cjs')
+const { resolvePath, resolvePathWithRoot, rootPathsFor } = require('./roots.cjs')
 // looksBinary now lives with the scan, in searchWorker.cjs.
 const { createJournal } = require('./journalCore.cjs')
 const {
   readFileSmart, writeFileAtomic, existingMode, applyEdit,
-  decodeBuffer, encodeText, detectEol, applyEol, hashContent,
+  decodeBuffer, encodeText, detectEol, applyEol, hashContent, toLf,
+  FS_ERRORS, createBackupSnapshot, computeFileHash, acquireLock, releaseLock,
+  isImmutablePath, generateDiffPreview,
 } = require('./fsCore.cjs')
 const { getIndex, scanRoot, listDir, invalidate } = require('./fsIndex.cjs')
 const { globToRegExp } = require('./safeRegex.cjs')
@@ -114,8 +116,13 @@ function registerFsBridge() {
     return { path: file, ...res }
   })
 
-  ipcMain.handle('fs_write', async (_e, { ctx, path: rel, content, expectedHash = null, keepEol = true }) => {
-    const file = resolvePath(ctx, rel)
+  ipcMain.handle('fs_write', async (_e, { ctx, path: rel, content, expectedHash = null, keepEol = true, dryRun = false, backup = false }) => {
+    const { absolutePath: file, rootPath } = resolvePathWithRoot(ctx, rel)
+    if (isImmutablePath(file, rootPath)) {
+      const err = new Error(`Cannot write to ${rel}: Path is in an immutable protected zone.`)
+      err.code = FS_ERRORS.IMMUTABLE_ZONE
+      throw err
+    }
 
     // What is on disk RIGHT NOW, which is not necessarily what the model read.
     let prior = null
@@ -136,6 +143,19 @@ function registerFsBridge() {
       const eol = detectEol(prior.text)
       if (eol) text = applyEol(text, eol)
     }
+
+    if (dryRun) {
+      return {
+        path: file,
+        dry_run: true,
+        preview: generateDiffPreview(prior ? prior.text : '', text, file),
+      }
+    }
+
+    if (backup && prior) {
+      await createBackupSnapshot(file, rootPath)
+    }
+
     const bytes = prior && !prior.binary
       ? encodeText(text, { encoding: prior.encoding, bom: prior.bom })
       : Buffer.from(text, 'utf8')
@@ -156,8 +176,14 @@ function registerFsBridge() {
     }
   })
 
-  ipcMain.handle('fs_edit', async (_e, { ctx, path: rel, oldString, newString, replaceAll, expectedHash = null, startLine = 0, start_line = 0, endLine = 0, end_line = 0 }) => {
-    const file = resolvePath(ctx, rel)
+  ipcMain.handle('fs_edit', async (_e, { ctx, path: rel, oldString, newString, replaceAll, expectedHash = null, startLine = 0, start_line = 0, endLine = 0, end_line = 0, dryRun = false, backup = false }) => {
+    const { absolutePath: file, rootPath } = resolvePathWithRoot(ctx, rel)
+    if (isImmutablePath(file, rootPath)) {
+      const err = new Error(`Cannot edit ${rel}: Path is in an immutable protected zone.`)
+      err.code = FS_ERRORS.IMMUTABLE_ZONE
+      throw err
+    }
+
     const buf = await fs.promises.readFile(file)
     const { text, encoding, bom, binary, readOnly } = decodeBuffer(buf)
     if (binary) throw new Error('Refusing to edit a binary file as text.')
@@ -169,10 +195,23 @@ function registerFsBridge() {
     // Match against LF-normalised text so an anchor copied from a previous
     // read still matches in a CRLF file, then put the file's own endings back.
     const { text: updatedLf, replaced } = applyEdit(
-      require('./fsCore.cjs').toLf(text), oldString, newString, replaceAll,
+      toLf(text), oldString, newString, replaceAll,
       { startLine: startLine || start_line || 0, endLine: endLine || end_line || 0 },
     )
     const updated = applyEol(updatedLf, eol)
+
+    if (dryRun) {
+      return {
+        path: file,
+        dry_run: true,
+        replaced,
+        preview: generateDiffPreview(text, updated, file),
+      }
+    }
+
+    if (backup) {
+      await createBackupSnapshot(file, rootPath)
+    }
 
     snapshot(ctx, 'fs_edit', file)
     const bytes = encodeText(updated, { encoding, bom })
@@ -497,6 +536,147 @@ function registerFsBridge() {
       await fs.promises.rm(srcPath, { recursive: true, force: true })
     }
     return { src: srcPath, dest: destPath, replaced: destExists }
+  })
+
+  // Lightweight existence and metadata probe without throwing on ENOENT
+  ipcMain.handle('fs_exists', async (_e, { ctx, path: rel }) => {
+    try {
+      const file = resolvePath(ctx, rel)
+      const st = await fs.promises.stat(file).catch(() => null)
+      if (!st) return { exists: false, is_file: false, is_dir: false }
+      return {
+        exists: true,
+        path: file,
+        is_file: st.isFile(),
+        is_dir: st.isDirectory(),
+        size: st.size,
+        mtimeMs: st.mtimeMs,
+      }
+    } catch (e) {
+      if (e.code === 'PATH_OUTSIDE_WORKSPACE' || e.code === 'RESERVED_DEVICE_NAME') throw e
+      return { exists: false, is_file: false, is_dir: false }
+    }
+  })
+
+  // Atomic append to file with optional backup and dry-run preview
+  ipcMain.handle('fs_write_append', async (_e, { ctx, path: rel, content, dryRun = false, backup = false }) => {
+    const { absolutePath: file, rootPath } = resolvePathWithRoot(ctx, rel)
+    if (isImmutablePath(file, rootPath)) {
+      const err = new Error(`Cannot append to ${rel}: Path is in an immutable protected zone.`)
+      err.code = FS_ERRORS.IMMUTABLE_ZONE
+      throw err
+    }
+
+    let prior = null
+    try {
+      const buf = await fs.promises.readFile(file)
+      prior = { buf, ...decodeBuffer(buf), hash: hashContent(buf) }
+    } catch { /* file may not exist yet */ }
+
+    const addition = String(content ?? '')
+    const priorText = prior ? prior.text : ''
+    const newText = priorText + addition
+
+    if (dryRun) {
+      return {
+        path: file,
+        dry_run: true,
+        preview: generateDiffPreview(priorText, newText, file),
+        would_append_bytes: Buffer.byteLength(addition, 'utf8'),
+      }
+    }
+
+    if (backup && prior) {
+      await createBackupSnapshot(file, rootPath)
+    }
+
+    snapshot(ctx, 'fs_write_append', file)
+    let bytes
+    if (prior && !prior.binary) {
+      const eol = detectEol(priorText)
+      const formatted = eol ? applyEol(newText, eol) : newText
+      bytes = encodeText(formatted, { encoding: prior.encoding, bom: prior.bom })
+    } else {
+      bytes = Buffer.from(newText, 'utf8')
+    }
+
+    await writeFileAtomic(file, bytes, { mode: await existingMode(file) })
+    return {
+      path: file,
+      appended_bytes: Buffer.byteLength(addition, 'utf8'),
+      total_bytes: bytes.length,
+      hash: hashContent(bytes),
+    }
+  })
+
+  // Streaming cryptographic hash
+  ipcMain.handle('fs_compute_hash', async (_e, { ctx, path: rel, algorithm = 'sha256' }) => {
+    const file = resolvePath(ctx, rel)
+    const validAlgos = ['sha256', 'sha512', 'md5']
+    const algo = validAlgos.includes(String(algorithm).toLowerCase()) ? String(algorithm).toLowerCase() : 'sha256'
+    const hash = await computeFileHash(file, algo)
+    const st = await fs.promises.stat(file)
+    return { path: file, algorithm: algo, hash, size: st.size }
+  })
+
+  // Advisory file locking
+  ipcMain.handle('fs_lock', async (_e, { ctx, path: rel, timeoutMs = 5000, staleMs = 60000 }) => {
+    const file = resolvePath(ctx, rel)
+    return await acquireLock(file, { timeoutMs, staleMs })
+  })
+
+  ipcMain.handle('fs_unlock', async (_e, { ctx, path: rel }) => {
+    const file = resolvePath(ctx, rel)
+    const released = await releaseLock(file)
+    return { released, path: file }
+  })
+
+  // Atomic write with pre-commit verification
+  ipcMain.handle('fs_atomic_write', async (_e, { ctx, path: rel, content, verifyHash = null, verifyMinSize = null, backup = false }) => {
+    const { absolutePath: file, rootPath } = resolvePathWithRoot(ctx, rel)
+    if (isImmutablePath(file, rootPath)) {
+      const err = new Error(`Cannot write to ${rel}: Path is in an immutable protected zone.`)
+      err.code = FS_ERRORS.IMMUTABLE_ZONE
+      throw err
+    }
+
+    const bytes = Buffer.isBuffer(content) ? content : Buffer.from(String(content ?? ''), 'utf8')
+    if (verifyMinSize != null && bytes.length < verifyMinSize) {
+      const err = new Error(`Verification failed: content size ${bytes.length} bytes is less than expected minimum ${verifyMinSize}`)
+      err.code = FS_ERRORS.VERIFICATION_FAILED
+      throw err
+    }
+
+    const calculatedHash = hashContent(bytes)
+    if (verifyHash && calculatedHash !== verifyHash) {
+      const err = new Error(`Verification failed: hash ${calculatedHash} does not match expected ${verifyHash}`)
+      err.code = FS_ERRORS.VERIFICATION_FAILED
+      throw err
+    }
+
+    if (backup) {
+      await createBackupSnapshot(file, rootPath)
+    }
+
+    snapshot(ctx, 'fs_atomic_write', file)
+    await writeFileAtomic(file, bytes, { mode: await existingMode(file) })
+    return { path: file, bytes: bytes.length, hash: calculatedHash, verified: true }
+  })
+
+  // Workspace ping / health check
+  ipcMain.handle('fs_ping', async (_e, { ctx } = {}) => {
+    const roots = rootPathsFor(ctx)
+    if (!roots.length) return { ok: false, error: 'NO_FOLDER_GRANTED', roots: [] }
+    const start = Date.now()
+    const primary = roots[0]
+    const probeFile = path.join(primary, `.probe_${Date.now()}_${process.pid}.tmp`)
+    try {
+      await fs.promises.writeFile(probeFile, 'ping', 'utf8')
+      await fs.promises.unlink(probeFile)
+      return { ok: true, latencyMs: Date.now() - start, root: primary, totalRoots: roots.length }
+    } catch (e) {
+      return { ok: false, error: e.message, root: primary }
+    }
   })
 }
 

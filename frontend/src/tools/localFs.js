@@ -29,6 +29,7 @@ export const DESKTOP_ONLY_TOOLS = new Set([
   'fs_multi_replace', 'fs_patch', 'code_outline', 'fs_outline', 'fs_smart_read', 'fs_skim',
   'fs_file_info', 'fs_copy', 'fs_batch_write', 'fs_search', 'fs_find_files', 'fs_codebase_map',
   'fs_delete', 'fs_mkdir', 'fs_move', 'fs_batch_read', 'fs_file_tree', 'fs_undo', 'fs_git',
+  'fs_exists', 'fs_write_append', 'fs_compute_hash', 'fs_lock', 'fs_unlock', 'fs_atomic_write', 'fs_ping',
   'terminal_run', 'clipboard_access', 'watch_folder', 'system_state', 'process_manager',
   'file_dialog', 'git_status', 'git_log', 'git_diff', 'proc_start', 'proc_output',
   'proc_stop', 'proc_list', 'watch', 'computer_control', 'screen_inspect', 'desktop_action',
@@ -741,6 +742,8 @@ export const fsWriteTool = {
         path: { type: 'string', description: 'Absolute path, or relative to this chat’s primary folder.' },
         content: { type: 'string', description: 'Full text to write. The file’s existing encoding and line endings are preserved automatically.' },
         expected_hash: { type: 'string', description: 'The hash returned by fs_read. If the file changed on disk since then, the result says so and the previous content is recoverable with fs_undo.' },
+        dry_run: { type: 'boolean', description: 'Preview diff and byte count without modifying the filesystem.' },
+        backup: { type: 'boolean', description: 'Create an automatic timestamped backup in .ai_backups before writing.' },
       },
       required: ['path', 'content'],
     },
@@ -749,23 +752,44 @@ export const fsWriteTool = {
     const path = args.path || args.file || args.filepath || args.target_file || args.TargetFile || args.filename
     const content = args.content ?? args.text ?? args.code ?? args.data ?? args.body ?? args.file_content ?? args.CodeContent ?? ''
     const expected_hash = args.expected_hash ?? args.hash ?? args.expectedHash
+    const dry_run = Boolean(args.dry_run ?? args.dryRun ?? false)
+    const backup = Boolean(args.backup ?? false)
     if (!path) return fail('path is required (e.g. { path: "src/file.js", content: "..." })')
     return guard(async () => {
-      // Record Workspace Time Machine snapshot for 1-click rollback
-      try {
-        const prev = globalFsCache.get(path, null, null, cacheScope(opts)) || (await invoke('fs_read', { path, maxBytes: 250000 }, opts?.ctx).catch(() => null))
-        const prevText = typeof prev === 'string' ? prev : prev?.content || ''
-        await recordSnapshot({
-          filePath: path,
-          previousContent: prevText,
-          newContent: String(content ?? ''),
-          toolName: 'fs_write',
-          description: `AI overwritten: ${path}`,
-        })
-      } catch {}
+      // Record Workspace Time Machine snapshot for 1-click rollback if not dry run
+      if (!dry_run) {
+        try {
+          const prev = globalFsCache.get(path, null, null, cacheScope(opts)) || (await invoke('fs_read', { path, maxBytes: 250000 }, opts?.ctx).catch(() => null))
+          const prevText = typeof prev === 'string' ? prev : prev?.content || ''
+          await recordSnapshot({
+            filePath: path,
+            previousContent: prevText,
+            newContent: String(content ?? ''),
+            toolName: 'fs_write',
+            description: `AI overwritten: ${path}`,
+          })
+        } catch {}
+      }
 
-      const r = await invoke('fs_write', { path, content: String(content ?? ''), expectedHash: expected_hash || null }, opts?.ctx)
+      const r = await invoke('fs_write', {
+        path,
+        content: String(content ?? ''),
+        expectedHash: expected_hash || null,
+        dryRun: dry_run,
+        backup,
+      }, opts?.ctx)
       const res = r && typeof r === 'object' ? r : {}
+
+      if (dry_run) {
+        return ok({
+          tool: 'fs_write',
+          path,
+          dry_run: true,
+          preview: res.preview,
+          message: `Dry-run preview for ${path} (${res.preview?.changes || 0} change(s))`,
+        })
+      }
+
       globalFsCache.set(path, String(content ?? ''), Date.now(), null, cacheScope(opts))
       globalWorkspaceTrie.insert(path)
       return ok({
@@ -797,6 +821,8 @@ export const fsEditTool = {
         expected_hash: { type: 'string', description: 'The hash returned by fs_read. If the file changed on disk since then, the result says so.' },
         start_line: { type: 'number', description: 'Optional 1-indexed start line to limit search scope.' },
         end_line: { type: 'number', description: 'Optional 1-indexed end line to limit search scope.' },
+        dry_run: { type: 'boolean', description: 'Preview diff without modifying the filesystem.' },
+        backup: { type: 'boolean', description: 'Create an automatic timestamped backup in .ai_backups before editing.' },
       },
       required: ['path', 'old_string', 'new_string'],
     },
@@ -809,6 +835,8 @@ export const fsEditTool = {
     const expected_hash = args.expected_hash ?? args.hash ?? args.expectedHash
     const start_line = args.start_line ?? args.StartLine ?? args.startLine ?? 0
     const end_line = args.end_line ?? args.EndLine ?? args.endLine ?? 0
+    const dry_run = Boolean(args.dry_run ?? args.dryRun ?? false)
+    const backup = Boolean(args.backup ?? false)
 
     if (!path) return fail('path is required (e.g. { path: "src/file.js", old_string: "...", new_string: "..." })')
     if (old_string == null || new_string == null) {
@@ -823,9 +851,23 @@ export const fsEditTool = {
         expectedHash: expected_hash || null,
         startLine: Number(start_line) || 0,
         endLine: Number(end_line) || 0,
+        dryRun: dry_run,
+        backup,
       }, opts?.ctx)
-      globalFsCache.invalidate(path)
       const res = r && typeof r === 'object' ? r : {}
+
+      if (dry_run) {
+        return ok({
+          tool: 'fs_edit',
+          path,
+          dry_run: true,
+          replaced: res.replaced ?? 1,
+          preview: res.preview,
+          message: `Dry-run preview for ${path} (${res.replaced ?? 1} replacement(s))`,
+        })
+      }
+
+      globalFsCache.invalidate(path)
       return ok({
         tool: 'fs_edit',
         path,
@@ -834,6 +876,238 @@ export const fsEditTool = {
         stale: res.stale || false,
         warning: res.warning || undefined,
         message: `Edited ${path} (${res.replaced ?? 1} replacement(s))`,
+      })
+    })
+  },
+}
+
+export const fsExistsTool = {
+  schema: {
+    name: 'fs_exists',
+    description: 'Check if a file or directory exists and inspect its basic metadata (is_file, is_dir, size, mtime) without listing contents. Fast and lightweight pre-flight validation. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path to probe relative to granted folders.' },
+      },
+      required: ['path'],
+    },
+  },
+  async execute(args = {}, opts = {}) {
+    const path = args.path || args.file || args.filepath || args.target_file || args.filename
+    if (!path) return fail('path is required (e.g. { path: "src/file.js" })')
+    return guard(async () => {
+      const res = await invoke('fs_exists', { path }, opts?.ctx)
+      return ok({
+        tool: 'fs_exists',
+        path,
+        exists: !!res?.exists,
+        is_file: !!res?.is_file,
+        is_dir: !!res?.is_dir,
+        size: res?.size ?? 0,
+        mtime_ms: res?.mtimeMs ?? 0,
+      })
+    })
+  },
+}
+
+export const fsWriteAppendTool = {
+  schema: {
+    name: 'fs_write_append',
+    description: 'Append content to the end of a file atomically (creates it if missing). Great for logs, test output, or accumulating results. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path to append to.' },
+        content: { type: 'string', description: 'Text content to append.' },
+        dry_run: { type: 'boolean', description: 'Preview diff without writing to disk.' },
+        backup: { type: 'boolean', description: 'Create an automatic backup in .ai_backups before writing.' },
+      },
+      required: ['path', 'content'],
+    },
+  },
+  async execute(args = {}, opts = {}) {
+    const path = args.path || args.file || args.filepath || args.target_file || args.filename
+    const content = args.content ?? args.text ?? args.data ?? ''
+    const dry_run = Boolean(args.dry_run ?? args.dryRun ?? false)
+    const backup = Boolean(args.backup ?? false)
+    if (!path) return fail('path is required')
+    return guard(async () => {
+      const res = await invoke('fs_write_append', { path, content: String(content ?? ''), dryRun: dry_run, backup }, opts?.ctx)
+      globalFsCache.invalidate(path)
+      if (dry_run) {
+        return ok({
+          tool: 'fs_write_append',
+          path,
+          dry_run: true,
+          preview: res?.preview,
+          message: `Dry-run preview: would append ${res?.would_append_bytes || 0} bytes to ${path}`,
+        })
+      }
+      return ok({
+        tool: 'fs_write_append',
+        path,
+        appended_bytes: res?.appended_bytes,
+        total_bytes: res?.total_bytes,
+        hash: res?.hash,
+        message: `Appended ${res?.appended_bytes || 0} bytes to ${path}`,
+      })
+    })
+  },
+}
+
+export const fsComputeHashTool = {
+  schema: {
+    name: 'fs_compute_hash',
+    description: 'Compute a cryptographic hash (SHA-256 or MD5) of a file by streaming, without loading the whole file into memory. Ideal for integrity verification and change detection. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path to hash.' },
+        algorithm: { type: 'string', enum: ['sha256', 'sha512', 'md5'], description: 'Hash algorithm (default "sha256").' },
+      },
+      required: ['path'],
+    },
+  },
+  async execute(args = {}, opts = {}) {
+    const path = args.path || args.file || args.filepath || args.target_file || args.filename
+    const algorithm = args.algorithm || args.algo || 'sha256'
+    if (!path) return fail('path is required')
+    return guard(async () => {
+      const res = await invoke('fs_compute_hash', { path, algorithm }, opts?.ctx)
+      return ok({
+        tool: 'fs_compute_hash',
+        path,
+        algorithm: res?.algorithm || algorithm,
+        hash: res?.hash,
+        size: res?.size,
+      })
+    })
+  },
+}
+
+export const fsLockTool = {
+  schema: {
+    name: 'fs_lock',
+    description: 'Acquire an advisory file lock (.lock file) to coordinate concurrent tasks or subagents. Automatically breaks stale locks after stale_ms. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path to lock.' },
+        timeout_ms: { type: 'number', description: 'Timeout in milliseconds to wait for the lock (default 5000).' },
+        stale_ms: { type: 'number', description: 'Maximum lock lifetime before considered stale and broken (default 60000).' },
+      },
+      required: ['path'],
+    },
+  },
+  async execute(args = {}, opts = {}) {
+    const path = args.path || args.file || args.filepath || args.target_file || args.filename
+    const timeout_ms = Number(args.timeout_ms ?? args.timeoutMs ?? 5000) || 5000
+    const stale_ms = Number(args.stale_ms ?? args.staleMs ?? 60000) || 60000
+    if (!path) return fail('path is required')
+    return guard(async () => {
+      const res = await invoke('fs_lock', { path, timeoutMs: timeout_ms, staleMs: stale_ms }, opts?.ctx)
+      return ok({
+        tool: 'fs_lock',
+        path,
+        locked: !!res?.locked,
+        lock_file: res?.lockFile,
+        message: `Acquired advisory lock for ${path}`,
+      })
+    })
+  },
+}
+
+export const fsUnlockTool = {
+  schema: {
+    name: 'fs_unlock',
+    description: 'Release an advisory file lock previously acquired by fs_lock. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path to unlock.' },
+      },
+      required: ['path'],
+    },
+  },
+  async execute(args = {}, opts = {}) {
+    const path = args.path || args.file || args.filepath || args.target_file || args.filename
+    if (!path) return fail('path is required')
+    return guard(async () => {
+      const res = await invoke('fs_unlock', { path }, opts?.ctx)
+      return ok({
+        tool: 'fs_unlock',
+        path,
+        released: !!res?.released,
+        message: `Released advisory lock for ${path}`,
+      })
+    })
+  },
+}
+
+export const fsAtomicWriteTool = {
+  schema: {
+    name: 'fs_atomic_write',
+    description: 'Write a file atomically with pre-commit integrity verification (hash or minimum size checks). Guarantees the target is never left truncated or corrupt. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path to write.' },
+        content: { type: 'string', description: 'Content to write.' },
+        verify_hash: { type: 'string', description: 'Expected SHA-256 hash of content before commit.' },
+        verify_min_size: { type: 'number', description: 'Minimum acceptable byte size of content.' },
+        backup: { type: 'boolean', description: 'Create timestamped backup in .ai_backups before commit.' },
+      },
+      required: ['path', 'content'],
+    },
+  },
+  async execute(args = {}, opts = {}) {
+    const path = args.path || args.file || args.filepath || args.target_file || args.filename
+    const content = args.content ?? args.text ?? ''
+    const verify_hash = args.verify_hash ?? args.verifyHash ?? null
+    const verify_min_size = args.verify_min_size ?? args.verifyMinSize ?? null
+    const backup = Boolean(args.backup ?? false)
+    if (!path) return fail('path is required')
+    return guard(async () => {
+      const res = await invoke('fs_atomic_write', {
+        path,
+        content: String(content ?? ''),
+        verifyHash: verify_hash,
+        verifyMinSize: verify_min_size,
+        backup,
+      }, opts?.ctx)
+      globalFsCache.set(path, String(content ?? ''), Date.now(), null, cacheScope(opts))
+      return ok({
+        tool: 'fs_atomic_write',
+        path,
+        bytes: res?.bytes,
+        hash: res?.hash,
+        verified: true,
+        message: `Atomically verified and committed ${path} (${res?.bytes || 0} bytes)`,
+      })
+    })
+  },
+}
+
+export const fsPingTool = {
+  schema: {
+    name: 'fs_ping',
+    description: 'Health check verifying read/write latency and accessibility within the current chat’s working workspace. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  async execute(_args = {}, opts = {}) {
+    return guard(async () => {
+      const res = await invoke('fs_ping', {}, opts?.ctx)
+      return ok({
+        tool: 'fs_ping',
+        ok: res?.ok,
+        latency_ms: res?.latencyMs,
+        root: res?.root,
+        total_roots: res?.totalRoots,
       })
     })
   },

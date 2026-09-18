@@ -88,6 +88,11 @@ function resolvePath(ctx, target) {
   return core.resolveWithin(rootPathsFor(ctx), target).absolutePath
 }
 
+/** Resolve a tool-supplied path returning both absolutePath and the containing rootPath. */
+function resolvePathWithRoot(ctx, target) {
+  return core.resolveWithin(rootPathsFor(ctx), target)
+}
+
 function listFor(ctx) {
   const ids = core.resolveRootIds(state, ctx)
   const key = ctx?.conversationId != null ? `chat:${ctx.conversationId}` : null
@@ -178,4 +183,4 @@ function registerRootsIpc(opts = {}) {
   })
 }
 
-module.exports = { registerRootsIpc, resolvePath, rootPathsFor, load, getTrustState, setHookTrust }
+module.exports = { registerRootsIpc, resolvePath, resolvePathWithRoot, rootPathsFor, load, getTrustState, setHookTrust }

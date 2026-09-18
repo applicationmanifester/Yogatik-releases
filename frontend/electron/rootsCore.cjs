@@ -97,6 +97,22 @@ function nearestExisting(p) {
   }
 }
 
+const RESERVED_DEVICE_NAMES = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i
+
+/**
+ * Detects Windows reserved device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
+ * which cause file-system deadlocks or corruption on Windows systems.
+ */
+function hasReservedDeviceName(filePath) {
+  if (!filePath) return null
+  const parts = String(filePath).split(/[\\/]/)
+  for (const part of parts) {
+    if (!part || /^[a-zA-Z]:$/.test(part)) continue
+    if (RESERVED_DEVICE_NAMES.test(part)) return part
+  }
+  return null
+}
+
 /**
  * Resolve `target` inside one of `rootPaths`, or throw.
  *
@@ -108,7 +124,11 @@ function nearestExisting(p) {
  */
 function resolveWithin(rootPaths, target) {
   const roots = (rootPaths || []).filter(Boolean)
-  if (!roots.length) throw new Error('no folder granted')
+  if (!roots.length) {
+    const err = new Error('no folder granted')
+    err.code = 'NO_FOLDER_GRANTED'
+    throw err
+  }
 
   const primary = path.resolve(roots[0])
   let raw = target == null || target === '' ? '.' : String(target).trim()
@@ -118,10 +138,22 @@ function resolveWithin(rootPaths, target) {
   if (isWin && /^\/([a-zA-Z]):[\\/]/.test(raw)) {
     raw = raw.slice(1)
   }
+
+  const reserved = hasReservedDeviceName(raw)
+  if (reserved) {
+    const err = new Error(`Path contains reserved Windows device name "${reserved}". This path is disallowed.`)
+    err.code = 'RESERVED_DEVICE_NAME'
+    throw err
+  }
+
   const abs = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(primary, raw)
 
   const rootPath = containingRoot(roots, abs)
-  if (!rootPath) throw new Error(`${raw} is outside this chat's folders`)
+  if (!rootPath) {
+    const err = new Error(`${raw} is outside this chat's folders`)
+    err.code = 'PATH_OUTSIDE_WORKSPACE'
+    throw err
+  }
 
   let realProbe
   let realRoot
@@ -129,7 +161,9 @@ function resolveWithin(rootPaths, target) {
   try { realRoot = fs.realpathSync(rootPath) } catch { realRoot = rootPath }
 
   if (!samePath(realProbe, realRoot) && !isUnder(realProbe, realRoot)) {
-    throw new Error(`${raw} is outside this chat's folders`)
+    const err = new Error(`${raw} is outside this chat's folders`)
+    err.code = 'PATH_OUTSIDE_WORKSPACE'
+    throw err
   }
   return { absolutePath: abs, rootPath }
 }
@@ -306,7 +340,7 @@ function cleanPollutedDefault(state) {
 
 module.exports = {
   rootIdFor, emptyState, bindingKeys, resolveRootIds, resolveRootPaths,
-  containingRoot, resolveWithin,
+  containingRoot, resolveWithin, hasReservedDeviceName, RESERVED_DEVICE_NAMES,
   materialise, addRoot, removeRoot, setPrimary, rebindChat, unbindChat, migrateLegacyGrant, pruneMissing,
   ensureDefaultRoot, cleanPollutedDefault,
 }
