@@ -112,6 +112,10 @@ export function TradingModal({ isOpen, onClose }) {
 
   const isLive = config.mode === 'live'
   const timerRef = useRef(null)
+  // Keep a stable ref so fetchLiveData always reads the latest config
+  // without config itself being a useCallback dependency (avoids interval restarts)
+  const configRef = useRef(config)
+  useEffect(() => { configRef.current = config }, [config])
 
   // Daily Circuit Breaker Status
   const circuitStatus = checkDailyCircuitBreaker({
@@ -129,9 +133,10 @@ export function TradingModal({ isOpen, onClose }) {
   }, [activeTab])
 
   // 1. Fetch live data for current mode
+  // configRef provides latest config without making it a dep (avoids interval flapping)
   const fetchLiveData = useCallback(async () => {
     setIsRefreshing(true)
-    const currentConfig = getTradingConfig()
+    const currentConfig = configRef.current
     const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     setLastUpdated(now)
 
@@ -220,37 +225,44 @@ export function TradingModal({ isOpen, onClose }) {
       }
     } catch (err) {
       console.error('[TradingModal] fetchLiveData error:', err)
+      setActionNotice({ type: 'error', text: 'Failed to refresh data — check your connection or API credentials.' })
+      setTimeout(() => setActionNotice(null), 4000)
     } finally {
       setIsRefreshing(false)
     }
+  // configRef is stable (a ref object), so it's intentionally omitted from deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 2. Fetch Scanner setups
+  // 2. Fetch Scanner setups — runs stocks in parallel with Promise.allSettled
   const runScanner = useCallback(async () => {
     setScannerLoading(true)
+    setScannerResults([]) // clear stale results while refreshing
     const list = DEFAULT_WATCHLIST.slice(0, 8)
-    const results = []
 
-    for (const sym of list) {
-      try {
-        const analysis = await analyzeStock(sym, 'NSE')
-        results.push(analysis)
-      } catch {
-        // fallback simulated card
-        results.push({
-          symbol: `NSE:${sym}`,
-          currentPrice: 1500,
-          setupScore: 65,
-          recommendation: 'HOLD / NEUTRAL',
-          side: 'HOLD',
-          keyLevels: { stopLoss: 1460, target1: 1560, riskRewardRatio: '1:2.0' },
-          indicators: { rsi14: 52.4, ema20: 1490, ema50: 1475, macdStatus: 'BULLISH' },
-          reasons: ['Testing key moving averages'],
-        })
+    const settled = await Promise.allSettled(
+      list.map(sym => analyzeStock(sym, 'NSE'))
+    )
+
+    const results = settled.map((res, i) => {
+      if (res.status === 'fulfilled') return res.value
+      // Fallback simulated card on failure
+      return {
+        symbol: `NSE:${list[i]}`,
+        currentPrice: 1500,
+        setupScore: 65,
+        recommendation: 'HOLD / NEUTRAL',
+        side: 'HOLD',
+        keyLevels: { stopLoss: 1460, target1: 1560, riskRewardRatio: '1:2.0' },
+        indicators: { rsi14: 52.4, ema20: 1490, ema50: 1475, macdStatus: 'BULLISH' },
+        reasons: ['Testing key moving averages'],
       }
-    }
+    })
+
     setScannerResults(results)
     setScannerLoading(false)
+  // DEFAULT_WATCHLIST is module-level constant — intentionally omitted
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Initial load on open
@@ -420,8 +432,24 @@ export function TradingModal({ isOpen, onClose }) {
     }
 
     setActionLoading(`trade_${sym}`)
+
+    // Optimistic UI: immediately insert a pending order row so the UI feels instant
+    const optimisticOrder = {
+      order_id: `OPT-${Date.now()}`,
+      tradingsymbol: sym,
+      transaction_type: action,
+      quantity: qty,
+      price,
+      status: 'PENDING (Placing…)',
+      order_timestamp: new Date().toISOString(),
+      _optimistic: true,
+    }
+    setOrdersList(prev => [optimisticOrder, ...prev])
+
     try {
       if (isLive) {
+        // Remove optimistic row then show redirect notice
+        setOrdersList(prev => prev.filter(o => !o._optimistic))
         alert('To place live trades, please confirm the order ticket in chat or use Kite directly.')
       } else {
         const res = await executePaperOrder({
@@ -430,11 +458,15 @@ export function TradingModal({ isOpen, onClose }) {
           quantity: qty,
           orderType: 'MARKET',
         })
+        // Remove optimistic row (fetchLiveData will repopulate with real order)
+        setOrdersList(prev => prev.filter(o => !o._optimistic))
         setActionNotice({ type: 'success', text: res.message })
         setActiveTab('positions')
         await fetchLiveData()
       }
     } catch (err) {
+      // Roll back the optimistic row on failure
+      setOrdersList(prev => prev.filter(o => !o._optimistic))
       setActionNotice({ type: 'error', text: err.message })
     } finally {
       setActionLoading(null)
