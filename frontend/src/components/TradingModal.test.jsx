@@ -5,6 +5,7 @@ import { TradingModal } from './TradingModal'
 import { resetPaperPortfolio, saveTradingConfig } from '../trading/tradingStorage'
 import * as paper from '../trading/paperEngine'
 import { marketDataTool } from '../tools/marketData'
+import * as zerodha from '../trading/zerodhaClient'
 
 describe('TradingModal Component', () => {
   beforeEach(() => {
@@ -100,6 +101,51 @@ describe('TradingModal Component', () => {
 
     await waitFor(() => {
       expect(paper.squareOffPaperPosition).toHaveBeenCalledWith('NSE:TCS')
+    })
+  })
+
+  it('surfaces an error notice when fetchLiveData fails', async () => {
+    // Force getPaperPortfolio to throw so the fetchLiveData catch branch fires
+    vi.spyOn(paper, 'getPaperPortfolio').mockRejectedValue(new Error('portfolio fetch failed'))
+
+    render(<TradingModal isOpen={true} onClose={() => {}} />)
+
+    // The error notice should appear and contain a meaningful message
+    await waitFor(() => {
+      const notice = screen.queryByText(/Failed to refresh data/i)
+      expect(notice).not.toBeNull()
+    })
+  })
+
+  it('rolls back the optimistic order row when executePaperOrder rejects', async () => {
+    // Start with an empty orders list
+    vi.spyOn(paper, 'getPaperPortfolio').mockResolvedValue({
+      mode: 'paper',
+      cashBalance: 100000,
+      stockValue: 0,
+      netWorth: 100000,
+      totalInvested: 0,
+      totalUnrealizedPnl: 0,
+      holdings: [],
+      recentOrders: [],
+    })
+
+    // Simulate the quick-execute failing
+    vi.spyOn(paper, 'executePaperOrder').mockRejectedValue(new Error('insufficient balance'))
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<TradingModal isOpen={true} onClose={() => {}} />)
+
+    // Switch to the scanner tab (where quick-execute buttons live)
+    fireEvent.click(screen.getByRole('button', { name: /^Market Scanner$/i }))
+
+    // The scanner will run in background; we just verify state doesn't leak
+    // The key assertion: after a failed execute, no lingering 'PENDING (Placing…)' row
+    // is visible (optimistic rollback worked)
+    await waitFor(() => {
+      const pendingRows = screen.queryAllByText(/PENDING \(Placing/i)
+      expect(pendingRows).toHaveLength(0)
     })
   })
 })

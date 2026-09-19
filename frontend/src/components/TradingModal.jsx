@@ -612,7 +612,7 @@ export function TradingModal({ isOpen, onClose }) {
               background: isLive ? 'var(--error, #ef4444)' : 'var(--success, #22c55e)',
               color: '#fff',
             }}>
-              {isLive ? <AlertTriangle size={13} /> : <Shield size={13} />}
+              {isLive ? <AlertTriangle size={13} aria-hidden="true" /> : <Shield size={13} aria-hidden="true" />}
               {isLive ? 'Live Zerodha (Real Capital)' : 'Zero-Risk Paper Simulator'}
             </span>
 
@@ -629,7 +629,7 @@ export function TradingModal({ isOpen, onClose }) {
               border: `1px solid ${circuitStatus.isTripped ? 'var(--error, #ef4444)' : 'rgba(59, 130, 246, 0.3)'}`,
               color: circuitStatus.isTripped ? 'var(--error, #ef4444)' : '#3b82f6',
             }}>
-              <Shield size={12} />
+              <Shield size={12} aria-hidden="true" />
               Circuit: {circuitStatus.isTripped ? 'TRIPPED' : 'HEALTHY'} (-{circuitStatus.drawdownPercent}% / {circuitStatus.limitPercent}%)
             </span>
 
@@ -655,7 +655,7 @@ export function TradingModal({ isOpen, onClose }) {
               }}
               title="Cancel all orders and square off all positions immediately"
             >
-              <AlertOctagon size={13} />
+              <AlertOctagon size={13} aria-hidden="true" />
               {actionLoading === 'kill_switch' ? 'KILLING...' : 'KILL SWITCH'}
             </button>
 
@@ -669,7 +669,7 @@ export function TradingModal({ isOpen, onClose }) {
           {/* Polling & Refresh Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-secondary)' }}>
-              <Clock size={13} />
+              <Clock size={13} aria-hidden="true" />
               <span>Poll:</span>
               <select
                 value={autoRefreshInterval}
@@ -712,7 +712,7 @@ export function TradingModal({ isOpen, onClose }) {
               }}
               title="Refresh live prices & portfolio"
             >
-              <RefreshCw size={12} className={isRefreshing ? 'animate-spin' : ''} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
+              <RefreshCw size={12} aria-hidden="true" className={isRefreshing ? 'animate-spin' : ''} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
               <span>{isRefreshing ? 'Syncing...' : 'Refresh'}</span>
             </button>
 
