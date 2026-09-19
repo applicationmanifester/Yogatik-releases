@@ -10,6 +10,7 @@ import { ModelPicker } from './ModelPicker'
 import { LocalModelPanel } from './LocalModelPanel'
 import { ChromeAIPanel } from './ChromeAIPanel'
 import { SearchEnginePanel } from './SearchEnginePanel'
+import { KEY_STORAGE_DISCLOSURE } from '../crypto'
 import { DEFAULT_LOCAL_MODEL } from '../localLLM'
 import { FEATURES, resolveFeatures, FEATURE_DEFAULTS } from '../features'
 import { VOICE_LABELS, DEFAULT_VOICE } from '../video/speech'
@@ -480,6 +481,7 @@ export function SettingsModal({
                         value={customForm.api_key}
                         onChange={e => setCustomForm({ ...customForm, api_key: e.target.value })}
                       />
+                      <p className="field-hint">{KEY_STORAGE_DISCLOSURE}</p>
                     </div>
                     <div className="span-2">
                       <label>Models (Comma-separated slugs)</label>
@@ -564,6 +566,7 @@ export function SettingsModal({
                               {showKey[id] ? <EyeOff size={12} /> : <Eye size={12} />}
                             </button>
                           </div>
+                          <p className="field-hint">{KEY_STORAGE_DISCLOSURE}</p>
 
                           <div className="provider-btns-row">
                             {keyInputs[id] ? (

@@ -3,16 +3,79 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '10.1.0'
+export const APP_VERSION = '10.2.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.1.0 — Quantitative Trading Suite, Atomic Storage & Performance Hyperdrive'
+export const APP_CODENAME = 'Yogatik 10.2.0 — File Workspace Management, DOMPurify Security & Isolated Composer Drafts'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.2.0",
+    "title": "Yogatik 10.2.0: File Workspace Management, DOMPurify Security & Isolated Composer Drafts",
+    "date": "September 19, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Multi-Chat Composer Isolation: Chat-scoped unsubmitted prompt drafts with sessionStorage persistence, preventing prompt leakage across conversations and scoping prompt enhancement undo toasts",
+      "File Workspace & Picker Components: Virtualized FileBrowser tree view with search filtering and FilePicker with magic-bytes binary validation, MIME enforcement, and path traversal sanitization",
+      "DOMPurify Hardened Security: Standardized HTML, Markdown, and SVG sanitization preventing XSS attacks across LLM responses, tool outputs, and document views",
+      "Zerodha Kite Session & Desktop Fetch: Direct desktop native fetch bypassing CORS relay overhead, local preview server proxy support, and manual access token fallback",
+      "Cloudflare CORS Proxy Hardening: Strict credential allowlisting (Authorization & x-api-key headers) and per-origin sliding-window rate limiting (60 req/min)",
+      "Unified 10.2.0 Multi-Platform Matrix: Monorepo desktop apps, standalone browser, and web app aligned"
+    ],
+    "sections": [
+      {
+        "category": "💬 Multi-Chat & Composer UX",
+        "items": [
+          {
+            "title": "Per-Conversation Composer Drafts",
+            "description": "Each conversation maintains an independent draft state in memory and sessionStorage. Switching chats preserves in-progress prompts and attachments, while creating a new chat opens a pristine composer."
+          },
+          {
+            "title": "Scoped Prompt Enhancement & Undo",
+            "description": "Prompt enhancement actions and undo confirmations are strictly linked to the originating chat and dismissed automatically when navigating between conversations."
+          }
+        ]
+      },
+      {
+        "category": "📁 Workspace & File Management",
+        "items": [
+          {
+            "title": "Virtualized FileBrowser",
+            "description": "High-performance virtualized file tree component supporting deep directory traversal, multi-selection, file operations (read, write, move, delete, mkdir), and file preview."
+          },
+          {
+            "title": "Hardened FilePicker",
+            "description": "Drag-and-drop file uploader with binary magic-bytes validation, strict MIME checking, 10MB ceiling, and path traversal sanitization."
+          },
+          {
+            "title": "Filesystem Facade",
+            "description": "Centralized, robust filesystem abstraction layer with consistent error handling and cross-environment support."
+          }
+        ]
+      },
+      {
+        "category": "🛡️ Security & Privacy Hardening",
+        "items": [
+          {
+            "title": "DOMPurify Sanitization Pipeline",
+            "description": "Replaced ad-hoc regex scrubbing with industry-standard DOMPurify across all HTML, Markdown, and SVG render paths with 18 automated regression tests."
+          },
+          {
+            "title": "Proxy Credential Allowlist & Rate Limiting",
+            "description": "CORS worker now enforces a strict credential allowlist and sliding-window rate limiting to prevent credential leakage and abuse."
+          },
+          {
+            "title": "API Key Storage Transparency",
+            "description": "Visible disclosure notices inform users that custom and provider credentials reside exclusively in local client storage."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "10.1.0",
     "title": "Yogatik 10.1.0: Quantitative Trading Suite, Atomic Storage & Performance Hyperdrive",
     "date": "September 19, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Full Quantitative Trading Suite: Vector backtesting engine, risk management module, explainable signal system, and cryptographic trade journal",
       "Zerodha Kite Connect & Paper Trading Engine: Live API integration with Indian market fee model (brokerage, STT, GST) and zero-risk paper simulator",
