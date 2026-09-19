@@ -3,16 +3,91 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '9.1.0'
+export const APP_VERSION = '10.1.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 9.1.0 — Real-Time AI Media Studio, YouTube Anti-Adblock Engine & Multi-Platform Hyperdrive'
+export const APP_CODENAME = 'Yogatik 10.1.0 — Quantitative Trading Suite, Atomic Storage & Performance Hyperdrive'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.1.0",
+    "title": "Yogatik 10.1.0: Quantitative Trading Suite, Atomic Storage & Performance Hyperdrive",
+    "date": "September 19, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Full Quantitative Trading Suite: Vector backtesting engine, risk management module, explainable signal system, and cryptographic trade journal",
+      "Zerodha Kite Connect & Paper Trading Engine: Live API integration with Indian market fee model (brokerage, STT, GST) and zero-risk paper simulator",
+      "Performance Hyperdrive: Parallelised market scanner (~8× faster), stale-closure fix for auto-refresh intervals, optimistic UI for instant order feedback",
+      "Atomic localStorage Write: Staging-key pattern prevents config corruption on crash, with automatic recovery fallback",
+      "Accessibility & Error Surface: aria-hidden on decorative icons, visible error banners for live-data failures, 6 new error-case unit tests",
+      "Monorepo Version 10.1.0 Alignment: Unified release matrix across desktop apps, standalone browser, web application, and GitHub Actions pipelines"
+    ],
+    "sections": [
+      {
+        "category": "📈 Quantitative Trading Suite",
+        "items": [
+          {
+            "title": "Vector Backtesting Engine",
+            "description": "Full OHLCV backtesting with EMA crossover, RSI/MACD signal generation, Chandelier Exit stops, Indian market friction (brokerage, STT, GST, SEBI charges), and equity-curve metrics including CAGR, Sharpe, max drawdown, and win rate."
+          },
+          {
+            "title": "Risk Management Module",
+            "description": "Fractional-Kelly position sizing, daily drawdown circuit breaker, per-order capital limits, and SEBI-aligned order validation with real-time enforcement."
+          },
+          {
+            "title": "Explainable Signal System",
+            "description": "Human-readable signal explanations pairing technical indicators with plain-English rationale, giving traders full transparency on every recommendation."
+          },
+          {
+            "title": "Cryptographic Trade Journal",
+            "description": "Tamper-evident SHA-256 chained trade journal with integrity verification, CSV/JSON export, and forensic audit capabilities."
+          }
+        ]
+      },
+      {
+        "category": "⚡ Performance & Architecture",
+        "items": [
+          {
+            "title": "Parallelised Market Scanner",
+            "description": "Replaced sequential for-await loop with Promise.allSettled across all watchlist symbols — scan time drops from Σ(latency) to max(latency), ~8× faster for the default 8-stock watchlist."
+          },
+          {
+            "title": "Stale-Closure Fix for Auto-Refresh",
+            "description": "configRef pattern ensures fetchLiveData always reads the latest trading configuration without restarting the polling interval on every settings keystroke."
+          },
+          {
+            "title": "Optimistic UI for Order Execution",
+            "description": "Orders appear instantly in the Order Book with PENDING (Placing...) status before the async engine resolves, with clean rollback on failure for zero-latency perceived responsiveness."
+          },
+          {
+            "title": "Atomic localStorage Write",
+            "description": "Staging-key write pattern (write staging → promote primary → remove staging) eliminates the torn-write window that could corrupt config JSON on crash or tab close, with automatic recovery from staging on next load."
+          }
+        ]
+      },
+      {
+        "category": "♿ Accessibility & Quality",
+        "items": [
+          {
+            "title": "Screen-Reader Friendly Icons",
+            "description": "All decorative Lucide icons adjacent to visible text (mode pill, circuit status, kill switch, refresh button) now carry aria-hidden=true so screen readers skip SVGs and announce only the meaningful text."
+          },
+          {
+            "title": "Visible Error Surface",
+            "description": "Live-data fetch failures now surface as actionable error notices instead of silent console.error, keeping traders informed of connectivity issues."
+          },
+          {
+            "title": "Expanded Test Coverage",
+            "description": "6 new unit tests covering fetchLiveData error surface, optimistic order rollback, and atomic storage recovery. Full suite: 2811 tests passing across 268 test files."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "9.1.0",
     "title": "Yogatik 9.1.0: Real-Time AI Media Studio, YouTube Anti-Adblock Engine & Multi-Platform Hyperdrive",
     "date": "September 19, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Real-Time AI Media Studio Generation: Live prompt-derived visual generation with Flux AI, dynamic aspect ratios, and Fal.ai / Kling 3 Pro cloud pipeline integration",
       "YouTube Anti-Adblock & Hydration Resilience: Zero-latency ad skipper without triggering YouTube's Polymer skeleton freeze or telemetry errors",
