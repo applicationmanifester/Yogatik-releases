@@ -7,15 +7,17 @@ const ALLOWED_HOSTS = new Set([
   'api.anthropic.com',
   'api.elevenlabs.io',
   'api.github.com',
-  'raw.githubusercontent.com'
+  'raw.githubusercontent.com',
+  'api.kite.trade',
+  'kite.zerodha.com'
 ]);
 
-const SENSITIVE_HEADERS = ['authorization', 'cookie', 'x-api-key', 'x-auth-token', 'x-access-token'];
+const SENSITIVE_HEADERS = ['cookie', 'x-auth-token', 'x-access-token'];
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const target = url.searchParams.get('target');
+    const target = url.searchParams.get('target') || request.headers.get('x-target-url');
     
     if (!target) {
       return new Response('Missing target parameter', { status: 400 });
@@ -47,7 +49,7 @@ export default {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
+          'Access-Control-Allow-Headers': '*, Content-Type, Authorization, X-API-Key, X-Target-URL, X-Kite-Version',
           'Access-Control-Max-Age': '86400'
         }
       });

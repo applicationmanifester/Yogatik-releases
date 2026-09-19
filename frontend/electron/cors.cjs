@@ -31,6 +31,8 @@ const PROVIDER_PATTERNS = [
   /^https:\/\/api\.x\.ai\//,
   /^https:\/\/api\.mistral\.ai\//,
   /^https:\/\/generativelanguage\.googleapis\.com\//,
+  /^https:\/\/api\.kite\.trade\//,
+  /^https:\/\/kite\.zerodha\.com\//,
 ]
 
 // First-party hosts whose cookies are legitimately ours — auth must keep working.

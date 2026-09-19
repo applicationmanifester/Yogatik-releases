@@ -70,6 +70,7 @@ export function TradingModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('positions') // 'positions' | 'orders' | 'scanner' | 'settings'
   const [config, setConfig] = useState(getTradingConfig())
   const [requestToken, setRequestToken] = useState('')
+  const [directAccessToken, setDirectAccessToken] = useState('')
   const [authStatus, setAuthStatus] = useState(null)
   const [loading, setLoading] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -360,6 +361,45 @@ export function TradingModal({ isOpen, onClose }) {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleDirectAccessTokenSave = async () => {
+    const token = (directAccessToken || '').trim()
+    if (!token) {
+      alert('Please enter an Access Token.')
+      return
+    }
+    if (!config.zerodhaApiKey) {
+      alert('Please enter your Kite API Key first.')
+      return
+    }
+    setLoading(true)
+    setAuthStatus(null)
+    try {
+      const next = saveTradingConfig({
+        zerodhaAccessToken: token,
+        zerodhaTokenExpiry: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+      })
+      setConfig(next)
+      setAuthStatus({ success: true, message: "Access Token saved! Valid for today's trading session." })
+      setDirectAccessToken('')
+      await fetchLiveData()
+    } catch (err) {
+      setAuthStatus({ success: false, message: err.message || 'Failed to validate Access Token.' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleClearZerodhaSession = () => {
+    const next = saveTradingConfig({
+      zerodhaAccessToken: '',
+      zerodhaPublicToken: '',
+      zerodhaUserId: '',
+      zerodhaTokenExpiry: '',
+    })
+    setConfig(next)
+    setAuthStatus({ success: true, message: 'Zerodha session cleared.' })
   }
 
   const handleResetPaper = () => {
@@ -2172,6 +2212,84 @@ export function TradingModal({ isOpen, onClose }) {
                     <span>{authStatus.message}</span>
                   </div>
                 )}
+
+                {config.zerodhaAccessToken && (
+                  <div style={{
+                    marginTop: '10px',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    background: 'rgba(34,197,94,0.08)',
+                    border: '1px solid rgba(34,197,94,0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontSize: '11.5px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success, #22c55e)' }}>
+                      <CheckCircle2 size={14} />
+                      <span>
+                        <strong>Active Session:</strong> {config.zerodhaUserId ? `User ${config.zerodhaUserId}` : 'Token Active'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleClearZerodhaSession}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text-secondary)',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                )}
+
+                <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--border)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                    Already have an active Kite Access Token? Paste it directly:
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="password"
+                      value={directAccessToken}
+                      onChange={(e) => setDirectAccessToken(e.target.value.trim())}
+                      placeholder="Paste active access_token"
+                      style={{
+                        flex: 1,
+                        padding: '7px 10px',
+                        borderRadius: '6px',
+                        background: 'var(--bg-input)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text-primary)',
+                        fontSize: '12px',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleDirectAccessTokenSave}
+                      disabled={loading || !directAccessToken.trim()}
+                      style={{
+                        padding: '7px 12px',
+                        background: 'var(--bg-secondary)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '6px',
+                        fontWeight: 600,
+                        fontSize: '12px',
+                        cursor: (loading || !directAccessToken.trim()) ? 'not-allowed' : 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Save Token
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Safety & Risk Limits */}

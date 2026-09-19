@@ -125,6 +125,11 @@ async function activateTab(s, tabId) {
   const targetTab = s.tabs.get(tabId)
   if (targetTab?.hibernating) {
     await restoreTab(s, tabId)
+  } else {
+    // If the tab is not hibernating but also not viewCreated, we should create the view.
+    if (!targetTab.viewCreated) {
+      ensureView(s, tabId)
+    }
   }
 
   s.activeTabId = tabId
@@ -384,6 +389,59 @@ function setMode(s, mode) {
 // ── Tabs ──────────────────────────────────────────────────────────────────
 
 function createTab(s, url, opts = {}) {
+  const isAgent = !!opts?.isAgent
+  const partition = opts?.partition || (isAgent ? 'persist:agent-workspace' : undefined)
+  const webPrefs = {
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true,
+    autoplayPolicy: 'no-user-gesture-required',
+  }
+  if (partition) webPrefs.partition = partition
+
+  const tabId = newTabId()
+  // `console` is a ring of the page's own console output and uncaught errors.
+  // Without it the model has no way to answer "does the UI work" — it was
+  // observed inventing `window.__errors` and evaluating that, because reading
+  // the real console was not a capability the tool offered.
+  const tab = {
+    view: null,
+    viewCreated: false,
+    webPrefs,
+    refEpoch: 0,
+    console: [],
+    failed: [],
+    // CDP (Network domain) request/response capture — see ensureDebugger().
+    network: [],
+    debuggerAttached: false,
+    debuggerWired: false,
+    pendingRequests: new Map(),
+    humanControl: false,
+    helpRequested: false,
+    isAgent,
+    _pendingUrl: null,
+    savedUrl: null,
+    savedTitle: null,
+    savedScroll: null,
+    hibernating: false,
+  }
+  s.tabs.set(tabId, tab)
+  s.activeTabId = tabId
+
+  // If not lazy, create view now
+  if (!opts?.lazy) {
+    ensureView(s, tabId)
+    // After view created, navigate to targetUrl
+    const targetUrl = isNewTabUrl(url) ? NEW_TAB_URL : url
+    navigate(s, tabId, targetUrl)
+  } else {
+    // Store pending URL for later when view is created
+    tab._pendingUrl = isNewTabUrl(url) ? NEW_TAB_URL : url
+  }
+
+  showActive(s)
+  return tabId
+}) {
   const isAgent = !!opts?.isAgent
   const partition = opts?.partition || (isAgent ? 'persist:agent-workspace' : undefined)
   const webPrefs = {

@@ -84,7 +84,7 @@ let mainWin = null
 
 function createMainWindow() {
   const saved = loadWindowState()
-  const opts = {
+const opts = {
     width: saved?.bounds?.width || 1200,
     height: saved?.bounds?.height || 850,
     x: saved?.bounds?.x,
@@ -97,9 +97,10 @@ function createMainWindow() {
       preload: path.join(__dirname, 'browserWindowPreload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
+      enableSiteIsolation: true,
     },
-  }
+  };
 
   mainWin = new BrowserWindow(opts)
 
@@ -144,18 +145,18 @@ function applyCSP() {
       (url.includes('browserWindow.html') || url.includes('newtab.html') || url.includes('splash.html'))
 
     if (isChrome) {
-      const csp = [
-        "default-src 'self' 'unsafe-inline' data: blob:;",
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval';",
-        "style-src 'self' 'unsafe-inline';",
-        "img-src 'self' data: blob: https:;",
-        "font-src 'self' data:;",
-        "connect-src 'self' https: wss:;",
-        "frame-src 'none';",
-        "object-src 'none';",
-        "base-uri 'none';",
-        "form-action 'none';",
-      ].join(' ')
+const csp = [
+         "default-src 'self'",
+         "script-src 'self' https:",
+         "style-src 'self' 'unsafe-inline'",
+         "img-src 'self' data: blob: https:",
+         "font-src 'self' data:",
+         "connect-src 'self' https: wss:",
+         "frame-src 'none'",
+         "object-src 'none'",
+         "base-uri 'none'",
+         "form-action 'none'",
+       ].join(' ')
 
       callback({
         responseHeaders: {

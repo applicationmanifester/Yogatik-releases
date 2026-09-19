@@ -57,16 +57,24 @@ export function getKiteLoginUrl(apiKey) {
   return `https://kite.zerodha.com/connect/login?v=3&api_key=${encodeURIComponent(apiKey)}`
 }
 
-/**
- * Dispatches an HTTP request to Kite API.
- * In Electron or environments where CORS is bypassed, direct fetch gets the genuine
- * response without failing over to public relays.
- */
 async function dispatchKite(url, { method = 'GET', headers = {}, body = null } = {}) {
   unblockHost('api.kite.trade')
 
-  // In Electron desktop apps, main process strips CORS so direct fetch is used without proxy
-  if (typeof window !== 'undefined' && window.__YOGATIK_ELECTRON__) {
+  const isDesktop = typeof window !== 'undefined' && (
+    !!window.__YOGATIK_ELECTRON__ ||
+    !!window.electron ||
+    !!window.__TAURI__ ||
+    !!window.__TAURI_INTERNALS__ ||
+    !!window.__YOGATIK_DESKTOP__ ||
+    !!window.__YOGATIK_BROWSER__ ||
+    (typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent)) ||
+    (typeof window !== 'undefined' && window.location?.protocol === 'file:')
+  )
+
+  // 1. Desktop: try direct native fetch first.
+  // In Electron desktop apps, the main process strips CORS headers for api.kite.trade,
+  // so this executes with full native speed and zero relay hops.
+  if (isDesktop) {
     try {
       const directResp = await fetch(url, {
         method,
@@ -77,12 +85,33 @@ async function dispatchKite(url, { method = 'GET', headers = {}, body = null } =
       if (json) return json
       if (directResp.ok) return { status: 'success' }
     } catch (directErr) {
-      // fallback
+      // Direct fetch failed. Proceed to proxy cascade fallback.
     }
   }
 
-  // In web browsers or unit test environments, route through proxyJson
-  return await proxyJson(url, { method, headers, body })
+  // 2. Route through proxy cascade (/api/llm-proxy in dev/preview, Cloudflare worker in prod)
+  try {
+    return await proxyJson(url, { method, headers, body })
+  } catch (proxyErr) {
+    if (!isDesktop) {
+      throw new Error(
+        'Zerodha Kite API blocks web-browser requests via CORS. Please run the Yogatik Desktop app for live trading, or enter your active Access Token directly.'
+      )
+    }
+    throw proxyErr
+  }
+}
+
+/**
+ * Validates an active access_token by checking margins.
+ */
+export async function validateAccessToken(apiKey, accessToken) {
+  if (!apiKey || !accessToken) throw new Error('API Key and Access Token are required.')
+  const margins = await getMargins(apiKey, accessToken)
+  return {
+    success: true,
+    margins,
+  }
 }
 
 /**

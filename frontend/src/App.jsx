@@ -2102,14 +2102,115 @@ export default function App() {
     })
   }, [])
 
+  // Per-conversation composer drafts & enhancement toasts
+  const chatDraftsRef = useRef(() => {
+    try {
+      const raw = sessionStorage.getItem('yogatik_chat_drafts')
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  })
+  if (typeof chatDraftsRef.current === 'function') {
+    chatDraftsRef.current = chatDraftsRef.current()
+  }
+  const enhanceToastIdRef = useRef(null)
+  const inputRef = useRef(input)
+  inputRef.current = input
+  const attachedFileRef = useRef(attachedFile)
+  attachedFileRef.current = attachedFile
+  const attachedFilePathRef = useRef(attachedFilePath)
+  attachedFilePathRef.current = attachedFilePath
+  const attachedImageRef = useRef(attachedImage)
+  attachedImageRef.current = attachedImage
+
+  const saveComposerDraft = useCallback((explicitConv = null) => {
+    const targetConv = explicitConv || conversationsRef.current[activeIdxRef.current]
+    const key = targetConv?.clientId || targetConv?.id
+    if (!key) return
+    const curInput = inputRef.current || ''
+    const curFile = attachedFileRef.current || null
+    const curPath = attachedFilePathRef.current || null
+    const curImg = attachedImageRef.current || null
+
+    if (curInput.trim() || curFile || curPath || curImg) {
+      chatDraftsRef.current[key] = {
+        input: curInput,
+        attachedFile: curFile,
+        attachedFilePath: curPath,
+        attachedImage: curImg,
+      }
+    } else {
+      delete chatDraftsRef.current[key]
+    }
+
+    try {
+      const serializable = {}
+      for (const [k, v] of Object.entries(chatDraftsRef.current)) {
+        if (v && v.input) serializable[k] = { input: v.input }
+      }
+      sessionStorage.setItem('yogatik_chat_drafts', JSON.stringify(serializable))
+    } catch {}
+  }, [])
+
+  const restoreComposerDraft = useCallback((targetConv) => {
+    const key = targetConv?.clientId || targetConv?.id
+    const draft = key ? chatDraftsRef.current[key] : null
+    const restoredText = draft?.input || ''
+    setInput(restoredText)
+    inputRef.current = restoredText
+    setAttachedFile(draft?.attachedFile || null)
+    attachedFileRef.current = draft?.attachedFile || null
+    setAttachedFilePath(draft?.attachedFilePath || null)
+    attachedFilePathRef.current = draft?.attachedFilePath || null
+    setAttachedImage(draft?.attachedImage || null)
+    attachedImageRef.current = draft?.attachedImage || null
+    setTimeout(() => {
+      autoResize()
+    }, 40)
+  }, [autoResize])
+
+  // Keep active chat's unsubmitted draft synchronized in memory
+  useEffect(() => {
+    const curConv = conversationsRef.current[activeIdxRef.current]
+    const key = curConv?.clientId || curConv?.id
+    if (!key) return
+    if (input.trim() || attachedFile || attachedFilePath || attachedImage) {
+      chatDraftsRef.current[key] = {
+        input,
+        attachedFile,
+        attachedFilePath,
+        attachedImage,
+      }
+    } else {
+      delete chatDraftsRef.current[key]
+    }
+  }, [input, attachedFile, attachedFilePath, attachedImage])
+
   const newChat = useCallback(() => {
     try { trackConversation() } catch {}
+
+    // Save draft for outgoing chat before resetting
+    saveComposerDraft()
+
+    // Dismiss any prompt enhancement toast from previous chat so it does not linger
+    if (enhanceToastIdRef.current) {
+      dismissToast(enhanceToastIdRef.current)
+      enhanceToastIdRef.current = null
+    }
+
     // Don't stop other chats — let them keep streaming in background
     setConvQuery('')
     setInput('')
+    inputRef.current = ''
     setActiveArtifact(null)
     setAttachedFile(null)
+    attachedFileRef.current = null
+    setAttachedFilePath(null)
+    attachedFilePathRef.current = null
     setAttachedImage(null)
+    attachedImageRef.current = null
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
     setVisibleCount(WINDOW_STEP)
     setShowSkills(false)
     setShowPersonalise(false)
@@ -2164,7 +2265,7 @@ export default function App() {
 
     if (window.innerWidth <= 768) setSidebarOpen(false)
     setTimeout(() => textareaRef.current?.focus(), 50)
-  }, [provider, model, temperature, webSearch, tools, activeTemplate])
+  }, [provider, model, temperature, webSearch, tools, activeTemplate, saveComposerDraft, dismissToast])
 
   const newChatRef = useRef(newChat)
   newChatRef.current = newChat  // always current — no useEffect lag
@@ -2198,6 +2299,13 @@ export default function App() {
     setShowDemoModal(false)
     const idx = conversationsRef.current.findIndex(c => c.id === convId)
     if (idx >= 0) { switchChat(idx); return }
+
+    saveComposerDraft()
+    if (enhanceToastIdRef.current) {
+      dismissToast(enhanceToastIdRef.current)
+      enhanceToastIdRef.current = null
+    }
+
     const full = await getConversation(convId)
     if (!full) return
     const formatted = {
@@ -2221,7 +2329,8 @@ export default function App() {
     activeIdxRef.current = 0
     setVisibleCount(WINDOW_STEP)
     if (window.innerWidth <= 768) setSidebarOpen(false)
-  }, [provider, model, temperature, webSearch, tools])
+    restoreComposerDraft(formatted)
+  }, [provider, model, temperature, webSearch, tools, saveComposerDraft, restoreComposerDraft, dismissToast])
 
   /**
    * yogatik:// deep links.
@@ -2260,6 +2369,17 @@ export default function App() {
   }, [showToast, openChatById, startLive])
 
   const switchChat = async (idx) => {
+    if (idx === activeIdxRef.current) return
+
+    // 1. Save outgoing conversation's composer draft
+    saveComposerDraft()
+
+    // 2. Dismiss prompt enhancement toast from previous chat so it does not linger
+    if (enhanceToastIdRef.current) {
+      dismissToast(enhanceToastIdRef.current)
+      enhanceToastIdRef.current = null
+    }
+
     setActiveIdx(idx)
     activeIdxRef.current = idx
     historyIndexRef.current = -1
@@ -2275,6 +2395,9 @@ export default function App() {
     if (window.innerWidth <= 768) setSidebarOpen(false)
     const c = conversationsRef.current[idx] || conversations[idx]
     if (!c) return
+
+    // 3. Restore draft for incoming chat
+    restoreComposerDraft(c)
 
     if (c.provider) setProviderState(c.provider)
     if (c.model !== undefined) setModel(c.model)
@@ -2311,6 +2434,12 @@ export default function App() {
     const c = conversationsRef.current[idx] || conversations[idx]
     const cClientId = c?.clientId
     const cId = c?.id
+    if (cClientId) delete chatDraftsRef.current[cClientId]
+    if (cId) delete chatDraftsRef.current[cId]
+    if (enhanceToastIdRef.current) {
+      dismissToast(enhanceToastIdRef.current)
+      enhanceToastIdRef.current = null
+    }
     const doDelete = async () => {
       if (cId) { try { await deleteConversation(cId) } catch {} }
       if (isDesktop()) {
@@ -2318,9 +2447,10 @@ export default function App() {
         if (cId) unbindChatRoots(cId).catch(() => {})
       }
       setVisibleCount(WINDOW_STEP)
+      let fallbackList = []
       setConversations(prev => {
         const next = prev.filter((item, i) => (cClientId ? item.clientId !== cClientId : i !== idx))
-        const fallbackList = next.length ? next : [{
+        fallbackList = next.length ? next : [{
           clientId: `c_def_${Date.now()}`,
           id: null,
           title: 'New Chat',
@@ -2338,6 +2468,8 @@ export default function App() {
       setActiveIdx(prev => {
         const nextIdx = Math.max(0, prev >= idx ? prev - 1 : prev)
         activeIdxRef.current = nextIdx
+        const nextTargetConv = fallbackList[nextIdx]
+        restoreComposerDraft(nextTargetConv)
         return nextIdx
       })
     }
@@ -2683,11 +2815,19 @@ export default function App() {
       }
       historyIndexRef.current = -1
       draftInputRef.current = ''
-      setInput('')
-      setAttachedFile(null)
-      setAttachedFilePath(null)
-      setAttachedImage(null)
-      if (textareaRef.current) textareaRef.current.style.height = 'auto'
+      if (targetClientId) delete chatDraftsRef.current[targetClientId]
+      if (targetConv.id) delete chatDraftsRef.current[targetConv.id]
+      if (targetIdx === activeIdxRef.current) {
+        setInput('')
+        inputRef.current = ''
+        setAttachedFile(null)
+        attachedFileRef.current = null
+        setAttachedFilePath(null)
+        attachedFilePathRef.current = null
+        setAttachedImage(null)
+        attachedImageRef.current = null
+        if (textareaRef.current) textareaRef.current.style.height = 'auto'
+      }
       showToast('Prompt queued — will send automatically when the model finishes.')
       return
     }
@@ -2764,8 +2904,19 @@ export default function App() {
     }
     historyIndexRef.current = -1
     draftInputRef.current = ''
-    setInput('')
-    if (textareaRef.current) textareaRef.current.style.height = 'auto'
+    if (targetClientId) delete chatDraftsRef.current[targetClientId]
+    if (targetConv.id) delete chatDraftsRef.current[targetConv.id]
+    if (targetIdx === activeIdxRef.current) {
+      setInput('')
+      inputRef.current = ''
+      setAttachedFile(null)
+      attachedFileRef.current = null
+      setAttachedFilePath(null)
+      attachedFilePathRef.current = null
+      setAttachedImage(null)
+      attachedImageRef.current = null
+      if (textareaRef.current) textareaRef.current.style.height = 'auto'
+    }
 
     setLoadingMap(prev => ({ ...prev, [targetClientId]: true }))
     setStreamText(targetClientId, '')
@@ -3285,21 +3436,57 @@ export default function App() {
         // so the undo travels with the confirmation rather than living in a
         // separate history UI nobody would find.
         const original = input
-        setInput(enhanced.trim())
+        const targetClientId = conv?.clientId
+        const targetId = conv?.id
+        const enhancedTrimmed = enhanced.trim()
+
+        setInput(enhancedTrimmed)
+        inputRef.current = enhancedTrimmed
+
+        // Immediately update this chat's draft
+        const draftKey = targetClientId || targetId
+        if (draftKey) {
+          chatDraftsRef.current[draftKey] = {
+            ...(chatDraftsRef.current[draftKey] || {}),
+            input: enhancedTrimmed,
+            attachedFile: attachedFileRef.current,
+            attachedFilePath: attachedFilePathRef.current,
+            attachedImage: attachedImageRef.current,
+          }
+        }
+
         setTimeout(() => {
           autoResize()
           textareaRef.current?.focus()
         }, 50)
-        showToast('✨ Prompt enhanced', {
+
+        if (enhanceToastIdRef.current) {
+          dismissToast(enhanceToastIdRef.current)
+          enhanceToastIdRef.current = null
+        }
+
+        const toastId = showToast('✨ Prompt enhanced', {
           variant: 'success',
           actions: [{
             label: 'Undo',
             onClick: () => {
-              setInput(original)
-              setTimeout(() => { autoResize(); textareaRef.current?.focus() }, 50)
+              const curConv = conversationsRef.current[activeIdxRef.current]
+              const isSameChat = curConv && (curConv.clientId === targetClientId || (targetId && curConv.id === targetId))
+              if (isSameChat) {
+                setInput(original)
+                inputRef.current = original
+                setTimeout(() => { autoResize(); textareaRef.current?.focus() }, 50)
+              }
+              if (draftKey) {
+                chatDraftsRef.current[draftKey] = {
+                  ...(chatDraftsRef.current[draftKey] || {}),
+                  input: original,
+                }
+              }
             },
           }],
         })
+        enhanceToastIdRef.current = toastId
       } else {
         showToast('✨ Prompt is already well-structured')
       }
@@ -5798,6 +5985,7 @@ export default function App() {
               onChange={e => {
                 const val = e.target.value
                 setInput(val)
+                inputRef.current = val
                 autoResize()
                 if (val.startsWith('/')) {
                   setShowSlashMenu(true)
