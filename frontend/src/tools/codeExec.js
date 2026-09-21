@@ -82,9 +82,15 @@ export const codeExecTool = {
       'packages persist across calls in this conversation, like a Jupyter kernel. numpy/pandas/etc. ' +
       'from imports load automatically; top-level await is supported. Pass packages[] to pip-install ' +
       'pure-Python wheels via micropip, or reset:true to clear the kernel. ' +
-      'IT CANNOT REACH THE REAL MACHINE: no access to the user’s files, no OS or shell commands, ' +
+      'IT CANNOT REACH THE REAL MACHINE: no access to the user\'s files, no OS or shell commands, ' +
       'no starting servers, no installing system software. To run a real command use terminal_run; ' +
-      'to start a dev server use proc_start; to read the user’s files use fs_read/fs_list.',
+      'to start a dev server use proc_start; to read the user\'s files use fs_read/fs_list. ' +
+      'IMPORTANT — Pyodide package constraints: fitz / PyMuPDF is NOT available and will always fail. ' +
+      'For PDF text extraction use pdfminer.six instead: pass packages:["pdfminer.six"] then ' +
+      '`from pdfminer.high_level import extract_text_to_fp, extract_pages` or ' +
+      '`from pdfminer.high_level import extract_text; text = extract_text(io.BytesIO(pdf_bytes))`. ' +
+      'Other unavailable C-extension packages: lxml, Pillow (PIL), OpenCV (cv2), scipy, scikit-learn. ' +
+      'Prefer pure-Python alternatives installable via micropip.',
     parameters: {
       type: 'object',
       properties: {

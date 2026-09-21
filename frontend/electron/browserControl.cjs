@@ -13,6 +13,8 @@
 // into an unrelated chat.
 
 const { BrowserWindow, WebContentsView, ipcMain, session: electronSession, shell } = require('electron')
+const { enableHTTPSUpgrade } = require('./httpsUpgrade.cjs')
+const { injectFingerprintProtection } = require('./fingerprintProtection.cjs')
 const path = require('path')
 const { pathToFileURL } = require('url')
 const { safeSend } = require('./safeWindow.cjs')
@@ -114,6 +116,8 @@ function createWindowSurface(s) {
       sandbox: false,
     },
   })
+    const eSession = s.win.webContents.session
+  enableHTTPSUpgrade(eSession)
   s.win.loadFile(path.join(__dirname, 'browserWindow.html'))
   s.win.webContents.on('did-finish-load', () => {
     syncTabBar(s)
@@ -292,6 +296,7 @@ function createTab(s, url, opts = {}) {
 
   const wc = view.webContents
   injectAdShield(wc)
+  injectFingerprintProtection(view)
   try {
     const defaultUA = wc.getUserAgent()
     const cleanedUA = defaultUA

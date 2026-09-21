@@ -58,7 +58,7 @@ import {
   liveEndpoint, buildSetup, audioChunk, videoFrame, textInput, toolResponse,
   decodeServerMessage, rateFromMime, LIVE_MODELS,
 } from './protocol'
-import { createMicCapture, createPlayer, base64ToPcm16 } from './audio'
+import { createMicCapture, createPlayer, base64ToPcm16, setupDeviceChangeRecovery, teardownDeviceChangeRecovery } from './audio'
 import { createCamera, createScreenCapture, switchCamera as switchCameraTrack } from './video'
 import { enumerate, nextCamera, loadPreferredDevices, savePreferredDevices } from './devices'
 import { setSharedVisualSource, clearSharedVisualSource } from '../vision/source'
@@ -74,7 +74,7 @@ const RECONNECT_MAX = 3
 
 export function createLiveSession({
   apiKey, model = LIVE_MODELS[0], voice = 'Puck', persona = null,
-  disabledTools = [], camera = true, noiseSuppression = true, onEvent = () => {},
+  disabledTools = [], camera = true, noiseSuppression = true, speakerMuted = false, onEvent = () => {},
 }) {
   let ws = null
   let mic = null
@@ -148,6 +148,8 @@ You can see them through their camera and hear them through their microphone. Be
           break
         case 'resumeHandle':
           resumeHandle = ev.handle
+          // Persist for browser refresh / tab restore
+          try { localStorage.setItem('yogatik_live_resume', ev.handle) } catch {}
           break
         case 'goAway':
           // The server is about to hang up; reconnect on the handle so the
@@ -162,6 +164,10 @@ You can see them through their camera and hear them through their microphone. Be
 
   function open() {
     ready = false
+    // Restore resume handle from localStorage if not already set (e.g. after page refresh)
+    if (!resumeHandle) {
+      try { resumeHandle = localStorage.getItem('yogatik_live_resume') } catch {}
+    }
     ws = new WebSocket(liveEndpoint(apiKey))
     ws.onopen = () => {
       ws.send(JSON.stringify(buildSetup({
@@ -178,7 +184,11 @@ You can see them through their camera and hear them through their microphone. Be
       const raw = typeof e.data === 'string' ? e.data : await e.data.text()
       try { handle(JSON.parse(raw)) } catch { /* keepalive / non-JSON */ }
     }
-    ws.onerror = () => emit({ type: 'error', message: 'Live connection failed. Check the Gemini key and that the model supports Live.' })
+    ws.onerror = () => {
+      // Clear mic timer on connection error to prevent leak
+      if (micLevelTimer) { clearInterval(micLevelTimer); micLevelTimer = null }
+      emit({ type: 'error', message: 'Live connection failed. Check the Gemini key and that the model supports Live.' })
+    }
     ws.onclose = (e) => {
       if (closed) return
       if (e.code === 1008 || e.code === 1007) {
@@ -199,7 +209,12 @@ You can see them through their camera and hear them through their microphone. Be
       return
     }
     emit({ type: 'reconnecting', attempt: reconnects })
-    setTimeout(() => { if (!closed) open() }, 200 * reconnects)
+    // Exponential backoff with jitter (500ms base, 8s max, 30% jitter)
+    const baseDelay = 500
+    const maxDelay = 8000
+    const delay = Math.min(baseDelay * 2 ** (reconnects - 1), maxDelay)
+    const jitter = delay * 0.3 * Math.random()
+    setTimeout(() => { if (!closed) open() }, delay + jitter)
   }
 
   async function start() {
@@ -207,6 +222,7 @@ You can see them through their camera and hear them through their microphone. Be
       onLevel: (l) => emit({ type: 'level', who: 'assistant', value: l }),
       onSpeakingChange: (v) => emit({ type: 'speaking', value: v }),
     })
+    if (speakerMuted) player.setMuted(true)
     await player.resume()          // must happen inside the click handler
 
     // Open the microphone the user last chose; an unplugged one falls back
@@ -216,6 +232,24 @@ You can see them through their camera and hear them through their microphone. Be
       noiseSuppression: currentNoiseSuppression,
     })
     emit({ type: 'mic', stream: mic.stream })
+
+    // Set up device change recovery (headset unplugged/replugged)
+    setupDeviceChangeRecovery(async () => {
+      if (closed || !mic || mic.isMuted()) return
+      try {
+        await mic.setNoiseSuppression(currentNoiseSuppression)
+      } catch {
+        // Re-create capture with fallback
+        const pref = loadPreferredDevices()
+        const next = await createMicCapture((b64) => send(audioChunk(b64)), {
+          deviceId: pref.micId,
+          noiseSuppression: currentNoiseSuppression,
+        })
+        mic?.close()
+        mic = next
+        emit({ type: 'mic', stream: mic.stream })
+      }
+    })
 
     if (micLevelTimer) clearInterval(micLevelTimer)
     micLevelTimer = setInterval(() => {
@@ -249,13 +283,12 @@ You can see them through their camera and hear them through their microphone. Be
       setSharedVisualSource(cam)
       emit({ type: 'camera', stream: cam.stream, video: cam.video })
       let sinceForced = 0
-      frameTimer = setInterval(() => {
-        const force = ++sinceForced % 5 === 0
+      cam.onFrame((force) => {
         const b64 = cam?.grab(force)
         if (b64) send(videoFrame(b64))
-      }, FRAME_MS)
+      })
     } else if (!on && cam) {
-      clearInterval(frameTimer); frameTimer = null
+      cam.offFrame()
       clearSharedVisualSource(cam)
       cam.close(); cam = null
       emit({ type: 'camera', stream: null })
@@ -268,21 +301,20 @@ You can see them through their camera and hear them through their microphone. Be
         screen = await createScreenCapture()
         setSharedVisualSource(screen)
         emit({ type: 'screen', stream: screen.stream, active: true })
-        // Send screen frames at 1fps, same as camera
+        // Send screen frames using adaptive frame rate
         let sinceForced = 0
-        screenTimer = setInterval(() => {
+        screen.onFrame((force) => {
           if (screen?.stopped) { enableScreenShare(false); return }
-          const force = ++sinceForced % 5 === 0
           const b64 = screen?.grab(force)
           if (b64) send(videoFrame(b64))
-        }, FRAME_MS)
+        })
         // Auto-stop when browser's "Stop sharing" is clicked
         screen.stream.getVideoTracks()[0].addEventListener('ended', () => enableScreenShare(false))
       } catch {
         emit({ type: 'warning', message: 'Screen sharing was cancelled or not supported.' })
       }
     } else if (!on && screen) {
-      clearInterval(screenTimer); screenTimer = null
+      screen.offFrame()
       clearSharedVisualSource(screen)
       screen.close(); screen = null
       if (cam) setSharedVisualSource(cam)
@@ -294,8 +326,8 @@ You can see them through their camera and hear them through their microphone. Be
     if (closed) return
     closed = true
     if (micLevelTimer) { clearInterval(micLevelTimer); micLevelTimer = null }
-    clearInterval(frameTimer)
-    clearInterval(screenTimer)
+    cam?.offFrame()
+    screen?.offFrame()
     try { ws?.close() } catch {}
     clearSharedVisualSource(cam)
     clearSharedVisualSource(screen)
@@ -303,6 +335,7 @@ You can see them through their camera and hear them through their microphone. Be
     screen?.close()
     mic?.close()
     player?.close()
+    teardownDeviceChangeRecovery()
     ws = null; cam = null; screen = null; mic = null; player = null
     onEvent({ type: 'ended' })
   }

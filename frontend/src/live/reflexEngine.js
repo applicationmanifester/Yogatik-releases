@@ -163,39 +163,49 @@ function evaluateUnitConversion(text = '') {
 }
 
 /**
- * Checks if an utterance matches a known high-frequency reflex intent.
+ * Checks if an utterance matches a known high-frequency reflex intent with structured metadata.
  * @param {string} text - User prompt
- * @returns {string|null} - The synthesized response or null if not a reflex match
+ * @returns {{response: string, confidence: number, intent: string}|null} - Structured reflex match or null
  */
-export function matchReflex(text = '') {
+export function matchReflexIntent(text = '') {
   const t = String(text || '').trim().toLowerCase()
   if (!t || t.length > 70) return null
 
   // Instant mathematical calculations and unit conversions
   const mathRes = evaluateSimpleMath(t)
-  if (mathRes) return mathRes
+  if (mathRes) return { response: mathRes, confidence: 1.0, intent: 'math' }
   const convRes = evaluateUnitConversion(t)
-  if (convRes) return convRes
+  if (convRes) return { response: convRes, confidence: 1.0, intent: 'unit_conversion' }
 
   // Dynamic real-time queries evaluated on-device
-  if (TIME_QUERY.test(t)) return getFormattedTime()
-  if (DATE_QUERY.test(t)) return getFormattedDate()
-  if (CAPABILITIES.test(t)) return pickRandom(CAPABILITY_RESPONSES)
-  if (STATUS_PING.test(t)) return pickRandom(STATUS_RESPONSES)
+  if (TIME_QUERY.test(t)) return { response: getFormattedTime(), confidence: 1.0, intent: 'time' }
+  if (DATE_QUERY.test(t)) return { response: getFormattedDate(), confidence: 1.0, intent: 'date' }
+  if (CAPABILITIES.test(t)) return { response: pickRandom(CAPABILITY_RESPONSES), confidence: 0.95, intent: 'capabilities' }
+  if (STATUS_PING.test(t)) return { response: pickRandom(STATUS_RESPONSES), confidence: 0.95, intent: 'status' }
 
-  if (GREETINGS.test(t)) return pickRandom(GREETING_RESPONSES)
-  if (FILLER_GREETINGS.test(t)) return pickRandom(GREETING_RESPONSES)
-  if (HOW_ARE_YOU.test(t)) return pickRandom(HOW_ARE_YOU_RESPONSES)
-  if (CAN_YOU_HEAR_ME.test(t)) return pickRandom(CAN_YOU_HEAR_ME_RESPONSES)
-  if (WHO_ARE_YOU.test(t)) return pickRandom(WHO_ARE_YOU_RESPONSES)
-  if (THANKS.test(t)) return pickRandom(THANKS_RESPONSES)
-  if (FAREWELL.test(t)) return pickRandom(FAREWELL_RESPONSES)
-  if (COMPLIMENTS.test(t)) return pickRandom(COMPLIMENT_RESPONSES)
-  if (ACKNOWLEDGMENTS.test(t)) return pickRandom(ACKNOWLEDGMENT_RESPONSES)
-  if (CONTINUATIONS.test(t)) return pickRandom(CONTINUATION_RESPONSES)
-  if (CONFUSED.test(t)) return pickRandom(CONFUSED_RESPONSES)
+  // Greeting variants with varying confidence
+  if (GREETINGS.test(t)) return { response: pickRandom(GREETING_RESPONSES), confidence: 0.98, intent: 'greeting' }
+  if (FILLER_GREETINGS.test(t)) return { response: pickRandom(GREETING_RESPONSES), confidence: 0.9, intent: 'filler_greeting' }
+  if (HOW_ARE_YOU.test(t)) return { response: pickRandom(HOW_ARE_YOU_RESPONSES), confidence: 0.98, intent: 'how_are_you' }
+  if (CAN_YOU_HEAR_ME.test(t)) return { response: pickRandom(CAN_YOU_HEAR_ME_RESPONSES), confidence: 0.95, intent: 'mic_check' }
+  if (WHO_ARE_YOU.test(t)) return { response: pickRandom(WHO_ARE_YOU_RESPONSES), confidence: 0.95, intent: 'identity' }
+  if (THANKS.test(t)) return { response: pickRandom(THANKS_RESPONSES), confidence: 0.98, intent: 'thanks' }
+  if (FAREWELL.test(t)) return { response: pickRandom(FAREWELL_RESPONSES), confidence: 0.98, intent: 'farewell' }
+  if (COMPLIMENTS.test(t)) return { response: pickRandom(COMPLIMENT_RESPONSES), confidence: 0.9, intent: 'compliment' }
+  if (ACKNOWLEDGMENTS.test(t)) return { response: pickRandom(ACKNOWLEDGMENT_RESPONSES), confidence: 0.9, intent: 'acknowledgment' }
+  if (CONTINUATIONS.test(t)) return { response: pickRandom(CONTINUATION_RESPONSES), confidence: 0.85, intent: 'continuation' }
+  if (CONFUSED.test(t)) return { response: pickRandom(CONFUSED_RESPONSES), confidence: 0.9, intent: 'confused' }
 
   return null
+}
+
+/**
+ * Checks if an utterance matches a known high-frequency reflex intent.
+ * @param {string} text - User prompt
+ * @returns {string|null} - The synthesized response or null if not a reflex match
+ */
+export function matchReflex(text = '') {
+  return matchReflexIntent(text)?.response || null
 }
 
 /**

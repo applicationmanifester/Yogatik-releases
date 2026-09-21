@@ -71,13 +71,13 @@ export function needsMotion(q = '') { return MOTION_RE.test(q) && !TEXT_RE.test(
 
 /**
  * Capture settings for a question.
- * Text: big, sharp, cropped to the middle where people hold things.
- * Scene: small and cheap.
+ * Text: big, sharp, cropped CLOSER (0.6 = middle 60%) where people hold things.
+ * Scene: small and cheap, NO crop (0 = full frame).
  */
 export function captureProfile(q = '') {
   return needsText(q)
-    ? { maxEdge: 1280, quality: 0.92, crop: 0.75 }
-    : { maxEdge: 768, quality: 0.7, crop: 0 }
+    ? { maxEdge: 1280, quality: 0.92, crop: 0.6 }  // Zoom in on held object
+    : { maxEdge: 768, quality: 0.7, crop: 0 }       // Full room view
 }
 
 /**

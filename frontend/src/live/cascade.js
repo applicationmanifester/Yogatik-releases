@@ -301,7 +301,7 @@ export function createCascadeSession({
   voiceCommands = true,
   // Providers to fall back to when this one dies mid-call, from getLiveConfig.
   fallbacks = [],
-  speakerMuted: initialSpeakerMuted = false,
+  speakerMuted = false,
   onEvent = () => {},
 }) {
   // The active provider can change mid-call: a 429 five minutes into a
@@ -370,7 +370,7 @@ export function createCascadeSession({
   // for it (the composer's Volume2 icon was imported and never wired to
   // anything). `speak()` is the one choke point every spoken clause already
   // passes through, so muting output costs nothing extra to synthesize.
-  let speakerMuted = !!initialSpeakerMuted
+  // speakerMuted comes from config param; use it directly
   let speaking = false
   let thinking = false
   let abort = null
@@ -714,6 +714,22 @@ export function createCascadeSession({
     // force=false: an unchanged room returns null and costs nothing.
     const b64 = src?.grab(false, captureProfile(''))
     if (b64) { watched = b64; emit({ type: 'watched' }) }
+  }
+
+  /** Handle adaptive frame callback: store changed frame for auto-scan or continuous vision */
+  function handleVisionFrame(b64) {
+    if (!b64) return
+    if (visionMode === 'always') {
+      watched = b64
+      emit({ type: 'watched' })
+    } else if (visionMode === 'auto') {
+      // For auto mode, only store if we don't have a watched frame yet
+      // (auto-scan will use it on the next visual question)
+      if (!watched) {
+        watched = b64
+        emit({ type: 'watched' })
+      }
+    }
   }
 
   const framePart = (b64) => ({
@@ -1463,10 +1479,48 @@ export function createCascadeSession({
       // on most phones, which used to make `see` unusable inside a call.
       if (!screen) setSharedVisualSource(cam)
       emit({ type: 'camera', stream: cam.stream, video: cam.video })
+      // Use adaptive frame timer for auto-scan / continuous vision
+      cam.onFrame((force) => {
+        const b64 = cam?.grab(force)
+        if (b64 && visionMode !== 'off') handleVisionFrame(b64)
+      })
     } else if (!on && cam) {
+      cam.offFrame()
       clearSharedVisualSource(cam)
       cam.close(); cam = null
       emit({ type: 'camera', stream: null })
+    }
+  }
+
+  async function enableScreenShare(on) {
+    if (on && !screen) {
+      try {
+        screen = await createScreenCapture()
+        setSharedVisualSource(screen)
+        emit({ type: 'screen', stream: screen.stream, active: true })
+        // Use adaptive frame timer for auto-scan / continuous vision
+        screen.onFrame((force) => {
+          if (screen?.stopped) { enableScreenShare(false); return }
+          const b64 = screen?.grab(force)
+          if (b64 && visionMode !== 'off') handleVisionFrame(b64)
+        })
+        // If screen sharing stops from browser UI, auto-disable
+        screen.stream.getVideoTracks()[0].addEventListener('ended', () => {
+          clearSharedVisualSource(screen)
+          screen = null
+          if (cam) setSharedVisualSource(cam)
+          emit({ type: 'screen', stream: null, active: false })
+        })
+      } catch {
+        emit({ type: 'error', message: 'Screen sharing was cancelled or not supported.' })
+      }
+    } else if (!on && screen) {
+      screen.offFrame()
+      clearSharedVisualSource(screen)
+      screen.close()
+      screen = null
+      if (cam) setSharedVisualSource(cam)
+      emit({ type: 'screen', stream: null, active: false })
     }
   }
 
@@ -1494,6 +1548,8 @@ export function createCascadeSession({
     stopMicMonitor()
     speaker.close()
     abort?.abort()
+    cam?.offFrame()
+    screen?.offFrame()
     clearSharedVisualSource(cam)
     clearSharedVisualSource(screen)
     cam?.close()

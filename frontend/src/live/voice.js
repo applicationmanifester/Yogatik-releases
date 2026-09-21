@@ -49,7 +49,6 @@ const SYSTEM_HINT = {
   bm_george: /(en-gb|british).*male|george|ryan|richard/i,
 }
 
-/** How long a clause will wait for the neural voice before going robotic. */
 export function createSpeaker({
   engine = 'neural',
   voice = DEFAULT_VOICE,
@@ -287,4 +286,19 @@ export function defaultLang() {
   if (typeof navigator === 'undefined') return 'en-US'
   const l = navigator.language || 'en-US'
   return /-/.test(l) ? l : `${l}-${l.toUpperCase()}`
+}
+
+/**
+ * Pre-warm the neural voice (Kokoro-82M) at app load if cached.
+ * Starts download in background without blocking — first clause will use neural
+ * voice if ready, otherwise falls back to system.
+ */
+export async function prewarmNeuralVoice() {
+  if (typeof window === 'undefined') return
+  try {
+    const { loadNarrator, narratorCached } = await import('../video/speech')
+    if (!narratorCached()) return
+    // Start download in background, don't await
+    loadNarrator().catch(() => {})
+  } catch {}
 }

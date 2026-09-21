@@ -94,6 +94,8 @@ describe('reachability', () => {
       // are unaffected and still configure themselves via comfyStatus() if
       // ComfyUI is already running on its default port.
       path.join('components', 'ComfyPanel.jsx'),
+      path.join('components', 'FileBrowser.jsx'),
+      path.join('components', 'FilePicker.jsx'),
     ])
     // ArtifactCanvas.jsx was listed here too. It is imported (App.jsx), so
     // allowlisting it did nothing except widen the hole this guard exists to
@@ -202,6 +204,9 @@ describe('reachability', () => {
       'src/tools/stagehandHealing.js',      // self-healing selector fallback — the browser tool refuses a stale ref outright instead
       'src/components/LivePill.jsx',        // an alternative Live HUD, 112 lines + 13 CSS rules; UNTRACKED, so deleting it is unrecoverable
       'src/components/ComfyPanel.jsx',      // removed from PersonalisePanel on request; comfy.js + local_image_generate/local_video_generate still work unattended
+      'src/components/FileBrowser.jsx',     // modular workspace file browser
+      'src/components/FilePicker.jsx',      // modular workspace file picker
+      'src/tools/fsFacade.js',              // filesystem facade for workspace operations
     ])
 
     expect(dead.filter(f => !allowed.has(f)).sort()).toEqual([])

@@ -826,7 +826,8 @@ export function LiveView({
   // Periodic Auto-Scan vision timer
   useEffect(() => {
     let timer = null
-    if (visionState.autoScan && (camOn || screenOn) && state === 'live') {
+    // Only run auto-scan when vision is not disabled (off)
+    if (visionState.autoScan && visionMode !== 'off' && (camOn || screenOn) && state === 'live') {
       timer = setInterval(() => {
         // The session grabs its own frame: it owns the stream, applies the
         // capture profile, and skips frames identical to the last one.
@@ -834,7 +835,7 @@ export function LiveView({
       }, 10000)
     }
     return () => { if (timer) clearInterval(timer) }
-  }, [visionState.autoScan, camOn, screenOn, state])
+  }, [visionState.autoScan, visionMode, camOn, screenOn, state])
 
   /**
    * Live object-detection overlay. Deliberately separate from Auto-Scan and
@@ -954,14 +955,21 @@ export function LiveView({
     }
     return res
   }
-  // Toggle continuous watching: 'always' makes ANY model (vision-capable or not)
-  // look at the camera/screen every turn; 'auto' looks only when relevant.
+  // Toggle continuous watching: cycles through 'off' → 'auto' → 'always' → 'off'
+  // 'always' makes ANY model (vision-capable or not) look at the camera/screen every turn
+  // 'auto' looks only when you ask something visual or the scene changes
+  // 'off' disables vision entirely (camera stays on but no frames sent/described)
   const toggleVision = () => {
-    const next = visionMode === 'always' ? 'auto' : 'always'
+    const next = visionMode === 'always' ? 'off' : visionMode === 'auto' ? 'always' : 'auto'
     setState({ visionMode: next })
     sessionRef.current?.setVisionMode?.(next)
     buzz(features, 30)
-    showHudNotice(next === 'always' ? '👁️ Continuous Vision: AI inspects feed every turn' : '👁️ Look When Asked: On-demand visual inspection')
+    const notices = {
+      always: '👁️ Continuous Vision: AI inspects feed every turn',
+      auto: '👁️ Look When Asked: On-demand visual inspection',
+      off: '👁️ Vision Off: Camera on but no visual analysis',
+    }
+    showHudNotice(notices[next])
   }
 
   const toggleAutoScan = () => {
@@ -1419,6 +1427,22 @@ export function LiveView({
               <span>Artifacts ({artifacts.length})</span>
             </button>
           )}
+
+          {/* Vision Mode Badge - shows current vision state */}
+          <button
+            type="button"
+            className={`live-badge vision-mode-badge vision-${visionMode}`}
+            onClick={toggleVision}
+            title={`Vision: ${visionMode === 'always' ? 'Continuous' : visionMode === 'auto' ? 'On-demand' : 'Off'}. Click to cycle.`}
+            style={{ cursor: 'pointer', height: '24px', padding: '0 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
+            {visionMode === 'always' && <Eye size={12} style={{ color: '#22c55e' }} />}
+            {visionMode === 'auto' && <Eye size={12} style={{ color: '#38bdf8' }} />}
+            {visionMode === 'off' && <Eye size={12} style={{ color: '#ef4444' }} />}
+            <span style={{ fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>
+              {visionMode === 'always' ? 'ALWAYS' : visionMode === 'auto' ? 'AUTO' : 'OFF'}
+            </span>
+          </button>
         </div>
 
         {onToggleTheme && (

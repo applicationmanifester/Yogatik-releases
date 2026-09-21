@@ -319,7 +319,30 @@ function showActive(s) {
 // to, and back/forward would have no way to grey out.
 function navSnapshot(s) {
   const t = activeTab(s)
-  const rawUrl = t ? (t._pendingUrl || (t.hibernating ? (t.savedUrl || '') : safe(() => t.view.webContents.getURL(), ''))) : ''
+  // _pendingUrl: set as soon as did-start-navigation fires (so addr bar
+  // reflects the destination immediately), cleared on did-navigate.
+  // After clearing, webContents.getURL() should hold the committed URL —
+  // but on some pages (YouTube SPA, redirect chains) Electron emits
+  // did-navigate before the URL is fully committed, so getURL() still
+  // returns the old newtab / about:blank value for a brief window.
+  // Fall back to savedUrl (written on did-finish-load) when getURL()
+  // would produce a home URL but savedUrl has a real http(s) destination.
+  let rawUrl = ''
+  if (t) {
+    if (t._pendingUrl) {
+      rawUrl = t._pendingUrl
+    } else if (t.hibernating) {
+      rawUrl = t.savedUrl || ''
+    } else {
+      const live = safe(() => t.view.webContents.getURL(), '')
+      // If the live URL looks like a home/newtab URL but we have a real
+      // saved URL from a previous committed load, prefer the saved one so
+      // the address bar doesn't momentarily go blank mid-navigation.
+      rawUrl = (isNewTabUrl(live) && t.savedUrl && !isNewTabUrl(t.savedUrl))
+        ? t.savedUrl
+        : live
+    }
+  }
   const isHome = isNewTabUrl(rawUrl)
   return {
     conversationId: s.key === '__default__' ? null : s.key,
@@ -512,10 +535,15 @@ function wireTabListeners(s, tabId, tab) {
   })
   wc.on('did-navigate', () => {
     tab._pendingUrl = null
+    // Update savedUrl immediately on commit so navSnapshot fallback is current.
+    const committedUrl = safe(() => wc.getURL(), '')
+    if (committedUrl && !isNewTabUrl(committedUrl)) tab.savedUrl = committedUrl
     syncTabBar(s)
   })
   wc.on('did-navigate-in-page', () => {
     tab._pendingUrl = null
+    const committedUrl = safe(() => wc.getURL(), '')
+    if (committedUrl && !isNewTabUrl(committedUrl)) tab.savedUrl = committedUrl
     syncTabBar(s)
   })
 

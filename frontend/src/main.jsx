@@ -8,6 +8,8 @@ import { markAppHealthy } from './pwa'
 import { installErrorLog } from './errorLog'
 import { installShellGuard } from './shellGuard'
 import { autoStartOllama } from './ollama'
+import { preconnectProvider } from './live/latencyOptimizer'
+import { prewarmNeuralVoice } from './live/voice'
 import './styles.css'
 import { applyDocumentLocale } from './locale'
 
@@ -20,6 +22,20 @@ installShellGuard()
 
 // Auto-start Ollama daemon in the background (desktop-only; web no-op).
 autoStartOllama().catch(() => {})
+
+// Preconnect all AI provider origins at app load (not call start) — DNS + TLS + TCP warm.
+// Eliminates 100-300ms cold-start latency when user begins a Live call.
+const PROVIDER_ORIGINS = [
+  'https://generativelanguage.googleapis.com',
+  'https://api.groq.com',
+  'https://api.openai.com',
+  'https://openrouter.ai',
+  'https://integrate.api.nvidia.com',
+]
+PROVIDER_ORIGINS.forEach(preconnectProvider)
+
+// Pre-warm neural voice (Kokoro-82M) if cached — first clause won't be robotic.
+prewarmNeuralVoice().catch(() => {})
 
 // The tool registry (~195 tools) now loads as its own async chunk instead of
 // blocking the initial bundle (see agent.js: toolRegistry()/warmToolRegistry).

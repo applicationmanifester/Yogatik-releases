@@ -3,16 +3,88 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '10.2.0'
+export const APP_VERSION = '10.3.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.2.0 — File Workspace Management, DOMPurify Security & Isolated Composer Drafts'
+export const APP_CODENAME = 'Yogatik 10.3.0 — Adaptive Vision, Audio Device Recovery, Structured Reflex & Tool Hub'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.3.0",
+    "title": "Yogatik 10.3.0: Adaptive Vision, Audio Device Recovery, Structured Reflex & Tool Hub",
+    "date": "September 21, 2026",
+    "isLatest": true,
+    "highlights": [
+      "3-Way Vision & Adaptive Framerate: Tri-state vision mode control (Off / Auto / Always) with dynamic fps scaling (0.2fps static to 1.0fps motion), reducing bandwidth and token usage",
+      "Audio Device Recovery: Automated reconnection listeners for hot-swapped audio devices (headsets and external mics) ensuring uninterrupted live sessions",
+      "Prewarmed Neural Voice: Kokoro-82M speech synthesizer pre-warming on application initialization for instant natural voice feedback",
+      "Event-Driven Tool Status Hub: Centralized pub/sub tool lifecycle tracking with typed state transitions, diagnostics logging, and telemetry reporting",
+      "Electron HTTPS Upgrade & Fingerprint Guard: Automated HTTPS redirection and canvas/audio fingerprint protection layer on desktop browser sessions",
+      "Pyodide PDF Miner & Execution Guidance: Documented pure-Python alternatives (pdfminer.six) and clear runtime constraint guidance for sandbox execution"
+    ],
+    "sections": [
+      {
+        "category": "👁️ Live Vision & Multimodal",
+        "items": [
+          {
+            "title": "Tri-State Vision Mode & HUD Badge",
+            "description": "Cycle between Off, Auto, and Always vision modes with real-time HUD status badge and color indicators."
+          },
+          {
+            "title": "Adaptive Frame Rate Scaling",
+            "description": "Calculates perceptual hash distance to scale frame captures dynamically from 0.2 fps (static scenes) to 1.0 fps (active motion)."
+          },
+          {
+            "title": "Cascade Screen Sharing",
+            "description": "Integrated screen sharing with adaptive frame delivery into the Cascade multi-provider live session engine."
+          }
+        ]
+      },
+      {
+        "category": "🎙️ Audio & Voice Pipeline",
+        "items": [
+          {
+            "title": "Device Change Recovery",
+            "description": "Automatic recovery listener handles headphone and microphone plug/unplug events without dropping calls."
+          },
+          {
+            "title": "Neural Speech Pre-warming",
+            "description": "Pre-warms cached Kokoro-82M weights on startup so the very first speech clause uses natural neural voice without latency."
+          }
+        ]
+      },
+      {
+        "category": "⚡ Reflex Engine & Tool Hub",
+        "items": [
+          {
+            "title": "Structured Reflex Introspection",
+            "description": "Reflex engine now exposes structured intent classification and confidence metrics alongside instant on-device answers."
+          },
+          {
+            "title": "Tool Status Hub",
+            "description": "Event-driven hub tracking invocation lifecycle, timing buckets, error diagnostics, and reactive UI state updates."
+          }
+        ]
+      },
+      {
+        "category": "🛡️ Desktop & Security",
+        "items": [
+          {
+            "title": "HTTPS Upgrade & Anti-Fingerprinting",
+            "description": "Desktop session layer forces secure HTTPS upgrades and protects against browser fingerprinting."
+          },
+          {
+            "title": "Address Bar Navigation Smoothing",
+            "description": "Prevents URL flicker during SPA transitions (e.g. YouTube) and redirects by intelligently falling back to committed URLs."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "10.2.0",
     "title": "Yogatik 10.2.0: File Workspace Management, DOMPurify Security & Isolated Composer Drafts",
     "date": "September 19, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Multi-Chat Composer Isolation: Chat-scoped unsubmitted prompt drafts with sessionStorage persistence, preventing prompt leakage across conversations and scoping prompt enhancement undo toasts",
       "File Workspace & Picker Components: Virtualized FileBrowser tree view with search filtering and FilePicker with magic-bytes binary validation, MIME enforcement, and path traversal sanitization",

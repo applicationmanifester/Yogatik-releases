@@ -16,6 +16,13 @@ const MAX_EDGE = 768        // MEDIA_RESOLUTION_MEDIUM gets nothing from more
 const HASH_EDGE = 16        // 16x16 grayscale average hash
 const HASH_THRESHOLD = 16   // ~6% of bits flipped; below that it is sensor noise
 
+// Adaptive frame rate: static scene → 0.2fps, slow changes → 0.5fps, motion → 1fps (API ceiling)
+const ADAPTIVE_FRAME_MIN_MS = 1000   // 1fps max (API ceiling)
+const ADAPTIVE_FRAME_MID_MS = 2000   // 0.5fps
+const ADAPTIVE_FRAME_MAX_MS = 5000   // 0.2fps (static scene)
+const ADAPTIVE_HASH_STABLE_THRESHOLD = 4  // <4 bits = static
+const ADAPTIVE_HASH_SLOW_THRESHOLD = 8   // <8 bits = slow changes
+
 function makeHasher() {
   const c = document.createElement('canvas')
   c.width = c.height = HASH_EDGE
@@ -58,9 +65,15 @@ async function attach(stream) {
   let prevFrame = null      // the frame before the most recent one
   let lastFrame = null
 
+  // Adaptive frame rate state
+  let adaptiveIntervalMs = ADAPTIVE_FRAME_MIN_MS // Start at 1fps (max)
+  let frameTimer = null
+  let frameCallback = null
+  let lastHashDistance = 0
+
   // Rolling temporal frame buffer (Vision-Agents pattern)
   // Keeps the last ~5 seconds of frames in memory for motion/action reasoning
-  const temporalTicker = setInterval(() => {
+  let temporalTicker = setInterval(() => {
     if (stopped || !video.videoWidth) return
     temporalVideoBuffer.pushFrame(video, { maxEdge: 640, quality: 0.75 })
   }, 1000)
@@ -68,12 +81,57 @@ async function attach(stream) {
   stream.getVideoTracks()[0]?.addEventListener('ended', () => {
     stopped = true
     clearInterval(temporalTicker)
+    if (frameTimer) { clearInterval(frameTimer); frameTimer = null }
   })
+
+  function clearTemporalTicker() {
+    if (temporalTicker) {
+      clearInterval(temporalTicker)
+      temporalTicker = null
+    }
+  }
+
+  function updateAdaptiveInterval(hashDistance) {
+    lastHashDistance = hashDistance
+    // <4 bits changed = static scene → 0.2fps (5000ms)
+    // <8 bits changed = slow changes → 0.5fps (2000ms)
+    // >=8 bits = motion → 1fps (1000ms, API ceiling)
+    let newInterval
+    if (hashDistance < ADAPTIVE_HASH_STABLE_THRESHOLD) {
+      newInterval = ADAPTIVE_FRAME_MAX_MS
+    } else if (hashDistance < ADAPTIVE_HASH_SLOW_THRESHOLD) {
+      newInterval = ADAPTIVE_FRAME_MID_MS
+    } else {
+      newInterval = ADAPTIVE_FRAME_MIN_MS
+    }
+    if (newInterval !== adaptiveIntervalMs && frameCallback) {
+      adaptiveIntervalMs = newInterval
+      clearInterval(frameTimer)
+      frameTimer = setInterval(() => frameCallback(true), adaptiveIntervalMs)
+    }
+  }
+
+  function startFrameTimer(cb) {
+    frameCallback = cb
+    if (frameTimer) clearInterval(frameTimer)
+    frameTimer = setInterval(() => cb(true), adaptiveIntervalMs)
+  }
+
+  function stopFrameTimer() {
+    if (frameTimer) { clearInterval(frameTimer); frameTimer = null }
+    frameCallback = null
+  }
 
   return {
     stream,
     video,
     get stopped() { return stopped },
+
+    /** Start adaptive frame timer with a callback */
+    onFrame(cb) { startFrameTimer(cb) },
+
+    /** Stop adaptive frame timer */
+    offFrame() { stopFrameTimer() },
 
     /**
      * @param {boolean} force capture even if the scene has not changed
@@ -84,9 +142,13 @@ async function attach(stream) {
     grab(force = false, profile = {}) {
       if (!video.videoWidth || stopped) return null
       const h = hash(video)
-      const changed = !lastHash || distance(lastHash, h) > HASH_THRESHOLD
+      const hashDistance = lastHash ? distance(lastHash, h) : 256
+      const changed = !lastHash || hashDistance > HASH_THRESHOLD
       if (!changed && !force) return null
       lastHash = h
+
+      // Update adaptive interval based on scene change rate
+      updateAdaptiveInterval(hashDistance)
 
       const { maxEdge = MAX_EDGE, quality = 0.7, crop = 0 } = profile
       const vw = video.videoWidth
@@ -126,7 +188,7 @@ async function attach(stream) {
 
     close() {
       stopped = true
-      clearInterval(temporalTicker)
+      clearTemporalTicker()
       stream.getTracks().forEach(t => t.stop())
       video.srcObject = null
     },

@@ -1,101 +1,150 @@
 /**
- * Tool-status hub — a tiny in-memory pub/sub that tracks the live lifecycle of
- * every tool invocation (running → done | error) plus timing. Decoupled from
- * React so the agent loop can publish without importing the UI, and so it is
- * unit-testable without a DOM. Powers the ToolStatusPanel ("ready / loading /
- * failed" + retry) and the standardised, friendly error UI.
- *
- * Not persisted: this is ephemeral turn state, unlike errorLog.js (which keeps a
- * durable ring buffer for diagnostics). The two are complementary — begin()/fail()
- * here also forwards failures to logError so a screenshot still shows what broke.
+ * Tool Status Hub - manages per-invocation lifecycle records for tool calls.
+ * Provides publish/subscribe for UI components to react to tool state changes.
  */
-import { logError, diagnoseError } from './errorLog'
-import { trackToolSettled } from './analytics'
 
-const LONG_RUNNING_MS = 4000 // past this a tool is "slow", surfaced with a spinner
+import { trackToolSettled, latencyBucket } from './analytics.js';
+import { diagnoseError, logError } from './errorLog.js';
 
-let _seq = 0
-const _active = new Map() // id -> record
-const _subs = new Set()
+// ==================== Types ====================
+/** @typedef {'idle'|'running'|'done'|'failed'} ToolPhase */
+/** @typedef {{ id: string, name: string, args: any, startedAt: number, phase: ToolPhase, endedAt?: number, error?: string, diagnosis?: any }} ToolRecord */
 
-function snapshot() {
-  return [..._active.values()].map(r => ({ ...r }))
-}
+const LONG_RUNNING_MS = 4000; // past this a tool is "slow", surfaced with a spinner
+const TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// ==================== State ====================
+let _seq = 0;
+const _active = new Map(); // id -> ToolRecord
+const _subscribers = new Set(); // Set<(records: ToolRecord[]) => void>
+
+// ==================== Helpers ====================
 
 function emit() {
-  const list = snapshot()
-  for (const fn of _subs) {
-    try { fn(list) } catch { /* a bad subscriber must not break the hub */ }
+  const snapshot = [..._active.values()].map(cloneRecord);
+  for (const fn of _subscribers) {
+    try { fn(snapshot); } catch { /* ignore subscriber errors */ }
   }
 }
 
-/** Subscribe to status changes. Returns an unsubscribe fn. Fires once immediately. */
-export function subscribeToolStatus(fn) {
-  _subs.add(fn)
-  try { fn(snapshot()) } catch { /* ignore */ }
-  return () => _subs.delete(fn)
+function cloneRecord(rec) {
+  // Shallow clone is sufficient for our flat record structure
+  return { ...rec };
 }
 
-/** Mark a tool invocation as started. Returns an opaque id used to settle it. */
-export function beginTool(name, args) {
-  const id = `${name}#${++_seq}`
-  _active.set(id, {
+function generateId(toolName) {
+  return `${toolName}#${++_seq}`;
+}
+
+// ==================== Public API ====================
+
+/**
+ * Begins tracking a new tool invocation.
+ * @param {string} toolName - Name of the tool being invoked
+ * @param {any} [args] - Arguments passed to the tool (preserved as-is, including falsy values)
+ * @returns {string} The invocation ID
+ */
+export function beginTool(toolName, args) {
+  const id = generateId(toolName);
+  const rec = {
     id,
-    name: String(name || 'tool'),
-    args: args || undefined,
-    phase: 'running',
+    name: String(toolName || 'tool'),
+    args, // preserve args exactly as provided (including null/undefined/0/'')
     startedAt: Date.now(),
-    endedAt: null,
-    error: null,
-    diagnosis: null,
-  })
-  emit()
-  return id
+    phase: 'running',
+  };
+  _active.set(id, rec);
+  emit();
+  return id;
 }
 
 /**
- * Settle an invocation from its result object. A tool result is a failure when it
- * is falsy or `{success:false}` or carries an `error` — matching ToolResultCard's
- * own convention so the panel and the card never disagree.
+ * Settles a tool invocation as either done or failed.
+ * @param {string} id - The invocation ID returned by beginTool
+ * @param {{ error?: string|Error|null, success?: boolean, [key: string]: any }} result - Result object; if error is truthy or success===false, marks as failed
  */
 export function settleTool(id, result) {
-  const rec = _active.get(id)
-  if (!rec) return
-  const failed = !result || result.success === false || !!result.error
-  rec.phase = failed ? 'error' : 'done'
-  rec.endedAt = Date.now()
-  if (failed) {
-    const message = result?.error || 'Unknown error'
-    rec.error = String(message)
-    rec.diagnosis = diagnoseError(message)
-    logError('tool', `${rec.name}: ${rec.error}`, null, { tool: rec.name })
+  const rec = _active.get(id);
+  if (!rec) return; // no-op for unknown IDs
+
+  const hasError = !result || result.success === false || !!result?.error;
+  
+  if (hasError) {
+    const message = result?.error instanceof Error ? result.error.message : String(result?.error || 'Unknown error');
+    rec.phase = 'error';
+    rec.error = message;
+    rec.diagnosis = diagnoseError(message);
+    logError('tool', `${rec.name}: ${rec.error}`, null, { tool: rec.name });
+  } else {
+    rec.phase = 'done';
   }
-  // Opt-in analytics only — a hard no-op unless the user enabled it.
-  trackToolSettled(rec.name, !failed, rec.endedAt - rec.startedAt, failed ? rec.diagnosis?.type : undefined)
-  emit()
-  // Successful and errored records linger briefly so the UI can animate them out;
-  // the panel filters what it shows. Auto-prune keeps the map from growing.
-  const ttl = failed ? 8000 : 1200
-  setTimeout(() => { if (_active.get(id) === rec) { _active.delete(id); emit() } }, ttl)
+  
+  rec.endedAt = Date.now();
+  emit();
+  trackToolSettled(rec.name, hasError ? 'error' : 'success', rec.endedAt - rec.startedAt, hasError ? rec.diagnosis?.type : undefined);
+
+  // Schedule cleanup after TTL (different TTL for failed vs success to allow UI animations)
+  const ttl = hasError ? 8000 : 1200;
+  setTimeout(() => {
+    if (_active.get(id) === rec) {
+      _active.delete(id);
+      emit();
+    }
+  }, ttl);
 }
 
-/** True once a running tool has crossed the "slow" threshold (for spinners/toasts). */
+/**
+ * Subscribes to tool status updates.
+ * Immediately receives a snapshot of current records, then called on every change.
+ * @param {(records: ToolRecord[]) => void} fn - Callback receiving cloned record array
+ * @returns {() => void} Unsubscribe function
+ */
+export function subscribeToolStatus(fn) {
+  _subscribers.add(fn);
+  // Immediate snapshot (with error handling)
+  try {
+    fn([..._active.values()].map(cloneRecord));
+  } catch {
+    // ignore subscriber errors during initial call
+  }
+  return () => _subscribers.delete(fn);
+}
+
+/**
+ * Returns a snapshot of all current tool records.
+ * @returns {ToolRecord[]}
+ */
+export function snapshot() {
+  return [..._active.values()].map(cloneRecord);
+}
+
+/**
+ * Checks if a specific tool invocation has been running longer than the threshold.
+ * @param {ToolRecord} rec - A record from snapshot() or subscribe callback
+ * @param {number} [now=Date.now()] - Optional timestamp for testing
+ * @returns {boolean}
+ */
 export function isLongRunning(rec, now = Date.now()) {
-  return rec?.phase === 'running' && (now - rec.startedAt) >= LONG_RUNNING_MS
+  return rec?.phase === 'running' && (now - rec.startedAt) >= LONG_RUNNING_MS;
 }
 
-/** Human-friendly one-liner for a settled/failed record (reuses diagnoseError). */
+/**
+ * Returns a user-friendly error message for a record, if any.
+ * @param {ToolRecord} rec
+ * @returns {string|null}
+ */
 export function friendlyError(rec) {
-  const d = rec?.diagnosis || (rec?.error ? diagnoseError(rec.error) : null)
-  if (!d) return 'The tool ran into a problem.'
-  return d.suggestion || d.title || 'The tool ran into a problem.'
+  if (!rec || rec.phase !== 'error') return null;
+  const d = rec.diagnosis || (rec?.error ? diagnoseError(rec.error) : null);
+  if (!d) return 'The tool ran into a problem.';
+  return d.suggestion || d.title || 'The tool ran into a problem.';
 }
 
-/** Test/reset helper — clears all state and subscribers. */
+/** Resets all internal state (for testing only). */
 export function _resetToolStatus() {
-  _active.clear()
-  _subs.clear()
-  _seq = 0
+  _active.clear();
+  _subscribers.clear();
+  _seq = 0;
 }
 
-export { LONG_RUNNING_MS }
+export { LONG_RUNNING_MS };

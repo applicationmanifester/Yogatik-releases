@@ -462,11 +462,36 @@
     (function () {
       var RELEASES = [
   {
+    "version": "10.3.0",
+    "title": "Yogatik 10.3.0: Adaptive Vision, Audio Device Recovery, Structured Reflex & Tool Hub",
+    "date": "September 21, 2026",
+    "codename": "Adaptive Vision, Audio Device Recovery, Structured Reflex & Tool Hub",
+    "isLatest": true,
+    "highlights": [
+      [
+        "Tri-State Vision Mode & Adaptive Framerate",
+        "Off, Auto, and Always vision modes with real-time HUD status badge and dynamic frame-rate scaling (0.2fps to 1.0fps) based on scene motion"
+      ],
+      [
+        "Audio Hardware Recovery & Prewarmed Voice",
+        "Automatic reconnection listeners for hot-swapped headsets and microphones, plus startup pre-warming of neural Kokoro-82M speech weights"
+      ],
+      [
+        "Event-Driven Tool Status Hub",
+        "Centralized pub/sub tool lifecycle tracking with typed state transitions, diagnostics logging, and execution telemetry"
+      ],
+      [
+        "Electron HTTPS Upgrade & Fingerprint Guard",
+        "Automated HTTPS redirection, anti-fingerprinting defenses, and smoother address bar navigation during SPA transitions"
+      ]
+    ]
+  },
+  {
     "version": "10.2.0",
     "title": "Yogatik 10.2.0: File Workspace Management, DOMPurify Security & Isolated Composer Drafts",
     "date": "September 19, 2026",
     "codename": "File Workspace Management, DOMPurify Security & Isolated Composer Drafts",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Per-Conversation Composer Drafts",

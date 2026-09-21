@@ -105,7 +105,13 @@ export function LiveSettings({
 
           <div className="ls-seg" role="group" aria-label="How often to look">
             <button
-              className={`ls-seg-btn${visionMode !== 'always' ? ' active' : ''}`}
+              className={`ls-seg-btn${visionMode === 'off' ? ' active' : ''}`}
+              onClick={() => onVisionMode?.('off')}
+            >
+              Off
+            </button>
+            <button
+              className={`ls-seg-btn${visionMode === 'auto' ? ' active' : ''}`}
               onClick={() => onVisionMode?.('auto')}
             >
               When relevant
@@ -120,6 +126,8 @@ export function LiveSettings({
           <p className="ldp-empty">
             {visionMode === 'always'
               ? 'Looks at the camera on every turn. More accurate, and more tokens.'
+              : visionMode === 'off'
+              ? 'Camera is on but vision is disabled. No frames are sent or described.'
               : 'Looks when you ask something visual or the scene changes.'}
           </p>
         </div>

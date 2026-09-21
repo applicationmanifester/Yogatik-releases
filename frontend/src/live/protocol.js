@@ -14,9 +14,10 @@ export const LIVE_WS =
 export const LIVE_MODELS = [
   'gemini-2.0-flash-exp',
   'gemini-2.0-flash',
-  'gemini-2.5-flash-native-audio-preview-09-2025',
+  'gemini-2.5-flash-preview-native-audio',
   'gemini-live-2.5-flash-preview',
-  'gemini-3.1-flash-live-preview',
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
 ]
 
 export function liveEndpoint(apiKey) {
