@@ -12,6 +12,7 @@ import { startActivityTurn, publishStream, publishStep, endActivityTurn, setActi
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
 import ToolStatusPanel from './components/ToolStatusPanel'
+import { forceSettleAll } from './toolStatus'
 import A11yAnnouncer, { announce, announceAssertive } from './components/A11yAnnouncer'
 import { trackConversation, trackSlashCommand, trackLiveSession, getExpertiseLevelSync, subscribeExpertise, hiddenForLevel } from './expertiseTracker'
 import CrisisCard from './components/CrisisCard'
@@ -2478,6 +2479,8 @@ export default function App() {
         'This chat is currently generating a response. Stop generation and delete?',
         async () => {
           await stopGeneration(cClientId).catch(() => {})
+          forceSettleAll('Stopped by user.')
+          endActivityTurn(cClientId)
           setLoadingMap(prev => { const n = { ...prev }; delete n[cClientId]; return n })
           setStreamText(cClientId, '')
           setStatusMap(prev => ({ ...prev, [cClientId]: '' }))
@@ -2515,6 +2518,8 @@ export default function App() {
     const activeClientId = conv?.clientId
     if (activeClientId) {
       await stopGeneration(activeClientId).catch(() => {})
+      forceSettleAll('Stopped by user.')
+      endActivityTurn(activeClientId)
       setLoadingMap(prev => { const n = { ...prev }; delete n[activeClientId]; return n })
       setStreamText(activeClientId, '')
       setStatusMap(prev => ({ ...prev, [activeClientId]: '' }))
@@ -6253,7 +6258,7 @@ export default function App() {
       )}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={handleAuth} />}
       {features.artifacts && activeArtifact && <ArtifactPanel artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />}
-      {showActivity && <ActivityPanel conversationId={conv?.clientId} onClose={() => setShowActivity(false)} />}
+      {showActivity && <ActivityPanel conversationId={conv?.clientId ?? 'default'} onClose={() => setShowActivity(false)} />}
       {browserPanel && (
         <BrowserPanel
           conversationId={browserConvId}

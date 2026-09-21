@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "comlink": "^4.4.2",
-    "dompurify": "^3.4.15"
+    "dompurify": "^3.4.15",
+    "lru-cache": "^11.5.3"
   }
 }

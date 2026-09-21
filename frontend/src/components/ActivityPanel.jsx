@@ -20,6 +20,9 @@ export function ActivityPanel({ conversationId, onClose }) {
   const stickRef = useRef(true)
 
   useEffect(() => {
+    // Reset immediately so we never show stale state from the previous bucket
+    // while the new subscription's first snapshot is being delivered.
+    setAct({ reasoning: '', answer: '', steps: [], running: false })
     return subscribeActivity(setAct, conversationId)
   }, [conversationId])
 

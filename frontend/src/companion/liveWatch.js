@@ -161,6 +161,11 @@ export function createLiveWatcher({
       running = false
       if (timer) cancel(timer)
       timer = null
+      // If a round is mid-flight, status(IDLE) will fire once it resolves
+      // (the finally block sets inFlight = false, and the next tick check
+      // finds running===false and bails). We still fire IDLE immediately so
+      // the watcher's own status feed reflects the intent — the UI-level
+      // `watching` flag is managed separately in useCompanionBrain.
       status(STATUS.IDLE)
     },
     pause(on = true) {
@@ -182,6 +187,8 @@ export function createLiveWatcher({
     /** The user is interacting — keep the cadence at the floor. */
     setEngaged(v) { engaged = !!v },
     isRunning: () => running,
+    /** True when a round is still in-flight (useful for drain checks). */
+    isInFlight: () => inFlight,
     getState: () => ({ watch, adaptive, looks, skipped, lastReason }),
   }
 }

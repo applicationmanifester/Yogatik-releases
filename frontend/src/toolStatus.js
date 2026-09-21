@@ -7,11 +7,12 @@ import { trackToolSettled, latencyBucket } from './analytics.js';
 import { diagnoseError, logError } from './errorLog.js';
 
 // ==================== Types ====================
-/** @typedef {'idle'|'running'|'done'|'failed'} ToolPhase */
+/** @typedef {'idle'|'running'|'done'|'error'} ToolPhase */
 /** @typedef {{ id: string, name: string, args: any, startedAt: number, phase: ToolPhase, endedAt?: number, error?: string, diagnosis?: any }} ToolRecord */
 
 const LONG_RUNNING_MS = 4000; // past this a tool is "slow", surfaced with a spinner
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_RUNNING_MS = 2 * 60 * 1000; // 2 minutes — auto-expire stuck 'running' records
 
 // ==================== State ====================
 let _seq = 0;
@@ -55,6 +56,22 @@ export function beginTool(toolName, args) {
   };
   _active.set(id, rec);
   emit();
+
+  // Watchdog: if settleTool is never called (e.g. network drop / abort) the
+  // record auto-expires after MAX_RUNNING_MS so the panel never stays stuck.
+  setTimeout(() => {
+    const current = _active.get(id);
+    if (current && current.phase === 'running') {
+      current.phase = 'error';
+      current.error = 'Timed out — tool did not respond.';
+      current.endedAt = Date.now();
+      emit();
+      setTimeout(() => {
+        if (_active.get(id) === current) { _active.delete(id); emit(); }
+      }, 8000);
+    }
+  }, MAX_RUNNING_MS);
+
   return id;
 }
 
@@ -138,6 +155,24 @@ export function friendlyError(rec) {
   const d = rec.diagnosis || (rec?.error ? diagnoseError(rec.error) : null);
   if (!d) return 'The tool ran into a problem.';
   return d.suggestion || d.title || 'The tool ran into a problem.';
+}
+
+/**
+ * Force-settles every currently 'running' record as an error.
+ * Call this when the agent stream is aborted so the panel clears immediately
+ * instead of waiting for the MAX_RUNNING_MS watchdog.
+ * @param {string} [reason]
+ */
+export function forceSettleAll(reason = 'Cancelled.') {
+  for (const [id, rec] of _active) {
+    if (rec.phase !== 'running') continue;
+    rec.phase = 'error';
+    rec.error = reason;
+    rec.endedAt = Date.now();
+    // Short TTL — error badge fades out, not worth lingering.
+    setTimeout(() => { if (_active.get(id) === rec) { _active.delete(id); emit(); } }, 4000);
+  }
+  emit();
 }
 
 /** Resets all internal state (for testing only). */

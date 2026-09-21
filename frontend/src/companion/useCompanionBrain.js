@@ -238,10 +238,26 @@ export function useCompanionBrain({
   }, [buildWatcher])
 
   const stopWatch = useCallback(() => {
-    watcherRef.current?.stop()
-    setWatching(false)
+    const watcher = watcherRef.current
+    watcher?.stop()
     captureRef.current?.stop(SOURCE.SCREEN)
     trailRef.current.source('Stopped watching.')
+
+    // If a round is mid-flight, defer the UI badge flip until it resolves.
+    // This prevents isRunning()===true while watching===false, which caused
+    // the "modal still running but UI showed stopped" symptom.
+    if (watcher?.isInFlight()) {
+      const poll = setInterval(() => {
+        if (!watcher.isInFlight()) {
+          clearInterval(poll)
+          setWatching(false)
+        }
+      }, 100)
+      // Safety cap: flip after 10s regardless (handles a permanently-hung round).
+      setTimeout(() => { clearInterval(poll); setWatching(false) }, 10_000)
+    } else {
+      setWatching(false)
+    }
   }, [])
 
   /* ── camera ───────────────────────────────────────────────────────────── */
