@@ -61,6 +61,7 @@ yogatik-browser/release/
 *.tmp
 *.bak
 .firebase/
+.claude/worktrees/
 
 # Licence signing key — the private half must NEVER be committed.
 # It lives in Firebase secrets (functions:secrets:set LICENSE_PRIVATE_KEY).

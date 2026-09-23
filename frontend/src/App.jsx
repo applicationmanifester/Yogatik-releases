@@ -6395,11 +6395,11 @@ export default function App() {
                 defaultValue={editingPersona ? editingPersona.icon : '🤖'}
                 placeholder="e.g. 🤖, 🧑‍💻, ✍️"
                 maxLength={4}
-                style={{ padding: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'inherit' }}
+                style={{ padding: '8px', background: 'var(--bg-input, rgba(127,127,127,0.1))', border: '1px solid var(--border, rgba(127,127,127,0.2))', borderRadius: '4px', color: 'var(--text-primary, inherit)' }}
               />
             </div>
             <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label htmlFor="persona-name" style={{ fontSize: '12px' }}>Persona Name</label>
+              <label htmlFor="persona-name" style={{ fontSize: '12px', color: 'var(--text-primary, inherit)' }}>Persona Name</label>
               <input
                 id="persona-name"
                 name="name"
@@ -6407,11 +6407,11 @@ export default function App() {
                 defaultValue={editingPersona ? editingPersona.name : ''}
                 placeholder="e.g. French Translator"
                 required
-                style={{ padding: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'inherit' }}
+                style={{ padding: '8px', background: 'var(--bg-input, rgba(127,127,127,0.1))', border: '1px solid var(--border, rgba(127,127,127,0.2))', borderRadius: '4px', color: 'var(--text-primary, inherit)' }}
               />
             </div>
             <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label htmlFor="persona-prompt" style={{ fontSize: '12px' }}>System Instructions / Prompt</label>
+              <label htmlFor="persona-prompt" style={{ fontSize: '12px', color: 'var(--text-primary, inherit)' }}>System Instructions / Prompt</label>
               <textarea
                 id="persona-prompt"
                 name="system_prompt"
@@ -6419,7 +6419,7 @@ export default function App() {
                 placeholder="e.g. You are a French translator. Translate all user inputs into French..."
                 required
                 rows={5}
-                style={{ padding: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'inherit', resize: 'vertical' }}
+                style={{ padding: '8px', background: 'var(--bg-input, rgba(127,127,127,0.1))', border: '1px solid var(--border, rgba(127,127,127,0.2))', borderRadius: '4px', color: 'var(--text-primary, inherit)', resize: 'vertical' }}
               />
             </div>
             <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>

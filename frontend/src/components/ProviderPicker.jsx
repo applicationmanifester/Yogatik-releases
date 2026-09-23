@@ -115,10 +115,11 @@ export function ProviderPicker({
             bottom: 'calc(100% + 6px)',
             minWidth: '220px',
             maxHeight: 'min(46vh, 320px)',
-            background: 'var(--bg-secondary, #1a1a1a)',
-            border: '1px solid var(--border, #333)',
+            background: 'var(--bg-card, var(--bg-secondary, #1a1a24))',
+            color: 'var(--text-primary, inherit)',
+            border: '1px solid var(--border, rgba(127,127,127,0.25))',
             borderRadius: '8px',
-            boxShadow: '0 10px 32px rgba(0,0,0,0.5)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
             zIndex: 70,
             overflow: 'hidden',
             display: 'flex',
@@ -126,8 +127,8 @@ export function ProviderPicker({
           }}
         >
           {Object.keys(providers).length > 6 && (
-            <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border, rgba(255,255,255,0.08))', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Search size={12} style={{ opacity: 0.5 }} />
+            <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border, rgba(127,127,127,0.15))', background: 'var(--bg-tertiary, rgba(127,127,127,0.06))', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Search size={12} style={{ opacity: 0.6, color: 'var(--text-secondary, inherit)' }} />
               <input
                 ref={inputRef}
                 value={q}
@@ -137,7 +138,7 @@ export function ProviderPicker({
                   background: 'transparent',
                   border: 'none',
                   outline: 'none',
-                  color: 'inherit',
+                  color: 'var(--text-primary, inherit)',
                   fontSize: '12px',
                   width: '100%',
                 }}
@@ -165,14 +166,15 @@ export function ProviderPicker({
                     padding: '6px 10px',
                     fontSize: '12px',
                     borderRadius: '5px',
-                    background: isSelected ? 'rgba(255, 107, 53, 0.15)' : 'transparent',
-                    color: isSelected ? 'var(--accent, #ff6b35)' : 'var(--text-primary, #ddd)',
+                    background: isSelected ? 'var(--accent-glow, rgba(255, 107, 53, 0.15))' : 'transparent',
+                    color: isSelected ? 'var(--accent, #ff6b35)' : 'var(--text-primary, inherit)',
                     border: 'none',
                     cursor: 'pointer',
                     textAlign: 'left',
                     width: '100%',
+                    transition: 'background 0.1s ease',
                   }}
-                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--bg-tertiary, rgba(127,127,127,0.1))' }}
                   onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
@@ -185,12 +187,12 @@ export function ProviderPicker({
                         flexShrink: 0,
                       }}
                     />
-                    <span style={{ fontWeight: isSelected ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontWeight: isSelected ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isSelected ? 'var(--accent, #ff6b35)' : 'var(--text-primary, inherit)' }}>
                       {def.name || pid}
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                    {ready && <span style={{ fontSize: '10px', opacity: 0.6, background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', padding: '1px 5px', borderRadius: 4 }}>ready</span>}
+                    {ready && <span style={{ fontSize: '10px', opacity: 0.7, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '1px 5px', borderRadius: 4 }}>ready</span>}
                     {isSelected && <Check size={12} style={{ color: 'var(--accent, #ff6b35)' }} />}
                   </div>
                 </button>
@@ -210,8 +212,8 @@ export function ProviderPicker({
                 fontSize: '11px',
                 fontWeight: 600,
                 color: 'var(--accent, #ff6b35)',
-                borderTop: '1px solid var(--border, rgba(255,255,255,0.08))',
-                background: 'rgba(255, 107, 53, 0.05)',
+                borderTop: '1px solid var(--border, rgba(127,127,127,0.15))',
+                background: 'var(--bg-tertiary, rgba(127,127,127,0.06))',
                 borderLeft: 'none',
                 borderRight: 'none',
                 borderBottom: 'none',

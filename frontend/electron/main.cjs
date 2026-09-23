@@ -5,7 +5,7 @@
 //   menu       — native app menu + shortcuts
 //   windowState— remember size/position between launches
 
-const { app, BrowserWindow, shell, globalShortcut, ipcMain, desktopCapturer, screen, clipboard } = require('electron')
+const { app, BrowserWindow, shell, globalShortcut, ipcMain, desktopCapturer, screen, clipboard, nativeImage } = require('electron')
 const path = require('path')
 const os = require('os')
 const http = require('http')
@@ -98,8 +98,11 @@ process.on('unhandledRejection', (reason) => {
   console.error('[main] unhandled rejection:', reason?.stack || msg)
 })
 
-// Windows needs an explicit AppUserModelID for notifications to display.
-app.setAppUserModelId('app.yogatik.desktop')
+// Windows needs an explicit AppUserModelID for notifications and taskbar grouping.
+// In development mode (unpackaged), setting an ID without a registered shortcut causes Windows to show a blank icon.
+if (process.platform === 'win32') {
+  app.setAppUserModelId(app.isPackaged ? 'app.yogatik.desktop' : process.execPath)
+}
 
 // ── Performance & High-Computation Hardware Acceleration ─────────────────────
 app.commandLine.appendSwitch('enable-gpu-rasterization')
@@ -116,6 +119,10 @@ app.commandLine.appendSwitch('enable-hardware-overlays')
 
 function createWindow() {
   const state = windowState.restore({ width: 1200, height: 820 })
+  const iconPath = process.platform === 'win32'
+    ? path.join(__dirname, 'icon.ico')
+    : path.join(__dirname, 'icon.png')
+  const appIcon = nativeImage.createFromPath(iconPath)
 
   mainWindow = new BrowserWindow({
     width: state.width,
@@ -125,7 +132,7 @@ function createWindow() {
     minWidth: 380,
     minHeight: 560,
     show: false,
-    icon: path.join(__dirname, 'icon.ico'),
+    icon: appIcon.isEmpty() ? iconPath : appIcon,
     backgroundColor: '#0a0e14',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -134,6 +141,12 @@ function createWindow() {
       sandbox: false,
     },
   })
+
+  if (process.platform === 'win32' && !appIcon.isEmpty()) {
+    try {
+      mainWindow.setIcon(appIcon)
+    } catch {}
+  }
 
   // Apply CSP headers
   applyCSP(mainWindow)

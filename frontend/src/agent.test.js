@@ -24,7 +24,7 @@ const { streamChat } = await import('./llm')
 const { getToolSchemas, executeTool } = await import('./tools/index')
 const { describeWithoutModel } = await import('./vision/source')
 const { getMcpServers, setMcpServers, refreshMcpTools } = await import('./mcp')
-const { runAgent } = await import('./agent')
+const { runAgent, hasUnexecutedToolIntent } = await import('./agent')
 const { getReflexStats, _resetReflexMetrics } = await import('./live/metrics')
 
 /** Queue a scripted response per LLM round. */
@@ -1195,6 +1195,23 @@ describe('response watchdog integration in runAgent', () => {
     expect(onDone).toHaveBeenCalledWith(expect.objectContaining({
       watchdogEscalate: true,
     }))
+  })
+})
+
+describe('hasUnexecutedToolIntent', () => {
+  it('detects reasoning thoughts planning workspace exploration and inspection', () => {
+    expect(hasUnexecutedToolIntent('', 'Let me first explore the project structure to understand what needs to be fixed.')).toBe(true)
+    expect(hasUnexecutedToolIntent('', 'I should look at the electron files that were read and see if there are any issues.')).toBe(true)
+    expect(hasUnexecutedToolIntent('', "Let me start by examining the project structure and understanding what we're working with.")).toBe(true)
+    expect(hasUnexecutedToolIntent('', "Now I'll add the missing taskbar configuration.")).toBe(true)
+    expect(hasUnexecutedToolIntent('', 'Let me apply these fixes now.')).toBe(true)
+    expect(hasUnexecutedToolIntent('', 'We should check the electron folder.')).toBe(true)
+  })
+
+  it('returns false for plain completed conversational statements', () => {
+    expect(hasUnexecutedToolIntent('The capital of France is Paris.')).toBe(false)
+    expect(hasUnexecutedToolIntent('I have finished fixing the issue.')).toBe(false)
+    expect(hasUnexecutedToolIntent('Here is the explanation you asked for.')).toBe(false)
   })
 })
 

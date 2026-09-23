@@ -594,11 +594,32 @@ const MessageBubble = React.memo(function MessageBubble({
             <div className="message-tool-summary" style={{ color: 'var(--text-secondary, #888)', fontStyle: 'italic' }}>
               ✓ Completed actions ({msg.toolsUsed.join(', ')}). See the Thinking & Actions panel for step details.
             </div>
-          ) : !reasoning ? (
+          ) : reasoning ? (
+            <div className="message-empty" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 14px', background: 'var(--bg-secondary, rgba(255, 255, 255, 0.04))', borderRadius: '8px', border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))' }}>
+              <div style={{ color: 'var(--text-primary)', fontSize: '13px' }}>
+                💡 The model formulated a plan in thinking but paused before executing.
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {(onContinue || onRegenerate) && (
+                  <button
+                    type="button"
+                    className="small-btn"
+                    style={{ background: 'var(--primary, #e06c75)', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                    onClick={() => {
+                      if (onContinue) onContinue()
+                      else if (onRegenerate) onRegenerate()
+                    }}
+                  >
+                    ⚡ Continue &amp; Execute Actions
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
             <div className="message-empty">
               (The model returned an empty response. Try Regenerate or a stronger model.)
             </div>
-          ) : null}
+          )}
         </div>
       )}
        {/* Check if message content is long enough to warrant collapsing */}

@@ -464,50 +464,6 @@ function createTab(s, url, opts = {}) {
 
   showActive(s)
   return tabId
-}) {
-  const isAgent = !!opts?.isAgent
-  const partition = opts?.partition || (isAgent ? 'persist:agent-workspace' : undefined)
-  const webPrefs = {
-    contextIsolation: true,
-    nodeIntegration: false,
-    sandbox: true,
-    autoplayPolicy: 'no-user-gesture-required',
-  }
-  if (partition) webPrefs.partition = partition
-
-  const view = new WebContentsView({ webPreferences: webPrefs })
-  const tabId = newTabId()
-  // `console` is a ring of the page's own console output and uncaught errors.
-  // Without it the model has no way to answer "does the UI work" — it was
-  // observed inventing `window.__errors` and evaluating that, because reading
-  // the real console was not a capability the tool offered.
-  const tab = {
-    view, refEpoch: 0, console: [], failed: [],
-    // CDP (Network domain) request/response capture — see ensureDebugger().
-    network: [], debuggerAttached: false, debuggerWired: false, pendingRequests: new Map(),
-    humanControl: false,
-    helpRequested: false,
-    isAgent,
-  }
-  s.tabs.set(tabId, tab)
-  s.activeTabId = tabId
-
-  const wc = view.webContents
-  injectAdShield(wc)
-  try {
-    const defaultUA = wc.getUserAgent()
-    const cleanedUA = defaultUA
-      .replace(/Electron\/[0-9\.]+\s?/gi, '')
-      .replace(/Yogatik[A-Za-z0-9_-]*\/[0-9\.]+\s?/gi, '')
-      .trim()
-    wc.setUserAgent(cleanedUA)
-  } catch {}
-  wireTabListeners(s, tabId, tab)
-
-  showActive(s)
-  const targetUrl = isNewTabUrl(url) ? NEW_TAB_URL : url
-  navigate(s, tabId, targetUrl)
-  return tabId
 }
 
 function wireTabListeners(s, tabId, tab) {

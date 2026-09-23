@@ -79,9 +79,9 @@ export function PersonaPicker({
           fontSize: '12px',
           fontWeight: 600,
           cursor: 'pointer',
-          background: 'var(--bg-input, rgba(255,255,255,0.06))',
-          color: 'var(--text-primary, #eee)',
-          border: '1px solid var(--border, rgba(255,255,255,0.12))',
+          background: 'var(--bg-input, rgba(127,127,127,0.12))',
+          color: 'var(--text-primary, inherit)',
+          border: '1px solid var(--border, rgba(127,127,127,0.25))',
           borderRadius: '6px',
           whiteSpace: 'nowrap',
           maxWidth: '170px',
@@ -110,14 +110,14 @@ export function PersonaPicker({
           height: 26,
           padding: 0,
           borderRadius: '6px',
-          background: 'var(--bg-input, rgba(255,255,255,0.06))',
-          color: 'var(--text-secondary, #aaa)',
-          border: '1px solid var(--border, rgba(255,255,255,0.12))',
+          background: 'var(--bg-input, rgba(127,127,127,0.12))',
+          color: 'var(--text-secondary, #777)',
+          border: '1px solid var(--border, rgba(127,127,127,0.25))',
           cursor: 'pointer',
           transition: 'all 0.15s ease',
         }}
         onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent, #ff6b35)'; e.currentTarget.style.borderColor = 'var(--accent, #ff6b35)' }}
-        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary, #aaa)'; e.currentTarget.style.borderColor = 'var(--border, rgba(255,255,255,0.12))' }}
+        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary, #777)'; e.currentTarget.style.borderColor = 'var(--border, rgba(127,127,127,0.25))' }}
       >
         <Edit2 size={12} />
       </button>
@@ -138,14 +138,14 @@ export function PersonaPicker({
           height: 26,
           padding: 0,
           borderRadius: '6px',
-          background: 'var(--bg-input, rgba(255,255,255,0.06))',
-          color: 'var(--text-secondary, #aaa)',
-          border: '1px solid var(--border, rgba(255,255,255,0.12))',
+          background: 'var(--bg-input, rgba(127,127,127,0.12))',
+          color: 'var(--text-secondary, #777)',
+          border: '1px solid var(--border, rgba(127,127,127,0.25))',
           cursor: 'pointer',
           transition: 'all 0.15s ease',
         }}
         onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent, #ff6b35)'; e.currentTarget.style.borderColor = 'var(--accent, #ff6b35)' }}
-        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary, #aaa)'; e.currentTarget.style.borderColor = 'var(--border, rgba(255,255,255,0.12))' }}
+        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary, #777)'; e.currentTarget.style.borderColor = 'var(--border, rgba(127,127,127,0.25))' }}
       >
         <Plus size={13} />
       </button>
@@ -154,6 +154,7 @@ export function PersonaPicker({
       {open && (
         <div
           role="listbox"
+          className="persona-picker-popover"
           style={{
             position: 'absolute',
             bottom: 'calc(100% + 6px)',
@@ -164,26 +165,28 @@ export function PersonaPicker({
             maxHeight: '340px',
             display: 'flex',
             flexDirection: 'column',
-            background: 'var(--bg-card, #1a1a24)',
-            border: '1px solid var(--border, rgba(255,255,255,0.15))',
+            background: 'var(--bg-card, var(--bg-secondary, #1a1a24))',
+            color: 'var(--text-primary, inherit)',
+            border: '1px solid var(--border, rgba(127,127,127,0.25))',
             borderRadius: '8px',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
             overflow: 'hidden',
           }}
         >
           {/* Search Box if more than 3 personas */}
           {personas.length > 3 && (
             <div
+              className="persona-search-header"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
                 padding: '8px 10px',
-                borderBottom: '1px solid var(--border, rgba(255,255,255,0.1))',
-                background: 'rgba(0,0,0,0.2)',
+                borderBottom: '1px solid var(--border, rgba(127,127,127,0.15))',
+                background: 'var(--bg-tertiary, rgba(127,127,127,0.06))',
               }}
             >
-              <Search size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
+              <Search size={12} style={{ opacity: 0.6, flexShrink: 0, color: 'var(--text-secondary, inherit)' }} />
               <input
                 ref={inputRef}
                 value={q}
@@ -193,7 +196,7 @@ export function PersonaPicker({
                   background: 'transparent',
                   border: 'none',
                   outline: 'none',
-                  color: 'inherit',
+                  color: 'var(--text-primary, inherit)',
                   fontSize: '12px',
                   width: '100%',
                 }}
@@ -208,6 +211,7 @@ export function PersonaPicker({
               return (
                 <div
                   key={p.id}
+                  className={`persona-item${isSelected ? ' selected' : ''}`}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -216,13 +220,13 @@ export function PersonaPicker({
                     padding: '6px 8px',
                     fontSize: '12px',
                     borderRadius: '5px',
-                    background: isSelected ? 'rgba(255, 107, 53, 0.15)' : 'transparent',
-                    color: isSelected ? 'var(--accent, #ff6b35)' : 'var(--text-primary, #ddd)',
+                    background: isSelected ? 'var(--accent-glow, rgba(255, 107, 53, 0.15))' : 'transparent',
+                    color: isSelected ? 'var(--accent, #ff6b35)' : 'var(--text-primary, inherit)',
                     cursor: 'pointer',
                     transition: 'background 0.1s ease',
                   }}
                   onMouseEnter={e => {
-                    if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'
+                    if (!isSelected) e.currentTarget.style.background = 'var(--bg-tertiary, rgba(127,127,127,0.1))'
                   }}
                   onMouseLeave={e => {
                     if (!isSelected) e.currentTarget.style.background = 'transparent'
@@ -232,11 +236,11 @@ export function PersonaPicker({
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', flex: 1 }}>
                     <span style={{ fontSize: '15px', lineHeight: 1 }}>{p.icon || '🤖'}</span>
                     <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', textAlign: 'left' }}>
-                      <span style={{ fontWeight: isSelected ? 700 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontWeight: isSelected ? 700 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isSelected ? 'var(--accent, #ff6b35)' : 'var(--text-primary, inherit)' }}>
                         {p.name}
                       </span>
                       {p.system_prompt && (
-                        <span style={{ fontSize: '10px', opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '10px', color: isSelected ? 'var(--accent, #ff6b35)' : 'var(--text-secondary, #777)', opacity: isSelected ? 0.9 : 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {p.system_prompt.slice(0, 45)}
                         </span>
                       )}
@@ -258,7 +262,7 @@ export function PersonaPicker({
                       style={{
                         background: 'transparent',
                         border: 'none',
-                        color: 'inherit',
+                        color: 'var(--text-secondary, inherit)',
                         opacity: 0.6,
                         cursor: 'pointer',
                         padding: '3px',
@@ -266,9 +270,10 @@ export function PersonaPicker({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
+                        transition: 'all 0.15s ease',
                       }}
-                      onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
-                      onMouseLeave={e => { e.currentTarget.style.opacity = '0.6'; e.currentTarget.style.background = 'transparent' }}
+                      onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = 'var(--accent, #ff6b35)'; e.currentTarget.style.background = 'var(--bg-tertiary, rgba(127,127,127,0.15))' }}
+                      onMouseLeave={e => { e.currentTarget.style.opacity = '0.6'; e.currentTarget.style.color = 'var(--text-secondary, inherit)'; e.currentTarget.style.background = 'transparent' }}
                     >
                       <Edit2 size={12} />
                     </button>
@@ -277,7 +282,7 @@ export function PersonaPicker({
               )
             })}
             {filteredPersonas.length === 0 && (
-              <div style={{ padding: '12px', fontSize: '11px', textAlign: 'center', opacity: 0.6 }}>
+              <div style={{ padding: '12px', fontSize: '11px', textAlign: 'center', color: 'var(--text-muted, #777)' }}>
                 No personas found
               </div>
             )}
@@ -285,10 +290,11 @@ export function PersonaPicker({
 
           {/* Footer: Create Persona */}
           <div
+            className="persona-footer"
             style={{
-              borderTop: '1px solid var(--border, rgba(255,255,255,0.1))',
+              borderTop: '1px solid var(--border, rgba(127,127,127,0.15))',
               padding: '6px 8px',
-              background: 'rgba(0,0,0,0.2)',
+              background: 'var(--bg-tertiary, rgba(127,127,127,0.06))',
             }}
           >
             <button
@@ -307,11 +313,14 @@ export function PersonaPicker({
                 fontSize: '11px',
                 fontWeight: 600,
                 color: 'var(--accent, #ff6b35)',
-                background: 'rgba(255, 107, 53, 0.1)',
-                border: '1px solid rgba(255, 107, 53, 0.25)',
+                background: 'var(--accent-glow, rgba(255, 107, 53, 0.1))',
+                border: '1px solid var(--accent-glow, rgba(255, 107, 53, 0.25))',
                 borderRadius: '5px',
                 cursor: 'pointer',
+                transition: 'all 0.15s ease',
               }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent, #ff6b35)'; e.currentTarget.style.color = '#fff' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--accent-glow, rgba(255, 107, 53, 0.1))'; e.currentTarget.style.color = 'var(--accent, #ff6b35)' }}
             >
               <Plus size={12} />
               <span>Create Custom Persona</span>

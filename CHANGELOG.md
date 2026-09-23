@@ -1,5 +1,18 @@
 # Changelog
 
+## v10.5.0 - Autonomous Reasoner Recovery, Windows Taskbar Shell & Agent Resilience (2026-09-23)
+
+### 🧠 Agent & Reasoning Engine Resilience
+- **Expanded Planning Intent Recognition (`agent.js`)** — Broadened `hasUnexecutedToolIntent` to recognize multi-word connectors (`first`, `start by`, `begin by`, `next`), subjects (`I should`, `we should`, `I plan to`), and gerund/stems (`explore/exploring`, `examine/examining`, `look at`, `scan`, `review`, `debug`, `patch`), preventing premature halting when reasoning models plan tool executions.
+- **Strict Turn Alternation (`nudgeIntoAction`)** — Preserved the assistant's previous thought before appending a user nudge, ensuring proper role alternation (`user` → `assistant` → `user`) and preventing API rejection or lost planning context with NVIDIA NIM, OpenAI, and Anthropic APIs.
+- **Autonomous Exploratory Tool Seeding** — Automatically dispatches workspace exploration (`fs_find_files` / `fs_list`) when models plan file inspection without outputting tool syntax, waking up stalled reasoning models.
+- **Actionable UI Feedback (`MessageBubble.jsx`)** — Replaced empty/suppressed assistant states with an informative card and a one-click **⚡ Continue & Execute Actions** button whenever models formulate plans without immediate tool calls.
+- **Non-Blank Content Fallback Guarantee** — Added a safety synthesis net ensuring responses are never left blank even if watchdog retries are exhausted.
+
+### 🖥️ Windows Desktop Shell & Launcher
+- **Windows Taskbar Icon Persistence (`frontend/electron/main.cjs`)** — Fixed development-mode taskbar icon disappearance by dynamically setting `AppUserModelId` to `process.execPath` in dev and using `nativeImage` with `mainWindow.setIcon(appIcon)`.
+- **Root Electron Forwarder (`electron/main.cjs` & `package.json`)** — Added `"main": "frontend/electron/main.cjs"` to root `package.json` and created a forwarding launcher stub at `electron/main.cjs` to eliminate module resolution errors when launching Electron from repository root.
+
 ## v10.4.0 - Chat UI UX: Live Context Meter (2026-09-23)
 
 ### ?? Chat UI UX — Live Context Awareness in the Composer

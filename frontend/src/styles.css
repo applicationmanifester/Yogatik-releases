@@ -24,6 +24,7 @@
   --border-color: rgba(255, 255, 255, 0.12);
   --bg: #0e1116;
   --bg-surface: #1e1e2e;
+  --bg-card: #111820;
   --bg-elevated: #12161f;
   --bg-subtle: #0d1119;
   --text: #f2f4f8;
@@ -60,6 +61,7 @@
   --border-color: rgba(0, 0, 0, 0.12);
   --bg: #f5f7fa;
   --bg-surface: #e8ecf1;
+  --bg-card: #ffffff;
   --bg-elevated: #ffffff;
   --bg-subtle: #edf0f5;
   --text: #1a2332;

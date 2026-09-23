@@ -1,12 +1,9 @@
 {
   "name": "yogatik-monorepo",
-  "version": "10.4.0",
+  "version": "10.5.0",
   "private": true,
   "description": "Yogatik Studio — Standalone Unrestricted AI Agentic Assistant & Desktop Environment. The application lives in frontend/ — see CLAUDE.md.",
-  "workspaces": [
-    "frontend"
-  ],
-  "//": "THE APP IS frontend/. This file used to drive a pnpm monorepo (@my-app/web-app, @my-app/shared-ui, @my-app/desktop-electron) that was an abandoned hello-world scaffold — apps/web-app/src/App.tsx was a Card with a 'Get Started' button. Because the root package.json named it and a placeholder src/ sat beside it, an automated audit read the scaffold as the product and reported that Yogatik had no chat UI, no provider switcher and no tool calling — all of which have shipped in frontend/ for months. The scaffold was deleted on 2026-08-31. Every script below now delegates to frontend/ so the root cannot point anywhere else again.",
+  "main": "frontend/electron/main.cjs",
   "scripts": {
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
@@ -25,10 +22,5 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "comlink": "^4.4.2",
-    "dompurify": "^3.4.15",
-    "lru-cache": "^11.5.3"
   }
 }

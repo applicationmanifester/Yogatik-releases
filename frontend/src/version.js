@@ -3,16 +3,61 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '10.4.0'
+export const APP_VERSION = '10.5.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.4.0 — Desktop Release Stability, Unified Persona Flow & Context Tools'
+export const APP_CODENAME = 'Yogatik 10.5.0 — Autonomous Reasoner Recovery, Windows Taskbar Shell & Agent Resilience'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.5.0",
+    "title": "Yogatik 10.5.0: Autonomous Reasoner Recovery, Windows Taskbar Shell & Agent Resilience",
+    "date": "September 23, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Autonomous Reasoner Recovery: Self-healing intent recognition and tool execution for reasoning models (Nemotron-3, DeepSeek-R1, Qwen)",
+      "Windows Desktop Shell Integration: Native taskbar icon persistence and AppUserModelId association in development and production builds",
+      "Seamless Root Electron Launcher: Integrated forwarding entry point eliminating module resolution errors when launching from repository root",
+      "Actionable Reasoning Feedback: Interactive execution prompt and continue buttons when models formulate plans without immediate tool calls",
+      "Robust Agent Turn Alternation: Proper user-assistant message sequencing preventing API reject errors during mid-turn tool nudging"
+    ],
+    "sections": [
+      {
+        "category": "🧠 Agent & Reasoning Engine",
+        "items": [
+          {
+            "title": "Expanded Planning Intent Recognition",
+            "description": "Expanded hasUnexecutedToolIntent to match connectors, modal auxiliaries, and gerund verbs across reasoning models."
+          },
+          {
+            "title": "Sequential Message Turn Preservation",
+            "description": "Preserved assistant thought turn before user nudge to ensure strict role alternation and avoid provider 400 errors."
+          },
+          {
+            "title": "Autonomous Exploratory Tool Seeding",
+            "description": "Added automatic exploratory tool seeding when reasoning indicates file/project inspection intent without raw tool tags."
+          }
+        ]
+      },
+      {
+        "category": "🖥️ Desktop & Electron Shell",
+        "items": [
+          {
+            "title": "Windows Taskbar Icon Fix",
+            "description": "Configured dynamic AppUserModelId and nativeImage window icons ensuring the Yogatik icon renders cleanly on Windows taskbars."
+          },
+          {
+            "title": "Root Electron Forwarder",
+            "description": "Created root electron/main.cjs forwarder and updated root package.json to resolve Electron apps launched from the root directory."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "10.4.0",
     "title": "Yogatik 10.4.0: Desktop Release Stability, Left-Aligned Composer & Enhanced RAG Tools",
     "date": "September 23, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Desktop Multi-Platform Build Pipeline: Resolved packaging main entrypoint in electron-builder, restoring automated Windows, macOS, and Linux artifact generation on GitHub Actions",
       "Unified Left-Aligned Composer Controls: Harmonized top composer row layout with persona selector dropdown, quick edit actions, and document context indicator left-aligned",

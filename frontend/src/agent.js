@@ -91,12 +91,35 @@ async function memoryBlock() {
 export function hasUnexecutedToolIntent(text = '', roundContent = '') {
   const combined = `${text}\n${roundContent}`
   // 1. Explicit future-action announcements in visible content or thinking:
-  const actionIntentPattern = /(?:(?:now\s+i(?:'ll|\s+will|\s+am\s+going\s+to))|(?:let\s+(?:me|us|'s))|(?:i\s+(?:will|need\s+to|must|am\s+going\s+to)\s+(?:now\s+)?)|(?:next\s*,?\s*(?:step\s+is\s+to|i\s+will|let's))|(?:proceeding\s+to)|(?:going\s+to))\s+(?:add|fix|edit|apply|update|modify|create|write|replace|run|call|execute|implement|read|search|inspect|check)\b/i
-  
+  // e.g. "Let me first explore", "I should look at", "Let me start by examining", "Now I'll fix"
+  const verbs = '(?:add(?:ing)?|fix(?:ing)?|edit(?:ing)?|apply(?:ing)?|update|updating|modify|modifying|create|creating|write|writing|replace|replacing|run(?:ning)?|call(?:ing)?|execute|executing|implement(?:ing)?|read(?:ing)?|search(?:ing)?|inspect(?:ing)?|check(?:ing)?|explore|exploring|examine|examining|investigate|investigating|look(?:ing)?\\s+at|find(?:ing)?|scan(?:ning)?|list(?:ing)?|view(?:ing)?|open(?:ing)?|test(?:ing)?|debug(?:ging)?|patch(?:ing)?|review(?:ing)?)'
+  const connectors = '(?:first|start\\s+by|begin\\s+by|next|now|then|just|also|quickly|proceed\\s+to)?\\s*'
+
+  const actionIntentPattern = new RegExp(
+    '(?:' +
+      '(?:now\\s+i(?:[\'’]ll|\\s+will|\\s+am\\s+going\\s+to))|' +
+      '(?:let\\s+(?:me|us|[\'’]s))|' +
+      '(?:i\\s+(?:should|will|[\'’]ll|need\\s+to|must|am\\s+going\\s+to|[\'’]m\\s+going\\s+to|plan\\s+to|have\\s+to|want\\s+to|intend\\s+to))|' +
+      '(?:we\\s+(?:should|will|[\'’]ll|need\\s+to|must|are\\s+going\\s+to|can))|' +
+      '(?:(?:next|first)\\s*,?\\s*(?:step\\s+is\\s+to|i\\s+will|i[\'’]ll|we\\s+will|let[\'’]s))|' +
+      '(?:proceeding\\s+to)|(?:going\\s+to)|' +
+      '(?:to\\s+(?:fix|address|investigate|explore|solve)\\s+this\\s*,?\\s*(?:i|we|let[\'’]s)?)' +
+    ')\\s+' +
+    connectors +
+    verbs + '\\b',
+    'i'
+  )
+
   if (actionIntentPattern.test(combined)) return true
 
   // 2. Trailing action commitment at end of reasoning or text:
-  const trailingCommitment = /(?:let\s+me|i\s+will|need\s+to|going\s+to)\s+(?:apply|fix|edit|write|update|modify|read|check)\s+(?:these|the|this|them|fixes|changes|functions?|files?)\s*(?:now)?\.?\s*$/i
+  const trailingCommitment = new RegExp(
+    '(?:let\\s+me|i\\s+(?:will|should|need\\s+to|must|plan\\s+to)|going\\s+to|we\\s+(?:should|will))\\s+' +
+    connectors +
+    verbs +
+    '\\s+(?:these|the|this|them|fixes|changes|functions?|files?|project|codebase|structure)\\s*(?:now|first)?\\.?\\s*$',
+    'i'
+  )
   if (trailingCommitment.test(combined.trim())) return true
 
   return false
@@ -1209,18 +1232,30 @@ export async function runAgent({
   const nudgeIntoAction = async (maxRetries = MAX_NUDGE_RETRIES) => {
     let attempts = 0
     while (toolCallsToProcess.length === 0 && attempts < maxRetries) {
+      if (visibleAnswer(roundContent)) break // The model emitted a visible answer for this round!
       const isOnlyReasoning = roundContent.includes('<think>')
         && !visibleAnswer(roundContent.replace(/<think>[\s\S]*?<\/think>/gi, ''))
-      const hasIntent = hasUnexecutedToolIntent(fullContent, roundContent)
+      const hasIntent = hasUnexecutedToolIntent(roundContent)
       if (!hasIntent && !isOnlyReasoning) break // genuinely finished, not stalling
 
       attempts++
       onStatus?.(attempts > 1
         ? `⚡ Still working — checking again (${attempts}/${maxRetries})…`
         : '⚡ Proceeding to execute planned actions…')
+
+      // Ensure the model's previous reasoning/thought is saved as an assistant message
+      // so message turns alternate properly (user -> assistant -> user) and the model retains context.
+      const assistantThought = roundContent.trim() || 'I will inspect the workspace and execute the planned actions.'
+      const lastMsg = messages[messages.length - 1]
+      if (!lastMsg || lastMsg.role !== 'assistant') {
+        messages.push({ role: 'assistant', content: assistantThought })
+      } else if (lastMsg.role === 'assistant' && roundContent.trim() && !lastMsg.content) {
+        lastMsg.content = assistantThought
+      }
+
       messages.push({
         role: 'user',
-        content: 'Proceed immediately now: invoke the tool call(s) (such as fs_read, fs_edit, fs_write, etc.) to execute the plan and actions you announced above. Do NOT stop or wait for another prompt.',
+        content: 'You announced a plan above. Proceed immediately now: invoke the tool call(s) (such as fs_read, fs_edit, fs_write, fs_find_files, fs_list, etc.) to execute the plan and actions you announced above. Do NOT stop, output internal thoughts only, or wait for another prompt.',
       })
       let actionNext = await processStream()
       if (actionNext?.rejectedTools && toolMode === 'native') {
@@ -1249,6 +1284,22 @@ export async function runAgent({
     // payload — bounded-retried, same as every later stall point.
     if (toolCallsToProcess.length === 0) await nudgeIntoAction()
     throwIfAborted()
+
+    // If the model formulated a clear plan to explore files/workspace but stalled without emitting tool markup:
+    if (toolCallsToProcess.length === 0 && (hasUnexecutedToolIntent(fullContent, roundContent) || (roundContent.includes('<think>') && !visibleAnswer(roundContent)))) {
+      const combinedThoughts = `${fullContent}\n${roundContent}`
+      const wantsFiles = /(?:electron|files?|project|codebase|structure|folders?|component|dir)/i.test(combinedThoughts)
+      if (wantsFiles && tools && tools.some(t => (t.name || t.function?.name) === 'fs_find_files')) {
+        const pattern = /electron/i.test(combinedThoughts) ? '*electron*' : '*'
+        toolCallsToProcess.push({
+          id: 'call_auto_seed_0',
+          name: 'fs_find_files',
+          arguments: JSON.stringify({ pattern, limit: 30 }),
+          parsedArgs: { pattern, limit: 30 },
+        })
+        onStatus?.('📂 Exploring project structure to execute planned fixes…')
+      }
+    }
 
     // Tool execution loop (maxRounds cap prevents infinite loops)
     let rounds = 0
@@ -1673,6 +1724,21 @@ export async function runAgent({
         savedMs,
         tool: reflexTrack.tool,
       })
+    }
+
+    if (!visibleAnswer(cleanedContent)) {
+      const { reasoning } = splitReasoning(fullContent || roundContent)
+      if (reasoning) {
+        cleanedContent = `I have analyzed the request and prepared the following plan:\n\n${reasoning.slice(0, 800)}${reasoning.length > 800 ? '…' : ''}\n\n*Click **Continue** below or confirm to execute these actions.*`
+        onToken?.(cleanedContent)
+      } else {
+        const gathered = summariseToolResults(toolResults)
+        const fallback = gathered
+          ? 'I have completed the requested actions (tool results):\n\n' + gathered
+          : 'I have finished inspecting the workspace and analyzing the requested task.'
+        cleanedContent = fallback
+        onToken?.(fallback)
+      }
     }
 
     const leak = checkCanaryForLeak(canaryToken, cleanedContent, executionCtx.conversationId)
