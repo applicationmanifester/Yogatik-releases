@@ -6086,17 +6086,42 @@ html, body {
   color: #a6e3a1;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   background: rgba(166, 227, 161, 0.12);
-  padding: 2px 9px;
+  padding: 3px 10px;
   border-radius: 12px;
-  border: 1px solid rgba(166, 227, 161, 0.25);
+  border: 1px solid rgba(166, 227, 161, 0.3);
   font-weight: 600;
-  transition: all 0.2s ease;
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
 }
 
 .rag-docs-badge:hover {
-  background: rgba(166, 227, 161, 0.2);
+  background: rgba(166, 227, 161, 0.22);
+  border-color: rgba(166, 227, 161, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(166, 227, 161, 0.2);
+}
+
+.rag-docs-badge:focus-visible {
+  outline: 2px solid #a6e3a1;
+  outline-offset: 2px;
+}
+
+.context-meter-badge.clickable:hover {
+  background: rgba(255, 107, 53, 0.1) !important;
+  border-color: rgba(255, 107, 53, 0.4) !important;
+  color: var(--text-primary, #fff) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.context-meter-badge.clickable:focus-visible {
+  outline: 2px solid var(--accent, #ff6b35);
+  outline-offset: 2px;
 }
 
 .btn-vision-switch {

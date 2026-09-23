@@ -106,4 +106,35 @@ describe('ContextMeter rendering (mounted the way App.jsx does)', () => {
     expect(icon).toBeTruthy()
     expect(icon.getAttribute('color') || icon.style?.color || '').toBeTruthy()
   })
+
+  it('triggers onOpenContextModal when clicked or with Enter key', async () => {
+    const onOpen = vi.fn()
+    await mount(
+      <ContextMeter
+        messages={[{ role: 'user', content: 'test' }]}
+        systemPrompt=""
+        input=""
+        provider="openai"
+        model="gpt-4o"
+        onOpenContextModal={onOpen}
+      />,
+    )
+    const badge = host.querySelector('.context-meter-badge')
+    expect(badge).toBeTruthy()
+    expect(badge.getAttribute('role')).toBe('button')
+    expect(badge.getAttribute('title')).toContain('Click to view context usage')
+
+    // Click
+    await act(async () => {
+      badge.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onOpen).toHaveBeenCalledTimes(1)
+
+    // Keyboard Enter
+    await act(async () => {
+      badge.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(onOpen).toHaveBeenCalledTimes(2)
+  })
 })
+

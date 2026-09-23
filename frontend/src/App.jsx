@@ -137,6 +137,8 @@ const CitationGraphModal = safeLazy(() => import('./components/CitationGraphModa
 const EvalDashboard = safeLazy(() => import('./components/EvalDashboard').then(m => ({ default: m.EvalDashboard })))
 const TradingModal = safeLazy(() => import('./components/TradingModal').then(m => ({ default: m.TradingModal })))
 const MediaStudioModal = safeLazy(() => import('./components/MediaStudioModal').then(m => ({ default: m.MediaStudioModal })))
+const RagDocumentsModal = safeLazy(() => import('./components/RagDocumentsModal').then(m => ({ default: m.RagDocumentsModal })))
+const ContextUsageModal = safeLazy(() => import('./components/ContextUsageModal').then(m => ({ default: m.ContextUsageModal })))
 
 
 // ─── Main App ───
@@ -210,6 +212,8 @@ export default function App() {
   const [updateReady, setUpdateReady] = useState(null)   // () => apply
   const [storage, setStorage] = useState(null)
   const [docs, setDocs] = useState([])
+  const [showRagDocsModal, setShowRagDocsModal] = useState(false)
+  const [showContextModal, setShowContextModal] = useState(false)
   const [convQuery, setConvQuery] = useState('')
   const [activeFolder, setActiveFolder] = useState(null)
   const [activeTag, setActiveTag] = useState(null)
@@ -5725,14 +5729,17 @@ export default function App() {
                 }}
               />
             </div>
-            {docs.length > 0 && (
-              <div
-                className="rag-docs-badge"
-                title={`${docs.length} document(s) in active project local RAG index`}
-              >
-                <FileText size={11} /> {docs.length}
-              </div>
-            )}
+            <button
+              type="button"
+              className={`rag-docs-badge${docs.length === 0 ? ' empty' : ''}`}
+              title={docs.length > 0
+                ? `${docs.length} document(s) in active project local RAG index — Click to view saved location, preview passages, or delete`
+                : 'Local RAG Knowledge & Document Index — Click to view saved location or index files'}
+              onClick={() => setShowRagDocsModal(true)}
+              aria-label={docs.length > 0 ? `${docs.length} RAG documents indexed` : 'RAG index'}
+            >
+              <FileText size={11} /> {docs.length > 0 ? `${docs.length} RAG` : 'RAG'}
+            </button>
           </div>
           <div className="upload-area">
             {/* Active AI Provider Switcher Dropdown */}
@@ -6044,13 +6051,15 @@ export default function App() {
           {/* Live context usage: estimated tokens vs the active model's
               window. Sits here (not the header) so it re-renders with the
               composer, folding the draft in cheaply — the user sees the
-              meter turn amber/red BEFORE the model truncates or compacts. */}
+              meter turn amber/red BEFORE the model truncates or compacts.
+              Clickable to open the detailed Context Breakdown & Token Usage window. */}
           <ContextMeter
             messages={conv?.messages || []}
             systemPrompt={activeSystemPrompt}
             input={input}
-            provider={provider}
-            model={model}
+            provider={conv?.provider || provider}
+            model={conv?.model !== undefined ? conv.model : model}
+            onOpenContextModal={() => setShowContextModal(true)}
           />
 
           <div className="input-wrapper" style={{ position: 'relative' }}>
@@ -7037,6 +7046,60 @@ export default function App() {
           <MediaStudioModal
             isOpen={showMediaStudio}
             onClose={() => setShowMediaStudio(false)}
+          />
+        </React.Suspense>
+      )}
+
+      {showRagDocsModal && (
+        <React.Suspense fallback={null}>
+          <RagDocumentsModal
+            docs={docs}
+            activeProject={projects.find(p => p.id === activeProject) || null}
+            onClose={() => setShowRagDocsModal(false)}
+            onDeleteDoc={async (docId) => {
+              await removeDocument(docId)
+              refreshDocs()
+            }}
+            onClearAllDocs={async () => {
+              for (const d of docs) {
+                await removeDocument(d.id)
+              }
+              refreshDocs()
+            }}
+            onUploadDoc={async (file) => {
+              await uploadDocument(file, activeProject)
+              refreshDocs()
+            }}
+            onToast={showToast}
+          />
+        </React.Suspense>
+      )}
+
+      {showContextModal && (
+        <React.Suspense fallback={null}>
+          <ContextUsageModal
+            messages={conv?.messages || []}
+            systemPrompt={activeSystemPrompt}
+            input={input}
+            provider={conv?.provider || provider}
+            model={conv?.model !== undefined ? conv.model : model}
+            docs={docs}
+            onClose={() => setShowContextModal(false)}
+            onOpenAnalytics={() => navigateDashboard('usage')}
+            onCompact={() => {
+              if (conv?.id && conv.messages?.length > 4) {
+                trimConversationFrom(conv.id, 2).then(() => {
+                  loadConversations(activeProject)
+                  showToast('Compacted earlier conversation turns')
+                }).catch(() => {})
+              } else {
+                showToast('Conversation is already compact')
+              }
+            }}
+            onClearHistory={() => {
+              newChat()
+              showToast('Started new chat with clean context')
+            }}
           />
         </React.Suspense>
       )}

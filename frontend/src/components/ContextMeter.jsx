@@ -31,7 +31,17 @@ export function estimateConversationTokens(messages = [], systemPrompt = '', inp
   return Math.ceil(totalChars / 4)
 }
 
-export function ContextMeter({ messages = [], systemPrompt = '', input = '', provider = 'local', model = '' }) {
+export function ContextMeter({
+  messages = [],
+  systemPrompt = '',
+  input = '',
+  provider = 'local',
+  model = '',
+  onOpenContextModal = null,
+  onClick = null,
+}) {
+  const handleClick = onOpenContextModal || onClick
+
   // Memoised on the message list, not recomputed per render: this walks every
   // message and JSON.stringifies every tool result, and the component sits in
   // the header, which re-renders for reasons that have nothing to do with the
@@ -59,8 +69,17 @@ export function ContextMeter({ messages = [], systemPrompt = '', input = '', pro
 
   return (
     <div
-      className="context-meter-badge"
-      title={`Estimated Context Window: ${estimatedTokens.toLocaleString()} / ${limit.toLocaleString()} tokens (${percent}% used)`}
+      className={`context-meter-badge${handleClick ? ' clickable' : ''}`}
+      role={handleClick ? 'button' : undefined}
+      tabIndex={handleClick ? 0 : undefined}
+      onClick={handleClick || undefined}
+      onKeyDown={handleClick ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          handleClick()
+        }
+      } : undefined}
+      title={`Estimated Context Window: ${estimatedTokens.toLocaleString()} / ${limit.toLocaleString()} tokens (${percent}% used)${handleClick ? ' — Click to view context usage & token details' : ''}`}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -73,7 +92,9 @@ export function ContextMeter({ messages = [], systemPrompt = '', input = '', pro
         borderRadius: '6px',
         border: '1px solid var(--border-color, rgba(255,255,255,0.08))',
         userSelect: 'none',
-        height: '24px'
+        height: '24px',
+        cursor: handleClick ? 'pointer' : 'default',
+        transition: 'all 0.15s ease'
       }}
     >
       <Activity size={12} style={{ color: getColor() }} />
