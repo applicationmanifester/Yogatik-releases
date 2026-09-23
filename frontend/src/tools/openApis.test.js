@@ -606,13 +606,13 @@ describe('Open Public APIs Tools', () => {
      it('has valid schema definition', () => {
        expect(toolDiscoveryTool.schema.description).toContain('discover')
        expect(toolDiscoveryTool.schema.description).toContain('capabilities')
-       expect(toolDiscoveryTool.schema.properties.request).toBeDefined()
+       expect(toolDiscoveryTool.schema.parameters.properties.request).toBeDefined()
      })
 
      it('suggests relevant tools for recipe requests', async () => {
        const res = await toolDiscoveryTool.execute({ request: 'I want to find a recipe for chicken tikka masala' })
        expect(res.success).toBe(true)
-       expect(res.suggestions).toHaveLengthGreaterThan(0)
+       expect(res.suggestions.length).toBeGreaterThan(0)
        const recipeTools = res.suggestions.map(t => t.name)
        expect(recipeTools).toContain('meal_recipe')
        expect(recipeTools).toContain('cocktail_recipe')
@@ -621,7 +621,7 @@ describe('Open Public APIs Tools', () => {
      it('suggests coding tools for programming requests', async () => {
        const res = await toolDiscoveryTool.execute({ request: 'I need to debug a JavaScript function' })
        expect(res.success).toBe(true)
-       expect(res.suggestions).toHaveLengthGreaterThan(0)
+       expect(res.suggestions.length).toBeGreaterThan(0)
        const codingTools = res.suggestions.map(t => t.name)
        expect(codingTools).toContain('code_execute')
        expect(codingTools).toContain('js_execute')
@@ -631,7 +631,7 @@ describe('Open Public APIs Tools', () => {
      it('suggests research tools for learning requests', async () => {
        const res = await toolDiscoveryTool.execute({ request: 'I want to learn about quantum physics' })
        expect(res.success).toBe(true)
-       expect(res.suggestions).toHaveLengthGreaterThan(0)
+       expect(res.suggestions.length).toBeGreaterThan(0)
        const researchTools = res.suggestions.map(t => t.name)
        expect(researchTools).toContain('web_search')
        expect(researchTools).toContain('deep_research')

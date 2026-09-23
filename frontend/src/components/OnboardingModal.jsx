@@ -87,7 +87,7 @@ export default function OnboardingModal({ templates = [], onComplete, onSkip }) 
             <>
               <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>Pick a starting personality. You can change or create more anytime.</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {personaOptions.map(t => (
+                {templates.map(t => (
                   <button key={t.id} className={`onb-option ${persona === t.id ? 'selected' : ''}`} onClick={() => setPersona(t.id)}>
                     <strong>{t.name}</strong>{t.description ? <span> — {t.description}</span> : null}
                   </button>

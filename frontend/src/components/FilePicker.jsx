@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Upload, X, AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
 import { wsWrite, wsRead } from '../tools/localFs'
 

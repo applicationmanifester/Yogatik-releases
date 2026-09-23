@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { 
+import {
   ChevronRight, ChevronDown, Folder, FolderOpen, File as FileIcon, FileCode, FileJson,
-  FileText, Image as ImageIcon, Search, X, Loader2, MoreVertical, 
-  Download, Edit, Trash2, Copy, ExternalLink, Eye
+  FileText, Image as ImageIcon, Search, X, Loader2, MoreVertical,
+  Download, Edit, Trash2, Copy, ExternalLink, Eye, AlertCircle, FolderPlus
 } from 'lucide-react'
 import { humanSize, extOf } from '../workspace/treeStore'
 import { wsRead, wsDelete, wsMove, wsMkdir, wsWrite, wsCopy, wsStat, wsList, isDesktop } from '../tools/localFs'

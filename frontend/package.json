@@ -1,9 +1,9 @@
 {
   "name": "yogatik",
   "private": true,
-  "version": "10.3.0",
+  "version": "10.4.0",
   "type": "module",
-  "main": "dist-electron/main.js",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "npx vite --configLoader runner",
     "build": "npx vite --configLoader runner build",

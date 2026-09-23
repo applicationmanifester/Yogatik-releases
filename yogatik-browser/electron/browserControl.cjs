@@ -2331,6 +2331,26 @@ function registerBrowserControl(first, second) {
         }
         break
       }
+      case 'new-tab-group': {
+        // Handled in renderer; just sync state
+        break
+      }
+      case 'toggle-vertical-tabs': {
+        // Handled in renderer; just sync state
+        break
+      }
+      case 'collapse-sidebar': {
+        // Handled in renderer; just sync state
+        break
+      }
+      case 'rename-tab-group': {
+        // Handled in renderer; just sync state
+        break
+      }
+      case 'delete-tab-group': {
+        // Handled in renderer; just sync state
+        break
+      }
       default:
         break
     }

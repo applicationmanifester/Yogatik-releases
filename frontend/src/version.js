@@ -3,16 +3,66 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '10.3.0'
+export const APP_VERSION = '10.4.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.3.0 — Adaptive Vision, Audio Device Recovery, Structured Reflex & Tool Hub'
+export const APP_CODENAME = 'Yogatik 10.4.0 — Desktop Release Stability, Unified Persona Flow & Context Tools'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.4.0",
+    "title": "Yogatik 10.4.0: Desktop Release Stability, Left-Aligned Composer & Enhanced RAG Tools",
+    "date": "September 23, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Desktop Multi-Platform Build Pipeline: Resolved packaging main entrypoint in electron-builder, restoring automated Windows, macOS, and Linux artifact generation on GitHub Actions",
+      "Unified Left-Aligned Composer Controls: Harmonized top composer row layout with persona selector dropdown, quick edit actions, and document context indicator left-aligned",
+      "Interactive Document Context Management: Added quick inspection and deletion management for active RAG context documents directly from the composer",
+      "Resilient Tool Discovery & Suggestion Engine: Cleaned and optimized public API tool suggestion ranking with token-aware keyword matching and safe fallback schemas",
+      "Yogatik Browser v10.4.0 Standalone Alignment: Synchronized cross-platform browser runtime bindings, ad-shield controls, and standalone desktop release triggers"
+    ],
+    "sections": [
+      {
+        "category": "🖥️ Desktop & Release Infrastructure",
+        "items": [
+          {
+            "title": "Electron Packaging Entrypoint Fix",
+            "description": "Fixed electron main script resolution to electron/main.cjs, eliminating corrupted app.asar packaging errors across all desktop CI targets."
+          },
+          {
+            "title": "Automated Matrix Cross-Platform Builds",
+            "description": "Fully enabled continuous releases for Windows (.exe), macOS (.dmg / .zip), and Linux (.AppImage / .deb) via GitHub Actions."
+          }
+        ]
+      },
+      {
+        "category": "🎨 UI & Composer Experience",
+        "items": [
+          {
+            "title": "Left-Aligned Composer Bar",
+            "description": "Streamlined the composer top row to align persona picker, edit buttons, and active RAG badges neatly to the left."
+          },
+          {
+            "title": "Contextual Document Controls",
+            "description": "Expanded transparency for active RAG documents with quick inspection and removal badges above chat input."
+          }
+        ]
+      },
+      {
+        "category": "⚡ Tool Hub & Discovery",
+        "items": [
+          {
+            "title": "Token-Aware Tool Suggestion",
+            "description": "Upgraded tool discovery with token-bounded keyword evaluation to prevent substring misidentifications and improve prompt recommendations."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "10.3.0",
     "title": "Yogatik 10.3.0: Adaptive Vision, Persona Studio & Enhanced Icon Navigation",
     "date": "September 23, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Persona Selector & In-Place Editing: Interactive persona dropdown replacing crowded chips, with active-persona quick-edit icon and per-persona editor modal for prompt/name/icon changes",
       "Streamlined Icon Navigation: Left sidebar footer and composer actions consolidated into clean, accessible icon controls with clear tooltips",

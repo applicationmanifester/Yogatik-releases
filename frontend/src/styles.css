@@ -5926,10 +5926,10 @@ html, body {
 .composer-top-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   margin-bottom: 6px;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .persona-chips {
