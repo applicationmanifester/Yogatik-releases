@@ -197,7 +197,6 @@ describe('reachability', () => {
       'src/downloadConsent.js',             // consent is the features.* toggle (setLocalVLMConsent / setSemanticConsent); enhancements.test.js covers it
       'src/analyticsSink.js',               // initAnalyticsFromSettings is never called, so analytics is inert (it is opt-in anyway)
       'src/experiments.js',                 // getVariant/trackOutcome called by nothing; phase1.test.js covers it
-      'src/components/ContextMeter.jsx',    // unrendered context meter widget
       'src/components/McpModal.jsx',        // retired wrapper: McpServers hosted directly in DashboardShell
 
       // BUILT, NEVER WIRED, and worth a decision:
@@ -207,6 +206,7 @@ describe('reachability', () => {
       'src/components/FileBrowser.jsx',     // modular workspace file browser
       'src/components/FilePicker.jsx',      // modular workspace file picker
       'src/tools/fsFacade.js',              // filesystem facade for workspace operations
+      'src/responseCache.js',               // semantic response caching module
     ])
 
     expect(dead.filter(f => !allowed.has(f)).sort()).toEqual([])

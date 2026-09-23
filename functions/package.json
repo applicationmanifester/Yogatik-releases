@@ -2,19 +2,23 @@
   "name": "yogatik-functions",
   "description": "Yogatik licence server — issues signed entitlement tokens and receives provider webhooks.",
   "private": true,
-  "main": "index.js",
+  "main": "lib/index.js",
   "engines": {
     "node": "20"
   },
   "scripts": {
-    "serve": "firebase emulators:start --only functions",
-    "deploy": "firebase deploy --only functions",
+    "build": "tsc",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "deploy": "npm run build && firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "test": "vitest run"
+    "test": "vitest run",
+    "watch": "tsc -w"
   },
   "dependencies": {
     "firebase-admin": "^12.6.0",
-    "firebase-functions": "^6.1.0"
+    "firebase-functions": "^6.1.0",
+    "zod": "^3.23.8",
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "vitest": "^4.1.11"

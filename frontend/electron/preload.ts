@@ -1,29 +1,15 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
-import type { IpcContracts, IpcCommand } from './main'
+import type { IpcContracts, IpcCommand } from './ipcTypes'
+// The channel allowlist lives in ipcTypes.ts, SHARED with the main process —
+// a local duplicate here could drift out of sync (a channel registered in
+// main but missing here would throw "not allowed" in the preload).
+import { IPC_COMMANDS } from './ipcTypes'
 
 // ============================================================================
 // Type-Safe IPC Channel Generation
 // ============================================================================
 
-const IPC_CHANNELS = [
-  'fs:read', 'fs:write', 'fs:edit', 'fs:search',
-  'proc:start', 'proc:read', 'proc:kill', 'proc:list',
-  'browser:create', 'browser:navigate', 'browser:execute', 'browser:close', 'browser:list',
-  'terminal:exec', 'terminal:resize', 'terminal:close', 'terminal:list',
-  'search:query',
-  'chat:send', 'chat:history',
-  'mcp:call', 'mcp:list',
-  'clipboard:read', 'clipboard:write', 'clipboard:watch',
-  'watcher:add', 'watcher:remove', 'watcher:list',
-  'power:assert', 'power:release',
-  'dialog:show',
-  'processes:list',
-  'git:status', 'git:diff', 'git:commit',
-  'fs:watcher:add', 'fs:watcher:remove',
-  'mcp:stdio:call',
-  'companion:show', 'companion:hide',
-  'scheduler:add', 'scheduler:remove', 'scheduler:list',
-] as const satisfies readonly IpcCommand[]
+const IPC_CHANNELS = IPC_COMMANDS
 
 // ============================================================================
 // Safe Event Bridge with AbortSignal Support
@@ -246,6 +232,42 @@ const api = {
     onTrigger: createEventBridge({
       trigger: 'scheduler:trigger',
     }),
+  },
+
+  // Desktop System APIs (new from refactor)
+  desktop: {
+    isAlwaysOnTop: () =>
+      invoke('desktop:isAlwaysOnTop', {} as any),
+    toggleAlwaysOnTop: (flag?: boolean) =>
+      invoke('desktop:toggleAlwaysOnTop', { flag } as any),
+    getSystemInfo: () =>
+      invoke('desktop:getSystemInfo', {} as any),
+    showItemInFolder: (path: string) =>
+      invoke('desktop:showItemInFolder', { path } as any),
+    openPath: (path: string) =>
+      invoke('desktop:openPath', { path } as any),
+    openExternal: (url: string) =>
+      invoke('desktop:openExternal', { url } as any),
+    evalJs: (code: string, timeoutMs?: number) =>
+      invoke('desktop:eval-js', { code, timeoutMs } as any),
+    localSearch: (query: string, options?: { count?: number; recency?: string; engines?: string; site?: string }) =>
+      invoke('local-search', { query, options } as any),
+    captureScreen: () =>
+      invoke('desktop:captureScreen', {} as any),
+    getActiveWindow: () =>
+      invoke('desktop:getActiveWindow', {} as any),
+    setCompanionMode: (enable?: boolean) =>
+      invoke('desktop:setCompanionMode', { enable } as any),
+    executeAction: (action: { type: string; text?: string; keys?: string; targetUrl?: string; targetApp?: string }) =>
+      invoke('desktop:executeAction', { action } as any),
+    getAiCapabilities: (force?: boolean) =>
+      invoke('desktop:getAiCapabilities', { force } as any),
+  },
+
+  // Auth APIs
+  auth: {
+    googleDesktop: () =>
+      invoke('auth:google-desktop', {} as any),
   },
 } as const
 

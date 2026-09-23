@@ -1,6 +1,23 @@
 # Changelog
 
-## v9.0.0 — Standalone Yogatik Browser v1.0.0, AI Privacy Engine & High-Performance Hyperdrive (2026-09-18)
+## v10.4.0 - Chat UI UX: Live Context Meter (2026-09-23)
+
+### ?? Chat UI UX — Live Context Awareness in the Composer
+- **Context Meter wired into the composer (`App.jsx` + `ContextMeter.jsx`)** — The component was built but never mounted anywhere: estimated context usage was invisible in the chat. It now sits above the input wrapper, showing live `estimated / limit` tokens (color-coded green/amber/red) that fold the DRAFT in cheaply — the user sees the meter turn amber/red BEFORE the model truncates or compacts their history away.
+- **System-prompt memoisation** — `activeSystemPrompt` recomputes only when the pieces that build it change (templates/persona/roots/entitlement — `getSystemPrompt`'s identity tracks exactly those), so a keystroke costs a string length in the meter, never a full prompt rebuild.
+- **Rendering tests added (`ContextMeter.test.jsx`)** — 4 new mount tests following the WiredPanels pattern ("the component was built but never mounted, so nothing had exercised its first render"): App-shaped messages render the badge, the draft is counted cheaply (101 tokens from a 400-char draft), empty conversation renders safely, and usage past 60%/85% changes state. **7 total** in the file.
+
+### ?? AI Max Utilisation (from this session — see AI_MAX_UTILISATION.md)
+- **Hardware capability probe (`AiCapabilities.ts`)** — GPU adapter + VRAM via `app.getGPUInfo`, cores, memory, WebGPU support; cached 5-min TTL.
+- **Tuned inference defaults** — Ollama `num_gpu` layers (70% VRAM budget) + `num_thread` (½ physical cores); ComfyUI resolution/steps ceilings per VRAM tier; surfaced via `desktop:getAiCapabilities` and `ollama:status`.
+- **Heap scaled to the machine** — 25% of RAM clamped [512, 16384] MB, replacing the unconditional `--max-old-space-size=8192` that swap-thrashed a 4GB machine.
+
+### ?? Bugs fixed (chat UI)
+- **`utils.ts` missing `Worker` import** — resolved to the DOM Worker, so the worker pool's `.on`/`.postMessage` calls never worked.
+- **`procBridge.ts` dead orphan** — imported non-existent APIs, duplicated channels already covered by `bgProcesses.cjs`, never imported → removed.
+- **`ocr.worker.ts` pdf-parse v2 API** — v1 default-callable import no longer exists → migrated to the v2 class API with proper `destroy()` cleanup.
+
+## v9.0.0 - Standalone Yogatik Browser v1.0.0, AI Privacy Engine & High-Performance Hyperdrive (2026-09-18)
 
 ### 🌐 Standalone Yogatik Browser Launch (v1.0.0)
 - **Standalone Privacy Browser (`yogatik-browser/`)** — Launched dedicated standalone AI browser with isolated profile, local state persistence, and native cross-platform binaries (Windows, macOS Apple Silicon/Intel, Linux AppImage/deb).

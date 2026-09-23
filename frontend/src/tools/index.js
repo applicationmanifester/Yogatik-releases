@@ -156,7 +156,7 @@ import {
   nobelPrizeTool, issLocationTool, tvShowTool, triviaQuizTool, postalLookupTool,
   nasaApodTool, itunesSearchTool, artInstituteTool, solarTimesTool,
   dnsLookupTool, activitySuggestTool, jokesTool, animalFactsTool,
-  cocktailRecipeTool, federalRegisterTool,
+  cocktailRecipeTool, mealRecipeTool, toolDiscoveryTool, federalRegisterTool,
   userProfileGenTool, nasaAsteroidsTool, bibleScriptureTool, wikimediaFeedTool,
   // waybackArchiveTool retired 2026-09-04 — a duplicate of knowledge.js's
   // archiveTool (same job, same endpoint). See archive.js note below.
@@ -469,6 +469,8 @@ const ALL_TOOLS = {
   jokes: jokesTool,
   animal_facts: animalFactsTool,
   cocktail_recipe: cocktailRecipeTool,
+  meal_recipe: mealRecipeTool,
+  tool_discovery: toolDiscoveryTool,
   federal_register: federalRegisterTool,
   user_profile_gen: userProfileGenTool,
   nasa_asteroids: nasaAsteroidsTool,

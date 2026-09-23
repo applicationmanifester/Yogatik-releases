@@ -18,11 +18,13 @@ import {
   jokesTool,
   animalFactsTool,
   cocktailRecipeTool,
+  mealRecipeTool,
   federalRegisterTool,
   userProfileGenTool,
   nasaAsteroidsTool,
   bibleScriptureTool,
   wikimediaFeedTool,
+   toolDiscoveryTool,
 } from './openApis'
 
 describe('Open Public APIs Tools', () => {
@@ -599,4 +601,57 @@ describe('Open Public APIs Tools', () => {
       expect(res.on_this_day[0].year).toBe(1969)
     })
   })
+
+   describe('tool_discovery', () => {
+     it('has valid schema definition', () => {
+       expect(toolDiscoveryTool.schema.description).toContain('discover')
+       expect(toolDiscoveryTool.schema.description).toContain('capabilities')
+       expect(toolDiscoveryTool.schema.properties.request).toBeDefined()
+     })
+
+     it('suggests relevant tools for recipe requests', async () => {
+       const res = await toolDiscoveryTool.execute({ request: 'I want to find a recipe for chicken tikka masala' })
+       expect(res.success).toBe(true)
+       expect(res.suggestions).toHaveLengthGreaterThan(0)
+       const recipeTools = res.suggestions.map(t => t.name)
+       expect(recipeTools).toContain('meal_recipe')
+       expect(recipeTools).toContain('cocktail_recipe')
+     })
+
+     it('suggests coding tools for programming requests', async () => {
+       const res = await toolDiscoveryTool.execute({ request: 'I need to debug a JavaScript function' })
+       expect(res.success).toBe(true)
+       expect(res.suggestions).toHaveLengthGreaterThan(0)
+       const codingTools = res.suggestions.map(t => t.name)
+       expect(codingTools).toContain('code_execute')
+       expect(codingTools).toContain('js_execute')
+       expect(codingTools).toContain('code_validate')
+     })
+
+     it('suggests research tools for learning requests', async () => {
+       const res = await toolDiscoveryTool.execute({ request: 'I want to learn about quantum physics' })
+       expect(res.success).toBe(true)
+       expect(res.suggestions).toHaveLengthGreaterThan(0)
+       const researchTools = res.suggestions.map(t => t.name)
+       expect(researchTools).toContain('web_search')
+       expect(researchTools).toContain('deep_research')
+       expect(researchTools).toContain('wikipedia')
+     })
+
+     it('respects category filters', async () => {
+       const res = await toolDiscoveryTool.execute({ request: 'I want to create something', category: 'media' })
+       expect(res.success).toBe(true)
+       expect(res.category).toBe('media')
+       // Should suggest media-related tools
+       const mediaTools = res.suggestions.map(t => t.name)
+       expect(mediaTools).toContain('image_generate')
+       expect(mediaTools).toContain('sticker_generate')
+     })
+
+     it('handles empty requests gracefully', async () => {
+       const res = await toolDiscoveryTool.execute({ request: '' })
+       expect(res.success).toBe(false)
+       expect(res.error).toContain('describe what you want to accomplish')
+     })
+   })
 })

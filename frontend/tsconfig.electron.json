@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.main.json",
+  "compilerOptions": {
+    "outDir": "dist-electron",
+    "rootDir": "electron",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "declaration": true,
+    "declarationMap": true,
+    "noEmit": false
+  },
+  "include": [
+    "electron/**/*.ts",
+    "electron/**/*.d.ts"
+  ],
+  "exclude": [
+    "electron/browserHarness/**",
+    "node_modules",
+    "dist-electron"
+  ]
+}

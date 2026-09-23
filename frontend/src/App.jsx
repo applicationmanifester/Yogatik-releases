@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import ReactDOM from 'react-dom'
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera, TrendingUp, Package } from 'lucide-react'
-import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, deleteTemplate, addCustomModelToProvider } from './api'
+import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, updateTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { setUserQuestionHandler } from './tools/askUser'
 import { useToast } from './hooks/useToast'
@@ -12,6 +12,7 @@ import { startActivityTurn, publishStream, publishStep, endActivityTurn, setActi
 import { YogatikLogo } from './components/YogatikLogo'
 import { ToolResultCard, TOOL_ICONS } from './components/ToolResultCard'
 import ToolStatusPanel from './components/ToolStatusPanel'
+import { ContextMeter } from './components/ContextMeter'
 import { forceSettleAll } from './toolStatus'
 import A11yAnnouncer, { announce, announceAssertive } from './components/A11yAnnouncer'
 import { trackConversation, trackSlashCommand, trackLiveSession, getExpertiseLevelSync, subscribeExpertise, hiddenForLevel } from './expertiseTracker'
@@ -27,6 +28,7 @@ import { Modal } from './components/Modal'
 import { TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 import { ModelPicker } from './components/ModelPicker'
 import { ProviderPicker } from './components/ProviderPicker'
+import { PersonaPicker } from './components/PersonaPicker'
 import { StylePicker } from './components/StylePicker'
 import { runWorkflow } from './workflows'
 import { FloatingCompanion } from './components/FloatingCompanion'
@@ -411,28 +413,7 @@ export default function App() {
       if (await getStoredProvider()) return
       if (await hasAnyProviderKey()) return
 
-      // Chrome's built-in Gemini Nano beats the WebLLM pull outright when
-      // it is ALREADY on the device (state 'available') — zero bytes this
-      // app fetches, so there is no reason to prefer a 350MB+ download over
-      // it. Deliberately checked for 'available' only, never 'downloadable':
-      // silently kicking off Chrome's own background model download for an
-      // anonymous first-time visitor is the exact "download as a fallback,
-      // not a decision" mistake this codebase avoids everywhere else (see
-      // the ComfyUI/local-generation notes) — a user who wants it can still
-      // pick "Chrome built-in AI" from the provider list and trigger that
-      // download themselves, same as the WebLLM download button does.
-      try {
-        const { getChromeAIAvailability } = await import('./chromeAI')
-        const chromeAvail = await getChromeAIAvailability()
-        if (cancelled) return
-        if (chromeAvail?.state === 'available') {
-          setProviderState('chromeai')
-          setModel('gemini-nano')
-          await Promise.all([setActiveProvider('chromeai'), setActiveModel('chromeai', 'gemini-nano')]).catch(() => {})
-          refreshModels()
-          return
-        }
-      } catch { /* Prompt API absent here — fall through to WebLLM */ }
+
       if (cancelled) return
 
       const gpu = await webGpuDetails()
@@ -492,6 +473,16 @@ export default function App() {
     try { return !localStorage.getItem('yogatik_onboarded') } catch { return false }
   })
   const [showPersonaModal, setShowPersonaModal] = useState(false)
+  const [editingPersona, setEditingPersona] = useState(null)
+
+  // Migration: If provider is ever set to legacy/removed chromeai, immediately switch to local
+  useEffect(() => {
+    if (provider === 'chromeai') {
+      setActiveProvider('local').catch(() => {})
+      setProviderState('local')
+      refreshModels()
+    }
+  }, [provider])
   const [notFoundRoute, setNotFoundRoute] = useState(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [settingsModalTab, setSettingsModalTab] = useState('providers')
@@ -1299,6 +1290,16 @@ export default function App() {
     )
   }, [promptTemplates, activeTemplate, chatRoots, ent])
 
+  // Context meter: the system prompt is the dominant STATIC cost per
+  // conversation. getSystemPrompt's identity changes exactly when the pieces
+  // that build it change (templates/persona/roots/entitlement), so this memo
+  // recomputes only then — a keystroke costs a string length in ContextMeter,
+  // never a full prompt rebuild.
+  const activeSystemPrompt = useMemo(
+    () => getSystemPrompt('', '', null),
+    [getSystemPrompt],
+  )
+
   /**
    * Start a face-to-face call. Live is a websocket protocol only Gemini speaks,
    * so it is gated on a Gemini key rather than the active chat provider.
@@ -1619,8 +1620,13 @@ export default function App() {
     // Entitlement: fast synchronous cache initialized, plus async validation
     loadEntitlement().then(setEnt).catch(() => {})
     getActiveProvider().then(async (p) => {
-      setProviderState(p)
-      setModel(await getActiveModel(p) || '')
+      let activeP = p
+      if (activeP === 'chromeai') {
+        activeP = 'local'
+        await setActiveProvider('local').catch(() => {})
+      }
+      setProviderState(activeP)
+      setModel(await getActiveModel(activeP) || '')
       setProviderStatus(await getAllProviderStatus())
     }).catch(() => {})
     getPrefs().then(pref => {
@@ -4796,39 +4802,60 @@ export default function App() {
         {!isDesktop() && <AdSenseBanner className="sidebar-ad" />}
         </div>
 
-        {/* Clean Sidebar Footer: Settings & Dashboard trigger + Account & Links */}
+        {/* Clean Sidebar Footer: Settings, Providers & Keys, Persona & Tools Icon Bar */}
         <div className="sidebar-footer">
-          <button
-            type="button"
-            className="sidebar-settings-btn"
-            onClick={() => navigateDashboard('settings')}
-            title="Open Settings & Dashboard (/app/settings)"
-          >
-            <div className="sidebar-settings-btn-main">
-              <Sliders size={14} style={{ color: 'var(--accent, #ff6b35)' }} />
-              <div className="sidebar-settings-btn-text">
-                <span className="sidebar-settings-btn-title">Settings &amp; Dashboard</span>
-              </div>
-            </div>
-            <ChevronDown size={13} style={{ transform: 'rotate(-90deg)', opacity: 0.5 }} />
-          </button>
-
-          {/* Providers & Keys: navigation button only — provider selection is in the chat toolbar */}
-          <button
-            type="button"
-            className="sidebar-providers-btn"
-            onClick={() => navigateDashboard('providers')}
-            title="Manage AI Providers, API Keys & Models (/app/providers)"
-            aria-label="Providers & Keys"
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Key size={13} style={{ color: 'var(--accent, #ff6b35)' }} />
-              <span style={{ fontWeight: 600, fontSize: '12px' }}>Providers &amp; Keys</span>
-            </div>
-            <span className="sidebar-providers-status-chip">
-              {Object.values(models).filter(m => m.available).length} ready
-            </span>
-          </button>
+          <div className="sidebar-action-icons-row" role="toolbar" aria-label="Settings, Providers and Keys">
+            <button
+              type="button"
+              className="sidebar-action-icon-btn"
+              onClick={() => navigateDashboard('settings')}
+              title="Settings & Dashboard (/app/settings)"
+              aria-label="Settings & Dashboard"
+            >
+              <Sliders size={16} />
+            </button>
+            <button
+              type="button"
+              className="sidebar-action-icon-btn"
+              onClick={() => navigateDashboard('providers')}
+              title={`Providers & Keys — ${Object.values(models).filter(m => m.available).length} ready (/app/providers)`}
+              aria-label="Providers & Keys"
+            >
+              <Key size={16} />
+              {Object.values(models).filter(m => m.available).length > 0 && (
+                <span className="sidebar-action-icon-badge">
+                  {Object.values(models).filter(m => m.available).length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              className="sidebar-action-icon-btn"
+              onClick={() => setShowPersonaModal(true)}
+              title="Create Custom Persona"
+              aria-label="Create Custom Persona"
+            >
+              <Sparkles size={16} />
+            </button>
+            <button
+              type="button"
+              className="sidebar-action-icon-btn"
+              onClick={() => navigateDashboard('agents')}
+              title="Specialized AI Agents & Swarms (/app/agents)"
+              aria-label="AI Agents"
+            >
+              <Bot size={16} />
+            </button>
+            <button
+              type="button"
+              className="sidebar-action-icon-btn"
+              onClick={() => navigateDashboard('capabilities')}
+              title="AI Tools & Capabilities (/app/capabilities)"
+              aria-label="Capabilities"
+            >
+              <Wrench size={16} />
+            </button>
+          </div>
 
           {/* Phase 3: Progressive Disclosure — More Tools expander */}
           {hiddenForLevel(expertiseLevel).size > 0 && (
@@ -5683,26 +5710,27 @@ export default function App() {
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}>
           <div className="composer-top-bar">
-            <div className="persona-chips">
-              <span className="persona-chip-label">Persona:</span>
-              {promptTemplates.slice(0, 6).map(t => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className={`persona-chip ${(conv?.persona || activeTemplate) === t.id ? 'active' : ''}`}
-                  onClick={() => setPersona(t.id)}
-                  title={t.system_prompt || t.name}
-                >
-                  {t.icon ? `${t.icon} ` : ''}{t.name}
-                </button>
-              ))}
+            <div className="persona-bar-section" role="toolbar" aria-label="Persona Selector and Controls" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <PersonaPicker
+                personas={promptTemplates}
+                activePersonaId={conv?.persona || activeTemplate || 'default'}
+                onSelect={(id) => setPersona(id)}
+                onEdit={(persona) => {
+                  setEditingPersona(persona)
+                  setShowPersonaModal(true)
+                }}
+                onCreate={() => {
+                  setEditingPersona(null)
+                  setShowPersonaModal(true)
+                }}
+              />
             </div>
             {docs.length > 0 && (
               <div
                 className="rag-docs-badge"
                 title={`${docs.length} document(s) in active project local RAG index`}
               >
-                <FileText size={11} /> {docs.length} RAG doc{docs.length === 1 ? '' : 's'} active
+                <FileText size={11} /> {docs.length}
               </div>
             )}
           </div>
@@ -5727,58 +5755,96 @@ export default function App() {
               disabled={!models[conv?.provider || provider]?.available}
               onChange={(m) => chooseModel(m, conv?.provider || provider)} />
 
+            {/* Composer icon actions */}
+            <div className="composer-icon-actions" role="toolbar" aria-label="Chat Actions">
+              <label className="composer-icon-action-btn upload-btn" title="Upload files or images" aria-label="Upload files">
+                <Upload size={14} />
+                <input type="file" hidden accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.tsv,.txt,.md,.json,.xml,.yaml,.yml,.toml,.ini,.env,.sql,.js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.h,.cs,.go,.rs,.php,.rb,.sh,.html,.css,*/*" onChange={handleUpload} />
+              </label>
 
-            <label className="upload-btn">
-              <Upload size={12} /> Upload
-              <input type="file" hidden accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.tsv,.txt,.md,.json,.xml,.yaml,.yml,.toml,.ini,.env,.sql,.js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.h,.cs,.go,.rs,.php,.rb,.sh,.html,.css,*/*" onChange={handleUpload} />
-            </label>
-            {features.enhance && <button className={`small-btn ${isEnhancing ? 'pulsing' : ''}`} onClick={handleEnhancePrompt} disabled={!input.trim() || isEnhancing} title="Enhance prompt with AI" aria-label="Enhance prompt with AI">
-              <Sparkles size={12} /> {isEnhancing ? 'Enhancing...' : 'Enhance'}
-            </button>}
-            {recognitionRef.current && (
-              <button className={`voice-btn ${listening ? 'listening' : ''}`} onClick={toggleVoiceInput} title={listening ? 'Stop listening' : 'Voice input'}
-                aria-label={listening ? 'Stop voice input' : 'Start voice input'}>
-                {listening ? <MicOff size={12} /> : <Mic size={12} />}
-                {listening ? 'Stop' : 'Voice'}
-              </button>
-            )}
-            {features.compare && (
-              <button className={`small-btn ${compareMode ? 'active' : ''}`}
-                onClick={() => {
-                  setCompareMode(v => {
-                    const next = !v
-                    if (next && (!compareModels[0] || !compareModels[1])) {
-                      const avail = models[provider]?.models || []
-                      const m1 = avail[0] || model || ''
-                      const m2 = avail[1] || avail[0] || model || ''
-                      setCompareModels([m1, m2])
-                    }
-                    return next
-                  })
-                }} title="Send one prompt to two models">
-                <GitCompare size={12} /> Compare
-              </button>
-            )}
-            {features.live && (
-              <button className="small-btn live-start" onClick={startLive}
-                title="Talk face to face — live voice and video">
-                <Radio size={12} /> Live
-              </button>
-            )}
-            {!isStreamingHere && conv?.messages?.some(m => m.role === 'assistant') && (
-              <>
-                <button className="small-btn btn-continue" onClick={continueTurn}
-                  title="Continue from where the model stopped and execute remaining steps"
-                  aria-label="Continue last response"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 500 }}>
-                  <Play size={12} /> Continue
+              {features.enhance && (
+                <button
+                  type="button"
+                  className={`composer-icon-action-btn ${isEnhancing ? 'pulsing' : ''}`}
+                  onClick={handleEnhancePrompt}
+                  disabled={!input.trim() || isEnhancing}
+                  title="Enhance prompt with AI"
+                  aria-label="Enhance prompt with AI"
+                >
+                  <Sparkles size={14} />
                 </button>
-                <button className="small-btn" onClick={regenerate}
-                  title="Regenerate last response" aria-label="Regenerate last response">
-                  <RefreshCw size={12} /> Regenerate
+              )}
+
+              {recognitionRef.current && (
+                <button
+                  type="button"
+                  className={`composer-icon-action-btn voice-btn ${listening ? 'listening' : ''}`}
+                  onClick={toggleVoiceInput}
+                  title={listening ? 'Stop listening' : 'Voice input'}
+                  aria-label={listening ? 'Stop voice input' : 'Start voice input'}
+                >
+                  {listening ? <MicOff size={14} /> : <Mic size={14} />}
                 </button>
-              </>
-            )}
+              )}
+
+              {features.compare && (
+                <button
+                  type="button"
+                  className={`composer-icon-action-btn ${compareMode ? 'active' : ''}`}
+                  onClick={() => {
+                    setCompareMode(v => {
+                      const next = !v
+                      if (next && (!compareModels[0] || !compareModels[1])) {
+                        const avail = models[provider]?.models || []
+                        const m1 = avail[0] || model || ''
+                        const m2 = avail[1] || avail[0] || model || ''
+                        setCompareModels([m1, m2])
+                      }
+                      return next
+                    })
+                  }}
+                  title="Compare two models side-by-side"
+                  aria-label="Compare models"
+                >
+                  <GitCompare size={14} />
+                </button>
+              )}
+
+              {features.live && (
+                <button
+                  type="button"
+                  className="composer-icon-action-btn live-start"
+                  onClick={startLive}
+                  title="Talk face to face — live voice and video"
+                  aria-label="Live face to face"
+                >
+                  <Radio size={14} />
+                </button>
+              )}
+
+              {!isStreamingHere && conv?.messages?.some(m => m.role === 'assistant') && (
+                <>
+                  <button
+                    type="button"
+                    className="composer-icon-action-btn btn-continue"
+                    onClick={continueTurn}
+                    title="Continue from where the model stopped and execute remaining steps"
+                    aria-label="Continue last response"
+                  >
+                    <Play size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="composer-icon-action-btn"
+                    onClick={regenerate}
+                    title="Regenerate last response"
+                    aria-label="Regenerate last response"
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
           {compareMode && (
             <div className="compare-bar">
@@ -5974,6 +6040,18 @@ export default function App() {
               </button>
             </div>
           )}
+
+          {/* Live context usage: estimated tokens vs the active model's
+              window. Sits here (not the header) so it re-renders with the
+              composer, folding the draft in cheaply — the user sees the
+              meter turn amber/red BEFORE the model truncates or compacts. */}
+          <ContextMeter
+            messages={conv?.messages || []}
+            systemPrompt={activeSystemPrompt}
+            input={input}
+            provider={provider}
+            model={model}
+          />
 
           <div className="input-wrapper" style={{ position: 'relative' }}>
             {showSlashMenu && (
@@ -6276,37 +6354,102 @@ export default function App() {
         />
       )}
       {showPersonaModal && (
-        <Modal title="Create Custom Persona" icon={<Sparkles size={16} />} onClose={() => setShowPersonaModal(false)}>
-          <form onSubmit={async (e) => {
-            e.preventDefault()
-            const name = e.target.elements.name.value.trim()
-            const system_prompt = e.target.elements.system_prompt.value.trim()
-            const icon = e.target.elements.icon.value.trim() || '🤖'
-            if (!name || !system_prompt) {
-              setErrorModalMsg('Persona Name and System Instructions are both required.')
-              return
-            }
-            const t = await createTemplate({ name, system_prompt, icon })
-            setShowPersonaModal(false)
-            refreshTemplates()
-            setActiveTemplate(t.id)
-            await setPref('persona', t.id)
-          }} style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <Modal
+          title={editingPersona ? `Edit Persona: ${editingPersona.name}` : 'Create Custom Persona'}
+          icon={<Sparkles size={16} />}
+          onClose={() => { setShowPersonaModal(false); setEditingPersona(null) }}
+        >
+          <form
+            key={editingPersona ? editingPersona.id : 'new'}
+            onSubmit={async (e) => {
+              e.preventDefault()
+              const name = e.target.elements.name.value.trim()
+              const system_prompt = e.target.elements.system_prompt.value.trim()
+              const icon = e.target.elements.icon.value.trim() || '🤖'
+              if (!name || !system_prompt) {
+                setErrorModalMsg('Persona Name and System Instructions are both required.')
+                return
+              }
+              if (editingPersona) {
+                await updateTemplate(editingPersona.id, { name, system_prompt, icon })
+                refreshTemplates()
+                setShowPersonaModal(false)
+                setEditingPersona(null)
+              } else {
+                const t = await createTemplate({ name, system_prompt, icon })
+                setShowPersonaModal(false)
+                setEditingPersona(null)
+                refreshTemplates()
+                setActiveTemplate(t.id)
+                await setPref('persona', t.id)
+              }
+            }}
+            style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}
+          >
             <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label htmlFor="persona-icon" style={{ fontSize: '12px' }}>Emoji / Icon</label>
-              <input id="persona-icon" name="icon" type="text" defaultValue="🤖" placeholder="e.g. 🤖, 🧑‍💻, ✍️" maxLength={4} style={{ padding: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'inherit' }} />
+              <input
+                id="persona-icon"
+                name="icon"
+                type="text"
+                defaultValue={editingPersona ? editingPersona.icon : '🤖'}
+                placeholder="e.g. 🤖, 🧑‍💻, ✍️"
+                maxLength={4}
+                style={{ padding: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'inherit' }}
+              />
             </div>
             <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label htmlFor="persona-name" style={{ fontSize: '12px' }}>Persona Name</label>
-              <input id="persona-name" name="name" type="text" placeholder="e.g. French Translator" required style={{ padding: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'inherit' }} />
+              <input
+                id="persona-name"
+                name="name"
+                type="text"
+                defaultValue={editingPersona ? editingPersona.name : ''}
+                placeholder="e.g. French Translator"
+                required
+                style={{ padding: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'inherit' }}
+              />
             </div>
             <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label htmlFor="persona-prompt" style={{ fontSize: '12px' }}>System Instructions / Prompt</label>
-              <textarea id="persona-prompt" name="system_prompt" placeholder="e.g. You are a French translator. Translate all user inputs into French..." required rows={5} style={{ padding: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'inherit', resize: 'vertical' }} />
+              <textarea
+                id="persona-prompt"
+                name="system_prompt"
+                defaultValue={editingPersona ? editingPersona.system_prompt : ''}
+                placeholder="e.g. You are a French translator. Translate all user inputs into French..."
+                required
+                rows={5}
+                style={{ padding: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'inherit', resize: 'vertical' }}
+              />
             </div>
             <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-              <button type="button" className="small-btn" style={{ flex: 1 }} onClick={() => setShowPersonaModal(false)}>Cancel</button>
-              <button type="submit" className="small-btn btn-primary" style={{ flex: 1 }}>Save Persona</button>
+              {editingPersona && editingPersona.id !== 'default' && (
+                <button
+                  type="button"
+                  className="small-btn"
+                  style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}
+                  onClick={async () => {
+                    await deleteTemplate(editingPersona.id)
+                    setShowPersonaModal(false)
+                    setEditingPersona(null)
+                    refreshTemplates()
+                    if (activeTemplate === editingPersona.id) setActiveTemplate('default')
+                  }}
+                >
+                  Delete
+                </button>
+              )}
+              <button
+                type="button"
+                className="small-btn"
+                style={{ flex: 1 }}
+                onClick={() => { setShowPersonaModal(false); setEditingPersona(null) }}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="small-btn btn-primary" style={{ flex: 1 }}>
+                {editingPersona ? 'Update Persona' : 'Save Persona'}
+              </button>
             </div>
           </form>
         </Modal>

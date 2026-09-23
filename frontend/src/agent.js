@@ -50,7 +50,7 @@ import { getActiveAgent, agentDisabledTools } from './agents'
 import { getActiveStyleBlock } from './styles'
 import { loadProjectInstructions } from './projectInstructions'
 import { todoBlock } from './todos'
-import { compactHistory, getModelContextLimits } from './compaction'
+import { compactHistory, getModelContextLimits, getDynamicContextLimits } from './compaction'
 import { getTodos } from './tools/todo'
 // Synchronous by design: buildSystemPrompt runs mid-turn and cannot await.
 import { isLocked as isEntitlementLocked, entitlement as entitlementSnapshot } from './entitlement'
@@ -533,6 +533,8 @@ export async function runAgent({
   modelCanSee = false, localVisionEnabled = true, maxRounds: explicitMaxRounds = null,
   onToken, onStatus, onToolStart, onToolResult, onDone, onError, onSources,
   initialToolMode = null, onToolModeChange = null, agentOverride = null, onSafety = null,
+  // New: provider-specific options and structured output
+  providerOptions = null, responseFormat = null,
 }) {
   const executionCtx = { conversationId: conversationId || null, projectId: projectId || null }
   const { getToolSchemas, prioritizeToolSchemas, executeTool } = await toolRegistry()
@@ -687,9 +689,15 @@ export async function runAgent({
     : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock())
   ) + mcpBlock + safetyDirective + canaryDirective
 
-  const limits = getModelContextLimits(provider, model)
+  // Use dynamic context limits based on conversation complexity
+  const limits = getDynamicContextLimits(provider, model, history)
   const hBudget = isLocalProvider ? Math.min(LOCAL_HISTORY_BUDGET, limits.budget) : limits.budget
   const hTurns = isLocalProvider ? Math.min(LOCAL_MAX_TURNS, limits.maxTurns) : limits.maxTurns
+  
+  // Log dynamic context adjustment for debugging
+  if (limits.dynamic && limits.complexity > 0.5) {
+    onStatus?.(`📊 Dynamic context: ${limits.complexity > 0.7 ? 'High' : 'Medium'} complexity detected, budget adjusted to ${Math.floor(hBudget/1000)}k chars`)
+  }
 
   let pastHistory = history
   if (userMessage && history.length > 0) {
@@ -1083,6 +1091,7 @@ export async function runAgent({
 
     streamChat({
       provider, apiKey, model, messages, tools, temperature, maxTokens, signal,
+      providerOptions, responseFormat,
       // In prompted mode the reply may BE a tool call, so it is buffered and
       // only shown once we know it is prose. Even in native mode, models like Nemotron/Qwen
       // may emit raw XML tool calls, so we avoid streaming raw tool tags into the user's bubble.
@@ -1637,6 +1646,7 @@ export async function runAgent({
         await new Promise((resolve) => {
           streamChat({
             provider, apiKey, model, messages, tools: null, temperature, signal,
+            providerOptions, responseFormat,
             onToken: (t) => { chunk += t; fullContent += t; onToken?.(t) },
             onDone: () => resolve(),
             onError: () => resolve(),

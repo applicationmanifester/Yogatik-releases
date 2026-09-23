@@ -65,6 +65,75 @@ export function getModelContextLimits(provider = '', model = '') {
 }
 
 /**
+ * Analyze conversation complexity to dynamically adjust context window
+ */
+function analyzeComplexity(history) {
+  const text = history.map(h => {
+    const c = h?.content
+    if (typeof c === 'string') return c
+    if (Array.isArray(c)) return c.filter(p => p?.type === 'text').map(p => p.text || '').join(' ')
+    return ''
+  }).join(' ')
+  
+  const indicators = [
+    /\b(architecture|algorithm|optimize|refactor|debug|integrate)\b/gi,
+    /\b(compare|analyze|evaluate|synthesize|trade.?off)\b/gi,
+    /```[\s\S]*?```/g, // code blocks
+  ]
+  let score = 0
+  for (const ind of indicators) score += (text.match(ind) || []).length
+  return Math.min(1, score / 20)
+}
+
+/**
+ * Count tool calls in conversation history
+ */
+function countToolCalls(history) {
+  let count = 0
+  for (const turn of history) {
+    if (turn.role === 'tool' || (turn.role === 'assistant' && turn.tool_calls)) count++
+  }
+  return count
+}
+
+/**
+ * Calculate average response token length
+ */
+function avgTokenLength(history) {
+  const responses = history.filter(h => h.role === 'assistant')
+  if (!responses.length) return 0
+  let total = 0
+  for (const r of responses) {
+    const c = r.content
+    total += typeof c === 'string' ? c.length : Array.isArray(c) ? c.filter(p => p.type === 'text').join('').length : 0
+  }
+  return total / responses.length / 3.8 // chars to tokens
+}
+
+/**
+ * Get dynamic context limits based on conversation complexity
+ */
+export function getDynamicContextLimits(provider, model, conversationHistory = []) {
+  const base = getModelContextLimits(provider, model)
+  
+  // Analyze conversation complexity
+  const complexity = analyzeComplexity(conversationHistory)
+  const toolUsage = countToolCalls(conversationHistory)
+  const avgResponseLength = avgTokenLength(conversationHistory)
+  
+  // Adjust budget dynamically
+  let budget = base.budget
+  if (complexity > 0.7) budget *= 1.5      // Complex = more context
+  if (toolUsage > 10) budget *= 1.3        // Tool-heavy = more context
+  if (avgResponseLength > 2000) budget *= 1.2 // Verbose = more context
+  
+  // Cap at model maximum
+  budget = Math.min(budget, base.estimatedMaxTokens * 0.8)
+  
+  return { ...base, budget: Math.floor(budget), dynamic: true, complexity, toolUsage, avgResponseLength }
+}
+
+/**
  * Decide which turns to summarize and which to keep verbatim. The newest turns
  * are always kept — at least one, whatever the budget.
  */

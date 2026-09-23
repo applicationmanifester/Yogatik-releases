@@ -318,10 +318,39 @@ if (typeof window !== 'undefined' || typeof globalThis !== 'undefined') {
   getAgentModule().catch(() => {})
 }
 
+import { getRoutingRecommendation, detectTaskType } from './smartRouter'
+import { getSetting } from './db'
+
 export async function streamMessage(body, onToken, onSources, onDone, onError, onStatus, onStreamId, onToolsDetected, onToolResult) {
-  const provider = body.provider || await getActiveProvider()
+  // ─── Smart Model Routing ───────────────────────────────────────────────────
+  // If no explicit model/provider chosen, route based on message intent
+  let provider = body.provider
+  let model = normalizeModelName(body.model)
+  let qualityParams = {}
+  let routingReason = ''
+  
+  if (!provider || !model) {
+    const userMessage = body.message || body.messages?.[body.messages.length - 1]?.content || ''
+    const isDesktopMode = isDesktop()
+    const userPrefs = await getSetting('learned_preferences', {})
+    
+    const routing = getRoutingRecommendation(userMessage, {
+      currentProvider: provider,
+      currentModel: model,
+      isDesktop: isDesktopMode,
+      userPrefs,
+    })
+    
+    if (!provider) provider = routing.provider
+    if (!model) model = routing.model
+    qualityParams = routing.qualityParams
+    routingReason = routing.reason
+    
+    if (routingReason) onStatus?.(`🎯 ${routingReason}`)
+  }
+  
   const apiKey = await db.getSetting(`apikey_${provider}`)
-  let model = normalizeModelName(body.model) || normalizeModelName(await db.getSetting(`model_${provider}`, ''))
+  model = normalizeModelName(model) || normalizeModelName(await db.getSetting(`model_${provider}`, ''))
   if (!model) {
     const provDef = getLLMProviders()[provider]
     model = normalizeModelName(provDef?.default_model) || normalizeModelName(provDef?.default) || normalizeModelName(provDef?.preferred?.[0]) || normalizeModelName(provDef?.models?.[0]) || ''
@@ -391,12 +420,13 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         ])],
         agentOverride: body.agent_override || null,
         persona: body.system_prompt || null,
-        // Probing costs a round-trip, so per message we trust the cache and
-        // fall back to the name heuristic; the probe runs when a key is verified.
-        modelCanSee: (await getCachedVision(pid, mdl)) ?? looksVisionCapable(mdl),
-        localVisionEnabled: prefs2.local_vision !== false,
-        onToolModeChange: (mode) => { setToolMode(pid, mdl, mode).catch(() => {}) },
-        temperature: body.temperature || 0.7,
+        // Smart routing quality parameters
+        temperature: qualityParams.temperature ?? body.temperature ?? 0.7,
+        maxTokens: qualityParams.maxTokens ?? null,
+        // Provider-specific options
+        providerOptions: qualityParams.providerOptions,
+        // JSON mode if requested
+        responseFormat: qualityParams.responseFormat,
         signal: controller.signal,
         onToken: (t) => { produced = true; onToken?.(t) },
         onStatus,
@@ -982,7 +1012,10 @@ const DEFAULT_TEMPLATES = [
 
 export async function getTemplates() {
   const custom = await db.getSetting('templates', [])
-  return [...DEFAULT_TEMPLATES, ...custom]
+  const customMap = new Map(custom.map(c => [c.id, c]))
+  const merged = DEFAULT_TEMPLATES.map(d => customMap.get(d.id) || d)
+  const extras = custom.filter(c => !DEFAULT_TEMPLATES.some(d => d.id === c.id))
+  return [...merged, ...extras]
 }
 
 export async function createTemplate(data) {
@@ -991,6 +1024,22 @@ export async function createTemplate(data) {
   templates.push(t)
   await db.setSetting('templates', templates)
   return t
+}
+
+export async function updateTemplate(id, data) {
+  const templates = await db.getSetting('templates', [])
+  const idx = templates.findIndex(t => t.id === id)
+  if (idx !== -1) {
+    templates[idx] = { ...templates[idx], ...data }
+    await db.setSetting('templates', templates)
+    return templates[idx]
+  } else {
+    const def = DEFAULT_TEMPLATES.find(t => t.id === id)
+    const updated = { id, ...(def || {}), ...data }
+    templates.push(updated)
+    await db.setSetting('templates', templates)
+    return updated
+  }
 }
 
 export async function deleteTemplate(id) {
@@ -1146,6 +1195,7 @@ export async function getModels() {
   const result = {}
   const desktop = isDesktop()
   const entries = Object.entries(providers).filter(([id, p]) => {
+    if (id === 'chromeai') return false
     if (desktop && p.isLocal && !p.isOllama) return false
     return true
   })
@@ -1804,7 +1854,10 @@ export async function getAllProviderStatus() {
 // ─── Active provider / model (persisted — the agent reads these) ───
 export async function getActiveProvider() {
   const saved = await db.getSetting('provider')
-  if (saved) return saved
+  if (saved && saved !== 'chromeai') return saved
+  if (saved === 'chromeai') {
+    await db.setSetting('provider', '').catch(() => {})
+  }
   // First provider that can actually answer right now: has a key (or needs
   // none) and no proxy. NEVER 'local' — that default silently pointed a fresh
   // install at a 750MB download with tools and web forced off.

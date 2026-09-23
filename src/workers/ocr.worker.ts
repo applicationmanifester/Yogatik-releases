@@ -1,7 +1,9 @@
 import { Job } from 'bullmq';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
-import pdfParse from 'pdf-parse';
+// pdf-parse v2 is a class-based API: new PDFParse({ data }) then getText().
+// The v1 default-callable import no longer exists.
+import { PDFParse } from 'pdf-parse';
 import sharp from 'sharp';
 import fs from 'fs/promises';
 import path from 'path';
@@ -20,10 +22,17 @@ export const processDocument = async (job: Job) => {
   const buffer = await streamToBuffer(data.Body as Readable);
   await fs.writeFile(localPath, buffer);
 
-  // simple OCR simulation: for PDFs use pdf-parse
+  // simple OCR simulation: for PDFs use pdf-parse (v2 class API). The parser
+  // is destroyed after use — it holds a pdf.js document open otherwise.
   let text = '';
   if (key.endsWith('.pdf')) {
-    text = (await pdfParse(buffer)).text;
+    const parser = new PDFParse({ data: new Uint8Array(buffer) });
+    try {
+      const result = await parser.getText();
+      text = result.text;
+    } finally {
+      await parser.destroy();
+    }
   } else if (['.jpg', '.jpeg', '.png'].some(ext => key.endsWith(ext))) {
     const metadata = await sharp(buffer).metadata();
     text = JSON.stringify(metadata);

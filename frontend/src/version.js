@@ -10,16 +10,17 @@ export const APP_CODENAME = 'Yogatik 10.3.0 — Adaptive Vision, Audio Device Re
 export const APP_RELEASES = [
   {
     "version": "10.3.0",
-    "title": "Yogatik 10.3.0: Adaptive Vision, Audio Device Recovery, Structured Reflex & Tool Hub",
-    "date": "September 21, 2026",
+    "title": "Yogatik 10.3.0: Adaptive Vision, Persona Studio & Enhanced Icon Navigation",
+    "date": "September 23, 2026",
     "isLatest": true,
     "highlights": [
+      "Persona Selector & In-Place Editing: Interactive persona dropdown replacing crowded chips, with active-persona quick-edit icon and per-persona editor modal for prompt/name/icon changes",
+      "Streamlined Icon Navigation: Left sidebar footer and composer actions consolidated into clean, accessible icon controls with clear tooltips",
+      "Provider Stabilization: Removed non-functional and unreliably gated Chrome Built-in AI (Gemini Nano) with automatic migration to working providers",
       "3-Way Vision & Adaptive Framerate: Tri-state vision mode control (Off / Auto / Always) with dynamic fps scaling (0.2fps static to 1.0fps motion), reducing bandwidth and token usage",
       "Audio Device Recovery: Automated reconnection listeners for hot-swapped audio devices (headsets and external mics) ensuring uninterrupted live sessions",
       "Prewarmed Neural Voice: Kokoro-82M speech synthesizer pre-warming on application initialization for instant natural voice feedback",
-      "Event-Driven Tool Status Hub: Centralized pub/sub tool lifecycle tracking with typed state transitions, diagnostics logging, and telemetry reporting",
-      "Electron HTTPS Upgrade & Fingerprint Guard: Automated HTTPS redirection and canvas/audio fingerprint protection layer on desktop browser sessions",
-      "Pyodide PDF Miner & Execution Guidance: Documented pure-Python alternatives (pdfminer.six) and clear runtime constraint guidance for sandbox execution"
+      "Event-Driven Tool Status Hub: Centralized pub/sub tool lifecycle tracking with typed state transitions, diagnostics logging, and telemetry reporting"
     ],
     "sections": [
       {

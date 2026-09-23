@@ -69,6 +69,36 @@ let _ollamaBin = null       // resolved binary path (cached after first find)
 // ── Utility ────────────────────────────────────────────────────────────────
 function log(msg) { console.log(`[ollama] ${msg}`) }
 
+/**
+ * Tuned inference defaults from the AI capability probe (core/AiCapabilities).
+ *
+ * The probe lives in the compiled TypeScript output, whose location differs
+ * per packaging layout (dev: ../../dist-electron/, packaged: ./core/), so
+ * each candidate is tried in order. Returns null when none resolve — the
+ * renderer then uses Ollama's own defaults, which is a slower token rate at
+ * worst, never a broken card.
+ */
+async function inferenceDefaults() {
+  const candidates = [
+    '../../dist-electron/core/AiCapabilities',   // dev: electron/*.cjs entry
+    './core/AiCapabilities',                     // packaged: dist-electron/*
+    '../core/AiCapabilities',                    // fallback
+  ]
+  for (const candidate of candidates) {
+    try {
+      const { probeAiCapabilities } = require(candidate)
+      const caps = await probeAiCapabilities()
+      return {
+        numGpuLayers: caps.inference.ollamaNumGpuLayers,
+        numThread: caps.inference.ollamaNumThread,
+        vramBytesEstimate: caps.gpu.vramBytesEstimate,
+        gpuAvailable: caps.gpu.available,
+      }
+    } catch { /* try the next candidate path */ }
+  }
+  return null
+}
+
 /** Find the ollama binary: try each candidate path in order. */
 async function findOllamaBin() {
   if (_ollamaBin) return _ollamaBin
@@ -336,10 +366,14 @@ function registerOllamaIpc(getWindow) {
     // that matters; the binary is only needed for `list` and `pull`.
     const running = await probeHttp()
     const bin = await findOllamaBin()
-    if (!bin && !running) return { installed: false, running: false, models: [], bin: null }
+    if (!bin && !running) return { installed: false, running: false, models: [], bin: null, inference: null }
 
     const { models, viaHttp } = running ? await listModels(bin) : { models: [], viaHttp: false }
-    return { installed: true, running, models, bin, viaHttp }
+    // Tuned inference defaults from the hardware probe (GPU layers, threads).
+    // Fail-open null: the renderer then falls back to Ollama's own defaults,
+    // and a missing probe module must not make the Ollama card look broken.
+    const inference = await inferenceDefaults()
+    return { installed: true, running, models, bin, viaHttp, inference }
   })
 
   /**

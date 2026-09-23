@@ -5,6 +5,9 @@
 import { createHash } from 'crypto'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs'
 import { join, dirname, resolve, extname, basename } from 'path'
+// Worker was used without an import, so it resolved to the DOM Worker (no
+// .on/.postMessage semantics used here) — every worker-pool call failed.
+import { Worker } from 'worker_threads'
 
 // ---- Hashing ----
 export function hashContent(content: string | Buffer): string {
@@ -217,7 +220,7 @@ export class WorkerPool<T = any, R = any> {
   
   private spawnWorker(): void {
     const worker = new Worker(this.workerPath)
-    worker.on('message', (msg) => {
+    worker.on('message', (msg: unknown) => {
       this.busy--
       const task = this.queue.shift()
       if (task) {
@@ -225,7 +228,7 @@ export class WorkerPool<T = any, R = any> {
       }
       // Handle response...
     })
-    worker.on('error', (err) => {
+    worker.on('error', (err: Error) => {
       this.busy--
       console.error('[WorkerPool] Worker error:', err)
     })

@@ -3,7 +3,7 @@
   "private": true,
   "version": "10.3.0",
   "type": "module",
-  "main": "electron/main.cjs",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "npx vite --configLoader runner",
     "build": "npx vite --configLoader runner build",

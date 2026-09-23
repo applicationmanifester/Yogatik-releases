@@ -27,6 +27,7 @@ export function ProviderPicker({
 
   const sortedList = useMemo(() => {
     return Object.entries(providers)
+      .filter(([pid]) => pid !== 'chromeai')
       .sort(([pidA, defA], [pidB, defB]) => {
         const readyA = defA.available || pidA === 'local' || pidA === 'ollama' || defA.is_ollama || defA.isOllama || defA.noKey || defA.isLocal || (defA.models && defA.models.length > 0)
         const readyB = defB.available || pidB === 'local' || pidB === 'ollama' || defB.is_ollama || defB.isOllama || defB.noKey || defB.isLocal || (defB.models && defB.models.length > 0)

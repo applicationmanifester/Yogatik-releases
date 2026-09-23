@@ -32,23 +32,6 @@ const PROVIDERS = {
     isLocal: true,
     noKey: true,
   },
-  chromeai: {
-    // Chrome's built-in Gemini Nano (Prompt API). Unlike `local` (WebLLM,
-    // 350MB-1.7GB the app fetches), this ships with/is fetched once by
-    // Chrome itself — zero download this app is responsible for. See
-    // chromeAI.js for the full reasoning. isLocal:true deliberately reuses
-    // every place api.js already special-cases on-device providers (keyless,
-    // forced prompted-mode tool calling, excluded from the fallback chain).
-    name: 'Chrome built-in AI (Gemini Nano)',
-    baseUrl: '',
-    models: ['gemini-nano'],
-    default: 'gemini-nano',
-    keyUrl: '',
-    isLocal: true,
-    isChromeAI: true,
-    noKey: true,
-    offlineReady: true,
-  },
   ollama: {
     name: 'Ollama (local)',
     // OpenAI-compatible endpoint of a locally-running Ollama daemon.
@@ -358,6 +341,7 @@ export async function streamChat({
   provider, apiKey, model, messages, tools = null,
   temperature = 1.0, maxTokens = null, signal, onToken, onToolCall, onDone, onError, onStatus,
   retriedWithoutTools = false, onToolsRejected = null, retriedFixedTemp = false, retriedOmitTemp = false,
+  providerOptions = null, responseFormat = null,
 }) {
   const prov = getProviders()[provider]
   if (!prov) throw new Error(`Unknown provider: ${provider}`)
@@ -454,6 +438,16 @@ export async function streamChat({
     // NVIDIA (needsProxy) rejects the tool_choice field with a 400.
     // All other providers accept "auto" fine, so only send it for those.
     if (!prov.needsProxy && !prov.isAnthropic) body.tool_choice = 'auto'
+  }
+
+  // Provider-specific options (e.g., Anthropic thinking, OpenAI reasoning)
+  if (providerOptions && typeof providerOptions === 'object') {
+    Object.assign(body, providerOptions)
+  }
+
+  // Structured output (JSON mode)
+  if (responseFormat && typeof responseFormat === 'object') {
+    body.response_format = responseFormat
   }
 
   try {
@@ -975,7 +969,7 @@ export function classifyQueryIntent(prompt = '', attachments = [], hasTools = fa
  * @param {string} currentModel
  */
 export function getSuggestedRoute(intent, configuredKeys = {}, currentProvider = '', currentModel = '') {
-  const isReady = (p) => !!configuredKeys[p] || p === 'chromeai' || p === 'local' || p === 'ollama'
+  const isReady = (p) => !!configuredKeys[p] || p === 'local' || p === 'ollama'
 
   const intentPicks = {
     vision: [
@@ -1000,7 +994,6 @@ export function getSuggestedRoute(intent, configuredKeys = {}, currentProvider =
       { provider: 'groq', model: 'llama-3.3-70b-versatile', label: 'Groq (Sub-second speed)' },
       { provider: 'nvidia', model: 'meta/llama-3.1-8b-instruct', label: 'NVIDIA Llama 3.1 8B (Free Instant)' },
       { provider: 'gemini', model: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { provider: 'chromeai', model: 'gemini-nano', label: 'Chrome Built-in AI (Offline)' },
     ],
     general: [
       { provider: 'groq', model: 'llama-3.3-70b-versatile', label: 'Groq Llama 3.3 70B' },

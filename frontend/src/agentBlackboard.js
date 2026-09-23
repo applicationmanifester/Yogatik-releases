@@ -2,7 +2,10 @@
  * agentBlackboard.js — High-speed shared in-memory blackboard for Multi-Agent Workflows.
  * Enables concurrent or sequential sub-agents to share discovered facts, URLs,
  * code snippets, and intermediate deductions without burning duplicate LLM tokens.
+ * Supports cross-session persistence.
  */
+
+import { getSetting, setSetting } from './db'
 
 export class AgentBlackboard {
   constructor(sessionId = 'default') {
@@ -13,9 +16,7 @@ export class AgentBlackboard {
     this.createdAt = Date.now()
   }
 
-  /**
-   * Record a verified fact or key-value finding
-   */
+  /** Record a verified fact or key-value finding */
   setFact(key, value, sourceAgent = 'agent') {
     if (!key) return
     this.facts.set(String(key), {
@@ -25,16 +26,12 @@ export class AgentBlackboard {
     })
   }
 
-  /**
-   * Retrieve a specific fact by key
-   */
+  /** Retrieve a specific fact by key */
   getFact(key) {
     return this.facts.get(String(key))?.value
   }
 
-  /**
-   * Add a discovery note or observation
-   */
+  /** Add a discovery note or observation */
   appendNote(note, sourceAgent = 'agent') {
     if (!note || typeof note !== 'string') return
     this.notes.push({
@@ -44,9 +41,7 @@ export class AgentBlackboard {
     })
   }
 
-  /**
-   * Store a reusable code snippet or artifact reference
-   */
+  /** Store a reusable code snippet or artifact reference */
   setCodeSnippet(identifier, code, language = 'text', sourceAgent = 'agent') {
     if (!identifier || !code) return
     this.codeSnippets.set(String(identifier), {
@@ -57,9 +52,7 @@ export class AgentBlackboard {
     })
   }
 
-  /**
-   * Produce a compact Markdown context summary to inject into downstream agent prompts
-   */
+  /** Produce a compact Markdown context summary to inject into downstream agent prompts */
   formatContextPrompt() {
     const parts = []
 
@@ -85,9 +78,28 @@ export class AgentBlackboard {
     return parts.join('\n\n')
   }
 
-  /**
-   * Clear or reset the blackboard
-   */
+  /** Serialize blackboard for persistence */
+  toJSON() {
+    return {
+      sessionId: this.sessionId,
+      facts: Array.from(this.facts.entries()),
+      notes: this.notes,
+      codeSnippets: Array.from(this.codeSnippets.entries()),
+      createdAt: this.createdAt,
+    }
+  }
+
+  /** Restore blackboard from serialized state */
+  static fromJSON(data) {
+    const bb = new AgentBlackboard(data.sessionId)
+    bb.facts = new Map(data.facts || [])
+    bb.notes = data.notes || []
+    bb.codeSnippets = new Map(data.codeSnippets || [])
+    bb.createdAt = data.createdAt || Date.now()
+    return bb
+  }
+
+  /** Clear or reset the blackboard */
   clear() {
     this.facts.clear()
     this.notes = []
@@ -100,7 +112,49 @@ const activeBlackboards = new Map()
 
 export function getSessionBlackboard(sessionId = 'default') {
   if (!activeBlackboards.has(sessionId)) {
-    activeBlackboards.set(sessionId, new AgentBlackboard(sessionId))
+    const bb = new AgentBlackboard(sessionId)
+    activeBlackboards.set(sessionId, bb)
+    // Non-blocking background restore if data exists
+    getSetting(`blackboard_${sessionId}`).then(saved => {
+      if (saved && activeBlackboards.get(sessionId) === bb) {
+        if (saved.facts) {
+          for (const [k, v] of saved.facts) {
+            if (!bb.facts.has(k)) bb.facts.set(k, v)
+          }
+        }
+        if (saved.notes && bb.notes.length === 0) {
+          bb.notes.push(...saved.notes)
+        }
+        if (saved.codeSnippets) {
+          for (const [k, v] of saved.codeSnippets) {
+            if (!bb.codeSnippets.has(k)) bb.codeSnippets.set(k, v)
+          }
+        }
+      }
+    }).catch(() => {})
   }
   return activeBlackboards.get(sessionId)
+}
+
+export async function loadSessionBlackboard(sessionId = 'default') {
+  try {
+    const saved = await getSetting(`blackboard_${sessionId}`)
+    if (saved) {
+      const bb = AgentBlackboard.fromJSON(saved)
+      activeBlackboards.set(sessionId, bb)
+      return bb
+    }
+  } catch { /* ignore */ }
+  return getSessionBlackboard(sessionId)
+}
+
+export async function persistBlackboard(sessionId = 'default') {
+  const bb = activeBlackboards.get(sessionId)
+  if (bb) {
+    await setSetting(`blackboard_${sessionId}`, bb.toJSON())
+  }
+}
+
+export function clearBlackboard(sessionId = 'default') {
+  activeBlackboards.delete(sessionId)
 }
