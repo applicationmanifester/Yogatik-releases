@@ -1,6 +1,10 @@
 # Changelog
 
-## v10.5.0 - Autonomous Reasoner Recovery, Windows Taskbar Shell & Agent Resilience (2026-09-23)
+## v10.5.0 - Autonomous Reasoner Recovery, Interactive RAG & Context Manager (2026-09-24)
+
+### 📑 Local RAG Knowledge & Context Window Interactive Management
+- **Interactive Local RAG Manager (`RagDocumentsModal.jsx`)** — Clicking the green `📄 RAG` badge in the composer now opens the complete RAG management hub: displays local storage details (Client IndexedDB `db.documents`), workspace project scope, total characters and passages, chunk passage previews with one-click copy, text file exports, individual document deletion, and direct file uploads into the RAG index.
+- **AI Model Context Window Inspector (`ContextUsageModal.jsx` + `ContextMeter.jsx`)** — Made the composer context meter badge (`1.4k / 16.0k`) interactive with keyboard navigation and hover highlighting. Clicking it reveals an itemized breakdown of tokens (System prompt, Chat history with user vs assistant ratio, Tool payloads, Indexed RAG corpus, and Draft prompt), color-coded capacity meter, quick compaction triggers, and direct navigation to the full analytics dashboard.
 
 ### 🧠 Agent & Reasoning Engine Resilience
 - **Expanded Planning Intent Recognition (`agent.js`)** — Broadened `hasUnexecutedToolIntent` to recognize multi-word connectors (`first`, `start by`, `begin by`, `next`), subjects (`I should`, `we should`, `I plan to`), and gerund/stems (`explore/exploring`, `examine/examining`, `look at`, `scan`, `review`, `debug`, `patch`), preventing premature halting when reasoning models plan tool executions.

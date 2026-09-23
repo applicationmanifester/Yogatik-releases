@@ -10,20 +10,29 @@ export const APP_CODENAME = 'Yogatik 10.5.0 — Autonomous Reasoner Recovery, Wi
 export const APP_RELEASES = [
   {
     "version": "10.5.0",
-    "title": "Yogatik 10.5.0: Autonomous Reasoner Recovery, Windows Taskbar Shell & Agent Resilience",
-    "date": "September 23, 2026",
+    "title": "Yogatik 10.5.0: Autonomous Reasoner Recovery, Interactive RAG & Context Manager",
+    "date": "September 24, 2026",
     "isLatest": true,
     "highlights": [
       "Autonomous Reasoner Recovery: Self-healing intent recognition and tool execution for reasoning models (Nemotron-3, DeepSeek-R1, Qwen)",
+      "Interactive Local RAG Manager: One-click inspection of saved IndexedDB location, chunk passage preview, export, and deletion from the composer RAG badge",
+      "AI Context Window Inspector: Clickable context meter revealing live itemized token breakdown, headroom capacity, compaction tools, and cost analytics",
       "Windows Desktop Shell Integration: Native taskbar icon persistence and AppUserModelId association in development and production builds",
       "Seamless Root Electron Launcher: Integrated forwarding entry point eliminating module resolution errors when launching from repository root",
-      "Actionable Reasoning Feedback: Interactive execution prompt and continue buttons when models formulate plans without immediate tool calls",
       "Robust Agent Turn Alternation: Proper user-assistant message sequencing preventing API reject errors during mid-turn tool nudging"
     ],
     "sections": [
       {
-        "category": "🧠 Agent & Reasoning Engine",
+        "category": "🧠 Agent & Context Management",
         "items": [
+          {
+            "title": "Interactive Local RAG Knowledge Hub",
+            "description": "Clicking the RAG badge opens full storage details (IndexedDB db.documents), passage previews with chunk copying, text export, and document removal."
+          },
+          {
+            "title": "AI Context Window & Token Inspector",
+            "description": "Clicking the context meter badge launches an itemized token breakdown covering system prompt, chat history, tool payloads, RAG context, and draft tokens."
+          },
           {
             "title": "Expanded Planning Intent Recognition",
             "description": "Expanded hasUnexecutedToolIntent to match connectors, modal auxiliaries, and gerund verbs across reasoning models."
