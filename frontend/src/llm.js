@@ -341,6 +341,7 @@ export async function streamChat({
   provider, apiKey, model, messages, tools = null,
   temperature = 1.0, maxTokens = null, signal, onToken, onToolCall, onDone, onError, onStatus,
   retriedWithoutTools = false, onToolsRejected = null, retriedFixedTemp = false, retriedOmitTemp = false,
+  retriedContextTrim = false,
   providerOptions = null, responseFormat = null,
 }) {
   const prov = getProviders()[provider]
@@ -509,6 +510,27 @@ export async function streamChat({
           retriedOmitTemp,
         })
       }
+
+      // 3. Model context window or completion token limit exceeded (e.g. NVIDIA NIM's "Please reduce the length of the messages or completion.")
+      const isContextLimitError = resp.status === 400 &&
+        /reduce the length of the messages or completion|reduce the length|context_length_exceeded|maximum context length|too long.*token/i.test(err)
+      if (isContextLimitError && !retriedContextTrim) {
+        onStatus?.('⚠️ Context boundary reached — auto-trimming history & retrying…')
+        const trimmed = messages?.length > 2
+          ? [messages[0], messages[messages.length - 1]]
+          : messages
+        return streamChat({
+          provider, apiKey, model: cleanModel, messages: trimmed, tools,
+          temperature, signal, onToken, onToolCall, onDone, onError, onStatus,
+          retriedWithoutTools, onToolsRejected,
+          retriedFixedTemp,
+          retriedOmitTemp,
+          retriedContextTrim: true,
+          maxTokens: Math.min(maxTokens || 4096, 2048),
+          providerOptions, responseFormat,
+        })
+      }
+
       if (resp.status === 400) {
         const parsed = parseProviderError(resp.status, err)
         onError?.(new Error(parsed.length > 20 ? parsed : `"${displayModelName}" rejected the request (400): ${parsed}`))

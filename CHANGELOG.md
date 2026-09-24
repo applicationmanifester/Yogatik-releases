@@ -12,6 +12,11 @@
 - **Continuous Real-Time Voice Dictation (`VoiceDictationButton.jsx` + `App.jsx`)** — Native Web Speech API STT with active glowing pulse indicators and animated 4-bar soundwave equalizer streaming transcribed clauses smoothly into the composer.
 - **1-Click Smart History Compaction (`ContextMeter.jsx` + `ContextUsageModal.jsx` + `App.jsx`)** — Whenever conversation context usage exceeds 50%, an amber **⚡ Compact** badge appears in the bottom status meter. Clicking runs semantic history summarization to free 60%+ headroom while preserving key memories.
 
+### 🛡️ Resilience, Context Self-Healing & UI Polish
+- **Self-Healing Context Boundary & NVIDIA NIM Auto-Retry (`llm.js` + `api.js` + `errorLog.js`)** — Automated self-healing for context length limit errors (`"Please reduce the length of the messages or completion."`). Automatically trims intermediate turns and reduces completion reservation before retrying, preventing turn failures. Diagnosed in the UI with a 1-click **Auto-Pick High-Context Model** button.
+- **Favorite Project Locations (`App.jsx` + `DirectoryTreeModal.jsx` + `favoriteLocations.js`)** — Pin frequently used workspace directory paths for instant 1-click access without repetitive navigation.
+- **Enforced Min-Widths on Selectors & Dropdowns (`styles.css`)** — Added strict minimum width thresholds across model pickers, provider selectors, and modal dropdowns.
+
 ## v10.5.0 - Autonomous Reasoner Recovery, Interactive RAG & Context Manager (2026-09-24)
 
 ### 📑 Local RAG Knowledge & Context Window Interactive Management

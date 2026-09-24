@@ -213,7 +213,7 @@ export function assessResponse(content, meta = {}) {
 
   // ── 1.5. Incomplete tool synthesis / raw tool receipt stub ─────────
   if (isToolReceiptStub(visible)) {
-    if (regenerations >= maxRegens) {
+    if (forcedFinal || regenerations >= maxRegens) {
       return verdict('degraded', 'accept_partial', 'Model stopped after tool execution without synthesizing an answer.', 'high', 'incomplete_synthesis')
     }
     return verdict('failed', 'regenerate', 'The model stopped after tool execution without writing the actual answer prose. Synthesize the findings now.', 'critical', 'incomplete_synthesis')

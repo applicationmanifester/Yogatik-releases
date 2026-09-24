@@ -150,6 +150,7 @@ const CHANNELS = {
   'desktop:captureScreen': P(CAP.CONTROL),
   'desktop:executeAction': P(CAP.CONTROL),
   'desktop:eval-js': P(CAP.CONTROL),
+  'desktop:openVlc': P(CAP.CONTROL),
   'companion:move': P(CAP.CONTROL), 'companion:click': P(CAP.CONTROL),
   'companion:scroll': P(CAP.CONTROL), 'companion:key': P(CAP.CONTROL),
   // Reads what OTHER applications copied — no web equivalent exists.

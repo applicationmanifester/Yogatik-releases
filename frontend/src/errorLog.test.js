@@ -238,5 +238,14 @@ describe('fs_edit and workspace errors are never misdiagnosed as model retiremen
     expect(d.title).toBe('Permission Denied')
     expect(d.suggestion).not.toMatch(/model provider/i)
   })
+
+  it('diagnoses NVIDIA NIM context length limit error with actionable auto-pick suggestion', () => {
+    const d = diagnoseError('Please reduce the length of the messages or completion.')
+    expect(d.type).toBe('context_length')
+    expect(d.category).toBe('Context Window / Token Limit')
+    expect(d.title).toBe('Prompt Exceeds Context Window')
+    expect(d.actionType).toBe('autopick')
+    expect(d.actionLabel).toBe('Auto-Pick High-Context Model')
+  })
 })
 

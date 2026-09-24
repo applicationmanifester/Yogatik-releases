@@ -296,7 +296,7 @@ export async function getFallbackChain(primary) {
 /** Errors worth trying a different model or provider for. */
 function isProviderFailure(msg = '') {
   return /\b(400|404|429|500|502|503|504|520|522|524)\b/.test(msg) ||
-    /timeout|no response|not responding|overloaded|rate limit|not found|does not exist|invalid model|unknown model/i.test(msg)
+    /timeout|no response|not responding|overloaded|rate limit|not found|does not exist|invalid model|unknown model|reduce the length|context.*length|token.*limit|maximum context/i.test(msg)
 }
 
 // ─── Chat (via browser agent) ───

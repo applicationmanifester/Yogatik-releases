@@ -150,14 +150,14 @@ export function diagnoseError(error) {
     }
   }
 
-  if (lower.includes('context_length_exceeded') || lower.includes('maximum context length') || lower.includes('too long') || lower.includes('token limit') || lower.includes('max_tokens')) {
+  if (lower.includes('context_length_exceeded') || lower.includes('maximum context length') || lower.includes('too long') || lower.includes('token limit') || lower.includes('max_tokens') || lower.includes('reduce the length of the messages') || lower.includes('reduce the length')) {
     return {
       type: 'context_length',
-      category: 'Context Window',
-      title: 'Conversation Exceeds Token Limit',
-      suggestion: 'The conversation is too long for this model. Try starting a new chat or trimming earlier turns.',
-      actionType: 'new_chat',
-      actionLabel: 'Start New Chat',
+      category: 'Context Window / Token Limit',
+      title: 'Prompt Exceeds Context Window',
+      suggestion: 'The model context limit was exceeded by the combination of conversation history, tool definitions, and completion tokens. Try trimming earlier turns, starting a new chat, or auto-picking a model with a larger context window.',
+      actionType: 'autopick',
+      actionLabel: 'Auto-Pick High-Context Model',
     }
   }
 

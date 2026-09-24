@@ -1618,38 +1618,12 @@ export async function runAgent({
           fullContent = recovered
           onToken?.(recovered)
         } else {
-          // If we gathered tool results, retry the synthesis pass with an explicit anti-thinking directive
-          // so reasoning models like Nemotron/DeepSeek don't stall in a think-only loop.
-          let synthesisRecovered = false
-          if (toolResults && Object.keys(toolResults).length > 0) {
-            for (let synthAttempt = 1; synthAttempt <= 2; synthAttempt++) {
-              throwIfAborted()
-              onStatus?.(`🔄 Synthesizing final answer from results (attempt ${synthAttempt}/2)…`)
-              fullContent = ''
-              tools = null
-              toolCallsToProcess = []
-              messages.push({
-                role: 'user',
-                content: 'IMPORTANT: Write your visible markdown answer to the user now using the gathered tool results. ' +
-                  'Do NOT output <think> tags or internal scratchpad monologue. Present the full findings and summary directly.',
-              })
-              await processStream()
-              harvestPromptedCalls(true)
-              if (visibleAnswer(fullContent)) {
-                synthesisRecovered = true
-                break
-              }
-            }
-          }
-
-          if (!synthesisRecovered && !visibleAnswer(fullContent)) {
-            const gathered = summariseToolResults(toolResults)
-            const fallback = gathered
-              ? 'I have completed the requested actions (tool results):\n\n' + gathered
-              : 'I have finished inspecting the files and applying the requested changes.'
-            fullContent = fallback
-            onToken?.(fallback)
-          }
+          const gathered = summariseToolResults(toolResults)
+          const fallback = gathered
+            ? 'I have completed the requested actions (tool results):\n\n' + gathered
+            : 'I have finished inspecting the files and applying the requested changes.'
+          fullContent = fallback
+          onToken?.(fallback)
         }
       }
     }
