@@ -526,7 +526,7 @@ export async function streamChat({
           retriedFixedTemp,
           retriedOmitTemp,
           retriedContextTrim: true,
-          maxTokens: Math.min(maxTokens || 4096, 2048),
+          maxTokens: maxTokens || null,
           providerOptions, responseFormat,
         })
       }

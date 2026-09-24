@@ -88,7 +88,7 @@ const ROUTING_TABLE = {
   speed: {
     provider: 'groq',
     models: ['llama-3.1-8b-instant', 'gemma2-9b-it', 'llama-3.3-70b-versatile'],
-    qualityParams: { temperature: 0.2, maxTokens: 2048, topP: 0.9 },
+    qualityParams: { temperature: 0.2, topP: 0.9 },
     reason: 'Groq provides sub-second latency for quick responses',
   },
   code: {
@@ -99,31 +99,31 @@ const ROUTING_TABLE = {
       'google/gemma-3-27b-it:free',
       'openai/gpt-4o-mini',
     ],
-    qualityParams: { temperature: 0.1, maxTokens: 8192, topP: 0.95, responseFormat: { type: 'json_object' } },
+    qualityParams: { temperature: 0.1, topP: 0.95, responseFormat: { type: 'json_object' } },
     reason: 'OpenRouter free tier has excellent code models',
   },
   reasoning: {
     provider: 'openai',
     models: ['o4-mini', 'gpt-4o', 'o3-mini'],
-    qualityParams: { temperature: 0.3, maxTokens: 16384, reasoningEffort: 'medium' },
+    qualityParams: { temperature: 0.3, reasoningEffort: 'medium' },
     reason: 'OpenAI reasoning models excel at complex logic',
   },
   vision: {
     provider: 'gemini',
     models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
-    qualityParams: { temperature: 0.4, maxTokens: 8192, safetySettings: 'BLOCK_NONE' },
+    qualityParams: { temperature: 0.4, safetySettings: 'BLOCK_NONE' },
     reason: 'Gemini has best-in-class vision understanding',
   },
   research: {
     provider: 'perplexity',
     models: ['sonar-pro', 'sonar-reasoning', 'sonar'],
-    qualityParams: { temperature: 0.2, maxTokens: 16384, topP: 0.9 },
+    qualityParams: { temperature: 0.2, topP: 0.9 },
     reason: 'Perplexity provides web-grounded responses with citations',
   },
   local: {
     provider: 'ollama',
     models: ['auto'], // Will be resolved to available local model
-    qualityParams: { temperature: 0.3, maxTokens: 4096 },
+    qualityParams: { temperature: 0.3 },
     reason: 'Ollama runs fully local for privacy',
   },
   free: {
@@ -134,13 +134,13 @@ const ROUTING_TABLE = {
       'deepseek/deepseek-chat:free',
       'mistralai/mistral-small-3.1-24b-instruct:free',
     ],
-    qualityParams: { temperature: 0.3, maxTokens: 4096 },
+    qualityParams: { temperature: 0.3 },
     reason: 'OpenRouter free tier provides capable models at zero cost',
   },
   general: {
     provider: 'gemini',
     models: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'],
-    qualityParams: { temperature: 0.4, maxTokens: 8192 },
+    qualityParams: { temperature: 0.4 },
     reason: 'Gemini Flash offers excellent quality/speed/cost balance',
   },
 }
@@ -187,7 +187,7 @@ export function getRoutingRecommendation(message, context = {}) {
       if (['speed', 'code', 'general'].includes(taskType) && !currentProvider) {
         finalProvider = 'ollama'
         finalModels = providers.ollama.models
-        finalParams = { temperature: 0.3, maxTokens: 4096 }
+        finalParams = { temperature: 0.3 }
       }
     }
   }
@@ -255,14 +255,6 @@ function selectBestModel(providerId, preferredModels, taskType) {
 function adjustParamsForTask(params, taskType, message) {
   const adjusted = { ...params }
   const text = message.toLowerCase()
-  
-  // Longer responses for complex tasks
-  if (taskType === 'code' && (text.includes('full') || text.includes('complete') || text.includes('entire'))) {
-    adjusted.maxTokens = Math.max(adjusted.maxTokens, 12288)
-  }
-  if (taskType === 'research' && (text.includes('comprehensive') || text.includes('detailed') || text.includes('thorough'))) {
-    adjusted.maxTokens = Math.max(adjusted.maxTokens, 32768)
-  }
   
   // Lower temperature for factual/code tasks
   if (taskType === 'code' || taskType === 'research') {

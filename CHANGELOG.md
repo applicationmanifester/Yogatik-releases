@@ -14,6 +14,7 @@
 
 ### 🛡️ Resilience, Context Self-Healing & UI Polish
 - **Self-Healing Context Boundary & NVIDIA NIM Auto-Retry (`llm.js` + `api.js` + `errorLog.js`)** — Automated self-healing for context length limit errors (`"Please reduce the length of the messages or completion."`). Automatically trims intermediate turns and reduces completion reservation before retrying, preventing turn failures. Diagnosed in the UI with a 1-click **Auto-Pick High-Context Model** button.
+- **Uninhibited Token Usage Across Providers & Smart Router (`smartRouter.js` + `api.js` + `llm.js` + `compaction.js`)** — Removed artificial token constraints and clamped output budgets across smart routing tables, allowing models to operate with full native context windows and unbounded output token length.
 - **Favorite Project Locations (`App.jsx` + `DirectoryTreeModal.jsx` + `favoriteLocations.js`)** — Pin frequently used workspace directory paths for instant 1-click access without repetitive navigation.
 - **Enforced Min-Widths on Selectors & Dropdowns (`styles.css`)** — Added strict minimum width thresholds across model pickers, provider selectors, and modal dropdowns.
 

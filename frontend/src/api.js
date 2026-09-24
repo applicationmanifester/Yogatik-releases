@@ -422,7 +422,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         persona: body.system_prompt || null,
         // Smart routing quality parameters
         temperature: qualityParams.temperature ?? body.temperature ?? 0.7,
-        maxTokens: qualityParams.maxTokens ?? null,
+        maxTokens: body.maxTokens ?? body.max_tokens ?? null,
         // Provider-specific options
         providerOptions: qualityParams.providerOptions,
         // JSON mode if requested

@@ -51,17 +51,20 @@ export function getModelContextLimits(provider = '', model = '') {
   if (p === 'anthropic' || m.includes('claude')) {
     return { budget: 80000, maxTurns: 35, estimatedMaxTokens: 200000 }
   }
-  if (p === 'openai' || m.includes('gpt-4') || m.includes('o1') || m.includes('o3')) {
+  if (p === 'openai' || m.includes('gpt-4') || m.includes('o1') || m.includes('o3') || m.includes('o4')) {
+    return { budget: 60000, maxTurns: 30, estimatedMaxTokens: 128000 }
+  }
+  if (p === 'nvidia' || m.includes('llama-3') || m.includes('nemotron')) {
     return { budget: 60000, maxTurns: 30, estimatedMaxTokens: 128000 }
   }
   if (p === 'deepseek' || m.includes('deepseek') || m.includes('qwen-2.5-72b')) {
     return { budget: 48000, maxTurns: 25, estimatedMaxTokens: 64000 }
   }
-  if (p === 'groq' || p === 'cerebras' || p === 'together') {
-    return { budget: 32000, maxTurns: 20, estimatedMaxTokens: 32000 }
+  if (p === 'groq' || p === 'cerebras' || p === 'together' || p === 'openrouter') {
+    return { budget: 32000, maxTurns: 20, estimatedMaxTokens: 128000 }
   }
   // Default cloud fallback
-  return { budget: 24000, maxTurns: 20, estimatedMaxTokens: 16000 }
+  return { budget: 24000, maxTurns: 20, estimatedMaxTokens: 128000 }
 }
 
 /**
