@@ -26,14 +26,14 @@ export function isDesktop() {
 
 export const DESKTOP_ONLY_TOOLS = new Set([
   'fs_add_folder', 'fs_list', 'fs_read', 'fs_write', 'fs_edit', 'fs_replace_content',
-  'fs_multi_replace', 'fs_patch', 'code_outline', 'fs_outline', 'fs_smart_read', 'fs_skim',
+  'fs_multi_replace', 'fs_batch_replace', 'fs_patch', 'code_outline', 'fs_outline', 'fs_smart_read', 'fs_skim',
   'fs_file_info', 'fs_copy', 'fs_batch_write', 'fs_search', 'fs_find_files', 'fs_codebase_map',
   'fs_delete', 'fs_mkdir', 'fs_move', 'fs_batch_read', 'fs_file_tree', 'fs_undo', 'fs_git',
   'fs_exists', 'fs_write_append', 'fs_compute_hash', 'fs_lock', 'fs_unlock', 'fs_atomic_write', 'fs_ping',
   'terminal_run', 'clipboard_access', 'watch_folder', 'system_state', 'process_manager',
   'file_dialog', 'git_status', 'git_log', 'git_diff', 'proc_start', 'proc_output',
   'proc_stop', 'proc_list', 'watch', 'computer_control', 'screen_inspect', 'desktop_action',
-  'local_image_generate', 'local_video_generate', 'aider_copilot',
+  'local_image_generate', 'local_video_generate', 'aider_copilot', 'test_and_heal',
 ])
 
 // The active chat supplies the context for every call. It is injected here, NOT
@@ -463,6 +463,7 @@ function cacheScope(opts) {
 }
 import { globalWorkspaceTrie } from './workspaceTrie'
 import { recordSnapshot } from '../workspaceTimeMachine'
+import { quickValidateSyntax } from './codeValidate'
 
 export const fsReadTool = {
   schema: {
@@ -792,6 +793,12 @@ export const fsWriteTool = {
 
       globalFsCache.set(path, String(content ?? ''), Date.now(), null, cacheScope(opts))
       globalWorkspaceTrie.insert(path)
+
+      const syntaxCheck = quickValidateSyntax(String(content ?? ''), path)
+      const warningText = !syntaxCheck.valid
+        ? `⚠️ Syntax Warning: ${syntaxCheck.summary}. Please fix this in your next step.`
+        : res.warning || undefined
+
       return ok({
         tool: 'fs_write',
         path,
@@ -799,8 +806,10 @@ export const fsWriteTool = {
         hash: res.hash,
         encoding: res.encoding,
         stale: res.stale || false,
-        warning: res.warning || undefined,
-        message: `Wrote ${path}${res.stale ? ' (it had changed on disk — see warning)' : ''}`,
+        warning: warningText,
+        syntax_valid: syntaxCheck.valid,
+        syntax_error: syntaxCheck.valid ? undefined : syntaxCheck.error,
+        message: `Wrote ${path}${res.stale ? ' (it had changed on disk — see warning)' : ''}${!syntaxCheck.valid ? ` [⚠️ Syntax Notice: ${syntaxCheck.error || syntaxCheck.summary}]` : ''}`,
       })
     })
   },
@@ -1402,6 +1411,90 @@ export const fsMultiReplaceTool = {
         replacements: r?.replaced ?? appliedCount,
         hash: r?.hash,
         message: `Successfully applied ${appliedCount} edits to ${path}`,
+      })
+    })
+  },
+}
+
+export const fsBatchReplaceTool = {
+  schema: {
+    name: 'fs_batch_replace',
+    description: 'Perform atomic search and replace across multiple files in the workspace in a single turn. Automatically records snapshots for 1-click rollback. Desktop app only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        changes: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: 'Target file path.' },
+              search: { type: 'string', description: 'Exact string or pattern to find.' },
+              replace: { type: 'string', description: 'Replacement string.' },
+              allow_multiple: { type: 'boolean', description: 'Replace all occurrences in this file (default false).' },
+            },
+            required: ['path', 'search', 'replace'],
+          },
+          description: 'Array of { path, search, replace, allow_multiple } file modification items.',
+        },
+        dry_run: { type: 'boolean', description: 'Preview all changes without writing to disk.' },
+      },
+      required: ['changes'],
+    },
+  },
+  async execute({ changes = [], dry_run = false } = {}, opts = {}) {
+    if (!Array.isArray(changes) || !changes.length) {
+      return fail('changes array with at least one item is required')
+    }
+    return guard(async () => {
+      const results = []
+      let totalReplaced = 0
+
+      for (const item of changes) {
+        const filePath = item.path || item.file
+        const searchStr = item.search ?? item.old ?? item.old_string
+        const replaceStr = item.replace ?? item.new ?? item.new_string
+        const allowMultiple = !!(item.allow_multiple ?? item.replaceAll ?? item.all)
+
+        if (!filePath || searchStr == null || replaceStr == null) {
+          results.push({ path: filePath, success: false, error: 'path, search, and replace are required' })
+          continue
+        }
+
+        const editRes = await fsEditTool.execute({
+          path: filePath,
+          old_string: searchStr,
+          new_string: replaceStr,
+          replace_all: allowMultiple,
+          dry_run,
+        }, opts)
+
+        if (editRes.success) {
+          totalReplaced += (editRes.replaced ?? 1)
+          results.push({
+            path: filePath,
+            success: true,
+            replaced: editRes.replaced ?? 1,
+            syntax_warning: editRes.warning,
+          })
+        } else {
+          results.push({
+            path: filePath,
+            success: false,
+            error: editRes.error,
+          })
+        }
+      }
+
+      const succeeded = results.filter(r => r.success).length
+      return ok({
+        tool: 'fs_batch_replace',
+        total_files: changes.length,
+        files_modified: succeeded,
+        total_replacements: totalReplaced,
+        dry_run: !!dry_run,
+        results,
+        message: `Batch refactored ${succeeded}/${changes.length} file(s) with ${totalReplaced} total replacement(s).`,
       })
     })
   },

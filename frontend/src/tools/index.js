@@ -75,13 +75,14 @@ import { getMcpSchemas, isMcpTool, callMcpTool } from '../mcp'
 import {
   isDesktop, fsAddFolderTool, fsListTool, fsReadTool, fsWriteTool, fsEditTool, fsSearchTool,
   fsFindFilesTool, fsDeleteTool, fsMkdirTool, fsMoveTool, fsBatchReadTool, fsFileTreeTool,
-  fsReplaceContentTool, fsMultiReplaceTool, fsFileInfoTool, fsBatchWriteTool, fsCopyTool,
+  fsReplaceContentTool, fsMultiReplaceTool, fsBatchReplaceTool, fsFileInfoTool, fsBatchWriteTool, fsCopyTool,
   fsUndoTool, fsGitTool, fsCodebaseMapTool, getWorkspaceCtx, withWorkspaceContext,
   fsExistsTool, fsWriteAppendTool, fsComputeHashTool, fsLockTool, fsUnlockTool, fsAtomicWriteTool, fsPingTool,
   DESKTOP_ONLY_TOOLS as REAL_DESKTOP_ONLY_TOOLS,
 } from './localFs'
 import { requestPermission } from '../permissions'
 import { terminalRunTool } from './terminalRun'
+import { testAndHealTool } from './testAndHeal'
 import { mcpResourceTool, mcpPromptTool } from './mcpResources'
 import { backgroundTaskSpawnTool } from '../backgroundWorkers'
 import { mcpSearchTool } from './mcpSearchTool'
@@ -362,7 +363,9 @@ const ALL_TOOLS = {
   fs_edit: fsEditTool,
   fs_replace_content: fsReplaceContentTool,
   fs_multi_replace: fsMultiReplaceTool,
+  fs_batch_replace: fsBatchReplaceTool,
   fs_patch: fsPatchTool,
+  test_and_heal: testAndHealTool,
   code_outline: codeOutlineTool,
   code_validate: codeValidateTool,
   fs_outline: fsOutlineTool,
@@ -636,6 +639,11 @@ export const TOOL_ALIASES = {
   security_playbook: 'hexstrike_generate_playbook',
   replace_file_content: 'fs_replace_content',
   multi_replace_file_content: 'fs_multi_replace',
+  batch_replace: 'fs_batch_replace',
+  batch_replace_content: 'fs_batch_replace',
+  tdd: 'test_and_heal',
+  tdd_runner: 'test_and_heal',
+  test_runner: 'test_and_heal',
   file_info: 'fs_file_info',
   batch_write: 'fs_batch_write',
   batch_write_files: 'fs_batch_write',
@@ -1463,10 +1471,14 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   if (/\b(cloudflare_os|cloudflare os|gatekeeper|gadget|cloudflare workers|ai gateway|edge workspace|capability token|sandboxed app)\b/i.test(text)) {
     scores['cloudflare_os'] = 220
   }
-  if (/\b(replace_content|multi_replace|replace file|edit file|patch file|modify file|fs_replace|fs_edit)\b/i.test(text)) {
+  if (/\b(replace_content|multi_replace|batch_replace|replace file|edit file|patch file|modify file|fs_replace|fs_edit)\b/i.test(text)) {
     scores['fs_replace_content'] = 200
     scores['fs_multi_replace'] = 200
+    scores['fs_batch_replace'] = 200
     scores['fs_edit'] = 190
+  }
+  if (/\b(test|vitest|jest|pytest|cargo test|test_and_heal|tdd|run tests)\b/i.test(text)) {
+    scores['test_and_heal'] = 220
   }
   if (/\b(find files|find file|locate file|glob|where is|search files by name|fs_find_files)\b/i.test(text)) {
     scores['fs_find_files'] = 210

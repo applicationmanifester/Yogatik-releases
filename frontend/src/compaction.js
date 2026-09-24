@@ -154,6 +154,18 @@ export function splitForCompaction(history, budget, maxTurns) {
     keep.unshift(h[i])
     used += len
   }
+
+  // Ensure keep does NOT start with an orphaned tool turn:
+  // An orphaned role: 'tool' at the head of a conversation triggers 400 from providers.
+  while (keep.length > 0 && keep[0].role === 'tool') {
+    keep.shift()
+  }
+
+  // If keep is empty after cleaning orphaned tool turns, keep at least the last turn
+  if (!keep.length && h.length > 0) {
+    keep.push(h[h.length - 1])
+  }
+
   return { toSummarize: h.slice(0, h.length - keep.length), keep }
 }
 
@@ -182,15 +194,31 @@ export function formatSummaryTurn(summary) {
  *                   runs on whatever provider the chat is already using.
  */
 /**
- * Send only {role, content} to the provider, never whatever extra fields a
- * stored message happens to carry. Multimodal array content is passed THROUGH
- * unchanged — stringifying it would inline a base64 image into the prompt as
- * megabytes of garbage tokens.
+ * Send clean {role, content} to the provider, while preserving valid tool_calls
+ * on assistant turns and tool_call_id/name on tool turns for OpenAI/NVIDIA API specs.
+ * Multimodal array content is passed THROUGH unchanged.
  */
 function normalizeTurn(m) {
-  return Array.isArray(m.content)
-    ? { role: m.role, content: m.content }
-    : { role: m.role, content: typeof m.content === 'string' ? m.content : String(m.content ?? '') }
+  const out = { role: m.role }
+  if (Array.isArray(m.content)) {
+    out.content = m.content
+  } else if (typeof m.content === 'string') {
+    out.content = m.content
+  } else if (m.content != null) {
+    out.content = String(m.content)
+  } else if (!m.tool_calls) {
+    out.content = ''
+  }
+
+  // Preserve valid tool calling fields so large chats don't crash OpenAI/NVIDIA NIM/vLLM
+  if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length) {
+    out.tool_calls = m.tool_calls
+  }
+  if (m.role === 'tool' && m.tool_call_id) {
+    out.tool_call_id = m.tool_call_id
+    if (m.name) out.name = m.name
+  }
+  return out
 }
 
 export async function compactHistory(history, { budget, maxTurns, summarize } = {}) {

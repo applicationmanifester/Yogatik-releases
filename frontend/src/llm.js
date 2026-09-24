@@ -279,6 +279,35 @@ async function smartFetch(url, rawOptions, prov, timeoutMs) {
 }
 
 /**
+ * Ensure OpenAI/NVIDIA API compliant message order for function/tool calling.
+ * Strict providers reject requests if a user reminder message is placed immediately after
+ * tool results before the assistant responds. Folds trailing reminders into preceding tool message.
+ */
+export function sanitizeMessagesForToolCalling(messages = []) {
+  if (!Array.isArray(messages) || messages.length <= 1) return messages
+  const sanitized = []
+  for (let i = 0; i < messages.length; i++) {
+    const current = messages[i]
+    const prev = sanitized[sanitized.length - 1]
+
+    if (
+      current?.role === 'user' &&
+      prev?.role === 'tool' &&
+      typeof current.content === 'string' &&
+      /reminder|folder access|system note/i.test(current.content)
+    ) {
+      if (typeof prev.content === 'string') {
+        prev.content += `\n\n[Instruction: ${current.content}]`
+      }
+      continue
+    }
+
+    sanitized.push({ ...current })
+  }
+  return sanitized
+}
+
+/**
  * Retry on rate limits, gateway timeouts (524), and transient upstream failures.
  * Honours Retry-After when present, else exponential backoff with jitter.
  */
@@ -384,7 +413,7 @@ export async function streamChat({
   let endpoint = `${prov.baseUrl}/chat/completions`
   const body = {
     model: cleanModel,
-    messages,
+    messages: sanitizeMessagesForToolCalling(messages),
     stream: true,
   }
 
@@ -707,7 +736,7 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
   const isNoTempModel = /(^|\/)(o[13](-mini|-preview)?|deepseek-r1|gpt-4o-realtime)/i.test(cleanModel)
   const isReasoningModel = /(^|\/)(o[13](-mini|-preview)?|nemotron-.*ultra|deepseek-r1)/i.test(cleanModel)
   let endpoint = `${prov.baseUrl}/chat/completions`
-  const body = { model: cleanModel, messages }
+  const body = { model: cleanModel, messages: sanitizeMessagesForToolCalling(messages) }
   if (isNoTempModel) {
     // Model route rejects the temperature parameter completely
   } else if (isReasoningModel) {

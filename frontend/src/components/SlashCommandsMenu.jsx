@@ -49,6 +49,20 @@ export const SLASH_COMMANDS = [
     color: '#8b5cf6',
   },
   {
+    command: '/tdd',
+    label: 'Autonomous TDD Loop',
+    description: 'Execute test suite, parse assertion failures, and autonomously self-heal code',
+    icon: Play,
+    color: '#10b981',
+  },
+  {
+    command: '/refactor',
+    label: 'Autonomous Code Refactor',
+    description: 'Clean up code, eliminate ambiguities, optimize architecture, and auto-verify with tests',
+    icon: RefreshCw,
+    color: '#8b5cf6',
+  },
+  {
     command: '/swarm',
     label: 'Multi-Agent Swarm',
     description: 'Deploy parallel sub-agent swarm to execute complex tasks',

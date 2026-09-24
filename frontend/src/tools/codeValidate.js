@@ -188,6 +188,59 @@ function validateJson(content) {
   }
 }
 
+/**
+ * Fast synchronous pre-flight syntax check for file writes/patches.
+ * Returns { valid: true } or { valid: false, error: string, line?: number, summary: string }.
+ */
+export function quickValidateSyntax(code = '', filePathOrExt = '') {
+  if (typeof code !== 'string' || !code.trim()) return { valid: true }
+
+  const ext = (filePathOrExt.includes('.') ? filePathOrExt.split('.').pop() : filePathOrExt).toLowerCase()
+
+  // 1. JSON check
+  if (ext === 'json') {
+    const jsonRes = validateJson(code)
+    if (!jsonRes.valid) {
+      return {
+        valid: false,
+        error: jsonRes.error,
+        line: jsonRes.line,
+        summary: `JSON syntax error on line ${jsonRes.line}: ${jsonRes.error}`,
+      }
+    }
+    return { valid: true }
+  }
+
+  // 2. Bracket delimiter check for programming languages
+  const codeExts = ['js', 'jsx', 'ts', 'tsx', 'cjs', 'mjs', 'css', 'html', 'xml']
+  if (codeExts.includes(ext)) {
+    const delimRes = checkBalancedDelimiters(code)
+    if (!delimRes.valid) {
+      return {
+        valid: false,
+        error: delimRes.error,
+        line: delimRes.line,
+        summary: `Syntax delimiter error: ${delimRes.error}`,
+      }
+    }
+  }
+
+  // 3. JSX / HTML tag balance
+  if (['jsx', 'tsx', 'html', 'xml'].includes(ext)) {
+    const tagRes = checkJsxTags(code)
+    if (!tagRes.valid) {
+      return {
+        valid: false,
+        error: tagRes.error,
+        tag: tagRes.tag,
+        summary: `Tag error: ${tagRes.error}`,
+      }
+    }
+  }
+
+  return { valid: true }
+}
+
 export const codeValidateTool = {
   schema: {
     description:

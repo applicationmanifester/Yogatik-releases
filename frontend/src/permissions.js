@@ -197,6 +197,21 @@ export async function requestPermission(tool, args, ctx = {}) {
     } catch {}
   }
 
+  // Check user preference for File Edit & Write Auto Execution
+  const WRITE_TOOLS = [
+    'fs_write', 'fs_edit', 'fs_replace_content', 'fs_multi_replace',
+    'fs_batch_replace', 'fs_patch', 'fs_batch_write', 'fs_write_append',
+    'fs_mkdir', 'fs_move', 'fs_copy', 'fs_atomic_write',
+  ]
+  if (WRITE_TOOLS.includes(tool)) {
+    try {
+      const prefs = await getSetting('prefs', {})
+      const writeSetting = prefs?.features?.fileWriteApproval || 'auto'
+      if (writeSetting === 'auto') return { allowed: true, reason: 'Autonomous file write/edit enabled in settings.' }
+      if (writeSetting === 'deny') return { allowed: false, reason: 'File modification disabled in settings (Read Only).' }
+    } catch {}
+  }
+
   const verdict = decide(rules, tool, args, ctx)
   if (verdict.outcome === 'allow') return { allowed: true, reason: verdict.reason }
   if (verdict.outcome === 'deny') return { allowed: false, reason: `Denied: ${verdict.reason}` }

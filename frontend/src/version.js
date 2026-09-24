@@ -3,16 +3,70 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '10.6.0'
+export const APP_VERSION = '10.7.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.6.0 — Frontier AI Studio, Smart Follow-Ups, Visual Diffs & Voice Dictation'
+export const APP_CODENAME = 'Yogatik 10.7.0 — Autonomous Code Execution, Self-Healing TDD, Batch Replace & Seamless Huge Chat Context'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.7.0",
+    "title": "Yogatik 10.7.0: Autonomous Code Execution, Self-Healing TDD Loop, Atomic Batch Replace & Seamless Huge Chat Scale",
+    "date": "September 25, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Autonomous Code Execution & Zero-Ambiguity Decision-Making: Agent autonomously decides whether to execute tests, build commands, and write code without prompting for permission",
+      "Auto-Approved File Editing with Time Machine Safety: Write, patch, and batch-replace files without permission modals, backed by 1-click snapshot restore",
+      "Autonomous Test-and-Heal Loop (test_and_heal): Executes test suites (Vitest, Jest, Pytest, Cargo, Go), parses structured diagnostics, and heals failures autonomously",
+      "Atomic Multi-File Batch Replace (fs_batch_replace): Perform regex/string replacement across multiple workspace files in a single atomic transaction",
+      "Seamless Huge Chat Scale: Preserves tool_calls, tool_call_id, and message sequences across compaction boundaries, eliminating model provider stalls",
+      "New Slash Commands: Added /tdd for autonomous test-driven development and /refactor for zero-ambiguity architecture cleanup"
+    ],
+    "sections": [
+      {
+        "category": "⚡ Autonomous Coding & Execution Engine",
+        "items": [
+          {
+            "title": "Autonomous Execution & Zero-Ambiguity Directives",
+            "description": "Directs the AI to act decisively when implementing, building, or refactoring code. Eliminates hesitant questions like 'should I run this?' or 'may I edit this file?' in favor of autonomous end-to-end implementation."
+          },
+          {
+            "title": "Auto-Approved File Edits with Time Machine Snapshots",
+            "description": "Default auto-approval for file writing, editing, and patching in active workspaces. Every modification creates a pre-write snapshot for instant 1-click rollback."
+          },
+          {
+            "title": "Autonomous Test-and-Heal Runner (test_and_heal)",
+            "description": "Runs Vitest, Jest, Pytest, or Go/Cargo tests, extracts structured assertion failures with exact file and line locations, and feeds diagnostics directly into the healing loop."
+          },
+          {
+            "title": "Atomic Multi-File Batch Replace (fs_batch_replace)",
+            "description": "Execute targeted string or regex replacements across multiple files in a single turn with atomic rollbacks on failure."
+          }
+        ]
+      },
+      {
+        "category": "🛡️ Reliability & Model Provider Compatibility",
+        "items": [
+          {
+            "title": "Seamless Huge Chat History Compaction",
+            "description": "History compaction now preserves assistant tool_calls and tool message IDs while preventing orphaned tool messages at context boundaries."
+          },
+          {
+            "title": "NVIDIA NIM & OpenAI Tool Message Sanitization",
+            "description": "Sanitizes message sequences to strictly adhere to provider schemas, eliminating unexpected provider rejection errors during multi-turn agent runs."
+          },
+          {
+            "title": "Pre-Flight Syntax Validation",
+            "description": "Fast synchronous syntax validation on file writes to catch unclosed brackets, quotes, and tags with instant self-healing warnings."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "10.6.0",
     "title": "Yogatik 10.6.0: Frontier AI Studio — Smart Follow-Ups, Visual Code Diffs, Hover Citations, Chart Sandbox & Live Waveform Dictation",
     "date": "September 24, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Dynamic Follow-Up Suggestion Chips: Context-aware next-turn prompt chips (unit tests, optimizations, deep explanations, visual charts) automatically derived from assistant replies",
       "Rich Web Citation Hover Cards: Instant popover on hovering search citations displaying domain, favicon, verification badge, snippet preview, and direct link",

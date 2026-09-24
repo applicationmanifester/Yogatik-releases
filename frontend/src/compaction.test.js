@@ -150,4 +150,27 @@ describe('getModelContextLimits & estimateTokens', () => {
     ])
     expect(turnTokens).toBeGreaterThan(8)
   })
+
+  it('preserves tool_calls on assistant turns and tool_call_id on tool turns', async () => {
+    const h = [
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', function: { name: 'fs_write' } }] },
+      { role: 'tool', tool_call_id: 'call_1', name: 'fs_write', content: '{"ok":true}' },
+    ]
+    const out = await compactHistory(h, { budget: 10000, maxTurns: 10, summarize: async () => 's' })
+    expect(out[0].tool_calls).toBeDefined()
+    expect(out[0].tool_calls[0].id).toBe('call_1')
+    expect(out[1].tool_call_id).toBe('call_1')
+    expect(out[1].name).toBe('fs_write')
+  })
+
+  it('prevents keep from starting with an orphaned tool turn', () => {
+    const h = [
+      { role: 'assistant', content: 'thinking...', tool_calls: [{ id: 'c1' }] },
+      { role: 'tool', tool_call_id: 'c1', content: 'res1' },
+      { role: 'user', content: 'next question' },
+    ]
+    // Force a split that would drop the assistant but keep the tool
+    const { keep } = splitForCompaction(h, 20, 2)
+    expect(keep[0].role).not.toBe('tool')
+  })
 })

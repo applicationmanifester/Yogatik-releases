@@ -1,5 +1,19 @@
 # Changelog
 
+## v10.7.0 - Autonomous Code Execution, Self-Healing TDD, Batch Replace & Seamless Huge Chat Context (2026-09-25)
+
+### ⚡ Autonomous Code Execution & Zero-Ambiguity Decision-Making
+- **Autonomous Execution Directives (`agent.js`)** — When tasked to implement, build, fix, refactor, or test code, the AI agent autonomously decides whether to execute tests, build commands, and write code. It never pauses to ask ambiguous questions like "Should I run this?", "Would you like me to execute tests?", or "May I edit this file?".
+- **Auto-Approved File Editing with Time Machine Snapshots (`features.js` + `permissions.js`)** — File writing, editing, and patching in active workspaces are auto-approved by default (`fileWriteApproval: 'auto'`), eliminating repetitive permission dialogs. Every modification is protected by Workspace Time Machine with 1-click snapshot restore.
+- **Autonomous Test-and-Heal Runner (`testAndHeal.js` + `test_and_heal`)** — Automatically runs Vitest, Jest, Pytest, Go, or Cargo tests in the active workspace, parses structured failure diagnostics and assertion errors down to exact files and lines, and feeds them into the self-healing loop.
+- **Atomic Multi-File Batch Replacement (`fs_batch_replace`)** — Added dedicated atomic search-and-replace across multiple files in a single turn with pre-write rollback snapshots.
+- **New Slash Commands (`SlashCommandsMenu.jsx`)** — Added `/tdd` for autonomous test-driven development loops and `/refactor` for zero-ambiguity architecture cleanup.
+
+### 🛡️ Seamless Huge Chat Scaling & Provider Message Order Compatibility
+- **Compaction Boundary Tool Call Preservation (`compaction.js`)** — Compaction now strictly preserves `tool_calls` on assistant messages and `tool_call_id`/`name` on tool turns, while preventing orphaned tool messages from starting compacted histories.
+- **NVIDIA NIM & OpenAI Tool Message Sequence Sanitization (`llm.js`)** — Prevents provider execution failures (`HTTP 400: Invalid message order`) by folding trailing user reminders into the preceding tool message content before payload transmission.
+- **Pre-Flight Syntax Validation (`codeValidate.js` + `localFs.js`)** — Synchronous pre-flight delimiter, bracket, and tag validation on all file writes, providing immediate syntax warnings and self-healing context.
+
 ## v10.6.0 - Frontier AI Studio: Smart Follow-Ups, Visual Code Diffs, Interactive Data Sandbox & Voice Dictation (2026-09-24)
 
 ### ✨ Frontier AI Chat & Reasoning Experience

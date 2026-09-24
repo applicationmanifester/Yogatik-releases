@@ -1,3 +1,6 @@
+// browserBridge.ts — Playwright-based browser automation bridge for Yogatik
+// REFACTORED: Full TypeScript types, automatic cleanup, crash handlers, periodic stale session cleanup
+
 import { ipcMain, BrowserWindow } from 'electron'
 import { browserRateLimiter } from './utils'
 import { validatePath } from './utils'
@@ -86,26 +89,72 @@ export interface StorageState {
   origins: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>
 }
 
+// Playwright types for type safety
+interface PlaywrightBrowser {
+  close(): Promise<void>
+  newContext(options?: any): Promise<PlaywrightContext>
+}
+
+interface PlaywrightContext {
+  close(): Promise<void>
+  newPage(): Promise<PlaywrightPage>
+  addCookies(cookies: Cookie[]): Promise<void>
+  clearCookies(): Promise<void>
+  storageState(): Promise<StorageState>
+  pages(): PlaywrightPage[]
+}
+
+interface PlaywrightPage {
+  close(): Promise<void>
+  goto(url: string, options?: any): Promise<any>
+  goBack(): Promise<void>
+  goForward(): Promise<void>
+  reload(): Promise<void>
+  screenshot(options?: any): Promise<Buffer>
+  pdf(options?: any): Promise<Buffer>
+  evaluate(script: string, args?: any[]): Promise<any>
+  click(selector: string, options?: any): Promise<void>
+  fill(selector: string, value: string, options?: any): Promise<void>
+  waitForSelector(selector: string, options?: any): Promise<any>
+  waitForFunction(fn: string, options?: any): Promise<any>
+  title(): Promise<string>
+  url(): string
+  on(event: string, listener: (...args: any[]) => void): this
+  keyboard: { press(key: string, options?: any): Promise<void>; type(text: string, options?: any): Promise<void> }
+  mouse: { click(x: number, y: number, options?: any): Promise<void> }
+  setViewportSize(viewport: { width: number; height: number }): Promise<void>
+  bringToFront(): Promise<void>
+  evaluateHandle(script: string, ...args: any[]): Promise<any>
+}
+
+interface PlaywrightModule {
+  chromium: { launch(options: any): Promise<PlaywrightBrowser> }
+  firefox: { launch(options: any): Promise<PlaywrightBrowser> }
+  webkit: { launch(options: any): Promise<PlaywrightBrowser> }
+}
+
 // ============================================================================
-// Session Management
+// Session Management with Automatic Cleanup
 // ============================================================================
 
 const sessions = new Map<string, BrowserSession>()
-const browsers = new Map<string, any>()
-const contexts = new Map<string, any>()
-const pages = new Map<string, any>()
+const browsers = new Map<string, PlaywrightBrowser>()
+const contexts = new Map<string, PlaywrightContext>()
+const pages = new Map<string, PlaywrightPage>()
+const pageCrashHandlers = new Map<string, () => void>()
 
-let playwright: any = null
+let playwright: PlaywrightModule | null = null
 let mainWindow: BrowserWindow | null = null
+let cleanupInterval: NodeJS.Timeout | null = null
 
 export function setMainWindow(window: BrowserWindow): void {
   mainWindow = window
 }
 
-async function getPlaywright() {
+async function getPlaywright(): Promise<PlaywrightModule> {
   if (!playwright) {
     try {
-      playwright = require('playwright')
+      playwright = require('playwright') as PlaywrightModule
     } catch {
       throw new Error('Playwright not installed. Run: npm install playwright')
     }
@@ -117,11 +166,64 @@ function generateSessionId(): string {
   return `browser_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
 
+// Cleanup a single session completely
+async function cleanupSession(sessionId: string): Promise<void> {
+  const page = pages.get(sessionId)
+  if (page) {
+    const handler = pageCrashHandlers.get(sessionId)
+    if (handler) {
+      try { page.off('crash', handler) } catch {}
+    }
+    try { await page.close() } catch {}
+    pages.delete(sessionId)
+  }
+
+  const context = contexts.get(sessionId)
+  if (context) {
+    try { await context.close() } catch {}
+    contexts.delete(sessionId)
+  }
+
+  const browser = browsers.get(sessionId)
+  if (browser) {
+    try { await browser.close() } catch {}
+    browsers.delete(sessionId)
+  }
+
+  sessions.delete(sessionId)
+  pageCrashHandlers.delete(sessionId)
+}
+
+// Periodic cleanup of stale sessions (30 min idle)
+function startPeriodicCleanup(): void {
+  if (cleanupInterval) return
+  cleanupInterval = setInterval(async () => {
+    const now = Date.now()
+    const MAX_AGE = 30 * 60 * 1000 // 30 minutes
+
+    for (const [sessionId, session] of sessions) {
+      if (now - session.createdAt > MAX_AGE) {
+        console.log(`[browserBridge] Cleaning up stale session: ${sessionId}`)
+        await cleanupSession(sessionId)
+      }
+    }
+  }, 60_000)
+}
+
+function stopPeriodicCleanup(): void {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval)
+    cleanupInterval = null
+  }
+}
+
 // ============================================================================
 // IPC Handlers
 // ============================================================================
 
 export function registerBrowserBridge(): void {
+  startPeriodicCleanup()
+
   // ---- Launch browser ----
   ipcMain.handle('browser:launch', async (_event, options: {
     browserType?: 'chromium' | 'firefox' | 'webkit'
@@ -166,33 +268,27 @@ export function registerBrowserBridge(): void {
     const page = await context.newPage()
     pages.set(sessionId, page)
 
-    page.on('crash', () => {
+    // Track crash handler for cleanup
+    const crashHandler = () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('browser:crash', { sessionId })
       }
-    })
+      // Auto-cleanup on crash
+      cleanupSession(sessionId).catch(console.error)
+    }
+    page.on('crash', crashHandler)
+    pageCrashHandlers.set(sessionId, crashHandler)
 
     return session
   })
 
-  // ---- Close browser ----
+  // ---- Close browser with full cleanup ----
   ipcMain.handle('browser:close', async (_event, sessionId: string): Promise<boolean> => {
     if (!browserRateLimiter.tryConsume('browser:close')) {
       throw new Error('Rate limit exceeded for browser:close')
     }
 
-    const browser = browsers.get(sessionId)
-    if (!browser) return false
-
-    try {
-      await browser.close()
-    } catch {}
-
-    sessions.delete(sessionId)
-    browsers.delete(sessionId)
-    contexts.delete(sessionId)
-    pages.delete(sessionId)
-
+    await cleanupSession(sessionId)
     return true
   })
 
@@ -206,7 +302,7 @@ export function registerBrowserBridge(): void {
     return sessions.get(sessionId) || null
   })
 
-  // ---- Navigate ----
+  // ---- Navigate with timeout handling ----
   ipcMain.handle('browser:navigate', async (_event, request: NavigateRequest): Promise<{ url: string; title: string }> => {
     if (!browserRateLimiter.tryConsume('browser:navigate')) {
       throw new Error('Rate limit exceeded for browser:navigate')
@@ -216,11 +312,15 @@ export function registerBrowserBridge(): void {
     if (!page) throw new Error(`Session ${request.sessionId} not found`)
 
     const { url, waitUntil = 'load', timeout = 30000 } = request
-    const response = await page.goto(url, { waitUntil, timeout })
 
-    return {
-      url: page.url(),
-      title: await page.title()
+    try {
+      const response = await page.goto(url, { waitUntil, timeout })
+      return {
+        url: page.url(),
+        title: await page.title()
+      }
+    } catch (error) {
+      throw new Error(`Navigation failed for session ${request.sessionId}: ${error.message}`)
     }
   })
 
@@ -243,7 +343,7 @@ export function registerBrowserBridge(): void {
     await page.reload()
   })
 
-  // ---- Screenshot ----
+  // ---- Screenshot with proper buffer handling ----
   ipcMain.handle('browser:screenshot', async (_event, request: ScreenshotRequest): Promise<{ path: string; data: string }> => {
     if (!browserRateLimiter.tryConsume('browser:screenshot')) {
       throw new Error('Rate limit exceeded for browser:screenshot')
@@ -313,7 +413,13 @@ export function registerBrowserBridge(): void {
     if (!page) throw new Error(`Session ${request.sessionId} not found`)
 
     const { script, args = [] } = request
-    return await page.evaluate(script, ...args)
+    try {
+      const result = await page.evaluate(script, ...args)
+      // Ensure result is serializable
+      return JSON.parse(JSON.stringify(result))
+    } catch (error) {
+      throw new Error(`Script evaluation failed: ${error.message}`)
+    }
   })
 
   // ---- Click ----
@@ -329,7 +435,7 @@ export function registerBrowserBridge(): void {
     await page.click(selector, options)
   })
 
-  // ---- Type text ----
+  // ---- Type ----
   ipcMain.handle('browser:type', async (_event, request: TypeRequest): Promise<void> => {
     if (!browserRateLimiter.tryConsume('browser:type')) {
       throw new Error('Rate limit exceeded for browser:type')
@@ -339,11 +445,10 @@ export function registerBrowserBridge(): void {
     if (!page) throw new Error(`Session ${request.sessionId} not found`)
 
     const { selector, text, options = {} } = request
-    await page.fill(selector, '', { force: true })
-    await page.type(selector, text, options)
+    await page.fill(selector, text, options)
   })
 
-  // ---- Wait for selector/function ----
+  // ---- Wait ----
   ipcMain.handle('browser:wait', async (_event, request: WaitRequest): Promise<void> => {
     if (!browserRateLimiter.tryConsume('browser:wait')) {
       throw new Error('Rate limit exceeded for browser:wait')
@@ -355,40 +460,20 @@ export function registerBrowserBridge(): void {
     const { selector, timeout = 30000, state = 'visible', function: fn } = request
 
     if (selector) {
-      await page.waitForSelector(selector, { timeout, state })
+      await page.waitForSelector(selector, { state, timeout })
     } else if (fn) {
       await page.waitForFunction(fn, { timeout })
+    } else {
+      throw new Error('Either selector or function is required')
     }
-  })
-
-  // ---- Get page content ----
-  ipcMain.handle('browser:content', async (_event, sessionId: string): Promise<string> => {
-    if (!browserRateLimiter.tryConsume('browser:content')) {
-      throw new Error('Rate limit exceeded for browser:content')
-    }
-
-    const page = pages.get(sessionId)
-    if (!page) throw new Error(`Session ${sessionId} not found`)
-
-    return await page.content()
-  })
-
-  // ---- Get page title ----
-  ipcMain.handle('browser:title', async (_event, sessionId: string): Promise<string> => {
-    const page = pages.get(sessionId)
-    if (!page) throw new Error(`Session ${sessionId} not found`)
-    return await page.title()
-  })
-
-  // ---- Get page URL ----
-  ipcMain.handle('browser:url', async (_event, sessionId: string): Promise<string> => {
-    const page = pages.get(sessionId)
-    if (!page) throw new Error(`Session ${sessionId} not found`)
-    return page.url()
   })
 
   // ---- Cookies ----
   ipcMain.handle('browser:cookies:get', async (_event, sessionId: string, urls?: string[]): Promise<Cookie[]> => {
+    if (!browserRateLimiter.tryConsume('browser:cookies:get')) {
+      throw new Error('Rate limit exceeded for browser:cookies:get')
+    }
+
     const context = contexts.get(sessionId)
     if (!context) throw new Error(`Session ${sessionId} not found`)
     return await context.cookies(urls)
@@ -398,6 +483,7 @@ export function registerBrowserBridge(): void {
     if (!browserRateLimiter.tryConsume('browser:cookies:set')) {
       throw new Error('Rate limit exceeded for browser:cookies:set')
     }
+
     const context = contexts.get(sessionId)
     if (!context) throw new Error(`Session ${sessionId} not found`)
     await context.addCookies(cookies)
@@ -407,6 +493,7 @@ export function registerBrowserBridge(): void {
     if (!browserRateLimiter.tryConsume('browser:cookies:clear')) {
       throw new Error('Rate limit exceeded for browser:cookies:clear')
     }
+
     const context = contexts.get(sessionId)
     if (!context) throw new Error(`Session ${sessionId} not found`)
     await context.clearCookies()
@@ -423,6 +510,7 @@ export function registerBrowserBridge(): void {
     if (!browserRateLimiter.tryConsume('browser:storage:set')) {
       throw new Error('Rate limit exceeded for browser:storage:set')
     }
+
     const browser = browsers.get(sessionId)
     if (!browser) throw new Error(`Session ${sessionId} not found`)
 
@@ -540,11 +628,19 @@ export function registerBrowserBridge(): void {
     const context = contexts.get(sessionId)
     if (!context) throw new Error(`Session ${sessionId} not found`)
     return context.pages().map((p: any) => {
-      // Find the page ID for this page
       for (const [id, pg] of pages.entries()) {
         if (pg === p) return id
       }
       return ''
     }).filter(Boolean)
   })
+
+  // ---- Shutdown handler for graceful cleanup ----
+  ipcMain.on('browser:shutdown', async () => {
+    stopPeriodicCleanup()
+    const sessionIds = Array.from(sessions.keys())
+    await Promise.all(sessionIds.map(id => cleanupSession(id)))
+  })
 }
+
+export { cleanupSession, startPeriodicCleanup, stopPeriodicCleanup }
