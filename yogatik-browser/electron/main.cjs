@@ -21,6 +21,27 @@ const { registerBrowserControl, destroyAllSessions } = require('./browserControl
 // ── App Identity ──────────────────────────────────────────────────────────
 app.setName('Yogatik Browser')
 
+if (process.platform === 'win32') {
+  const appId = 'app.yogatik.browser'
+  app.setAppUserModelId(appId)
+
+  if (!app.isPackaged && process.env.APPDATA) {
+    try {
+      const iconPath = path.join(__dirname, 'assets', 'icon.ico')
+      const startMenuDir = path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+      const shortcutPath = path.join(startMenuDir, 'Yogatik Browser.lnk')
+      shell.writeShortcutLink(shortcutPath, 'create', {
+        target: process.execPath,
+        args: `"${path.resolve(__dirname, '..')}"`,
+        appUserModelId: appId,
+        icon: iconPath,
+        iconIndex: 0,
+        description: 'Yogatik Browser',
+      })
+    } catch {}
+  }
+}
+
 // Isolated user data — never share cookies/state with Yogatik Studio
 const BROWSER_DATA = path.join(app.getPath('appData'), 'YogatikBrowser')
 app.setPath('userData', BROWSER_DATA)
@@ -92,7 +113,7 @@ const opts = {
     show: false,
     title: 'Yogatik Browser',
     backgroundColor: '#0a0e14',
-    icon: path.join(__dirname, 'assets', 'icon.png'),
+    icon: path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'browserWindowPreload.cjs'),
       contextIsolation: true,

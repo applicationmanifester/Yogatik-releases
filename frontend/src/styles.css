@@ -1382,7 +1382,42 @@ html, body {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-/* Provider Modal & Dialogs */
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay,
+  .modal,
+  .modal-content,
+  .modal-card,
+  .vision-modal-overlay,
+  .vision-modal,
+  .live-modal-overlay,
+  .live-search-dialog,
+  .ad-modal,
+  .trading-modal,
+  .modal-tabs button,
+  .template-card,
+  .modal-form input,
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .small-btn,
+  .vision-modal-retake,
+  .vision-chip,
+  .vision-modal-ask input,
+  .vision-modal-close,
+  .icon-btn,
+  .stop-btn,
+  .conv-actions .icon-btn,
+  .segmented button,
+  .live-btn,
+  .soundwave-bar,
+  .context-badge,
+  [class*="-modal"],
+  [class*="Modal"] {
+    animation: none !important;
+    transition: none !important;
+  }
+}
 .modal-overlay {
   position: fixed;
   inset: 0;

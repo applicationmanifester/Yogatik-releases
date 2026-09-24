@@ -13,7 +13,7 @@ export function ReasoningAccordion({
   elapsedSec = null,
   defaultExpanded = false,
 }) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded)
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded || isStreaming)
   const [copied, setCopied] = useState(false)
 
   // Estimate token count (~4 characters per token average)
@@ -85,9 +85,11 @@ export function ReasoningAccordion({
       {isExpanded && (
         <div className="reasoning-accordion-content">
           <div className="reasoning-markdown-body">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {reasoning}
-            </ReactMarkdown>
+            <div className="reasoning-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {reasoning}
+              </ReactMarkdown>
+            </div>
             {isStreaming && <span className="reasoning-cursor" aria-hidden="true">▌</span>}
           </div>
         </div>

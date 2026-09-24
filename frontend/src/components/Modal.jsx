@@ -11,6 +11,7 @@ const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:n
 export function Modal({ title, icon, onClose, children, footer, labelledBy = 'modal-title', className = '', embedded = false }) {
   const ref = useRef(null)
   const restoreTo = useRef(null)
+  const inertRootsRef = useRef([])
 
   useEffect(() => {
     // Embedded inside DashboardShell: the shell's own overlay already owns
@@ -24,6 +25,22 @@ export function Modal({ title, icon, onClose, children, footer, labelledBy = 'mo
     const node = ref.current
     const first = node?.querySelector(FOCUSABLE)
     ;(first || node)?.focus()
+
+    // Apply inert to background content for screen readers
+    // Find main content areas that should be inert while modal is open
+    const mainContent = document.querySelector('main, #root > div:first-child, .app, [role="main"]')
+    const sidebar = document.querySelector('aside, .sidebar, [role="complementary"]')
+    const header = document.querySelector('header, .header, [role="banner"]')
+    const nav = document.querySelector('nav, [role="navigation"]')
+    
+    const roots = [mainContent, sidebar, header, nav].filter(Boolean)
+    inertRootsRef.current = roots
+    
+    roots.forEach(root => {
+      if (root && !root.contains(node)) {
+        root.setAttribute('inert', '')
+      }
+    })
 
     const onKeyDown = (e) => {
       if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); return }
@@ -42,6 +59,10 @@ export function Modal({ title, icon, onClose, children, footer, labelledBy = 'mo
     document.addEventListener('keydown', onKeyDown, true)
     return () => {
       document.removeEventListener('keydown', onKeyDown, true)
+      // Remove inert from background content
+      inertRootsRef.current.forEach(root => {
+        if (root) root.removeAttribute('inert')
+      })
       restoreTo.current?.focus?.()
     }
   }, [onClose, embedded])

@@ -99,9 +99,27 @@ process.on('unhandledRejection', (reason) => {
 })
 
 // Windows needs an explicit AppUserModelID for notifications and taskbar grouping.
-// In development mode (unpackaged), setting an ID without a registered shortcut causes Windows to show a blank icon.
+// In development, we create a Start Menu shortcut with the AppUserModelId pointing to icon.ico
+// so Windows Taskbar renders the Yogatik brand icon instead of the generic electron.exe binary icon.
 if (process.platform === 'win32') {
-  app.setAppUserModelId(app.isPackaged ? 'app.yogatik.desktop' : process.execPath)
+  const appId = 'app.yogatik.desktop'
+  app.setAppUserModelId(appId)
+
+  if (!app.isPackaged && process.env.APPDATA) {
+    try {
+      const iconPath = path.join(__dirname, 'icon.ico')
+      const startMenuDir = path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+      const shortcutPath = path.join(startMenuDir, 'Yogatik.lnk')
+      shell.writeShortcutLink(shortcutPath, 'create', {
+        target: process.execPath,
+        args: `"${path.resolve(__dirname, '..')}"`,
+        appUserModelId: appId,
+        icon: iconPath,
+        iconIndex: 0,
+        description: 'Yogatik AI Workspace',
+      })
+    } catch {}
+  }
 }
 
 // ── Performance & High-Computation Hardware Acceleration ─────────────────────

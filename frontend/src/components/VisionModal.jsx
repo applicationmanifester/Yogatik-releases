@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react'
 import { Loader2, Aperture, X, Copy, Check, MessageSquare } from 'lucide-react'
+import { announce } from './A11yAnnouncer'
 
 /**
  * Vision Modal - Analyze camera/screen frames with AI vision
@@ -37,6 +38,16 @@ export function VisionModal({
     return () => document.removeEventListener('keydown', handler)
   }, [isOpen, visionQ, onClose, onAskVision])
 
+  // Announce state changes for screen readers
+  useEffect(() => {
+    if (!isOpen) return
+    if (visionLoading && !visionText) {
+      announce('Analyzing image…')
+    } else if (visionText && !visionLoading) {
+      announce('Analysis complete')
+    }
+  }, [isOpen, visionLoading, visionText])
+
   if (!isOpen) return null
 
   return (
@@ -52,7 +63,13 @@ export function VisionModal({
         <div className="vision-modal-body">
           {visionImage && (
             <div className="vision-modal-image">
-              <img src={`data:image/jpeg;base64,${visionImage}`} alt="Captured scene" />
+              <img
+                src={`data:image/jpeg;base64,${visionImage}`}
+                alt={visionText
+                  ? `Analysis: ${visionText.slice(0, 120)}${visionText.length > 120 ? '…' : ''}`
+                  : 'Captured scene awaiting analysis'
+                }
+              />
               <button
                 className={`vision-modal-retake ${retakeFlash ? 'flash' : ''}`}
                 onClick={onRetake}
@@ -96,7 +113,7 @@ export function VisionModal({
             ))}
           </div>
 
-          <div className="vision-modal-text">
+          <div className="vision-modal-text" aria-live="polite" aria-atomic="false">
             {visionLoading && !visionText && (
               <div className="vision-modal-loading">
                 <Loader2 size={16} className="spin" /> Looking…

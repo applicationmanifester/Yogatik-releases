@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ReasoningAccordion } from './ReasoningAccordion'
 import { sanitizeHtmlSync } from '../utils/sanitize'
+import { useTypewriter } from '../hooks/useTypewriter'
 
 /**
  * The in-flight assistant reply.

@@ -15,12 +15,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const src = fs.readFileSync(path.join(HERE, 'SettingsModal.jsx'), 'utf8')
+const modalSrc = fs.readFileSync(path.join(HERE, 'SettingsModal.jsx'), 'utf8')
+const providersSrc = fs.readFileSync(path.join(HERE, 'settings', 'ProvidersTab.jsx'), 'utf8')
+const src = providersSrc + '\n' + modalSrc
 
 describe('SettingsModal wires up the on-device provider cards', () => {
   it('imports the real panels, not a re-implementation', () => {
-    expect(src).toMatch(/import\s*\{\s*LocalModelPanel\s*\}\s*from\s*['"]\.\/LocalModelPanel['"]/)
-    expect(src).toMatch(/import\s*\{\s*ChromeAIPanel\s*\}\s*from\s*['"]\.\/ChromeAIPanel['"]/)
+    expect(src).toMatch(/import\s*\{\s*LocalModelPanel\s*\}\s*from\s*['"](\.\/|\.\.\/)LocalModelPanel['"]/)
+    expect(src).toMatch(/import\s*\{\s*ChromeAIPanel\s*\}\s*from\s*['"](\.\/|\.\.\/)ChromeAIPanel['"]/)
   })
 
   it('renders a panel for every isLocal provider that is not Ollama (Ollama keeps its own daemon UI)', () => {
