@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import { Activity } from 'lucide-react'
+import { Activity, Zap } from 'lucide-react'
 import { getModelContextLimits } from '../compaction'
 
 /**
@@ -39,6 +39,7 @@ export function ContextMeter({
   model = '',
   onOpenContextModal = null,
   onClick = null,
+  onQuickCompact = null,
 }) {
   const handleClick = onOpenContextModal || onClick
 
@@ -114,6 +115,33 @@ export function ContextMeter({
           transition: 'width 0.3s ease'
         }} />
       </div>
+      {percent >= 50 && onQuickCompact && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onQuickCompact()
+          }}
+          title="⚡ Quick Compact: Summarize older turns to free up tokens"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '3px',
+            background: 'rgba(251, 191, 36, 0.15)',
+            border: '1px solid rgba(251, 191, 36, 0.3)',
+            borderRadius: '4px',
+            color: '#fbbf24',
+            fontSize: '10px',
+            fontWeight: 700,
+            padding: '1px 5px',
+            cursor: 'pointer',
+            marginLeft: '4px',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Zap size={10} /> Compact
+        </button>
+      )}
     </div>
   )
 }

@@ -1,5 +1,17 @@
 # Changelog
 
+## v10.6.0 - Frontier AI Studio: Smart Follow-Ups, Visual Code Diffs, Interactive Data Sandbox & Voice Dictation (2026-09-24)
+
+### ✨ Frontier AI Chat & Reasoning Experience
+- **Dynamic Follow-Up Suggestion Chips (`FollowUpSuggestions.jsx` + `MessageBubble.jsx`)** — Assistant replies dynamically inspect the conversation turn to compute 3 smart, context-aware next action chips (writing unit tests, performance tuning, step-by-step deep dive explanations, or visual chart generation). Clicking any chip instantly submits or fills the user composer for a fluid dialogue loop.
+- **Rich Web Citation Hover Cards (`CitationHoverCard.jsx` + `MessageBubble.jsx`)** — Hovering over citations `[1]`, `[2]` or search references reveals an interactive glassmorphism card featuring the target site favicon (via Google Favicon Service), verified source badge, domain link, and rich snippet preview with hover-delay dismissal protection.
+- **Cursor-Style Visual Code Diff Reviewer (`DiffReviewModal.jsx` + `CodeBlock.jsx`)** — Every code snippet header now includes an interactive **Diff** button. Clicking it launches a unified red/green diff review modal computing added/removed lines, summary change metrics (`+N / -M`), and single-click **Accept & Apply**, **Reject**, or **Copy** controls.
+
+### 📊 Artifact Canvas & Voice Audio
+- **Interactive SVG Data Visualization Sandbox (`DataChartSandbox.jsx` + `ArtifactCanvas.jsx`)** — Artifact Canvas features a dedicated **Chart** tab button that parses raw CSV, Markdown tables, or JSON arrays into clean, zero-dependency SVG charts (**Bar Chart**, **Line Graph**, and **Donut Chart**) with summary metrics (Total, Average, and Percentage Share).
+- **Continuous Real-Time Voice Dictation (`VoiceDictationButton.jsx` + `App.jsx`)** — Native Web Speech API STT with active glowing pulse indicators and animated 4-bar soundwave equalizer streaming transcribed clauses smoothly into the composer.
+- **1-Click Smart History Compaction (`ContextMeter.jsx` + `ContextUsageModal.jsx` + `App.jsx`)** — Whenever conversation context usage exceeds 50%, an amber **⚡ Compact** badge appears in the bottom status meter. Clicking runs semantic history summarization to free 60%+ headroom while preserving key memories.
+
 ## v10.5.0 - Autonomous Reasoner Recovery, Interactive RAG & Context Manager (2026-09-24)
 
 ### 📑 Local RAG Knowledge & Context Window Interactive Management

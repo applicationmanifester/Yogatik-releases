@@ -158,7 +158,7 @@ jobs:
             * **macOS (Intel)** — `Yogatik-x64.dmg` or `Yogatik-x64.zip`
             * **Linux** — `Yogatik.AppImage` or `Yogatik.deb`
 
-            ### 🌐 Yogatik Browser (v1.0.0) Standalone AI Browser
+            ### 🌐 Yogatik Browser (${{ steps.release-version.outputs.pkg_tag }}) Standalone AI Browser
             * **Windows** — `YogatikBrowser-Setup.exe`
             * **macOS (Apple Silicon M1/M2/M3)** — `YogatikBrowser-arm64.dmg` or `YogatikBrowser-arm64.zip`
             * **macOS (Intel)** — `YogatikBrowser-x64.dmg` or `YogatikBrowser-x64.zip`

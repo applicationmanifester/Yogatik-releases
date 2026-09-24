@@ -15,6 +15,10 @@ import { mdToHtml } from '../tools/mdToPdf'
 import { ToolResultCard, TOOL_ICONS } from './ToolResultCard'
 import { diagnoseError } from '../errorLog'
 import { AdaptiveCard, parseAdaptiveCards } from './AdaptiveCard'
+import { ReasoningAccordion } from './ReasoningAccordion'
+import { AgentWorkflowStepper } from './AgentWorkflowStepper'
+import { FollowUpSuggestions } from './FollowUpSuggestions'
+import { CitationHoverCard } from './CitationHoverCard'
 
 /**
  * "Why did I say this" — a plain-language summary of what shaped the reply
@@ -338,6 +342,7 @@ const MessageBubble = React.memo(function MessageBubble({
 
   // Provenance explanation state — expanded/collapsed
   const [showProvenance, setShowProvenance] = useState(false)
+  const [hoveredSourceIdx, setHoveredSourceIdx] = useState(null)
 
 
   // Failed turns are rendered with actionable diagnosis, resolution recommendations, and copy tools
@@ -515,34 +520,13 @@ const MessageBubble = React.memo(function MessageBubble({
           })}
         </div>
       )}
-      {msg.role === 'assistant' && (
-        <details className="activity-trace">
-          <summary>Steps, thoughts & actions taken ({msg.trace?.length || 1} step{(msg.trace?.length || 1) === 1 ? '' : 's'})</summary>
-          <p className="why-explain">{explainReply(msg, formattedModelName)}</p>
-          <ol>
-            {msg.trace?.length > 0 ? (
-              msg.trace.map((s, i) => {
-                const Icon = TOOL_ICONS[s.tool] || Wrench
-                const arg = s.args && Object.keys(s.args).length
-                  ? JSON.stringify(s.args).replace(/^{|}$/g, '').slice(0, 180)
-                  : ''
-                const mark = s.status === 'error' ? '✕ Failed' : s.status === 'done' ? '✓ Completed' : '… In progress'
-                return (
-                  <li key={i} className={`trace-step trace-${s.status}`}>
-                    <Icon size={11} /> <span className="trace-tool">Step {i + 1}: Executed {s.tool}</span>
-                    {arg && <div className="trace-args" style={{ fontSize: '10.5px', opacity: 0.85, marginTop: '2px' }}>Input: {arg}</div>}
-                    <span className="trace-mark" style={{ fontSize: '10px', marginLeft: 'auto', fontWeight: 600 }}>{mark}</span>
-                  </li>
-                )
-              })
-            ) : (
-              <li className="trace-step trace-done">
-                <Wrench size={11} /> <span className="trace-tool">Step 1: Direct response generation ({formattedModelName})</span>
-                <span className="trace-mark" style={{ fontSize: '10px', marginLeft: 'auto', fontWeight: 600 }}>✓ Completed</span>
-              </li>
-            )}
-          </ol>
-        </details>
+      {msg.role === 'assistant' && (msg.toolsUsed?.length > 0 || msg.trace?.length > 0) && (
+        <AgentWorkflowStepper
+          trace={msg.trace || []}
+          toolsUsed={msg.toolsUsed || []}
+          modelName={formattedModelName}
+          explanation={explainReply(msg, formattedModelName)}
+        />
       )}
       {msg.file && (
         <div className="msg-attachment-badge">
@@ -581,12 +565,9 @@ const MessageBubble = React.memo(function MessageBubble({
           {msg.imageName && <span className="msg-image-caption">{msg.imageName}</span>}
         </div>
       )}
-      {reasoning && (
-        <details className="reasoning-panel">
-          <summary>Thinking</summary>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{reasoning}</ReactMarkdown>
-        </details>
-      )}
+      {reasoning ? (
+        <ReasoningAccordion reasoning={reasoning} isStreaming={false} />
+      ) : null}
       {/* If there is no separate answer, show a clean action summary without duplicating internal thinking */}
       {msg.role === 'assistant' && typeof answer === 'string' && !answer && (
         <div className="message-content">
@@ -697,8 +678,16 @@ const MessageBubble = React.memo(function MessageBubble({
           ))}
         </div>
       )}
+      {msg.role === 'assistant' && (
+        <FollowUpSuggestions
+          content={answer || (typeof msg.content === 'string' ? msg.content : '')}
+          onSelectSuggestion={(prompt) => {
+            window.dispatchEvent(new CustomEvent('yogatik:submit-prompt', { detail: { prompt } }))
+          }}
+        />
+      )}
       {msg.sources?.length > 0 && (
-        <div className="sources" style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg-input, rgba(0,0,0,0.15))', borderRadius: 8, border: '1px solid var(--border)' }}>
+        <div className="sources" style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg-input, rgba(0,0,0,0.15))', borderRadius: 8, border: '1px solid var(--border)', position: 'relative' }}>
           <div className="sources-title" style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
             <FileText size={12} /> Sources &amp; Retrieved Citations ({msg.sources.length})
           </div>
@@ -706,14 +695,30 @@ const MessageBubble = React.memo(function MessageBubble({
             {msg.sources.map((s, i) => {
               const label = s.title || (s.url ? s.url.replace(/^https?:\/\//, '').split('/')[0] : `Document ${i + 1}`)
               const scoreBadge = s.score ? ` (${Math.round(s.score * 100)}% match)` : ''
-              return s.url ? (
-                <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="source-item source-chip" style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: 'var(--accent)' }}>
-                  🌐 {label}{scoreBadge}
-                </a>
-              ) : (
-                <span key={i} className="source-item source-chip" title={s.snippet || s.content || ''} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-secondary)' }}>
-                  📄 {label}{scoreBadge}
-                </span>
+              const isHovered = hoveredSourceIdx === i
+
+              return (
+                <div
+                  key={i}
+                  style={{ position: 'relative', display: 'inline-flex' }}
+                  onMouseEnter={() => setHoveredSourceIdx(i)}
+                  onMouseLeave={() => setHoveredSourceIdx(null)}
+                >
+                  {s.url ? (
+                    <a href={s.url} target="_blank" rel="noopener noreferrer" className="source-item source-chip" style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: 'var(--accent)' }}>
+                      🌐 {label}{scoreBadge}
+                    </a>
+                  ) : (
+                    <span className="source-item source-chip" title={s.snippet || s.content || ''} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-secondary)' }}>
+                      📄 {label}{scoreBadge}
+                    </span>
+                  )}
+                  {isHovered && s.url && (
+                    <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, zIndex: 9999 }}>
+                      <CitationHoverCard source={s} index={i + 1} />
+                    </div>
+                  )}
+                </div>
               )
             })}
           </div>
@@ -748,10 +753,15 @@ const MessageBubble = React.memo(function MessageBubble({
             </span>
           )}
           {msg.ttfbMs && (
-            <span className={`provenance-chip latency${msg.ttfbMs > 3000 ? ' bad' : msg.ttfbMs > 1000 ? ' warn' : ''}`}>
-              {Math.round(msg.ttfbMs)}ms
+            <span className={`provenance-chip latency${msg.ttfbMs > 3000 ? ' bad' : msg.ttfbMs > 1000 ? ' warn' : ''}`} title="Time to first token">
+              ⚡ {Math.round(msg.ttfbMs)}ms TTFB
             </span>
           )}
+          {(msg.tokenCount || (answer || msg.content)?.length) ? (
+            <span className="provenance-chip tokens" title="Estimated token count">
+              <Zap size={9} aria-hidden="true" /> ~{Math.round(msg.tokenCount || ((answer || msg.content || '').length / 4)).toLocaleString()} tok
+            </span>
+          ) : null}
           <button
             type="button"
             onClick={() => setShowProvenance(p => !p)}

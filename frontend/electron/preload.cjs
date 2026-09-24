@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('__YOGATIK_DESKTOP__', {
   getSystemInfo: () => ipcRenderer.invoke('desktop:getSystemInfo'),
   showItemInFolder: (fullPath) => ipcRenderer.invoke('desktop:showItemInFolder', fullPath),
   openPath: (fullPath) => ipcRenderer.invoke('desktop:openPath', fullPath),
+  openVlc: (fullPath) => ipcRenderer.invoke('desktop:openVlc', fullPath),
   openExternal: (url) => ipcRenderer.invoke('desktop:openExternal', url),
   loginWithGoogle: () => ipcRenderer.invoke('auth:google-desktop'),
   evalJs: (code, timeoutMs) => ipcRenderer.invoke('desktop:eval-js', { code, timeoutMs }),

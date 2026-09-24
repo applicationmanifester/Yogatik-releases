@@ -10,7 +10,7 @@ import {
   saveStoredStudioRun, deleteStoredStudioRun, toggleFavoriteStudioRun
 } from '../mediaStudioCatalog'
 
-export function MediaStudioModal({ isOpen, onClose }) {
+export function MediaStudioModal({ isOpen, onClose, onOpenVideoStudio }) {
   const [category, setCategory] = useState('all')
   const [selectedModelId, setSelectedModelId] = useState('kling-3-pro')
   const [searchQuery, setSearchQuery] = useState('')
@@ -617,6 +617,18 @@ export function MediaStudioModal({ isOpen, onClose }) {
                   >
                     <RefreshCw size={14} /> Reuse & Edit Settings
                   </button>
+                  {activeViewerRun.kind === 'video' && onOpenVideoStudio && (
+                    <button
+                      className="hero-btn secondary"
+                      onClick={() => {
+                        onOpenVideoStudio(activeViewerRun.mediaUrl)
+                        onClose()
+                      }}
+                      title="Open in Video Studio to trim, edit, or launch in VLC"
+                    >
+                      <Film size={14} color="#06b6d4" /> Edit in Video Studio
+                    </button>
+                  )}
                   <a
                     href={activeViewerRun.mediaUrl}
                     download={`studio_${activeViewerRun.id}.${activeViewerRun.kind === 'video' ? 'mp4' : 'jpg'}`}

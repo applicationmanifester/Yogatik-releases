@@ -3,16 +3,66 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '10.5.0'
+export const APP_VERSION = '10.6.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.5.0 — Autonomous Reasoner Recovery, Windows Taskbar Shell & Agent Resilience'
+export const APP_CODENAME = 'Yogatik 10.6.0 — Frontier AI Studio, Smart Follow-Ups, Visual Diffs & Voice Dictation'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.6.0",
+    "title": "Yogatik 10.6.0: Frontier AI Studio — Smart Follow-Ups, Visual Code Diffs, Hover Citations, Chart Sandbox & Live Waveform Dictation",
+    "date": "September 24, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Dynamic Follow-Up Suggestion Chips: Context-aware next-turn prompt chips (unit tests, optimizations, deep explanations, visual charts) automatically derived from assistant replies",
+      "Rich Web Citation Hover Cards: Instant popover on hovering search citations displaying domain, favicon, verification badge, snippet preview, and direct link",
+      "Cursor-Style Visual Code Diff & 1-Click Apply: Dedicated Diff button on all code snippets opening unified red/green diff review with line addition/deletion stats and one-click accept & apply",
+      "Interactive Data Visualization Sandbox in Artifact Canvas: Zero-dependency SVG Bar, Line, and Donut charts parsing CSV, Markdown tables, or JSON directly inside Artifact Canvas",
+      "Real-Time Voice Dictation with Live Waveform: Continuous speech-to-text dictation with pulsing listening orb and animated 4-bar equalizer streaming into composer textarea",
+      "1-Click Smart History Compaction & Headroom Optimization: Quick-compact badge in ContextMeter when usage exceeds 50%, freeing 60%+ context tokens via semantic compaction"
+    ],
+    "sections": [
+      {
+        "category": "✨ Frontier AI Chat & Reasoning Experience",
+        "items": [
+          {
+            "title": "Dynamic Smart Follow-Up Chips",
+            "description": "Assistant messages analyze the reply type to intelligently suggest 3 context-aware follow-up action chips (writing unit tests, performance tuning, deep dive explanations, or visual chart generation) for single-click prompt continuation."
+          },
+          {
+            "title": "Rich Web Citation Hover Cards",
+            "description": "Hovering citation badges [1], [2] displays domain favicons, source domain verification badges, title previews, and extracted snippets with hover-delay preservation."
+          },
+          {
+            "title": "Cursor-Style Code Diff Reviewer",
+            "description": "Added an interactive Diff button to code blocks opening a visual unified diff comparison with line additions, deletions, change statistics, and one-click Accept & Apply."
+          }
+        ]
+      },
+      {
+        "category": "📊 Artifact Canvas & Voice Audio",
+        "items": [
+          {
+            "title": "Interactive SVG Data Chart Sandbox",
+            "description": "Artifact Canvas now features a dedicated Chart view that parses markdown tables, CSV, and JSON data arrays into clean SVG Bar, Line, and Donut visualizers with summary statistics."
+          },
+          {
+            "title": "Real-Time Continuous Voice Dictation",
+            "description": "Continuous Web Speech API recognition integrated into the composer with animated 4-bar soundwave equalizer, active glowing listening states, and smooth transcript appending."
+          },
+          {
+            "title": "1-Click Context Compaction",
+            "description": "Automatic ⚡ Compact badge appears in the context usage meter when token utilization exceeds 50%, enabling instant history compaction that frees 60%+ headroom."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "10.5.0",
     "title": "Yogatik 10.5.0: Autonomous Reasoner Recovery, Interactive RAG & Context Manager",
     "date": "September 24, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Autonomous Reasoner Recovery: Self-healing intent recognition and tool execution for reasoning models (Nemotron-3, DeepSeek-R1, Qwen)",
       "Interactive Local RAG Manager: One-click inspection of saved IndexedDB location, chunk passage preview, export, and deletion from the composer RAG badge",

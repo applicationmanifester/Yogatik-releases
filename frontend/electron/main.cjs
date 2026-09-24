@@ -423,6 +423,51 @@ if (!gotLock) {
       return true
     })
 
+    ipcMain.handle('desktop:openVlc', async (_, targetPath) => {
+      if (!targetPath) return { success: false, error: 'No path provided' }
+      const fs = require('fs')
+      const norm = path.normalize(targetPath)
+      const isWin = process.platform === 'win32'
+      const isMac = process.platform === 'darwin'
+
+      const candidatePaths = []
+      if (isWin) {
+        candidatePaths.push(
+          'C:\\Program Files\\VideoLAN\\VLC\\vlc.exe',
+          'C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe'
+        )
+      } else if (isMac) {
+        candidatePaths.push('/Applications/VLC.app/Contents/MacOS/VLC')
+      } else {
+        candidatePaths.push('/usr/bin/vlc', '/usr/local/bin/vlc')
+      }
+
+      let vlcExe = candidatePaths.find(p => {
+        try { return fs.existsSync(p) } catch { return false }
+      })
+
+      if (vlcExe) {
+        try {
+          spawn(vlcExe, [norm], { detached: true, stdio: 'ignore' }).unref()
+          return { success: true, player: 'vlc', path: vlcExe }
+        } catch (e) {
+          console.warn('[VLC] Failed to spawn VLC executable directly:', e)
+        }
+      }
+
+      try {
+        const proc = spawn('vlc', [norm], { detached: true, stdio: 'ignore' })
+        proc.on('error', async () => {
+          await shell.openPath(norm)
+        })
+        proc.unref()
+        return { success: true, player: 'vlc-path' }
+      } catch {
+        await shell.openPath(norm)
+        return { success: true, player: 'system-default' }
+      }
+    })
+
     ipcMain.handle('desktop:openExternal', async (_, url) => {
       if (!url) return false
       try {

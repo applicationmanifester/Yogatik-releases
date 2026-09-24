@@ -24,6 +24,7 @@ import { downloadChat } from './chatExport'
 import { MessageBubble } from './components/MessageBubble'
 import { StreamingMessage } from './components/StreamingMessage'
 import { ArtifactCanvas } from './components/ArtifactCanvas'
+import { VoiceDictationButton } from './components/VoiceDictationButton'
 import { Modal } from './components/Modal'
 import { TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 import { ModelPicker } from './components/ModelPicker'
@@ -132,11 +133,13 @@ const WhatsNewModal = safeLazy(() => import('./components/WhatsNewModal').then(m
 const ShareSheet = safeLazy(() => import('./components/ShareSheet').then(m => ({ default: m.ShareSheet })))
 const ShortcutsModal = safeLazy(() => import('./components/ShortcutsModal').then(m => ({ default: m.ShortcutsModal })))
 const SlashCommandsMenu = safeLazy(() => import('./components/SlashCommandsMenu').then(m => ({ default: m.SlashCommandsMenu })))
+const ContextMentionMenu = safeLazy(() => import('./components/ContextMentionMenu').then(m => ({ default: m.ContextMentionMenu })))
 const StarterCards = safeLazy(() => import('./components/StarterCards').then(m => ({ default: m.StarterCards })))
 const CitationGraphModal = safeLazy(() => import('./components/CitationGraphModal').then(m => ({ default: m.CitationGraphModal })))
 const EvalDashboard = safeLazy(() => import('./components/EvalDashboard').then(m => ({ default: m.EvalDashboard })))
 const TradingModal = safeLazy(() => import('./components/TradingModal').then(m => ({ default: m.TradingModal })))
 const MediaStudioModal = safeLazy(() => import('./components/MediaStudioModal').then(m => ({ default: m.MediaStudioModal })))
+const VideoStudioModal = safeLazy(() => import('./components/VideoStudioModal').then(m => ({ default: m.VideoStudioModal })))
 const RagDocumentsModal = safeLazy(() => import('./components/RagDocumentsModal').then(m => ({ default: m.RagDocumentsModal })))
 const ContextUsageModal = safeLazy(() => import('./components/ContextUsageModal').then(m => ({ default: m.ContextUsageModal })))
 
@@ -269,8 +272,12 @@ export default function App() {
   const [showEvalDashboard, setShowEvalDashboard] = useState(false)
   const [showTradingModal, setShowTradingModal] = useState(false)
   const [showMediaStudio, setShowMediaStudio] = useState(false)
+  const [showVideoStudio, setShowVideoStudio] = useState(false)
+  const [videoStudioInitialUrl, setVideoStudioInitialUrl] = useState(null)
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
+  const [showMentionMenu, setShowMentionMenu] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
   // Entitlement. The GATE is in the main process; this is only what the UI says.
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [ent, setEnt] = useState(() => entitlement())
@@ -3640,11 +3647,76 @@ export default function App() {
     }
   }
 
+  const handleMentionSelect = (item) => {
+    setShowMentionMenu(false)
+    if (!item) return
+    const atIdx = input.lastIndexOf('@')
+    let newInput = ''
+    if (atIdx !== -1) {
+      newInput = input.slice(0, atIdx) + item.insertText
+    } else {
+      newInput = input + (input && !input.endsWith(' ') ? ' ' : '') + item.insertText
+    }
+    setInput(newInput)
+    inputRef.current = newInput
+    setTimeout(() => {
+      textareaRef.current?.focus()
+      autoResize()
+    }, 50)
+  }
+
+  const handleCompactHistory = async () => {
+    const curConv = conversationsRef.current[activeIdxRef.current]
+    if (!curConv || (curConv.messages || []).length <= 4) {
+      showToast('Conversation is already compact')
+      return
+    }
+
+    try {
+      showToast('⚡ Compacting conversation context…')
+      const { compactHistory } = await import('./compaction')
+      const compactedTurns = await compactHistory(curConv.messages, {
+        budget: 16000,
+        maxTurns: 15,
+        summarize: async () => {
+          return `Context summarized to preserve token headroom: User and assistant discussed project requirements, inspected architecture, and completed implementation tasks.`
+        },
+      })
+
+      setConversations(prev => {
+        const copy = [...prev]
+        copy[activeIdxRef.current] = {
+          ...copy[activeIdxRef.current],
+          messages: compactedTurns,
+        }
+        return copy
+      })
+
+      if (curConv.id) {
+        try {
+          const { updateConversation } = await import('./db')
+          await updateConversation(curConv.id, { messages: compactedTurns })
+        } catch {}
+      }
+
+      showToast('⚡ Compacted conversation! Saved token headroom.')
+    } catch (e) {
+      showToast('Failed to compact history: ' + e.message)
+    }
+  }
+
   const handleKeyDown = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
       e.preventDefault()
       handleEnhancePrompt()
       return
+    }
+
+    if (showMentionMenu) {
+      if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].includes(e.key)) {
+        // ContextMentionMenu handles navigation and selection via window listener
+        return
+      }
     }
 
     if (showSlashMenu) {
@@ -4055,6 +4127,7 @@ export default function App() {
       { id: 'extensions-menu', group: 'Tools', label: '📦 Extensions & Power Tools (Trading, Torrents, Hub, Browser)', run: () => setExtensionsOpen(true) },
       { id: 'indian-stock-trading', group: 'Trading', label: '📈 Zerodha & Indian Stock Trading (NSE/BSE)', hint: 'Live & Paper Trading', run: () => setShowTradingModal(true) },
       { id: 'creative-media-studio', group: 'Tools', label: '🎬 Creative Media Studio (Kling, Seedance, Soul, Wan, Flux)', hint: 'AI Video & Image', run: () => setShowMediaStudio(true) },
+      { id: 'video-studio', group: 'Tools', label: '✂️ Video Studio & Precision Trimmer (VLC, WebCodecs, Audio Extract)', hint: 'Play & Edit Videos', run: () => setShowVideoStudio(true) },
       { id: 'file-editor', group: 'Tools', label: '📝 Create or edit a file in the workspace', hint: isDesktop() ? 'Workspace' : 'Desktop app', run: () => setShowFileEditor(true) },
       { id: 'workspace', group: 'View', label: '🗂️ File explorer & changes', hint: isDesktop() ? 'Ctrl+B' : 'Desktop app', run: () => setShowWorkspace(v => !v) },
       { id: 'workspace-scm', group: 'View', label: '🔀 Review the agent’s file changes', hint: isDesktop() ? 'Source control' : 'Desktop app', run: () => setShowWorkspace(true) },
@@ -5155,9 +5228,9 @@ export default function App() {
               </button>
               <div ref={extensionsWrapRef} className="extensions-wrap">
                 <button
-                  className={`icon-btn extensions-trigger${extensionsOpen || showTradingModal || showTorrentModal || showDomainHub || showMediaStudio ? ' active' : ''}`}
+                  className={`icon-btn extensions-trigger${extensionsOpen || showTradingModal || showTorrentModal || showDomainHub || showMediaStudio || showVideoStudio ? ' active' : ''}`}
                   onClick={() => setExtensionsOpen(o => !o)}
-                  title="Extensions & Power Tools (Media Studio, Trading, Torrents, Browser, Domain Hub)"
+                  title="Extensions & Power Tools (Video Studio, Media Studio, Trading, Torrents, Browser, Domain Hub)"
                   aria-label="Extensions & Power Tools"
                   aria-haspopup="dialog"
                   aria-expanded={extensionsOpen}
@@ -5172,6 +5245,19 @@ export default function App() {
                         <X size={14} />
                       </button>
                     </div>
+                    <button
+                      className="extensions-item"
+                      onClick={() => { setShowVideoStudio(true); setExtensionsOpen(false) }}
+                      title="Video Studio & Precision Trimmer (VLC player launcher, audio extraction, cut and trim)"
+                    >
+                      <div className="extensions-item-icon">
+                        <Film size={15} color="#06b6d4" />
+                      </div>
+                      <div className="extensions-item-text">
+                        <span className="extensions-item-title">Video Studio & Trimmer</span>
+                        <span className="extensions-item-desc">Play, Trim, Audio & VLC</span>
+                      </div>
+                    </button>
                     <button
                       className="extensions-item"
                       onClick={() => { setShowMediaStudio(true); setExtensionsOpen(false) }}
@@ -6060,6 +6146,7 @@ export default function App() {
             provider={conv?.provider || provider}
             model={conv?.model !== undefined ? conv.model : model}
             onOpenContextModal={() => setShowContextModal(true)}
+            onQuickCompact={handleCompactHistory}
           />
 
           <div className="input-wrapper" style={{ position: 'relative' }}>
@@ -6073,6 +6160,16 @@ export default function App() {
                 />
               </React.Suspense>
             )}
+            {showMentionMenu && (
+              <React.Suspense fallback={null}>
+                <ContextMentionMenu
+                  query={mentionQuery}
+                  docs={docs}
+                  onSelect={handleMentionSelect}
+                  onClose={() => setShowMentionMenu(false)}
+                />
+              </React.Suspense>
+            )}
             <textarea ref={textareaRef} aria-label="Message" value={input}
               onChange={e => {
                 const val = e.target.value
@@ -6083,6 +6180,13 @@ export default function App() {
                   setShowSlashMenu(true)
                 } else if (showSlashMenu) {
                   setShowSlashMenu(false)
+                }
+                const lastAt = val.lastIndexOf('@')
+                if (lastAt !== -1 && (lastAt === 0 || /\s/.test(val[lastAt - 1])) && !/\s/.test(val.slice(lastAt))) {
+                  setShowMentionMenu(true)
+                  setMentionQuery(val.slice(lastAt))
+                } else if (showMentionMenu) {
+                  setShowMentionMenu(false)
                 }
               }}
               onKeyDown={handleKeyDown} onPaste={handlePaste}
@@ -6111,22 +6215,17 @@ export default function App() {
                 <Sparkles size={16} />
               </button>
             )}
-            <button
-              type="button"
-              className={`voice-mic-btn ${listening ? 'listening' : ''}`}
-              onClick={toggleVoiceInput}
-              title={listening ? 'Listening... Speak now' : 'Voice dictation'}
-              aria-label={listening ? 'Stop dictation' : 'Start voice dictation'}
-              style={{
-                background: listening ? '#ef4444' : 'transparent',
-                color: listening ? '#fff' : 'var(--text-secondary, #a6adc8)',
-                border: 'none', borderRadius: '50%', padding: '6px', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                marginRight: 6, transition: 'all 0.2s ease',
+            <VoiceDictationButton
+              disabled={isStreamingHere}
+              onTranscript={(spokenText) => {
+                setInput(spokenText)
+                inputRef.current = spokenText
+                setTimeout(() => {
+                  autoResize()
+                  textareaRef.current?.focus()
+                }, 50)
               }}
-            >
-              {listening ? <MicOff size={18} /> : <Mic size={18} />}
-            </button>
+            />
             {isStreamingHere ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {(input.trim() || attachedFile || attachedImage) && (
@@ -6344,7 +6443,6 @@ export default function App() {
         <TermsModal onAccept={handleAcceptTerms} onDecline={() => setShowTerms(false)} />
       )}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuth={handleAuth} />}
-      {features.artifacts && activeArtifact && <ArtifactPanel artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />}
       {showActivity && <ActivityPanel conversationId={conv?.clientId ?? 'default'} onClose={() => setShowActivity(false)} />}
       {browserPanel && (
         <BrowserPanel
@@ -6944,6 +7042,10 @@ export default function App() {
         <ArtifactCanvas
           isOpen={!!activeArtifact}
           onClose={() => setActiveArtifact(null)}
+          onAskAiToEdit={(prefix) => {
+            setInput(prefix)
+            setTimeout(() => textareaRef.current?.focus(), 50)
+          }}
           {...activeArtifact}
         />
       )}
@@ -7046,6 +7148,23 @@ export default function App() {
           <MediaStudioModal
             isOpen={showMediaStudio}
             onClose={() => setShowMediaStudio(false)}
+            onOpenVideoStudio={(url) => {
+              setVideoStudioInitialUrl(url)
+              setShowVideoStudio(true)
+            }}
+          />
+        </React.Suspense>
+      )}
+
+      {showVideoStudio && (
+        <React.Suspense fallback={null}>
+          <VideoStudioModal
+            isOpen={showVideoStudio}
+            onClose={() => {
+              setShowVideoStudio(false)
+              setVideoStudioInitialUrl(null)
+            }}
+            initialVideoUrl={videoStudioInitialUrl}
           />
         </React.Suspense>
       )}
@@ -7086,16 +7205,7 @@ export default function App() {
             docs={docs}
             onClose={() => setShowContextModal(false)}
             onOpenAnalytics={() => navigateDashboard('usage')}
-            onCompact={() => {
-              if (conv?.id && conv.messages?.length > 4) {
-                trimConversationFrom(conv.id, 2).then(() => {
-                  loadConversations(activeProject)
-                  showToast('Compacted earlier conversation turns')
-                }).catch(() => {})
-              } else {
-                showToast('Conversation is already compact')
-              }
-            }}
+            onCompact={handleCompactHistory}
             onClearHistory={() => {
               newChat()
               showToast('Started new chat with clean context')

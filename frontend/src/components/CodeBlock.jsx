@@ -1,6 +1,7 @@
 import React, { useState, lazy, Suspense } from 'react'
-import { Copy, Check, Eye, Play, Terminal, X, Pencil, FileDown } from 'lucide-react'
+import { Copy, Check, Eye, Play, Terminal, X, Pencil, FileDown, GitCommit } from 'lucide-react'
 import { retryImport } from '../pwa'
+import { DiffReviewModal } from './DiffReviewModal'
 
 /**
  * Prism + its theme are ~600KB (225KB gzipped) and most conversations never
@@ -32,6 +33,7 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
   const [executing, setExecuting] = useState(false)
   const [execResult, setExecResult] = useState(null)
   const [isEditing, setIsEditing] = useState(false)
+  const [showDiffModal, setShowDiffModal] = useState(false)
 
   const rawLang = className?.replace('language-', '')?.toLowerCase()
   const lang = rawLang || 'text'
@@ -263,6 +265,16 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
               <FileDown size={11} /> Download
             </button>
           )}
+          {code.length > 5 && (
+            <button
+              className="code-block-btn"
+              onClick={() => setShowDiffModal(true)}
+              title="Review visual diff against original or file"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <GitCommit size={11} /> Diff
+            </button>
+          )}
           {onOpenArtifact && (
             <button className="code-block-btn" onClick={handleOpenArtifact} title="Open in Canvas Artifact sandbox">
               <Eye size={11} /> {isPreviewable ? 'Preview' : 'Artifact'}
@@ -298,6 +310,21 @@ export function CodeBlock({ children, className, onOpenArtifact }) {
             <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: '#f38ba8' }}>{execResult.error}</pre>
           )}
         </div>
+      )}
+      {showDiffModal && (
+        <DiffReviewModal
+          isOpen={showDiffModal}
+          filePath={(() => {
+            const match = code.match(/(?:\/\/|#|\/\*)\s*(?:filepath|file):\s*([^\r\n*]+)/i)
+            return match ? match[1].trim() : `${lang.toUpperCase()} Snippet`
+          })()}
+          originalCode={initialCode}
+          modifiedCode={code}
+          onClose={() => setShowDiffModal(false)}
+          onAccept={(updatedCode) => {
+            setCode(updatedCode)
+          }}
+        />
       )}
     </div>
   )

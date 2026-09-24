@@ -3,7 +3,7 @@ import { stripToolCallSyntax } from '../promptedTools'
 import { extractActionChips } from '../actionChips'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { useTypewriter } from '../hooks/useTypewriter'
+import { ReasoningAccordion } from './ReasoningAccordion'
 import { sanitizeHtmlSync } from '../utils/sanitize'
 
 /**
@@ -119,10 +119,7 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
   const body = (
     <>
       {reasoning ? (
-        <details className="reasoning-bubble" style={bare ? { marginTop: 4 } : undefined}>
-          <summary className="reasoning-summary">Thinking…</summary>
-          <div className="reasoning-body">{reasoning}</div>
-        </details>
+        <ReasoningAccordion reasoning={reasoning} isStreaming={true} defaultExpanded={false} />
       ) : null}
       {cleanText ? (
         <div className="message-content">
