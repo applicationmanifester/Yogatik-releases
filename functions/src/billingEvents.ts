@@ -110,8 +110,16 @@ function dedupeKey(provider: string, id: string): string {
   return `${provider}_${safe || 'unknown'}`
 }
 
+/**
+ * Convert Razorpay seconds-since-epoch to milliseconds.
+ * Throws if timestamp is missing - webhooks should always provide it.
+ * The caller provides explicit `now` for failure/cancel events.
+ */
 function parseRazorpayTimestamp(seconds: number | undefined): number {
-  return seconds ? seconds * 1000 : Date.now()
+  if (seconds === undefined) {
+    throw new Error('Razorpay timestamp missing in webhook payload')
+  }
+  return seconds * 1000
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

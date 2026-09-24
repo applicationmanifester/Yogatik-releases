@@ -1,5 +1,13 @@
 # Changelog
 
+## v10.8.0 - Autonomous Relentless Engine: Auto-Retry, Reconnecting, Anti-Stagnation Rework & Persistent Task Memory (2026-09-25)
+
+### 🔄 Relentless Execution & Transport Self-Healing
+- **Resilient Transport Layer (`resilientTransport.js` + `llm.js`)** — Added automatic exponential backoff with full jitter for HTTP 429 (rate limits), 500, 502, 503, 504 server overload, cold starts, and network socket drops. Reconnects and pings automatically in the background while broadcasting clear status to the UI without throwing unhandled exceptions.
+- **Autonomous Anti-Stagnation Rework Loop (`relentlessLoop.js` + `agent.js`)** — Tracks command and test outcomes with error signature hashing. If an identical error occurs across multiple consecutive attempts, triggers an immediate strategic pivot directive so the AI explores alternate architectures instead of repeating dead-end edits.
+- **Disk-Backed Task Plan Memory (`taskPlanMemory.js`)** — Long-horizon project goals, phase checklists, and ground truth are maintained in structured `.yogatik/TASK_PLAN.md` format, persisting intent across massive compaction boundaries.
+- **New Slash Command `/loop` (`SlashCommandsMenu.jsx`)** — Triggers relentless autonomous execution on any prompt, continuing until all tasks succeed or the user explicitly clicks Stop.
+
 ## v10.7.0 - Autonomous Code Execution, Self-Healing TDD, Batch Replace & Seamless Huge Chat Context (2026-09-25)
 
 ### ⚡ Autonomous Code Execution & Zero-Ambiguity Decision-Making

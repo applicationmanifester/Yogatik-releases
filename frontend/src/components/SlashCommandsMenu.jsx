@@ -56,6 +56,13 @@ export const SLASH_COMMANDS = [
     color: '#10b981',
   },
   {
+    command: '/loop',
+    label: 'Relentless Autonomous Loop',
+    description: 'Auto-retrying, reconnecting, and reworking code continuously until user clicks Stop',
+    icon: RefreshCw,
+    color: '#06b6d4',
+  },
+  {
     command: '/refactor',
     label: 'Autonomous Code Refactor',
     description: 'Clean up code, eliminate ambiguities, optimize architecture, and auto-verify with tests',

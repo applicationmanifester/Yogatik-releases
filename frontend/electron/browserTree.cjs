@@ -237,7 +237,7 @@ function elementRefExpression(index) {
   return `(() => {
   const el = (window.__yogatikRefs__ || [])[${Number(index) || 0}];
   if (!el || !el.isConnected) throw new Error('Element not found or detached');
-  if (el.tagName !== 'INPUT' || (el.type !== 'file' && el.type !== 'FILE')) {
+  if (!(el.tagName === 'INPUT' && el.type === 'file')) {
     throw new Error('Element is not a file input (type=' + (el.type || 'unknown') + ')');
   }
   return el;
@@ -245,47 +245,67 @@ function elementRefExpression(index) {
 }
 
 // Adaptive relocation (Scrapling-style): match by role/name/text against fresh scan
-function textSimilarity(a, b) {
-  if (!a || !b) return 0
-  const sa = String(a).toLowerCase().trim()
-  const sb = String(b).toLowerCase().trim()
-  if (sa === sb) return 1
-  if (sa.includes(sb) || sb.includes(sa)) return 0.8
-  const wordsA = new Set(sa.split(/\s+/))
-  const wordsB = new Set(sb.split(/\s+/))
-  let common = 0
-  for (const w of wordsA) if (wordsB.has(w)) common++
-  return common / Math.max(wordsA.size, wordsB.size, 1)
+
+function normalizeForMatch(s) {
+  return (typeof s === 'string' ? s : '').toLowerCase().trim().replace(/\s+/g, ' ')
 }
 
-const RELOCATE_MIN_SCORE = 0.75
+// Token-set (Jaccard) similarity: forgiving of word order and minor punctuation
+// drift — "Add to cart (2)" and "Add to cart (3)" still read as the same button.
+function textSimilarity(a, b) {
+  const na = normalizeForMatch(a)
+  const nb = normalizeForMatch(b)
+  if (na === nb) return na ? 1 : 0
+  if (!na || !nb) return 0
+  const ta = new Set(na.split(' ').filter(Boolean))
+  const tb = new Set(nb.split(' ').filter(Boolean))
+  let inter = 0
+  for (const tok of ta) if (tb.has(tok)) inter++
+  const union = ta.size + tb.size - inter
+  return union > 0 ? inter / union : 0
+}
+
+const RELOCATE_WEIGHTS = { role: 0.25, identity: 0.60, tag: 0.15 }
+
+const RELOCATE_MIN_SCORE = 0.72
 const RELOCATE_MIN_MARGIN = 0.15
 
-function candidateScore(target, cand) {
-  if (target.role !== cand.role) return 0
-  let score = 0
-  score += textSimilarity(target.name, cand.name) * 0.5
-  score += textSimilarity(target.text, cand.text) * 0.5
-  return score
+function candidateScore(target, candidate) {
+  if (!target || !candidate) return 0
+  const roleScore = target.role && candidate.role ? (target.role === candidate.role ? 1 : 0) : 0
+  const nameScore = textSimilarity(target.name, candidate.name)
+  const textScore = textSimilarity(target.text, candidate.text)
+  // Most elements carry ONLY a name or ONLY visible text, not both — averaging
+  // the two in would halve the score of the common case for no reason.
+  const identityScore = Math.max(nameScore, textScore)
+  // An unknown tag on either side is neutral (0.5), not a penalty.
+  const tagScore = target.tag && candidate.tag ? (target.tag === candidate.tag ? 1 : 0) : 0.5
+  return roleScore * RELOCATE_WEIGHTS.role
+    + identityScore * RELOCATE_WEIGHTS.identity
+    + tagScore * RELOCATE_WEIGHTS.tag
 }
 
+// Returns the index of the confident, unambiguous best match, or null.
 function findRelocationMatch(target, candidates) {
   if (!target || !Array.isArray(candidates) || !candidates.length) return null
+  if (!normalizeForMatch(target.name) && !normalizeForMatch(target.text)) return null
+
   let bestIdx = -1
-  let bestScore = -1
-  let secondBest = -1
-  for (let i = 0; i < candidates.length; i++) {
-    const s = candidateScore(target, candidates[i])
-    if (s > bestScore) {
-      secondBest = bestScore
-      bestScore = s
+  let bestScore = -Infinity
+  let secondScore = -Infinity
+  candidates.forEach((c, i) => {
+    const score = candidateScore(target, c)
+    if (score > bestScore) {
+      secondScore = bestScore
+      bestScore = score
       bestIdx = i
-    } else if (s > secondBest) {
-      secondBest = s
+    } else if (score > secondScore) {
+      secondScore = score
     }
-  }
+  })
+  if (bestIdx < 0) return null
   if (bestScore < RELOCATE_MIN_SCORE) return null
-  if (bestScore - secondBest < RELOCATE_MIN_MARGIN) return null
+  if (secondScore > -Infinity && (bestScore - secondScore) < RELOCATE_MIN_MARGIN) return null
   return bestIdx
 }
 

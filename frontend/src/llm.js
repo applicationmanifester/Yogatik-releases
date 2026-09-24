@@ -5,6 +5,7 @@
  */
 
 import { createReasoningTagger } from './reasoning.js'
+import { calculateBackoffWithJitter, isTransientError } from './resilientTransport.js'
 
 const PROVIDERS = {
   nvidia: {
@@ -316,7 +317,7 @@ export function sanitizeMessagesForToolCalling(messages = []) {
 // routinely blow past the 100s edge timeout on the first request of the day.
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504, 520, 522, 524])
 
-async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeoutMs = REQUEST_TIMEOUT } = {}) {
+async function fetchWithRetry(url, options, prov, { retries = 5, onStatus, timeoutMs = REQUEST_TIMEOUT } = {}) {
   let attempt = 0
   for (;;) {
     const controller = new AbortController()
@@ -326,7 +327,7 @@ async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeo
     let combinedSignal = controller.signal
     if (options?.signal) {
       if (options.signal.aborted) { clearTimeout(timer); throw options.signal.reason }
-      combinedSignal = AbortSignal.any([options.signal, controller.signal])
+      combinedSignal = AbortSignal.any ? AbortSignal.any([options.signal, controller.signal]) : options.signal
     }
 
     try {
@@ -337,12 +338,12 @@ async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeo
       const header = Number(resp.headers.get('retry-after'))
       const backoff = Number.isFinite(header) && header > 0
         ? Math.min(header * 1000, 30000)
-        : Math.min(2 ** attempt * 1000, 8000) + Math.random() * 500
+        : calculateBackoffWithJitter(attempt, { baseDelay: 1000, maxDelay: 20000, jitterRatio: 0.25 })
 
       attempt++
       onStatus?.(resp.status === 429
-        ? `Rate limited — retrying in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})`
-        : `Provider error ${resp.status} — retrying (${attempt}/${retries})`)
+        ? `Rate limited — retrying in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})…`
+        : `Provider error ${resp.status} — reconnecting in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})…`)
 
       await new Promise((resolve, reject) => {
         const t = setTimeout(resolve, backoff)
@@ -355,10 +356,18 @@ async function fetchWithRetry(url, options, prov, { retries = 3, onStatus, timeo
     } catch (err) {
       clearTimeout(timer)
       if (err.name === 'AbortError' || options?.signal?.aborted) throw err
-      if (attempt < retries) {
+      if (attempt < retries && (isTransientError(err) || RETRY_STATUS.has(err.status))) {
         attempt++
-        onStatus?.(`Connection issue (${err.message || 'retrying'}) — retry ${attempt}/${retries}…`)
-        await new Promise(resolve => setTimeout(resolve, Math.min(2 ** attempt * 1000, 5000)))
+        const backoff = calculateBackoffWithJitter(attempt, { baseDelay: 1000, maxDelay: 15000, jitterRatio: 0.25 })
+        onStatus?.(`Connection issue (${err.message || 'retrying'}) — reconnecting in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})…`)
+        await new Promise((resolve, reject) => {
+          const t = setTimeout(resolve, backoff)
+          options?.signal?.addEventListener(
+            'abort',
+            () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) },
+            { once: true },
+          )
+        })
         continue
       }
       throw err

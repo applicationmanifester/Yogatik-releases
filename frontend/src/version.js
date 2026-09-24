@@ -3,16 +3,48 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '10.7.0'
+export const APP_VERSION = '10.8.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.7.0 — Autonomous Code Execution, Self-Healing TDD, Batch Replace & Seamless Huge Chat Context'
+export const APP_CODENAME = 'Yogatik 10.8.0 — Autonomous Relentless Engine: Auto-Retry, Reconnecting, Anti-Stagnation Rework & Persistent Task Memory'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.8.0",
+    "title": "Yogatik 10.8.0: Autonomous Relentless Engine — Auto-Retry, Stream Reconnecting, Anti-Stagnation Rework & Disk Task Memory",
+    "date": "September 25, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Relentless Resilient Transport: Automatic exponential backoff with full jitter on 429 rate limits, 502/503/504 server spikes, and network drops",
+      "Continuous Autonomous Rework: When builds or tests fail, parses structured assertion diffs and automatically applies repairs without stopping or asking permission",
+      "Anti-Stagnation Entropy Engine: Detects repetitive failed patch attempts and instructs the model to pivot its architectural approach",
+      "Disk-Backed Task Plan Memory: Long-horizon project tracking with .yogatik/TASK_PLAN.md preserving state across compaction horizons",
+      "New Slash Command /loop: Triggers relentless autonomous execution on any prompt until verified or user presses Stop"
+    ],
+    "sections": [
+      {
+        "category": "🔄 Relentless Execution & Self-Correction",
+        "items": [
+          {
+            "title": "Resilient Transport with Jittered Backoff",
+            "description": "Recovers automatically from dropped sockets, stream stalls, and rate limits without throwing unhandled exceptions to the UI."
+          },
+          {
+            "title": "Autonomous Anti-Stagnation Rework Engine",
+            "description": "Hashes error signatures and detects repeated failures to force creative architectural pivots instead of repetitive dead-end edits."
+          },
+          {
+            "title": "Disk-Backed Task Plan Memory",
+            "description": "Maintains persistent task DAGs on disk so long-running multi-file implementations never suffer from context amnesia."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "10.7.0",
     "title": "Yogatik 10.7.0: Autonomous Code Execution, Self-Healing TDD Loop, Atomic Batch Replace & Seamless Huge Chat Scale",
     "date": "September 25, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Autonomous Code Execution & Zero-Ambiguity Decision-Making: Agent autonomously decides whether to execute tests, build commands, and write code without prompting for permission",
       "Auto-Approved File Editing with Time Machine Safety: Write, patch, and batch-replace files without permission modals, backed by 1-click snapshot restore",

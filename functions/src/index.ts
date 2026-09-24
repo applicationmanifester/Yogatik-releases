@@ -17,7 +17,7 @@ import { defineSecret, defineInt } from 'firebase-functions/params'
 import * as admin from 'firebase-admin'
 import * as crypto from 'crypto'
 import { z } from 'zod'
-import type { Request, Response } from 'express'
+import type { Request, Response, NextFunction } from 'express'
 import { buildRazorpayBillingEvent, buildPaddleBillingEvent } from './billingEvents'
 
 admin.initializeApp()
@@ -129,18 +129,18 @@ const RazorpayWebhookSchema = z.object({
 // Logging & Request Context
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface RequestContext {
+export interface RequestContext {
   requestId: string
   uid?: string
   startTime: number
   ip?: string
 }
 
-function generateRequestId(): string {
+export function generateRequestId(): string {
   return `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`
 }
 
-function createLogger(ctx: RequestContext) {
+export function createLogger(ctx: RequestContext) {
   const base = { requestId: ctx.requestId, uid: ctx.uid, ip: ctx.ip }
   return {
     info: (msg: string, meta?: Record<string, unknown>) => console.log(JSON.stringify({ level: 'info', message: msg, ...base, ...meta, timestamp: Date.now() })),
@@ -158,25 +158,57 @@ interface RateLimitEntry {
   windowStart: number
 }
 
-const rateLimitCache = new Map<string, RateLimitEntry>()
+interface RateLimitResult {
+  allowed: boolean
+  remaining: number
+  resetTime: number
+}
 
-async function checkRateLimit(identifier: string, logger: ReturnType<typeof createLogger>): Promise<boolean> {
+const rateLimitCache = new Map<string, RateLimitEntry>()
+const CACHE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
+
+// Periodic cleanup to prevent memory leak
+setInterval(() => {
+  const now = Date.now()
+  const windowMs = RATE_LIMIT_WINDOW_MS.value()
+  for (const [key, entry] of rateLimitCache.entries()) {
+    if (now - entry.windowStart >= windowMs) {
+      rateLimitCache.delete(key)
+    }
+  }
+}, CACHE_CLEANUP_INTERVAL_MS)
+
+/**
+ * Check rate limit for an identifier (IP, user ID, etc.)
+ * Uses in-memory cache for fast path, Firestore transaction for distributed safety.
+ * Returns RateLimitResult with allowed flag and headers.
+ */
+export async function checkRateLimit(
+  identifier: string,
+  logger: ReturnType<typeof createLogger>
+): Promise<RateLimitResult> {
   const now = Date.now()
   const windowMs = RATE_LIMIT_WINDOW_MS.value()
   const maxRequests = RATE_LIMIT_MAX_REQUESTS.value()
 
-  // Try in-memory first (fast path)
+  // Fast path: in-memory cache
   const cached = rateLimitCache.get(identifier)
-  if (cached && now - cached.windowStart < windowMs) {
-    if (cached.count >= maxRequests) {
-      logger.warn('Rate limit exceeded (memory)', { identifier, count: cached.count })
-      return false
+  if (cached) {
+    if (now - cached.windowStart < windowMs) {
+      // Within current window
+      if (cached.count >= maxRequests) {
+        logger.warn('Rate limit exceeded (memory)', { identifier, count: cached.count })
+        return { allowed: false, remaining: 0, resetTime: cached.windowStart + windowMs }
+      }
+      cached.count++
+      return { allowed: true, remaining: maxRequests - cached.count, resetTime: cached.windowStart + windowMs }
     }
-    cached.count++
-    return true
+    // Window expired - update cache with new window (avoids repeated Firestore fallback)
+    rateLimitCache.set(identifier, { count: 1, windowStart: now })
+    return { allowed: true, remaining: maxRequests - 1, resetTime: now + windowMs }
   }
 
-  // Fallback to Firestore for distributed rate limiting
+  // No cache entry - slow path: Firestore transaction for cross-instance correctness
   const ref = db.collection('rateLimits').doc(identifier)
   try {
     const result = await db.runTransaction(async (txn) => {
@@ -188,39 +220,96 @@ async function checkRateLimit(identifier: string, logger: ReturnType<typeof crea
         data.count = 1
         data.windowStart = now
       } else if (data.count >= maxRequests) {
-        return { allowed: false, count: data.count }
+        return { allowed: false, count: data.count, windowStart: data.windowStart }
       } else {
         data.count++
       }
       txn.set(ref, data)
-      return { allowed: true, count: data.count }
+      return { allowed: true, count: data.count, windowStart: data.windowStart }
     })
-    return result.allowed
+    // Update in-memory cache with Firestore result
+    rateLimitCache.set(identifier, { count: result.count, windowStart: result.windowStart })
+    const remaining = Math.max(0, maxRequests - result.count)
+    const resetTime = result.windowStart + windowMs
+    return { allowed: result.allowed, remaining, resetTime }
   } catch (e) {
     // On Firestore error, allow but log (fail-open for availability)
     logger.error('Rate limit check failed, failing open', { error: String(e) })
-    return true
+    // Also seed cache to avoid hammering Firestore on repeated errors
+    rateLimitCache.set(identifier, { count: 1, windowStart: now })
+    return { allowed: true, remaining: maxRequests, resetTime: now + windowMs }
+  }
+}
+
+/**
+ * Create Express middleware for rate limiting.
+ * Uses IP as default identifier; can be customized by providing a key function.
+ */
+export function rateLimitMiddleware(keyFn?: (req: Request) => string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const requestId = generateRequestId()
+    const ctx: RequestContext = { requestId, startTime: Date.now(), ip: req.ip }
+    const logger = createLogger(ctx)
+
+    const identifier = keyFn ? keyFn(req) : req.ip || 'unknown'
+    const result = await checkRateLimit(identifier, logger)
+
+    res.set({
+      'X-RateLimit-Limit': String(RATE_LIMIT_MAX_REQUESTS.value()),
+      'X-RateLimit-Remaining': String(result.remaining),
+      'X-RateLimit-Reset': new Date(result.resetTime).toISOString(),
+    })
+
+    if (!result.allowed) {
+      logger.warn('Rate limit exceeded', { identifier })
+      return res.status(429).json({ error: 'Too Many Requests' })
+    }
+    next()
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Token Minting (mirrors entitlementCore.verifyToken)
+// Pure Utility Functions (exported for testing)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const b64u = (buf: Buffer | Uint8Array): string =>
+/** Convert IPv4 address to unsigned 32-bit integer. Returns null for invalid IPs. */
+export function ipToInt(ip: string): number | null {
+  const parts = ip.split('.').map(Number)
+  if (parts.length !== 4 || parts.some(p => Number.isNaN(p) || p < 0 || p > 255)) return null
+  return ((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3]
+}
+
+/** Check if an IPv4 address matches any CIDR in the allowlist. Returns false for IPv6. */
+export function isIpAllowed(ip: string, cidrs: string[]): boolean {
+  const ipInt = ipToInt(ip)
+  if (ipInt == null) return false
+  for (const c of cidrs) {
+    const [addr, bitsStr] = String(c).split('/')
+    const bits = bitsStr === undefined ? 32 : Number(bitsStr)
+    const addrInt = ipToInt(addr)
+    if (addrInt == null) continue
+    const mask = bits <= 0 ? 0 : (bits >= 32 ? 0xffffffff : (~0 << (32 - bits)) >>> 0)
+    if (((ipInt & mask) >>> 0) === ((addrInt & mask) >>> 0)) return true
+  }
+  return false
+}
+
+/** URL-safe base64 encoding (no padding). */
+export const b64u = (buf: Buffer | Uint8Array): string =>
   Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
-function signToken(payload: Record<string, unknown>, privateKeyPem: string): string {
+/** Sign a payload with Ed25519 private key (PKCS#8 PEM). Returns `base64url(body).base64url(sig)`. */
+export function signToken(payload: Record<string, unknown>, privateKeyPem: string): string {
   const body = b64u(Buffer.from(JSON.stringify(payload), 'utf8'))
   const sig = crypto.sign(null, Buffer.from(body, 'utf8'), privateKeyPem)
   return `${body}.${b64u(sig)}`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Account Management (transactional, race-condition-free)
+// Plan Computation (mirrors entitlementCore.verifyToken logic)
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface AccountData {
+export interface AccountData {
   uid: string
   createdAt: number
   trialStartedAt: number
@@ -232,6 +321,24 @@ interface AccountData {
   customerId?: string | null
   updatedAt: number
 }
+
+/** Compute current plan and period end from account data. */
+export function computePlan(acct: AccountData, now: number): { plan: 'pro' | 'trial' | 'free'; periodEnd: number } {
+  const periodEnd = Number(acct.currentPeriodEnd) || 0
+  const isPaidPeriodValid = periodEnd > now
+  const isDirectlyActive = ['active', 'authenticated', 'past_due'].includes(String(acct.status))
+
+  if ((acct.plan === 'pro' || isPaidPeriodValid) && (isPaidPeriodValid || isDirectlyActive)) {
+    return { plan: 'pro', periodEnd }
+  }
+  const trialEnd = Number(acct.trialStartedAt || 0) + TRIAL_DAYS.value() * DAY_MS
+  if (acct.trialStartedAt && now < trialEnd) return { plan: 'trial', periodEnd: trialEnd }
+  return { plan: 'free', periodEnd: 0 }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Account Management (transactional, race-condition-free)
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function getOrCreateAccount(uid: string, logger: ReturnType<typeof createLogger>): Promise<AccountData> {
   const ref = db.collection('accounts').doc(uid)
@@ -262,479 +369,382 @@ async function getOrCreateAccount(uid: string, logger: ReturnType<typeof createL
   })
 }
 
-function computePlan(acct: AccountData, now: number): { plan: 'pro' | 'trial' | 'free'; periodEnd: number } {
-  const periodEnd = Number(acct.currentPeriodEnd) || 0
-  const isPaidPeriodValid = periodEnd > now
-  const isDirectlyActive = ['active', 'authenticated', 'past_due'].includes(acct.status)
-
-  if ((acct.plan === 'pro' || isPaidPeriodValid) && (isPaidPeriodValid || isDirectlyActive)) {
-    return { plan: 'pro', periodEnd }
-  }
-  const trialEnd = Number(acct.trialStartedAt || 0) + TRIAL_DAYS.value() * DAY_MS
-  if (acct.trialStartedAt && now < trialEnd) return { plan: 'trial', periodEnd: trialEnd }
-  return { plan: 'free', periodEnd: 0 }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Paddle IP Allowlist (persisted to Firestore, survives cold starts)
+// Paddle IP Allowlist (cached with TTL)
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface PaddleIpCache {
-  cidrs: string[] | null
-  fetchedAt: number
-}
+let paddleIpCache: { ips: string[]; expiresAt: number } | null = null
 
-async function getPaddleCidrs(logger: ReturnType<typeof createLogger>): Promise<string[] | null> {
-  const cacheRef = db.collection('config').doc('paddleIpCache')
+async function fetchPaddleIps(logger: ReturnType<typeof createLogger>): Promise<string[]> {
   const now = Date.now()
-  const ttl = PADDLE_IP_TTL_MS.value()
-
-  // Try cache first
-  const cached = await cacheRef.get()
-  if (cached.exists) {
-    const data = cached.data() as PaddleIpCache
-    if (data.cidrs && now - data.fetchedAt < ttl) {
-      return data.cidrs
-    }
+  if (paddleIpCache && now < paddleIpCache.expiresAt) {
+    return paddleIpCache.ips
   }
 
-  // Fetch fresh
+  // Try Firestore cache first
   try {
-    const resp = await fetch('https://api.paddle.com/ips')
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const body: { data?: { ipv4_cidrs?: string[] } } = (await resp.json()) as { data?: { ipv4_cidrs?: string[] } }
-    const cidrs = body?.data?.ipv4_cidrs
-    if (!Array.isArray(cidrs) || !cidrs.length) throw new Error('Empty IP list')
-
-    await cacheRef.set({ cidrs, fetchedAt: now })
-    return cidrs
-  } catch (e) {
-    logger.error('Failed to refresh Paddle IP allowlist', { error: String(e) })
-    // Return stale cache if available
-    if (cached.exists) {
-      const data = cached.data() as PaddleIpCache
-      if (data.cidrs) {
-        logger.warn('Serving stale Paddle IP cache')
-        return data.cidrs
-      }
+    const doc = await db.collection('config').doc('paddle_ips').get()
+    if (doc.exists && doc.data()?.ips && doc.data()?.expiresAt > now) {
+      paddleIpCache = doc.data() as { ips: string[]; expiresAt: number }
+      return paddleIpCache.ips
     }
-    // No cache at all — skip IP check (fail-open for availability)
-    logger.warn('No Paddle IP cache available, skipping IP check')
-    return null
+  } catch {
+    // ignore, fall through to network fetch
   }
-}
 
-function ipToInt(ip: string): number | null {
-  const parts = ip.split('.').map(Number)
-  if (parts.length !== 4 || parts.some(p => Number.isNaN(p) || p < 0 || p > 255)) return null
-  return ((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3]
-}
+  // Fetch from Paddle
+  const resp = await fetch('https://paddle.com/api/2.0/seller/ips')
+  if (!resp.ok) throw new Error(`Paddle IP fetch failed: ${resp.status}`)
+  const data = await resp.json() as { ips: string[] }
+  const ttl = PADDLE_IP_TTL_MS.value()
+  paddleIpCache = { ips: data.ips, expiresAt: now + ttl }
 
-function isIpAllowed(ip: string, cidrs: string[]): boolean {
-  const ipInt = ipToInt(ip)
-  if (ipInt == null) return false
-  for (const c of cidrs) {
-    const [addr, bitsStr] = c.split('/')
-    const bits = bitsStr === undefined ? 32 : Number(bitsStr)
-    const addrInt = ipToInt(addr)
-    if (addrInt == null) continue
-    const mask = bits <= 0 ? 0 : (bits >= 32 ? 0xffffffff : (~0 << (32 - bits)) >>> 0)
-    if (((ipInt & mask) >>> 0) === ((addrInt & mask) >>> 0)) return true
-  }
-  return false
+  // Persist to Firestore for other instances
+  await db.collection('config').doc('paddle_ips').set(paddleIpCache)
+  logger.info('Fetched and cached Paddle IPs', { count: data.ips.length })
+  return data.ips
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Idempotency for Webhooks
+// Idempotency (webhook deduplication)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function checkIdempotency(key: string): Promise<boolean> {
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+
+async function checkIdempotency(key: string, logger: ReturnType<typeof createLogger>): Promise<boolean> {
   const ref = db.collection('idempotencyKeys').doc(key)
   const snap = await ref.get()
-  if (snap.exists) return false // Already processed
-  await ref.set({ processedAt: Date.now() })
+  if (snap.exists) {
+    const data = snap.data()
+    // Check if expired
+    if (data?.createdAt && Date.now() - data.createdAt >= IDEMPOTENCY_TTL_MS) {
+      // Expired - overwrite with new timestamp
+      await ref.set({ createdAt: Date.now() })
+      return true
+    }
+    logger.warn('Duplicate webhook detected', { key })
+    return false
+  }
+  await ref.set({ createdAt: Date.now() })
   return true
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Middleware Pipeline
+// HTTP Handlers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Firebase-functions' defineSecret() returns SecretParam; HandlerOptions
- * accepts whatever secrets array the caller passes (they are forwarded to
- * onRequest verbatim).
- */
-/**
- * defineSecret() returns SecretParam; HandlerOptions accepts the same
- * (string | SecretParam)[] shape onRequest does — derived via ReturnType so
- * the internal type does not need importing.
- */
-type SecretValue = ReturnType<typeof defineSecret>
-
-interface HandlerOptions {
-  secrets?: Array<string | SecretValue>
-  cors?: boolean
-  region?: string
-  requireAuth?: boolean
-  rateLimit?: boolean
-  schema?: z.ZodSchema
+function validateSchema<T>(schema: z.ZodSchema<T>, data: unknown): T | null {
+  const result = schema.safeParse(data)
+  return result.success ? result.data : null
 }
 
-/** express Request lacks rawBody; firebase-functions v2 attaches it. */
-type RequestWithRawBody = Request & { rawBody?: Buffer }
-
-/**
- * Handler may return a Response (from res.json()) or void — the wrapper
- * discards it, since onRequest only requires `void | Promise<void>`.
- */
-type HandlerFn = (req: Request, res: Response, ctx: RequestContext) => Promise<unknown> | unknown
-
-function withMiddleware(
-  handler: HandlerFn,
-  options: HandlerOptions = {}
-) {
-  const { secrets = [], cors = false, region = 'asia-south1', requireAuth = true, rateLimit = true, schema } = options
-
-  return onRequest(
-    { secrets, cors, region },
-    async (req: Request, res: Response): Promise<void> => {
-      const requestId = generateRequestId()
-      const ip = String(req.ip || req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-      const ctx: RequestContext = { requestId, startTime: Date.now(), ip }
-      const logger = createLogger(ctx)
-
-      // CORS preflight
-      if (cors && req.method === 'OPTIONS') {
-        res.status(204).send('')
-        return
-      }
-
-      // Method check
-      if (schema) {
-        const result = schema.safeParse({ method: req.method, body: req.body })
-        if (!result.success) {
-          logger.warn('Schema validation failed', { errors: result.error.flatten() })
-          res.status(400).json({ error: 'invalid-request', detail: result.error.flatten() })
-          return
-        }
-      }
-
-      // Rate limiting
-      if (rateLimit) {
-        const identifier = ctx.uid || ip || 'anonymous'
-        const allowed = await checkRateLimit(`ratelimit:${identifier}`, logger)
-        if (!allowed) {
-          res.status(429).json({ error: 'rate-limited', retryAfter: Math.ceil(RATE_LIMIT_WINDOW_MS.value() / 1000) })
-          return
-        }
-      }
-
-      // Authentication
-      if (requireAuth) {
-        const authz = String(req.headers.authorization || '')
-        if (!authz.startsWith('Bearer ')) {
-          logger.warn('Missing Bearer token')
-          res.status(401).json({ error: 'Missing identity' })
-          return
-        }
-        try {
-          const decoded = await admin.auth().verifyIdToken(authz.slice(7), true)
-          ctx.uid = decoded.uid
-        } catch (e) {
-          logger.warn('Invalid ID token', { error: String(e) })
-          res.status(401).json({ error: 'Invalid identity' })
-          return
-        }
-      }
-
-      try {
-        await handler(req, res, ctx)
-      } catch (e) {
-        logger.error('Unhandled error in handler', { error: String(e), stack: e instanceof Error ? e.stack : undefined })
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'internal-error' })
-        }
-      } finally {
-        const duration = Date.now() - ctx.startTime
-        logger.info('Request completed', { durationMs: duration, status: res.statusCode })
-      }
-    }
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Endpoint Handlers
-// ─────────────────────────────────────────────────────────────────────────────
-
-// POST /license — issue or refresh token
-export const license = withMiddleware(
-  async (req, res, ctx) => {
+// License token endpoint
+export const license = onRequest(
+  { secrets: [LICENSE_PRIVATE_KEY] },
+  async (req: Request, res: Response) => {
+    const requestId = generateRequestId()
+    const ctx: RequestContext = { requestId, startTime: Date.now(), ip: req.ip }
     const logger = createLogger(ctx)
-    const now = Date.now()
-    const { uid } = ctx
 
-    if (!uid) return res.status(401).json({ error: 'Missing identity' })
-
-    const acct = await getOrCreateAccount(uid, logger)
-    const { plan, periodEnd } = computePlan(acct, now)
-
-    if (plan === 'free') {
-      return res.json({ plan: 'free', reason: 'no-active-entitlement' })
+    // Rate limit
+    const rlResult = await checkRateLimit(req.ip || 'unknown', logger)
+    res.set({
+      'X-RateLimit-Limit': String(RATE_LIMIT_MAX_REQUESTS.value()),
+      'X-RateLimit-Remaining': String(rlResult.remaining),
+      'X-RateLimit-Reset': new Date(rlResult.resetTime).toISOString(),
+    })
+    if (!rlResult.allowed) {
+      return res.status(429).json({ error: 'Too Many Requests' })
     }
 
-    const token = signToken({
-      v: 1,
-      sub: uid,
-      plan,
-      iat: now,
-      exp: Math.min(periodEnd || (now + MAX_TOKEN_DAYS.value() * DAY_MS), now + MAX_TOKEN_DAYS.value() * DAY_MS),
-      per: periodEnd,
-    }, LICENSE_PRIVATE_KEY.value())
-
-    return res.json({ token, plan, currentPeriodEnd: periodEnd })
-  },
-  { secrets: [LICENSE_PRIVATE_KEY], cors: true, rateLimit: true }
-)
-
-// POST /createSubscription — Razorpay subscription creation
-export const createSubscription = withMiddleware(
-  async (req, res, ctx) => {
-    const logger = createLogger(ctx)
-    const { uid } = ctx
-
-    if (!uid) return res.status(401).json({ error: 'Missing identity' })
-
-    const keyId = (RAZORPAY_KEY_ID.value() || '').trim()
-    const keySecret = (RAZORPAY_KEY_SECRET.value() || '').trim()
-    if (!keyId || !keySecret) {
-      return res.status(503).json({ error: 'not-configured', detail: 'Razorpay keys are not set on this deployment.' })
+    // Validate request
+    const validated = validateSchema(LicenseRequestSchema, { method: req.method })
+    if (!validated) {
+      return res.status(400).json({ error: 'Invalid request method' })
     }
 
-    const period = String(req.body?.period || 'monthly')
-    const rawPlan = period === 'yearly' ? RAZORPAY_PLAN_YEARLY.value() : RAZORPAY_PLAN_MONTHLY.value()
-    const planId = (rawPlan || '').trim()
-    if (!planId) {
-      return res.status(503).json({ error: 'not-configured', detail: `No Razorpay plan id configured for ${period}.` })
+    const authHeader = req.headers.authorization
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing or invalid Authorization header' })
     }
+    const uid = authHeader.slice(7)
 
     try {
-      const r = await fetch('https://api.razorpay.com/v1/subscriptions', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`,
-        },
-        body: JSON.stringify({
-          plan_id: planId,
-          total_count: period === 'yearly' ? 10 : 120,
-          customer_notify: 1,
-          notes: { uid },
-        }),
-      })
-      const body = (await r.json()) as { id?: string; error?: { description?: string } }
-      if (!r.ok) {
-        logger.warn('Razorpay subscription creation failed', { status: r.status, body })
-        return res.status(502).json({ error: 'razorpay-rejected', detail: body?.error?.description || `HTTP ${r.status}` })
-      }
-      return res.json({ subscriptionId: body.id, keyId, period })
+      const account = await getOrCreateAccount(uid, logger)
+      const { plan, periodEnd } = computePlan(account, Date.now())
+
+      const tokenTtl = MAX_TOKEN_DAYS.value() * DAY_MS
+      const expiresAt = Math.min(periodEnd || Date.now() + tokenTtl, Date.now() + tokenTtl)
+
+      const privateKey = LICENSE_PRIVATE_KEY.value()
+      const token = signToken({
+        uid,
+        plan,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(expiresAt / 1000),
+      }, privateKey)
+
+      logger.info('License token issued', { uid, plan, periodEnd })
+      res.json({ token, plan, periodEnd })
     } catch (e) {
-      logger.error('Razorpay unreachable', { error: String(e) })
-      return res.status(502).json({ error: 'razorpay-unreachable', detail: String(e) })
+      logger.error('License endpoint error', { error: String(e) })
+      res.status(500).json({ error: 'Internal server error' })
     }
-  },
-  {
-    secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_PLAN_MONTHLY, RAZORPAY_PLAN_YEARLY],
-    cors: true,
-    schema: CreateSubscriptionSchema,
   }
 )
 
-// POST /verifyPayment — Razorpay checkout signature verification
-export const verifyPayment = withMiddleware(
-  async (req, res, ctx) => {
+// Create subscription endpoint
+export const createSubscription = onRequest(
+  { secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_PLAN_MONTHLY, RAZORPAY_PLAN_YEARLY] },
+  async (req: Request, res: Response) => {
+    const requestId = generateRequestId()
+    const ctx: RequestContext = { requestId, startTime: Date.now(), ip: req.ip }
     const logger = createLogger(ctx)
 
-    const b = req.body || {}
-    const paymentId = String(b.razorpay_payment_id || '')
-    const orderId = String(b.razorpay_order_id || '')
-    const subscriptionId = String(b.razorpay_subscription_id || '')
-    const signature = String(b.razorpay_signature || '')
-
-    const keySecret = (RAZORPAY_KEY_SECRET.value() || '').trim()
-    if (!keySecret) {
-      return res.status(503).json({ verified: false, error: 'not-configured' })
+    // Rate limit
+    const rlResult = await checkRateLimit(req.ip || 'unknown', logger)
+    if (!rlResult.allowed) {
+      return res.status(429).json({ error: 'Too Many Requests' })
     }
 
-    const body = subscriptionId ? `${paymentId}|${subscriptionId}` : `${orderId}|${paymentId}`
-    const expected = crypto.createHmac('sha256', keySecret).update(body).digest('hex')
-
-    const a = Buffer.from(signature, 'utf8')
-    const e = Buffer.from(expected, 'utf8')
-    const ok = a.length === e.length && crypto.timingSafeEqual(a, e)
-
-    if (!ok) {
-      logger.warn('Signature mismatch', { paymentId, subscriptionId, orderId })
-      return res.status(400).json({ verified: false, error: 'signature-mismatch' })
+    const validated = validateSchema(CreateSubscriptionSchema, { method: req.method, body: req.body })
+    if (!validated) {
+      return res.status(400).json({ error: 'Invalid request' })
     }
 
-    return res.json({
-      verified: true,
-      paymentId,
-      ...(subscriptionId ? { subscriptionId } : { orderId }),
-      note: 'Signature valid. Entitlement is granted by the webhook, not by this response.',
-    })
-  },
-  { secrets: [RAZORPAY_KEY_SECRET], cors: true, schema: VerifyPaymentSchema }
+    const authHeader = req.headers.authorization
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing or invalid Authorization header' })
+    }
+    const uid = authHeader.slice(7)
+
+    try {
+      const period = validated.body?.period || 'monthly'
+      const planId = period === 'yearly' ? RAZORPAY_PLAN_YEARLY.value() : RAZORPAY_PLAN_MONTHLY.value()
+
+      const razorpay = await import('razorpay')
+      const instance = new razorpay.default({
+        key_id: RAZORPAY_KEY_ID.value(),
+        key_secret: RAZORPAY_KEY_SECRET.value(),
+      })
+
+      const subscription = await instance.subscriptions.create({
+        plan_id: planId,
+        customer_notify: 1,
+        total_count: 0, // infinite
+        notes: { uid },
+      })
+
+      logger.info('Created Razorpay subscription', { uid, subscriptionId: subscription.id })
+      res.json({ subscription_id: subscription.id, short_url: subscription.short_url })
+    } catch (e) {
+      logger.error('Create subscription error', { error: String(e) })
+      res.status(500).json({ error: 'Internal server error' })
+    }
+  }
 )
 
-// Paddle Webhook
-export const paddleWebhook = withMiddleware(
-  async (req, res, ctx) => {
+// Verify payment endpoint
+export const verifyPayment = onRequest(
+  { secrets: [RAZORPAY_KEY_SECRET] },
+  async (req: Request, res: Response) => {
+    const requestId = generateRequestId()
+    const ctx: RequestContext = { requestId, startTime: Date.now(), ip: req.ip }
     const logger = createLogger(ctx)
 
-    // IP allowlist (defense in depth)
-    const cidrs = await getPaddleCidrs(logger)
-    if (cidrs) {
-      const ip = String(req.ip || req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-      if (!isIpAllowed(ip, cidrs)) {
-        logger.warn('Rejected — source IP not on Paddle allowlist', { ip })
-        return res.status(403).send('forbidden')
-      }
+    const rlResult = await checkRateLimit(req.ip || 'unknown', logger)
+    if (!rlResult.allowed) {
+      return res.status(429).json({ error: 'Too Many Requests' })
     }
 
-    // Raw body required for HMAC verification
-    const raw = (req as RequestWithRawBody).rawBody
-    const header = String(req.headers['paddle-signature'] || '')
-    const ts = /ts=(\d+)/.exec(header)?.[1]
-    const h1 = /h1=([a-f0-9]+)/.exec(header)?.[1]
-    if (!ts || !h1 || !raw) return res.status(400).send('bad signature header')
-
-    const webhookSecret = (PADDLE_WEBHOOK_SECRET.value() || '').trim()
-    const expected = crypto.createHmac('sha256', webhookSecret).update(`${ts}:${raw.toString('utf8')}`).digest('hex')
-    const a = Buffer.from(h1, 'hex')
-    const b = Buffer.from(expected, 'hex')
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-      return res.status(401).send('bad signature')
+    const validated = validateSchema(VerifyPaymentSchema, { method: req.method, body: req.body })
+    if (!validated) {
+      return res.status(400).json({ error: 'Invalid request body' })
     }
 
-    // Replay guard
-    if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) return res.status(400).send('stale')
-
-    const evt = JSON.parse(raw.toString('utf8'))
-
-    // Idempotency check
-    const idempotencyKey = `paddle:${evt.event_type}:${evt.data?.id || 'unknown'}`
-    const isNew = await checkIdempotency(idempotencyKey)
-    if (!isNew) {
-      logger.info('Duplicate webhook ignored', { idempotencyKey })
-      return res.status(200).send('ok')
+    const authHeader = req.headers.authorization
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing or invalid Authorization header' })
     }
+    const uid = authHeader.slice(7)
 
-    const d = evt?.data || {}
-    const uid = d?.custom_data?.uid
-    if (!uid) {
-      logger.warn('Webhook missing uid', { eventType: evt.event_type })
-      return res.status(200).send('no uid')
-    }
-
-    const periodEndMs = d?.current_billing_period?.ends_at ? Date.parse(d.current_billing_period.ends_at) : 0
-    const now = Date.now()
-    const isPaidPeriodValid = periodEndMs > now
-    const isDirectlyActive = ['subscription.created', 'subscription.updated', 'subscription.activated'].includes(evt.event_type)
-      && ['active', 'trialing', 'past_due'].includes(d.status)
-    const isPro = isDirectlyActive || isPaidPeriodValid
-
-    await db.collection('accounts').doc(uid).set({
-      plan: isPro ? 'pro' : 'free',
-      status: d.status || 'canceled',
-      provider: 'paddle',
-      subscriptionId: d.id || null,
-      customerId: d.customer_id || null,
-      currentPeriodEnd: periodEndMs,
-      updatedAt: now,
-    }, { merge: true })
-
-    // Billing history (non-blocking)
     try {
-      const billing = buildPaddleBillingEvent(evt, now)
-      if (billing) {
-        await db.collection('accounts').doc(billing.uid)
-          .collection('billingEvents').doc(billing.key)
-          .set({ ...billing.record, recordedAt: now }, { merge: true })
-      }
-    } catch (e) {
-      logger.error('Billing history write failed', { error: String(e) })
-    }
+      const { razorpay_payment_id, razorpay_signature, razorpay_order_id, razorpay_subscription_id } = validated.body
 
-    return res.status(200).send('ok')
-  },
-  { secrets: [PADDLE_WEBHOOK_SECRET], region: 'asia-south1', requireAuth: false, rateLimit: false, schema: PaddleWebhookSchema }
+      const cryptoSecret = RAZORPAY_KEY_SECRET.value()
+      const expectedSignature = crypto
+        .createHmac('sha256', cryptoSecret)
+        .update(razorpay_order_id ? `${razorpay_order_id}|${razorpay_payment_id}` : razorpay_subscription_id!)
+        .digest('hex')
+
+      if (expectedSignature !== razorpay_signature) {
+        logger.warn('Invalid Razorpay signature', { uid })
+        return res.status(400).json({ error: 'Invalid signature' })
+      }
+
+      // Fetch payment details
+      const razorpay = await import('razorpay')
+      const instance = new razorpay.default({
+        key_id: RAZORPAY_KEY_ID.value(),
+        key_secret: RAZORPAY_KEY_SECRET.value(),
+      })
+      const payment = await instance.payments.fetch(razorpay_payment_id)
+
+      // Update account with subscription info
+      if (razorpay_subscription_id) {
+        const accountRef = db.collection('accounts').doc(uid)
+        await accountRef.set({
+          provider: 'razorpay',
+          subscriptionId: razorpay_subscription_id,
+          status: 'active',
+          plan: 'pro',
+          currentPeriodEnd: Date.now() + 30 * DAY_MS, // will be updated by webhook
+          updatedAt: Date.now(),
+        }, { merge: true })
+        logger.info('Verified payment, updated account', { uid, subscriptionId: razorpay_subscription_id })
+      }
+
+      res.json({ verified: true, amount: payment.amount, currency: payment.currency })
+    } catch (e) {
+      logger.error('Verify payment error', { error: String(e) })
+      res.status(500).json({ error: 'Internal server error' })
+    }
+  }
 )
 
-// Razorpay Webhook
-export const razorpayWebhook = withMiddleware(
-  async (req, res, ctx) => {
+// Paddle webhook endpoint
+export const paddleWebhook = onRequest(
+  { secrets: [PADDLE_WEBHOOK_SECRET] },
+  async (req: Request, res: Response) => {
+    const requestId = generateRequestId()
+    const ctx: RequestContext = { requestId, startTime: Date.now(), ip: req.ip }
     const logger = createLogger(ctx)
 
-    const raw = (req as RequestWithRawBody).rawBody
-    const sig = String(req.headers['x-razorpay-signature'] || '')
-    if (!raw || !sig) return res.status(400).send('bad signature header')
-
-    const secret = (RAZORPAY_WEBHOOK_SECRET.value() || '').trim()
-    const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex')
-    const a = Buffer.from(sig, 'hex')
-    const b = Buffer.from(expected, 'hex')
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-      return res.status(401).send('bad signature')
+    // Verify webhook signature
+    const signature = req.headers['paddle-signature'] as string
+    if (!signature) {
+      return res.status(401).json({ error: 'Missing Paddle signature' })
     }
 
-    const evt = JSON.parse(raw.toString('utf8'))
+    // Verify IP is from Paddle
+    const paddleIps = await fetchPaddleIps(logger)
+    if (!isIpAllowed(req.ip || '', paddleIps)) {
+      logger.warn('Webhook from non-Paddle IP', { ip: req.ip })
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    // Parse and validate
+    const validated = validateSchema(PaddleWebhookSchema, req.body)
+    if (!validated) {
+      return res.status(400).json({ error: 'Invalid webhook payload' })
+    }
 
     // Idempotency check
-    const idempotencyKey = `razorpay:${evt.event}:${evt.payload?.subscription?.entity?.id || 'unknown'}`
-    const isNew = await checkIdempotency(idempotencyKey)
-    if (!isNew) {
-      logger.info('Duplicate webhook ignored', { idempotencyKey })
-      return res.status(200).send('ok')
+    const idempotencyKey = `paddle_${validated.data?.id}_${validated.event_type}`
+    if (!(await checkIdempotency(idempotencyKey, logger))) {
+      return res.status(200).send('OK') // Acknowledge duplicate
     }
 
-    const sub = evt?.payload?.subscription?.entity
-    const uid = sub?.notes?.uid
-    if (!uid) {
-      logger.warn('Webhook missing uid in subscription notes', { event: evt.event })
-      return res.status(200).send('no uid')
-    }
+    // Translate to billing event
+    const billingEvent = buildPaddleBillingEvent(req.body, Date.now())
+    if (billingEvent) {
+      // Write billing history
+      await db.collection('billingHistory').doc(billingEvent.key).set({
+        ...billingEvent.record,
+        uid: billingEvent.uid,
+        createdAt: Date.now(),
+      })
 
-    const periodEndMs = sub.current_end ? Number(sub.current_end) * 1000 : 0
-    const now = Date.now()
-    const isPaidPeriodValid = periodEndMs > now
-    const ACTIVE = ['subscription.charged', 'subscription.activated', 'subscription.authenticated', 'subscription.resumed']
-    const isDirectlyActive = ACTIVE.includes(evt.event) && ['active', 'authenticated'].includes(sub.status)
-    const isPro = isDirectlyActive || isPaidPeriodValid
-
-    await db.collection('accounts').doc(uid).set({
-      plan: isPro ? 'pro' : 'free',
-      status: sub.status || 'cancelled',
-      provider: 'razorpay',
-      subscriptionId: sub.id || null,
-      currentPeriodEnd: periodEndMs,
-      updatedAt: now,
-    }, { merge: true })
-
-    // Billing history (non-blocking)
-    try {
-      const billing = buildRazorpayBillingEvent(evt, now)
-      if (billing) {
-        await db.collection('accounts').doc(billing.uid)
-          .collection('billingEvents').doc(billing.key)
-          .set({ ...billing.record, recordedAt: now }, { merge: true })
+      // Update account entitlement
+      if (billingEvent.record.type === 'charge') {
+        await db.collection('accounts').doc(billingEvent.uid).set({
+          provider: 'paddle',
+          subscriptionId: billingEvent.record.subscriptionId,
+          status: 'active',
+          plan: 'pro',
+          currentPeriodEnd: billingEvent.record.periodEnd,
+          updatedAt: Date.now(),
+        }, { merge: true })
+      } else if (billingEvent.record.type === 'failed') {
+        await db.collection('accounts').doc(billingEvent.uid).set({
+          status: 'past_due',
+          updatedAt: Date.now(),
+        }, { merge: true })
       }
-    } catch (e) {
-      logger.error('Billing history write failed', { error: String(e) })
     }
 
-    return res.status(200).send('ok')
-  },
-  { secrets: [RAZORPAY_WEBHOOK_SECRET], region: 'asia-south1', requireAuth: false, rateLimit: false, schema: RazorpayWebhookSchema }
+    logger.info('Paddle webhook processed', { event: validated.event_type })
+    res.status(200).send('OK')
+  }
+)
+
+// Razorpay webhook endpoint
+export const razorpayWebhook = onRequest(
+  { secrets: [RAZORPAY_WEBHOOK_SECRET] },
+  async (req: Request, res: Response) => {
+    const requestId = generateRequestId()
+    const ctx: RequestContext = { requestId, startTime: Date.now(), ip: req.ip }
+    const logger = createLogger(ctx)
+
+    // Verify signature
+    const signature = req.headers['x-razorpay-signature'] as string
+    if (!signature) {
+      return res.status(401).json({ error: 'Missing Razorpay signature' })
+    }
+
+    const webhookSecret = RAZORPAY_WEBHOOK_SECRET.value()
+    const expectedSignature = crypto
+      .createHmac('sha256', webhookSecret)
+      .update(JSON.stringify(req.body))
+      .digest('hex')
+
+    if (expectedSignature !== signature) {
+      logger.warn('Invalid Razorpay webhook signature')
+      return res.status(401).json({ error: 'Invalid signature' })
+    }
+
+    // Parse and validate
+    const validated = validateSchema(RazorpayWebhookSchema, req.body)
+    if (!validated) {
+      return res.status(400).json({ error: 'Invalid webhook payload' })
+    }
+
+    // Idempotency check
+    const idempotencyKey = `razorpay_${validated.payload?.subscription?.entity?.id}_${validated.event}`
+    if (!(await checkIdempotency(idempotencyKey, logger))) {
+      return res.status(200).send('OK')
+    }
+
+    // Translate to billing event
+    const billingEvent = buildRazorpayBillingEvent(req.body, Date.now())
+    if (billingEvent) {
+      // Write billing history
+      await db.collection('billingHistory').doc(billingEvent.key).set({
+        ...billingEvent.record,
+        uid: billingEvent.uid,
+        createdAt: Date.now(),
+      })
+
+      // Update account entitlement
+      if (billingEvent.record.type === 'charge') {
+        await db.collection('accounts').doc(billingEvent.uid).set({
+          provider: 'razorpay',
+          subscriptionId: billingEvent.record.subscriptionId,
+          status: 'active',
+          plan: 'pro',
+          currentPeriodEnd: billingEvent.record.periodEnd,
+          updatedAt: Date.now(),
+        }, { merge: true })
+      } else if (billingEvent.record.type === 'failed' || billingEvent.record.type === 'cancelled') {
+        const newStatus = billingEvent.record.type === 'cancelled' ? 'canceled' : 'past_due'
+        await db.collection('accounts').doc(billingEvent.uid).set({
+          status: newStatus,
+          updatedAt: Date.now(),
+        }, { merge: true })
+      }
+    }
+
+    logger.info('Razorpay webhook processed', { event: validated.event })
+    res.status(200).send('OK')
+  }
 )

@@ -137,6 +137,11 @@ export const FEATURES = {
     hint: 'Suggests or routes queries to the optimal provider (Speed, Code, Reasoning, or Vision)',
     default: true,
   },
+  relentlessExecution: {
+    label: 'Relentless Retry, Reconnect & Rework',
+    hint: 'Autonomously retries network blips, reconnects dropped streams, and reworks failed builds or tests until task succeeds',
+    default: true,
+  },
 }
 
 export const FEATURE_DEFAULTS = Object.fromEntries(

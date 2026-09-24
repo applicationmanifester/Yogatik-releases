@@ -58,6 +58,8 @@ import { detectReflexCandidate } from './agentReflex'
 import { recordReflexEvent } from './live/metrics'
 import { detectMcpNeed } from './mcpRegistry'
 import * as mcpMod from './mcp'
+import { createExecutionTracker, recordExecutionOutcome, detectStagnation, buildReworkFeedbackMessage } from './relentlessLoop'
+import { initializeTaskPlan, updateTaskPlanItem, renderTaskPlanPrompt } from './taskPlanMemory'
 import { assessResponse, regenerationPrompt, continuationPrompt as watchdogContinuationPrompt, isToolReceiptStub } from './responseWatchdog'
 import { buildUiTelemetryBlock } from './uiContext'
 
@@ -561,6 +563,7 @@ export async function runAgent({
   initialToolMode = null, onToolModeChange = null, agentOverride = null, onSafety = null,
   // New: provider-specific options and structured output
   providerOptions = null, responseFormat = null,
+  relentlessMode = false,
 }) {
   const executionCtx = { conversationId: conversationId || null, projectId: projectId || null }
   const { getToolSchemas, prioritizeToolSchemas, executeTool } = await toolRegistry()
@@ -607,6 +610,9 @@ export async function runAgent({
   let chatPrefs = {}
   try { chatPrefs = await getSetting('chat_prefs', {}) || {} } catch { /* defaults */ }
   const planMode = resolveFeatures(chatPrefs)?.planMode === true
+  const isRelentlessCommand = typeof userMessage === 'string' && /^\s*\/(?:loop|relentless|tdd)\b/i.test(userMessage)
+  const isRelentless = Boolean(relentlessMode || isRelentlessCommand || resolveFeatures(chatPrefs)?.relentlessExecution)
+  const executionTracker = isRelentless ? createExecutionTracker({ stagnationThreshold: 3 }) : null
   // How many tool rounds the agent may take before it must give a final answer.
   // Defaults to 25; user-tunable up to 100 in Personalise / chat settings.
   //
@@ -1461,6 +1467,17 @@ export async function runAgent({
           hadFileAccessThisTurn = true
         }
 
+        if (executionTracker && ['terminal_run', 'terminal_exec', 'test_and_heal', 'test_runner', 'fs_write', 'fs_edit', 'fs_batch_replace'].includes(tc.name)) {
+          const exitCode = result?.exitCode ?? (result?.success === false || result?.error ? 1 : 0)
+          recordExecutionOutcome(executionTracker, {
+            action: tc.name,
+            command: tc.parsedArgs?.command || tc.parsedArgs?.cmd || tc.parsedArgs?.testCommand,
+            error: result?.error,
+            diagnostics: result?.diagnostics || result?.output || result?.message,
+            exitCode,
+          })
+        }
+
         if (executionCtx.conversationId && result?.error) {
           logAgentTrace({
             conversationId: executionCtx.conversationId,
@@ -1514,6 +1531,21 @@ export async function runAgent({
             'you lack file, folder, or codebase access, and do NOT ask them to grant access, ' +
             'paste file contents, or share a URL. Answer using the actual content returned above.',
         })
+      }
+
+      if (isRelentless && executionTracker) {
+        const lastOutcome = executionTracker.history[executionTracker.history.length - 1]
+        if (lastOutcome && !lastOutcome.isSuccess && !signal?.aborted) {
+          const isStagnant = detectStagnation(executionTracker)
+          const reworkMsg = buildReworkFeedbackMessage(executionTracker, { isStagnant })
+          messages.push({
+            role: 'user',
+            content: reworkMsg,
+          })
+          onStatus?.(isStagnant
+            ? '⚠️ Stagnation detected — pivoting implementation strategy…'
+            : '🔄 Autonomous rework: Diagnosing failure & applying code fixes…')
+        }
       }
 
       // Any tool that produced a frame gets it shown to the model as an actual
