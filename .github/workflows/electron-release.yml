@@ -103,6 +103,19 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      - name: Disambiguate Yogatik Browser update metadata
+        shell: bash
+        run: |
+          for f in yogatik-browser/release/latest*.yml; do
+            if [ -f "$f" ]; then
+              base=$(basename "$f")
+              target="yogatik-browser/release/browser-${base#latest-}"
+              [ "$base" = "latest.yml" ] && target="yogatik-browser/release/browser.yml"
+              echo "Renaming $f -> $target"
+              mv "$f" "$target"
+            fi
+          done
+
       - name: Upload artefacts
         uses: actions/upload-artifact@v4
         continue-on-error: true
@@ -124,7 +137,7 @@ jobs:
             yogatik-browser/release/*.AppImage
             yogatik-browser/release/*.deb
             yogatik-browser/release/*.blockmap
-            yogatik-browser/release/latest*.yml
+            yogatik-browser/release/browser*.yml
 
       # All three runners publish into the SAME release on the PUBLIC MIRROR
       # repo. The source repo is private, and GitHub release assets on a private
@@ -184,7 +197,7 @@ jobs:
             yogatik-browser/release/*.AppImage
             yogatik-browser/release/*.deb
             yogatik-browser/release/*.blockmap
-            yogatik-browser/release/latest*.yml
+            yogatik-browser/release/browser*.yml
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 

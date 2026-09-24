@@ -33,7 +33,8 @@
       {
         "provider": "github",
         "owner": "applicationmanifester",
-        "repo": "Yogatik-releases"
+        "repo": "Yogatik-releases",
+        "channel": "browser"
       }
     ],
     "win": {
