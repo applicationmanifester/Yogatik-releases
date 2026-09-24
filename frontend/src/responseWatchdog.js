@@ -58,6 +58,21 @@ const FILE_ACCESS_DENIAL_PATTERNS = [
   /if it'?s in a file in your project, let me know the path and i'?ll read it/i,
 ]
 
+const TOOL_RECEIPT_PATTERNS = [
+  /^I have completed the requested actions \(tool results\):/i,
+  /^I have completed the requested operations and gathered the following information:/i,
+  /^I have finished inspecting the files and applying the requested changes\.?$/i,
+  /^I have finished inspecting the workspace and analyzing the requested task\.?$/i,
+  /^I have analyzed the request and prepared the following plan:\s*\n\n[\s\S]*\*Click \*\*Continue\*\*/i,
+]
+
+/** True if the response is merely a raw fallback receipt or action list rather than an actual synthesized answer. */
+export function isToolReceiptStub(text) {
+  if (!text) return false
+  const visible = visibleContent(text).trim()
+  return TOOL_RECEIPT_PATTERNS.some(p => p.test(visible))
+}
+
 /** True if the model falsely claims it cannot access files in desktop mode. */
 export function isFalseFileAccessDenial(text) {
   if (!text) return false
@@ -196,6 +211,14 @@ export function assessResponse(content, meta = {}) {
     return verdict('failed', 'regenerate', 'Response is empty — no visible content after stripping reasoning.', 'critical', 'empty')
   }
 
+  // ── 1.5. Incomplete tool synthesis / raw tool receipt stub ─────────
+  if (isToolReceiptStub(visible)) {
+    if (regenerations >= maxRegens) {
+      return verdict('degraded', 'accept_partial', 'Model stopped after tool execution without synthesizing an answer.', 'high', 'incomplete_synthesis')
+    }
+    return verdict('failed', 'regenerate', 'The model stopped after tool execution without writing the actual answer prose. Synthesize the findings now.', 'critical', 'incomplete_synthesis')
+  }
+
   // ── 2. Error-as-content ────────────────────────────────────────────
   if (isErrorContent(visible)) {
     if (regenerations >= maxRegens) {
@@ -294,7 +317,7 @@ function verdict(quality, action, reason, severity, check) {
 export function isRetryableError(errorString) {
   if (!errorString) return false
   const e = String(errorString).toLowerCase()
-  return /429|rate.?limit|50[0-4]|timeout|timed?\s*out|econnreset|econnrefused|network|overload|exceeded|capacity|busy|unavailable|bad gateway|gateway timeout/i.test(e)
+  return /429|rate.?limit|50[0-4]|timeout|timed?\s*out|econnreset|econnrefused|network|overload|exceeded|capacity|busy|unavailable|bad gateway|gateway timeout|premature|socket|disconnect|aborted by server|fetch failed|stream ended|closed unexpectedly/i.test(e)
 }
 
 /**
@@ -321,6 +344,11 @@ export function continuationPrompt(content) {
 export function regenerationPrompt(reason) {
   if (reason && reason.includes('fs_* tools')) {
     return `${reason} Do not mention or reference the failed attempt.`
+  }
+  if (reason && (reason.includes('incomplete_synthesis') || reason.includes('tool execution without writing the actual answer') || reason.includes('without synthesizing'))) {
+    return 'You have completed the tool exploration and collected all the data. ' +
+      'Do NOT just list the tools executed or output an action receipt. ' +
+      'Write your complete, comprehensive final answer directly to the user now in clear markdown formatting using the information gathered above.'
   }
   return `Your previous response did not meet quality standards (${reason}). ` +
     'Please provide a complete, high-quality response to the original question. ' +

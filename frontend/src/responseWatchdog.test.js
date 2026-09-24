@@ -14,6 +14,7 @@ import {
   continuationPrompt,
   regenerationPrompt,
   isFalseFileAccessDenial,
+  isToolReceiptStub,
 } from './responseWatchdog'
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -204,6 +205,33 @@ describe('assessResponse', () => {
   it('handles the forced-final flag for mid-thought', () => {
     const v = assessResponse('The answer involves:', { userMessage: 'Explain', forcedFinal: true })
     expect(v.action).toBe('accept_partial')
+  })
+
+  it('flags tool receipt stubs as incomplete_synthesis needing regeneration', () => {
+    const stub = 'I have completed the requested actions (tool results):\n\nweb_search — 2 results\ndeep_research — returned query, sub_queries'
+    const v = assessResponse(stub, { userMessage: 'Search the web for top AI news' })
+    expect(v.action).toBe('regenerate')
+    expect(v.check).toBe('incomplete_synthesis')
+  })
+
+  it('accepts partial if tool receipt stubs exhaust max regenerations', () => {
+    const stub = 'I have completed the requested actions (tool results):\n\nweb_search — 2 results'
+    const v = assessResponse(stub, { userMessage: 'Search the web', regenerations: 2 })
+    expect(v.action).toBe('accept_partial')
+    expect(v.check).toBe('incomplete_synthesis')
+  })
+})
+
+describe('isToolReceiptStub', () => {
+  it('detects action completed prefix', () => {
+    expect(isToolReceiptStub('I have completed the requested actions (tool results):\n\nweb_search — 2 results')).toBe(true)
+    expect(isToolReceiptStub('I have finished inspecting the files and applying the requested changes.')).toBe(true)
+    expect(isToolReceiptStub('I have finished inspecting the workspace and analyzing the requested task.')).toBe(true)
+  })
+
+  it('does NOT flag legitimate markdown answers', () => {
+    expect(isToolReceiptStub('# Today\'s Top AI News\n\n1. OpenAI announced GPT-5\n2. Anthropic published Claude 4')).toBe(false)
+    expect(isToolReceiptStub('Here are the results of the research on artificial intelligence.')).toBe(false)
   })
 })
 

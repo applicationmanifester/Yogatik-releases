@@ -113,10 +113,14 @@ function registerRootsIpc(opts = {}) {
   if (opts.getWindow) getWindow = opts.getWindow
   load()
 
-  ipcMain.handle('roots_add', async (_e, { ctx } = {}) => {
-    const res = await dialog.showOpenDialog(getWindow(), { properties: ['openDirectory'] })
-    if (res.canceled || !res.filePaths[0]) return null
-    const out = core.addRoot(state, ctx, res.filePaths[0])
+  ipcMain.handle('roots_add', async (_e, { ctx, path: directPath } = {}) => {
+    let chosenPath = directPath
+    if (!chosenPath) {
+      const res = await dialog.showOpenDialog(getWindow(), { properties: ['openDirectory'] })
+      if (res.canceled || !res.filePaths[0]) return null
+      chosenPath = res.filePaths[0]
+    }
+    const out = core.addRoot(state, ctx, chosenPath)
     state = out.state
     save()
     return out.root

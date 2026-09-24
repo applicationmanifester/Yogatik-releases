@@ -106,7 +106,7 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
       </button>
 
       {open && (
-        <div className="model-panel" role="listbox">
+        <div className="model-panel" role="listbox" style={{ minWidth: '320px' }}>
           <div className="model-search">
             <Search size={12} />
             <input ref={inputRef} value={q} onChange={e => { setQ(e.target.value); setSel(0) }}

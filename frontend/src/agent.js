@@ -58,7 +58,7 @@ import { detectReflexCandidate } from './agentReflex'
 import { recordReflexEvent } from './live/metrics'
 import { detectMcpNeed } from './mcpRegistry'
 import * as mcpMod from './mcp'
-import { assessResponse, regenerationPrompt, continuationPrompt as watchdogContinuationPrompt } from './responseWatchdog'
+import { assessResponse, regenerationPrompt, continuationPrompt as watchdogContinuationPrompt, isToolReceiptStub } from './responseWatchdog'
 import { buildUiTelemetryBlock } from './uiContext'
 
 /** Durable memories the user asked to keep, injected so the model recalls them
@@ -1618,12 +1618,38 @@ export async function runAgent({
           fullContent = recovered
           onToken?.(recovered)
         } else {
-          const gathered = summariseToolResults(toolResults)
-          const fallback = gathered
-            ? 'I have completed the requested actions (tool results):\n\n' + gathered
-            : 'I have finished inspecting the files and applying the requested changes.'
-          fullContent = fallback
-          onToken?.(fallback)
+          // If we gathered tool results, retry the synthesis pass with an explicit anti-thinking directive
+          // so reasoning models like Nemotron/DeepSeek don't stall in a think-only loop.
+          let synthesisRecovered = false
+          if (toolResults && Object.keys(toolResults).length > 0) {
+            for (let synthAttempt = 1; synthAttempt <= 2; synthAttempt++) {
+              throwIfAborted()
+              onStatus?.(`🔄 Synthesizing final answer from results (attempt ${synthAttempt}/2)…`)
+              fullContent = ''
+              tools = null
+              toolCallsToProcess = []
+              messages.push({
+                role: 'user',
+                content: 'IMPORTANT: Write your visible markdown answer to the user now using the gathered tool results. ' +
+                  'Do NOT output <think> tags or internal scratchpad monologue. Present the full findings and summary directly.',
+              })
+              await processStream()
+              harvestPromptedCalls(true)
+              if (visibleAnswer(fullContent)) {
+                synthesisRecovered = true
+                break
+              }
+            }
+          }
+
+          if (!synthesisRecovered && !visibleAnswer(fullContent)) {
+            const gathered = summariseToolResults(toolResults)
+            const fallback = gathered
+              ? 'I have completed the requested actions (tool results):\n\n' + gathered
+              : 'I have finished inspecting the files and applying the requested changes.'
+            fullContent = fallback
+            onToken?.(fallback)
+          }
         }
       }
     }
@@ -1743,7 +1769,8 @@ export async function runAgent({
 
     const leak = checkCanaryForLeak(canaryToken, cleanedContent, executionCtx.conversationId)
     if (leak.redacted) cleanedContent = leak.text
-    onDone?.({ content: cleanedContent, toolResults, sources, toolMode, promptLeakDetected: leak.leaked, watchdogEscalate, trace: traceRef ? [...traceRef] : undefined })
+    const incompleteSynthesis = isToolReceiptStub(cleanedContent)
+    onDone?.({ content: cleanedContent, toolResults, sources, toolMode, promptLeakDetected: leak.leaked, watchdogEscalate, trace: traceRef ? [...traceRef] : undefined, incompleteSynthesis })
   } catch (err) {
     if (reflexTrack) {
       const savedMs = reflexTrack.hit ? Math.max(0, Date.now() - reflexTrack.startTime) : 0

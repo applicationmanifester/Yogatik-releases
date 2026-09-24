@@ -39,6 +39,9 @@ export function summariseResult(name, result) {
   if (Array.isArray(result.results)) bits.push(`${result.results.length} result${result.results.length === 1 ? '' : 's'}`)
   if (Array.isArray(result.jobs)) bits.push(`${result.jobs.length} listing${result.jobs.length === 1 ? '' : 's'}`)
   if (Array.isArray(result.matches)) bits.push(`${result.matches.length} match${result.matches.length === 1 ? '' : 'es'}`)
+  if (Array.isArray(result.structured_findings)) bits.push(`${result.structured_findings.length} findings`)
+  if (Array.isArray(result.sources)) bits.push(`${result.sources.length} sources`)
+  if (Array.isArray(result.citations)) bits.push(`${result.citations.length} citations`)
   if (result.url) bits.push(String(result.url))
   if (result.title) bits.push(String(result.title))
 
@@ -46,7 +49,7 @@ export function summariseResult(name, result) {
 
   // A content preview, but a SHORT one: the point is to show what was found,
   // not to reprint the file.
-  const preview = result.content || result.text || result.excerpt || result.output || result.tree
+  const preview = result.content || result.text || result.excerpt || result.output || result.tree || result.executive_summary || result.summary || result.analysis
   const body = preview ? `\n\n${clip(preview)}` : ''
 
   if (!head && !body) {

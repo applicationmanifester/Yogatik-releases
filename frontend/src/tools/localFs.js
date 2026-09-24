@@ -156,11 +156,11 @@ function asRoot(p, source) {
 /** UI helpers (desktop only) — manage THIS chat's working folders.
  *  The Tauri shell has no roots_* commands and REJECTS unknown ones, so each
  *  falls back to the single-root fs_* command rather than silently doing nothing. */
-export async function addRoot(ctxOverride) {
+export async function addRoot(ctxOverride, directPath) {
   if (!isDesktop()) return null
-  try { return await invoke('roots_add', {}, ctxOverride) }
+  try { return await invoke('roots_add', directPath ? { path: directPath } : {}, ctxOverride) }
   catch {
-    try { return asRoot(await invoke('fs_grant', {}, ctxOverride), 'chat') } catch { return null }
+    try { return asRoot(await invoke('fs_grant', directPath ? { path: directPath } : {}, ctxOverride), 'chat') } catch { return null }
   }
 }
 export async function listRoots(ctxOverride) {

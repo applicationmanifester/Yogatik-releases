@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import ReactDOM from 'react-dom'
-import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Film, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera, TrendingUp, Package } from 'lucide-react'
+import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Film, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Star, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera, TrendingUp, Package } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, updateTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
+import { getFavoriteLocations, addFavoriteLocation, removeFavoriteLocation, isFavoriteLocation, toggleFavoriteLocation, getRecentLocations, recordRecentLocation } from './tools/favoriteLocations'
 import { setUserQuestionHandler } from './tools/askUser'
 import { useToast } from './hooks/useToast'
 import { copyChatScope, rebindChatScope } from './chatScope'
@@ -325,6 +326,8 @@ export default function App() {
   // dismiss it, not just a second click on the chip that opened it.
   useEffect(() => {
     if (!rootsOpen) return
+    setFavLocations(getFavoriteLocations())
+    setRecentLocations(getRecentLocations())
     const onKey = (e) => { if (e.key === 'Escape') setRootsOpen(false) }
     const onDown = (e) => {
       if (rootsWrapRef.current && !rootsWrapRef.current.contains(e.target)) setRootsOpen(false)
@@ -661,10 +664,18 @@ export default function App() {
     projectId: activeProject ?? null,
   }
 
-  const handleAddFolder = useCallback(async () => {
+  const [favLocations, setFavLocations] = useState(() => getFavoriteLocations())
+  const [recentLocations, setRecentLocations] = useState(() => getRecentLocations())
+
+  const handleAddFolder = useCallback(async (directPath) => {
     const ctx = { conversationId: scopeId, projectId: activeProject }
-    const added = await addRoot(ctx)
-    if (added) setChatRoots(await listRoots(ctx))
+    const added = await addRoot(ctx, typeof directPath === 'string' ? directPath : undefined)
+    if (added) {
+      if (added.path) recordRecentLocation(added.path, added.label)
+      setChatRoots(await listRoots(ctx))
+      setFavLocations(getFavoriteLocations())
+      setRecentLocations(getRecentLocations())
+    }
   }, [scopeId, activeProject])
   const handleRemoveFolder = useCallback(async (rootId) => {
     const ctx = { conversationId: scopeId, projectId: activeProject }
@@ -676,6 +687,12 @@ export default function App() {
     const updated = await setPrimaryRoot(rootId, ctx)
     setChatRoots(updated || [])
   }, [scopeId, activeProject])
+
+  const handleToggleFavorite = useCallback((p, label) => {
+    const updated = toggleFavoriteLocation(p, label)
+    setFavLocations(updated)
+    showToast(isFavoriteLocation(p) ? 'Pinned to Favorite Locations ⭐' : 'Removed from Favorites')
+  }, [showToast])
 
 
   // A browsing session carries logged-in state. It must not follow the user into
@@ -5190,20 +5207,139 @@ export default function App() {
                         <X size={14} />
                       </button>
                     </div>
-                    {(!chatRoots || chatRoots.length === 0) && <div className="roots-empty">No folder yet.</div>}
-                    {(chatRoots || []).filter(Boolean).map(r => (
-                      <div key={r.id || r.path} className="roots-row">
-                        <span className="roots-path" title={r.path}>{r.path}</span>
-                        {r.primary
-                          ? <span className="roots-badge">primary</span>
-                          : <button className="small-btn" onClick={() => handleMakePrimary(r.id)}>Make primary</button>}
-                        <button className="icon-btn" aria-label={`Remove ${r.label || r.path || 'folder'}`} onClick={() => handleRemoveFolder(r.id)}><Trash2 size={12} /></button>
-                      </div>
-                    ))}
+                    {(!chatRoots || chatRoots.length === 0) && <div className="roots-empty">No folder connected yet.</div>}
+                    {(chatRoots || []).filter(Boolean).map(r => {
+                      const isFav = isFavoriteLocation(r.path)
+                      return (
+                        <div key={r.id || r.path} className="roots-row">
+                          <button
+                            type="button"
+                            className="icon-btn roots-fav-btn"
+                            style={{ padding: '2px', color: isFav ? '#fbbf24' : 'var(--text-secondary)' }}
+                            onClick={() => handleToggleFavorite(r.path, r.label)}
+                            title={isFav ? 'Starred favorite (click to remove)' : 'Save as favorite location'}
+                            aria-label={isFav ? 'Starred favorite' : 'Save as favorite location'}
+                          >
+                            <Star size={13} fill={isFav ? '#fbbf24' : 'none'} stroke={isFav ? '#fbbf24' : 'currentColor'} />
+                          </button>
+                          <span className="roots-path" title={r.path}>{r.path}</span>
+                          {r.primary
+                            ? <span className="roots-badge">primary</span>
+                            : <button className="small-btn" onClick={() => handleMakePrimary(r.id)}>Make primary</button>}
+                          <button className="icon-btn" aria-label={`Remove ${r.label || r.path || 'folder'}`} onClick={() => handleRemoveFolder(r.id)}><Trash2 size={12} /></button>
+                        </div>
+                      )
+                    })}
                     {chatRoots && chatRoots.length > 0 && chatRoots[0]?.source && chatRoots[0].source !== 'chat' && (
                       <div className="roots-inherited">Inherited from {chatRoots[0].source}. Changing them here affects only this chat.</div>
                     )}
-                    <button className="small-btn" onClick={handleAddFolder}>Add folder…</button>
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                      <button className="small-btn primary" onClick={() => handleAddFolder()} style={{ flex: 1 }}>
+                        <Plus size={12} style={{ marginRight: 4 }} /> Add folder…
+                      </button>
+                    </div>
+
+                    {/* ⭐ Favorite Project Locations */}
+                    <div className="roots-section" style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Star size={12} fill="#fbbf24" stroke="#fbbf24" /> Favorite Locations ({favLocations.length})
+                        </span>
+                      </div>
+
+                      {favLocations.length === 0 ? (
+                        <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontStyle: 'italic', padding: '4px 0' }}>
+                          Star (⭐) any project folder above to save it as a favorite location for 1-click access across chats.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '140px', overflowY: 'auto' }}>
+                          {favLocations.map(fav => {
+                            const isCurrentlyActive = (chatRoots || []).some(cr => cr && cr.path && cr.path.toLowerCase() === fav.path.toLowerCase())
+                            return (
+                              <div key={fav.id || fav.path} className="roots-fav-row" style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px',
+                                padding: '4px 6px', borderRadius: '6px', background: 'var(--bg-secondary, rgba(255,255,255,0.02))'
+                              }}>
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div style={{ fontSize: '11.5px', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {fav.label || fav.path.split(/[/\\]/).pop()}
+                                  </div>
+                                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', direction: 'rtl', textAlign: 'left' }} title={fav.path}>
+                                    {fav.path}
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                                  {isCurrentlyActive ? (
+                                    <span style={{ fontSize: '9.5px', padding: '1px 5px', borderRadius: '4px', background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80' }}>Active</span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="small-btn"
+                                      style={{ fontSize: '10.5px', padding: '2px 7px' }}
+                                      onClick={() => handleAddFolder(fav.path)}
+                                      title="Use this project location for this chat"
+                                    >
+                                      Use
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="icon-btn"
+                                    style={{ padding: '2px' }}
+                                    onClick={() => {
+                                      const updated = removeFavoriteLocation(fav.id || fav.path)
+                                      setFavLocations(updated)
+                                    }}
+                                    title="Remove from favorites"
+                                    aria-label="Remove from favorites"
+                                  >
+                                    <X size={11} />
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 🕒 Recent Project Locations */}
+                    {recentLocations.filter(r => !favLocations.some(f => f.path.toLowerCase() === r.path.toLowerCase())).length > 0 && (
+                      <div className="roots-section" style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px dashed var(--border-color, rgba(255,255,255,0.06))' }}>
+                        <div style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={11} /> Recent Projects
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                          {recentLocations
+                            .filter(r => !favLocations.some(f => f.path.toLowerCase() === r.path.toLowerCase()))
+                            .slice(0, 3)
+                            .map(rec => {
+                              const isActive = (chatRoots || []).some(cr => cr && cr.path && cr.path.toLowerCase() === rec.path.toLowerCase())
+                              return (
+                                <button
+                                  key={rec.id || rec.path}
+                                  type="button"
+                                  className="small-btn"
+                                  style={{
+                                    fontSize: '10px',
+                                    padding: '2px 6px',
+                                    maxWidth: '140px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    opacity: isActive ? 0.6 : 1
+                                  }}
+                                  disabled={isActive}
+                                  onClick={() => handleAddFolder(rec.path)}
+                                  title={`Use ${rec.path}`}
+                                >
+                                  {rec.label || rec.path.split(/[/\\]/).pop()}
+                                </button>
+                              )
+                            })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
