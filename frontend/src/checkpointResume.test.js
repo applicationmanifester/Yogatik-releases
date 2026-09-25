@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('./llm', () => ({ streamChat: vi.fn() }))
+vi.mock('./llm', () => ({
+  streamChat: vi.fn(),
+  chatComplete: vi.fn(),
+  getProviderCapabilities: vi.fn(() => ({ tools: true, streaming: true })),
+}))
 vi.mock('./tools/index', () => ({
   getToolSchemas: vi.fn(() => [
     { type: 'function', function: { name: 'fs_read', description: 'read a file' } },

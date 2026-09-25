@@ -1,5 +1,15 @@
 # Changelog
 
+## v10.9.3 - Autonomous Relentless AI Engine: Auto-Prompted Tool Calling & Stream Loop Breaker (2026-09-25)
+
+### 🤖 Autonomous Agent & Tool Execution
+- **Auto-Prompted Tool Fallback (`agent.js`)** — When a provider's capability registry indicates `providerCaps.tools === false` (e.g. NVIDIA NIM or local model endpoints), Yogatik automatically engages `toolMode = 'prompted'`, injecting tool schemas and output formatting guidelines into the system instructions so the model can invoke tools without native function calling support.
+- **Bracketed Pseudo-Tool Parser (`promptedTools.js`)** — Added `parseBracketedToolCalls()` to parse plain-text bracketed tool invocations like `[Tool called: fs_file_tree {"path": "."}]` or `[Calling tool: ...]`. Eliminates execution stalls and syntax leaks when models output brackets instead of JSON blocks.
+- **Visible Content Cleansing (`reasoning.js`)** — Automatically removes bracketed pseudo-tool invocations and noisy internal mechanics from the user-facing answer stream while routing tool executions faithfully in the background.
+
+### ⚡ Stream Loop Protection & Token Preservation
+- **Real-Time Stream Repetition Loop Breaker (`reasoning.js` + `llm.js`)** — Continuously monitors streaming text chunks for degenerative runaway loops (e.g. repetitive dot sequences `... ... ...` or looping sentences). Immediately cancels the SSE stream reader and terminates the turn cleanly, preventing token waste, hangs, and frozen UI states.
+
 ## v10.9.2 - Autonomous Relentless AI Engine: Provider Intelligence & Zero-Drop Streaming (2026-09-25)
 
 ### 🤖 AI Provider Intelligence Engine

@@ -1079,7 +1079,7 @@ export async function runAgent({
 
   // 'native' → OpenAI-style tools array. 'prompted' → JSON protocol in the
   // system prompt, for models that 400 on a tools array or providers that lack native tool support (e.g. NVIDIA, local).
-  const providerCaps = getProviderCapabilities(provider)
+  const providerCaps = typeof getProviderCapabilities === 'function' ? (getProviderCapabilities(provider) || {}) : {}
   let toolMode = toolsEnabled ? (initialToolMode || (providerCaps.tools === false ? 'prompted' : 'native')) : 'off'
   let tools = toolMode === 'native' ? schemas : null
 
@@ -1678,7 +1678,7 @@ function safelyParseToolArgs(raw) {
     // this is the same failure when the cap was never reached. Ask once, then be
     // honest rather than blank.
     throwIfAborted()
-    if (!visibleAnswer(fullContent)) {
+    if (!visibleAnswer(fullContent) && (fullContent.trim() || rounds > 0 || Object.keys(toolResults).length > 0)) {
       // Only ask again if the cap-hit path has not already asked. Stacking two
       // identical "answer now" passes just burns a round on a model that is
       // already failing to answer.

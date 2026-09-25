@@ -3,16 +3,56 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '10.9.2'
+export const APP_VERSION = '10.9.3'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.9.2 — Autonomous Relentless AI Engine: Provider Intelligence & Zero-Drop Streaming'
+export const APP_CODENAME = 'Yogatik 10.9.3 — Autonomous Relentless AI Engine: Auto-Prompted Tool Calling & Stream Loop Breaker'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.9.3",
+    "title": "Yogatik 10.9.3: Autonomous Relentless AI Engine — Auto-Prompted Tool Calling & Stream Loop Breaker",
+    "date": "September 25, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Auto-Prompted Tool Mode: Automatically engages prompted tool mode when providers (NVIDIA NIM, local, Perplexity) lack native function calling capabilities",
+      "Bracketed Tool Call Parser: Robustly extracts and executes plain-text bracketed tool invocations ([Tool called: name {...}]) preventing model stoppage or token dump",
+      "Stream Repetition Loop Breaker: Real-time detection of runaway loop patterns (infinite dots '...', repeating sentences) with immediate abort to conserve tokens and prevent frozen UI",
+      "Clean User Display: Strips pseudo-tool syntax from visible stream responses while faithfully routing execution commands to the agent tool runner"
+    ],
+    "sections": [
+      {
+        "category": "🤖 Autonomous Agent & Tool Execution",
+        "items": [
+          {
+            "title": "Auto-Prompted Tool Fallback",
+            "description": "When providerCaps.tools is false (such as NVIDIA NIM or local inference endpoints), Yogatik automatically activates prompt-injected tool declarations and response instructions, enabling agentic workflow support on any LLM."
+          },
+          {
+            "title": "Bracketed Pseudo-Tool Parser (parseBracketedToolCalls)",
+            "description": "Detects and parses inline bracketed invocations such as [Tool called: fs_file_tree {...}] or [Calling tool: ...] emitted by models that do not use standard JSON markdown fences, directly converting them to executable tool calls."
+          }
+        ]
+      },
+      {
+        "category": "⚡ Stream Reliability & Loop Protection",
+        "items": [
+          {
+            "title": "Stream Repetition Breaker",
+            "description": "Continuous monitoring of streaming tokens for degenerate repeating loops (such as infinite '... ... ...' repetitions). Triggers early stream termination, saving GPU tokens and eliminating UI freeze."
+          },
+          {
+            "title": "Visible Content De-noising",
+            "description": "Bracketed pseudo tool calls and repetitive artifacts are cleanly excised from the visible conversation bubbles, ensuring a pristine reading experience while tools execute."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "10.9.2",
     "title": "Yogatik 10.9.2: Autonomous Relentless AI Engine — Provider Intelligence & Zero-Drop Streaming",
     "date": "September 25, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Anthropic Native Message Format: Fixed 'model output must contain either output text or tool calls' error with full OpenAI→Anthropic message converter",
       "Provider Capability Registry: Each provider declares tool/vision/streaming support — unsupported params are suppressed before sending, eliminating silent 400s",

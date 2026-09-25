@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // streamChat is the only network edge; drive it from a scripted queue.
-vi.mock('./llm', () => ({ streamChat: vi.fn() }))
+vi.mock('./llm', () => ({
+  streamChat: vi.fn(),
+  chatComplete: vi.fn(),
+  getProviderCapabilities: vi.fn(() => ({ tools: true, streaming: true })),
+}))
 vi.mock('./tools/index', () => ({
   getToolSchemas: vi.fn(() => []),
   executeTool: vi.fn(async () => ({ ok: true })),

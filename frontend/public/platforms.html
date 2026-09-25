@@ -462,11 +462,36 @@
     (function () {
       var RELEASES = [
   {
+    "version": "10.9.3",
+    "title": "Yogatik 10.9.3: Autonomous Relentless AI Engine — Auto-Prompted Tool Calling & Stream Loop Breaker",
+    "date": "September 25, 2026",
+    "codename": "Auto-Prompted Tools, Bracketed Invocations & Real-Time Stream Loop Breaker",
+    "isLatest": true,
+    "highlights": [
+      [
+        "Auto-Prompted Tool Mode for Any Provider",
+        "Automatically injects tool schemas and execution formatting for providers lacking native tool support (e.g. NVIDIA NIM, local LLMs)"
+      ],
+      [
+        "Bracketed Tool Call Parser",
+        "Parses inline [Tool called: name {...}] format directly into executable agent actions, preventing halts and token dumps"
+      ],
+      [
+        "Stream Repetition Loop Breaker",
+        "Real-time detection of runaway loop patterns (repeating dots, endless cycles) with immediate safe abort to save tokens"
+      ],
+      [
+        "Clean Conversation Bubbles",
+        "Strips pseudo-tool markup and noise from visible answer bubbles while preserving background execution"
+      ]
+    ]
+  },
+  {
     "version": "10.9.2",
     "title": "Yogatik 10.9.2: Autonomous Relentless AI Engine — Provider Intelligence & Zero-Drop Streaming",
     "date": "September 25, 2026",
     "codename": "Provider Intelligence, Circuit-Breaker Failover, Adaptive Limits & Checkpoint Resume",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Anthropic Native Message Converter",
