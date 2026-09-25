@@ -1,5 +1,18 @@
 # Changelog
 
+## v10.9.2 - Autonomous Relentless AI Engine: Provider Intelligence & Zero-Drop Streaming (2026-09-25)
+
+### 🤖 AI Provider Intelligence Engine
+- **Anthropic Native Message Converter (`toAnthropicMessages` in `llm.js`)** — Full OpenAI-to-Anthropic message pipeline: converts `tool_calls` to `tool_use` blocks, `role: tool` to `tool_result`, merges consecutive same-role turns, and prevents empty assistant content — fixing the `model output must contain either output text or tool calls` 400 error.
+- **Provider Capability Registry (`llm.js`)** — Declarative `PROVIDER_CAPABILITIES` table declares tools/vision/streaming/promptCaching support for every built-in provider. Unsupported params (like tools for NVIDIA/Perplexity) are stripped before sending, eliminating silent 400s.
+- **Adaptive Max-Token Limits per Model (`llm.js`)** — Dynamic `MODEL_MAX_TOKENS` lookup (30 entries) auto-resolves correct max_tokens for every major model (65,536 for Gemini 2.5 Pro; 64,000 for Claude 3.7 Sonnet; 8,192 for Groq LLaMA).
+- **Anthropic Prompt Caching on All Paths (`llm.js`)** — Both `streamChat` and `chatComplete` now include `anthropic-beta: prompt-caching-2024-07-31` and ephemeral `cache_control` blocks on system prompts — reducing latency and cost on long-context turns.
+
+### ⚡ Stream Reliability, Healthy Routing & Checkpoint Resume
+- **In-Flight Request Deduplication (`llm.js`)** — `streamChat({ dedupe: true })` returns the same in-progress Promise for identical concurrent requests, preventing duplicate API calls from rapid submit clicks or React StrictMode.
+- **Circuit-Breaker Failover & Smart Healthy Routing (`llm.js`)** — Providers that fail twice enter a 60s cooldown; `getHealthyRoute()` walks task-specific → general → fallback provider lists, ensuring zero interruptions.
+- **Stateful Checkpoint Resume Precision (`App.jsx` + `agent.js`)** — `resumeTurn` now safely purges the failed error bubble from UI state and restores internal agent history from `checkpointMapRef` with full tool_use/tool_result fidelity.
+
 ## v10.9.1 - Seamless High-FPS Desktop & Terminal Shield Engine (2026-09-25)
 
 ### ⚡ High-FPS Desktop Rendering & Compositing Engine

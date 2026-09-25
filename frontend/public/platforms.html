@@ -462,11 +462,40 @@
     (function () {
       var RELEASES = [
   {
+    "version": "10.9.2",
+    "title": "Yogatik 10.9.2: Autonomous Relentless AI Engine — Provider Intelligence & Zero-Drop Streaming",
+    "date": "September 25, 2026",
+    "codename": "Provider Intelligence, Circuit-Breaker Failover, Adaptive Limits & Checkpoint Resume",
+    "isLatest": true,
+    "highlights": [
+      [
+        "Anthropic Native Message Converter",
+        "Converts tool_calls to tool_use and tool results to tool_result blocks, eliminating 400 format errors on Anthropic Claude"
+      ],
+      [
+        "Provider Capability Registry",
+        "Declarative feature registry automatically strips unsupported params (e.g. tools for NVIDIA/Perplexity) before transmission"
+      ],
+      [
+        "Adaptive Max-Token Limits per Model",
+        "30-model lookup table automatically resolves exact token limits (65K for Gemini 2.5 Pro, 64K for Claude 3.7 Sonnet, 8K for Groq)"
+      ],
+      [
+        "Circuit-Breaker Failover & Deduplication",
+        "Cool down failing providers for 60s with automatic rerouting, and deduplicate concurrent identical stream requests"
+      ],
+      [
+        "Stateful Checkpoint & Resume Engine",
+        "Resume from Action N cleanly restores agent-internal tool states, eliminating duplicated error bubbles and turn loss"
+      ]
+    ]
+  },
+  {
     "version": "10.9.1",
     "title": "Yogatik 10.9.1: Seamless High-FPS Desktop & Terminal Shield Engine",
     "date": "September 25, 2026",
     "codename": "High-FPS Rendering, DirectComposition Fixes & Rogue Terminal Shield",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Seamless High-FPS Desktop Rendering",

@@ -70,7 +70,7 @@ export const APP_RELEASES = [
     "version": "10.9.1",
     "title": "Yogatik 10.9.1: Seamless High-FPS Desktop & Terminal Shield Engine",
     "date": "September 25, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Seamless High-FPS Desktop Rendering: Eliminated Windows DWM DirectComposition MPO stalls and 15-FPS frame lock",
       "In-Process 2D Canvas Acceleration: Removed out-of-process rasterization bottlenecks at 1.5x/1.25x Windows fractional scaling",
