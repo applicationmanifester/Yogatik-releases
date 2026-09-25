@@ -227,8 +227,8 @@ const isNvidiaHost = (url) => typeof url === 'string' && url.includes('://integr
 
 // Nothing should hang forever: a stalled proxy or provider previously left the
 // UI on "Connecting…" with no way out but the Stop button.
-// Increased to 300s for complex multi-tool tasks; can be overridden per call.
-const REQUEST_TIMEOUT = 300_000
+// Set to 600s (10 minutes) for massive models (such as Nemotron 550B) and deep multi-tool reasoning turns.
+const REQUEST_TIMEOUT = 600_000
 
 function withTimeout(options, ms = REQUEST_TIMEOUT) {
   const timeout = AbortSignal.timeout(ms)
@@ -381,6 +381,7 @@ export async function streamChat({
   retriedWithoutTools = false, onToolsRejected = null, retriedFixedTemp = false, retriedOmitTemp = false,
   retriedContextTrim = false,
   providerOptions = null, responseFormat = null,
+  streamRetryCount = 0,
 }) {
   const prov = getProviders()[provider]
   if (!prov) throw new Error(`Unknown provider: ${provider}`)
@@ -617,18 +618,20 @@ export async function streamChat({
     const reasoningTagger = createReasoningTagger()
 
     // 90s between-chunk watchdog: 30s was too aggressive on iOS/mobile where
-    // background throttling can hold the stream for 60-90s mid-response without
-    // the provider actually stalling. Status nudges at 30s and 60s so the user
-    // sees "Still working…" instead of a blank spinner.
-    const STREAM_CHUNK_TIMEOUT_MS = 90000
+    // 300s (5-minute) between-chunk watchdog for massive models (e.g. 550B) with
+    // progressive status updates at 30s, 60s, 120s, 180s, and 240s so the user sees live progress.
+    const STREAM_CHUNK_TIMEOUT_MS = 300000
     while (true) {
       // Chunk-stall watchdog: aborts if provider connection freezes mid-stream
-      let chunkTimer, nudge30, nudge60
+      let chunkTimer, nudge30, nudge60, nudge120, nudge180, nudge240
       const chunkPromise = new Promise((_, reject) => {
         nudge30 = setTimeout(() => onStatus?.('⏳ Still working — waiting for the model…'), 30000)
-        nudge60 = setTimeout(() => onStatus?.('⏳ Still working — large model responding, please wait…'), 60000)
+        nudge60 = setTimeout(() => onStatus?.('⏳ Large model processing deep context, please wait…'), 60000)
+        nudge120 = setTimeout(() => onStatus?.('⏳ Massive model reasoning in progress — holding connection open…'), 120000)
+        nudge180 = setTimeout(() => onStatus?.('⏳ Model formulating response — connection healthy…'), 180000)
+        nudge240 = setTimeout(() => onStatus?.('⏳ Heavy inference in progress — waiting for tokens…'), 240000)
         chunkTimer = setTimeout(() => {
-          const err = new Error('Stream stalled — no tokens received from provider for 90s. Try regenerating or choosing a faster model.')
+          const err = new Error('Stream stalled — no tokens received from provider for 300s.')
           err.name = 'TimeoutError'
           reject(err)
         }, STREAM_CHUNK_TIMEOUT_MS)
@@ -638,6 +641,9 @@ export async function streamChat({
         clearTimeout(chunkTimer)
         clearTimeout(nudge30)
         clearTimeout(nudge60)
+        clearTimeout(nudge120)
+        clearTimeout(nudge180)
+        clearTimeout(nudge240)
       })
       const { done, value } = await Promise.race([readPromise, chunkPromise])
       if (done) break
@@ -715,8 +721,19 @@ export async function streamChat({
 
     onDone?.()
   } catch (err) {
+    if (err.name === 'TimeoutError' && streamRetryCount < 2 && !signal?.aborted) {
+      const nextRetry = streamRetryCount + 1
+      onStatus?.(`⏳ Model stream delayed (timeout) — auto-reconnecting and retrying (${nextRetry}/2)…`)
+      return streamChat({
+        provider, apiKey, model: cleanModel, messages, tools,
+        temperature, maxTokens, signal, onToken, onToolCall, onDone, onError, onStatus,
+        retriedWithoutTools, onToolsRejected, retriedFixedTemp, retriedOmitTemp,
+        retriedContextTrim, providerOptions, responseFormat,
+        streamRetryCount: nextRetry,
+      })
+    }
     if (err.name === 'TimeoutError') {
-      onError?.(new Error(`No response after ${REQUEST_TIMEOUT / 1000}s — the provider or proxy is not responding. Try a smaller model.`))
+      onError?.(new Error(`No response after ${REQUEST_TIMEOUT / 1000}s (10 minutes) — the provider or proxy is not responding.`))
     } else if (err.name === 'AbortError') {
       // Stop was pressed. onDone MUST still fire: the agent awaits this promise
       // and swallowing the abort left the whole turn (and the UI) hanging.
