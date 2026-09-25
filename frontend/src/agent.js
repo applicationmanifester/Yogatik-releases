@@ -564,6 +564,8 @@ export async function runAgent({
   // New: provider-specific options and structured output
   providerOptions = null, responseFormat = null,
   relentlessMode = false,
+  resumeCheckpoint = null,
+  onCheckpoint = null,
 }) {
   const executionCtx = { conversationId: conversationId || null, projectId: projectId || null }
   const { getToolSchemas, prioritizeToolSchemas, executeTool } = await toolRegistry()
@@ -599,7 +601,9 @@ export async function runAgent({
     signal.addEventListener('abort', () => reject(abortError()), { once: true })
   })
 
-  const traceRef = []
+  const traceRef = (resumeCheckpoint?.trace && Array.isArray(resumeCheckpoint.trace))
+    ? [...resumeCheckpoint.trace]
+    : []
   let reflexTrack = null
 
   // Web research is only truly available if tools are on, the toggle is on,
@@ -760,11 +764,24 @@ export async function runAgent({
     },
   })
 
-  const messages = [
-    { role: 'system', content: systemBase },
-    ...windowed,
-    ...(userMessage ? [{ role: 'user', content: userMessage }] : []),
-  ]
+  const messages = (resumeCheckpoint && Array.isArray(resumeCheckpoint.messages) && resumeCheckpoint.messages.length > 0)
+    ? [...resumeCheckpoint.messages]
+    : [
+        { role: 'system', content: systemBase },
+        ...windowed,
+        ...(userMessage ? [{ role: 'user', content: userMessage }] : []),
+      ]
+
+  if (resumeCheckpoint && Array.isArray(resumeCheckpoint.messages) && resumeCheckpoint.messages.length > 0) {
+    if (messages[0]?.role === 'system') {
+      messages[0].content = systemBase
+    }
+    const completedActionsCount = resumeCheckpoint.actionCount || Object.keys(resumeCheckpoint.toolResults || {}).length
+    messages.push({
+      role: 'user',
+      content: `[System Checkpoint Resume: Resuming turn from checkpoint after Action ${completedActionsCount}. All previous tool executions and results above are preserved and complete. Do NOT repeat the actions already completed above. Continue directly from where you left off to complete the user's request.]`,
+    })
+  }
 
   // An attached image follows the same policy as the camera: hand it to the
   // model when it can see, otherwise read it here (OCR / on-device VLM) and
@@ -807,15 +824,18 @@ export async function runAgent({
     }
   }
 
-  const toolResults = {}
+  const toolResults = (resumeCheckpoint?.toolResults && typeof resumeCheckpoint.toolResults === 'object')
+    ? { ...resumeCheckpoint.toolResults }
+    : {}
   const sources = []
   let fullContent = ''
+  let rounds = resumeCheckpoint?.round || 0
 
   try {
     // Pre-fetch YouTube transcript/details when a URL is present so every provider
     // sees the same grounded context instead of guessing from the bare link.
     const ytMatch = userMessage && userMessage.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
-  if (ytMatch) {
+  if (ytMatch && !resumeCheckpoint) {
     throwIfAborted()
     onStatus?.('Fetching YouTube video details…')
     try {
@@ -965,7 +985,7 @@ export async function runAgent({
     }
   }
 
-  if (webAvailable && userMessage) {
+  if (webAvailable && userMessage && !resumeCheckpoint) {
     if (isSocialQuery(userMessage)) {
       throwIfAborted()
       onStatus?.('Searching social media for live posts…')
@@ -1311,7 +1331,7 @@ export async function runAgent({
     }
 
     // Tool execution loop (maxRounds cap prevents infinite loops)
-    let rounds = 0
+    rounds = resumeCheckpoint?.round || rounds || 0
     while (toolCallsToProcess.length > 0 && rounds < maxRounds) {
       throwIfAborted()
       rounds++
@@ -1571,6 +1591,16 @@ export async function runAgent({
 
       if (sources.length) onSources?.(sources)
 
+      const roundCheckpoint = {
+        round: rounds,
+        messages: [...messages],
+        toolResults: { ...toolResults },
+        trace: [...traceRef],
+        actionCount: Object.keys(toolResults).length,
+        timestamp: Date.now(),
+      }
+      try { onCheckpoint?.(roundCheckpoint) } catch {}
+
       // Call LLM again with tool results
       throwIfAborted()
       onStatus?.('Thinking...')
@@ -1779,7 +1809,15 @@ export async function runAgent({
     const leak = checkCanaryForLeak(canaryToken, cleanedContent, executionCtx.conversationId)
     if (leak.redacted) cleanedContent = leak.text
     const incompleteSynthesis = isToolReceiptStub(cleanedContent)
-    onDone?.({ content: cleanedContent, toolResults, sources, toolMode, promptLeakDetected: leak.leaked, watchdogEscalate, trace: traceRef ? [...traceRef] : undefined, incompleteSynthesis })
+    const finalCheckpoint = {
+      round: rounds,
+      messages: [...messages],
+      toolResults: { ...toolResults },
+      trace: [...traceRef],
+      actionCount: Object.keys(toolResults).length,
+      timestamp: Date.now(),
+    }
+    onDone?.({ content: cleanedContent, toolResults, sources, toolMode, promptLeakDetected: leak.leaked, watchdogEscalate, trace: traceRef ? [...traceRef] : undefined, incompleteSynthesis, checkpoint: finalCheckpoint })
   } catch (err) {
     if (reflexTrack) {
       const savedMs = reflexTrack.hit ? Math.max(0, Date.now() - reflexTrack.startTime) : 0
@@ -1789,14 +1827,24 @@ export async function runAgent({
         tool: reflexTrack.tool,
       })
     }
+    const errCheckpoint = {
+      round: rounds,
+      messages: [...messages],
+      toolResults: { ...toolResults },
+      trace: [...traceRef],
+      actionCount: Object.keys(toolResults).length,
+      timestamp: Date.now(),
+    }
+    try { onCheckpoint?.(errCheckpoint) } catch {}
     let cleanedContent = stripToolCallSyntax(fullContent)
     if (err?.name === 'AbortError' || signal?.aborted) {
       // User pressed Stop or turn was aborted: keep whatever was generated instead of dropping it.
       const leak = checkCanaryForLeak(canaryToken, cleanedContent, executionCtx.conversationId)
       if (leak.redacted) cleanedContent = leak.text
-      onDone?.({ content: cleanedContent, toolResults, sources, aborted: true, promptLeakDetected: leak.leaked, trace: traceRef ? [...traceRef] : undefined })
+      onDone?.({ content: cleanedContent, toolResults, sources, aborted: true, promptLeakDetected: leak.leaked, trace: traceRef ? [...traceRef] : undefined, checkpoint: errCheckpoint })
     } else {
-      onError?.(err)
+      if (err && typeof err === 'object') err.checkpoint = errCheckpoint
+      onError?.(err, errCheckpoint)
     }
   }
 }

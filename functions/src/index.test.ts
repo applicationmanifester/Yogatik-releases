@@ -25,10 +25,14 @@ interface AccountData {
 
 function computePlan(acct: AccountData, now: number): { plan: 'pro' | 'trial' | 'free'; periodEnd: number } {
   const periodEnd = Number(acct.currentPeriodEnd) || 0
-  const isPaidPeriodValid = periodEnd > now
-  const isDirectlyActive = ['active', 'authenticated', 'past_due'].includes(String(acct.status))
+  const status = String(acct.status)
+  const isPaidStatus = ['active', 'authenticated', 'past_due'].includes(status)
+  const hasValidPaidPeriod = periodEnd > now
 
-  if ((acct.plan === 'pro' || isPaidPeriodValid) && (isPaidPeriodValid || isDirectlyActive)) {
+  if (acct.plan === 'pro' && isPaidStatus) {
+    return { plan: 'pro', periodEnd }
+  }
+  if (hasValidPaidPeriod && (acct.plan === 'pro' || isPaidStatus)) {
     return { plan: 'pro', periodEnd }
   }
   const trialEnd = Number(acct.trialStartedAt || 0) + TRIAL_DAYS * DAY
@@ -123,6 +127,22 @@ describe('computePlan', () => {
 
   it('returns free for brand-new account with no fields', () => {
     expect(computePlan({ uid: 'u1' }, NOW).plan).toBe('free')
+  })
+
+  it('returns trial (not pro) for a freshly created account whose currentPeriodEnd holds the trial end', () => {
+    // Regression: getOrCreateAccount writes plan='trial', status='trialing',
+    // currentPeriodEnd = now + TRIAL_DAYS. Because that value is in the future,
+    // naive logic reported these brand-new accounts as 'pro'.
+    const acct: AccountData = {
+      uid: 'u1',
+      trialStartedAt: NOW,
+      plan: 'trial',
+      status: 'trialing',
+      currentPeriodEnd: NOW + TRIAL_DAYS * DAY,
+    }
+    const result = computePlan(acct, NOW)
+    expect(result.plan).toBe('trial')
+    expect(result.periodEnd).toBe(NOW + TRIAL_DAYS * DAY)
   })
 
   it('still grants pro for plan=pro + status=active even with missing periodEnd (mirrors original design)', () => {

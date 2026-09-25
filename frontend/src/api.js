@@ -397,6 +397,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
 
       let failure = null
       let produced = false
+      let latestCheckpoint = body.resumeCheckpoint || null
 
       const { runAgent } = await getAgentModule()
       await runAgent({
@@ -406,6 +407,11 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         userImage: body.image || null,
         conversationId: body.conversationId || body.channel || null,
         projectId: body.projectId || null,
+        resumeCheckpoint: body.resumeCheckpoint || null,
+        onCheckpoint: (cp) => {
+          latestCheckpoint = cp
+          body.onCheckpoint?.(cp)
+        },
         // 1B-class on-device: keep tools on (for web/research) but force
         // prompted mode (text JSON protocol) so streamLocal never sees a
         // native `tools` array that breaks the small WebLLM engine.
@@ -434,15 +440,18 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         onToolStart: (name, args) => onToolsDetected?.([name], args),
         onToolResult: (name, result) => onToolResult?.(name, result),
         onSafety: body.onSafety || null,
-        onDone: ({ content, sources, aborted, trace, toolResults, watchdogEscalate }) => {
+        onDone: ({ content, sources, aborted, trace, toolResults, watchdogEscalate, checkpoint }) => {
           if (sources?.length) onSources?.(sources)
           recordTurn(pid, mdl, {
             inTokens: estimateTokens(body.message || ''),
             outTokens: estimateTokens(content || ''),
           })
-          onDone?.(content, { aborted, provider: pid, model: mdl, trace, toolResults, watchdogEscalate })
+          onDone?.(content, { aborted, provider: pid, model: mdl, trace, toolResults, watchdogEscalate, checkpoint: checkpoint || latestCheckpoint })
         },
-        onError: (err) => { failure = err?.message || String(err) },
+        onError: (err, checkpoint) => {
+          failure = err?.message || String(err)
+          if (checkpoint) latestCheckpoint = checkpoint
+        },
       })
 
       if (failure && !produced && !controller.signal.aborted && isProviderFailure(failure)) {
@@ -460,6 +469,11 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
               userImage: body.image || null,
               conversationId: body.conversationId || body.channel || null,
               projectId: body.projectId || null,
+              resumeCheckpoint: latestCheckpoint || body.resumeCheckpoint || null,
+              onCheckpoint: (cp) => {
+                latestCheckpoint = cp
+                body.onCheckpoint?.(cp)
+              },
               toolsEnabled: body.tools !== false && body.use_tools !== false,
               initialToolMode: isLocalProvider ? 'prompted' : await getToolMode(pid, fallbackMdl),
               webEnabled: body.use_web_search !== false,
@@ -481,15 +495,18 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
               onToolStart: (name, args) => onToolsDetected?.([name], args),
               onToolResult: (name, result) => onToolResult?.(name, result),
               onSafety: body.onSafety || null,
-              onDone: ({ content, sources, aborted, trace, toolResults, watchdogEscalate }) => {
+              onDone: ({ content, sources, aborted, trace, toolResults, watchdogEscalate, checkpoint }) => {
                 if (sources?.length) onSources?.(sources)
                 recordTurn(pid, fallbackMdl, {
                   inTokens: estimateTokens(body.message || ''),
                   outTokens: estimateTokens(content || ''),
                 })
-                onDone?.(content, { aborted, provider: pid, model: fallbackMdl, trace, toolResults, watchdogEscalate })
+                onDone?.(content, { aborted, provider: pid, model: fallbackMdl, trace, toolResults, watchdogEscalate, checkpoint: checkpoint || latestCheckpoint })
               },
-              onError: (err) => { failure = err?.message || String(err) },
+              onError: (err, checkpoint) => {
+                failure = err?.message || String(err)
+                if (checkpoint) latestCheckpoint = checkpoint
+              },
             })
           }
         } catch { /* ignore fallback error */ }
@@ -502,17 +519,17 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
       const next = chain[i + 1]
       if (produced || controller.signal.aborted || !isProviderFailure(failure) || !next) {
         logError('llm_stream', failure, null, { provider: pid, model: activeMdl })
-        onError?.(failure)
+        onError?.(failure, { checkpoint: latestCheckpoint })
         return
       }
       onStatus?.(`${getLLMProviders()[pid]?.name || pid} failed — trying ${getLLMProviders()[next]?.name || next}…`)
     }
     const exhausted = chainExhaustedMessage(chain, getLLMProviders())
     logError('llm_stream', exhausted, null, { provider, chain })
-    onError?.(exhausted)
+    onError?.(exhausted, { checkpoint: latestCheckpoint })
   } catch (err) {
     logError('llm_stream_uncaught', err.message, err.stack, { provider, model })
-    onError?.(err.message)
+    onError?.(err.message, { checkpoint: latestCheckpoint })
   } finally {
     if (aborters.get(channel) === controller) aborters.delete(channel)
   }

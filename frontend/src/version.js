@@ -3,16 +3,47 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '10.8.0'
+export const APP_VERSION = '10.9.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.8.0 — Autonomous Relentless Engine: Auto-Retry, Reconnecting, Anti-Stagnation Rework & Persistent Task Memory'
+export const APP_CODENAME = 'Yogatik 10.9.0 — Turn Checkpoint & Mid-Flight Resume Engine'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.9.0",
+    "title": "Yogatik 10.9.0: Stateful Turn Checkpoints & Mid-Flight Resume Engine",
+    "date": "September 25, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Stateful Turn Checkpointing: Captures completed tool results, tool calls, and reasoning trace continuously during multi-action turns",
+      "Mid-Flight Resume from Action N: Preserves all previous tool results when timeouts or errors occur, allowing seamless continuation without losing prior work",
+      "Resume vs Restart Controls: Direct one-click 'Resume from Action N' button alongside 'Restart from Scratch' in error message bubbles",
+      "Watchdog Extension to 10 Minutes: Extended safety watchdog timeout to 600 seconds and stream timeout to 300 seconds for massive coding operations"
+    ],
+    "sections": [
+      {
+        "category": "💾 Stateful Turn Checkpoint & Resume Engine",
+        "items": [
+          {
+            "title": "Continuous Action Checkpointing",
+            "description": "Every tool result and reasoning step is captured continuously in IndexedDB Dexie as the turn executes."
+          },
+          {
+            "title": "Zero-Loss Resume from Action N",
+            "description": "When an error or connection stall occurs, the user can resume directly from where the model stopped, skipping redundant duplicate steps."
+          },
+          {
+            "title": "Contextual Recovery Directives",
+            "description": "Automatically injects verified tool histories into context so the LLM knows exactly which actions are already finished."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "10.8.0",
     "title": "Yogatik 10.8.0: Autonomous Relentless Engine — Auto-Retry, Stream Reconnecting, Anti-Stagnation Rework & Disk Task Memory",
     "date": "September 25, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Relentless Resilient Transport: Automatic exponential backoff with full jitter on 429 rate limits, 502/503/504 server spikes, and network drops",
       "Continuous Autonomous Rework: When builds or tests fail, parses structured assertion diffs and automatically applies repairs without stopping or asking permission",

@@ -70,6 +70,19 @@ db.version(7).stores({
   traces: '++id, conversationId, tool, createdAt, [conversationId+createdAt]',
   indexed_pages: '++id, url, domain, title, createdAt, [domain+createdAt]',
 })
+// v8: hash index on documents so dedupe lookups use an index instead of a
+// full-table scan (documents hold megabytes of extracted text).
+db.version(8).stores({
+  conversations: '++id, title, updatedAt, projectId',
+  messages: '++id, conversationId, role, createdAt, [conversationId+createdAt]',
+  settings: 'key',
+  documents: '++id, name, createdAt, projectId, hash',
+  projects: '++id, name, createdAt',
+  media: '++id, createdAt',
+  memories: '++id, store, at',
+  traces: '++id, conversationId, tool, createdAt, [conversationId+createdAt]',
+  indexed_pages: '++id, url, domain, title, createdAt, [domain+createdAt]',
+})
 
 // A backgrounded/hidden tab (mobile especially) can have IndexedDB closed out
 // from under us; the next Dexie call throws DatabaseClosedError / InvalidStateError
@@ -101,9 +114,13 @@ export async function saveMedia({ blob, mime, filename, meta = {} }) {
   const id = await db.media.add({ blob, mime, filename, meta, createdAt: Date.now() })
   // Videos are megabytes. Without a cap, IndexedDB fills up and every later
   // write starts failing with QuotaExceededError.
-  const all = await db.media.orderBy('createdAt').reverse().toArray()
-  const toDelete = all.slice(MEDIA_KEEP).map(m => m.id)
-  if (toDelete.length > 0) await db.media.bulkDelete(toDelete)
+  // Keys-only query: never load blob payloads into memory just to compute
+  // which old renders to evict.
+  const count = await db.media.count()
+  if (count > MEDIA_KEEP) {
+    const toDelete = await db.media.orderBy('createdAt').limit(count - MEDIA_KEEP).keys()
+    if (toDelete.length > 0) await db.media.bulkDelete(toDelete)
+  }
   return id
 }
 
@@ -182,7 +199,6 @@ export async function getSetting(key, fallback = null) {
 }
 
 export async function setSetting(key, value) {
-  _settingsCache.set(key, value)
   let toStore = value
   if (isApiKeySetting(key) && typeof value === 'string' && value && !value.startsWith('kc.v1:')) {
     try {
@@ -191,6 +207,9 @@ export async function setSetting(key, value) {
     } catch { /* store plaintext if the vault helper is unavailable */ }
   }
   await withReopen(() => db.settings.put({ key, value: toStore }))
+  // Cache only after a successful write: if the put fails the cache must keep
+  // serving the last value that actually persisted — not one that silently didn't.
+  _settingsCache.set(key, value)
 }
 
 export async function getAllSettings() {
@@ -323,8 +342,11 @@ export async function addDocument(doc) {
 export async function findDocumentByHash(hash, projectId) {
   if (!hash) return null
   return withReopen(async () => {
-    const all = await db.documents.toArray()
-    return all.find(d => d.hash === hash && (projectId === undefined || (d.projectId ?? null) === (projectId ?? null))) || null
+    // Index lookup on hash (v8 schema). Documents hold megabytes of extracted
+    // text — a full-table scan here stalled every duplicate check on upload.
+    const matches = await db.documents.where('hash').equals(hash).toArray()
+    if (projectId === undefined) return matches[0] || null
+    return matches.find(d => (d.projectId ?? null) === (projectId ?? null)) || null
   })
 }
 export async function getDocuments(projectId) {
@@ -390,7 +412,8 @@ export async function importAll(data, mode = 'merge') {
   if (data?.format !== 'yogatik-backup') throw new Error('Not a Yogatik backup file.')
   if (data.version > 1) throw new Error('This backup was made by a newer version of Yogatik.')
 
-  return db.transaction('rw', db.conversations, db.messages, db.documents, db.settings, db.projects, db.memories, async () => {
+  return db.transaction('rw', db.conversations, db.messages, db.documents, db.settings, db.projects, db.memories,
+    ...(db.indexed_pages ? [db.indexed_pages] : []), async () => {
     if (mode === 'replace') {
       await Promise.all([
         db.conversations.clear(),

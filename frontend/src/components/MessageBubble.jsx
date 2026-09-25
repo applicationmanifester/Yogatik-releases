@@ -265,7 +265,7 @@ function useMarkdownComponents(msgContent, onOpenArtifact) {
 }
 
 const MessageBubble = React.memo(function MessageBubble({
-   msg, onTTS, onOpenArtifact, onRegenerate, onContinue, onEdit, onRetry, onOpenSettings, onAutoPick, showToolCards = true,
+   msg, onTTS, onOpenArtifact, onRegenerate, onContinue, onEdit, onRetry, onResume, onOpenSettings, onAutoPick, showToolCards = true,
 }) {
    const [copied, setCopied] = useState(false)
    const [showExportMenu, setShowExportMenu] = useState(false)
@@ -391,9 +391,31 @@ const MessageBubble = React.memo(function MessageBubble({
           </div>
 
           <div className="message-error-buttons">
+            {onResume && (msg.checkpoint?.actionCount > 0 || (msg.checkpoint?.toolResults && Object.keys(msg.checkpoint.toolResults).length > 0)) && (
+              <button
+                type="button"
+                className="error-btn-primary error-btn-resume"
+                onClick={onResume}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  borderColor: '#059669',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+                }}
+                title="Preserves all completed tool results and continues directly from the stopping point"
+              >
+                <Play size={13} fill="currentColor" /> Resume from Action {msg.checkpoint.actionCount || Object.keys(msg.checkpoint.toolResults || {}).length}
+              </button>
+            )}
+
             {onRetry && (
-              <button type="button" className="error-btn-primary" onClick={onRetry}>
-                <RefreshCw size={13} /> Retry Turn
+              <button
+                type="button"
+                className={onResume && (msg.checkpoint?.actionCount > 0 || (msg.checkpoint?.toolResults && Object.keys(msg.checkpoint.toolResults).length > 0)) ? "error-btn-secondary" : "error-btn-primary"}
+                onClick={onRetry}
+              >
+                <RefreshCw size={13} /> {onResume && (msg.checkpoint?.actionCount > 0 || (msg.checkpoint?.toolResults && Object.keys(msg.checkpoint.toolResults).length > 0)) ? "Restart from Scratch" : "Retry Turn"}
               </button>
             )}
 

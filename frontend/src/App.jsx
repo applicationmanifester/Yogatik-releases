@@ -470,6 +470,7 @@ export default function App() {
   const [online, setOnline] = useState(() => navigator.onLine)
   const toolRunMapRef = useRef({}) // per-chat tool results: { [clientId]: { results: {}, used: [] } }
   const traceMapRef = useRef({})   // per-chat activity steps: { [clientId]: [...] }
+  const checkpointMapRef = useRef({}) // per-chat checkpoint state: { [clientId]: checkpoint }
   const textareaRef = useRef(null)
   const promptHistoryRef = useRef([])
   const historyIndexRef = useRef(-1)
@@ -2818,7 +2819,8 @@ export default function App() {
     showToast(`⚡ Switched to ${route.recommended.label}`)
   }, [handlePickProviderModel, showToast])
 
-  const send = async (text = input, overrideImage = null, explicitIdx = null) => {
+  const send = async (text = input, overrideImage = null, explicitIdx = null, turnOptions = {}) => {
+    const { resumeCheckpoint = null } = turnOptions || {}
     if (compareMode) {
       runCompare(text)
       return
@@ -2829,6 +2831,9 @@ export default function App() {
     const targetConv = conversationsRef.current[targetIdx]
     if (!targetConv) return
     const targetClientId = targetConv.clientId
+    if (resumeCheckpoint) {
+      checkpointMapRef.current[targetClientId] = resumeCheckpoint
+    }
 
     if (!text.trim() && !attachedFile && !attachedImage && !overrideImage) return
 
@@ -3193,6 +3198,10 @@ export default function App() {
           conversationId: convId || targetClientId,
           projectId: activeProject?.id || null,
           image: sentImage?.dataUrl || null,
+          resumeCheckpoint: resumeCheckpoint || checkpointMapRef.current[targetClientId] || null,
+          onCheckpoint: (cp) => {
+            checkpointMapRef.current[targetClientId] = cp
+          },
           // On-device safety screen → surface a soft support card (never blocks).
           onSafety: (_verdict, card) => { if (card) setCrisisCard(card) },
         },
@@ -3319,13 +3328,14 @@ export default function App() {
           setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
           delete toolRunMapRef.current[targetClientId]
           delete traceMapRef.current[targetClientId]
+          delete checkpointMapRef.current[targetClientId]
           getTodayUsage().then(setUsage).catch(() => {})
           // Name the chat: switching away mid-turn would otherwise end the turn
           // on whichever conversation the user is now looking at.
           endActivityTurn(targetClientId)
           triggerNextQueued(targetClientId)
         },
-        (err) => {
+        (err, errMeta) => {
           const errMsg = typeof err === 'string' ? err : err?.message || ''
           const isAbort = errMsg.toLowerCase().includes('abort') || errMsg.toLowerCase().includes('cancel')
           // Auto-retry transient provider failures
@@ -3348,6 +3358,17 @@ export default function App() {
           setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
           setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
           setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+          const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
+          const activeTrace = traceMapRef.current[targetClientId] || []
+          const cp = checkpointMapRef.current[targetClientId] || errMeta?.checkpoint || (
+            Object.keys(runData.results || {}).length > 0 ? {
+              messages: updated.messages,
+              toolResults: { ...runData.results },
+              trace: [...activeTrace],
+              actionCount: Object.keys(runData.results).length,
+              timestamp: Date.now(),
+            } : null
+          )
           delete toolRunMapRef.current[targetClientId]
           delete traceMapRef.current[targetClientId]
           if (isRetiredModelError(err)) {
@@ -3357,10 +3378,23 @@ export default function App() {
               getAllProviderStatus().then(setProviderStatus)
             })
           }
+          const errObj = {
+            createdAt: Date.now(),
+            role: 'assistant',
+            provider: useProvider,
+            model: useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined),
+            error: String(err),
+            content: content.trim(),
+            checkpoint: cp,
+            toolResults: { ...runData.results },
+            toolsUsed: [...runData.used],
+            trace: activeTrace.length ? [...activeTrace] : undefined,
+          }
+          if (convId) saveMessage(convId, errObj).catch(() => {})
           setConversations(prev => {
             const next = prev.map(c =>
               (c.clientId === targetClientId || (convId && c.id === convId))
-                ? { ...c, id: convId, messages: [...(c.messages || []), { role: 'assistant', provider: useProvider, model: useModel || (useProvider === 'local' ? DEFAULT_LOCAL_MODEL : undefined), error: String(err), content: '' }] }
+                ? { ...c, id: convId, messages: [...(c.messages || []), errObj] }
                 : c
             )
             conversationsRef.current = next
@@ -3885,6 +3919,28 @@ export default function App() {
     })
     if (targetConv?.id) { try { await trimConversationFrom(targetConv.id, lastUser) } catch {} }
     sendRef.current?.(prompt, imageToResend)
+  }
+
+  const resumeTurn = async (failedMsg) => {
+    if (isStreamingHere) return
+    const curIdx = activeIdxRef.current
+    const targetConv = conversationsRef.current[curIdx]
+    const msgs = targetConv?.messages || []
+    let lastUser = -1
+    for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'user') { lastUser = i; break } }
+    if (lastUser < 0) return
+    const lastUserMsg = msgs[lastUser]
+    const prompt = lastUserMsg.content
+    const imageToResend = lastUserMsg.image ? { dataUrl: lastUserMsg.image, thumb: lastUserMsg.image, name: 'attached-image' } : null
+    const checkpoint = failedMsg?.checkpoint || null
+    const kept = msgs.slice(0, lastUser)
+    setConversations(prev => {
+      const next = prev.map((c, i) => i === curIdx ? { ...c, messages: kept } : c)
+      conversationsRef.current = next
+      return next
+    })
+    if (targetConv?.id) { try { await trimConversationFrom(targetConv.id, lastUser) } catch {} }
+    sendRef.current?.(prompt, imageToResend, null, { resumeCheckpoint: checkpoint })
   }
 
   const handleBackup = async () => {
@@ -5758,6 +5814,7 @@ export default function App() {
                     onContinue={isLastAssistant && !isStreamingHere ? continueTurn : undefined}
                     onEdit={!isStreamingHere ? (text) => editAndResend(absolute, text) : undefined}
                     onRetry={m.error && !isStreamingHere ? regenerate : undefined}
+                    onResume={m.error && m.checkpoint && !isStreamingHere ? () => resumeTurn(m) : undefined}
                     onOpenSettings={handleOpenSettings}
                     onAutoPick={handleAutoPick} />
                 )

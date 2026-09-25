@@ -1,7 +1,7 @@
 {
   "name": "yogatik",
   "private": true,
-  "version": "10.8.0",
+  "version": "10.9.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {

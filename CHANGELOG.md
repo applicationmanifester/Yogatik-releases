@@ -1,5 +1,13 @@
 # Changelog
 
+## v10.9.0 - Stateful Turn Checkpoints & Mid-Flight Resume Engine (2026-09-25)
+
+### 💾 Stateful Turn Checkpointing & Recovery
+- **Continuous Action Checkpointing (`agent.js` + `api.js`)** — Every tool execution round, tool result, and reasoning trace is captured continuously into turn checkpoints as the turn executes.
+- **Mid-Flight Resume from Action N (`App.jsx` + `MessageBubble.jsx`)** — When an API watchdog timeout, network stall, or provider error interrupts a multi-step task, completed work is preserved. Clicking **Resume from Action N** immediately re-attaches previous tool results and continues execution directly from where the model stopped, eliminating redundant rework.
+- **Resume vs Restart UI (`MessageBubble.jsx`)** — Error message bubbles prominently feature a green gradient `Resume from Action N` button alongside `Restart from Scratch`, giving users total control over their recovery path.
+- **Watchdog Timeout Scaling (`llm.js`)** — Extended safety watchdog timeout to 10 minutes (`REQUEST_TIMEOUT = 600_000ms`) and stream chunk watchdog to 5 minutes (`STREAM_CHUNK_TIMEOUT_MS = 300_000ms`) to accommodate massive code generation and test execution.
+
 ## v10.8.0 - Autonomous Relentless Engine: Auto-Retry, Reconnecting, Anti-Stagnation Rework & Persistent Task Memory (2026-09-25)
 
 ### 🔄 Relentless Execution & Transport Self-Healing

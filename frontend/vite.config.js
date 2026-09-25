@@ -32,6 +32,12 @@ function llmProxyPlugin() {
     const chunks = []
     req.on('data', c => chunks.push(c))
     req.on('end', async () => {
+      // Upstream timeout: a hung provider must not hang the dev server forever.
+      // Long LLM generations legitimately run minutes, so this is generous.
+      const upstreamTimeout = AbortSignal.timeout(120_000)
+      // Client gone mid-stream: stop piping upstream immediately.
+      let clientGone = false
+      res.on('close', () => { clientGone = true })
       try {
         const body = Buffer.concat(chunks)
         const isBodyless = req.method === 'GET' || req.method === 'HEAD'
@@ -39,6 +45,7 @@ function llmProxyPlugin() {
           method: req.method || 'POST',
           headers,
           body: isBodyless || body.length === 0 ? undefined : body,
+          signal: upstreamTimeout,
         })
 
         res.writeHead(resp.status, {
@@ -51,14 +58,25 @@ function llmProxyPlugin() {
           while (true) {
             const { done, value } = await reader.read()
             if (done) { res.end(); return }
-            res.write(value)
+            if (clientGone) { resp.body.cancel().catch(() => {}); return }
+            // Backpressure: res.write() returning false means the socket buffer
+            // is full — wait for 'drain' instead of ballooning memory on fast streams.
+            if (!res.write(value)) {
+              await new Promise(resolve => res.once('drain', resolve))
+            }
           }
         } else {
           res.end(await resp.text())
         }
       } catch (e) {
-        if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
-        res.end(JSON.stringify({ error: e.message }))
+        // Timeouts and client disconnects surface here too — only report a real
+        // upstream failure when a response can still be written.
+        if (!res.headersSent && !clientGone) {
+          res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+          res.end(JSON.stringify({ error: e.message }))
+        } else {
+          try { res.end() } catch {}
+        }
       }
     })
   }

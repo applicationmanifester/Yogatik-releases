@@ -462,11 +462,36 @@
     (function () {
       var RELEASES = [
   {
+    "version": "10.9.0",
+    "title": "Yogatik 10.9.0: Stateful Turn Checkpoints & Mid-Flight Resume Engine",
+    "date": "September 25, 2026",
+    "codename": "Turn Checkpoint & Mid-Flight Resume Engine: Zero-Loss Execution & Recovery",
+    "isLatest": true,
+    "highlights": [
+      [
+        "Stateful Turn Checkpointing",
+        "Captures completed tool results, tool calls, and reasoning trace continuously during multi-action turns"
+      ],
+      [
+        "Mid-Flight Resume from Action N",
+        "Preserves all previous tool results when timeouts or errors occur, allowing seamless continuation without losing prior work"
+      ],
+      [
+        "Resume vs Restart Controls",
+        "Direct one-click 'Resume from Action N' button alongside 'Restart from Scratch' in error message bubbles"
+      ],
+      [
+        "Watchdog Extension to 10 Minutes",
+        "Extended safety watchdog timeout to 600 seconds and stream timeout to 300 seconds for massive coding operations"
+      ]
+    ]
+  },
+  {
     "version": "10.8.0",
     "title": "Yogatik 10.8.0: Autonomous Relentless Engine — Auto-Retry, Stream Reconnecting, Anti-Stagnation Rework & Disk Task Memory",
     "date": "September 25, 2026",
     "codename": "Autonomous Relentless Engine: Auto-Retry, Reconnecting, Anti-Stagnation Rework & Persistent Task Memory",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Relentless Resilient Transport",

@@ -168,7 +168,7 @@ const rateLimitCache = new Map<string, RateLimitEntry>()
 const CACHE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 
 // Periodic cleanup to prevent memory leak
-setInterval(() => {
+const cleanupTimer = setInterval(() => {
   const now = Date.now()
   const windowMs = RATE_LIMIT_WINDOW_MS.value()
   for (const [key, entry] of rateLimitCache.entries()) {
@@ -177,6 +177,8 @@ setInterval(() => {
     }
   }
 }, CACHE_CLEANUP_INTERVAL_MS)
+// Don't keep the Cloud Functions instance alive just for cache cleanup.
+if (typeof cleanupTimer.unref === 'function') cleanupTimer.unref()
 
 /**
  * Check rate limit for an identifier (IP, user ID, etc.)
@@ -325,10 +327,20 @@ export interface AccountData {
 /** Compute current plan and period end from account data. */
 export function computePlan(acct: AccountData, now: number): { plan: 'pro' | 'trial' | 'free'; periodEnd: number } {
   const periodEnd = Number(acct.currentPeriodEnd) || 0
-  const isPaidPeriodValid = periodEnd > now
-  const isDirectlyActive = ['active', 'authenticated', 'past_due'].includes(String(acct.status))
+  const status = String(acct.status)
+  const isPaidStatus = ['active', 'authenticated', 'past_due'].includes(status)
+  const hasValidPaidPeriod = periodEnd > now
 
-  if ((acct.plan === 'pro' || isPaidPeriodValid) && (isPaidPeriodValid || isDirectlyActive)) {
+  // Documented design intent: an explicit paid plan with a paid status keeps
+  // access even if currentPeriodEnd is missing (signToken caps exposure).
+  if (acct.plan === 'pro' && isPaidStatus) {
+    return { plan: 'pro', periodEnd }
+  }
+
+  // Otherwise pro requires a valid paid period AND a paid plan/status.
+  // NOTE: trial accounts store their trial end in currentPeriodEnd, so gating on
+  // paid plan/status here is what stops trials being reported as 'pro'.
+  if (hasValidPaidPeriod && (acct.plan === 'pro' || isPaidStatus)) {
     return { plan: 'pro', periodEnd }
   }
   const trialEnd = Number(acct.trialStartedAt || 0) + TRIAL_DAYS.value() * DAY_MS
@@ -393,9 +405,12 @@ async function fetchPaddleIps(logger: ReturnType<typeof createLogger>): Promise<
   }
 
   // Fetch from Paddle
+  // NOTE: verify this endpoint against current Paddle Billing docs — the legacy
+  // /api/2.0/seller/ips path may no longer be correct.
   const resp = await fetch('https://paddle.com/api/2.0/seller/ips')
   if (!resp.ok) throw new Error(`Paddle IP fetch failed: ${resp.status}`)
-  const data = await resp.json() as { ips: string[] }
+  const data = await resp.json() as { ips?: string[] }
+  if (!Array.isArray(data?.ips)) throw new Error('Paddle IP response missing ips[]')
   const ttl = PADDLE_IP_TTL_MS.value()
   paddleIpCache = { ips: data.ips, expiresAt: now + ttl }
 
@@ -413,20 +428,24 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 async function checkIdempotency(key: string, logger: ReturnType<typeof createLogger>): Promise<boolean> {
   const ref = db.collection('idempotencyKeys').doc(key)
-  const snap = await ref.get()
-  if (snap.exists) {
-    const data = snap.data()
-    // Check if expired
-    if (data?.createdAt && Date.now() - data.createdAt >= IDEMPOTENCY_TTL_MS) {
-      // Expired - overwrite with new timestamp
-      await ref.set({ createdAt: Date.now() })
+  try {
+    // Atomic create — fails with ALREADY_EXISTS (code 6) if another instance
+    // already claimed this key, closing the read-then-write race.
+    await ref.create({ createdAt: Date.now() })
+    return true
+  } catch (e) {
+    const code = (e as { code?: number }).code
+    if (code !== 6) throw e // unexpected error — surface it
+
+    const snap = await ref.get()
+    const createdAt = Number(snap.data()?.createdAt ?? 0)
+    if (Date.now() - createdAt >= IDEMPOTENCY_TTL_MS) {
+      await ref.set({ createdAt: Date.now() }) // expired claim — take it over
       return true
     }
     logger.warn('Duplicate webhook detected', { key })
     return false
   }
-  await ref.set({ createdAt: Date.now() })
-  return true
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -467,7 +486,16 @@ export const license = onRequest(
     if (!authHeader?.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'Missing or invalid Authorization header' })
     }
-    const uid = authHeader.slice(7)
+    // Verify the Firebase ID token — never trust the bearer value as a uid.
+    let uid: string
+    try {
+      const decoded = await admin.auth().verifyIdToken(authHeader.slice(7))
+      uid = decoded.uid
+      ctx.uid = uid
+    } catch {
+      logger.warn('Invalid or expired ID token')
+      return res.status(401).json({ error: 'Invalid or expired token' })
+    }
 
     try {
       const account = await getOrCreateAccount(uid, logger)
@@ -516,7 +544,15 @@ export const createSubscription = onRequest(
     if (!authHeader?.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'Missing or invalid Authorization header' })
     }
-    const uid = authHeader.slice(7)
+    let uid: string
+    try {
+      const decoded = await admin.auth().verifyIdToken(authHeader.slice(7))
+      uid = decoded.uid
+      ctx.uid = uid
+    } catch {
+      logger.warn('Invalid or expired ID token')
+      return res.status(401).json({ error: 'Invalid or expired token' })
+    }
 
     try {
       const period = validated.body?.period || 'monthly'
@@ -566,7 +602,15 @@ export const verifyPayment = onRequest(
     if (!authHeader?.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'Missing or invalid Authorization header' })
     }
-    const uid = authHeader.slice(7)
+    let uid: string
+    try {
+      const decoded = await admin.auth().verifyIdToken(authHeader.slice(7))
+      uid = decoded.uid
+      ctx.uid = uid
+    } catch {
+      logger.warn('Invalid or expired ID token')
+      return res.status(401).json({ error: 'Invalid or expired token' })
+    }
 
     try {
       const { razorpay_payment_id, razorpay_signature, razorpay_order_id, razorpay_subscription_id } = validated.body
@@ -574,7 +618,11 @@ export const verifyPayment = onRequest(
       const cryptoSecret = RAZORPAY_KEY_SECRET.value()
       const expectedSignature = crypto
         .createHmac('sha256', cryptoSecret)
-        .update(razorpay_order_id ? `${razorpay_order_id}|${razorpay_payment_id}` : razorpay_subscription_id!)
+        .update(
+          razorpay_order_id
+            ? `${razorpay_order_id}|${razorpay_payment_id}`
+            : `${razorpay_payment_id}|${razorpay_subscription_id!}`
+        )
         .digest('hex')
 
       if (expectedSignature !== razorpay_signature) {
@@ -662,7 +710,10 @@ export const paddleWebhook = onRequest(
           subscriptionId: billingEvent.record.subscriptionId,
           status: 'active',
           plan: 'pro',
-          currentPeriodEnd: billingEvent.record.periodEnd,
+          // Don't clobber an existing valid period with null/0 from a partial payload.
+          ...(Number(billingEvent.record.periodEnd) > 0
+            ? { currentPeriodEnd: billingEvent.record.periodEnd }
+            : {}),
           updatedAt: Date.now(),
         }, { merge: true })
       } else if (billingEvent.record.type === 'failed') {
@@ -693,9 +744,13 @@ export const razorpayWebhook = onRequest(
     }
 
     const webhookSecret = RAZORPAY_WEBHOOK_SECRET.value()
+    // Razorpay signs the RAW request body bytes; re-serializing req.body can
+    // change key order/whitespace and break verification.
+    const rawBody: Buffer =
+      (req as Request & { rawBody?: Buffer }).rawBody ?? Buffer.from(JSON.stringify(req.body))
     const expectedSignature = crypto
       .createHmac('sha256', webhookSecret)
-      .update(JSON.stringify(req.body))
+      .update(rawBody)
       .digest('hex')
 
     if (expectedSignature !== signature) {
@@ -732,7 +787,10 @@ export const razorpayWebhook = onRequest(
           subscriptionId: billingEvent.record.subscriptionId,
           status: 'active',
           plan: 'pro',
-          currentPeriodEnd: billingEvent.record.periodEnd,
+          // Don't clobber an existing valid period with null/0 from a partial payload.
+          ...(Number(billingEvent.record.periodEnd) > 0
+            ? { currentPeriodEnd: billingEvent.record.periodEnd }
+            : {}),
           updatedAt: Date.now(),
         }, { merge: true })
       } else if (billingEvent.record.type === 'failed' || billingEvent.record.type === 'cancelled') {
