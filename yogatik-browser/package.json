@@ -1,7 +1,7 @@
 {
   "name": "yogatik-browser",
   "private": true,
-  "version": "10.9.3",
+  "version": "10.9.4",
   "description": "Yogatik Browser — AI-first privacy browser that thinks with you, not about you.",
   "main": "electron/main.cjs",
   "scripts": {

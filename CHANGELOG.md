@@ -1,5 +1,12 @@
 # Changelog
 
+## v10.9.4 - Markdown Table Loop-Breaker Fix & Pattern Precision (2026-09-25)
+
+### ⚡ Stream Reliability & Loop Protection
+- **Markdown Table Exemption (`reasoning.js`)** — Both `deduplicateRepetitions` and `createReasoningTagger` now detect pipe-delimited markdown rows (`| col | col |`) and separator rows (`| --- | --- |`) and skip loop detection entirely. Previously, NVIDIA Nemotron-3's comparative table responses were being cut off mid-render with *"…repetitive text loop truncated"* — a false positive caused by the repeating `|---|` pattern in table header separators.
+- **Raised Pattern Minimum Length: 10 → 15 chars (`reasoning.js`)** — The minimum captured-group length in the regex pattern matcher was increased from 10 to 15 characters. Short table cell fragments like ` --- ` or ` col ` no longer qualify as "repeating units", eliminating another class of false positives.
+- **Wider Detection Tail: 300 → 500 chars (`reasoning.js`)** — The sliding tail window used by `createReasoningTagger` for both the reasoning and content channels was extended from 300 to 500 characters, giving the detector richer context before any truncation decision fires.
+
 ## v10.9.3 - Autonomous Relentless AI Engine: Auto-Prompted Tool Calling & Stream Loop Breaker (2026-09-25)
 
 ### 🤖 Autonomous Agent & Tool Execution

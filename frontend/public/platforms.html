@@ -462,11 +462,36 @@
     (function () {
       var RELEASES = [
   {
+    "version": "10.9.4",
+    "title": "Yogatik 10.9.4: Autonomous Relentless AI Engine — Markdown Table Loop-Breaker Fix & Pattern Precision",
+    "date": "September 25, 2026",
+    "codename": "Table-Aware Loop Detection, Min-Length Precision & Wider Tail Window",
+    "isLatest": true,
+    "highlights": [
+      [
+        "Markdown Table False-Positive Fix",
+        "Stream repetition loop breaker no longer truncates valid markdown tables from NVIDIA Nemotron and other models"
+      ],
+      [
+        "Table-Aware Loop Detection",
+        "Pipe-delimited rows (| col | col |) and separator rows (| --- | --- |) are now fully exempt from loop detection"
+      ],
+      [
+        "Raised Pattern Minimum (10→15 chars)",
+        "Prevents short table cell tokens like ' --- ' from falsely matching as repeating loop units"
+      ],
+      [
+        "Wider Detection Tail (300→500 chars)",
+        "More context available before any loop truncation decision fires, improving accuracy"
+      ]
+    ]
+  },
+  {
     "version": "10.9.3",
     "title": "Yogatik 10.9.3: Autonomous Relentless AI Engine — Auto-Prompted Tool Calling & Stream Loop Breaker",
     "date": "September 25, 2026",
     "codename": "Auto-Prompted Tools, Bracketed Invocations & Real-Time Stream Loop Breaker",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Auto-Prompted Tool Mode for Any Provider",

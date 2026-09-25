@@ -21,6 +21,15 @@ export function deduplicateRepetitions(text) {
     let lastLine = null
     for (const line of lines) {
       const trimmed = line.trim()
+      // Markdown table rows and separator rows are legitimately repetitive — skip them
+      // e.g.  "| col | col |"  and  "| --- | --- |"
+      const isTableRow = trimmed.startsWith('|') && trimmed.endsWith('|')
+      if (isTableRow) {
+        repeatCount = 0
+        lastLine = null
+        cleanLines.push(line)
+        continue
+      }
       if (trimmed && trimmed.length > 5 && trimmed === lastLine) {
         repeatCount++
         if (repeatCount <= 2) {
@@ -109,15 +118,19 @@ export function createReasoningTagger() {
       }
 
       reasoningTail += text
-      if (reasoningTail.length > 300) {
-        reasoningTail = reasoningTail.slice(-300)
+      if (reasoningTail.length > 500) {
+        reasoningTail = reasoningTail.slice(-500)
       }
 
-      // Check if the tail contains a 3x repeating pattern
-      const loopMatch = reasoningTail.match(/(.{12,80}?)(?:\s*\1){2,}/is)
-      if (loopMatch) {
-        suppressedDueToLoop = true
-        return '\n\n*(…repetitive reasoning loop truncated)*'
+      // Check if the tail contains a 3x repeating pattern.
+      // Skip if the tail is dominated by markdown table content (pipe-delimited rows).
+      const hasTableContent = (reasoningTail.match(/\|/g) || []).length > 6
+      if (!hasTableContent) {
+        const loopMatch = reasoningTail.match(/(.{15,80}?)(?:\s*\1){2,}/is)
+        if (loopMatch) {
+          suppressedDueToLoop = true
+          return '\n\n*(…repetitive reasoning loop truncated)*'
+        }
       }
 
       const prefix = open ? '' : '<think>'
@@ -136,8 +149,8 @@ export function createReasoningTagger() {
       }
 
       contentTail += text
-      if (contentTail.length > 300) {
-        contentTail = contentTail.slice(-300)
+      if (contentTail.length > 500) {
+        contentTail = contentTail.slice(-500)
       }
 
       // Check for runaway dots / ellipses / filler tokens (e.g. "... ... ... ..." or "...........")
@@ -146,11 +159,15 @@ export function createReasoningTagger() {
         return prefix + '\n\n*(…repetitive filler loop truncated)*'
       }
 
-      // Check if the tail contains a 3x repeating pattern (10-80 chars)
-      const loopMatch = contentTail.match(/(.{10,80}?)(?:\s*\1){2,}/is)
-      if (loopMatch) {
-        contentLoopSuppressed = true
-        return prefix + '\n\n*(…repetitive text loop truncated)*'
+      // Check if the tail contains a 3x repeating pattern (min 15 chars to avoid short table fragments).
+      // Skip entirely when the tail is dominated by markdown table content (pipe-delimited rows).
+      const hasTableContent = (contentTail.match(/\|/g) || []).length > 6
+      if (!hasTableContent) {
+        const loopMatch = contentTail.match(/(.{15,80}?)(?:\s*\1){2,}/is)
+        if (loopMatch) {
+          contentLoopSuppressed = true
+          return prefix + '\n\n*(…repetitive text loop truncated)*'
+        }
       }
 
       return prefix + text
