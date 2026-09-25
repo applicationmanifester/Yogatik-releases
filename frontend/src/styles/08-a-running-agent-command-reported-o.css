@@ -1,0 +1,1122 @@
+/* The chat composer is 16px at ≤480px so iOS does not zoom on focus; the same
+   applies here or tapping the terminal input jumps the whole layout. */
+@media (max-width: 480px) {
+  .term-input textarea { font-size: 16px; }
+  .term-drawer { font-size: 13px; }
+}
+
+/* A running agent command, reported on the header button. */
+.term-live-dot {
+  position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%;
+  background: #d9a441; box-shadow: 0 0 0 2px var(--bg-secondary);
+}
+
+/* ── Upgrade / entitlement ─────────────────────────────────────────────── */
+.up-wrap { display: flex; flex-direction: column; gap: 14px; max-width: 560px; }
+.up-banner {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 11px; border-radius: 8px; font-size: 12.5px;
+  background: rgba(88, 166, 255, .10); color: var(--text-primary);
+  border: 1px solid rgba(88, 166, 255, .25);
+}
+.up-banner.warn {
+  background: rgba(217, 164, 65, .10); color: #e8c885; border-color: rgba(217, 164, 65, .28);
+}
+.up-caps { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.up-caps li {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 13px; color: var(--text-secondary);
+}
+.up-caps svg { flex: none; margin-top: 2px; color: #3fb950; }
+
+.up-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 9px; background: var(--bg-tertiary); }
+.up-tab {
+  flex: 1; padding: 6px 10px; border-radius: 7px; border: 0; cursor: pointer;
+  font-size: 12px; font-weight: 600; background: transparent; color: var(--text-secondary);
+}
+.up-tab.active { background: var(--bg-secondary); color: var(--text-primary); }
+
+.up-plans { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.up-plan {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 12px 14px; border-radius: 10px; cursor: pointer; text-align: left;
+  background: var(--bg-tertiary); border: 1.5px solid var(--border); color: var(--text-primary);
+}
+.up-plan.active { border-color: var(--accent); background: var(--bg-secondary); }
+.up-price { font-size: 21px; font-weight: 700; line-height: 1.15; }
+.up-per { font-size: 11.5px; color: var(--text-muted); }
+.up-save {
+  margin-top: 5px; font-size: 10.5px; font-weight: 600; color: #8fd99b;
+  background: rgba(63, 185, 80, .12); padding: 2px 7px; border-radius: 999px;
+}
+.up-note { margin: 0; font-size: 11.5px; color: var(--text-muted); }
+.up-note.warn { color: #e8c885; }
+.up-buy { justify-content: center; padding: 10px; font-size: 13.5px; }
+.up-waiting {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px; border-radius: 9px; background: var(--bg-tertiary); font-size: 12px;
+}
+.up-waiting > div { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.up-waiting span { color: var(--text-muted); font-size: 11.5px; }
+.up-fine { margin: 0; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+/* The locked state inside the workspace dock. */
+.ws-locked { display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 30px 22px; text-align: center; }
+.ws-locked svg { color: var(--text-muted); }
+.ws-locked p { margin: 0; font-weight: 600; color: var(--text-primary); font-size: 13.5px; }
+.ws-locked span { font-size: 12px; color: var(--text-muted); line-height: 1.5; max-width: 300px; }
+
+/* Personal edition marker. Both builds can be installed at once, and confusing
+   them is a real failure mode — the badge is how you tell at a glance. */
+.edition-badge {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 5px;
+  background: rgba(163, 113, 247, .16); color: #c9a6ff; border: 1px solid rgba(163, 113, 247, .3);
+}
+/* The upgrade chip is the app's own accent, not a generic blue. It was
+   #79c0ff, which is the one control in the header that did not look like
+   Yogatik — and it is the control asking for money, so it is the last one that
+   should look borrowed. --accent tracks the theme, so this stays correct in
+   light mode (where it resolves to the darker #d4570a) without a second rule. */
+.trial-chip {
+  font-size: 10.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; cursor: pointer;
+  background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent);
+  transition: background var(--transition), color var(--transition);
+}
+.trial-chip:hover { background: var(--accent); color: #fff; }
+.trial-chip.pro {
+  background: linear-gradient(135deg, rgba(255, 107, 53, 0.18), rgba(245, 158, 11, 0.18));
+  color: var(--accent, #ff6b35);
+  border: 1px solid rgba(255, 107, 53, 0.45);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.trial-chip.pro:hover {
+  background: linear-gradient(135deg, #ff6b35, #f59e0b);
+  color: #fff;
+  border-color: transparent;
+}
+/* Urgent and locked stay off-accent on purpose: once the accent means "buy
+   this", an amber countdown and a red lock still have to read as different
+   states rather than as three shades of the same button. */
+.trial-chip.urgent { background: rgba(217, 164, 65, .14); color: #e8c885; border-color: rgba(217, 164, 65, .45); }
+.trial-chip.urgent:hover { background: rgba(217, 164, 65, .3); color: #f3dcae; }
+.trial-chip.locked { background: rgba(229, 83, 75, .12); color: #f0a8a3; border-color: rgba(229, 83, 75, .45); }
+.trial-chip.locked:hover { background: rgba(229, 83, 75, .28); color: #ffd0cc; }
+
+.pro-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff6b35, #f59e0b);
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(255, 107, 53, 0.4);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  line-height: 1.3;
+}
+.pro-badge-pill:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 14px rgba(255, 107, 53, 0.6);
+}
+
+.sidebar-providers-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  color: var(--text-primary, #fff);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sidebar-providers-btn:hover {
+  background: var(--bg-input, rgba(255, 255, 255, 0.08));
+  border-color: var(--accent, #ff6b35);
+  transform: translateY(-1px);
+}
+.sidebar-providers-status-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.btn-providers-quick {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-providers-quick:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+/* Source Control: branch picker, remote actions and the destructive gate. */
+.ws-branch-select {
+  max-width: 150px; padding: 2px 6px; border-radius: 6px;
+  font-size: 11.5px; font-weight: 600;
+  background: var(--bg-tertiary); color: var(--text-primary);
+  border: 1px solid var(--border); cursor: pointer;
+}
+.ws-toolbar .ws-spacer { flex: 1 1 auto; }
+.icon-btn.danger:hover:not(:disabled) { color: #f0a8a3; }
+.ws-notice.confirm {
+  border-left-color: #e5534b; color: #f0a8a3;
+  background: rgba(229, 83, 75, .09); flex-wrap: wrap;
+}
+.ws-notice.confirm span { flex: 1 1 160px; }
+.ws-danger-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 7px; font-size: 11px; font-weight: 600;
+  cursor: pointer; border: 1px solid #e5534b; background: #e5534b; color: #fff;
+  white-space: nowrap;
+}
+.ws-danger-btn:hover:not(:disabled) { background: #c9433c; }
+.ws-branch-new { display: flex; gap: 6px; padding: 6px 9px; border-bottom: 1px solid var(--border); }
+.ws-branch-new input {
+  flex: 1; min-width: 0; padding: 3px 8px; border-radius: 6px; font-size: 11.5px;
+  background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border);
+}
+.ws-check {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--text-secondary); cursor: pointer; user-select: none;
+}
+.ws-check input { accent-color: var(--accent); }
+
+.ws-empty {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 24px 18px; text-align: center; color: var(--text-muted);
+}
+.ws-empty p { margin: 0; font-weight: 600; color: var(--text-secondary); font-size: 13px; }
+.ws-empty span { font-size: 11.5px; line-height: 1.5; max-width: 280px; }
+.ws-empty.sm { padding: 14px; gap: 5px; }
+
+@keyframes ws-spin { to { transform: rotate(360deg) } }
+.ws-spin { animation: ws-spin .9s linear infinite; }
+
+/* ── Tree ─────────────────────────────────────────────────────────────── */
+.ws-explorer { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.ws-tree { flex: 1; min-height: 0; overflow: auto; outline: none; }
+.ws-tree:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+.ws-row {
+  display: flex; align-items: center; gap: 4px;
+  padding-right: 8px; cursor: pointer; user-select: none;
+  white-space: nowrap; color: var(--text-secondary);
+}
+.ws-row:hover { background: var(--bg-tertiary); }
+.ws-row.selected { background: var(--accent-soft); color: var(--text-primary); }
+.ws-row.active { color: var(--accent); }
+.ws-chev { width: 12px; flex-shrink: 0; display: grid; place-items: center; opacity: .75; }
+.ws-icon { flex-shrink: 0; opacity: .85; }
+.ws-name { overflow: hidden; text-overflow: ellipsis; }
+.ws-size { margin-left: auto; font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+.ws-agent-mark { color: var(--accent); flex-shrink: 0; }
+
+/* Git colours follow the badge, not the row, so an unchanged file in a changed
+   folder is not tinted — that miscue reads as "everything is modified". */
+.ws-badge {
+  flex-shrink: 0; font-size: 9.5px; font-weight: 700;
+  min-width: 13px; text-align: center; border-radius: 3px; padding: 0 2px;
+}
+.ws-badge.git-M, .ws-row.git-M .ws-name { color: #d9a441; }
+.ws-badge.git-U, .ws-row.git-U .ws-name { color: #3fb950; }
+.ws-badge.git-A, .ws-row.git-A .ws-name { color: #3fb950; }
+.ws-badge.git-D, .ws-row.git-D .ws-name { color: #e5534b; }
+.ws-badge.git-R, .ws-row.git-R .ws-name { color: #58a6ff; }
+.ws-badge.dot { color: #d9a441; font-size: 14px; line-height: 1; }
+.ws-badge.err { color: #e5534b; }
+
+/* ── Codebase map ─────────────────────────────────────────────────────── */
+.ws-codemap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ws-codemap-toolbar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-bottom: 1px solid var(--border);
+  color: var(--text-muted); flex-shrink: 0;
+}
+.ws-codemap-title {
+  font-size: 11.5px; font-weight: 600; color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ws-codemap-stats {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 9px; font-size: 10.5px; color: var(--text-muted);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.ws-codemap-body {
+  flex: 1; min-height: 0; margin: 0; padding: 10px 12px;
+  font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; line-height: 1.6;
+  color: var(--text-secondary); white-space: pre-wrap; word-break: break-word;
+  overflow: auto;
+}
+
+.ws-draft {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; border-top: 1px solid var(--border); background: var(--bg-tertiary);
+  font-size: 11px; color: var(--text-muted);
+}
+.ws-draft code { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-draft input {
+  flex: 1; min-width: 0; padding: 3px 7px; font-size: 12px;
+  border-radius: 5px; border: 1px solid var(--border);
+  background: var(--bg-input); color: var(--text-primary); outline: none;
+}
+
+.ws-menu {
+  position: fixed; z-index: 60; min-width: 196px; padding: 4px;
+  border-radius: 9px; border: 1px solid var(--border);
+  background: var(--bg-secondary); box-shadow: 0 12px 32px rgba(0,0,0,.42);
+}
+.ws-menu > button {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 9px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--text-secondary); font-size: 12px; text-align: left; cursor: pointer;
+}
+.ws-menu > button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.ws-menu > button.danger { color: #e5534b; }
+.ws-menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+
+/* ── Changes (git + journal) ──────────────────────────────────────────── */
+.ws-changes { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ws-tabs { display: flex; gap: 2px; padding: 4px 6px 0; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ws-tabs > button {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; font-size: 11.5px; cursor: pointer;
+  border: 0; border-bottom: 2px solid transparent; background: transparent;
+  color: var(--text-muted);
+}
+.ws-tabs > button.active { color: var(--text-primary); border-bottom-color: var(--accent); }
+
+.ws-commit { padding: 7px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ws-commit textarea {
+  width: 100%; resize: vertical; padding: 6px 8px; font-size: 12px;
+  border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg-input); color: var(--text-primary); outline: none;
+}
+.ws-commit-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+
+.ws-change-list { flex: 0 1 auto; overflow: auto; max-height: 45%; }
+.ws-group-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 9px; font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--text-muted); background: var(--bg-primary); position: sticky; top: 0; z-index: 1;
+}
+.ws-group-head > span { opacity: .7; }
+.ws-group-head > .icon-btn { margin-left: auto; }
+.ws-change-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; cursor: pointer; color: var(--text-secondary); white-space: nowrap;
+}
+.ws-change-row:hover { background: var(--bg-tertiary); }
+.ws-change-row.selected { background: var(--accent-soft); color: var(--text-primary); }
+.ws-change-name { overflow: hidden; text-overflow: ellipsis; }
+.ws-change-dir { flex: 1; min-width: 0; font-size: 10.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+.ws-count { font-size: 10px; color: var(--text-muted); }
+
+.ws-log { border-top: 1px solid var(--border); overflow: auto; }
+.ws-log-row { display: flex; align-items: center; gap: 8px; padding: 4px 9px; font-size: 11px; white-space: nowrap; }
+.ws-log-row code { color: var(--accent); font-size: 10.5px; }
+
+/* ── Diff ─────────────────────────────────────────────────────────────── */
+.ws-diff-wrap { flex: 1; min-height: 0; display: flex; border-top: 1px solid var(--border); }
+.ws-diff { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ws-diff-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 9px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.ws-diff-title { font-size: 11.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-diff-stat { font-size: 11px; }
+.ws-diff-stat .add { color: #3fb950; }
+.ws-diff-stat .del { color: #e5534b; }
+.ws-diff-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.ws-diff-body {
+  flex: 1; min-height: 0; overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px; line-height: 1.55;
+}
+.ws-hunk-head {
+  padding: 2px 9px; color: var(--text-muted);
+  background: var(--bg-tertiary); position: sticky; top: 0; z-index: 1;
+}
+.ws-diff-line { display: flex; align-items: flex-start; gap: 0; white-space: pre-wrap; }
+.ws-diff-line code { flex: 1; min-width: 0; padding-right: 8px; word-break: break-word; }
+.ws-diff-line .ws-ln {
+  flex-shrink: 0; width: 40px; padding-right: 7px; text-align: right;
+  color: var(--text-muted); opacity: .65; user-select: none;
+}
+.ws-diff-line .ws-sign { flex-shrink: 0; width: 12px; text-align: center; opacity: .8; }
+.ws-diff-line.add { background: rgba(63, 185, 80, .10); color: #b6ecb9; }
+.ws-diff-line.del { background: rgba(229, 83, 75, .10); color: #f0b6b2; }
+.ws-diff-line.gap { background: var(--bg-tertiary); opacity: .35; min-height: 1.55em; }
+/* The intra-line mark is the point of the whole diff model: without it a
+   one-character change paints two whole lines and the reviewer diffs by eye. */
+.ws-word { background: rgba(255, 255, 255, .18); color: inherit; border-radius: 2px; padding: 0 1px; }
+.ws-diff-line.add .ws-word { background: rgba(63, 185, 80, .34); }
+.ws-diff-line.del .ws-word { background: rgba(229, 83, 75, .34); }
+.ws-diff-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; }
+.ws-diff-split > .ws-diff-line { border-right: 1px solid var(--border); }
+
+/* ── Search ───────────────────────────────────────────────────────────── */
+.ws-search-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ws-results { flex: 1; min-height: 0; overflow: auto; }
+.ws-result-group { border-bottom: 1px solid var(--border); }
+.ws-result-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; cursor: pointer; color: var(--text-secondary);
+  background: var(--bg-primary); white-space: nowrap;
+}
+.ws-result-head:hover { color: var(--text-primary); }
+.ws-result-row {
+  display: flex; gap: 8px; padding: 2px 8px 2px 26px; cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; color: var(--text-muted);
+}
+.ws-result-row:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.ws-result-row code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-result-row .ws-ln { flex-shrink: 0; width: 34px; text-align: right; opacity: .6; }
+
+/* ── Editor ───────────────────────────────────────────────────────────── */
+.ws-editor { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.ws-editor-dock > .ws-editor { width: 100%; }
+.ws-tabstrip { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ws-tab {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 8px 5px 11px; cursor: pointer; white-space: nowrap;
+  border-right: 1px solid var(--border); color: var(--text-muted); font-size: 11.5px;
+}
+.ws-tab.active { color: var(--text-primary); background: var(--bg-tertiary); }
+.ws-tab-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.ws-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.ws-editor-bar {
+  display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+  border-bottom: 1px solid var(--border); flex-shrink: 0; min-height: 30px;
+}
+.ws-editor-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.ws-cm { flex: 1; min-width: 0; overflow: auto; }
+.ws-cm .cm-editor { height: 100%; font-size: 12.5px; }
+.ws-cm .cm-scroller { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.ws-plain-editor {
+  flex: 1; border: 0; outline: none; resize: none; padding: 8px 10px;
+  background: var(--bg-primary); color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px; line-height: 1.55;
+}
+
+/* A dock that eats a phone screen is not a dock. Below 900px it becomes an
+   overlay over the chat, which is the only arrangement that leaves the
+   conversation usable at all. */
+@media (max-width: 1100px) {
+  /* Not enough room for tree AND editor beside a conversation. The editor wins
+     the overlay, because a file you opened deliberately is what you are looking
+     at; the tree stays reachable behind it. */
+  .ws-editor-dock {
+    position: absolute; inset: 0 0 0 auto; z-index: 25;
+    width: min(94vw, 760px) !important;
+    box-shadow: -12px 0 40px rgba(0,0,0,.5);
+  }
+}
+@media (max-width: 900px) {
+  .ws-dock {
+    position: absolute; inset: 0 auto 0 0; z-index: 24;
+    width: min(92vw, 460px) !important;
+    box-shadow: 0 0 40px rgba(0,0,0,.5);
+  }
+  .ws-resizer { display: none; }
+}
+
+/* ── Editor chrome polish ─────────────────────────────────────────────── */
+.ws-tabstrip { position: relative; scrollbar-width: thin; }
+.ws-tabstrip::-webkit-scrollbar { height: 3px; }
+.ws-tab { position: relative; transition: background .12s ease; }
+.ws-tab:hover { background: var(--bg-tertiary); }
+/* The active tab is marked on its TOP edge. A background alone is invisible
+   against a strip of identically dark tabs. */
+.ws-tab.active::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0;
+  height: 2px; background: var(--accent);
+}
+.ws-tab .icon-btn { opacity: 0; transition: opacity .12s ease; }
+.ws-tab:hover .icon-btn, .ws-tab.active .icon-btn { opacity: .75; }
+.ws-tab-closeall { margin-left: auto; align-self: center; padding: 0 8px; opacity: .5; }
+.ws-tab-closeall:hover { opacity: 1; }
+
+.ws-crumbs {
+  display: flex; align-items: center; gap: 2px;
+  font-size: 11px; color: var(--text-muted);
+  min-width: 0; overflow: hidden; white-space: nowrap;
+}
+.ws-crumbs > span { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.ws-crumbs > span:not(.leaf) { opacity: .7; }
+.ws-crumbs > span.leaf { color: var(--text-primary); font-weight: 600; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
+
+.ws-statusbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 3px 10px; flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  font-size: 10.5px; color: var(--text-muted);
+}
+.ws-statusbar .ro { color: #d9a441; }
+
+/* Skeleton — a file is milliseconds away; a centred spinner reads as a stall. */
+.ws-skeleton { flex: 1; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; }
+.ws-skeleton > span {
+  height: 8px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-input) 50%, var(--bg-tertiary) 75%);
+  background-size: 300% 100%;
+  animation: ws-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes ws-shimmer { from { background-position: 150% 0 } to { background-position: -150% 0 } }
+@media (prefers-reduced-motion: reduce) {
+  .ws-skeleton > span { animation: none; }
+  .ws-spin { animation-duration: 2.4s; }
+}
+
+/* CodeMirror sits on the app's own surface rather than one-dark's, so the
+   editor does not look like a pasted-in rectangle of a different product. */
+.ws-cm .cm-editor { background: transparent; }
+.ws-cm .cm-editor.cm-focused { outline: none; }
+.ws-cm .cm-gutters { background: transparent; border-right: 1px solid var(--border); color: var(--text-muted); }
+.ws-cm .cm-activeLine, .ws-cm .cm-activeLineGutter { background: rgba(255, 255, 255, .035); }
+.ws-cm .cm-selectionBackground, .ws-cm ::selection { background: var(--accent-glow) !important; }
+.ws-cm .cm-cursor { border-left-color: var(--accent); }
+
+/* ── Companion: trail, turns, notices ─────────────────────────────────────
+   The companion is quiet by design. These are the surfaces that make "quiet
+   because nothing needed saying" distinguishable from "quiet because broken",
+   which is the difference between a feature people leave on and one they turn
+   off within the hour. */
+
+.companion-note.as-button {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  border: 0; background: transparent; cursor: pointer; text-align: left;
+  font: inherit; color: inherit;
+}
+.companion-note.as-button em {
+  margin-left: auto; font-style: normal; opacity: .65; font-size: 10px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%;
+}
+
+.companion-trail {
+  margin: 4px 0 6px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .04);
+  padding: 4px;
+  max-height: 168px;
+  overflow: auto;
+}
+.companion-trail-row {
+  display: flex; gap: 7px; align-items: baseline;
+  padding: 2px 5px; font-size: 10.5px; line-height: 1.45;
+  color: rgba(255, 255, 255, .62);
+}
+.companion-trail-row .t { opacity: .45; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.companion-trail-row.spoke { color: #ffd7c2; }
+.companion-trail-row.error { color: #f0a8a3; }
+.companion-trail-row.source { color: rgba(255, 255, 255, .8); }
+.companion-trail-row.skip { opacity: .7; }
+.companion-trail-row.muted { opacity: .5; }
+.companion-trail-clear {
+  display: flex; align-items: center; gap: 4px; margin: 2px 0 0 auto;
+  border: 0; background: transparent; cursor: pointer;
+  color: rgba(255, 255, 255, .45); font-size: 10px; padding: 3px 5px;
+}
+.companion-trail-clear:hover { color: rgba(255, 255, 255, .8); }
+
+/* Turns are indented by role rather than bubbled: at this width a bubble is
+   mostly padding, and the companion has to stay readable in a 380px strip. */
+.companion-turn {
+  font-size: 12.5px; line-height: 1.5; margin: 0 0 6px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.companion-turn.user {
+  color: rgba(255, 255, 255, .72);
+  border-left: 2px solid var(--accent);
+  padding-left: 7px;
+}
+.companion-turn.assistant { color: rgba(255, 255, 255, .93); }
+
+.companion-thoughts-block { margin-bottom: 6px; }
+.companion-thoughts-toggle {
+  display: flex; align-items: center; gap: 4px;
+  background: rgba(255, 255, 255, .05); border: 0; border-radius: 4px;
+  color: rgba(255, 255, 255, .6); font-size: 11px; padding: 2px 6px; cursor: pointer;
+}
+.companion-thoughts {
+  font-size: 11px; color: rgba(255, 255, 255, .5);
+  padding: 4px 6px; font-style: italic; white-space: pre-wrap;
+  border-left: 2px solid rgba(255, 255, 255, .1); margin-top: 4px;
+}
+
+.companion-error {
+  font-size: 11px; color: #f0a8a3;
+  background: rgba(229, 83, 75, .1);
+  border-radius: 6px; padding: 5px 7px; margin-top: 4px;
+}
+
+.companion-icon:disabled, .companion-icon-btn:disabled { opacity: .35; cursor: default; }
+
+/* ── Right-to-left ────────────────────────────────────────────────────────
+   `dir="rtl"` on <html> mirrors text and flexbox for free. What it does NOT
+   mirror is anything written with a physical side — translateX, border-right,
+   a fixed `left`. Those are the pieces that would leave an Arabic or Hebrew
+   user with a sidebar sliding off the wrong edge, so they are corrected here
+   rather than left to look like a rendering bug.
+
+   This is not a translation. The UI is still in English; the LAYOUT is no
+   longer backwards, which is the part a user cannot work around. */
+
+[dir="rtl"] .sidebar { border-right: 0; border-left: 1px solid var(--border); }
+[dir="rtl"] .sidebar.collapsed { transform: translateX(272px); }
+[dir="rtl"] .ws-dock,
+[dir="rtl"] .ws-editor-dock { border-right: 0; border-left: 1px solid var(--border); }
+[dir="rtl"] .ws-rail { border-right: 0; border-left: 1px solid var(--border); }
+[dir="rtl"] .ws-resizer { right: auto; left: -3px; }
+[dir="rtl"] .ws-rail-btn.active::before { left: auto; right: -4px; }
+[dir="rtl"] .ws-row { padding-right: 0; padding-left: 8px; }
+[dir="rtl"] .ws-tab { border-right: 0; border-left: 1px solid var(--border); }
+[dir="rtl"] .companion-turn.user { border-left: 0; border-right: 2px solid var(--accent); padding-left: 0; padding-right: 7px; }
+[dir="rtl"] .companion-thoughts { border-left: 0; border-right: 2px solid rgba(255, 255, 255, .1); }
+[dir="rtl"] .ws-notice { border-left: 0; border-right: 2px solid var(--accent); }
+[dir="rtl"] .ws-diff-line .ws-ln { text-align: left; padding-right: 0; padding-left: 7px; }
+[dir="rtl"] .ws-change-dir { direction: ltr; text-align: right; }
+
+/* Code, paths and diffs stay left-to-right INSIDE an RTL page. A file path or a
+   line of JavaScript rendered right-to-left is unreadable, and this is the one
+   thing every RTL-capable editor gets right. */
+[dir="rtl"] .ws-cm,
+[dir="rtl"] .ws-plain-editor,
+[dir="rtl"] .ws-diff-body,
+[dir="rtl"] .ws-results,
+[dir="rtl"] pre,
+[dir="rtl"] code { direction: ltr; text-align: left; }
+
+/* ── Motion & Animation Accessibility ────────────────────────────────────────
+   Respect user preference for reduced motion (WCAG 2.2 SC 2.3.3) and reduce GPU
+   overhead on low-power devices. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Floating Live Pill Overlay ────────────────────────────────────────── */
+.live-pill-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  max-width: 480px;
+  min-width: 320px;
+  animation: livePillSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+}
+
+.live-pill-container.collapsed {
+  min-width: unset;
+  max-width: unset;
+}
+
+.live-pill-glass {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(17, 24, 32, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 107, 53, 0.25);
+  border-radius: 9999px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 0 24px rgba(255, 107, 53, 0.12);
+  transition: all 0.2s ease;
+}
+
+.live-pill-orb {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease-out;
+}
+
+.live-orb-core {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-gradient);
+  z-index: 2;
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.live-orb-glow {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 107, 53, 0.4) 0%, transparent 70%);
+  animation: orbPulse 2s infinite ease-in-out;
+}
+
+.live-pill-orb.status-speaking .live-orb-core {
+  background: linear-gradient(135deg, #22c55e, #10b981);
+  box-shadow: 0 0 12px #22c55e;
+}
+
+.live-pill-orb.status-thinking .live-orb-core {
+  background: linear-gradient(135deg, #8b5cf6, #ec4899);
+  box-shadow: 0 0 12px #8b5cf6;
+  animation: orbSpin 1.5s linear infinite;
+}
+
+.live-pill-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.live-pill-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  margin-bottom: 2px;
+}
+
+.live-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.live-pill-role-tag {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+}
+
+.live-pill-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.live-pill-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.live-pill-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.live-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.live-btn.btn-ghost {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-primary);
+}
+
+.live-btn.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.live-btn.btn-active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.live-btn.btn-danger {
+  background: rgba(244, 63, 94, 0.2);
+  color: var(--error);
+  border: 1px solid rgba(244, 63, 94, 0.4);
+}
+
+.live-btn.btn-end-call {
+  background: #dc2626;
+  color: #fff;
+  box-shadow: 0 0 12px rgba(220, 38, 38, 0.4);
+}
+
+.live-btn.btn-end-call:hover {
+  background: #b91c1c;
+  transform: scale(1.05);
+}
+
+@keyframes livePillSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes orbPulse {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.25); opacity: 0.9; }
+}
+
+@keyframes orbSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes scanLaser {
+  0% { top: 10%; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { top: 90%; opacity: 0; }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ── Live device picker ──────────────────────────────────────────────────────
+   Phone-first: a bottom sheet with 44px rows, because the live controls sit at
+   the bottom of the screen and a centred dialog puts the choices where a thumb
+   cannot reach. On a wide screen it centres instead. */
+.ldp-backdrop {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.ldp-sheet {
+  width: 100%; max-width: 460px;
+  background: var(--bg-secondary); color: var(--text-primary);
+  border: 1px solid var(--border); border-bottom: 0;
+  border-radius: 16px 16px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+  max-height: 78dvh; overflow-y: auto;
+  animation: ldp-rise 180ms ease;
+}
+@keyframes ldp-rise { from { transform: translateY(14px); opacity: .6 } to { transform: none; opacity: 1 } }
+@media (prefers-reduced-motion: reduce) { .ldp-sheet { animation: none } }
+
+.ldp-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+.ldp-head-actions { display: flex; gap: 4px; }
+.ldp-group { margin-bottom: 14px; }
+.ldp-group-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); margin: 0 2px 6px;
+}
+.ldp-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  /* 44px: the smallest target a thumb hits reliably. */
+  min-height: 44px; padding: 8px 12px; margin-bottom: 6px;
+  background: var(--bg-tertiary); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 10px;
+  font-size: 13.5px; text-align: left; cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.ldp-row:hover:not(:disabled) { border-color: var(--accent); }
+.ldp-row.active { border-color: var(--accent); background: var(--accent-glow); }
+.ldp-row:disabled { opacity: .55; cursor: default; }
+.ldp-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ldp-tag {
+  flex: 0 0 auto; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px;
+  background: var(--bg-input); color: var(--text-secondary);
+}
+.ldp-check { flex: 0 0 auto; color: var(--accent); }
+.ldp-empty { font-size: 12.5px; color: var(--text-muted); padding: 6px 2px; }
+.ldp-error {
+  font-size: 12.5px; color: #f0a8a3; background: rgba(229, 83, 75, .12);
+  border: 1px solid rgba(229, 83, 75, .3); border-radius: 8px; padding: 8px 10px; margin: 2px 0 0;
+}
+
+@media (min-width: 640px) {
+  .ldp-backdrop { align-items: center; }
+  .ldp-sheet { border-radius: 16px; border-bottom: 1px solid var(--border); }
+}
+
+/* ── Live: layered layout ────────────────────────────────────────────────────
+   Everything in the call is absolutely positioned over the video, so the only
+   thing keeping the layers apart is discipline about where each band sits.
+   Measured against the shipped screenshot, three of them collided: the HUD
+   reticle, the captions and the action chips all landed in the same 200px.
+
+   The bands, bottom-up:
+     controls        40px (24px on a phone) + safe area
+     action chips    directly above the controls, never below them
+     captions        above the chips, capped at 3 lines
+     reticle / orb   the middle of the frame, which the captions now clear
+*/
+.live-captions {
+  bottom: calc(160px + env(safe-area-inset-bottom));
+  background: transparent !important;
+  padding: 0;
+  border-radius: 0;
+  max-height: 30dvh; overflow: hidden;
+  pointer-events: none;
+}
+.live-caption { overflow-wrap: anywhere; }
+/* The live line is the one being spoken. The others are context, not equals. */
+.live-caption:not(:last-child) { opacity: .55; font-size: 15px; }
+
+/* Action chips (Identify Pill / Scan Barcode / Enhance Macro) sit ABOVE the
+   control bar. In the shipped build they were below it, which on a phone puts
+   them under the home indicator where they cannot be tapped at all. */
+.live-hud-actions {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(108px + env(safe-area-inset-bottom));
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  width: min(560px, 94vw); z-index: 4;
+}
+
+.live-controls {
+  /* The home indicator on iOS overlaps a bar pinned to a flat 40px. */
+  bottom: calc(40px + env(safe-area-inset-bottom));
+  flex-wrap: wrap; justify-content: center;
+  width: min(560px, 96vw);
+}
+
+@media (max-width: 640px) {
+  .live-controls { bottom: calc(20px + env(safe-area-inset-bottom)); gap: 8px; }
+  /* 46px keeps a comfortable touch target while fitting seven controls across
+     a 360px phone without wrapping into two rows. */
+  .live-btn { width: 46px; height: 46px; }
+  .live-btn.end { width: 56px; height: 56px; }
+  .live-captions { bottom: calc(148px + env(safe-area-inset-bottom)); max-height: 26dvh; }
+  .live-caption { font-size: 15px; }
+  .live-caption:last-child { font-size: 17px; }
+  .live-hud-actions { bottom: calc(96px + env(safe-area-inset-bottom)); gap: 6px; }
+}
+
+/* Landscape on a phone is ~380px tall: the captions and the reticle cannot
+   both have the middle, so the captions shrink to one line and hug the edge. */
+@media (max-height: 460px) and (orientation: landscape) {
+  .live-captions { bottom: calc(84px + env(safe-area-inset-bottom)); max-height: 22dvh; padding-top: 14px; }
+  .live-caption:not(:last-child) { display: none; }
+  .live-controls { bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .live-hud-actions { display: none; }
+}
+
+/* ── Live settings sheet (shares the device-picker chrome) ─────────────────── */
+.ls-warn {
+  display: flex; gap: 9px; align-items: flex-start;
+  background: rgba(217, 164, 65, .12); border: 1px solid rgba(217, 164, 65, .35);
+  color: #e8c885; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+}
+.ls-warn b { display: block; font-size: 13px; margin-bottom: 3px; color: #f3dcae; }
+.ls-warn p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+.ls-select { width: 100%; margin-bottom: 8px; }
+.ls-seg { display: flex; gap: 6px; margin-bottom: 6px; }
+.ls-seg-btn {
+  flex: 1 1 0; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  border: 1px solid var(--border); border-radius: 9px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+.ls-seg-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+.ls-row { display: flex; align-items: center; gap: 12px; }
+.ls-row input[type="range"] { flex: 1 1 auto; }
+.ls-value { flex: 0 0 auto; font-size: 12.5px; font-weight: 700; color: var(--text-secondary); min-width: 44px; text-align: right; }
+
+/* The settings button carries the warning when the chat model cannot see, so
+   the answer to "why can't it see me" is one tap from the control bar rather
+   than buried behind a badge that only states the symptom. */
+.live-btn.warn {
+  color: #e8c885;
+  border-color: rgba(217, 164, 65, .5);
+  background: rgba(217, 164, 65, .16);
+}
+.live-btn.warn:hover { background: rgba(217, 164, 65, .3); }
+
+/* A hint is a next step, not a failure — an Ollama daemon that is merely not
+   started yet should not read as red as an invalid API key. */
+.conn-error.conn-hint {
+  color: #e8c885;
+  background: rgba(217, 164, 65, .1);
+  border-left: 2px solid rgba(217, 164, 65, .5);
+  padding: 6px 8px; border-radius: 6px; margin-top: 6px;
+}
+
+/* ── Response style picker, and .style-select generally ──────────────────────
+   `.style-select` was used by LiveSettings and PersonalisePanel and had NO rule
+   anywhere in this stylesheet, so those dropdowns rendered as browser defaults:
+   a light control on a dark panel. Styling the class fixes them too. */
+.style-select {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  /* Chevron drawn inline so the control needs no asset and no extra element. */
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) calc(50% + 1px), calc(100% - 10px) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 28px;
+}
+.style-select:hover { border-color: var(--accent); background: var(--bg-tertiary); }
+.style-select:focus-visible {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #ff6b35) 16%, transparent);
+}
+.style-select:disabled { opacity: .55; cursor: default; }
+/* The popup list is OS-drawn and inherits nothing, so options need their own
+   colours or they come back as black-on-white inside a dark app. */
+.style-select option { background: var(--bg-tertiary); color: var(--text-primary); }
+
+.style-picker { margin: 8px 0 2px; display: flex; flex-direction: column; gap: 5px; }
+.style-picker-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.style-picker-label {
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); font-weight: 600;
+}
+.style-picker-badge {
+  font-size: 10px; letter-spacing: .03em; padding: 1px 6px; border-radius: 999px;
+  color: var(--accent); border: 1px solid var(--accent); background: var(--accent-glow);
+  white-space: nowrap;
+}
+.style-picker-hint {
+  margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--text-muted);
+}
+.style-picker-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.style-picker-link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-size: 11.5px; font-family: inherit; color: var(--accent);
+}
+.style-picker-link:hover:not(:disabled) { color: var(--accent-hover); text-decoration: underline; }
+.style-picker-link:disabled { opacity: .5; cursor: default; }
+.style-picker-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.style-picker-note { font-size: 11.5px; color: var(--text-muted); }
+
+/* ─── Live Spatial Stage & Dock Overlay ─── */
+.live-view.mode-dock {
+  background: transparent !important;
+  pointer-events: none !important;
+}
+.live-view.mode-dock::after {
+  display: none !important;
+}
+.live-view.mode-dock .live-self,
+.live-view.mode-dock .live-viewfinder,
+.live-view.mode-dock .live-detect-layer,
+.live-view.mode-dock .live-badges,
+.live-view.mode-dock .live-orb-wrap,
+.live-view.mode-dock .live-controls,
+.live-view.mode-dock .live-captions {
+  display: none !important;
+}
+.live-view.mode-dock .live-dock-overlay {
+  pointer-events: auto !important;
+}
+
+@keyframes liveDockDrop {
+  0% { opacity: 0; transform: translate(-50%, -24px) scale(0.92); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@keyframes liveArtifactSlideIn {
+  0% { opacity: 0; transform: translateX(20px) scale(0.97); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+.live-mode-switch-group {
+  display: flex;
+  align-items: center;
+  background: var(--live-surface, rgba(15, 23, 42, 0.55));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--live-border, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+.live-mode-switch-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  color: var(--live-text-dim, rgba(255, 255, 255, 0.65));
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.live-mode-switch-btn:hover {
+  color: var(--live-text, #fff);
+  background: var(--live-btn-hover, rgba(255, 255, 255, 0.08));
+}
+
+.live-mode-switch-btn.active {
+  color: #0284c7;
+  background: rgba(56, 189, 248, 0.18);
+  font-weight: 600;
+  box-shadow: 0 1px 6px rgba(56, 189, 248, 0.15);
+}
+[data-theme="dark"] .live-mode-switch-btn.active {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.22);
+}

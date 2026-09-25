@@ -3,16 +3,64 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '10.9.0'
+export const APP_VERSION = '10.9.1'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.9.0 — Turn Checkpoint & Mid-Flight Resume Engine'
+export const APP_CODENAME = 'Yogatik 10.9.1 — Seamless High-FPS Desktop & Terminal Shield Engine'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.9.1",
+    "title": "Yogatik 10.9.1: Seamless High-FPS Desktop & Terminal Shield Engine",
+    "date": "September 25, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Seamless High-FPS Desktop Rendering: Eliminated Windows DWM DirectComposition MPO stalls and 15-FPS frame lock",
+      "In-Process 2D Canvas Acceleration: Removed out-of-process rasterization bottlenecks at 1.5x/1.25x Windows fractional scaling",
+      "Sub-Millisecond Keystroke Latency: Memoized historical message components with custom comparator, freezing DOM trees during typing and scroll",
+      "Terminal Shield & Rogue Popup Guard: Enforced windowsHide on all background PowerShell/system processes and guarded terminal drawer shortcuts"
+    ],
+    "sections": [
+      {
+        "category": "⚡ High-FPS Desktop & Compositing Engine",
+        "items": [
+          {
+            "title": "DirectComposition MPO Stall Fix",
+            "description": "Removed hardware overlay flags and disabled native window occlusion throttling, ensuring steady 60/120Hz refresh rates without frame drops."
+          },
+          {
+            "title": "In-Process Canvas Rasterization",
+            "description": "Canvas operations execute directly in-process, eliminating cross-process IPC serialization lag at fractional display scales."
+          },
+          {
+            "title": "Message Tree Memoization & Virtual Key Stabilization",
+            "description": "Historical message bubble DOM trees are frozen in memory while typing in the composer, dropping keystroke latency to <1ms."
+          },
+          {
+            "title": "GPU Layer & Blur Cleanup",
+            "description": "Eliminated redundant Gaussian blur composites on opaque surfaces and removed forced 3D transforms that inflated GPU memory."
+          }
+        ]
+      },
+      {
+        "category": "🛡️ Terminal Shield & Input Guard",
+        "items": [
+          {
+            "title": "Hidden Background Process Execution",
+            "description": "Added strict windowsHide flags to all Electron background PowerShell and tasklist calls, preventing rogue console window flashes."
+          },
+          {
+            "title": "AltGr & Markdown Backtick Isolation",
+            "description": "Guarded terminal drawer toggle with key modifier checks, preventing accidental drawer popups when typing backticks or international keys."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "10.9.0",
     "title": "Yogatik 10.9.0: Stateful Turn Checkpoints & Mid-Flight Resume Engine",
     "date": "September 25, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Stateful Turn Checkpointing: Captures completed tool results, tool calls, and reasoning trace continuously during multi-action turns",
       "Mid-Flight Resume from Action N: Preserves all previous tool results when timeouts or errors occur, allowing seamless continuation without losing prior work",

@@ -264,6 +264,24 @@ function useMarkdownComponents(msgContent, onOpenArtifact) {
   }), [msgContent, onOpenArtifact])
 }
 
+function areMessageBubblePropsEqual(prev, next) {
+  if (prev.showToolCards !== next.showToolCards) return false
+  if (prev.msg !== next.msg) {
+    if (prev.msg?.content !== next.msg?.content) return false
+    if (prev.msg?.error !== next.msg?.error) return false
+    if (prev.msg?.checkpoint !== next.msg?.checkpoint) return false
+    if (prev.msg?.reasoning !== next.msg?.reasoning) return false
+    if (prev.msg?.id !== next.msg?.id) return false
+    if (prev.msg?.role !== next.msg?.role) return false
+    if (prev.msg?.timestamp !== next.msg?.timestamp) return false
+  }
+  if (Boolean(prev.onRegenerate) !== Boolean(next.onRegenerate)) return false
+  if (Boolean(prev.onContinue) !== Boolean(next.onContinue)) return false
+  if (Boolean(prev.onRetry) !== Boolean(next.onRetry)) return false
+  if (Boolean(prev.onResume) !== Boolean(next.onResume)) return false
+  return true
+}
+
 const MessageBubble = React.memo(function MessageBubble({
    msg, onTTS, onOpenArtifact, onRegenerate, onContinue, onEdit, onRetry, onResume, onOpenSettings, onAutoPick, showToolCards = true,
 }) {
@@ -901,6 +919,6 @@ const MessageBubble = React.memo(function MessageBubble({
       )}
     </div>
   )
-})
+}, areMessageBubblePropsEqual)
 
 export { MessageBubble }

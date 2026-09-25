@@ -122,18 +122,19 @@ if (process.platform === 'win32') {
   }
 }
 
-// ── Performance & High-Computation Hardware Acceleration ─────────────────────
+// ── Smooth Performance & GPU Hardware Acceleration ─────────────────────────
 app.commandLine.appendSwitch('enable-gpu-rasterization')
-app.commandLine.appendSwitch('enable-zero-copy')
-app.commandLine.appendSwitch('ignore-gpu-blocklist')
 app.commandLine.appendSwitch('enable-webgl2-compute-context')
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+// Prevent Windows DWM occlusion lag, disable buggy multiplane overlays (MPO) and widget layering stalls
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,HardwareOverlays,WidgetLayering')
+app.commandLine.appendSwitch('enable-smooth-scrolling')
+app.commandLine.appendSwitch('high-dpi-support', '1')
 const videoFeatures = process.platform === 'win32'
-  ? 'MediaFoundationVideoDecoder,D3D11VideoDecoder,WebGPU,CanvasOopRasterization'
-  : 'VaapiVideoDecoder,WebGPU,CanvasOopRasterization'
+  ? 'MediaFoundationVideoDecoder,D3D11VideoDecoder,WebGPU'
+  : 'VaapiVideoDecoder,WebGPU'
 app.commandLine.appendSwitch('enable-features', videoFeatures)
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=8192')
-app.commandLine.appendSwitch('enable-hardware-overlays')
 
 function createWindow() {
   const state = windowState.restore({ width: 1200, height: 820 })
@@ -150,6 +151,7 @@ function createWindow() {
     minWidth: 380,
     minHeight: 560,
     show: false,
+    paintWhenInitiallyHidden: true,
     icon: appIcon.isEmpty() ? iconPath : appIcon,
     backgroundColor: '#0a0e14',
     webPreferences: {
@@ -157,6 +159,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      backgroundThrottling: false,
+      spellcheck: false,
     },
   })
 
@@ -636,7 +640,7 @@ if (!gotLock) {
             pid     = $pidVal
           } | ConvertTo-Json -Compress
         `
-        exec(`powershell -NoProfile -NonInteractive -Command "${psScript.replace(/\r?\n/g, ' ')}"`, { timeout: 3000 }, (err, stdout) => {
+        exec(`powershell -NoProfile -NonInteractive -Command "${psScript.replace(/\r?\n/g, ' ')}"`, { timeout: 3000, windowsHide: true }, (err, stdout) => {
           if (err || !stdout.trim()) {
             resolve({ success: true, appName: 'External Application', title: 'Active Window' })
             return
@@ -690,11 +694,11 @@ if (!gotLock) {
         if (type === 'type' && text) {
           // Send keystrokes via Windows Forms SendKeys
           const escaped = text.replace(/[{}+^%~()]/g, '{$&}')
-          exec(`powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${escaped}')"`)
+          exec(`powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${escaped}')"`, { windowsHide: true })
           return { success: true, action: 'type', text }
         }
         if (type === 'hotkey' && keys) {
-          exec(`powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${keys}')"`)
+          exec(`powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${keys}')"`, { windowsHide: true })
           return { success: true, action: 'hotkey', keys }
         }
         if (type === 'clipboard' && text) {
@@ -840,6 +844,7 @@ if (!gotLock) {
       if (process.platform === 'win32') {
         // Send Ctrl+C to the foreground app first, then read after a short beat.
         exec(`powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^c')"`,
+          { windowsHide: true },
           () => setTimeout(relay, 250))
       } else {
         relay()

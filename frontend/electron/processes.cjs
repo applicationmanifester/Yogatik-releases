@@ -14,7 +14,7 @@ const PROTECTED_PIDS = new Set([0, 4, process.pid])
 function listWindows() {
   return new Promise((resolve) => {
     // CSV: "Image Name","PID","Session Name","Session#","Mem Usage"
-    exec('tasklist /FO CSV /NH', { timeout: 8000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+    exec('tasklist /FO CSV /NH', { timeout: 8000, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
       if (err || !stdout) return resolve([])
       const rows = []
       for (const line of stdout.split(/\r?\n/)) {

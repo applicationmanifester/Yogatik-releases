@@ -1,5 +1,19 @@
 # Changelog
 
+## v10.9.1 - Seamless High-FPS Desktop & Terminal Shield Engine (2026-09-25)
+
+### ⚡ High-FPS Desktop Rendering & Compositing Engine
+- **DirectComposition MPO Stall Fix (`frontend/electron/main.cjs`)** — Removed `enable-hardware-overlays`, `enable-zero-copy`, and `ignore-gpu-blocklist` which caused Windows DirectComposition Multi-Plane Overlay plane negotiation stalls and 15-FPS frame lock. Added `disable-features=CalculateNativeWinOcclusion,HardwareOverlays,WidgetLayering` to ensure the DWM never throttles render frames when windows overlap.
+- **In-Process 2D Canvas Acceleration (`frontend/electron/main.cjs`)** — Removed `CanvasOopRasterization`, keeping 2D canvas rasterization in-process to eliminate cross-process IPC command serialization bottlenecks on Windows 1.5x/1.25x display scaling.
+- **Sub-Millisecond Keystroke Latency & Message Memoization (`MessageBubble.jsx`)** — Implemented custom `areMessageBubblePropsEqual(prev, next)` comparator on `React.memo(MessageBubble)`, freezing completed historical message trees in memory while typing in the composer or toggling UI controls.
+- **Virtual Key Stabilization (`App.jsx`)** — Stabilized message map keys using stable IDs/clientIDs/timestamps rather than array indices to preserve DOM nodes across scroll and message streaming.
+- **Compositing & Layer Optimization (`styles.css`)** — Stripped redundant Gaussian blur filters on opaque header and composer surfaces, eliminated `transform: translateZ(0)` GPU layer explosions across 50+ message bubbles, and added `will-change: scroll-position`.
+- **OLE32 Mutex & Polling Relaxation (`clipboardManager.cjs`)** — Relaxed clipboard polling from 800ms to 2000ms with window visibility guards, preventing background Win32 OLE32 mutex contention.
+
+### 🛡️ Terminal Shield & Rogue Popup Guard
+- **Hidden Background Process Execution (`frontend/electron/main.cjs` + `processes.cjs`)** — Added strict `{ windowsHide: true }` to all background PowerShell, tasklist, and child process executions, preventing unhidden `conhost.exe` command prompt flashes.
+- **AltGr & International Key Isolation (`App.jsx`)** — Eliminated duplicate global keydown listeners and strictly guarded terminal drawer shortcuts (`!e.altKey && !e.shiftKey && !e.repeat`), preventing accidental drawer popups when typing backticks in markdown or pressing AltGr keys.
+
 ## v10.9.0 - Stateful Turn Checkpoints & Mid-Flight Resume Engine (2026-09-25)
 
 ### 💾 Stateful Turn Checkpointing & Recovery

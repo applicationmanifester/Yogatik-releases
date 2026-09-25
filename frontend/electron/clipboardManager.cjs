@@ -44,13 +44,16 @@ function startPolling(getWindow) {
   if (poller) return
   poller = setInterval(() => {
     try {
+      const win = getWindow?.()
+      // Skip polling if window is destroyed or minimized/hidden to save CPU and clipboard locks
+      if (!win || win.isDestroyed() || !win.isVisible()) return
       const text = clipboard.readText() || ''
       if (text && text !== lastSeen) {
         pushHistory(text)
-        safeSend(getWindow?.(), 'clipboard-changed', { text, at: Date.now() })
+        safeSend(win, 'clipboard-changed', { text, at: Date.now() })
       }
     } catch { /* ignore transient clipboard locks */ }
-  }, 800)
+  }, 2000)
   if (poller.unref) poller.unref()
 }
 

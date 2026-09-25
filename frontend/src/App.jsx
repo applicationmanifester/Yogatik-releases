@@ -309,10 +309,6 @@ export default function App() {
         e.preventDefault()
         setSidebarOpen(prev => !prev)
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
-        e.preventDefault()
-        setShowTerminal(prev => !prev)
-      }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
         e.preventDefault()
         setShowDiagnosticsModal(prev => !prev)
@@ -1789,7 +1785,7 @@ export default function App() {
       // like the dock it is deliberately NOT guarded by isAnyModalOpen: seeing
       // what the agent is running is exactly what you want while something else
       // is open.
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === '`' || e.code === 'Backquote')) {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !e.repeat && (e.key === '`' || e.key === '~' || (e.code === 'Backquote' && e.key === '`'))) {
         e.preventDefault()
         setShowTerminal(v => !v)
       }
@@ -5806,8 +5802,9 @@ export default function App() {
               {shownMessages.map((m, i) => {
                 const absolute = i + (allMessages.length - shownMessages.length)
                 const isLastAssistant = absolute === allMessages.length - 1 && m.role === 'assistant'
+                const msgKey = m.id || m.clientId || (m.createdAt ? `${m.role}-${m.createdAt}-${absolute}` : `msg-${absolute}`)
                 return (
-                  <MessageBubble key={absolute} msg={m} showToolCards={features.toolCards}
+                  <MessageBubble key={msgKey} msg={m} showToolCards={features.toolCards}
                     onTTS={handleTTS}
                     onOpenArtifact={handleOpenArtifact}
                     onRegenerate={isLastAssistant && !isStreamingHere ? regenerate : undefined}
