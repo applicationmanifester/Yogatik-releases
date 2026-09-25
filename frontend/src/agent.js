@@ -4,7 +4,7 @@
  * Uses OpenAI-compatible function calling (works with Groq, OpenRouter, OpenAI).
  */
 
-import { streamChat, chatComplete } from './llm'
+import { streamChat, chatComplete, getProviderCapabilities } from './llm'
 import { visibleAnswer as sharedVisibleAnswer } from './reasoning'
 // Readable summaries for the last-resort path. The inline version pasted raw
 // JSON — a whole file's contents plus internal bookkeeping — which is barely
@@ -1078,8 +1078,9 @@ export async function runAgent({
   const schemas = rawSchemas ? prioritizeToolSchemas(rawSchemas, userMessage || '') : rawSchemas
 
   // 'native' → OpenAI-style tools array. 'prompted' → JSON protocol in the
-  // system prompt, for models that 400 on a tools array.
-  let toolMode = toolsEnabled ? (initialToolMode || 'native') : 'off'
+  // system prompt, for models that 400 on a tools array or providers that lack native tool support (e.g. NVIDIA, local).
+  const providerCaps = getProviderCapabilities(provider)
+  let toolMode = toolsEnabled ? (initialToolMode || (providerCaps.tools === false ? 'prompted' : 'native')) : 'off'
   let tools = toolMode === 'native' ? schemas : null
 
   // A model can start ALREADY in prompted mode via initialToolMode (every

@@ -152,7 +152,11 @@ describe('timers are cleaned up', () => {
 
 describe('wiring', () => {
   const app = fs.readFileSync(path.join(HERE, '..', 'App.jsx'), 'utf8')
-  const css = fs.readFileSync(path.join(HERE, '..', 'styles.css'), 'utf8')
+  const stylesDir = path.join(HERE, '..', 'styles')
+  const subCss = fs.existsSync(stylesDir)
+    ? fs.readdirSync(stylesDir).filter(f => f.endsWith('.css')).map(f => fs.readFileSync(path.join(stylesDir, f), 'utf8')).join('\n')
+    : ''
+  const css = fs.readFileSync(path.join(HERE, '..', 'styles.css'), 'utf8') + '\n' + subCss
 
   it('App uses this provider rather than its own toast state', () => {
     expect(app).toMatch(/import \{ useToast \} from '\.\/hooks\/useToast'/)

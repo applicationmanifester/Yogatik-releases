@@ -258,6 +258,31 @@ export function parseToolCalls(reply = '') {
     }
   }
 
+  // 5. Check bracketed pseudo tool calls emitted by reasoning/instruct models:
+  // e.g. [Tool called: fs_file_tree for workspace exploration]
+  // or [Tool called: fs_list {"path": "."}] or [Calling tool: fs_read(path="...")]
+  if (!found.length) {
+    const BRACKET_TOOL = /\[(?:Tool called|Calling tool|Tool|Call tool|Invoke):\s*([a-zA-Z0-9_-]+)(?:[\s:(]+([\s\S]*?))?\]/gi
+    let bm
+    while ((bm = BRACKET_TOOL.exec(clean))) {
+      attempted = true
+      const name = bm[1].trim()
+      let rawArgs = (bm[2] || '').trim().replace(/^(?:for|with)\s+/i, '')
+      if (rawArgs.endsWith(')')) rawArgs = rawArgs.slice(0, -1).trim()
+      let args = {}
+      if (rawArgs.startsWith('{') && rawArgs.endsWith('}')) {
+        try { args = JSON.parse(repairJson(rawArgs)) } catch {}
+      } else if (rawArgs.includes('=')) {
+        for (const part of rawArgs.split(/[\s,]+/)) {
+          const [k, v] = part.split('=')
+          if (k && v) args[k.trim()] = v.replace(/^["']|["']$/g, '').trim()
+        }
+      }
+      found.push({ name, parsedArgs: args, id: `pt_${found.length}` })
+      text = text.replace(bm[0], '')
+    }
+  }
+
   return { calls: found, text: text.trim(), malformed: attempted && found.length === 0 }
 }
 
@@ -284,6 +309,8 @@ export function stripToolCallSyntax(text) {
   if (
     !text.includes('<') &&
     !text.includes('[TOOL_CALL') &&
+    !text.includes('[Tool called') &&
+    !text.includes('[Calling tool') &&
     !text.includes('<|python_tag|>') &&
     !text.includes('Action:')
   ) {
@@ -297,6 +324,7 @@ export function stripToolCallSyntax(text) {
     .replace(/<function(?:=|\s+name=)["']?[\w-]+["']?>[\s\S]*?<\/function>/gi, '')
     .replace(/<invoke\s+name=["']?[^"'>\s]+["']?>[\s\S]*?<\/invoke>/gi, '')
     .replace(/\[TOOL_CALL:\s*[\s\S]*?\]/gi, '')
+    .replace(/\[(?:Tool called|Calling tool|Tool|Call tool|Invoke):\s*[\s\S]*?\]/gi, '')
     // Truncated tails.
     .replace(/<tool_call>[\s\S]*$/i, '')
     .replace(/<function_call>[\s\S]*$/i, '')
@@ -306,6 +334,7 @@ export function stripToolCallSyntax(text) {
     .replace(/<\|python_tag\|>[\s\S]*$/i, '')
     .replace(/\[TOOL_CALLS?\][\s\S]*$/i, '')
     .replace(/\[TOOL_CALL:?[\s\S]*$/i, '')
+    .replace(/\[(?:Tool called|Calling tool):?[\s\S]*$/i, '')
   // Trim ONLY when something was actually removed.
   return out === input ? input : out.trim()
 }

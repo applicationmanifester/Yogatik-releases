@@ -16,6 +16,8 @@ describe('prompted tool-call parsing (repair harness)', () => {
     ['claude invoke xml', '<invoke name="fs_read"><parameter name="path">src/app.js</parameter></invoke>', 'fs_read'],
     ['xml wrapped json', '<tool_call>\n{"name": "web_search", "arguments": {"query": "test"}}\n</tool_call>', 'web_search'],
     ['react action format', 'Action: terminal_run\nAction Input: {"command": "npm test"}', 'terminal_run'],
+    ['bracketed pseudo tool call', '[Tool called: fs_file_tree for workspace exploration]', 'fs_file_tree'],
+    ['bracketed tool call with args', '[Calling tool: fs_read path="src/index.js"]', 'fs_read'],
   ]
   for (const [label, reply, expected] of cases) {
     it(`parses: ${label}`, () => {

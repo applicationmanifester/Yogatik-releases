@@ -64,4 +64,21 @@ describe('createReasoningTagger', () => {
     expect(t.content('')).toBe('')
     expect(t.isOpen()).toBe(false)
   })
+
+  it('detects and suppresses runaway dots/ellipsis repetition loops in content stream', () => {
+    const t = createReasoningTagger()
+    const outputs = [t.content("I'll start by exploring the workspace ")]
+    for (let i = 0; i < 10; i++) {
+      outputs.push(t.content('... '))
+    }
+    expect(outputs.some(o => o.includes('repetitive filler loop truncated'))).toBe(true)
+    expect(t.isContentLoopSuppressed()).toBe(true)
+    // Any subsequent tokens are suppressed
+    expect(t.content('... ')).toBe('')
+  })
+
+  it('visibleAnswer strips bracketed pseudo tool announcements', () => {
+    expect(visibleAnswer('[Tool called: fs_file_tree for workspace exploration]')).toBe('')
+    expect(visibleAnswer('Analyzing workspace:\n[Tool called: fs_file_tree for workspace exploration]')).toBe('Analyzing workspace:')
+  })
 })

@@ -74,7 +74,12 @@ export function splitReasoning(content) {
 
 /** Just the part the user is meant to read. Reasoning alone is not an answer. */
 export function visibleAnswer(content) {
-  return splitReasoning(content).answer
+  const ans = splitReasoning(content).answer
+  if (!ans) return ''
+  // Pseudo tool announcements (e.g. "[Tool called: fs_file_tree for workspace exploration]")
+  // are internal tool execution attempts, not visible answers to the user.
+  const stripped = ans.replace(/\[(?:Tool called|Calling tool|Tool|Call tool|Invoke):\s*[\s\S]*?\]/gi, '').trim()
+  return stripped
 }
 
 /**
@@ -82,13 +87,16 @@ export function visibleAnswer(content) {
  * `reasoning_content` on DeepSeek-R1 and NVIDIA's reasoning models, `reasoning`
  * on OpenRouter — not inline in `content`.
  *
- * Wraps reasoning in <think> tags and includes a stream-level repetition breaker
- * to prevent runaway loops (common in 120B+ Nemotron reasoning collapse).
+ * Wraps reasoning in <think> tags and includes stream-level repetition breakers
+ * on BOTH reasoning and content channels to prevent runaway loops (common in 120B+
+ * Nemotron and open reasoning models).
  */
 export function createReasoningTagger() {
   let open = false
   let reasoningTail = ''
   let suppressedDueToLoop = false
+  let contentTail = ''
+  let contentLoopSuppressed = false
 
   return {
     /** Text from the reasoning channel. Opens the block on first use. */
@@ -122,6 +130,29 @@ export function createReasoningTagger() {
       suppressedDueToLoop = false
       const prefix = open ? '</think>' : ''
       open = false
+
+      if (contentLoopSuppressed) {
+        return ''
+      }
+
+      contentTail += text
+      if (contentTail.length > 300) {
+        contentTail = contentTail.slice(-300)
+      }
+
+      // Check for runaway dots / ellipses / filler tokens (e.g. "... ... ... ..." or "...........")
+      if (/(\.\s*|\.\.\.\s*){10,}/.test(contentTail)) {
+        contentLoopSuppressed = true
+        return prefix + '\n\n*(…repetitive filler loop truncated)*'
+      }
+
+      // Check if the tail contains a 3x repeating pattern (10-80 chars)
+      const loopMatch = contentTail.match(/(.{10,80}?)(?:\s*\1){2,}/is)
+      if (loopMatch) {
+        contentLoopSuppressed = true
+        return prefix + '\n\n*(…repetitive text loop truncated)*'
+      }
+
       return prefix + text
     },
     /** End of stream: close the block if the model only ever reasoned. */
@@ -129,8 +160,10 @@ export function createReasoningTagger() {
       const out = open ? '</think>' : ''
       open = false
       suppressedDueToLoop = false
+      contentLoopSuppressed = false
       return out
     },
     isOpen() { return open },
+    isContentLoopSuppressed() { return contentLoopSuppressed },
   }
 }

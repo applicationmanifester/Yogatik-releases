@@ -905,6 +905,12 @@ export async function streamChat({
             if (out) onToken?.(out)
           }
 
+          // If a runaway repetition/dots loop was detected and suppressed, cancel reader and terminate stream early
+          if (reasoningTagger.isContentLoopSuppressed?.()) {
+            try { reader.cancel() } catch {}
+            break
+          }
+
           // Streaming tool calls (OpenAI/Groq/OpenRouter format)
           if (delta?.tool_calls) {
             if (firstTokenTime === null) firstTokenTime = performance.now()
