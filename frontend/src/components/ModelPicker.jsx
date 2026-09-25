@@ -21,9 +21,19 @@ function modelId(model) {
  * models with near-identical names — the other 70 became unreachable. Here the
  * filter box is separate from the selection, so the full list is always there.
  */
+const CATEGORIES = [
+  { id: 'all', label: 'All' },
+  { id: 'fast', label: '⚡ Ultra Fast', test: (m) => /(flash|instant|mini|8b|haiku|groq|turbo|small|nano)/i.test(m) },
+  { id: 'code', label: '💻 Coding', test: (m) => /(code|coder|codestral|sonnet|qwen|deepseek|claude)/i.test(m) },
+  { id: 'reason', label: '🧠 Reasoning', test: (m) => /(r1|reason|o1|o3|o4|nemotron.*ultra)/i.test(m) },
+  { id: 'grounded', label: '🌐 Web Search', test: (m) => /(sonar|perplexity|search|browse)/i.test(m) },
+  { id: 'local', label: '🔒 Local / Free', test: (m) => /(local|free|ollama|gemma)/i.test(m) },
+]
+
 export function ModelPicker({ models = [], value, measured = {}, onChange, formatLatency, disabled, compact = false, prefix = null }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
+  const [category, setCategory] = useState('all')
   const [sel, setSel] = useState(0)
   const boxRef = useRef(null)
   const inputRef = useRef(null)
@@ -50,14 +60,22 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
   }, [modelIds, measured])
 
   const filtered = useMemo(() => {
+    let list = ordered
+    if (category !== 'all') {
+      const catObj = CATEGORIES.find(c => c.id === category)
+      if (catObj?.test) {
+        list = list.filter(m => catObj.test(m))
+      }
+    }
     const needle = q.trim().toLowerCase()
-    if (!needle) return ordered
-    return ordered.filter(m => needle.split(/\s+/).every(part => m.toLowerCase().includes(part)))
-  }, [ordered, q])
+    if (!needle) return list
+    return list.filter(m => needle.split(/\s+/).every(part => m.toLowerCase().includes(part)))
+  }, [ordered, q, category])
 
   useEffect(() => {
     if (!open) return
     setQ('')
+    setCategory('all')
     setSel(Math.max(0, ordered.indexOf(selectedValue)))
     const t = setTimeout(() => inputRef.current?.focus(), 0)
     return () => clearTimeout(t)
@@ -112,6 +130,41 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
             <input ref={inputRef} value={q} onChange={e => { setQ(e.target.value); setSel(0) }}
               onKeyDown={onKeyDown} placeholder={`Filter or enter custom model…`} aria-label="Filter models" />
             {q && <button className="icon-btn" onClick={() => setQ('')} aria-label="Clear filter"><X size={11} /></button>}
+          </div>
+
+          <div
+            className="model-categories"
+            style={{
+              display: 'flex',
+              gap: '4px',
+              padding: '6px 8px',
+              overflowX: 'auto',
+              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              scrollbarWidth: 'none',
+            }}
+          >
+            {CATEGORIES.map(cat => (
+              <button
+                key={cat.id}
+                type="button"
+                className={`category-pill ${category === cat.id ? 'active' : ''}`}
+                onClick={() => { setCategory(cat.id); setSel(0) }}
+                style={{
+                  fontSize: '11px',
+                  padding: '3px 8px',
+                  borderRadius: '999px',
+                  border: category === cat.id ? '1px solid rgba(59, 130, 246, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+                  background: category === cat.id ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                  color: category === cat.id ? '#60a5fa' : 'inherit',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  fontWeight: category === cat.id ? 600 : 400,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {cat.label}
+              </button>
+            ))}
           </div>
 
           <div className="model-list" ref={listRef}>

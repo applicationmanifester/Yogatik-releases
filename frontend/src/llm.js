@@ -151,6 +151,82 @@ const PROVIDERS = {
     preferred: ['command-r-plus', 'command-r7b-12-2024'],
     keyUrl: 'https://dashboard.cohere.com/api-keys',
   },
+  cerebras: {
+    name: 'Cerebras',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    models: [],
+    default: '',
+    preferred: ['llama3.3-70b', 'llama3.1-8b'],
+    keyUrl: 'https://cloud.cerebras.ai',
+  },
+}
+
+/**
+ * Per-model adaptive max-token limits.
+ * Prevents sending tiny maxTokens to big models (wastes context) and sending huge
+ * values to small models (causes 400s). Keyed by case-insensitive substring match.
+ */
+const MODEL_MAX_TOKENS = [
+  // Context-window giants — high output limits
+  { match: /gemini-2\.5-pro/i,               max: 65536 },
+  { match: /gemini-2\.5-flash/i,             max: 32768 },
+  { match: /gemini-2\.0-flash/i,             max: 16384 },
+  { match: /claude-3-7/i,                    max: 64000 },
+  { match: /claude-3-5/i,                    max: 32768 },
+  { match: /claude-3-haiku/i,                max: 8192  },
+  { match: /claude-3-opus/i,                 max: 32768 },
+  { match: /gpt-4o/i,                        max: 16384 },
+  { match: /gpt-4-turbo/i,                   max: 8192  },
+  { match: /o[134]-mini/i,                   max: 65536 },
+  { match: /o[134]/i,                        max: 65536 },
+  { match: /deepseek-r1/i,                   max: 32768 },
+  { match: /deepseek-chat/i,                 max: 16384 },
+  { match: /llama-3\.3-70b|llama-3-70b/i,   max: 8192  },
+  { match: /llama-3\.1-8b|llama-3-8b/i,     max: 8192  },
+  { match: /nemotron-.*70b/i,                max: 8192  },
+  { match: /nemotron-.*super/i,              max: 16384 },
+  { match: /mistral-large/i,                 max: 16384 },
+  { match: /mistral-small/i,                 max: 8192  },
+  { match: /codestral/i,                     max: 16384 },
+  { match: /sonar/i,                         max: 8192  },
+  { match: /grok-3/i,                        max: 32768 },
+  { match: /grok-2/i,                        max: 16384 },
+  { match: /cerebras|llama3\.3-70b|llama3\.1-8b/i, max: 8192 },
+]
+
+/** Return the recommended maxTokens for a model, or a conservative fallback. */
+export function getModelMaxTokens(modelId, fallback = 4096) {
+  if (!modelId) return fallback
+  for (const { match, max } of MODEL_MAX_TOKENS) {
+    if (match.test(modelId)) return max
+  }
+  return fallback
+}
+
+/**
+ * Capability flags per provider — what each supports natively.
+ * Used to suppress unsupported params before sending (prevents 400s).
+ */
+const PROVIDER_CAPABILITIES = {
+  anthropic:   { tools: true,  vision: true,  streaming: true,  promptCaching: true  },
+  openai:      { tools: true,  vision: true,  streaming: true,  promptCaching: false },
+  gemini:      { tools: true,  vision: true,  streaming: true,  promptCaching: false },
+  groq:        { tools: true,  vision: false, streaming: true,  promptCaching: false },
+  openrouter:  { tools: true,  vision: true,  streaming: true,  promptCaching: false },
+  nvidia:      { tools: false, vision: false, streaming: true,  promptCaching: false },
+  deepseek:    { tools: true,  vision: false, streaming: true,  promptCaching: false },
+  mistral:     { tools: true,  vision: false, streaming: true,  promptCaching: false },
+  perplexity:  { tools: false, vision: false, streaming: true,  promptCaching: false },
+  cohere:      { tools: true,  vision: false, streaming: true,  promptCaching: false },
+  xai:         { tools: true,  vision: true,  streaming: true,  promptCaching: false },
+  cerebras:    { tools: true,  vision: false, streaming: true,  promptCaching: false },
+  ollama:      { tools: true,  vision: true,  streaming: true,  promptCaching: false },
+  local:       { tools: false, vision: false, streaming: true,  promptCaching: false },
+  chromeai:    { tools: false, vision: false, streaming: true,  promptCaching: false },
+}
+
+export function getProviderCapabilities(providerId) {
+  return PROVIDER_CAPABILITIES[providerId] || { tools: true, vision: false, streaming: true, promptCaching: false }
 }
 
 // Custom providers merged at runtime
@@ -309,6 +385,111 @@ export function sanitizeMessagesForToolCalling(messages = []) {
 }
 
 /**
+ * Convert OpenAI-format message history to Anthropic native message format.
+ *
+ * Anthropic is strict:
+ * - No `role: "system"` messages (must be pulled out to `body.system`).
+ * - No `role: "tool"` messages — tool results must be `role: "user"` with
+ *   `content: [{ type: "tool_result", tool_use_id, content }]`.
+ * - Assistant messages that issued tool calls must carry `tool_use` content
+ *   blocks; an empty `content` field causes the
+ *   "model output must contain either output text or tool calls" 400 error.
+ * - Consecutive same-role messages must be merged (Anthropic rejects them).
+ */
+export function toAnthropicMessages(messages = []) {
+  const out = []
+
+  for (const m of messages) {
+    if (m.role === 'system') continue // stripped — goes to body.system
+
+    if (m.role === 'tool') {
+      // OpenAI tool result → Anthropic user message with tool_result block.
+      const last = out[out.length - 1]
+      const toolResultBlock = {
+        type: 'tool_result',
+        tool_use_id: m.tool_call_id || m.id || 'unknown',
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
+      }
+      if (last?.role === 'user' && Array.isArray(last.content)) {
+        // Merge consecutive tool results into the same user turn.
+        last.content.push(toolResultBlock)
+      } else {
+        out.push({ role: 'user', content: [toolResultBlock] })
+      }
+      continue
+    }
+
+    if (m.role === 'assistant') {
+      const contentBlocks = []
+
+      // Preserve any existing text content.
+      if (typeof m.content === 'string' && m.content.trim()) {
+        contentBlocks.push({ type: 'text', text: m.content })
+      } else if (Array.isArray(m.content)) {
+        for (const b of m.content) {
+          if (b.type === 'text' && b.text?.trim()) contentBlocks.push(b)
+          else if (b.type === 'tool_use') contentBlocks.push(b) // already native
+        }
+      }
+
+      // Convert OpenAI tool_calls to Anthropic tool_use blocks.
+      if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+        for (const tc of m.tool_calls) {
+          let parsedInput = {}
+          try { parsedInput = typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments) : (tc.function?.arguments ?? {}) } catch { /* keep empty */ }
+          contentBlocks.push({
+            type: 'tool_use',
+            id: tc.id || `call_${Math.random().toString(36).slice(2, 10)}`,
+            name: tc.function?.name || tc.name || 'unknown',
+            input: parsedInput,
+          })
+        }
+      }
+
+      // Anthropic rejects assistant messages with empty content — fallback to a space.
+      if (contentBlocks.length === 0) {
+        contentBlocks.push({ type: 'text', text: '...' })
+      }
+
+      // Merge with previous assistant turn if consecutive (Anthropic rejects same-role runs).
+      const last = out[out.length - 1]
+      if (last?.role === 'assistant' && Array.isArray(last.content)) {
+        last.content.push(...contentBlocks)
+      } else {
+        out.push({ role: 'assistant', content: contentBlocks })
+      }
+      continue
+    }
+
+    if (m.role === 'user') {
+      const normalised = {
+        role: 'user',
+        content: typeof m.content === 'string'
+          ? m.content
+          : (Array.isArray(m.content) ? m.content : String(m.content ?? '')),
+      }
+      // Merge consecutive user turns (Anthropic rejects them).
+      const last = out[out.length - 1]
+      if (last?.role === 'user') {
+        if (typeof last.content === 'string' && typeof normalised.content === 'string') {
+          last.content += '\n' + normalised.content
+        } else {
+          // At least one is an array — coerce both and concat.
+          const a = typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : last.content
+          const b = typeof normalised.content === 'string' ? [{ type: 'text', text: normalised.content }] : normalised.content
+          last.content = [...a, ...b]
+        }
+      } else {
+        out.push(normalised)
+      }
+      continue
+    }
+  }
+
+  return out
+}
+
+/**
  * Retry on rate limits, gateway timeouts (524), and transient upstream failures.
  * Honours Retry-After when present, else exponential backoff with jitter.
  */
@@ -375,6 +556,10 @@ async function fetchWithRetry(url, options, prov, { retries = 5, onStatus, timeo
   }
 }
 
+// In-flight request deduplication: prevents the same prompt being fired twice
+// (e.g. React StrictMode double-mount, rapid submit clicks, chat switch race).
+const _INFLIGHT_STREAMS = new Map()
+
 export async function streamChat({
   provider, apiKey, model, messages, tools = null,
   temperature = 1.0, maxTokens = null, signal, onToken, onToolCall, onDone, onError, onStatus,
@@ -382,11 +567,15 @@ export async function streamChat({
   retriedContextTrim = false,
   providerOptions = null, responseFormat = null,
   streamRetryCount = 0,
+  dedupe = false,   // Set true to enable in-flight deduplication for identical requests
 }) {
   const prov = getProviders()[provider]
   if (!prov) throw new Error(`Unknown provider: ${provider}`)
 
   const cleanModel = normalizeModelName(model) || normalizeModelName(prov.default) || normalizeModelName(prov.preferred?.[0]) || (typeof prov.models?.[0] === 'string' ? prov.models[0] : '')
+
+  // ── Adaptive maxTokens: if not explicitly provided, use per-model sensible defaults
+  const resolvedMaxTokens = maxTokens || getModelMaxTokens(cleanModel, prov.isAnthropic ? 4096 : null)
 
   // On-device WebGPU inference never touches the network or a key.
   if (provider === 'local') {
@@ -403,9 +592,10 @@ export async function streamChat({
 
   const headers = { 'Content-Type': 'application/json' }
   if (prov.isAnthropic) {
-    // Anthropic uses x-api-key instead of Bearer, plus version and browser access headers
+    // Anthropic uses x-api-key instead of Bearer, plus version, beta prompt caching, and browser access headers
     if (apiKey) headers['x-api-key'] = apiKey
     headers['anthropic-version'] = '2023-06-01'
+    headers['anthropic-beta'] = 'prompt-caching-2024-07-31'
     headers['anthropic-dangerous-direct-browser-access'] = 'true'
   } else if (apiKey || !prov.noKey) {
     headers['Authorization'] = `Bearer ${apiKey}`
@@ -436,9 +626,9 @@ export async function streamChat({
     body.top_p = 0.95
   }
 
-  if (maxTokens && Number.isFinite(maxTokens)) {
-    body.max_tokens = maxTokens
-    if (provider === 'openai' || isReasoningModel) body.max_completion_tokens = maxTokens
+  if (resolvedMaxTokens && Number.isFinite(resolvedMaxTokens)) {
+    body.max_tokens = resolvedMaxTokens
+    if (provider === 'openai' || isReasoningModel) body.max_completion_tokens = resolvedMaxTokens
   }
 
   // Add mild anti-repetition penalty for standard OpenAI/NVIDIA endpoints to prevent N-gram degeneration loops
@@ -450,26 +640,21 @@ export async function streamChat({
 
   if (prov.isAnthropic) {
     endpoint = `${prov.baseUrl}/messages`
-    body.max_tokens = (maxTokens && Number.isFinite(maxTokens)) ? maxTokens : 4096
-    let systemPrompt = ''
-    const anthropicMessages = []
-    for (const m of messages) {
-      if (m.role === 'system') {
-        systemPrompt += (systemPrompt ? '\n\n' : '') + m.content
-      } else {
-        anthropicMessages.push(m)
-      }
-    }
-    // Enable Anthropic prompt caching: mark system prompt block with ephemeral cache_control
-    if (systemPrompt) {
+    body.max_tokens = resolvedMaxTokens || 4096
+    // Extract system prompt text (Anthropic uses a separate `system` field).
+    const systemParts = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
+    if (systemParts) {
       body.system = [
         {
           type: 'text',
-          text: systemPrompt,
+          text: systemParts,
           cache_control: { type: 'ephemeral' },
         },
       ]
     }
+    // Convert full OpenAI-format history → Anthropic native format.
+    // This handles: tool_calls on assistant, role:"tool" results, empty content, consecutive same-role turns.
+    const anthropicMessages = toAnthropicMessages(messages)
     body.messages = anthropicMessages.length ? anthropicMessages : [{ role: 'user', content: 'hello' }]
   }
 
@@ -480,15 +665,44 @@ export async function streamChat({
     if (!prov.needsProxy && !prov.isAnthropic) body.tool_choice = 'auto'
   }
 
+  // ── Suppress unsupported tool calls for providers that don't support them
+  const caps = getProviderCapabilities(provider)
+  if (!caps.tools && body.tools) {
+    delete body.tools
+    delete body.tool_choice
+  }
+
   // Provider-specific options (e.g., Anthropic thinking, OpenAI reasoning)
   if (providerOptions && typeof providerOptions === 'object') {
     Object.assign(body, providerOptions)
   }
 
-  // Structured output (JSON mode)
-  if (responseFormat && typeof responseFormat === 'object') {
+  // Structured output (JSON mode) — only for OpenAI-compatible providers
+  if (responseFormat && typeof responseFormat === 'object' && !prov.isAnthropic) {
     body.response_format = responseFormat
   }
+
+  // ── In-flight deduplication: return the same promise for identical concurrent requests
+  if (dedupe) {
+    const dedupeKey = `${provider}:${cleanModel}:${JSON.stringify(messages?.slice(-2)?.map(m => m.content?.slice?.(0, 120)))}`
+    if (_INFLIGHT_STREAMS.has(dedupeKey)) {
+      return _INFLIGHT_STREAMS.get(dedupeKey)
+    }
+    const streamPromise = streamChat({
+      provider, apiKey, model: cleanModel, messages, tools,
+      temperature, maxTokens, signal, onToken, onToolCall, onDone, onError, onStatus,
+      retriedWithoutTools, onToolsRejected, retriedFixedTemp, retriedOmitTemp,
+      retriedContextTrim, providerOptions, responseFormat, streamRetryCount,
+      dedupe: false, // prevent infinite dedup loop
+    })
+    _INFLIGHT_STREAMS.set(dedupeKey, streamPromise)
+    streamPromise.finally(() => _INFLIGHT_STREAMS.delete(dedupeKey))
+    return streamPromise
+  }
+
+  const streamStartTime = performance.now()
+  let firstTokenTime = null
+  let tokenCount = 0
 
   try {
     const resp = await fetchWithRetry(endpoint, {
@@ -672,21 +886,28 @@ export async function streamChat({
           const reasonDelta = delta?.reasoning_content ?? delta?.reasoning
             ?? (parsed.type === 'thinking_delta' ? parsed.delta?.thinking : null)
           if (reasonDelta) {
+            if (firstTokenTime === null) firstTokenTime = performance.now()
+            tokenCount += Math.max(1, Math.round((reasonDelta.length || 1) / 3.8))
             const out = reasoningTagger.reasoning(reasonDelta)
             if (out) onToken?.(out)
           }
 
           // Content token (OpenAI delta or Anthropic text_delta)
           if (delta?.content) {
+            if (firstTokenTime === null) firstTokenTime = performance.now()
+            tokenCount += Math.max(1, Math.round((delta.content.length || 1) / 3.8))
             const out = reasoningTagger.content(delta.content)
             if (out) onToken?.(out)
           } else if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+            if (firstTokenTime === null) firstTokenTime = performance.now()
+            tokenCount += Math.max(1, Math.round((parsed.delta.text.length || 1) / 3.8))
             const out = reasoningTagger.content(parsed.delta.text)
             if (out) onToken?.(out)
           }
 
           // Streaming tool calls (OpenAI/Groq/OpenRouter format)
           if (delta?.tool_calls) {
+            if (firstTokenTime === null) firstTokenTime = performance.now()
             for (const tc of delta.tool_calls) {
               const idx = tc.index ?? 0
               if (!toolCalls[idx]) {
@@ -719,7 +940,15 @@ export async function streamChat({
     const tail = reasoningTagger.end()
     if (tail) onToken?.(tail)
 
-    onDone?.()
+    const durationMs = Math.round(performance.now() - streamStartTime)
+    const ttftMs = firstTokenTime ? Math.round(firstTokenTime - streamStartTime) : durationMs
+    const genDurationSec = (performance.now() - (firstTokenTime || streamStartTime)) / 1000
+    const tokPerSec = (tokenCount > 0 && genDurationSec > 0.05)
+      ? Math.round((tokenCount / genDurationSec) * 10) / 10
+      : 0
+    const telemetry = { ttftMs, tokPerSec, tokenCount, durationMs }
+
+    onDone?.(telemetry)
   } catch (err) {
     if (err.name === 'TimeoutError' && streamRetryCount < 2 && !signal?.aborted) {
       const nextRetry = streamRetryCount + 1
@@ -737,7 +966,13 @@ export async function streamChat({
     } else if (err.name === 'AbortError') {
       // Stop was pressed. onDone MUST still fire: the agent awaits this promise
       // and swallowing the abort left the whole turn (and the UI) hanging.
-      onDone?.()
+      const durationMs = Math.round(performance.now() - streamStartTime)
+      const ttftMs = firstTokenTime ? Math.round(firstTokenTime - streamStartTime) : durationMs
+      const genDurationSec = (performance.now() - (firstTokenTime || streamStartTime)) / 1000
+      const tokPerSec = (tokenCount > 0 && genDurationSec > 0.05)
+        ? Math.round((tokenCount / genDurationSec) * 10) / 10
+        : 0
+      onDone?.({ ttftMs, tokPerSec, tokenCount, durationMs })
     } else {
       onError?.(err)
     }
@@ -748,10 +983,13 @@ export async function streamChat({
 export async function chatComplete({ provider, apiKey, model, messages, tools, temperature = 0.7, maxTokens, timeoutMs = REQUEST_TIMEOUT, retries }) {
   const prov = getProviders()[provider]
   const cleanModel = normalizeModelName(model) || normalizeModelName(prov?.default) || normalizeModelName(prov?.preferred?.[0]) || (typeof prov?.models?.[0] === 'string' ? prov.models[0] : '')
+  const resolvedMax = maxTokens || getModelMaxTokens(cleanModel, 2048)
   const headers = { 'Content-Type': 'application/json' }
   if (prov?.isAnthropic) {
     if (apiKey) headers['x-api-key'] = apiKey
     headers['anthropic-version'] = '2023-06-01'
+    headers['anthropic-beta'] = 'prompt-caching-2024-07-31'
+    headers['anthropic-dangerous-direct-browser-access'] = 'true'
   } else if (apiKey || !prov?.noKey) {
     headers['Authorization'] = `Bearer ${apiKey}`
   }
@@ -770,33 +1008,29 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
   } else {
     body.temperature = temperature
   }
-  if (maxTokens) {
-    body.max_tokens = maxTokens
-    if (provider === 'openai' || isReasoningModel) body.max_completion_tokens = maxTokens
+  if (resolvedMax) {
+    body.max_tokens = resolvedMax
+    if (provider === 'openai' || isReasoningModel) body.max_completion_tokens = resolvedMax
   }
-  if (tools?.length) { body.tools = tools; body.tool_choice = 'auto' }
+  // Suppress tools for providers that don't support them natively
+  const caps2 = getProviderCapabilities(provider)
+  if (caps2.tools && tools?.length) { body.tools = tools; body.tool_choice = 'auto' }
 
   if (prov?.isAnthropic) {
     endpoint = `${prov.baseUrl}/messages`
-    body.max_tokens = maxTokens || 1024
-    let systemPrompt = ''
-    const anthropicMessages = []
-    for (const m of messages) {
-      if (m.role === 'system') {
-        systemPrompt += (systemPrompt ? '\n\n' : '') + m.content
-      } else {
-        anthropicMessages.push(m)
-      }
-    }
-    if (systemPrompt) {
+    body.max_tokens = resolvedMax || 2048
+    const systemParts = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
+    if (systemParts) {
       body.system = [
         {
           type: 'text',
-          text: systemPrompt,
+          text: systemParts,
           cache_control: { type: 'ephemeral' },
         },
       ]
     }
+    // Convert OpenAI-format message history to Anthropic native format.
+    const anthropicMessages = toAnthropicMessages(messages)
     body.messages = anthropicMessages.length ? anthropicMessages : [{ role: 'user', content: 'hello' }]
   }
 

@@ -9,7 +9,7 @@ import { KEY_STORAGE_DISCLOSURE } from '../../crypto'
 import { DEFAULT_LOCAL_MODEL } from '../../localLLM'
 import {
   getModels, saveProviderApiKey, removeProvider, testProvider,
-  addProvider
+  addProvider, benchmarkAllProviders
 } from '../../api'
 import {
   pullOllamaModel, cancelOllamaPull, startOllamaDaemon,
@@ -24,6 +24,14 @@ export const QUICK_TEMPLATES = {
     default: 'meta/llama-3.3-70b-instruct',
     keyUrl: 'https://build.nvidia.com',
     note: 'Llama 3.3, Nemotron 70B & Llama 3.1 8B',
+  },
+  cerebras: {
+    name: 'Cerebras',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    models: ['llama3.3-70b', 'llama3.1-8b'],
+    default: 'llama3.3-70b',
+    keyUrl: 'https://cloud.cerebras.ai',
+    note: 'World-record ultra-fast inference (~2,000 tok/s)',
   },
   gemini: {
     name: 'Google Gemini',
@@ -100,6 +108,21 @@ export function ProvidersTab({
   const [refreshingOllama, setRefreshingOllama] = useState(false)
   const [pullState, setPullState] = useState({})
   const [localModelChoice, setLocalModelChoice] = useState(DEFAULT_LOCAL_MODEL)
+  const [isBenchmarking, setIsBenchmarking] = useState(false)
+  const [benchmarkResults, setBenchmarkResults] = useState({})
+
+  const handleBenchmarkAll = async () => {
+    setIsBenchmarking(true)
+    try {
+      await benchmarkAllProviders((id, res) => {
+        setBenchmarkResults(prev => ({ ...prev, [id]: res }))
+      })
+    } catch (e) {
+      console.error('Benchmark failed:', e)
+    } finally {
+      setIsBenchmarking(false)
+    }
+  }
 
   const handleTestProvider = async (id) => {
     setTestingId(id)
@@ -177,10 +200,41 @@ export function ProvidersTab({
           <p className="settings-pane-subtitle">
             Configure endpoints, connect API keys, or add custom OpenAI-compatible proxies. All keys are encrypted locally on your device.
           </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+            <span
+              style={{
+                fontSize: '0.72rem',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: 'rgba(16, 185, 129, 0.12)',
+                color: '#10b981',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              🔒 OS Keychain / AES-GCM Encrypted
+            </span>
+            <span style={{ fontSize: '0.72rem', opacity: 0.65 }}>Zero plaintext telemetry</span>
+          </div>
         </div>
-        <button className="settings-btn primary" onClick={() => setShowCustomForm(true)}>
-          <Plus size={13} /> Add Custom Provider
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            className="settings-btn ghost"
+            onClick={handleBenchmarkAll}
+            disabled={isBenchmarking}
+            title="Ping all configured providers simultaneously to measure real-world roundtrip latency"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+          >
+            <Zap size={13} style={{ color: '#eab308' }} />
+            {isBenchmarking ? 'Benchmarking…' : 'Benchmark All'}
+          </button>
+          <button className="settings-btn primary" onClick={() => setShowCustomForm(true)}>
+            <Plus size={13} /> Add Custom Provider
+          </button>
+        </div>
       </div>
 
       {/* Sampling Temperature Setting */}
@@ -294,6 +348,7 @@ export function ProvidersTab({
           const tpl = QUICK_TEMPLATES[id]
           const hasKey = prov.available
           const testRes = testResults[id]
+          const benchmarkRes = benchmarkResults[id]
           const isTesting = testingId === id
           const isSaving = savingKeyId === id
           const isCur = activeProvider === id
@@ -305,6 +360,15 @@ export function ProvidersTab({
                   <div className="provider-name-row">
                     <span className="provider-name">{prov.name || id}</span>
                     {isCur && <span className="settings-badge active-tag">In Use</span>}
+                    {benchmarkRes && (
+                      <span
+                        className={`settings-badge ${benchmarkRes.success ? (benchmarkRes.latencyMs < 500 ? 'green' : benchmarkRes.latencyMs < 2000 ? 'yellow' : 'orange') : 'red'}`}
+                        style={{ fontFamily: 'monospace', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                        title={benchmarkRes.success ? `Ping: ${benchmarkRes.latencyMs}ms (${benchmarkRes.model})` : benchmarkRes.error}
+                      >
+                        ⚡ {benchmarkRes.success ? `${benchmarkRes.latencyMs}ms` : 'Offline'}
+                      </span>
+                    )}
                     {prov.is_ollama ? (
                       prov.available ? (
                         <span className="settings-badge green">Daemon Running</span>

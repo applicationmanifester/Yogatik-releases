@@ -471,6 +471,29 @@ const MessageBubble = React.memo(function MessageBubble({
             {formattedModelName}
           </span>
         )}
+        {msg.role === 'assistant' && msg.telemetry && (msg.telemetry.tokPerSec > 0 || msg.telemetry.ttftMs > 0) && (
+          <span
+            className="msg-telemetry-badge"
+            title={`Speed: ${msg.telemetry.tokPerSec || 0} tokens/sec | Time to First Token: ${msg.telemetry.ttftMs || 0}ms | Total duration: ${msg.telemetry.durationMs || 0}ms`}
+            style={{
+              fontSize: '10px',
+              padding: '1px 6px',
+              borderRadius: '999px',
+              background: 'rgba(56, 189, 248, 0.12)',
+              color: '#38bdf8',
+              border: '1px solid rgba(56, 189, 248, 0.25)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px',
+              fontWeight: 600,
+              fontFamily: 'monospace',
+            }}
+          >
+            ⚡ {msg.telemetry.tokPerSec > 0 ? `${msg.telemetry.tokPerSec} t/s` : ''}
+            {msg.telemetry.tokPerSec > 0 && msg.telemetry.ttftMs > 0 ? ' · ' : ''}
+            {msg.telemetry.ttftMs > 0 ? `${msg.telemetry.ttftMs}ms` : ''}
+          </span>
+        )}
         {msg.createdAt && <time className="message-time" dateTime={new Date(msg.createdAt).toISOString()}>{relativeTime(msg.createdAt)}</time>}
 
         <span className="message-actions" style={{ position: 'relative' }}>

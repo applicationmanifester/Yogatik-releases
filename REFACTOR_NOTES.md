@@ -41,3 +41,35 @@
 - `src/` is `.jsx` (711 files); `tsconfig.main.json` covers electron main only
 - Enabling strict on the renderer is a migration, not a config flip; it would surface thousands of errors at once
 - Suggested incremental path: a leaf-scoped tsconfig with `allowJs` + `checkJs` first
+
+
+## Session: 2026-09-25 — "fix all" continuation (App.jsx slices + TypeScript enablement)
+
+### Verified baseline
+- vitest v4.1.10 targeted run: smoke (mounts full App) + WiredPanels + MessageBubble → **13/13 passed**
+- App.jsx measured **7,501 lines** on disk at session start (an earlier read showed 7,429 — prior uncommitted session changes were present in the working tree, confirmed via `git status`; boundary assertions on fresh reads caught no drift in the extraction regions)
+
+### Slice 1: Tag Assignment Modal → `src/components/TagModal.jsx`
+- Extracted L7005–7181 **verbatim** (177 lines) → App.jsx 7,501 → **7,335**
+- Props: `conv` (snapshot `{idx, conv, tags}`), `onChange` (= `setTagModalConv`), `allTags`, `setConvTags`, `showToast`
+- Gated at the render site (`{tagModalConv && <TagModal ... />}`) + defensive early-return inside the component — zero behavior change
+- Identifier audit clean (85 tokens scanned); esbuild-checked before write; backup in `.ai_backups/App.jsx.pre-tagmodal-*`
+- **New test**: `src/components/TagModal.test.jsx` (2 tests) — renders the component in jsdom
+
+### Slice 2: Folder Assignment Modal → `src/components/FolderModal.jsx`
+- Extracted L6893–7005 **verbatim** (112 lines) → App.jsx 7,336 → **7,234**
+- Props: `conv` (`{idx, conv, folder}`), `onChange` (= `setFolderModalConv`), `allFolders`, `setConvFolder`, `showToast`
+- **New test**: `src/components/FolderModal.test.jsx` (3 tests)
+- Backup in `.ai_backups/App.jsx.pre-foldermodal-*`
+
+### TypeScript enablement
+- Created `frontend/tsconfig.json`: `strict: true` applies to future `.ts/.tsx` files; `allowJs + checkJs: false` → **zero new diagnostics** on existing JSX; `jsx: react-jsx` matches `@vitejs/plugin-react@4.7.0` automatic runtime; `noEmit` so vite keeps owning the build; separate `tsconfig.main.json` unaffected
+- Verified the full vitest subset passes with tsconfig present
+
+### Post-slice verification
+- vitest: **4 files / 15 tests passed** (smoke mount + WiredPanels + FolderModal + TagModal), ~8s
+
+### Deliberately deferred (with rationale)
+- **tools/index.js lazy registry**: schemas are entangled with executors across all tool files and `getToolSchemas()` must stay synchronous (consumers verified: `agent.js` + `live/session.js` use `getToolSchemas`+`executeTool`; `autoSkills.js` needs only `getToolNames`). Full laziness = a dedicated schema/executor separation migration across every tool file. Electron loads from local disk, so the bundle-size win is marginal.
+- **Remaining App.jsx slices**: ~7,234 lines remain. Next candidates: Human-In-The-Loop question modal, ConfirmModal/ProjectNameModal/RestoreModal/ErrorModal cluster, then the workspace dock.
+- **Full `npm run build`** was not run from this sandbox (15s hard timeout); esbuild transform checks + vitest-with-tsconfig cover syntax and runtime of everything changed.

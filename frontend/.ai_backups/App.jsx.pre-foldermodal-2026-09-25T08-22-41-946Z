@@ -70,7 +70,6 @@ import PermissionPrompt from './components/PermissionPrompt'
 import { APP_VERSION, hasSeenCurrentVersion } from './version'
 import { AdSenseBanner } from './components/AdSenseBanner'
 import { TagModal } from './components/TagModal'
-import { FolderModal } from './components/FolderModal'
 import { safeLazy } from './utils/safeLazy'
 import { prewarmToolsFromInput } from './tools/toolPrewarm'
 import { formatLatency, getStatusIcon, formatDirectTimeAnswer, WINDOW_STEP, SUGGESTIONS } from './appHelpers'
@@ -3449,11 +3448,9 @@ export default function App() {
           setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
           const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
           const activeTrace = traceMapRef.current[targetClientId] || []
-          // Prefer the agent's own saved checkpoint (has proper tool_use/tool_result format)
-          // over a fallback built from display messages (which lack internal tool structure).
           const cp = checkpointMapRef.current[targetClientId] || errMeta?.checkpoint || (
             Object.keys(runData.results || {}).length > 0 ? {
-              messages: [],   // empty — agent will rebuild from conversation history
+              messages: updated.messages,
               toolResults: { ...runData.results },
               trace: [...activeTrace],
               actionCount: Object.keys(runData.results).length,
@@ -4017,18 +4014,13 @@ export default function App() {
     const curIdx = activeIdxRef.current
     const targetConv = conversationsRef.current[curIdx]
     const msgs = targetConv?.messages || []
-    // Find the last user message
     let lastUser = -1
     for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'user') { lastUser = i; break } }
     if (lastUser < 0) return
     const lastUserMsg = msgs[lastUser]
     const prompt = lastUserMsg.content
     const imageToResend = lastUserMsg.image ? { dataUrl: lastUserMsg.image, thumb: lastUserMsg.image, name: 'attached-image' } : null
-    // Use the agent's internal checkpoint (has tool_use/tool_result in proper format)
-    // Prefer: agent's saved checkpoint from checkpointMapRef > failedMsg.checkpoint > null
-    const targetClientId = targetConv?.clientId
-    const checkpoint = checkpointMapRef.current[targetClientId] || failedMsg?.checkpoint || null
-    // Trim conversation display: remove user turn + everything after (error messages, partial responses)
+    const checkpoint = failedMsg?.checkpoint || null
     const kept = msgs.slice(0, lastUser)
     setConversations(prev => {
       const next = prev.map((c, i) => i === curIdx ? { ...c, messages: kept } : c)
@@ -4036,8 +4028,6 @@ export default function App() {
       return next
     })
     if (targetConv?.id) { try { await trimConversationFrom(targetConv.id, lastUser) } catch {} }
-    // Clear the in-memory checkpoint so a double-click on Resume doesn't re-use stale state
-    if (targetClientId) delete checkpointMapRef.current[targetClientId]
     sendRef.current?.(prompt, imageToResend, null, { resumeCheckpoint: checkpoint })
   }
 
@@ -6902,13 +6892,116 @@ export default function App() {
 
       {/* Folder Assignment Modal */}
       {folderModalConv && (
-        <FolderModal
-          conv={folderModalConv}
-          onChange={setFolderModalConv}
-          allFolders={allFolders}
-          setConvFolder={setConvFolder}
-          showToast={showToast}
-        />
+        <Modal
+          title="Organize Chat into Folder"
+          icon={<Folder size={18} />}
+          onClose={() => setFolderModalConv(null)}
+        >
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+              Assign <strong>"{folderModalConv.conv?.title || 'this chat'}"</strong> to a folder for easy categorization.
+            </p>
+
+            {allFolders.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                  Existing Folders:
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {allFolders.map(f => (
+                    <button
+                      key={f}
+                      type="button"
+                      className="small-btn"
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '12px',
+                        borderRadius: '6px',
+                        background: folderModalConv.folder === f ? 'var(--accent, #6366f1)' : 'rgba(255,255,255,0.06)',
+                        color: folderModalConv.folder === f ? '#fff' : 'inherit',
+                        border: '1px solid var(--border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => setFolderModalConv(prev => ({ ...prev, folder: f }))}
+                    >
+                      <Folder size={12} /> {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                Folder Name:
+              </label>
+              <input
+                type="text"
+                autoFocus
+                placeholder="e.g. Work, Research, Personal, Projects..."
+                value={folderModalConv.folder || ''}
+                onChange={e => setFolderModalConv(prev => ({ ...prev, folder: e.target.value }))}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    setConvFolder(folderModalConv.idx, folderModalConv.folder)
+                    showToast(folderModalConv.folder ? `Moved to folder "${folderModalConv.folder}"` : 'Folder cleared')
+                    setFolderModalConv(null)
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  background: 'var(--bg-input, rgba(255,255,255,0.05))',
+                  border: '1px solid var(--border, rgba(255,255,255,0.15))',
+                  borderRadius: '6px',
+                  color: 'var(--text-primary, inherit)',
+                  fontSize: '13px',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '6px' }}>
+              {folderModalConv.conv?.folder && (
+                <button
+                  type="button"
+                  className="small-btn"
+                  style={{ color: '#ff6b6b' }}
+                  onClick={() => {
+                    setConvFolder(folderModalConv.idx, null)
+                    showToast('Folder cleared')
+                    setFolderModalConv(null)
+                  }}
+                >
+                  Clear Folder
+                </button>
+              )}
+              <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                <button
+                  type="button"
+                  className="small-btn"
+                  onClick={() => setFolderModalConv(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="small-btn btn-primary"
+                  onClick={() => {
+                    setConvFolder(folderModalConv.idx, folderModalConv.folder)
+                    showToast(folderModalConv.folder ? `Moved to folder "${folderModalConv.folder}"` : 'Folder cleared')
+                    setFolderModalConv(null)
+                  }}
+                >
+                  Save Folder
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* Tag Assignment Modal */}

@@ -3,11 +3,69 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '10.9.1'
+export const APP_VERSION = '10.9.2'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.9.1 — Seamless High-FPS Desktop & Terminal Shield Engine'
+export const APP_CODENAME = 'Yogatik 10.9.2 — Autonomous Relentless AI Engine: Provider Intelligence & Zero-Drop Streaming'
 
 export const APP_RELEASES = [
+  {
+    "version": "10.9.2",
+    "title": "Yogatik 10.9.2: Autonomous Relentless AI Engine — Provider Intelligence & Zero-Drop Streaming",
+    "date": "September 25, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Anthropic Native Message Format: Fixed 'model output must contain either output text or tool calls' error with full OpenAI→Anthropic message converter",
+      "Provider Capability Registry: Each provider declares tool/vision/streaming support — unsupported params are suppressed before sending, eliminating silent 400s",
+      "Adaptive Max-Token Limits: 30-model lookup table auto-sets correct max_tokens per model (65K for Gemini 2.5 Pro, 8K for Cerebras, etc.)",
+      "Circuit-Breaker Failover: Providers that fail twice are cooled down for 60s; getHealthyRoute() automatically reroutes to next available provider",
+      "In-Flight Deduplication: Identical concurrent stream requests share one promise — eliminates double-sends from rapid clicks or React StrictMode",
+      "Anthropic Prompt Caching: Both streamChat and chatComplete now send beta prompt-caching headers for faster repeat-context responses"
+    ],
+    "sections": [
+      {
+        "category": "🤖 AI Provider Intelligence Engine",
+        "items": [
+          {
+            "title": "Anthropic Message Format Converter (toAnthropicMessages)",
+            "description": "Full OpenAI-to-Anthropic message pipeline: converts tool_calls to tool_use blocks, role:tool to tool_result, merges consecutive same-role turns, and prevents empty assistant content — fixing the 'model output must contain either output text or tool calls' 400 error."
+          },
+          {
+            "title": "Provider Capability Registry",
+            "description": "PROVIDER_CAPABILITIES table declares tools/vision/streaming/promptCaching support for every built-in provider. Tool arrays are stripped before sending to NVIDIA, Perplexity, and local providers that reject them."
+          },
+          {
+            "title": "Adaptive Max-Token Limits per Model",
+            "description": "MODEL_MAX_TOKENS lookup (30 entries) auto-resolves correct max_tokens for every major model. Gemini 2.5 Pro gets 65,536; Claude 3.7 Sonnet gets 64,000; Groq LLaMA gets 8,192. No more manual tuning or provider 400s from wrong limits."
+          },
+          {
+            "title": "Anthropic Prompt Caching on All Paths",
+            "description": "Both streamChat and chatComplete now include anthropic-beta: prompt-caching-2024-07-31 and the ephemeral cache_control block on system prompts — reducing latency and cost on long-context Anthropic turns."
+          }
+        ]
+      },
+      {
+        "category": "⚡ Stream Reliability & Speed",
+        "items": [
+          {
+            "title": "In-Flight Request Deduplication",
+            "description": "streamChat({ dedupe: true }) returns the same in-progress Promise for identical concurrent requests. Prevents duplicate API calls from rapid submit clicks, React StrictMode double-mounts, and chat-switch races."
+          },
+          {
+            "title": "Circuit-Breaker with Auto Cooldown",
+            "description": "markProviderFailed() trips a 60-second circuit after 2 consecutive failures. getHealthyRoute() walks task-specific → general → fallback provider lists, always returning a live provider. markProviderSuccess() resets the breaker on recovery."
+          },
+          {
+            "title": "Smart Healthy Routing (getHealthyRoute)",
+            "description": "New routing function that respects circuit-breaker state. Falls back through: task-optimal → general routing → hardcoded safe list (Groq → Gemini → OpenRouter → NVIDIA → Ollama → OpenAI). Never gets stuck on a dead provider."
+          },
+          {
+            "title": "responseFormat Gated for Compatible Providers",
+            "description": "JSON response_format is now only sent to OpenAI-compatible providers. Anthropic (which has no such field) no longer receives it, preventing malformed request errors on structured-output tasks."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "10.9.1",
     "title": "Yogatik 10.9.1: Seamless High-FPS Desktop & Terminal Shield Engine",

@@ -21,6 +21,42 @@ import { getProviders } from './llm'
  * @property {string} reason
  */
 
+// ─── Lightweight Circuit-Breaker ─────────────────────────────────────────────
+// Tracks provider failures and opens the circuit for CIRCUIT_OPEN_MS.
+// Agent calls markProviderFailed() on error; router skips open providers.
+const CIRCUIT_OPEN_MS = 60_000 // 60 s cool-down
+const _providerFailures = new Map() // providerId → { count, openUntil }
+
+export function markProviderFailed(providerId) {
+  const now = Date.now()
+  const rec = _providerFailures.get(providerId) || { count: 0, openUntil: 0 }
+  rec.count++
+  // Trip after 2 consecutive failures
+  if (rec.count >= 2) rec.openUntil = now + CIRCUIT_OPEN_MS
+  _providerFailures.set(providerId, rec)
+}
+
+export function markProviderSuccess(providerId) {
+  _providerFailures.delete(providerId)
+}
+
+export function isProviderHealthy(providerId) {
+  const rec = _providerFailures.get(providerId)
+  if (!rec) return true
+  if (Date.now() > rec.openUntil) { _providerFailures.delete(providerId); return true }
+  return false
+}
+
+export function getCircuitStatus() {
+  const now = Date.now()
+  return Object.fromEntries(
+    [..._providerFailures.entries()].map(([id, rec]) => [
+      id,
+      { failures: rec.count, openUntil: rec.openUntil, healthy: now > rec.openUntil },
+    ])
+  )
+}
+
 // ─── Intent Detection Patterns ──────────────────────────────────────────────
 const INTENT_PATTERNS = {
   code: [
@@ -83,13 +119,33 @@ export function detectTaskType(message) {
   return top && top[1] >= 1 ? top[0] : 'general'
 }
 
+/**
+ * Classify a user query into intent and metadata for speculative routing
+ * @param {string} query
+ * @returns {{ taskType: TaskType, confidence: number, requiresWeb: boolean, requiresCode: boolean, isComplex: boolean }}
+ */
+export function classifyQueryIntent(query) {
+  const taskType = detectTaskType(query)
+  const text = (query || '').toLowerCase()
+  const requiresWeb = /(latest|recent|news|current|today|price|who is|what happened|weather)/i.test(text)
+  const requiresCode = /(code|fix|bug|implement|function|react|javascript|python|css|html|sql|api)/i.test(text)
+  const isComplex = /(explain in detail|step by step|architecture|refactor entire|deep dive|comprehensive)/i.test(text)
+  return {
+    taskType,
+    confidence: text.length > 5 ? 0.85 : 0.6,
+    requiresWeb,
+    requiresCode,
+    isComplex,
+  }
+}
+
 // ─── Model Routing Table ────────────────────────────────────────────────────
 const ROUTING_TABLE = {
   speed: {
-    provider: 'groq',
-    models: ['llama-3.1-8b-instant', 'gemma2-9b-it', 'llama-3.3-70b-versatile'],
+    provider: 'cerebras',
+    models: ['llama3.3-70b', 'llama3.1-8b', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
     qualityParams: { temperature: 0.2, topP: 0.9 },
-    reason: 'Groq provides sub-second latency for quick responses',
+    reason: 'Ultra-low latency inference for instant replies',
   },
   code: {
     provider: 'openrouter',
@@ -302,4 +358,52 @@ export function getAllRoutingOptions() {
     models: config.models,
     reason: config.reason,
   }))
+}
+
+/**
+ * Like getRoutingRecommendation but skips providers with open circuit breakers.
+ * Falls back through all routing candidates until a healthy provider is found.
+ * @param {string} message
+ * @param {Object} context - same as getRoutingRecommendation
+ * @returns {RoutingRecommendation}
+ */
+export function getHealthyRoute(message, context = {}) {
+  const taskType = detectTaskType(message)
+
+  // Walk primary → general routing tables, skip tripped providers
+  const tables = [ROUTING_TABLE[taskType], ROUTING_TABLE.general].filter(Boolean)
+  for (const routing of tables) {
+    if (isProviderHealthy(routing.provider)) {
+      const selectedModel = selectBestModel(routing.provider, routing.models, taskType)
+      const finalParams = adjustParamsForTask({ ...routing.qualityParams }, taskType, message)
+      return {
+        provider: routing.provider,
+        model: selectedModel,
+        taskType,
+        confidence: 0.85,
+        qualityParams: finalParams,
+        reason: routing.reason,
+        currentMatches: false,
+      }
+    }
+  }
+
+  // All primary candidates tripped — fall back to any healthy built-in
+  const fallbackOrder = ['groq', 'gemini', 'openrouter', 'nvidia', 'ollama', 'openai']
+  for (const pid of fallbackOrder) {
+    if (isProviderHealthy(pid)) {
+      const prov = getProviders()[pid]
+      const model = prov?.preferred?.[0] || prov?.models?.[0] || ''
+      return {
+        provider: pid, model, taskType,
+        confidence: 0.5,
+        qualityParams: { temperature: 0.4 },
+        reason: 'Fallback — primary providers temporarily unavailable',
+        currentMatches: false,
+      }
+    }
+  }
+
+  // Absolute last resort
+  return getRoutingRecommendation(message, context)
 }

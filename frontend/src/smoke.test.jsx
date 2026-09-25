@@ -19,6 +19,7 @@ vi.mock('./api', () => {
     'createProject', 'deleteProject', 'setActiveProject', 'acceptTerms', 'downloadBackup',
     'restoreBackup', 'forgetApiKey', 'enableCloudSync', 'disableCloudSync', 'pruneRetiredModel',
     'updateConversationModel', 'branchConversation', 'createTemplate', 'deleteTemplate', 'addCustomModelToProvider',
+    'benchmarkAllProviders',
   ]) api[n] = vi.fn(async () => undefined)
   for (const n of [
     'getConversations', 'getTemplates', 'listDocuments', 'getTools', 'getProjects',

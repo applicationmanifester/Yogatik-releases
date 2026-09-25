@@ -759,7 +759,10 @@ export async function runAgent({
     },
   })
 
-  const messages = (resumeCheckpoint && Array.isArray(resumeCheckpoint.messages) && resumeCheckpoint.messages.length > 0)
+  // Restore messages from checkpoint if it has internal agent history (tool_use/tool_result format).
+  // If checkpoint.messages is empty (fallback path), use normal windowed history instead.
+  const hasCheckpointMessages = resumeCheckpoint && Array.isArray(resumeCheckpoint.messages) && resumeCheckpoint.messages.length > 0
+  const messages = hasCheckpointMessages
     ? [...resumeCheckpoint.messages]
     : [
         { role: 'system', content: systemBase },
@@ -767,16 +770,20 @@ export async function runAgent({
         ...(userMessage ? [{ role: 'user', content: userMessage }] : []),
       ]
 
-  if (resumeCheckpoint && Array.isArray(resumeCheckpoint.messages) && resumeCheckpoint.messages.length > 0) {
+  if (resumeCheckpoint) {
     if (messages[0]?.role === 'system') {
       messages[0].content = systemBase
     }
     const completedActionsCount = resumeCheckpoint.actionCount || Object.keys(resumeCheckpoint.toolResults || {}).length
-    messages.push({
-      role: 'user',
-      content: `[System Checkpoint Resume: Resuming turn from checkpoint after Action ${completedActionsCount}. All previous tool executions and results above are preserved and complete. Do NOT repeat the actions already completed above. Continue directly from where you left off to complete the user's request.]`,
-    })
+    if (completedActionsCount > 0) {
+      messages.push({
+        role: 'user',
+        content: `[System Checkpoint Resume: Resuming turn from checkpoint after Action ${completedActionsCount}. All previous tool executions and results above are preserved and complete. Do NOT repeat the actions already completed above. Continue directly from where you left off to complete the user's request.]`,
+      })
+    }
   }
+
+
 
   // An attached image follows the same policy as the camera: hand it to the
   // model when it can see, otherwise read it here (OCR / on-device VLM) and
@@ -825,6 +832,7 @@ export async function runAgent({
   const sources = []
   let fullContent = ''
   let rounds = resumeCheckpoint?.round || 0
+  let lastTelemetry = null
 
   try {
     // Pre-fetch YouTube transcript/details when a URL is present so every provider
@@ -1128,6 +1136,23 @@ export async function runAgent({
   let toolCallsToProcess = []
   let forcedFinal = false  // a 'stop using tools, answer now' pass already ran
 
+function safelyParseToolArgs(raw) {
+  if (!raw) return {}
+  if (typeof raw === 'object' && raw !== null) return raw
+  if (typeof raw === 'string') {
+    try {
+      let parsed = JSON.parse(raw)
+      if (typeof parsed === 'string') {
+        try { parsed = JSON.parse(parsed) } catch {}
+      }
+      return typeof parsed === 'object' && parsed !== null ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
+
   let streamingReported = false
   const processStream = () => new Promise((resolve, reject) => {
     toolCallsToProcess = []
@@ -1161,7 +1186,10 @@ export async function runAgent({
       },
       onToolCall: (tc) => { toolCallsToProcess.push(tc) },
       onToolsRejected: toolMode === 'native' ? () => { rejectedTools = true } : null,
-      onDone: () => resolve({ rejectedTools }),
+      onDone: (telemetry) => {
+        if (telemetry) lastTelemetry = telemetry
+        resolve({ rejectedTools, telemetry })
+      },
       onError: (e) => reject(e),
     })
   })
@@ -1336,6 +1364,7 @@ export async function runAgent({
           ...tc,
           name: String(tc.name || '').split('<')[0].split(' ')[0].split(':')[0].trim(),
           id: tc.id || `call_${rounds}_${i}`,
+          parsedArgs: safelyParseToolArgs(tc.parsedArgs || tc.arguments),
         }))
 
       // One assistant message carrying every tool_call of this round,
@@ -1812,7 +1841,7 @@ export async function runAgent({
       actionCount: Object.keys(toolResults).length,
       timestamp: Date.now(),
     }
-    onDone?.({ content: cleanedContent, toolResults, sources, toolMode, promptLeakDetected: leak.leaked, watchdogEscalate, trace: traceRef ? [...traceRef] : undefined, incompleteSynthesis, checkpoint: finalCheckpoint })
+    onDone?.({ content: cleanedContent, toolResults, sources, toolMode, promptLeakDetected: leak.leaked, watchdogEscalate, trace: traceRef ? [...traceRef] : undefined, incompleteSynthesis, checkpoint: finalCheckpoint, telemetry: lastTelemetry })
   } catch (err) {
     if (reflexTrack) {
       const savedMs = reflexTrack.hit ? Math.max(0, Date.now() - reflexTrack.startTime) : 0
@@ -1836,7 +1865,7 @@ export async function runAgent({
       // User pressed Stop or turn was aborted: keep whatever was generated instead of dropping it.
       const leak = checkCanaryForLeak(canaryToken, cleanedContent, executionCtx.conversationId)
       if (leak.redacted) cleanedContent = leak.text
-      onDone?.({ content: cleanedContent, toolResults, sources, aborted: true, promptLeakDetected: leak.leaked, trace: traceRef ? [...traceRef] : undefined, checkpoint: errCheckpoint })
+      onDone?.({ content: cleanedContent, toolResults, sources, aborted: true, promptLeakDetected: leak.leaked, trace: traceRef ? [...traceRef] : undefined, checkpoint: errCheckpoint, telemetry: lastTelemetry })
     } else {
       if (err && typeof err === 'object') err.checkpoint = errCheckpoint
       onError?.(err, errCheckpoint)

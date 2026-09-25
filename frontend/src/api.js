@@ -440,13 +440,13 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
         onToolStart: (name, args) => onToolsDetected?.([name], args),
         onToolResult: (name, result) => onToolResult?.(name, result),
         onSafety: body.onSafety || null,
-        onDone: ({ content, sources, aborted, trace, toolResults, watchdogEscalate, checkpoint }) => {
+        onDone: ({ content, sources, aborted, trace, toolResults, watchdogEscalate, checkpoint, telemetry }) => {
           if (sources?.length) onSources?.(sources)
           recordTurn(pid, mdl, {
             inTokens: estimateTokens(body.message || ''),
             outTokens: estimateTokens(content || ''),
           })
-          onDone?.(content, { aborted, provider: pid, model: mdl, trace, toolResults, watchdogEscalate, checkpoint: checkpoint || latestCheckpoint })
+          onDone?.(content, { aborted, provider: pid, model: mdl, trace, toolResults, watchdogEscalate, checkpoint: checkpoint || latestCheckpoint, telemetry })
         },
         onError: (err, checkpoint) => {
           failure = err?.message || String(err)
@@ -495,13 +495,13 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
               onToolStart: (name, args) => onToolsDetected?.([name], args),
               onToolResult: (name, result) => onToolResult?.(name, result),
               onSafety: body.onSafety || null,
-              onDone: ({ content, sources, aborted, trace, toolResults, watchdogEscalate, checkpoint }) => {
+              onDone: ({ content, sources, aborted, trace, toolResults, watchdogEscalate, checkpoint, telemetry }) => {
                 if (sources?.length) onSources?.(sources)
                 recordTurn(pid, fallbackMdl, {
                   inTokens: estimateTokens(body.message || ''),
                   outTokens: estimateTokens(content || ''),
                 })
-                onDone?.(content, { aborted, provider: pid, model: fallbackMdl, trace, toolResults, watchdogEscalate, checkpoint: checkpoint || latestCheckpoint })
+                onDone?.(content, { aborted, provider: pid, model: fallbackMdl, trace, toolResults, watchdogEscalate, checkpoint: checkpoint || latestCheckpoint, telemetry })
               },
               onError: (err, checkpoint) => {
                 failure = err?.message || String(err)
@@ -1552,6 +1552,56 @@ export async function testProvider(id, modelOverride) {
       latencyMs: Math.round(performance.now() - started),
     })
   }
+}
+
+/**
+ * Benchmark all configured or active providers simultaneously by sending a 1-token
+ * connection ping and measuring roundtrip latency in milliseconds.
+ *
+ * @param {function(string, object): void} [onProgress] - Callback fired as each provider benchmark completes
+ * @returns {Promise<Record<string, { success: boolean, latencyMs?: number, model?: string, error?: string }>>}
+ */
+export async function benchmarkAllProviders(onProgress) {
+  await loadCustomProviders()
+  const providers = getLLMProviders()
+  const results = {}
+
+  // Gather all providers that have keys configured, or don't require keys (local, chromeai, ollama, public)
+  const probeList = []
+  for (const [id, p] of Object.entries(providers)) {
+    const key = await db.getSetting(`apikey_${id}`)
+    const isKeyless = p?.isLocal || p?.noKey || p?.isOllama || id === 'ollama' || id === 'local' || p?.publicModels
+    if (key || isKeyless) {
+      probeList.push(id)
+    }
+  }
+
+  if (!probeList.length) {
+    probeList.push('nvidia', 'groq', 'gemini', 'openrouter')
+  }
+
+  const tasks = probeList.map(async (id) => {
+    try {
+      const res = await testProvider(id)
+      const data = {
+        success: !!res?.success,
+        latencyMs: res?.latencyMs ?? null,
+        model: res?.model || null,
+        error: res?.error || null,
+      }
+      results[id] = data
+      onProgress?.(id, data)
+      return { id, data }
+    } catch (err) {
+      const data = { success: false, error: err?.message || 'Connection failed' }
+      results[id] = data
+      onProgress?.(id, data)
+      return { id, data }
+    }
+  })
+
+  await Promise.allSettled(tasks)
+  return results
 }
 
 /**
