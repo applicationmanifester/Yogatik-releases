@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue, startTransition } from 'react'
 import ReactDOM from 'react-dom'
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Film, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Star, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera, TrendingUp, Package } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, updateTemplate, deleteTemplate, addCustomModelToProvider } from './api'
@@ -981,6 +981,22 @@ export default function App() {
   const activeIdxRef = useRef(activeIdx)
   activeIdxRef.current = activeIdx
 
+  // Fast in-memory cache for conversation messages and settings to make chat switching instantaneous
+  const convCacheRef = useRef(new Map())
+
+  const preloadConversation = useCallback(async (convId) => {
+    if (!convId || convCacheRef.current.has(convId)) return
+    try {
+      const full = await getConversation(convId)
+      if (full) {
+        convCacheRef.current.set(convId, {
+          ...full,
+          hydratedMessages: (full.messages || []).map(hydrate),
+        })
+      }
+    } catch {}
+  }, [])
+
   // Provider/model must be persisted: the agent reads them from IndexedDB, so
   // React-only state meant every message silently went to the stored default.
   const setProvider = useCallback((id) => {
@@ -1364,17 +1380,21 @@ export default function App() {
   const activeChatKey = conv?.id || conv?.clientId || String(activeIdx)
   useEffect(() => {
     if (!conv?.messages || conv.messages.length === 0) return
-    if (scrollerRef.current) {
-      scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight
+    const el = scrollerRef.current
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    } else {
+      scrollToBottom('auto')
     }
-    scrollToBottom('auto')
 
     // Second pass after Markdown / Math / Code highlights calculate heights
     const timer = setTimeout(() => {
-      if (scrollerRef.current) {
-        scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight
+      const el2 = scrollerRef.current
+      if (el2) {
+        el2.scrollTop = el2.scrollHeight
+      } else {
+        scrollToBottom('auto')
       }
-      scrollToBottom('auto')
     }, 60)
     return () => clearTimeout(timer)
   }, [activeChatKey, conv?.messages?.length, scrollToBottom])
@@ -1955,6 +1975,12 @@ export default function App() {
       return
     }
     const first = await getConversation(convs[0].id)
+    if (first && first.id) {
+      convCacheRef.current.set(first.id, {
+        ...first,
+        hydratedMessages: (first.messages || []).map(hydrate),
+      })
+    }
     const mapped = convs.map((c, i) => ({
       clientId: `c_${c.id}_${i}`,
       id: c.id,
@@ -1984,6 +2010,23 @@ export default function App() {
       if (top.webSearch !== undefined) setWebSearchState(top.webSearch)
       if (top.tools !== undefined) setToolsEnabledState(top.tools)
       if (top.persona) setActiveTemplate(top.persona)
+
+      // Warm up the top recent conversations in background idle time so switching is instant
+      const idleFn = typeof requestIdleCallback === 'function' ? requestIdleCallback : (cb) => setTimeout(cb, 300)
+      idleFn(() => {
+        filtered.slice(1, 6).forEach(c => {
+          if (c.id && !convCacheRef.current.has(c.id)) {
+            getConversation(c.id).then(full => {
+              if (full) {
+                convCacheRef.current.set(c.id, {
+                  ...full,
+                  hydratedMessages: (full.messages || []).map(hydrate),
+                })
+              }
+            }).catch(() => {})
+          }
+        })
+      })
     }
   }, [activeProject, provider, model, temperature, webSearch, tools])
 
@@ -2181,7 +2224,15 @@ export default function App() {
       for (const [k, v] of Object.entries(chatDraftsRef.current)) {
         if (v && v.input) serializable[k] = { input: v.input }
       }
-      sessionStorage.setItem('yogatik_chat_drafts', JSON.stringify(serializable))
+      if (typeof queueMicrotask === 'function') {
+        queueMicrotask(() => {
+          try { sessionStorage.setItem('yogatik_chat_drafts', JSON.stringify(serializable)) } catch {}
+        })
+      } else {
+        setTimeout(() => {
+          try { sessionStorage.setItem('yogatik_chat_drafts', JSON.stringify(serializable)) } catch {}
+        }, 0)
+      }
     } catch {}
   }, [])
 
@@ -2400,7 +2451,7 @@ export default function App() {
     return () => { if (typeof unlisten === 'function') unlisten() }
   }, [showToast, openChatById, startLive])
 
-  const switchChat = async (idx) => {
+  const switchChat = useCallback(async (idx) => {
     if (idx === activeIdxRef.current) return
 
     // 1. Save outgoing conversation's composer draft
@@ -2412,47 +2463,66 @@ export default function App() {
       enhanceToastIdRef.current = null
     }
 
-    setActiveIdx(idx)
-    activeIdxRef.current = idx
-    historyIndexRef.current = -1
-    draftInputRef.current = ''
-    setVisibleCount(WINDOW_STEP)
-    setShowSkills(false)
-    setShowPersonalise(false)
-    setShowPalette(false)
-    setShowToolPicker(false)
-    setShowProviderModal(false)
-    setShowPersonaModal(false)
-    setShowDemoModal(false)
-    if (window.innerWidth <= 768) setSidebarOpen(false)
     const c = conversationsRef.current[idx] || conversations[idx]
     if (!c) return
 
-    // 3. Restore draft for incoming chat
-    restoreComposerDraft(c)
+    // Pre-resolve messages and settings from cache or DB BEFORE switching activeIdx
+    // This completely eliminates the empty-screen flash and double-render stutter
+    let incomingMessages = c.messages
+    let incomingProvider = c.provider
+    let incomingModel = c.model
+    let incomingSystemPrompt = c.systemPrompt
+    let incomingPersona = c.persona
+    let incomingTemp = c.temperature
+    let incomingWeb = c.webSearch
+    let incomingTools = c.tools
 
-    if (c.provider) setProviderState(c.provider)
-    if (c.model !== undefined) setModel(c.model)
-    if (c.temperature !== undefined) setTemperatureState(c.temperature)
-    if (c.webSearch !== undefined) setWebSearchState(c.webSearch)
-    if (c.tools !== undefined) setToolsEnabledState(c.tools)
-    if (c.persona !== undefined) setActiveTemplate(c.persona)
+    if (c.id && (!incomingMessages || incomingMessages.length === 0)) {
+      let cached = convCacheRef.current.get(c.id)
+      if (!cached) {
+        try {
+          const full = await getConversation(c.id)
+          if (full) {
+            cached = {
+              ...full,
+              hydratedMessages: (full.messages || []).map(hydrate),
+            }
+            convCacheRef.current.set(c.id, cached)
+          }
+        } catch {}
+      }
 
-    if (c.id && (!c.messages || c.messages.length === 0)) {
-      const full = await getConversation(c.id)
-      if (full) {
+      if (cached) {
+        incomingMessages = cached.hydratedMessages || []
+        incomingProvider = cached.provider || incomingProvider
+        incomingModel = cached.model !== undefined ? cached.model : incomingModel
+        incomingSystemPrompt = cached.settings?.systemPrompt ?? cached.systemPrompt ?? incomingSystemPrompt
+        incomingPersona = cached.settings?.persona ?? cached.persona ?? incomingPersona
+        incomingTemp = cached.settings?.temperature ?? cached.temperature ?? incomingTemp
+        incomingWeb = cached.settings?.webSearch ?? cached.webSearch ?? incomingWeb
+        incomingTools = cached.settings?.tools ?? cached.tools ?? incomingTools
+
+        c.messages = incomingMessages
+        c.provider = incomingProvider
+        c.model = incomingModel
+        c.systemPrompt = incomingSystemPrompt
+        c.persona = incomingPersona
+        c.temperature = incomingTemp
+        c.webSearch = incomingWeb
+        c.tools = incomingTools
+
         setConversations(prev => {
           const next = prev.map(conv =>
             (conv.id === c.id || conv.clientId === c.clientId) ? {
               ...conv,
-              provider: full.provider || conv.provider,
-              model: full.model !== undefined ? full.model : conv.model,
-              systemPrompt: full.settings?.systemPrompt ?? conv.systemPrompt ?? '',
-              persona: full.settings?.persona ?? conv.persona ?? 'default',
-              temperature: full.settings?.temperature ?? conv.temperature ?? 1.0,
-              webSearch: full.settings?.webSearch ?? conv.webSearch ?? true,
-              tools: full.settings?.tools ?? conv.tools ?? true,
-              messages: (full.messages || []).map(hydrate),
+              provider: incomingProvider,
+              model: incomingModel,
+              systemPrompt: incomingSystemPrompt,
+              persona: incomingPersona,
+              temperature: incomingTemp,
+              webSearch: incomingWeb,
+              tools: incomingTools,
+              messages: incomingMessages,
             } : conv
           )
           conversationsRef.current = next
@@ -2460,12 +2530,32 @@ export default function App() {
         })
       }
     }
-  }
+
+    startTransition(() => {
+      setActiveIdx(idx)
+      activeIdxRef.current = idx
+      historyIndexRef.current = -1
+      draftInputRef.current = ''
+      setVisibleCount(WINDOW_STEP)
+      if (window.innerWidth <= 768) setSidebarOpen(false)
+
+      // Restore draft for incoming chat
+      restoreComposerDraft(c)
+
+      if (incomingProvider && incomingProvider !== provider) setProviderState(incomingProvider)
+      if (incomingModel !== undefined && incomingModel !== model) setModel(incomingModel)
+      if (incomingTemp !== undefined && incomingTemp !== temperature) setTemperatureState(incomingTemp)
+      if (incomingWeb !== undefined && incomingWeb !== webSearch) setWebSearchState(incomingWeb)
+      if (incomingTools !== undefined && incomingTools !== tools) setToolsEnabledState(incomingTools)
+      if (incomingPersona !== undefined && incomingPersona !== activeTemplate) setActiveTemplate(incomingPersona)
+    })
+  }, [provider, model, temperature, webSearch, tools, activeTemplate, saveComposerDraft, restoreComposerDraft, dismissToast])
 
   const deleteChat = async (idx) => {
     const c = conversationsRef.current[idx] || conversations[idx]
     const cClientId = c?.clientId
     const cId = c?.id
+    if (cId) convCacheRef.current.delete(cId)
     if (cClientId) delete chatDraftsRef.current[cClientId]
     if (cId) delete chatDraftsRef.current[cId]
     if (enhanceToastIdRef.current) {
@@ -4890,8 +4980,10 @@ export default function App() {
           <div key={group.label} className="conv-group">
             <div className="conv-group-label">{group.label}</div>
             {group.items.map(({ c, i }) => (
-            <div key={i} className={`conversation-item ${i === activeIdx ? 'active' : ''}`}
-              onClick={() => switchChat(i)} onDoubleClick={() => startRename(i)}>
+            <div key={c.id || c.clientId || `conv-${i}`} className={`conversation-item ${i === activeIdx ? 'active' : ''}`}
+              onClick={() => switchChat(i)}
+              onMouseEnter={() => c.id && preloadConversation(c.id)}
+              onDoubleClick={() => startRename(i)}>
               {renamingIdx === i ? (
                 <input className="conv-rename" aria-label="Conversation title" autoFocus value={renameText}
                   onChange={e => setRenameText(e.target.value)}
