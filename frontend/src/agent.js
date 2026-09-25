@@ -729,11 +729,6 @@ export async function runAgent({
   const limits = getDynamicContextLimits(provider, model, history)
   const hBudget = isLocalProvider ? Math.min(LOCAL_HISTORY_BUDGET, limits.budget) : limits.budget
   const hTurns = isLocalProvider ? Math.min(LOCAL_MAX_TURNS, limits.maxTurns) : limits.maxTurns
-  
-  // Log dynamic context adjustment for debugging
-  if (limits.dynamic && limits.complexity > 0.5) {
-    onStatus?.(`📊 Dynamic context: ${limits.complexity > 0.7 ? 'High' : 'Medium'} complexity detected, budget adjusted to ${Math.floor(hBudget/1000)}k chars`)
-  }
 
   let pastHistory = history
   if (userMessage && history.length > 0) {
