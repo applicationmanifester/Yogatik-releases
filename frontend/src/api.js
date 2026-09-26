@@ -383,6 +383,7 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
   const chain = prefs2.fallback === false || body.noFallback
     ? [provider]
     : await getFallbackChain(provider)
+  let latestCheckpoint = body.resumeCheckpoint || null
 
   try {
     for (let i = 0; i < chain.length; i++) {
@@ -397,7 +398,6 @@ export async function streamMessage(body, onToken, onSources, onDone, onError, o
 
       let failure = null
       let produced = false
-      let latestCheckpoint = body.resumeCheckpoint || null
 
       const { runAgent } = await getAgentModule()
       await runAgent({

@@ -187,7 +187,8 @@ export function createSpeaker({
     /** Queue a clause. Order is preserved; overlapping speech is never allowed. */
     speak(text) {
       const line = String(text ?? '').trim()
-      if (!line || cancelled) return
+      if (!line) return
+      cancelled = false
       queue.push(line)
       if (!pumping) {
         pumping = true

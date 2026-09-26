@@ -102,6 +102,11 @@ describe('stripToolCallSyntax', () => {
     expect(stripToolCallSyntax(onlyJson)).toBe('')
   })
 
+  it('removes broken brace stutter and malformed tool attempts from reasoning models', () => {
+    const broken = '{\n{\n{\n{\n{\n"tool{\n"{\nBased on the repository, OpenViking provides memory.'
+    expect(stripToolCallSyntax(broken)).toBe('Based on the repository, OpenViking provides memory.')
+  })
+
   it('leaves ordinary prose and code alone', () => {
     const prose = 'Use `<function>` in a type signature, and `a < b` compares numbers.'
     expect(stripToolCallSyntax(prose)).toBe(prose)

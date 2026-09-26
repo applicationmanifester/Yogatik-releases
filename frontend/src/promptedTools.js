@@ -324,8 +324,9 @@ export function stripToolCallSyntax(text) {
     !text.includes('<|python_tag|>') &&
     !text.includes('Action:') &&
     !text.includes('tool_calls') &&
+    !text.includes('tool') &&
     !text.includes('{"name":') &&
-    !text.includes('{"tool":')
+    !/\{\s*["“]?(?:tool|name|function)/i.test(text)
   ) {
     return text
   }
@@ -335,8 +336,10 @@ export function stripToolCallSyntax(text) {
     // Fenced and bare JSON tool calls
     .replace(/```(?:json)?\s*\{\s*["“]tool_calls[\s\S]*?```/gi, '')
     .replace(/```(?:json)?\s*\[\s*\{\s*["“](?:name|tool|function)[\s\S]*?```/gi, '')
-    .replace(/\{\s*["“]tool_calls["”]\s*:\s*\[[\s\S]*?\]\s*\}/gi, '')
-    .replace(/\{\s*["“](?:name|tool|function)["”]\s*:\s*["“][^"”]+["”]\s*,\s*["“](?:arguments|args|parameters)["”]\s*:\s*[\s\S]*?\}/gi, '')
+    .replace(/(?:\s*\{)+\s*["“]tool_calls["”]\s*:\s*\[[\s\S]*?\](?:\s*\})*/gi, '')
+    .replace(/(?:\s*\{)+\s*["“](?:name|tool|function)["”]\s*:\s*["“][^"”]+["”]\s*,\s*["“](?:arguments|args|parameters)["”]\s*:\s*[\s\S]*?\}+/gi, '')
+    // Stuttered / malformed tool call fragments (e.g. "{\n{\n{\n{\n\"tool{\n\"{\n")
+    .replace(/(?:^|\n)\s*(?:\{\s*)+(?:["“]?tool\b[^:\n]*\{?[\s\S]*?["“]?\{?\s*)(?=[A-Za-z]|$)/gi, '\n')
     // XML formats
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
     .replace(/<function_call>[\s\S]*?<\/function_call>/gi, '')

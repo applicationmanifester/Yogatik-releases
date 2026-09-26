@@ -105,19 +105,29 @@ if (process.platform === 'win32') {
   const appId = 'app.yogatik.desktop'
   app.setAppUserModelId(appId)
 
-  if (!app.isPackaged && process.env.APPDATA) {
+  if (process.env.APPDATA) {
     try {
-      const iconPath = path.join(__dirname, 'icon.ico')
       const startMenuDir = path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs')
       const shortcutPath = path.join(startMenuDir, 'Yogatik.lnk')
-      shell.writeShortcutLink(shortcutPath, 'create', {
-        target: process.execPath,
-        args: `"${path.resolve(__dirname, '..')}"`,
-        appUserModelId: appId,
-        icon: iconPath,
-        iconIndex: 0,
-        description: 'Yogatik AI Workspace',
-      })
+      if (app.isPackaged) {
+        // Ensure the installed Start Menu shortcut always points explicitly to the exe icon
+        // so Windows Taskbar pins and active window grouping show the Yogatik logo
+        shell.writeShortcutLink(shortcutPath, 'update', {
+          appUserModelId: appId,
+          icon: process.execPath,
+          iconIndex: 0,
+        })
+      } else {
+        const iconPath = path.join(__dirname, 'icon.ico')
+        shell.writeShortcutLink(shortcutPath, 'create', {
+          target: process.execPath,
+          args: `"${path.resolve(__dirname, '..')}"`,
+          appUserModelId: appId,
+          icon: iconPath,
+          iconIndex: 0,
+          description: 'Yogatik AI Workspace',
+        })
+      }
     } catch {}
   }
 }
@@ -139,7 +149,7 @@ app.commandLine.appendSwitch('js-flags', '--max-old-space-size=8192')
 function createWindow() {
   const state = windowState.restore({ width: 1200, height: 820 })
   const iconPath = process.platform === 'win32'
-    ? path.join(__dirname, 'icon.ico')
+    ? (app.isPackaged ? process.execPath : path.join(__dirname, 'icon.ico'))
     : path.join(__dirname, 'icon.png')
   const appIcon = nativeImage.createFromPath(iconPath)
 
