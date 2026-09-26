@@ -8,10 +8,30 @@ describe('splitReasoning', () => {
     expect(answer).toBe('The answer is 4.')
   })
 
+  it('separates <thought> and <reasoning> blocks from the answer', () => {
+    const res1 = splitReasoning('<thought>deep thought</thought>The solution.')
+    expect(res1.reasoning).toBe('deep thought')
+    expect(res1.answer).toBe('The solution.')
+
+    const res2 = splitReasoning('<reasoning>step 1</reasoning>Done.')
+    expect(res2.reasoning).toBe('step 1')
+    expect(res2.answer).toBe('Done.')
+  })
+
+  it('handles tags with attributes (e.g. <think class="reasoning">)', () => {
+    const { reasoning, answer } = splitReasoning('<think class="reasoning">internal thoughts</think>Hello world')
+    expect(reasoning).toBe('internal thoughts')
+    expect(answer).toBe('Hello world')
+  })
+
   it('captures an UNCLOSED block, so reasoning is visible while it streams', () => {
     const { reasoning, answer } = splitReasoning('<think>still thinking')
     expect(reasoning).toBe('still thinking')
     expect(answer).toBe('')
+
+    const resThought = splitReasoning('<thought>streaming thoughts...')
+    expect(resThought.reasoning).toBe('streaming thoughts...')
+    expect(resThought.answer).toBe('')
   })
 
   it('leaves ordinary text alone', () => {
@@ -20,7 +40,9 @@ describe('splitReasoning', () => {
 
   it('visibleAnswer strips reasoning, since reasoning alone is not an answer', () => {
     expect(visibleAnswer('<think>hmm</think>')).toBe('')
+    expect(visibleAnswer('<thought>hmm</thought>')).toBe('')
     expect(visibleAnswer('<think>hmm</think>Done.')).toBe('Done.')
+    expect(visibleAnswer('<reasoning>hmm</reasoning>Done.')).toBe('Done.')
   })
 })
 

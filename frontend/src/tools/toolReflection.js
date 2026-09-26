@@ -14,7 +14,10 @@ export function enrichToolError(toolName, args = {}, result = {}) {
   let hint = null
 
   if (name.startsWith('fs_') || name === 'code_execute') {
-    if (errStr.includes('old_string not found') || errStr.includes('not unique')) {
+    const rawPath = String(args.path || args.file || '').trim().toLowerCase()
+    if (rawPath === name || rawPath === 'fs_read' || rawPath === 'fs_write' || rawPath === 'fs_edit' || rawPath === 'fs_list') {
+      hint = `You passed the tool name "${rawPath}" as the file path argument. You must specify an actual file or directory path in the workspace (e.g. "src/index.js" or "."), or call fs_find_files to discover the project structure.`
+    } else if (errStr.includes('old_string not found') || errStr.includes('not unique')) {
       hint = 'The text to replace could not be matched uniquely in the file. Hint: Call fs_read with start_line and end_line around the target area to see the exact current lines and formatting, then re-issue fs_edit or use fs_patch.'
     } else if (errStr.includes('enoent') || (errStr.includes('not found') && !errStr.includes('old_string')) || errStr.includes('no such file')) {
       hint = 'The target file or path does not exist. Hint: Call fs_find_files or fs_list to discover the actual filenames in the workspace before proceeding.'

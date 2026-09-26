@@ -17,15 +17,7 @@ import { useTypewriter } from '../hooks/useTypewriter'
  *
  * The parent pushes through the ref; React state stops at this component.
  */
-function splitReasoning(content) {
-  if (typeof content !== 'string') return { reasoning: '', answer: content }
-  let reasoning = ''
-  const answer = content
-    .replace(/<think>([\s\S]*?)<\/think>/gi, (_, r) => { reasoning += r + '\n'; return '' })
-    .replace(/<think>([\s\S]*)$/i, (_, r) => { reasoning += r; return '' })
-    .trim()
-  return { reasoning: reasoning.trim(), answer }
-}
+import { splitReasoning } from '../reasoning'
 
 /**
  * @param {string} initialText text this chat had already streamed before this
@@ -120,7 +112,7 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
   const body = (
     <>
       {reasoning ? (
-        <ReasoningAccordion reasoning={reasoning} isStreaming={true} defaultExpanded={false} />
+        <ReasoningAccordion reasoning={reasoning} isStreaming={true} defaultExpanded={true} />
       ) : null}
       {cleanText ? (
         <div className="message-content">

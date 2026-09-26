@@ -1,5 +1,16 @@
 # Changelog
 
+## v10.9.5 - Autonomous Agent Circuit Breaker, Windows Path Precision & Zero-Leak Streaming (2026-09-25)
+
+### 🤖 Autonomous Agent & Loop Defense
+- **Repetitive Failure Circuit Breaker (`agent.js`)** — Tracks consecutive failures per tool (`toolFailureCounts`). When any tool fails 2+ times consecutively (such as repeatedly attempting invalid file paths), the engine injects a priority `CIRCUIT BREAKER` directive commanding the model to stop looping and discover the workspace structure using `fs_find_files` or `fs_list`.
+- **Tool Name Path Hallucination Guard (`toolReflection.js`)** — Automatically detects when a model passes the tool name as the file path argument (e.g. `{ "path": "fs_read" }`), returning an immediate actionable reflection hint before turns are burned in repetitive `ENOENT` loops.
+- **Relentless Mode Action Uncapping (`agent.js`)** — Turns running with `/relentless`, `/loop`, or relentless mode enabled operate with unbounded round ceilings (`Infinity`), allowing deep multi-step engineering tasks to run until resolution without hitting artificial limits.
+
+### ⚡ Windows Path Precision & UI Leak Protection
+- **Windows Path Normalization in `repairJson` (`promptedTools.js`)** — Tolerant parsing and normalization for unescaped single and multiple backslashes in Windows file paths inside JSON payloads, eliminating `SyntaxError: Bad escaped character in JSON` failures on NVIDIA Nemotron, Qwen, and DeepSeek models.
+- **Zero-Leak Tool Markup Cleansing (`promptedTools.js` + `agent.js`)** — `stripToolCallSyntax` now cleans bare and fenced JSON tool arrays (`{"tool_calls": [...]}`) and truncated tool call prefixes. Ensured fallback recovery in `agent.js` filters recovered text so unexecuted tool call JSON never leaks into user-facing chat bubbles.
+
 ## v10.9.4 - Markdown Table Loop-Breaker Fix & Pattern Precision (2026-09-25)
 
 ### ⚡ Stream Reliability & Loop Protection

@@ -10,18 +10,19 @@ import { createActionGate, MODES } from '../companion/gate'
 import { describeEntry, summarize } from '../companion/trail'
 import { isSilence, PERSONAS } from '../companion/companionChat'
 
+import { splitReasoning } from '../reasoning'
+
 /**
  * The floating companion window (?companion=1) — and now the SAME companion
  * that runs in the in-app panel.
  */
 
-/** Split a reply into its <think> block and the part meant to be read. */
+/** Split a reply into its reasoning/thoughts block and the part meant to be read. */
 export function splitThinking(raw) {
-  const str = String(raw || '')
-  const m = str.match(/<think>([\s\S]*?)<\/think>/i)
+  const { reasoning, answer } = splitReasoning(String(raw || ''))
   return {
-    thoughts: m ? m[1].trim() : '',
-    text: str.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '').trim(),
+    thoughts: reasoning,
+    text: answer,
   }
 }
 

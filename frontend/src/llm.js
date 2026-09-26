@@ -606,7 +606,8 @@ export async function streamChat({
   }
 
   const isNoTempModel = /(^|\/)(o[13](-mini|-preview)?|deepseek-r1|gpt-4o-realtime)/i.test(cleanModel)
-  const isReasoningModel = /(^|\/)(o[13](-mini|-preview)?|nemotron-.*ultra|deepseek-r1)/i.test(cleanModel)
+  const isReasoningModel = /(^|\/)(o[13](-mini|-preview)?|nemotron-.*ultra|deepseek-r1|deepseek-reasoner|claude-3-7)/i.test(cleanModel)
+    || /r1|reasoner|thinking/i.test(cleanModel)
   const shouldOmitTemp = retriedOmitTemp || isNoTempModel
   const isFixedTemp = (isReasoningModel && !shouldOmitTemp) || retriedFixedTemp
 
@@ -631,6 +632,10 @@ export async function streamChat({
     if (provider === 'openai' || isReasoningModel) body.max_completion_tokens = resolvedMaxTokens
   }
 
+  if (provider === 'openrouter' && (isReasoningModel || /r1|deepseek/i.test(cleanModel))) {
+    body.include_reasoning = true
+  }
+
   // Add mild anti-repetition penalty for standard OpenAI/NVIDIA endpoints to prevent N-gram degeneration loops
   // (Skip for reasoning models or routes that reject sampling parameters)
   if (!prov.isAnthropic && !prov.baseUrl.includes('anthropic') && !isFixedTemp && !shouldOmitTemp) {
@@ -641,6 +646,18 @@ export async function streamChat({
   if (prov.isAnthropic) {
     endpoint = `${prov.baseUrl}/messages`
     body.max_tokens = resolvedMaxTokens || 4096
+
+    // Enable Anthropic thinking for Claude 3.7 or reasoning models
+    const isClaude37 = /claude-3-7/i.test(cleanModel)
+    if (isClaude37 || isReasoningModel) {
+      const budget = Math.min(2048, Math.max(1024, Math.floor((body.max_tokens || 4096) / 2)))
+      body.thinking = { type: 'enabled', budget_tokens: budget }
+      if (body.max_tokens <= budget) {
+        body.max_tokens = budget + 2048
+      }
+      body.temperature = 1.0 // Anthropic strictly requires temperature=1.0 when thinking is enabled
+    }
+
     // Extract system prompt text (Anthropic uses a separate `system` field).
     const systemParts = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
     if (systemParts) {
@@ -883,7 +900,12 @@ export async function streamChat({
           // empty for exactly the models that reason most. The tagger wraps it
           // in <think> so splitReasoning handles it everywhere, instead of
           // teaching every consumer about a second channel.
-          const reasonDelta = delta?.reasoning_content ?? delta?.reasoning
+          const reasonDelta = delta?.reasoning_content
+            ?? delta?.reasoning
+            ?? delta?.thought
+            ?? delta?.thinking
+            ?? delta?.reasoning_text
+            ?? (parsed.delta?.type === 'thinking_delta' ? parsed.delta?.thinking : null)
             ?? (parsed.type === 'thinking_delta' ? parsed.delta?.thinking : null)
           if (reasonDelta) {
             if (firstTokenTime === null) firstTokenTime = performance.now()

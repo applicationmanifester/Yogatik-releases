@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseToolCalls, stripToolCallSyntax } from './promptedTools'
+import { parseToolCalls, stripToolCallSyntax, repairJson } from './promptedTools'
 import { classifyQuery } from './api'
 
 // Regression harness: the weak-model outputs prompted tool-calling must survive.
@@ -91,10 +91,31 @@ describe('stripToolCallSyntax', () => {
     expect(stripToolCallSyntax('Sure.\n[TOOL_CALLS][{"name":"x"}]')).toBe('Sure.')
   })
 
+  it('removes bare and fenced JSON tool calls so they never leak into prose', () => {
+    const rawJson = 'Here is the result.\n{"tool_calls": [{"name": "fs_write", "arguments": {"path": "C:\\\\Users\\\\test.js"}}]}'
+    expect(stripToolCallSyntax(rawJson)).toBe('Here is the result.')
+
+    const fencedJson = 'Processing...\n```json\n{"tool_calls": [{"name": "fs_read", "arguments": {"path": "test.js"}}]}\n```'
+    expect(stripToolCallSyntax(fencedJson)).toBe('Processing...')
+
+    const onlyJson = '{"tool_calls": [{"name": "fs_write", "arguments": {"path": "C:\\\\file.txt"}}]}'
+    expect(stripToolCallSyntax(onlyJson)).toBe('')
+  })
+
   it('leaves ordinary prose and code alone', () => {
     const prose = 'Use `<function>` in a type signature, and `a < b` compares numbers.'
     expect(stripToolCallSyntax(prose)).toBe(prose)
     expect(stripToolCallSyntax('')).toBe('')
     expect(stripToolCallSyntax(null)).toBe('')
+  })
+})
+
+describe('Windows path tolerant tool-call parsing', () => {
+  it('parses tool calls containing unescaped single backslashes in Windows file paths', () => {
+    const raw = String.raw`{"tool_calls":[{"name":"fs_write","arguments":{"path":"C:\Users\project\Desktop\test.js","content":"console.log(1)"}}]}`
+    const { calls } = parseToolCalls(raw)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].name).toBe('fs_write')
+    expect(calls[0].parsedArgs.path).toContain('test.js')
   })
 })

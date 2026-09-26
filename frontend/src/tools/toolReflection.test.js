@@ -24,4 +24,11 @@ describe('enrichToolError', () => {
     const enriched = enrichToolError('terminal_run', { command: 'cargo build' }, errorResult)
     expect(enriched.reflection_hint).toContain('PATH')
   })
+
+  it('attaches reflection hint when the tool name was hallucinated as the file path', () => {
+    const errorResult = { success: false, error: 'File not found: fs_read (no such file or directory)' }
+    const enriched = enrichToolError('fs_read', { path: 'fs_read' }, errorResult)
+    expect(enriched.reflection_hint).toContain('passed the tool name')
+    expect(enriched.reflection_hint).toContain('fs_find_files')
+  })
 })

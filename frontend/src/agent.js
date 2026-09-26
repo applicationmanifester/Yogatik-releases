@@ -636,7 +636,7 @@ export async function runAgent({
   const isUnlimitedRounds = rawConfiguredRounds === 0 || rawConfiguredRounds == null || rawConfiguredRounds >= 100
   const maxRounds = explicitMaxRounds != null
     ? explicitMaxRounds
-    : (isUnlimitedRounds
+    : (isRelentless || isUnlimitedRounds
       ? Infinity
       : (Number.isFinite(rawConfiguredRounds) && rawConfiguredRounds > 0
         ? rawConfiguredRounds
@@ -1175,10 +1175,16 @@ function safelyParseToolArgs(raw) {
           onStatus?.('⚡ Streaming response…')
         }
         if (toolMode !== 'prompted') {
-          const nonThinking = roundContent.replace(/<think[\s\S]*?<\/think>/gi, '').trimStart()
+          const nonThinking = roundContent
+            .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*?<\/(?:think|thought|reasoning)>/gi, '')
+            .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*$/i, '')
+            .trimStart()
           const looksLikeToolCall = /^\s*<(?:tool_call|function_call|function=|invoke\s|action:)/i.test(nonThinking)
             || /^\s*```(?:json)?\s*\{\s*["“]tool_calls/i.test(nonThinking)
+            || /^\s*```(?:json)?\s*\[\s*\{\s*["“](?:name|tool|function)/i.test(nonThinking)
             || /^\s*\{\s*["“]tool_calls/i.test(nonThinking)
+            || /^\s*\[TOOL_CALL/i.test(nonThinking)
+            || /^\s*\{\s*["“](?:name|tool|function)["”]\s*:\s*["“][^"”]+["”]\s*,\s*["“](?:arguments|args|parameters)/i.test(nonThinking)
           if (!looksLikeToolCall) {
             fullContent += t
             onToken?.(t)
@@ -1215,14 +1221,15 @@ function safelyParseToolArgs(raw) {
       // Keep the prose, drop the markup, and say plainly that the budget ran
       // out — silently deleting the call would leave an answer that reads as
       // if the model simply stopped mid-thought.
-      const prose = (text || '').trim()
+      const prose = stripToolCallSyntax(text || '').trim()
+      const targetTool = calls[0]?.name ? `\`${calls[0].name}\`` : 'the next planned action'
       if (prose) {
-        fullContent = prose
+        fullContent = `${prose}\n\n*Note: Action round limit reached before executing ${targetTool}.*`
       } else {
         const gathered = summariseToolResults(toolResults)
         fullContent = gathered
-          ? `I have completed the requested operations and gathered the following information:\n\n${gathered}`
-          : 'I have finished executing the tool steps for this turn.'
+          ? `I have completed the requested operations and gathered the following information:\n\n${gathered}\n\n*Action round limit reached before executing ${targetTool}.*`
+          : `I have finished executing the tool steps for this turn. (Action limit reached before ${targetTool})`
       }
       return false
     }
@@ -1286,8 +1293,8 @@ function safelyParseToolArgs(raw) {
     let attempts = 0
     while (toolCallsToProcess.length === 0 && attempts < maxRetries) {
       if (visibleAnswer(roundContent)) break // The model emitted a visible answer for this round!
-      const isOnlyReasoning = roundContent.includes('<think>')
-        && !visibleAnswer(roundContent.replace(/<think>[\s\S]*?<\/think>/gi, ''))
+      const isOnlyReasoning = /<(?:think|thought|reasoning)\b/i.test(roundContent)
+        && !visibleAnswer(roundContent.replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*?<\/(?:think|thought|reasoning)>/gi, ''))
       const hasIntent = hasUnexecutedToolIntent(roundContent)
       if (!hasIntent && !isOnlyReasoning) break // genuinely finished, not stalling
 
@@ -1354,7 +1361,7 @@ function safelyParseToolArgs(raw) {
       }
     }
 
-    // Tool execution loop (maxRounds cap prevents infinite loops)
+    const toolFailureCounts = new Map()
     rounds = resumeCheckpoint?.round || rounds || 0
     while (toolCallsToProcess.length > 0 && rounds < maxRounds) {
       throwIfAborted()
@@ -1503,6 +1510,21 @@ function safelyParseToolArgs(raw) {
         onToolResult?.(tc.name, result)
         const step = [...traceRef].reverse().find(s => s.tool === tc.name && s.status === 'running')
         if (step) step.status = result?.error ? 'error' : 'done'
+
+        // Circuit breaker: track consecutive tool failures to stop repetitive hallucination loops
+        if (result?.error) {
+          const prevFailures = toolFailureCounts.get(tc.name) || 0
+          const newFailures = prevFailures + 1
+          toolFailureCounts.set(tc.name, newFailures)
+          if (newFailures >= 2) {
+            messages.push({
+              role: 'user',
+              content: `CIRCUIT BREAKER: '${tc.name}' has failed ${newFailures} times consecutively with error: "${String(result.error).slice(0, 160)}". Do NOT repeat '${tc.name}'. Use 'fs_find_files' to discover real filenames, or adapt your strategy now.`,
+            })
+          }
+        } else {
+          toolFailureCounts.set(tc.name, 0)
+        }
 
         // Real evidence the model already has file/folder/shell access THIS
         // turn — a successful, unblocked read/search/listing/shell command.
@@ -1654,13 +1676,14 @@ function safelyParseToolArgs(raw) {
     // the user always gets a synthesized answer instead of a cut-off / empty reply.
     if (toolCallsToProcess.length > 0) {
       throwIfAborted()
+      const pendingNames = toolCallsToProcess.map(c => c.name).join(', ')
       toolCallsToProcess = []
       tools = null // Crucial: strip tool schemas so LLM is forced to generate prose synthesis
       messages.push({
         role: 'user',
-        content: 'You have completed the tool exploration for this turn. Do NOT request any ' +
+        content: `You have completed the tool exploration for this turn (${rounds} actions taken). Do NOT request any ` +
           'more tools. Give your best, complete final answer now in clear markdown using everything gathered ' +
-          'so far, and note briefly if anything remained uncertain.',
+          `so far, and note briefly what remains if anything was unfinished (pending: ${pendingNames}).`,
       })
       onStatus?.('Finalizing answer…')
       forcedFinal = true
@@ -1700,7 +1723,11 @@ function safelyParseToolArgs(raw) {
         // If the model produced text during the last round outside <think> tags, recover it
         let recovered = ''
         if (roundContent) {
-          const stripped = roundContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
+          const stripped = stripToolCallSyntax(
+            roundContent
+              .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*?<\/(?:think|thought|reasoning)>/gi, '')
+              .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*$/i, '')
+          ).trim()
           if (stripped && visibleAnswer(stripped)) recovered = stripped
         }
 
@@ -1819,7 +1846,7 @@ function safelyParseToolArgs(raw) {
     if (!visibleAnswer(cleanedContent)) {
       const { reasoning } = splitReasoning(fullContent || roundContent)
       if (reasoning) {
-        cleanedContent = `I have analyzed the request and prepared the following plan:\n\n${reasoning.slice(0, 800)}${reasoning.length > 800 ? '…' : ''}\n\n*Click **Continue** below or confirm to execute these actions.*`
+        cleanedContent = `<think>${reasoning}</think>\n\nI have analyzed the request and prepared the following plan:\n\n${reasoning.slice(0, 800)}${reasoning.length > 800 ? '…' : ''}\n\n*Click **Continue** below or confirm to execute these actions.*`
         onToken?.(cleanedContent)
       } else {
         const gathered = summariseToolResults(toolResults)

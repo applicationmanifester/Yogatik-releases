@@ -237,6 +237,53 @@ describe('request shaping', () => {
     expect(b.frequency_penalty).toBeUndefined()
   })
 
+  it('extracts Anthropic thinking_delta events into reasoning tags', async () => {
+    fetchMock.mockResolvedValue(sseResponse([
+      `data: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'Let me analyze this.' } })}\n\n`,
+      `data: ${JSON.stringify({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'Here is the answer.' } })}\n\n`,
+      'data: [DONE]\n\n',
+    ]))
+    const tokens = []
+    await streamChat({
+      provider: 'anthropic', apiKey: 'k', model: 'claude-3-7-sonnet-20250219',
+      messages: [{ role: 'user', content: 'hi' }],
+      onToken: t => tokens.push(t), onDone: () => {},
+    })
+    const full = tokens.join('')
+    expect(full).toContain('<think>Let me analyze this.</think>')
+    expect(full).toContain('Here is the answer.')
+  })
+
+  it('extracts Gemini delta.thought and Ollama delta.thinking into reasoning tags', async () => {
+    fetchMock.mockResolvedValue(sseResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { thought: 'Gemini reasoning step' } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: '42' } }] })}\n\n`,
+      'data: [DONE]\n\n',
+    ]))
+    const tokens = []
+    await streamChat({
+      provider: 'gemini', apiKey: 'k', model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      onToken: t => tokens.push(t), onDone: () => {},
+    })
+    const full = tokens.join('')
+    expect(full).toContain('<think>Gemini reasoning step</think>')
+    expect(full).toContain('42')
+  })
+
+  it('configures thinking budget and temperature=1.0 for Claude 3.7 requests', async () => {
+    fetchMock.mockResolvedValue(sseResponse(['data: [DONE]\n\n']))
+    await streamChat({
+      provider: 'anthropic', apiKey: 'k', model: 'claude-3-7-sonnet-20250219',
+      messages: [{ role: 'user', content: 'hi' }],
+      onDone: () => {},
+    })
+    const b = bodyOf()
+    expect(b.thinking).toBeDefined()
+    expect(b.thinking.type).toBe('enabled')
+    expect(b.temperature).toBe(1.0)
+  })
+
   it('rejects an unknown provider instead of guessing an endpoint', async () => {
     await expect(streamChat({
       provider: 'nope', apiKey: 'k', model: 'm', messages: [], onDone: () => {},

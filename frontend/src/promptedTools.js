@@ -62,11 +62,21 @@ const XML_INVOKE = /<invoke\s+name=["']?([^"'>\s]+)["']?>([\s\S]*?)<\/invoke>/gi
 const REACT_ACTION = /Action:\s*([a-zA-Z0-9_-]+)\s*\nAction Input:\s*([\s\S]*?)(?=(?:\n\s*Action:|\n\s*Observation:|\n\s*```|$))/gi
 
 /** Best-effort repair of the almost-JSON weak models emit. */
-function repairJson(raw) {
-  return raw
+export function repairJson(raw) {
+  if (!raw || typeof raw !== 'string') return ''
+  let cleaned = raw
     .replace(/,\s*([}\]])/g, '$1')                 // trailing commas
     .replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false').replace(/\bNone\b/g, 'null')
     .replace(/[“”]/g, '"').replace(/[‘’]/g, "'")   // smart quotes → straight
+
+  // Normalize Windows paths like "C:\..." or "C:\\..." inside quotes:
+  // Convert all backslash sequences (single or multiple) to a valid JSON-escaped pair (\\\\)
+  cleaned = cleaned.replace(/"([a-zA-Z]:[^"\n\r]*)"/g, (_, p) => {
+    const normalized = p.replace(/\\+/g, () => '\\\\')
+    return `"${normalized}"`
+  })
+
+  return cleaned
 }
 
 /** Parses parameter values converting numbers/booleans/JSON when applicable. */
@@ -157,10 +167,10 @@ function parseXmlToolBlock(xmlContent) {
 export function parseToolCalls(reply = '') {
   const found = []
   const rawReply = String(reply)
-  // Reasoning-then-format: drop <think>…</think> (and an unclosed one) first for prose.
+  // Reasoning-then-format: drop reasoning blocks (and unclosed streaming ones) first for prose.
   const clean = rawReply
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/<think>[\s\S]*$/i, '')
+    .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*?<\/(?:think|thought|reasoning)>/gi, '')
+    .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*$/i, '')
   let text = clean
   let attempted = false
 
@@ -312,29 +322,41 @@ export function stripToolCallSyntax(text) {
     !text.includes('[Tool called') &&
     !text.includes('[Calling tool') &&
     !text.includes('<|python_tag|>') &&
-    !text.includes('Action:')
+    !text.includes('Action:') &&
+    !text.includes('tool_calls') &&
+    !text.includes('{"name":') &&
+    !text.includes('{"tool":')
   ) {
     return text
   }
 
   const input = String(text ?? '')
-  const out = input
+  let out = input
+    // Fenced and bare JSON tool calls
+    .replace(/```(?:json)?\s*\{\s*["“]tool_calls[\s\S]*?```/gi, '')
+    .replace(/```(?:json)?\s*\[\s*\{\s*["“](?:name|tool|function)[\s\S]*?```/gi, '')
+    .replace(/\{\s*["“]tool_calls["”]\s*:\s*\[[\s\S]*?\]\s*\}/gi, '')
+    .replace(/\{\s*["“](?:name|tool|function)["”]\s*:\s*["“][^"”]+["”]\s*,\s*["“](?:arguments|args|parameters)["”]\s*:\s*[\s\S]*?\}/gi, '')
+    // XML formats
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
     .replace(/<function_call>[\s\S]*?<\/function_call>/gi, '')
     .replace(/<function(?:=|\s+name=)["']?[\w-]+["']?>[\s\S]*?<\/function>/gi, '')
     .replace(/<invoke\s+name=["']?[^"'>\s]+["']?>[\s\S]*?<\/invoke>/gi, '')
     .replace(/\[TOOL_CALL:\s*[\s\S]*?\]/gi, '')
     .replace(/\[(?:Tool called|Calling tool|Tool|Call tool|Invoke):\s*[\s\S]*?\]/gi, '')
-    // Truncated tails.
+    // Truncated tails
+    .replace(/```(?:json)?\s*\{\s*["“]tool_calls[\s\S]*$/gi, '')
+    .replace(/\{\s*["“]tool_calls["”]\s*:\s*\[?[\s\S]*$/gi, '')
     .replace(/<tool_call>[\s\S]*$/i, '')
     .replace(/<function_call>[\s\S]*$/i, '')
     .replace(/<function(?:=|\s+name=)["']?[\w-]+["']?>[\s\S]*$/i, '')
     .replace(/<invoke\s+name=["']?[^"'>\s]+["']?>[\s\S]*$/i, '')
-    // Provider-specific call markers that are never prose.
+    // Provider-specific call markers that are never prose
     .replace(/<\|python_tag\|>[\s\S]*$/i, '')
     .replace(/\[TOOL_CALLS?\][\s\S]*$/i, '')
     .replace(/\[TOOL_CALL:?[\s\S]*$/i, '')
     .replace(/\[(?:Tool called|Calling tool):?[\s\S]*$/i, '')
+
   // Trim ONLY when something was actually removed.
   return out === input ? input : out.trim()
 }

@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react'
-import { Brain, ChevronDown, ChevronUp, Copy, Check, Sparkles } from 'lucide-react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
+import { Brain, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -13,8 +13,24 @@ export function ReasoningAccordion({
   elapsedSec = null,
   defaultExpanded = false,
 }) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded || isStreaming)
+  const [userToggled, setUserToggled] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(() => defaultExpanded || isStreaming)
   const [copied, setCopied] = useState(false)
+  const scrollRef = useRef(null)
+
+  // Keep expanded while streaming unless the user manually collapsed it
+  useEffect(() => {
+    if (isStreaming && !userToggled) {
+      setIsExpanded(true)
+    }
+  }, [isStreaming, userToggled])
+
+  // Follow reasoning stream
+  useEffect(() => {
+    if (isStreaming && isExpanded && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [reasoning, isStreaming, isExpanded])
 
   // Estimate token count (~4 characters per token average)
   const tokenEstimate = useMemo(() => {
@@ -30,16 +46,21 @@ export function ReasoningAccordion({
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const toggleExpanded = () => {
+    setUserToggled(true)
+    setIsExpanded(v => !v)
+  }
+
   if (!reasoning && !isStreaming) return null
 
   return (
     <div className={`reasoning-accordion-card ${isStreaming ? 'streaming' : ''} ${isExpanded ? 'expanded' : 'collapsed'}`}>
       <div
         className="reasoning-accordion-header"
-        onClick={() => setIsExpanded(v => !v)}
+        onClick={toggleExpanded}
         role="button"
         tabIndex={0}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsExpanded(v => !v) } }}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpanded() } }}
         aria-expanded={isExpanded}
       >
         <div className="reasoning-header-left">
@@ -84,7 +105,7 @@ export function ReasoningAccordion({
 
       {isExpanded && (
         <div className="reasoning-accordion-content">
-          <div className="reasoning-markdown-body">
+          <div className="reasoning-markdown-body" ref={scrollRef}>
             <div className="reasoning-body">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {reasoning}

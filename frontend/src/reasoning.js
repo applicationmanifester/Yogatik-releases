@@ -54,7 +54,8 @@ export function splitReasoning(content) {
   if (typeof content !== 'string') return { reasoning: '', answer: content }
   
   // Fast path: if no reasoning markup, bypass all parsing instantly
-  if (!content.includes('<think>')) {
+  const hasReasoningTag = /<(?:think|thought|reasoning)\b/i.test(content)
+  if (!hasReasoningTag) {
     return { reasoning: '', answer: deduplicateRepetitions(content) }
   }
 
@@ -65,9 +66,9 @@ export function splitReasoning(content) {
 
   let reasoning = ''
   const answer = content
-    .replace(/<think>([\s\S]*?)<\/think>/gi, (_, r) => { reasoning += r + '\n'; return '' })
-    // An unclosed block is reasoning still being written.
-    .replace(/<think>([\s\S]*)$/i, (_, r) => { reasoning += r; return '' })
+    .replace(/<(?:think|thought|reasoning)\b[^>]*>([\s\S]*?)<\/(?:think|thought|reasoning)>/gi, (_, r) => { reasoning += r + '\n'; return '' })
+    // An unclosed block is reasoning still being written while streaming.
+    .replace(/<(?:think|thought|reasoning)\b[^>]*>([\s\S]*)$/i, (_, r) => { reasoning += r; return '' })
 
   const cleanReasoning = deduplicateRepetitions(reasoning.trim())
   const cleanAnswer = deduplicateRepetitions(answer.trim())
