@@ -132,6 +132,12 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Yogatik",
+      "installerIcon": "electron/icon.ico",
+      "uninstallerIcon": "electron/icon.ico",
+      "installerHeaderIcon": "electron/icon.ico",
       "artifactName": "Yogatik-Setup.exe"
     },
     "linux": {

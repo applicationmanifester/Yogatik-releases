@@ -23,6 +23,7 @@
     "appId": "app.yogatik.browser",
     "productName": "Yogatik Browser",
     "npmRebuild": false,
+    "icon": "electron/assets/icon.png",
     "directories": {
       "output": "release"
     },
@@ -48,6 +49,12 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Yogatik Browser",
+      "installerIcon": "electron/assets/icon.ico",
+      "uninstallerIcon": "electron/assets/icon.ico",
+      "installerHeaderIcon": "electron/assets/icon.ico",
       "artifactName": "YogatikBrowser-Setup.exe"
     },
     "linux": {
