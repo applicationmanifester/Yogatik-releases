@@ -1,55 +1,58 @@
 /**
- * App Versioning & 
+ * App Versioning & Release Updates Registry for Yogatik
+ * Tracks current version, build metadata, and itemized release updates/changelog.
+ */
+
+export const APP_VERSION = '10.9.6'
+export const BUILD_DATE = 'September 2026'
+export const APP_CODENAME = 'Yogatik 10.9.6 — Live AI Reasoning Visibility, Stream Transparency & Icon Persistence'
+
+export const APP_RELEASES = [
   {
     "version": "10.9.6",
-    "date": "2026-09-26",
-    "title": "Live Reasoning Visibility in Prompted Mode",
+    "title": "Yogatik 10.9.6: Live AI Reasoning Visibility, Stream Transparency & Icon Persistence",
+    "date": "September 26, 2026",
+    "isLatest": true,
     "highlights": [
-      "AI thinking & reasoning now streams live in prompted mode (Nemotron, DeepSeek, Qwen, etc.)",
-      "Fixed: <think> tokens were completely suppressed during generation in prompted tool mode",
-      "Reasoning accordion and Thinking panel now show real-time chain-of-thought for all model types",
-      "NSIS installer now correctly embeds app icon into desktop & start menu shortcuts",
-      "Splash screen logo path fix for packaged Electron builds",
-      "Yogatik Browser splash updated to v10.9.6"
+      "Live AI Thinking & Reasoning Visibility: Real-time streaming of <think>/<thought>/<reasoning> tokens into the Reasoning accordion and Thinking & Actions panel across all model families (NVIDIA Nemotron, DeepSeek-R1, QwQ, etc.)",
+      "Zero-Latency Stream Transparency: Fixed suppression bug in prompted tool execution mode where thought tokens were hidden until completion",
+      "Persistent Desktop Icon & Shortcuts: Fixed missing icon after Windows NSIS installation, ensuring desktop and start menu shortcuts preserve the Yogatik branding",
+      "Packaged Splash Screen Asset Reliability: Standardized logo asset paths across Electron packaging workflows"
     ],
-    "changes": [
+    "sections": [
       {
-        "category": "🧠 AI Reasoning",
+        "category": "🧠 AI Thinking & Real-Time Reasoning",
         "items": [
           {
-            "title": "Live Thinking in Prompted Mode",
-            "description": "In prompted tool mode, <think>/<thought>/<reasoning> tokens are now forwarded to the UI immediately as they stream, while non-thinking content is still buffered for tool-call detection. This means reasoning models (NVIDIA Nemotron, DeepSeek-R1, Qwen-QwQ) show live reasoning in the Thinking panel and chat bubble."
+            "title": "Prompted Mode Live Reasoning",
+            "description": "In prompted tool mode, thinking tokens (<think>, <thought>, <reasoning>) now stream directly into the UI in real-time while tool calls continue to be safely buffered and executed."
+          },
+          {
+            "title": "Universal Model Compatibility",
+            "description": "Ensures models with reasoning capabilities like NVIDIA Nemotron Ultra, DeepSeek-R1, and Qwen-QwQ display their reasoning process visibly rather than appearing frozen during long reasoning phases."
           }
         ]
       },
       {
-        "category": "🖥️ Desktop App",
+        "category": "🖥️ Desktop App & Installation Quality",
         "items": [
           {
-            "title": "App Icon Persists After Installation",
-            "description": "NSIS installer now includes installerIcon, uninstallerIcon, createDesktopShortcut, and shortcutName so the installed app shortcut always shows the Yogatik logo."
+            "title": "Desktop Icon Persistence",
+            "description": "Updated NSIS installer settings with explicit installerIcon, uninstallerIcon, and shortcut configurations so the Yogatik icon remains on the desktop and start menu."
           },
           {
-            "title": "Splash Screen Logo Fix",
-            "description": "Fixed relative path for logo.svg in the Electron splash screen so it renders correctly in packaged builds."
+            "title": "Packaged Splash Screen",
+            "description": "Fixed relative path references for the application icon on the Electron splash screen in production bundles."
           }
         ]
       }
     ]
-  },Release Updates Registry for Yogatik
- * Tracks current version, build metadata, and itemized release updates/changelog.
- */
-
-export const APP_VERSION = '10.9.5'
-export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 10.9.5 — Autonomous Agent Circuit Breaker, Windows Path Precision & Zero-Leak Streaming'
-
-export const APP_RELEASES = [
+  },
   {
     "version": "10.9.5",
     "title": "Yogatik 10.9.5: Autonomous Agent Circuit Breaker, Windows Path Precision & Zero-Leak Streaming",
     "date": "September 25, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Repetitive Failure Circuit Breaker: Automatically detects repeated consecutive tool errors and injects proactive intervention directives, stopping models from looping and exhausting turn budgets",
       "Windows Path Tolerant Tool Calling: Normalizes unescaped backslashes in Windows file paths inside JSON payloads, eliminating JSON.parse syntax failures on models like NVIDIA Nemotron and Qwen",

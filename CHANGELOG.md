@@ -1,5 +1,15 @@
 # Changelog
 
+## v10.9.6 - Live AI Reasoning Visibility, Stream Transparency & Icon Persistence (2026-09-26)
+
+### 🧠 AI Thinking & Real-Time Reasoning
+- **Prompted Mode Live Reasoning (`agent.js`)** — In prompted tool execution mode, `<think>`, `<thought>`, and `<reasoning>` tokens now stream live into the chat bubble's Reasoning accordion and the Thinking & Actions side panel as they arrive from the model. Previously, prompted mode buffered all stream tokens until completion to detect tool call syntax, which suppressed visible thinking tokens for reasoning models like NVIDIA Nemotron-3 Ultra, DeepSeek-R1, and Qwen-QwQ.
+- **Immediate Thinking Forwarding** — The token buffer selectively forwards thought chunks to `onChunk({ reasoning: token })` while retaining and buffering non-thinking text for accurate tool call extraction.
+
+### 🖥️ Desktop App & Installation Quality
+- **NSIS Installer Icon Persistence (`package.json`)** — Updated NSIS installer configuration with `installerIcon`, `uninstallerIcon`, `createDesktopShortcut: "always"`, and `shortcutName: "Yogatik"` so the application icon remains intact on the Windows desktop and Start Menu after installation.
+- **Packaged Splash Screen Logo Resolution (`splash.html`)** — Corrected relative pathing for `logo.svg` to ensure the splash screen displays properly in production packaged Electron environments.
+
 ## v10.9.5 - Autonomous Agent Circuit Breaker, Windows Path Precision & Zero-Leak Streaming (2026-09-25)
 
 ### 🤖 Autonomous Agent & Loop Defense
