@@ -229,8 +229,9 @@ export function createSpeaker({
       try { current?.stop() } catch { /* already finished */ }
       current = null
       queue = []
-      if (speaking) { speaking = false; onEnd() }
-      cancelled = false
+      if (speaking) { speaking = false; onLevel(0); onEnd() }
+      // Do NOT reset cancelled here — let the pump loop exit naturally
+      // and the next speak() call will reset it
       return Promise.resolve()
     },
 

@@ -122,20 +122,21 @@ export async function createMicCapture(onChunk, { deviceId = '', noiseSuppressio
  * @returns {Function} cleanup function
  */
 let deviceChangeHandler = null
+let recoverCallbacks = new Set()
 
 export function setupDeviceChangeRecovery(onRecover) {
+  if (onRecover) recoverCallbacks.add(onRecover)
   if (deviceChangeHandler) return
   deviceChangeHandler = async () => {
-    // We can't directly access the mic from here, but the session can listen
-    // for a custom event and handle recovery
     window.dispatchEvent(new CustomEvent('yogatik:devicechange'))
-    onRecover?.()
+    for (const cb of recoverCallbacks) cb?.()
   }
   navigator.mediaDevices.addEventListener('devicechange', deviceChangeHandler)
 }
 
-export function teardownDeviceChangeRecovery() {
-  if (deviceChangeHandler) {
+export function teardownDeviceChangeRecovery(onRecover) {
+  if (onRecover) recoverCallbacks.delete(onRecover)
+  if (recoverCallbacks.size === 0 && deviceChangeHandler) {
     navigator.mediaDevices.removeEventListener('devicechange', deviceChangeHandler)
     deviceChangeHandler = null
   }

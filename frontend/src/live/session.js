@@ -203,6 +203,11 @@ You can see them through their camera and hear them through their microphone. Be
   function reconnect() {
     if (closed) return
     try { ws?.close() } catch {}
+    // Clean up stale timers and frame sources before reconnecting
+    if (frameTimer) { clearInterval(frameTimer); frameTimer = null }
+    if (screenTimer) { clearInterval(screenTimer); screenTimer = null }
+    if (cam) { cam.offFrame() }
+    if (screen) { screen.offFrame() }
     if (reconnects++ >= RECONNECT_MAX) {
       emit({ type: 'error', message: 'Lost the live connection.' })
       stop()

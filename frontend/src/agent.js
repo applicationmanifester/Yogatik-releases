@@ -1180,13 +1180,25 @@ function safelyParseToolArgs(raw) {
             .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*$/i, '')
             .trimStart()
           const looksLikeToolCall = /^\s*<(?:tool_call|function_call|function=|invoke\s|action:)/i.test(nonThinking)
-            || /^\s*```(?:json)?\s*\{\s*["“]tool_calls/i.test(nonThinking)
-            || /^\s*```(?:json)?\s*\[\s*\{\s*["“](?:name|tool|function)/i.test(nonThinking)
-            || /^\s*\{\s*["“]tool_calls/i.test(nonThinking)
+            || /^\s*```(?:json)?\s*\{\s*["\u201c]tool_calls/i.test(nonThinking)
+            || /^\s*```(?:json)?\s*\[\s*\{\s*["\u201c](?:name|tool|function)/i.test(nonThinking)
+            || /^\s*\{\s*["\u201c]tool_calls/i.test(nonThinking)
             || /^\s*\[TOOL_CALL/i.test(nonThinking)
-            || /^\s*\{\s*["“](?:name|tool|function)["”]\s*:\s*["“][^"”]+["”]\s*,\s*["“](?:arguments|args|parameters)/i.test(nonThinking)
+            || /^\s*\{\s*["\u201c](?:name|tool|function)["\u201d]\s*:\s*["\u201c][^"\u201c]+["\u201d]\s*,\s*["\u201c](?:arguments|args|parameters)/i.test(nonThinking)
           if (!looksLikeToolCall) {
             fullContent += t
+            onToken?.(t)
+          }
+        } else {
+          // In prompted mode the full response is buffered for tool-call detection.
+          // However <think>/<thought>/<reasoning> content can NEVER be a tool call —
+          // stream those tokens immediately so the Thinking panel and streaming
+          // message bubble show live reasoning as it generates.
+          const openCount = (roundContent.match(/<(?:think|thought|reasoning)\b[^>]*>/gi) || []).length
+          const closeCount = (roundContent.match(/<\/(?:think|thought|reasoning)>/gi) || []).length
+          const isInsideOpenBlock = openCount > closeCount
+          const isClosingThinkTag = /<\/(?:think|thought|reasoning)>/i.test(t)
+          if (isInsideOpenBlock || isClosingThinkTag) {
             onToken?.(t)
           }
         }

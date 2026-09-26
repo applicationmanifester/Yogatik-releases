@@ -1,5 +1,42 @@
 /**
- * App Versioning & Release Updates Registry for Yogatik
+ * App Versioning & 
+  {
+    "version": "10.9.6",
+    "date": "2026-09-26",
+    "title": "Live Reasoning Visibility in Prompted Mode",
+    "highlights": [
+      "AI thinking & reasoning now streams live in prompted mode (Nemotron, DeepSeek, Qwen, etc.)",
+      "Fixed: <think> tokens were completely suppressed during generation in prompted tool mode",
+      "Reasoning accordion and Thinking panel now show real-time chain-of-thought for all model types",
+      "NSIS installer now correctly embeds app icon into desktop & start menu shortcuts",
+      "Splash screen logo path fix for packaged Electron builds",
+      "Yogatik Browser splash updated to v10.9.6"
+    ],
+    "changes": [
+      {
+        "category": "🧠 AI Reasoning",
+        "items": [
+          {
+            "title": "Live Thinking in Prompted Mode",
+            "description": "In prompted tool mode, <think>/<thought>/<reasoning> tokens are now forwarded to the UI immediately as they stream, while non-thinking content is still buffered for tool-call detection. This means reasoning models (NVIDIA Nemotron, DeepSeek-R1, Qwen-QwQ) show live reasoning in the Thinking panel and chat bubble."
+          }
+        ]
+      },
+      {
+        "category": "🖥️ Desktop App",
+        "items": [
+          {
+            "title": "App Icon Persists After Installation",
+            "description": "NSIS installer now includes installerIcon, uninstallerIcon, createDesktopShortcut, and shortcutName so the installed app shortcut always shows the Yogatik logo."
+          },
+          {
+            "title": "Splash Screen Logo Fix",
+            "description": "Fixed relative path for logo.svg in the Electron splash screen so it renders correctly in packaged builds."
+          }
+        ]
+      }
+    ]
+  },Release Updates Registry for Yogatik
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
