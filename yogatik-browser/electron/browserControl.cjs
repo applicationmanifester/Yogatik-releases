@@ -102,6 +102,7 @@ async function restoreTab(s, tabId) {
 
   wireTabListeners(s, tabId, tab)
   tab.hibernating = false
+  tab.viewCreated = true
 
   const targetUrl = tab.savedUrl || NEW_TAB_URL
   wc.loadURL(targetUrl).catch(() => {})
@@ -182,8 +183,22 @@ function tabFor(s, tabId) {
   return activeTab(s)
 }
 
+// Privacy-friendly favicon lookup (DuckDuckGo's icon proxy — no request
+// logging, unlike Google's s2 service). The chrome page fetches these images
+// itself; the main process only computes the URL from the hostname.
+function faviconUrlFor(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return ''
+  try {
+    const host = new URL(rawUrl).hostname
+    if (!host || host === 'about:blank') return ''
+    return `https://icons.duckduckgo.com/ip3/${host}.ico`
+  } catch {
+    return ''
+  }
+}
+
 function listTabs(s) {
-  return [...s.tabs.entries()].map(([tabId, t]) => {
+  const entries = [...s.tabs.entries()].map(([tabId, t]) => {
     const rawUrl = t.hibernating ? (t.savedUrl || '') : safe(() => t.view.webContents.getURL(), '')
     const isHome = isNewTabUrl(rawUrl)
     return {
@@ -194,8 +209,14 @@ function listTabs(s) {
       hibernating: !!t.hibernating,
       audible: t.hibernating ? false : safe(() => t.view.webContents.isCurrentlyAudible(), false),
       muted: t.hibernating ? false : safe(() => t.view.webContents.isAudioMuted(), false),
+      pinned: !!t.pinned,
+      favicon: isHome ? '' : faviconUrlFor(rawUrl),
     }
   })
+  // Pinned tabs always come first, in pin order, then recency order.
+  const pinned = entries.filter(t => t.pinned)
+  const rest = entries.filter(t => !t.pinned)
+  return [...pinned, ...rest]
 }
 
 // ── Surfaces ──────────────────────────────────────────────────────────────
@@ -367,6 +388,10 @@ function navSnapshot(s) {
 // pushed a plain IPC event instead, mirroring the __YOGATIK_MENU__ push
 // pattern rather than making the panel poll.
 function syncTabBar(s) {
+  // Every tab mutation (create/close/activate/pin/navigate) funnels through
+  // showActive → syncTabBar, so this is the single hook for session
+  // persistence. Debounced inside persistSession.
+  persistSession(s)
   if (s.mode === 'window') {
     if (!s.win || s.win.isDestroyed()) return
     const snap = navSnapshot(s)
@@ -442,6 +467,7 @@ function createTab(s, url, opts = {}) {
     humanControl: false,
     helpRequested: false,
     isAgent,
+    pinned: false,
     _pendingUrl: null,
     savedUrl: null,
     savedTitle: null,
@@ -464,6 +490,40 @@ function createTab(s, url, opts = {}) {
 
   showActive(s)
   return tabId
+}
+
+/**
+ * Create the WebContentsView for a tab that doesn't have one yet (fresh tab
+ * or a lazy/hibernated tab being woken). Modeled on restoreTab: same web
+ * prefs, AdShield injection, cleaned UA, wired listeners.
+ */
+function ensureView(s, tabId) {
+  const tab = s.tabs.get(tabId)
+  if (!tab || tab.view) return
+
+  const webPrefs = { ...tab.webPrefs }
+  if (!webPrefs.preload) {
+    webPrefs.preload = path.join(__dirname, 'browserWindowPreload.cjs')
+  }
+  tab.view = new WebContentsView({ webPreferences: webPrefs })
+  const wc = tab.view.webContents
+  injectAdShield(wc)
+  try {
+    const defaultUA = wc.getUserAgent()
+    const cleanedUA = defaultUA
+      .replace(/Electron\/[0-9\.]+\s?/gi, '')
+      .replace(/Yogatik[A-Za-z0-9_-]*\/[0-9\.]+\s?/gi, '')
+      .trim()
+    wc.setUserAgent(cleanedUA)
+  } catch {}
+
+  wireTabListeners(s, tabId, tab)
+  tab.viewCreated = true
+
+  if (tab._pendingUrl) {
+    wc.loadURL(tab._pendingUrl).catch(() => {})
+  }
+  showActive(s)
 }
 
 function wireTabListeners(s, tabId, tab) {
@@ -494,6 +554,16 @@ function wireTabListeners(s, tabId, tab) {
     // Update savedUrl immediately on commit so navSnapshot fallback is current.
     const committedUrl = safe(() => wc.getURL(), '')
     if (committedUrl && !isNewTabUrl(committedUrl)) tab.savedUrl = committedUrl
+    // Per-site zoom: re-apply the user's saved zoom for this hostname on every
+    // navigation — a site you keep at 150% should stay at 150%.
+    try {
+      const host = committedUrl ? new URL(committedUrl).hostname : ''
+      const saved = host ? getSetting('siteZoom') : null
+      const percent = saved && typeof saved === 'object' ? Number(saved[host]) : NaN
+      if (Number.isFinite(percent) && percent > 0) {
+        wc.setZoomFactor(percent / 100)
+      }
+    } catch {}
     syncTabBar(s)
   })
   wc.on('did-navigate-in-page', () => {
@@ -767,6 +837,11 @@ function navigate(s, tabId, url) {
   })
 }
 
+// Closed-tab memory for Ctrl+Shift+T — capped so a long session can't grow
+// this forever. Most-recent-last stack of { url, pinned }.
+const CLOSED_TAB_CAP = 10
+const closedTabs = []
+
 function closeTab(s, tabId) {
   const t = s.tabs.get(tabId)
   if (!t) return { success: false, error: 'No such tab' }
@@ -787,8 +862,132 @@ function closeTab(s, tabId) {
   // Last tab closed: hide the surface, but keep the session so the next call
   // reopens it. Hidden rather than destroyed for the same reason as setMode.
   if (!s.tabs.size && s.mode === 'window' && s.win && !s.win.isDestroyed()) s.win.hide()
+  // Remember what was closed so Ctrl+Shift+T can bring it back — capped so a
+  // long session can't grow this forever.
+  const closedUrl = (t.savedUrl && !isNewTabUrl(t.savedUrl))
+    ? t.savedUrl
+    : safe(() => t.view?.webContents?.getURL(), '')
+  if (closedUrl && !isNewTabUrl(closedUrl)) {
+    closedTabs.push({ url: closedUrl, pinned: !!t.pinned })
+    if (closedTabs.length > CLOSED_TAB_CAP) closedTabs.shift()
+  }
   showActive(s)
   return { success: true, tabs: listTabs(s) }
+}
+
+/**
+ * Reopen the most recently closed tab (Ctrl+Shift+T). Restores url and pinned
+ * state; position/history inside the page is gone, which is standard.
+ */
+function reopenLastTab(s) {
+  const entry = closedTabs.pop()
+  if (!entry) return { success: false, error: 'No closed tabs to reopen' }
+  const tabId = createTab(s, entry.url)
+  if (entry.pinned) {
+    const t = s.tabs.get(tabId)
+    if (t) t.pinned = true
+  }
+  s.activeTabId = tabId
+  showActive(s)
+  return { success: true, tabId, url: entry.url }
+}
+
+/** Cycle to the next (or previous) tab in list order — pinned tabs first. */
+function cycleTab(s, direction) {
+  const ids = listTabs(s).map(t => t.tabId)
+  if (ids.length < 2) return { success: false, error: 'Only one tab' }
+  const idx = ids.indexOf(s.activeTabId)
+  const nextIdx = direction === 'prev'
+    ? (idx - 1 + ids.length) % ids.length
+    : (idx + 1) % ids.length
+  activateTab(s, ids[nextIdx])
+  return { success: true, tabId: ids[nextIdx] }
+}
+
+// ── Tab Session Persistence ───────────────────────────────────────────────
+//
+// Restarts must restore what the user had open: urls, titles, active tab and
+// pinned state. Written debounced whenever tabs change and on quit; restored
+// once at startup. Hibernation and per-tab scroll are beyond this — Chrome
+// behaves the same way for a cold start.
+
+const SESSION_FILE_NAME = 'tab-session.json'
+let sessionSaveTimer = null
+
+function sessionFilePath() {
+  try {
+    return path.join(app.getPath('userData'), SESSION_FILE_NAME)
+  } catch {
+    return path.join(__dirname, '..', SESSION_FILE_NAME)
+  }
+}
+
+function loadSavedSession() {
+  try {
+    const raw = fs.readFileSync(sessionFilePath(), 'utf-8')
+    const parsed = JSON.parse(raw)
+    if (!parsed || !Array.isArray(parsed.tabs)) return null
+    return parsed
+  } catch { return null }
+}
+
+/** Persist the default session's open tabs. Debounced — fires on every tab
+ *  mutation otherwise (each keystroke of a rename, each navigation). */
+function persistSession(s) {
+  if (s.key !== '__default__') return // only the standalone browser window persists
+  if (sessionSaveTimer) clearTimeout(sessionSaveTimer)
+  sessionSaveTimer = setTimeout(() => writeSessionFile(s), 400)
+}
+
+function writeSessionFile(s) {
+  if (!s || s.tabs.size === 0) return
+  const tabs = []
+  for (const [tabId, t] of s.tabs) {
+    const url = t.hibernating ? (t.savedUrl || '') : safe(() => t.view.webContents.getURL(), '')
+    // New-tab placeholders carry no state worth restoring — a restart must
+    // not reopen a row of blank tabs.
+    if (isNewTabUrl(url)) continue
+    tabs.push({
+      url,
+      title: t.hibernating ? (t.savedTitle || '') : safe(() => t.view.webContents.getTitle(), ''),
+      pinned: !!t.pinned,
+      active: tabId === s.activeTabId,
+    })
+  }
+  if (!tabs.length) return
+  try {
+    fs.mkdirSync(path.dirname(sessionFilePath()), { recursive: true })
+    fs.writeFileSync(sessionFilePath(), JSON.stringify({ tabs, savedAt: Date.now() }))
+  } catch {}
+}
+
+/**
+ * Restore the persisted tab session at startup. Called from main.cjs after
+ * the chrome window finishes loading. Returns true when at least one real
+ * page was restored; false means "nothing saved" and the caller should open
+ * a fresh new tab.
+ */
+function restoreSavedSession(getMainWin) {
+  const saved = loadSavedSession()
+  if (!saved || !saved.tabs.length) return false
+  const real = saved.tabs.filter(t => t.url && !isNewTabUrl(t.url))
+  if (!real.length) return false
+
+  const s = ensureSession('__default__', 'window')
+  const mw = getMainWin ? getMainWin() : null
+  if (mw && !mw.isDestroyed()) s.win = mw
+
+  let activeId = null
+  for (const t of real) {
+    const tabId = createTab(s, t.url)
+    const tab = s.tabs.get(tabId)
+    if (tab) tab.pinned = !!t.pinned
+    if (t.active || !activeId) activeId = tabId
+  }
+  // createTab() marks each new tab active as it goes; settle on the saved one.
+  if (activeId) s.activeTabId = activeId
+  showActive(s)
+  return true
 }
 
 function destroySession(key) {
@@ -1211,6 +1410,18 @@ function zoomTab(s, { tabId, direction } = {}) {
   const wc = t.view.webContents
   const next = stepZoom(safe(() => wc.getZoomFactor(), 1), direction)
   wc.setZoomFactor(next)
+  // Persist per-site so the same hostname comes back at this zoom next visit.
+  try {
+    const url = safe(() => wc.getURL(), '')
+    const host = url ? new URL(url).hostname : ''
+    if (host && !isNewTabUrl(url)) {
+      const siteZoom = getSetting('siteZoom') || {}
+      const updated = (typeof siteZoom === 'object' && !Array.isArray(siteZoom)) ? siteZoom : {}
+      if (direction === 'reset') delete updated[host]
+      else updated[host] = Math.round(next * 100)
+      setSetting('siteZoom', updated)
+    }
+  } catch {}
   syncTabBar(s)
   return { success: true, zoomFactor: next, zoomPercent: Math.round(next * 100) }
 }
@@ -2219,6 +2430,15 @@ function registerBrowserControl(first, second) {
           }
         }
         break
+      case 'toggle-pin':
+        if (typeof tabId === 'string' && s.tabs.has(tabId)) {
+          const tab = s.tabs.get(tabId)
+          if (tab) {
+            tab.pinned = !tab.pinned
+            syncTabBar(s)
+          }
+        }
+        break
       case 'pip':
         if (t) {
           t.view.webContents.executeJavaScript(`
@@ -2327,6 +2547,15 @@ function registerBrowserControl(first, second) {
         if (s.activeTabId) closeTab(s, s.activeTabId)
         break
       }
+      case 'cycle-tab-next':
+        cycleTab(s, 'next')
+        break
+      case 'cycle-tab-prev':
+        cycleTab(s, 'prev')
+        break
+      case 'reopen-tab':
+        reopenLastTab(s)
+        break
       case 'reload': {
         if (t) { t.view.webContents.reloadIgnoringCache(); t.refEpoch++ }
         break
@@ -2530,4 +2759,5 @@ module.exports = {
   tabFor, activeTab, readPage, click, typeText, pressKey, scroll, screenshot,
   zoomTab, findInPage, stopFindInPage, listDownloads, navSnapshot,
   registerBrowserControl,
+  restoreSavedSession, reopenLastTab, cycleTab, persistSession,
 }

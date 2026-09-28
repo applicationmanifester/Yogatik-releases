@@ -181,6 +181,7 @@ const READER_SCRIPT = `
       <button class="y-reader-btn" id="y-font-down" title="Decrease Font Size">A-</button>
       <button class="y-reader-btn" id="y-font-up" title="Increase Font Size">A+</button>
       <span style="opacity:0.3;">|</span>
+      <button class="y-reader-btn" id="y-reader-save" title="Save as Markdown">💾 Save</button>
       <button class="y-reader-btn" id="y-reader-close" style="color:#ff7a18;font-weight:bold;">✕ Exit</button>
     </div>
 
@@ -221,6 +222,56 @@ const READER_SCRIPT = `
 
   const closeReader = () => overlay.remove();
   document.getElementById('y-reader-close').onclick = closeReader;
+
+  // ── Save as Markdown ──────────────────────────────────────────────────────
+  // Converts the extracted article to Markdown and downloads it via a blob —
+  // the session's will-download handler routes it to the Downloads folder.
+  document.getElementById('y-reader-save').onclick = () => {
+    const body = document.getElementById('y-article-body');
+    if (!body) return;
+
+    const inline = (html) => {
+      const d = document.createElement('div');
+      d.innerHTML = html;
+      return (d.textContent || '').replace(/\\s+/g, ' ').trim();
+    };
+
+    const mdParts = ['## ' + (h1 || 'Untitled'), ''];
+    if (author) mdParts.push('_By ' + author + '_');
+    mdParts.push('_Saved with Yogatik Reader — ' + location.hostname + '_');
+    mdParts.push('');
+
+    const nodes = body.querySelectorAll('h2, h3, h4, p, blockquote, li');
+    nodes.forEach(el => {
+      const tag = el.tagName.toLowerCase();
+      // Skip list items that belong to an already-emitted ul/ol parent.
+      if ((tag === 'li') && el.parentElement && (el.parentElement.tagName === 'UL' || el.parentElement.tagName === 'OL')) {
+        if (el === el.parentElement.firstElementChild) {
+          mdParts.push('');
+          [...el.parentElement.children].forEach(li => mdParts.push('- ' + inline(li.innerHTML)));
+        }
+        return;
+      }
+      const text = inline(el.innerHTML);
+      if (!text) return;
+      if (tag === 'h2') mdParts.push('', '### ' + text);
+      else if (tag === 'h3') mdParts.push('', '#### ' + text);
+      else if (tag === 'h4') mdParts.push('', '##### ' + text);
+      else if (tag === 'blockquote') mdParts.push('', '> ' + text);
+      else mdParts.push('', text);
+    });
+
+    const md = mdParts.join('\\n') + '\\n';
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const safeName = (h1 || 'article').replace(/[^a-z0-9-_ ]/gi, '').trim().slice(0, 60) || 'article';
+    a.download = safeName + '.md';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
 
   window.addEventListener('keydown', function escHandler(e) {
     if (e.key === 'Escape') {

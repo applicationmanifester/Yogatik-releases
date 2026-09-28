@@ -435,6 +435,8 @@
   <!-- Bottom keyboard hints -->
   <div class="footer-hints">
     <div class="hint-item"><span class="kbd">Ctrl+T</span> New Tab</div>
+    <div class="hint-item"><span class="kbd">Ctrl+Tab</span> Cycle Tabs</div>
+    <div class="hint-item"><span class="kbd">Ctrl+Shift+T</span> Reopen Tab</div>
     <div class="hint-item"><span class="kbd">Ctrl+K</span> Command Palette</div>
     <div class="hint-item"><span class="kbd">Ctrl+Shift+R</span> Reader Mode</div>
     <div class="hint-item"><span class="kbd">Ctrl+D</span> Bookmark</div>
@@ -517,9 +519,26 @@
       }, 500);
     };
 
-    // Simulated / tracked blocked count
-    let blocked = parseInt(localStorage.getItem('yogatik_blocked_total') || '148', 10);
+    // Blocked count — starts from the last known cumulative total, then the
+    // main process overwrites it with the REAL counter via __setShieldStats
+    // (injected on did-finish-load). No hardcoded fake numbers.
+    let blocked = parseInt(localStorage.getItem('yogatik_blocked_total') || '0', 10);
     document.getElementById('ads-blocked-val').textContent = blocked.toLocaleString();
+
+    window.__setShieldStats = (stats) => {
+      if (!stats || typeof stats !== 'object') return;
+      const total = Number.isFinite(stats.lifetimeBlocked) ? stats.lifetimeBlocked : 0;
+      if (total > 0) {
+        blocked = total;
+        document.getElementById('ads-blocked-val').textContent = blocked.toLocaleString();
+        localStorage.setItem('yogatik_blocked_total', String(blocked));
+      }
+      const rules = Number.isFinite(stats.rulesLoaded) ? stats.rulesLoaded : null;
+      const networkFilter = document.querySelectorAll('.p-stat-lbl')[2];
+      if (networkFilter && rules) {
+        networkFilter.textContent = rules.toLocaleString() + ' Rules';
+      }
+    };
   </script>
 </body>
 </html>

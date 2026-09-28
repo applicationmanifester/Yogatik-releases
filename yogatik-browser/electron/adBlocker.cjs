@@ -122,7 +122,40 @@ const YOUTUBE_AD_SKIP_SCRIPT = `
 `
 
 let adShieldEnabled = true
-let blockedCount = 0
+let blockedCount = 0 // this session (drives the toolbar badge)
+let lifetimeBlocked = 0 // cumulative, persisted across launches
+let statsSaveTimer = null
+
+// Cumulative blocked count persists in userData so the new-tab dashboard
+// shows a real, growing number instead of resetting to a placeholder.
+function statsFilePath() {
+  try {
+    return path.join(app.getPath('userData'), 'shield-stats.json')
+  } catch { return null }
+}
+
+function loadLifetimeCount() {
+  const p = statsFilePath()
+  if (!p) return
+  try {
+    if (fs.existsSync(p)) {
+      const data = JSON.parse(fs.readFileSync(p, 'utf-8'))
+      lifetimeBlocked = Number(data.lifetimeBlocked) || 0
+    }
+  } catch {}
+}
+
+function persistLifetimeCount() {
+  if (statsSaveTimer) clearTimeout(statsSaveTimer)
+  statsSaveTimer = setTimeout(() => {
+    const p = statsFilePath()
+    if (!p) return
+    try {
+      fs.mkdirSync(path.dirname(p), { recursive: true })
+      fs.writeFileSync(p, JSON.stringify({ lifetimeBlocked, updatedAt: Date.now() }))
+    } catch {}
+  }, 1000)
+}
 
 function isAdShieldEnabled() {
   // Override with setting if available
@@ -144,6 +177,7 @@ function getAdShieldStats() {
   return {
     enabled: isAdShieldEnabled(),
     blockedCount,
+    lifetimeBlocked,
     patternsLoaded,
     loadingPatterns,
   }
@@ -207,7 +241,7 @@ function loadEasyList() {
       res.on('end', () => {
         try {
           const patterns = parseEasyList(data)
-          resolve(patterns)
+          resolve({ patterns, text: data })
         } catch (e) {
           reject(e)
         }
@@ -223,6 +257,42 @@ function loadEasyList() {
   })
 }
 
+// ── Bundled Filter List (offline-safe) ────────────────────────────────────
+// A snapshot of EasyList ships inside the package (electron/assets/
+// easylist.txt) so first-load-on-offline still blocks the whole list, not
+// just the ~50 hardcoded fallback rules. The freshest copy the app ever
+// fetched is cached in userData and preferred over the bundle.
+const fs = require('fs')
+const path = require('path')
+const { app } = require('electron')
+
+function bundledListPath() {
+  try {
+    return path.join(__dirname, 'assets', 'easylist.txt')
+  } catch {
+    return null
+  }
+}
+
+function cachedListPath() {
+  try {
+    return path.join(app.getPath('userData'), 'easylist-cache.txt')
+  } catch {
+    return null
+  }
+}
+
+function readListFile(p) {
+  if (!p) return null
+  try {
+    if (fs.existsSync(p)) {
+      const text = fs.readFileSync(p, 'utf-8')
+      return text && text.length > 1000 ? text : null
+    }
+  } catch {}
+  return null
+}
+
 /**
  * Initialize ad blocker patterns.
  * Called once at startup.
@@ -231,16 +301,50 @@ async function initializePatterns() {
   if (patternsLoaded || loadingPatterns) return
   loadingPatterns = true
   try {
-    const patterns = await loadEasyList()
-    if (patterns && patterns.length > 0) {
-      AD_PATTERNS = patterns
-      console.log(`Loaded ${patterns.length} EasyList rules`)
-    } else {
-      throw new Error('No patterns loaded')
+    // 1. Freshest cached copy (written by a previous successful refresh)
+    // 2. Bundled snapshot (works fully offline, first run included)
+    // 3. Hardcoded fallback (~50 core rules)
+    let text = readListFile(cachedListPath()) || readListFile(bundledListPath())
+    if (text) {
+      const patterns = parseEasyList(text)
+      if (patterns.length > 0) {
+        AD_PATTERNS = patterns
+        patternsLoaded = true
+        loadingPatterns = false
+        console.log(`Loaded ${patterns.length} filter rules from local list`)
+        // Refresh from the network in the background; a newer list is cached
+        // for next launch (never blocks startup).
+        loadEasyList().then(({ text: fresh }) => {
+          if (!fresh) return
+          AD_PATTERNS = parseEasyList(fresh)
+          const cache = cachedListPath()
+          if (cache) {
+            try { fs.writeFileSync(cache, fresh) } catch {}
+          }
+          console.log(`Refreshed ${AD_PATTERNS.length} filter rules from network`)
+        }).catch(() => {})
+        return
+      }
     }
+    throw new Error('No local list available')
   } catch (err) {
-    console.warn('Failed to load EasyList, using hardcoded fallback:', err.message)
-    AD_PATTERNS = HARDCODED_PATTERNS.slice() // copy
+    console.warn('No local/bundled list, trying network fetch:', err.message)
+    try {
+      const { patterns, text } = await loadEasyList()
+      if (patterns && patterns.length > 0) {
+        AD_PATTERNS = patterns
+        const cache = cachedListPath()
+        if (cache) {
+          try { fs.writeFileSync(cache, text) } catch {}
+        }
+        console.log(`Loaded ${patterns.length} EasyList rules`)
+      } else {
+        throw new Error('No patterns loaded')
+      }
+    } catch (netErr) {
+      console.warn('Failed to load EasyList, using hardcoded fallback:', netErr.message)
+      AD_PATTERNS = HARDCODED_PATTERNS.slice() // copy
+    }
   } finally {
     patternsLoaded = true
     loadingPatterns = false
@@ -305,6 +409,8 @@ function enableAdBlocker(ses = session.defaultSession) {
   ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (details, cb) => {
     if (isAdShieldEnabled() && shouldBlockUrl(details.url)) {
       blockedCount++
+      lifetimeBlocked++
+      persistLifetimeCount()
       cb({ cancel: true })
       return
     }
@@ -314,6 +420,8 @@ function enableAdBlocker(ses = session.defaultSession) {
 
 /**
  * Inject cosmetic ad blocker styles and YouTube auto-skipper into a WebContents tab.
+ * On new-tab pages, also pushes the REAL AdShield counters so the privacy
+ * dashboard shows live data instead of a hardcoded placeholder.
  */
 function injectAdShield(wc) {
   if (!wc || typeof wc.on !== 'function') return
@@ -324,11 +432,23 @@ function injectAdShield(wc) {
     if (url.includes('youtube.com')) {
       wc.executeJavaScript(YOUTUBE_AD_SKIP_SCRIPT).catch(() => {})
     }
+    // New tab: replace the fake "Trackers Blocked" placeholder with the REAL
+    // cumulative counter (persisted across launches, grows with use).
+    if (url.includes('newtab.html')) {
+      const stats = getAdShieldStats()
+      wc.executeJavaScript(`window.__setShieldStats && window.__setShieldStats(${JSON.stringify({
+        blockedCount: stats.blockedCount,
+        lifetimeBlocked: stats.lifetimeBlocked,
+        rulesLoaded: stats.patternsLoaded,
+        enabled: stats.enabled,
+      })})`).catch(() => {})
+    }
   })
 }
 
 // Initialize patterns when module is loaded
 initializePatterns().catch(console.error)
+loadLifetimeCount()
 
 module.exports = {
   shouldBlockUrl,

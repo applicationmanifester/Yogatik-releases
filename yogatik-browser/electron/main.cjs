@@ -17,6 +17,7 @@ const path = require('path')
 
 const { enableAdBlocker } = require('./adBlocker.cjs')
 const { registerBrowserControl, destroyAllSessions, restoreSavedSession } = require('./browserControl.cjs')
+const { get: getSetting } = require('./settings/store.cjs')
 
 // ── App Identity ──────────────────────────────────────────────────────────
 app.setName('Yogatik Browser')
@@ -259,6 +260,18 @@ function setupPermissionHandler() {
       callback(true)
       return
     }
+
+    // Per-site exceptions: the user may have explicitly granted this
+    // permission for this origin via the Site Permissions panel (persisted
+    // in settings.json as sitePermissions["https://host"][permission]).
+    try {
+      const origin = new URL(url).origin
+      const grants = getSetting('sitePermissions')
+      if (grants && typeof grants === 'object' && grants[origin]?.[permission] === true) {
+        callback(true)
+        return
+      }
+    } catch {}
 
     // Auto-deny sensitive device and privacy permissions on untrusted external origins
     const sensitive = [

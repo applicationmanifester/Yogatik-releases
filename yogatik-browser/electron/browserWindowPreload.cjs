@@ -2,11 +2,11 @@
 
 const { contextBridge, ipcRenderer } = require('electron')
 
-const TAB_ID_ACTIONS = new Set(['close', 'select', 'cancel-download', 'open-download', 'show-download', 'toggle-mute', 'new-tab-group', 'toggle-vertical-tabs', 'collapse-sidebar', 'rename-tab-group', 'delete-tab-group'])
+const TAB_ID_ACTIONS = new Set(['close', 'select', 'cancel-download', 'open-download', 'show-download', 'toggle-mute', 'toggle-pin', 'new-tab-group', 'toggle-vertical-tabs', 'collapse-sidebar', 'rename-tab-group', 'delete-tab-group'])
 const VALID_ACTIONS = new Set([
   'close', 'select', 'new-tab', 'back', 'forward', 'reload', 'navigate',
   'zoom', 'find', 'find-stop', 'cancel-download', 'open-download', 'show-download',
-  'pip', 'toggle-mute', 'toggle-shield', 'toggle-ai-panel', 'ai-query', 'send-to-main-chat',
+  'pip', 'toggle-mute', 'toggle-pin', 'toggle-shield', 'toggle-ai-panel', 'ai-query', 'send-to-main-chat',
   'toggle-reader', 'screenshot', 'theme', 'cmd-action',
   'new-tab-group', 'toggle-vertical-tabs', 'collapse-sidebar', 'rename-tab-group', 'delete-tab-group',
 ])
