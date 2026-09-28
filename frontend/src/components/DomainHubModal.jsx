@@ -448,12 +448,16 @@ const DOMAIN_PRESETS = [
   },
 ]
 
-export function DomainHubModal({ isOpen, onClose, onExecutePrompt }) {
+export function DomainHubModal({ isOpen, onClose, onExecutePrompt, onStreamStart }) {
   const [activeTab, setActiveTab] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [streamStarted, setStreamStarted] = useState(false)
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) {
+      setStreamStarted(false)
+      return
+    }
     const handleKey = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault()
@@ -487,16 +491,24 @@ export function DomainHubModal({ isOpen, onClose, onExecutePrompt }) {
   }, {})
 
   const handleRunPreset = (preset) => {
-    onClose()
-    onExecutePrompt(preset.prompt)
+    onExecutePrompt(preset.prompt, { onStreamStart })
+    // Don't close immediately - wait for stream to start
+    setStreamStarted(true)
+    // Fallback: close after short delay if no stream start signal
+    setTimeout(() => {
+      if (streamStarted) onClose()
+    }, 3000)
   }
 
   const handleCustomSearch = (e) => {
     e.preventDefault()
     if (!searchQuery.trim()) return
     const promptText = `Search ${activeTab === 'all' ? 'social media, Naukri, Indeed, X, and YouTube' : activeTab} for: "${searchQuery.trim()}". Provide comprehensive insights and links.`
-    onClose()
-    onExecutePrompt(promptText)
+    onExecutePrompt(promptText, { onStreamStart })
+    setStreamStarted(true)
+    setTimeout(() => {
+      if (streamStarted) onClose()
+    }, 3000)
   }
 
   const quickPrompts = [
@@ -609,8 +621,11 @@ export function DomainHubModal({ isOpen, onClose, onExecutePrompt }) {
                 type="button"
                 className="domain-hub-custom-ask-btn"
                 onClick={() => {
-                  onClose()
                   onExecutePrompt(`Search for "${searchQuery}" across social media, jobs, and web research.`)
+                  setStreamStarted(true)
+                  setTimeout(() => {
+                    if (streamStarted) onClose()
+                  }, 3000)
                 }}
               >
                 <Sparkles size={14} /> Ask AI about "{searchQuery}"
@@ -683,8 +698,11 @@ export function DomainHubModal({ isOpen, onClose, onExecutePrompt }) {
                 type="button"
                 className="domain-hub-chip"
                 onClick={() => {
-                  onClose()
-                  onExecutePrompt(qp.query)
+                  onExecutePrompt(qp.query, { onStreamStart })
+                  setStreamStarted(true)
+                  setTimeout(() => {
+                    if (streamStarted) onClose()
+                  }, 3000)
                 }}
               >
                 {qp.label}

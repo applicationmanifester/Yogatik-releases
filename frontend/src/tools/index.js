@@ -103,6 +103,7 @@ import { zerodhaTradeTool } from './zerodhaTrade'
 import { videoEditTool } from './videoEdit'
 import {
   gitStatusTool, gitLogTool, gitDiffTool,
+  gitWorktreeListTool, gitWorktreeAddTool, gitWorktreeRemoveTool, gitWorktreePruneTool,
   procStartTool, procOutputTool, procStopTool, procListTool, watchTool,
 } from './devTools'
 import {
@@ -417,6 +418,10 @@ const ALL_TOOLS = {
   git_status: gitStatusTool,
   git_log: gitLogTool,
   git_diff: gitDiffTool,
+  git_worktree_list: gitWorktreeListTool,
+  git_worktree_add: gitWorktreeAddTool,
+  git_worktree_remove: gitWorktreeRemoveTool,
+  git_worktree_prune: gitWorktreePruneTool,
   proc_start: procStartTool,
   proc_output: procOutputTool,
   proc_stop: procStopTool,
@@ -1334,8 +1339,10 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   if (/\b(cut ?out|remove the background|isolate|segment|just the (object|product|item)|crop to (the|this))\b/i.test(text)) {
     scores['segment'] = 200
   }
-  if (/\b(delegate|sub-agent|subagent|multi-agent|plan|steps|roadmap|complex task|workflow)\b/i.test(text)) {
-    scores['spawn_agents'] = 200
+  if (/\b(delegate|sub-agent|subagent|multi-agent|plan|steps|roadmap|complex task|workflow|break down|in parallel|concurrently|orchestrat|multi-part|end-to-end)\b/i.test(text) ||
+      (/\b(and also|compare|research and|analyze and|build and|design and)\b/i.test(text) && text.length > 50)) {
+    scores['spawn_agents'] = 240
+    scores['crew_orchestrator'] = 220
     scores['sub_agent_runner'] = 180
     scores['scheduler'] = 150
   }

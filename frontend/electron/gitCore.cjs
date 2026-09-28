@@ -321,8 +321,30 @@ function parseBranches(raw) {
   return out
 }
 
+function parseWorktreeList(raw) {
+  const worktrees = []
+  let current = null
+  for (const line of String(raw || '').split(/\r?\n/)) {
+    if (!line.trim()) continue
+    if (line.startsWith('worktree ')) {
+      if (current) worktrees.push(current)
+      current = { path: line.slice(9).trim(), head: null, branch: null, detached: false, bare: false }
+    } else if (line.startsWith('HEAD ') && current) {
+      current.head = line.slice(5).trim()
+    } else if (line.startsWith('branch ') && current) {
+      current.branch = line.slice(7).trim()
+      current.detached = current.branch === '(detached)'
+    } else if (line === 'bare' && current) {
+      current.bare = true
+    }
+  }
+  if (current) worktrees.push(current)
+  return worktrees
+}
+
 module.exports = {
   parseStatus, parseStatusV2, parseLog, parseBranches, summarizeStatus,
   operationInProgress, isSafeGitArgs, buildWriteArgs,
   WRITE_OPS, DESTRUCTIVE_OPS, BRANCH_OPS, READ_ONLY, VALID_REF, REC, FIELD,
+  parseWorktreeList,
 }

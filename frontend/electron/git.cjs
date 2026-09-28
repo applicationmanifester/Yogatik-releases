@@ -240,4 +240,48 @@ function registerGitIpc({ rootPathsFor, snapshot = null }) {
   })
 }
 
+  // Git worktree operations — enables isolated parallel agent workspaces
+  ipcMain.handle('git_worktree_list', async (_e, { ctx } = {}) => {
+    const roots = rootPathsFor(ctx)
+    if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
+    const res = await runGit(roots[0], ['worktree', 'list', '--porcelain'])
+    if (!res.ok) return { success: false, error: res.error || res.stderr }
+    return { success: true, worktrees: core.parseWorktreeList(res.stdout) }
+  })
+
+  ipcMain.handle('git_worktree_add', async (_e, { ctx, path, branch, createBranch = false, detach = false } = {}) => {
+    const roots = rootPathsFor(ctx)
+    if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
+    if (!path) return { success: false, error: 'Worktree path is required.' }
+    const args = ['worktree', 'add']
+    if (detach) args.push('--detach')
+    if (createBranch && branch) args.push('-b', branch)
+    args.push(path)
+    if (branch && !createBranch) args.push(branch)
+    const res = await runGit(roots[0], args, { timeout: 60000 })
+    if (!res.ok) return { success: false, error: res.error || res.stderr }
+    return { success: true, stdout: res.stdout, path }
+  })
+
+  ipcMain.handle('git_worktree_remove', async (_e, { ctx, path, force = false } = {}) => {
+    const roots = rootPathsFor(ctx)
+    if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
+    if (!path) return { success: false, error: 'Worktree path is required.' }
+    const args = ['worktree', 'remove']
+    if (force) args.push('--force')
+    args.push(path)
+    const res = await runGit(roots[0], args, { timeout: 30000 })
+    if (!res.ok) return { success: false, error: res.error || res.stderr }
+    return { success: true, stdout: res.stdout }
+  })
+
+  ipcMain.handle('git_worktree_prune', async (_e, { ctx } = {}) => {
+    const roots = rootPathsFor(ctx)
+    if (!roots.length) return { success: false, error: 'No working folder for this chat.' }
+    const res = await runGit(roots[0], ['worktree', 'prune'])
+    if (!res.ok) return { success: false, error: res.error || res.stderr }
+    return { success: true, stdout: res.stdout }
+  })
+}
+
 module.exports = { registerGitIpc, runGit }

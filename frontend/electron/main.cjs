@@ -4,6 +4,8 @@
 //   cors       — direct provider calls without a browser proxy
 //   menu       — native app menu + shortcuts
 //   windowState— remember size/position between launches
+//   tui        — Terminal UI mode (blessed-based)
+//   headless   — Headless automation mode
 
 const { app, BrowserWindow, shell, globalShortcut, ipcMain, desktopCapturer, screen, clipboard, nativeImage } = require('electron')
 const path = require('path')
@@ -11,6 +13,7 @@ const os = require('os')
 const http = require('http')
 const url = require('url')
 const { spawn, exec } = require('child_process')
+const fs = require('fs')
 
 const { registerFsBridge, initJournal, snapshot: fsSnapshot } = require('./fsBridge.cjs')
 const { safeSend, safeWin, alive } = require('./safeWindow.cjs')
@@ -33,9 +36,6 @@ const { registerCodebaseMap } = require('./codebaseMap.cjs')
 const { registerPower } = require('./power.cjs')
 const { registerDialogs } = require('./dialogs.cjs')
 const { registerProcesses } = require('./processes.cjs')
-// The shared terminal timeline. Agent commands and the human's own land in one
-// per-chat scrollback, so the model's shell is watchable and interruptible.
-// pty.cjs's standalone sessions are superseded by terminalSession's tier 2.
 const {
   registerTerminalSession, stopAllTerminals, runBlock: runTerminalBlock,
 } = require('./terminalSession.cjs')
@@ -43,13 +43,6 @@ const { registerMcpStdio, killAllMcpStdio } = require('./mcpStdio.cjs')
 const { registerCompanionInput } = require('./companionInput.cjs')
 const { registerBrowserControl, destroyAllSessions } = require('./browserControl.cjs')
 const { registerCompanion, toggle: toggleCompanion, destroy: destroyCompanion, isVisible: isCompanionVisible, sendToCompanion } = require('./companionWindow.cjs')
-// Complementary modules from the per-chat-folders work. Different IPC channels
-// (underscore-style) so they coexist with the colon-style ones above:
-//   bgProcesses    — start/stream LONG-RUNNING commands (vs processes.cjs, which
-//                    lists and kills OS processes)
-//   mcpStdioClient — main-side MCP handshake + tools/call (vs mcpStdio.cjs, a
-//                    lower-level RPC passthrough the renderer drives)
-//   fsWatcher      — polling drain model (vs watcher.cjs's named watchers)
 const { registerBgProcessIpc, killAllBgProcesses } = require('./bgProcesses.cjs')
 const { registerGitIpc } = require('./git.cjs')
 const { registerFsWatcherIpc, stopAllFsWatchers } = require('./fsWatcher.cjs')
@@ -62,6 +55,13 @@ const windowState = require('./windowState.cjs')
 
 const isDev = !app.isPackaged
 let mainWindow = null
+let tuiWindow = null
+let isHeadless = false
+let headlessPrompt = null
+let headlessModel = null
+let headlessCwd = null
+let headlessResolve = null
+let headlessReject = null
 
 // ── Last-resort crash guard ────────────────────────────────────────────────
 //
@@ -324,6 +324,81 @@ if (!gotLock) {
   }
 
   app.whenReady().then(async () => {
+    // Parse command line args for headless/TUI mode
+    const argv = process.argv.slice(1)
+    isHeadless = argv.includes('--headless') || argv.includes('--headless=new')
+    const isTUI = argv.includes('--tui')
+    
+    if (isHeadless) {
+      // Headless mode: parse args and run without UI
+      const promptIdx = argv.findIndex(a => a.startsWith('--prompt='))
+      const modelIdx = argv.findIndex(a => a.startsWith('--model='))
+      const cwdIdx = argv.findIndex(a => a.startsWith('--cwd='))
+      
+      headlessPrompt = promptIdx >= 0 ? argv[promptIdx].split('=')[1] : ''
+      headlessModel = modelIdx >= 0 ? argv[modelIdx].split('=')[1] : ''
+      headlessCwd = cwdIdx >= 0 ? argv[cwdIdx].split('=')[1] : process.cwd()
+      
+      // Disable GPU for headless
+      app.commandLine.appendSwitch('disable-gpu')
+      app.commandLine.appendSwitch('headless', 'new')
+      
+      // Create a minimal window for IPC
+      mainWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          preload: path.join(__dirname, 'preload.cjs'),
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: false,
+          backgroundThrottling: false
+        }
+      })
+      
+      if (isDev) {
+        await mainWindow.loadURL('http://localhost:5173')
+      } else {
+        await mainWindow.loadFile(path.join(__dirname, '..', 'dist-electron', 'index.html'))
+      }
+      
+      // Wait for load then execute headless prompt
+      await new Promise(resolve => mainWindow.webContents.once('did-finish-load', resolve))
+      
+      // Send the prompt via the existing event system
+      if (headlessPrompt) {
+        mainWindow.webContents.executeJavaScript(`
+          window.dispatchEvent(new CustomEvent('yogatik:submit-prompt', {
+            detail: { prompt: ${JSON.stringify(headlessPrompt)} }
+          }))
+        `)
+      }
+      
+      // Set up headless result capture
+      ipcMain.once('headless:result', (_, result) => {
+        console.log(result)
+        app.exit(0)
+      })
+      
+      ipcMain.once('headless:error', (_, error) => {
+        console.error(error)
+        app.exit(1)
+      })
+      
+      // Timeout after 5 minutes
+      setTimeout(() => {
+        console.error('Headless execution timeout')
+        app.exit(1)
+      }, 300000)
+      
+      return // Skip normal window creation
+    }
+    
+    if (isTUI) {
+      // TUI mode: launch the blessed-based TUI
+      require('./tui.cjs')
+      return // Skip normal window creation
+    }
+
     enableProviderCors()
     enableAdBlocker()
 
@@ -548,6 +623,62 @@ if (!gotLock) {
           error: err && (err.stack || err.message) ? String(err.stack || err.message) : String(err),
           logs,
         }
+      }
+    })
+
+    // Portable config: load .yogatik/config.json from working directory
+    ipcMain.handle('yogatik:loadConfig', async (_, { cwd = process.cwd() } = {}) => {
+      const configPath = path.join(cwd, '.yogatik', 'config.json')
+      if (fs.existsSync(configPath)) {
+        try {
+          return JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+        } catch (err) {
+          return { error: `Failed to parse config: ${err.message}` }
+        }
+      }
+      return null
+    })
+
+    ipcMain.handle('yogatik:saveConfig', async (_, { config, cwd = process.cwd() }) => {
+      const configDir = path.join(cwd, '.yogatik')
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true })
+      }
+      const configPath = path.join(configDir, 'config.json')
+      try {
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+        return { success: true }
+      } catch (err) {
+        return { success: false, error: err.message }
+      }
+    })
+
+    // Headless mode result handlers (renderer -> main)
+    ipcMain.on('headless:result', (_, result) => {
+      if (headlessResolve) headlessResolve(result)
+    })
+
+    ipcMain.on('headless:error', (_, error) => {
+      if (headlessReject) headlessReject(new Error(error))
+    })
+
+    // TUI mode streaming handlers (renderer -> main -> TUI)
+    ipcMain.on('tui:stream-token', (_, token) => {
+      // Forward to TUI process if running
+      if (tuiWindow && !tuiWindow.isDestroyed()) {
+        tuiWindow.webContents.send('tui-stream-token', token)
+      }
+    })
+
+    ipcMain.on('tui:stream-done', (_, content) => {
+      if (tuiWindow && !tuiWindow.isDestroyed()) {
+        tuiWindow.webContents.send('tui-stream-done', content)
+      }
+    })
+
+    ipcMain.on('tui:stream-error', (_, error) => {
+      if (tuiWindow && !tuiWindow.isDestroyed()) {
+        tuiWindow.webContents.send('tui-stream-error', error)
       }
     })
 

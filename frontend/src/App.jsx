@@ -145,6 +145,9 @@ const MediaStudioModal = safeLazy(() => import('./components/MediaStudioModal').
 const VideoStudioModal = safeLazy(() => import('./components/VideoStudioModal').then(m => ({ default: m.VideoStudioModal })))
 const RagDocumentsModal = safeLazy(() => import('./components/RagDocumentsModal').then(m => ({ default: m.RagDocumentsModal })))
 const ContextUsageModal = safeLazy(() => import('./components/ContextUsageModal').then(m => ({ default: m.ContextUsageModal })))
+const SessionReplayModal = safeLazy(() => import('./components/SessionReplayModal').then(m => ({ default: m.SessionReplayModal })))
+const PluginManagerModal = safeLazy(() => import('./components/PluginManagerModal').then(m => ({ default: m.PluginManagerModal })))
+const CostTrackingModal = safeLazy(() => import('./components/CostTrackingPanel').then(m => ({ default: m.CostTrackingPanel })))
 
 
 // ─── Main App ───
@@ -505,6 +508,9 @@ export default function App() {
   const [showOverviewModal, setShowOverviewModal] = useState(false)
   const [showMcpModal, setShowMcpModal] = useState(false)
   const [showTorrentModal, setShowTorrentModal] = useState(false)
+  const [showSessionReplayModal, setShowSessionReplayModal] = useState(false)
+  const [showPluginManagerModal, setShowPluginManagerModal] = useState(false)
+  const [showCostTrackingModal, setShowCostTrackingModal] = useState(false)
   const [companionMode, setCompanionMode] = useState(false)
   const [pipWindow, setPipWindow] = useState(null)
 
@@ -749,6 +755,80 @@ export default function App() {
   }, [showToast])
 
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
+
+  // Load portable config (.yogatik/config.json) on startup
+  useEffect(() => {
+    if (!isDesktop()) return
+    const loadConfig = async () => {
+      try {
+        const config = await window.__YOGATIK_CONFIG__?.load()
+        if (config) {
+          // Apply config to app state
+          if (config.model && window.__YOGATIK_DESKTOP__) {
+            // Model will be applied when conversation starts
+            console.log('[yogatik] Loaded portable config:', config)
+          }
+        }
+      } catch (err) {
+        console.warn('[yogatik] Failed to load portable config:', err)
+      }
+    }
+    loadConfig()
+  }, [])
+
+  // Handle headless mode: if launched with --headless, capture streaming and exit
+  useEffect(() => {
+    if (!isDesktop() || !window.__YOGATIK_HEADLESS__) return
+    
+    // Check URL for headless params
+    const params = new URLSearchParams(window.location.search)
+    const isHeadless = params.get('headless') === 'true'
+    if (!isHeadless) return
+    
+    console.log('[yogatik] Headless mode detected')
+    
+    // Override send to capture result
+    const originalSend = sendRef.current
+    let capturedContent = ''
+    let isDone = false
+    
+    // Listen for streaming tokens
+    const handleToken = (e) => {
+      const token = e.detail
+      if (token) {
+        capturedContent += token
+      }
+    }
+    
+    // Listen for stream done
+    const handleDone = (e) => {
+      const { content, meta } = e.detail || {}
+      if (content) {
+        capturedContent = content
+      }
+      isDone = true
+      // Send result back to main process
+      window.__YOGATIK_HEADLESS__.sendResult(capturedContent)
+      // Give time for IPC to send
+      setTimeout(() => window.close(), 100)
+    }
+    
+    const handleError = (e) => {
+      const error = e.detail
+      window.__YOGATIK_HEADLESS__.sendError(error?.message || 'Unknown error')
+      setTimeout(() => window.close(), 100)
+    }
+    
+    window.addEventListener('yogatik:stream-token', handleToken)
+    window.addEventListener('yogatik:stream-done', handleDone)
+    window.addEventListener('yogatik:stream-error', handleError)
+    
+    return () => {
+      window.removeEventListener('yogatik:stream-token', handleToken)
+      window.removeEventListener('yogatik:stream-done', handleDone)
+      window.removeEventListener('yogatik:stream-error', handleError)
+    }
+  }, [])
 
   // Install the approval UI. permissions.js FAILS CLOSED without this, so a
   // build where the UI never mounts refuses destructive calls rather than
@@ -2839,7 +2919,7 @@ export default function App() {
       if (idx >= 0) {
         if (nextItem.attachedFile) setAttachedFile(nextItem.attachedFile)
         if (nextItem.attachedFilePath) setAttachedFilePath(nextItem.attachedFilePath)
-        sendRef.current?.(nextItem.text, nextItem.attachedImage, idx)
+        sendRef.current?.(nextItem.text, nextItem.attachedImage, idx, { onStreamStart: nextItem.onStreamStart })
       }
     }, 150)
   }, [])
@@ -2908,7 +2988,7 @@ export default function App() {
   }, [handlePickProviderModel, showToast])
 
   const send = async (text = input, overrideImage = null, explicitIdx = null, turnOptions = {}) => {
-    const { resumeCheckpoint = null } = turnOptions || {}
+    const { resumeCheckpoint = null, onStreamStart = null } = turnOptions || {}
     if (compareMode) {
       runCompare(text)
       return
@@ -2933,6 +3013,7 @@ export default function App() {
         attachedFilePath,
         attachedImage: overrideImage || attachedImage,
         timestamp: Date.now(),
+        onStreamStart, // Pass callback through queue
       }
       setQueuedMessagesMap(prev => {
         const next = {
@@ -3183,14 +3264,29 @@ export default function App() {
 
     let content = ''
     let sources = []
+    let streamStartCallbackCalled = false
     toolRunMapRef.current[targetClientId] = { results: {}, used: [] }
     traceMapRef.current[targetClientId] = []
 
     const pushStreamContent = (txt) => {
       setStreamText(targetClientId, txt)
+      // Call onStreamStart callback on first meaningful token
+      if (!streamStartCallbackCalled && txt && txt.trim() && onStreamStart) {
+        streamStartCallbackCalled = true
+        onStreamStart()
+      }
+    }
+
+    const ensureStreamStart = () => {
+      if (!streamStartCallbackCalled && onStreamStart) {
+        streamStartCallbackCalled = true
+        onStreamStart()
+      }
     }
 
     if (isMultiAgent) {
+      // Defer to allow StreamingMessage to mount before first tokens arrive
+      await Promise.resolve()
       await runMultiAgentDebate({
         topic: collaborateTopic,
         modelA: { provider: useProvider, model: useModel },
@@ -3204,12 +3300,15 @@ export default function App() {
         onToken: (agent, token) => {
           content += token
           pushStreamContent(content)
+          ensureStreamStart()
         },
         onMessageDone: (agent, finalContent) => {
           content += '\n'
           pushStreamContent(content)
+          ensureStreamStart()
         },
         onDone: (finalContent) => {
+          ensureStreamStart()
           setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
           setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
           setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
@@ -3236,10 +3335,12 @@ export default function App() {
           triggerNextQueued(targetClientId)
         },
         onError: (err) => {
+          ensureStreamStart()
           try { announceAssertive(typeof err === 'string' ? err : err?.message || 'Error occurred') } catch {}
           setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
           setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
           setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+          if (window.__YOGATIK_HEADLESS__) window.dispatchEvent(new CustomEvent('yogatik:stream-error', { detail: String(err) }))
           // Preserve any partial content the model streamed before the error —
           // especially important on iOS where background throttling can kill a
           // stream after several paragraphs of real output. Losing all of that
@@ -3269,8 +3370,15 @@ export default function App() {
     }
 
     const executeStream = async (attempt = 0) => {
+      // Reset stream start callback flag for each attempt (including retries)
+      streamStartCallbackCalled = false
       startActivityTurn(targetClientId)
       const _latTurn = startTurn({ provider: useProvider, model: useModel })
+      // Defer stream start to next microtask so StreamingMessage mounts and
+      // receives initialText from streamTextRef before first tokens arrive.
+      // This fixes streaming from modals (Domain Hub, Vision, etc.) where the
+      // send is triggered externally and the UI may not be ready yet.
+      await Promise.resolve()
       await streamMessage(
         {
           message: finalText,
@@ -3293,7 +3401,7 @@ export default function App() {
           // On-device safety screen → surface a soft support card (never blocks).
           onSafety: (_verdict, card) => { if (card) setCrisisCard(card) },
         },
-        (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); publishStream(content, targetClientId); setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' })) },
+        (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); ensureStreamStart(); publishStream(content, targetClientId); setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' })); if (window.__YOGATIK_HEADLESS__) window.dispatchEvent(new CustomEvent('yogatik:stream-token', { detail: token })) },
         (s) => { sources = s },
         (_final, meta) => {
           _latTurn.done()
@@ -3301,6 +3409,7 @@ export default function App() {
           setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' }))
           setStreamIdMap(prev => (prev[targetClientId] == null ? prev : { ...prev, [targetClientId]: null }))
           setLoadingMap(prev => (!prev[targetClientId] ? prev : (() => { const n = { ...prev }; delete n[targetClientId]; return n })()))
+          if (window.__YOGATIK_HEADLESS__) window.dispatchEvent(new CustomEvent('yogatik:stream-done', { detail: { content, meta } }))
 
           // Tell the user their answer arrived if they looked away. The desktop
           // shell has supported rich notifications since v3.13 and nothing ever
@@ -4329,6 +4438,9 @@ export default function App() {
       { id: 'billing', group: 'Settings', label: 'Billing — plan and payment history', hint: 'View invoices', run: () => navigateDashboard('billing') },
       { id: 'mcp-servers', group: 'Settings', label: 'MCP Servers — connect external tools & data', hint: 'Connectors', run: () => navigateDashboard('mcp') },
       { id: 'plugins', group: 'Settings', label: 'Plugins — install & manage extensions', hint: 'Extensions', run: () => navigateDashboard('plugins') },
+      { id: 'session-replay', group: 'Debug', label: 'Session Replay — view past interactions', hint: 'Replay', run: () => setShowSessionReplayModal(true) },
+      { id: 'plugin-manager', group: 'Settings', label: 'Plugin Manager — install & manage plugins', hint: 'Plugins', run: () => setShowPluginManagerModal(true) },
+      { id: 'cost-tracking', group: 'Debug', label: 'Cost Tracking — view API usage costs', hint: 'Costs', run: () => setShowCostTrackingModal(true) },
     ]
 
     for (const [id, p] of Object.entries(models)) {
@@ -7056,9 +7168,13 @@ export default function App() {
         onClose={() => setShowDomainHub(false)}
         onExecutePrompt={(p) => {
           setInput(p)
-          sendRef.current?.(p)
+          sendRef.current?.(p, null, null, { onStreamStart: () => setShowDomainHub(false) })
         }}
+        onStreamStart={() => setShowDomainHub(false)}
       />}
+      {showSessionReplayModal && <SessionReplayModal isOpen={showSessionReplayModal} onClose={() => setShowSessionReplayModal(false)} />}
+      {showPluginManagerModal && <PluginManagerModal isOpen={showPluginManagerModal} onClose={() => setShowPluginManagerModal(false)} />}
+      {showCostTrackingModal && <CostTrackingModal isOpen={showCostTrackingModal} onClose={() => setShowCostTrackingModal(false)} conv={conv} />}
       {showCitationGraph && <CitationGraphModal isOpen={showCitationGraph} onClose={() => setShowCitationGraph(false)} />}
       {showEvalDashboard && <EvalDashboard onClose={() => setShowEvalDashboard(false)} />}
       {showDownloadModal && <DownloadModal isOpen={showDownloadModal} onClose={() => setShowDownloadModal(false)} onInstallPwa={installPwa} showPwa={!!showPwaInstall} />}
@@ -7066,9 +7182,12 @@ export default function App() {
         <ArtifactCanvas
           isOpen={!!activeArtifact}
           onClose={() => setActiveArtifact(null)}
-          onAskAiToEdit={(prefix) => {
+          onAskAiToEdit={(prefix, autoSend = false) => {
             setInput(prefix)
-            setTimeout(() => textareaRef.current?.focus(), 50)
+            setTimeout(() => {
+              textareaRef.current?.focus()
+              if (autoSend) sendRef.current?.(prefix, null, null, { onStreamStart: () => setActiveArtifact(null) })
+            }, 50)
           }}
           {...activeArtifact}
         />

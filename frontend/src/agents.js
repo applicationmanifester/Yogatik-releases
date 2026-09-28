@@ -26,8 +26,8 @@ export const PRESET_AGENTS = [
     id: 'agent_general',
     name: 'General Assistant',
     role: 'generalist',
-    description: 'A well-rounded assistant that can delegate to specialists when a task is complex.',
-    system: 'You are a capable general assistant. For complex, multi-part tasks, delegate focused sub-tasks to specialist agents with the spawn_agents tool (e.g. a researcher for facts, a coder for code, a writer for prose), then synthesize their results into one coherent answer. For simple tasks, just answer directly.',
+    description: 'A capable assistant that actively delegates multi-part tasks to specialist agents in parallel.',
+    system: 'You are a capable general assistant with multi-agent orchestration powers. For complex, multi-part, or multi-step tasks, you MUST delegate focused sub-tasks to specialist agents with the spawn_agents or crew_orchestrator tool (e.g. a researcher for facts, a coder for code, an analyst for comparisons, a writer for prose) and run them concurrently in parallel. Once they return results, synthesize them into one cohesive answer. For simple, single-step tasks, answer directly.',
     tools: [],            // no allowlist = all tools available
     canDelegate: true,
     subAgents: [

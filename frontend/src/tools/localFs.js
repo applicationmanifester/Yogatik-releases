@@ -31,7 +31,8 @@ export const DESKTOP_ONLY_TOOLS = new Set([
   'fs_delete', 'fs_mkdir', 'fs_move', 'fs_batch_read', 'fs_file_tree', 'fs_undo', 'fs_git',
   'fs_exists', 'fs_write_append', 'fs_compute_hash', 'fs_lock', 'fs_unlock', 'fs_atomic_write', 'fs_ping',
   'terminal_run', 'clipboard_access', 'watch_folder', 'system_state', 'process_manager',
-  'file_dialog', 'git_status', 'git_log', 'git_diff', 'proc_start', 'proc_output',
+  'file_dialog', 'git_status', 'git_log', 'git_diff', 'git_worktree_list', 'git_worktree_add', 'git_worktree_remove', 'git_worktree_prune',
+  'proc_start', 'proc_output',
   'proc_stop', 'proc_list', 'watch', 'computer_control', 'screen_inspect', 'desktop_action',
   'local_image_generate', 'local_video_generate', 'aider_copilot', 'test_and_heal',
 ])

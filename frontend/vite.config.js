@@ -142,11 +142,53 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // Heavy internal modules — split into dedicated chunks
+          if (id.includes('/src/agent.js')) return 'agent-core'
+          if (id.includes('/src/api.js')) return 'api-core'
+          if (id.includes('/src/tools/index.js')) return 'tools-registry'
+          if (id.includes('/src/llm.js')) return 'llm-core'
+          if (id.includes('/src/tools/localFs.js')) return 'fs-tools'
+          if (id.includes('/src/tools/devTools.js')) return 'dev-tools'
+          if (id.includes('/src/tools/terminalRun.js')) return 'terminal-tools'
+          if (id.includes('/src/tools/codeExec.js')) return 'code-exec'
+          if (id.includes('/src/tools/webSearch.js')) return 'search-tools'
+          if (id.includes('/src/tools/documents.js')) return 'doc-tools'
+          if (id.includes('/src/tools/browserControl.js')) return 'browser-tools'
+          if (id.includes('/src/live/cascade.js')) return 'live-cascade'
+          if (id.includes('/src/live/session.js')) return 'live-session'
+          if (id.includes('/src/vision/source.js')) return 'vision-core'
+          if (id.includes('/src/db.js')) return 'db-core'
+          if (id.includes('/src/mcp.js')) return 'mcp-core'
+          if (id.includes('/src/agents.js')) return 'agents-core'
+          if (id.includes('/src/autonomousAgent.js')) return 'autonomous-agent'
+          if (id.includes('/src/tools/spawnAgents.js')) return 'spawn-agents'
+          if (id.includes('/src/tools/crewRunner.js')) return 'crew-runner'
+          if (id.includes('/src/tools/agentSwarmTool.js')) return 'agent-swarm'
+          if (id.includes('/src/tools/subAgentRunner.js')) return 'sub-agent-runner'
+          if (id.includes('/src/tools/localIndexEngine.js')) return 'local-index'
+          if (id.includes('/src/tools/localGen.js')) return 'local-gen'
+          if (id.includes('/src/tools/videoRender.js')) return 'video-render'
+          if (id.includes('/src/tools/docGenerator.js')) return 'doc-generator'
+          if (id.includes('/src/trading/')) return 'trading-core'
+          if (id.includes('/src/companion/')) return 'companion-core'
+
+          // Node modules — vendor chunks
           if (id.includes('node_modules')) {
             if (id.includes('firebase')) return 'vendor-firebase'
+            if (id.includes('pdfjs') || id.includes('jspdf')) return 'vendor-pdf'
+            if (id.includes('html2canvas')) return 'vendor-canvas'
+            if (id.includes('lucide-react')) return 'vendor-icons'
+            if (id.includes('react-markdown') || id.includes('remark') || id.includes('rehype')) return 'vendor-markdown'
+            if (id.includes('@codemirror') || id.includes('@lezer') || id.includes('codemirror')) return 'vendor-codemirror'
+            if (id.includes('prismjs') || id.includes('refractor') || id.includes('react-syntax-highlighter')) return 'vendor-highlight'
+            if (id.includes('three') || id.includes('@react-three')) return 'vendor-three'
+            if (id.includes('chart.js') || id.includes('chartjs')) return 'vendor-chart'
+            if (id.includes('date-fns') || id.includes('dayjs')) return 'vendor-date'
+            if (id.includes('zustand') || id.includes('jotai') || id.includes('redux')) return 'vendor-state'
             // Keep heavy code editor and syntax highlighter as async chunks
             if (id.includes('react-syntax-highlighter') || id.includes('prismjs') || id.includes('refractor')) return undefined
             if (id.includes('@codemirror') || id.includes('@lezer')) return undefined
+            return 'vendor-other'
           }
         },
       },

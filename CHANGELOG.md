@@ -1,5 +1,12 @@
 # Changelog
 
+## v10.10.0 - Proactive Multi-Agent Delegation, Concurrent Specialists & Orchestration Reflex (2026-09-28)
+
+### 🤖 Multi-Agent Orchestration & Sub-Agent Delegation
+- **Mandatory Multi-Agent Delegation Directive (`agent.js`)** — Replaced passive delegation suggestions with a concrete directive commanding models to autonomously decompose multi-part objectives (research + code, multi-topic comparisons, full-stack implementations) and dispatch specialized sub-agents (`researcher`, `coder`, `analyst`, `writer`, `planner`) via `spawn_agents` or `crew_orchestrator` in parallel.
+- **General Assistant Active Delegation Persona (`agents.js`)** — Upgraded the default General Assistant persona to proactively partition complex, multi-faceted queries across specialist sub-agents concurrently, synthesizing their unified findings into an executive final output.
+- **Dynamic Multi-Intent & Workflow Tool Prioritization (`tools/index.js`)** — Enhanced `prioritizeToolSchemas` to score `spawn_agents` (240) and `crew_orchestrator` (220) to top tier when multi-step intent keywords (`in parallel`, `concurrently`, `break down`, `multi-part`, `end-to-end`) or multi-intent connectors (`and also`, `research and`, `analyze and`, `build and`) are present in user queries.
+
 ## v10.9.6 - Live AI Reasoning Visibility, Stream Transparency & Icon Persistence (2026-09-26)
 
 ### 🧠 AI Thinking & Real-Time Reasoning

@@ -7,7 +7,7 @@
 import { createReasoningTagger } from './reasoning.js'
 import { calculateBackoffWithJitter, isTransientError } from './resilientTransport.js'
 
-const PROVIDERS = {
+export const PROVIDERS = {
   nvidia: {
     name: 'NVIDIA',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
@@ -23,6 +23,7 @@ const PROVIDERS = {
     keyUrl: 'https://build.nvidia.com',
     publicModels: true,
     needsProxy: true,
+    pricing: { input: 0, output: 0, currency: 'USD', free: true },
   },
   local: {
     name: 'On-device (no key)',
@@ -32,6 +33,7 @@ const PROVIDERS = {
     keyUrl: '',
     isLocal: true,
     noKey: true,
+    pricing: { input: 0, output: 0, currency: 'USD', free: true },
   },
   ollama: {
     name: 'Ollama (local)',
@@ -57,6 +59,7 @@ const PROVIDERS = {
     isLocal: true,
     offlineReady: true,
     keyUrl: 'https://ollama.com/download',
+    pricing: { input: 0, output: 0, currency: 'USD', free: true },
   },
   gemini: {
     name: 'Gemini',
@@ -65,6 +68,14 @@ const PROVIDERS = {
     default: '',
     preferred: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'],
     keyUrl: 'https://aistudio.google.com/apikey',
+    pricing: {
+      'gemini-2.5-pro': { input: 1.25, output: 5.00 },
+      'gemini-2.5-flash': { input: 0.075, output: 0.30 },
+      'gemini-2.0-flash': { input: 0.075, output: 0.30 },
+      'gemini-1.5-pro': { input: 1.25, output: 5.00 },
+      'gemini-1.5-flash': { input: 0.075, output: 0.30 },
+      default: { input: 0.075, output: 0.30 },
+    },
   },
   groq: {
     name: 'Groq',
@@ -73,6 +84,7 @@ const PROVIDERS = {
     default: '',
     preferred: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
     keyUrl: 'https://console.groq.com',
+    pricing: { input: 0, output: 0, currency: 'USD', free: true },
   },
   openrouter: {
     name: 'OpenRouter (100+ models)',
@@ -92,6 +104,7 @@ const PROVIDERS = {
       'anthropic/claude-3-5-haiku',
     ],
     keyUrl: 'https://openrouter.ai/keys',
+    pricing: { input: 0, output: 0, currency: 'USD', note: 'Per-model pricing via OpenRouter' },
   },
   openai: {
     name: 'OpenAI',
@@ -100,6 +113,16 @@ const PROVIDERS = {
     default: '',
     preferred: ['gpt-4o-mini', 'gpt-4o', 'o4-mini'],
     keyUrl: 'https://platform.openai.com/api-keys',
+    pricing: {
+      'gpt-4o': { input: 2.50, output: 10.00 },
+      'gpt-4o-mini': { input: 0.15, output: 0.60 },
+      'o4-mini': { input: 1.10, output: 4.40 },
+      'o1-preview': { input: 15.00, output: 60.00 },
+      'o1-mini': { input: 3.00, output: 12.00 },
+      'gpt-4-turbo': { input: 10.00, output: 30.00 },
+      'gpt-3.5-turbo': { input: 0.50, output: 1.50 },
+      default: { input: 0.15, output: 0.60 },
+    },
   },
   anthropic: {
     name: 'Anthropic (Claude)',
@@ -110,6 +133,13 @@ const PROVIDERS = {
     keyUrl: 'https://console.anthropic.com/settings/api-keys',
     isAnthropic: true,
     needsProxy: true,
+    pricing: {
+      'claude-3-7-sonnet-20250219': { input: 3.00, output: 15.00 },
+      'claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00 },
+      'claude-3-5-haiku-20241022': { input: 0.25, output: 1.25 },
+      'claude-3-opus-20240229': { input: 15.00, output: 75.00 },
+      default: { input: 3.00, output: 15.00 },
+    },
   },
   xai: {
     name: 'xAI Grok',
@@ -118,6 +148,12 @@ const PROVIDERS = {
     default: '',
     preferred: ['grok-3-mini', 'grok-3', 'grok-2-1212'],
     keyUrl: 'https://console.x.ai/',
+    pricing: {
+      'grok-3': { input: 3.00, output: 15.00 },
+      'grok-3-mini': { input: 0.30, output: 0.50 },
+      'grok-2-1212': { input: 2.00, output: 10.00 },
+      default: { input: 0.30, output: 0.50 },
+    },
   },
   deepseek: {
     name: 'DeepSeek',
@@ -126,6 +162,11 @@ const PROVIDERS = {
     default: '',
     preferred: ['deepseek-chat', 'deepseek-reasoner'],
     keyUrl: 'https://platform.deepseek.com/api_keys',
+    pricing: {
+      'deepseek-chat': { input: 0.14, output: 0.28 },
+      'deepseek-reasoner': { input: 0.55, output: 2.19 },
+      default: { input: 0.14, output: 0.28 },
+    },
   },
   mistral: {
     name: 'Mistral AI',
@@ -134,6 +175,12 @@ const PROVIDERS = {
     default: '',
     preferred: ['mistral-small-latest', 'mistral-large-latest', 'codestral-latest'],
     keyUrl: 'https://console.mistral.ai/api-keys',
+    pricing: {
+      'mistral-large-latest': { input: 2.00, output: 6.00 },
+      'mistral-small-latest': { input: 0.20, output: 0.60 },
+      'codestral-latest': { input: 0.20, output: 0.60 },
+      default: { input: 0.20, output: 0.60 },
+    },
   },
   perplexity: {
     name: 'Perplexity (Web-grounded)',
@@ -142,6 +189,12 @@ const PROVIDERS = {
     default: '',
     preferred: ['sonar', 'sonar-pro', 'sonar-reasoning'],
     keyUrl: 'https://www.perplexity.ai/settings/api',
+    pricing: {
+      'sonar': { input: 1.00, output: 1.00 },
+      'sonar-pro': { input: 3.00, output: 15.00 },
+      'sonar-reasoning': { input: 1.00, output: 5.00 },
+      default: { input: 1.00, output: 1.00 },
+    },
   },
   cohere: {
     name: 'Cohere',
@@ -150,6 +203,11 @@ const PROVIDERS = {
     default: '',
     preferred: ['command-r-plus', 'command-r7b-12-2024'],
     keyUrl: 'https://dashboard.cohere.com/api-keys',
+    pricing: {
+      'command-r-plus': { input: 3.00, output: 15.00 },
+      'command-r': { input: 0.50, output: 1.50 },
+      default: { input: 0.50, output: 1.50 },
+    },
   },
   cerebras: {
     name: 'Cerebras',
@@ -158,6 +216,7 @@ const PROVIDERS = {
     default: '',
     preferred: ['llama3.3-70b', 'llama3.1-8b'],
     keyUrl: 'https://cloud.cerebras.ai',
+    pricing: { input: 0, output: 0, currency: 'USD', free: true },
   },
 }
 

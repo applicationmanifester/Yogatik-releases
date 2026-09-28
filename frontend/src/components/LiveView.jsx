@@ -1043,6 +1043,7 @@ export function LiveView({
     const dataUrl = `data:image/jpeg;base64,${b64}`
 
     try {
+      let finalText = ''
       if (modelCanSee) {
         setVision({ via: model ? model.split('/').pop() : provider })
         const isMotionQ = needsMotion(q)
@@ -1056,12 +1057,25 @@ export function LiveView({
           provider, apiKey, model,
           userMessage,
           toolsEnabled: false,
-          onToken: (t) => setVision({ text: visionText + t }),
+          onToken: (t) => {
+            finalText += t
+            setVision({ text: visionText + t })
+          },
         })
       } else {
         setVision({ via: 'on-device' })
         const { via, text } = await describeWithoutModel(dataUrl, q)
+        finalText = text
         setVision({ via: via === 'ocr' ? 'OCR' : 'on-device VLM', text })
+      }
+      // Persist vision Q&A to conversation history
+      if (conversationId && onTranscript && finalText) {
+        try {
+          await onTranscript('user', `[Vision] ${q}`)
+          await onTranscript('assistant', `[Vision Analysis via ${visionVia || 'AI'}]: ${finalText}`)
+        } catch (e) {
+          console.error('Failed to persist vision analysis:', e)
+        }
       }
     } catch (err) {
       setVision({ text: visionText + `\n\n[Analysis failed: ${err.message}]` })

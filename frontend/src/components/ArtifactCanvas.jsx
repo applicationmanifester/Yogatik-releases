@@ -95,7 +95,7 @@ export function ArtifactCanvas({
 
   const handleAskEdit = () => {
     if (onAskAiToEdit) {
-      onAskAiToEdit(`Regarding artifact "${title}" (${language}):\n\n`)
+      onAskAiToEdit(`Regarding artifact "${title}" (${language}):\n\n`, true)
     }
   }
 

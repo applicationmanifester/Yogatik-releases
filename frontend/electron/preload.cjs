@@ -18,6 +18,7 @@ const FS_COMMANDS = new Set([
   'proc_start', 'proc_output', 'proc_stop', 'proc_list',
   'hooks_run', 'hooks_list', 'hooks_trust', 'hooks_trusted',
   'git_run', 'git_status', 'git_log', 'git_diff', 'git_write', 'git_show_untracked',
+  'git_worktree_list', 'git_worktree_add', 'git_worktree_remove', 'git_worktree_prune',
   // A handler not named here is rejected as "Unknown command" — that is how
   // fs_find_files shipped dead. Every new git_* handler goes in this list.
   'git_file_history', 'git_show_file',
@@ -477,5 +478,24 @@ contextBridge.exposeInMainWorld('__YOGATIK_TORRENT__', {
     ipcRenderer.on('torrent:update', handler)
     return () => ipcRenderer.removeListener('torrent:update', handler)
   }
+})
+
+// Portable config bridge
+contextBridge.exposeInMainWorld('__YOGATIK_CONFIG__', {
+  load: (cwd) => ipcRenderer.invoke('yogatik:loadConfig', { cwd }),
+  save: (config, cwd) => ipcRenderer.invoke('yogatik:saveConfig', { config, cwd }),
+})
+
+// Headless mode bridge
+contextBridge.exposeInMainWorld('__YOGATIK_HEADLESS__', {
+  sendResult: (result) => ipcRenderer.send('headless:result', result),
+  sendError: (error) => ipcRenderer.send('headless:error', error),
+})
+
+// TUI mode bridge
+contextBridge.exposeInMainWorld('__YOGATIK_TUI__', {
+  sendToken: (token) => ipcRenderer.send('tui:stream-token', token),
+  sendDone: (content) => ipcRenderer.send('tui:stream-done', content),
+  sendError: (error) => ipcRenderer.send('tui:stream-error', error),
 })
 
