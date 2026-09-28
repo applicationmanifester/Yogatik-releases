@@ -12,11 +12,11 @@
 //   - Window state persistence
 //   - CSP security headers
 
-const { app, BrowserWindow, globalShortcut, ipcMain, shell, session: electronSession } = require('electron')
+const { app, BrowserWindow, globalShortcut, Notification, ipcMain, shell, session: electronSession } = require('electron')
 const path = require('path')
 
 const { enableAdBlocker } = require('./adBlocker.cjs')
-const { registerBrowserControl, destroyAllSessions } = require('./browserControl.cjs')
+const { registerBrowserControl, destroyAllSessions, restoreSavedSession } = require('./browserControl.cjs')
 
 // ── App Identity ──────────────────────────────────────────────────────────
 app.setName('Yogatik Browser')

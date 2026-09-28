@@ -19,10 +19,10 @@ if (!gotLock) {
 app.commandLine.appendSwitch('disable-gpu')
 app.commandLine.appendSwitch('headless', 'new')
 
-let screen: any = null
-let messagesBox: any = null
-let inputBox: any = null
-let statusBar: any = null
+let screen = null
+let messagesBox = null
+let inputBox = null
+let statusBar = null
 let currentConversationId = null
 let isStreaming = false
 let streamingContent = ''
@@ -120,7 +120,7 @@ function createTUI() {
   return screen
 }
 
-function appendMessage(role: string, content: string, isStreaming = false) {
+function appendMessage(role, content, isStreaming = false) {
   const timestamp = new Date().toLocaleTimeString()
   const prefix = role === 'user' ? '{green-fg}You{/green-fg}' : '{cyan-fg}Yogatik{/cyan-fg}'
   const marker = isStreaming ? '{yellow-fg}▌{/yellow-fg}' : ''
@@ -133,7 +133,7 @@ function appendMessage(role: string, content: string, isStreaming = false) {
   screen.render()
 }
 
-function updateStreamingMessage(content: string) {
+function updateStreamingMessage(content) {
   streamingContent = content
   const existing = messagesBox.getContent()
   // Replace last assistant message
@@ -157,7 +157,7 @@ function updateStreamingMessage(content: string) {
   screen.render()
 }
 
-async function sendMessage(text: string) {
+async function sendMessage(text) {
   if (isStreaming) return
   
   appendMessage('user', text)

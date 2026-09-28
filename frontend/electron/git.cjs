@@ -238,7 +238,6 @@ function registerGitIpc({ rootPathsFor, snapshot = null }) {
       return { success: false, error: e.message }
     }
   })
-}
 
   // Git worktree operations — enables isolated parallel agent workspaces
   ipcMain.handle('git_worktree_list', async (_e, { ctx } = {}) => {
