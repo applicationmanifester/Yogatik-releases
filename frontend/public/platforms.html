@@ -462,11 +462,86 @@
     (function () {
       var RELEASES = [
   {
+    "version": "11.2.0",
+    "title": "Yogatik 11.2.0: Auto-Recovery for Model Overload & Autonomous Watchdog Reconnect",
+    "date": "September 29, 2026",
+    "codename": "Overloaded Model Auto-Recovery, Response Quality Watchdog Reconnection",
+    "isLatest": true,
+    "highlights": [
+      [
+        "Overloaded Model Auto-Recovery",
+        "Automatic retry with exponential backoff when upstream provider APIs report high load (429, 503, model overloaded)"
+      ],
+      [
+        "Autonomous Watchdog Continuation",
+        "Truncated or incomplete responses (unclosed code fences, mid-sentence cuts) automatically trigger continuation passes"
+      ],
+      [
+        "Seamless Stream Healing",
+        "Reconnecting and self-healing stream errors even after initial tokens were received without losing output"
+      ],
+      [
+        "Cross-Platform Release Sync",
+        "Coordinated v11.2.0 deployment across Web, Desktop (Windows, macOS, Linux), and Standalone Browser"
+      ]
+    ]
+  },
+  {
+    "version": "11.1.0",
+    "title": "Yogatik 11.1.0: Live Voice On-Device Whisper Fallback & Vision Modal JSON Formatter",
+    "date": "September 28, 2026",
+    "codename": "Live Voice Whisper Bypass, Vision JSON Formatter & Multimodal Guard",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Live Voice Desktop Fix",
+        "Skip failing cloud Web Speech in Electron and automatically fall back to on-device Whisper STT"
+      ],
+      [
+        "Vision Modal JSON Formatter",
+        "Interactive collapsible JSON tree viewer with Raw and Formatted view modes"
+      ],
+      [
+        "Conversational Vision Prompts",
+        "Enforced natural language responses for live multimodal camera and screen captures"
+      ],
+      [
+        "Cross-Platform Release Sync",
+        "Coordinated v11.1.0 deployment across Web, Desktop (Windows, macOS, Linux), and Browser"
+      ]
+    ]
+  },
+  {
+    "version": "11.0.0",
+    "title": "Yogatik 11.0.0: Modal Streaming Fixes, Session Replay, Cost Tracking & Git Worktree Isolation",
+    "date": "September 28, 2026",
+    "codename": "Modal Streaming Race Fix, Session Replay, Cost Tracking & Plugin System",
+    "isLatest": false,
+    "highlights": [
+      [
+        "Modal Streaming Fix",
+        "Fixed race condition where modals closed before AI stream started with ensureStreamStart guarantee"
+      ],
+      [
+        "Session Replay System",
+        "Full event logging with playback, speed control, search/filter, and JSON export"
+      ],
+      [
+        "Cost Tracking UI",
+        "Per-conversation cost breakdown by model with provider pricing comparison table"
+      ],
+      [
+        "Git Worktree Isolation",
+        "git_worktree_add/remove/list/prune tools for parallel agent workspaces"
+      ]
+    ]
+  },
+  {
     "version": "10.9.6",
     "title": "Yogatik 10.9.6: Live AI Reasoning Visibility, Stream Transparency & Icon Persistence",
     "date": "September 26, 2026",
     "codename": "Live AI Reasoning Stream, Prompted Mode Transparency & NSIS Icon Fix",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Live AI Reasoning & Thinking Visibility",

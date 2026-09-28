@@ -100,6 +100,45 @@ function closeSplash() {
   splashWin = null
 }
 
+// ── Auto-Updates (electron-updater) ───────────────────────────────────────
+// The GitHub publish config in package.json generates app-update.yml at
+// packaging time; electron-updater reads it and polls the 'browser' channel.
+// Downloads run silently in the background and install on quit — the user
+// is only ever interrupted by a single notification that a restart is due.
+let updaterStarted = false
+
+function startAutoUpdater() {
+  if (updaterStarted) return
+  // electron-updater is only meaningful in a packaged build (app-update.yml
+  // does not exist in dev, and checking would just 404).
+  if (!app.isPackaged) return
+  try {
+    const { autoUpdater } = require('electron-updater')
+    autoUpdater.autoDownload = true
+    autoUpdater.autoInstallOnAppQuit = true
+
+    autoUpdater.on('update-downloaded', (info) => {
+      try {
+        new Notification({
+          title: 'Yogatik Browser — Update Ready',
+          body: `Version ${info.version} downloaded. It installs next time you restart.`,
+          icon: path.join(__dirname, 'assets', 'icon.png'),
+          silent: true,
+        }).show()
+      } catch {}
+    })
+
+    autoUpdater.on('error', () => { /* offline / no release — stay silent */ })
+
+    // First check shortly after launch (after the window is up), then every 4h.
+    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 15_000)
+    setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000)
+    updaterStarted = true
+  } catch (err) {
+    console.warn('[updater] electron-updater unavailable:', err.message)
+  }
+}
+
 // ── Main Browser Window ───────────────────────────────────────────────────
 let mainWin = null
 
@@ -132,9 +171,14 @@ const opts = {
   mainWin.webContents.on('did-finish-load', () => {
     closeSplash()
     mainWin.show()
-    // Open initial tab with Yogatik Browser new tab experience
+    // Restore the previous session's tabs (urls, titles, active tab, pinned
+    // state). Falls back to a fresh new tab when nothing was saved — a
+    // restart must never silently reopen pages the user had already closed.
     setTimeout(() => {
-      ipcMain.emit('browser:quick-action', null, { action: 'new-tab' })
+      const restored = restoreSavedSession(() => mainWin)
+      if (!restored) {
+        ipcMain.emit('browser:quick-action', null, { action: 'new-tab' })
+      }
     }, 50)
   })
 
@@ -289,6 +333,18 @@ function registerShortcuts() {
         'window.__toggleBookmark && window.__toggleBookmark()'
       ).catch(() => {})
     }
+    // Ctrl+Tab / Ctrl+Shift+Tab: cycle tabs (next / previous)
+    if (ctrl && input.key === 'Tab') {
+      ipcMain.emit('browser:quick-action', null, {
+        action: input.shift ? 'cycle-tab-prev' : 'cycle-tab-next',
+      })
+      event.preventDefault()
+    }
+    // Ctrl+Shift+T: Reopen last closed tab
+    if (ctrl && input.shift && input.key === 'T') {
+      ipcMain.emit('browser:quick-action', null, { action: 'reopen-tab' })
+      event.preventDefault()
+    }
     // Ctrl+Shift+S: Screenshot
     if (ctrl && input.shift && input.key === 'S') {
       ipcMain.emit('browser:quick-action', null, { action: 'screenshot' })
@@ -314,6 +370,9 @@ app.whenReady().then(() => {
   // Create the main browser window
   createMainWindow()
   registerShortcuts()
+
+  // Start background update checks (packaged builds only)
+  startAutoUpdater()
 
   // macOS: re-create window when dock icon is clicked
   app.on('activate', () => {
