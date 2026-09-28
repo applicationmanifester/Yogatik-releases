@@ -1050,7 +1050,7 @@ export function LiveView({
         const userMessage = (isMotionQ && temporalVideoBuffer.hasFrames())
           ? temporalVideoBuffer.buildMultimodalPrompt(q, 3)
           : [
-              { type: 'text', text: q },
+              { type: 'text', text: q + '\n\nIMPORTANT: Respond in natural language, not JSON format. Provide a clear, conversational description.' },
               { type: 'image_url', image_url: { url: dataUrl } },
             ]
         await runAgent({

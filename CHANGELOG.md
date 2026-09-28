@@ -1,6 +1,20 @@
 # Changelog
 
-## v10.10.0 - Proactive Multi-Agent Delegation, Concurrent Specialists & Orchestration Reflex (2026-09-28)
+## v11.1.0 - Live Speech On-Device Whisper Fallback & Vision Modal JSON Formatter (2026-09-28)
+
+### 🎙️ Live Mode Speech Recognition & Electron Reliability
+- **Electron Cloud Web Speech Bypass (`cascade.js`)** — Detects Electron runtime environment to bypass the cloud Web Speech API (`SpeechRecognition`), which throws repeated network errors without Google API credentials, and directly initializes on-device Whisper transcription.
+- **Immediate Speech Recognition** — Eliminates the 2-retry loop delay and reconnecting banners when speaking in desktop Live mode.
+
+### 👁️ Vision & Multimodal Inspection
+- **Interactive JSON Tree Viewer (`VisionModal.jsx`, `12-vision-modal-json.css`)** — Added collapsible JSON tree viewer with level expansion, syntax highlighting, and Raw/Formatted mode toggle for structured vision outputs.
+- **Natural Language Vision Prompts (`LiveView.jsx`)** — Enhanced live camera frame prompts to request natural conversational language from multimodal vision models rather than raw JSON structures.
+
+### 🌐 Cross-Platform Synchronisation
+- **Synchronized v11.1.0** — Aligned version badges across Web, Desktop (Windows, macOS, Linux), and Standalone Browser pages.
+
+## v11.0.0 - Modal Streaming Fixes, Session Replay, Cost Tracking & Plugin System (2026-09-28)
+
 
 ### 🤖 Multi-Agent Orchestration & Sub-Agent Delegation
 - **Mandatory Multi-Agent Delegation Directive (`agent.js`)** — Replaced passive delegation suggestions with a concrete directive commanding models to autonomously decompose multi-part objectives (research + code, multi-topic comparisons, full-stack implementations) and dispatch specialized sub-agents (`researcher`, `coder`, `analyst`, `writer`, `planner`) via `spawn_agents` or `crew_orchestrator` in parallel.

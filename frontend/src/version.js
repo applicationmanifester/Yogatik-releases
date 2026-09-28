@@ -3,16 +3,70 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '11.0.0'
+export const APP_VERSION = '11.1.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 11.0.0 — Modal Streaming Fixes, Session Replay, Cost Tracking, Plugin System, Git Worktree Isolation, Cost Tracking UI'
+export const APP_CODENAME = 'Yogatik 11.1.0 — Live Speech On-Device Whisper Fallback & Vision Modal JSON Formatter'
+
+const SEEN_VERSION_KEY = 'yogatik:seen_version'
+
+export function hasSeenCurrentVersion() {
+  try {
+    return localStorage.getItem(SEEN_VERSION_KEY) === APP_VERSION
+  } catch { return false }
+}
+
+export function markCurrentVersionAsSeen() {
+  try {
+    localStorage.setItem(SEEN_VERSION_KEY, APP_VERSION)
+  } catch { /* ignore */ }
+}
 
 export const APP_RELEASES = [
+  {
+    "version": "11.1.0",
+    "title": "Yogatik 11.1.0: Live Voice On-Device Whisper Fallback & Vision Modal JSON Formatter",
+    "date": "September 28, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Live Voice Desktop Fix: Skip failing cloud Web Speech in Electron and automatically fall back to on-device Whisper STT",
+      "Vision Modal JSON Formatter: Interactive collapsible JSON tree viewer with Raw and Formatted view modes",
+      "Conversational Vision Prompts: Enforced natural language responses for live multimodal camera and screen captures",
+      "Cross-Platform Release Sync: Coordinated v11.1.0 deployment across Web, Desktop (Windows, macOS, Linux), and Browser"
+    ],
+    "sections": [
+      {
+        "category": "🎙️ Live Mode Speech Recognition",
+        "items": [
+          {
+            "title": "Electron Cloud Web Speech Bypass",
+            "description": "Detected Electron runtime environment in cascade.js to skip the Google Cloud Web Speech API (which throws repeated network errors without Google API credentials) and directly route voice audio to fast, on-device Whisper transcription."
+          },
+          {
+            "title": "Immediate Voice Response",
+            "description": "Eliminated the 2-retry network error delay and reconnecting banners when speaking in desktop Live mode."
+          }
+        ]
+      },
+      {
+        "category": "👁️ Vision & Multimodal Inspection",
+        "items": [
+          {
+            "title": "Collapsible JSON Tree Viewer",
+            "description": "Added an interactive JSON viewer for structured vision outputs with depth-aware expansion, colored primitives, and formatted/raw toggling."
+          },
+          {
+            "title": "Conversational Response Guard",
+            "description": "Prompted live frame vision queries to default to natural language explanations rather than raw JSON strings."
+          }
+        ]
+      }
+    ]
+  },
   {
     "version": "11.0.0",
     "title": "Yogatik 11.0.0: Modal Streaming Fixes, Session Replay, Cost Tracking, Plugin System, Git Worktree Isolation, Cost Tracking UI",
     "date": "September 28, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Fixed modal streaming race condition: modals now properly close when AI stream starts via onStreamStart callback",
       "Session Replay: Full event logging with playback, speed control, search/filter, and JSON export",
@@ -312,3 +366,10 @@ export const APP_RELEASES = [
     "isLatest": false
   }
 ]
+
+/**
+ * Get release info by version string or latest release.
+ */
+export function getRelease(version = APP_VERSION) {
+  return APP_RELEASES.find(r => r.version === version) || APP_RELEASES[0]
+}

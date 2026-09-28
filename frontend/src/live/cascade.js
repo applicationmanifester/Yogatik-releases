@@ -1419,7 +1419,15 @@ export function createCascadeSession({
     const isLocalProvider = provider === 'ollama' || provider === 'lmstudio' ||
       provider === 'local' || String(provider).startsWith('localhost') || String(apiKey).startsWith('http://')
 
-    if (!speechRecognitionAvailable() || isLocalProvider) {
+    // Electron ships Chromium's SpeechRecognition constructor but lacks Google's
+    // cloud API credentials. Every call fires `onerror` with 'network', the 2-retry
+    // fallback loop wastes seconds, and the user sees "Reconnecting…" toasts before
+    // Whisper even starts. Skip straight to on-device speech in Electron.
+    const isElectron = typeof window !== 'undefined' &&
+      (!!window.__YOGATIK_ELECTRON__ || !!window.__YOGATIK_DESKTOP__ ||
+       /electron/i.test(navigator.userAgent))
+
+    if (!speechRecognitionAvailable() || isLocalProvider || isElectron) {
       startLocalRecognition()
       if (camera) {
         try { await enableCamera(true) } catch (camErr) {
