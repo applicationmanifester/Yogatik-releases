@@ -61,7 +61,7 @@ import { detectMcpNeed } from './mcpRegistry'
 import * as mcpMod from './mcp'
 import { createExecutionTracker, recordExecutionOutcome, detectStagnation, buildReworkFeedbackMessage } from './relentlessLoop'
 import { initializeTaskPlan, updateTaskPlanItem, renderTaskPlanPrompt } from './taskPlanMemory'
-import { assessResponse, regenerationPrompt, continuationPrompt as watchdogContinuationPrompt, isToolReceiptStub } from './responseWatchdog'
+import { assessResponse, regenerationPrompt, continuationPrompt as watchdogContinuationPrompt, isToolReceiptStub, isRetryableError, retryDelay } from './responseWatchdog'
 import { buildUiTelemetryBlock } from './uiContext'
 
 /** Durable memories the user asked to keep, injected so the model recalls them
@@ -1154,63 +1154,90 @@ function safelyParseToolArgs(raw) {
 }
 
   let streamingReported = false
-  const processStream = () => new Promise((resolve, reject) => {
-    toolCallsToProcess = []
-    roundContent = ''
-    let rejectedTools = false
-    streamingReported = false
-    onStatus?.('🧠 Thinking & formulating response…')
+  const processStream = (maxTransientRetries = 2) => {
+    let transientAttempt = 0
+    const attemptStream = () => new Promise((resolve, reject) => {
+      toolCallsToProcess = []
+      roundContent = ''
+      let rejectedTools = false
+      streamingReported = false
+      onStatus?.(transientAttempt > 0
+        ? `🔄 Retrying stream (${transientAttempt}/${maxTransientRetries})…`
+        : '🧠 Thinking & formulating response…')
 
-    streamChat({
-      provider, apiKey, model, messages, tools, temperature, maxTokens, signal,
-      providerOptions, responseFormat,
-      // In prompted mode the reply may BE a tool call, so it is buffered and
-      // only shown once we know it is prose. Even in native mode, models like Nemotron/Qwen
-      // may emit raw XML tool calls, so we avoid streaming raw tool tags into the user's bubble.
-      onToken: (t) => {
-        roundContent += t
-        if (!streamingReported && t.trim()) {
-          streamingReported = true
-          onStatus?.('⚡ Streaming response…')
-        }
-        if (toolMode !== 'prompted') {
-          const nonThinking = roundContent
-            .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*?<\/(?:think|thought|reasoning)>/gi, '')
-            .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*$/i, '')
-            .trimStart()
-          const looksLikeToolCall = /^\s*<(?:tool_call|function_call|function=|invoke\s|action:)/i.test(nonThinking)
-            || /^\s*```(?:json)?\s*\{\s*["\u201c]tool_calls/i.test(nonThinking)
-            || /^\s*```(?:json)?\s*\[\s*\{\s*["\u201c](?:name|tool|function)/i.test(nonThinking)
-            || /^\s*\{\s*["\u201c]tool_calls/i.test(nonThinking)
-            || /^\s*\[TOOL_CALL/i.test(nonThinking)
-            || /^\s*\{\s*["\u201c](?:name|tool|function)["\u201d]\s*:\s*["\u201c][^"\u201c]+["\u201d]\s*,\s*["\u201c](?:arguments|args|parameters)/i.test(nonThinking)
-          if (!looksLikeToolCall) {
-            fullContent += t
-            onToken?.(t)
+      streamChat({
+        provider, apiKey, model, messages, tools, temperature, maxTokens, signal,
+        providerOptions, responseFormat,
+        // In prompted mode the reply may BE a tool call, so it is buffered and
+        // only shown once we know it is prose. Even in native mode, models like Nemotron/Qwen
+        // may emit raw XML tool calls, so we avoid streaming raw tool tags into the user's bubble.
+        onToken: (t) => {
+          roundContent += t
+          if (!streamingReported && t.trim()) {
+            streamingReported = true
+            onStatus?.('⚡ Streaming response…')
           }
-        } else {
-          // In prompted mode the full response is buffered for tool-call detection.
-          // However <think>/<thought>/<reasoning> content can NEVER be a tool call —
-          // stream those tokens immediately so the Thinking panel and streaming
-          // message bubble show live reasoning as it generates.
-          const openCount = (roundContent.match(/<(?:think|thought|reasoning)\b[^>]*>/gi) || []).length
-          const closeCount = (roundContent.match(/<\/(?:think|thought|reasoning)>/gi) || []).length
-          const isInsideOpenBlock = openCount > closeCount
-          const isClosingThinkTag = /<\/(?:think|thought|reasoning)>/i.test(t)
-          if (isInsideOpenBlock || isClosingThinkTag) {
-            onToken?.(t)
+          if (toolMode !== 'prompted') {
+            const nonThinking = roundContent
+              .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*?<\/(?:think|thought|reasoning)>/gi, '')
+              .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*$/i, '')
+              .trimStart()
+            const looksLikeToolCall = /^\s*<(?:tool_call|function_call|function=|invoke\s|action:)/i.test(nonThinking)
+              || /^\s*```(?:json)?\s*\{\s*["\u201c]tool_calls/i.test(nonThinking)
+              || /^\s*```(?:json)?\s*\[\s*\{\s*["\u201c](?:name|tool|function)/i.test(nonThinking)
+              || /^\s*\{\s*["\u201c]tool_calls/i.test(nonThinking)
+              || /^\s*\[TOOL_CALL/i.test(nonThinking)
+              || /^\s*\{\s*["\u201c](?:name|tool|function)["\u201d]\s*:\s*["\u201c][^"\u201c]+["\u201d]\s*,\s*["\u201c](?:arguments|args|parameters)/i.test(nonThinking)
+            if (!looksLikeToolCall) {
+              fullContent += t
+              onToken?.(t)
+            }
+          } else {
+            // In prompted mode the full response is buffered for tool-call detection.
+            // However <think>/<thought>/<reasoning> content can NEVER be a tool call —
+            // stream those tokens immediately so the Thinking panel and streaming
+            // message bubble show live reasoning as it generates.
+            const openCount = (roundContent.match(/<(?:think|thought|reasoning)\b[^>]*>/gi) || []).length
+            const closeCount = (roundContent.match(/<\/(?:think|thought|reasoning)>/gi) || []).length
+            const isInsideOpenBlock = openCount > closeCount
+            const isClosingThinkTag = /<\/(?:think|thought|reasoning)>/i.test(t)
+            if (isInsideOpenBlock || isClosingThinkTag) {
+              onToken?.(t)
+            }
           }
-        }
-      },
-      onToolCall: (tc) => { toolCallsToProcess.push(tc) },
-      onToolsRejected: toolMode === 'native' ? () => { rejectedTools = true } : null,
-      onDone: (telemetry) => {
-        if (telemetry) lastTelemetry = telemetry
-        resolve({ rejectedTools, telemetry })
-      },
-      onError: (e) => reject(e),
+        },
+        onToolCall: (tc) => { toolCallsToProcess.push(tc) },
+        onToolsRejected: toolMode === 'native' ? () => { rejectedTools = true } : null,
+        onDone: (telemetry) => {
+          if (telemetry) lastTelemetry = telemetry
+          resolve({ rejectedTools, telemetry })
+        },
+        onError: async (e) => {
+          const errStr = typeof e === 'string' ? e : e?.message || ''
+          const isAbort = e?.name === 'AbortError' || signal?.aborted || /abort|cancel/i.test(errStr)
+          if (!isAbort && transientAttempt < maxTransientRetries && isRetryableError(errStr)) {
+            transientAttempt++
+            const delay = retryDelay(transientAttempt - 1)
+            onStatus?.(`⚠️ Model API overloaded/unavailable — reconnecting in ${Math.round(delay / 1000)}s (${transientAttempt}/${maxTransientRetries})…`)
+            await new Promise(r => setTimeout(r, delay))
+            if (signal?.aborted) {
+              reject(e)
+              return
+            }
+            try {
+              const res = await attemptStream()
+              resolve(res)
+            } catch (retryErr) {
+              reject(retryErr)
+            }
+            return
+          }
+          reject(e)
+        },
+      })
     })
-  })
+    return attemptStream()
+  }
 
   /** Pull any tool calls out of the reply text (supports XML, JSON, Nemotron, ReAct). */
   let promptedRepairTried = false

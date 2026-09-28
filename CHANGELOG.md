@@ -1,5 +1,15 @@
 # Changelog
 
+## v11.2.0 - Overloaded Model Auto-Recovery & Autonomous Watchdog Continuation (2026-09-29)
+
+### ⚡ Resilience & Auto-Recovery
+- **Overloaded Model Reconnection (`agent.js`, `App.jsx`)** — Implemented autonomous auto-retry and reconnection loop for transient provider errors (`429`, `503`, `The model API is currently overloaded`) with exponential backoff and transparent live status updates (`⚠️ Model API overloaded/unavailable — reconnecting in Xs...`).
+- **Autonomous Watchdog Continuation (`App.jsx`, `responseWatchdog.js`)** — Connected response quality watchdog verdict `continue` directly to execution pass using `continuationPrompt` so incomplete or truncated outputs (unclosed code fences, mid-sentence cuts, token limit boundaries) are automatically resumed instead of accepted partially.
+- **Seamless Stream Healing** — Enabled auto-recovery to execute even when partial tokens had already been received prior to the stream interruption.
+
+### 🌐 Cross-Platform Synchronisation
+- **Synchronized v11.2.0** — Aligned version numbers and release manifests across Web, Desktop (Windows, macOS, Linux), and Standalone Browser pages.
+
 ## v11.1.0 - Live Speech On-Device Whisper Fallback & Vision Modal JSON Formatter (2026-09-28)
 
 ### 🎙️ Live Mode Speech Recognition & Electron Reliability

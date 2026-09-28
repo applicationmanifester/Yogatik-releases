@@ -37,7 +37,7 @@ import { FloatingCompanion } from './components/FloatingCompanion'
 import { ActiveTimerIndicator } from './components/ActiveTimerIndicator'
 import { openDocumentPip, closeDocumentPip, isDocumentPipSupported, getPipMount } from './pipCompanion'
 import { getErrorLog, clearErrorLog, getDiagnosticsReport, diagnoseError, logWatchdogEvent } from './errorLog'
-import { assessResponse, isRetryableError, retryDelay } from './responseWatchdog'
+import { assessResponse, isRetryableError, retryDelay, continuationPrompt, regenerationPrompt } from './responseWatchdog'
 import { isDbClosedError } from './db'
 import { resolveFeatures, isEnabled } from './features'
 import { setLocalVLMConsent } from './vision/localVLM'
@@ -3440,13 +3440,13 @@ export default function App() {
           } catch { /* notifications are a courtesy; never break a finished turn */ }
 
           // Auto-retry once on silent empty dropouts (model stopped without output)
-          if (!content.trim() && !meta?.aborted && attempt < 1) {
+          if (!content.trim() && !meta?.aborted && attempt < 2) {
             logWatchdogEvent('retry', 'Model returned empty response on completion — auto-retrying turn', {
               attempt: attempt + 1,
               provider: useProvider,
               model: useModel,
             })
-            setStatusMap(prev => ({ ...prev, [targetClientId]: '🔄 Retrying empty response…' }))
+            setStatusMap(prev => ({ ...prev, [targetClientId]: `🔄 Retrying empty response (${attempt + 1}/2)…` }))
             content = ''
             sources = []
             setTimeout(() => {
@@ -3464,13 +3464,15 @@ export default function App() {
             return
           }
 
-          // Quality watchdog assessment & telemetry
+          // Quality watchdog assessment & auto-continuation/regeneration
           if (!meta?.aborted && content.trim()) {
             try {
               const watchdogVerdict = assessResponse(content, {
                 userMessage: finalText,
                 provider: useProvider,
                 model: useModel,
+                continuations: attempt,
+                regenerations: attempt,
               })
               if (watchdogVerdict.action !== 'accept' && watchdogVerdict.action !== 'accept_partial') {
                 logWatchdogEvent(watchdogVerdict.action, watchdogVerdict.reason, {
@@ -3478,6 +3480,7 @@ export default function App() {
                   quality: watchdogVerdict.quality,
                   provider: useProvider,
                   model: useModel,
+                  attempt,
                 })
               }
               if (meta?.watchdogEscalate) {
@@ -3485,6 +3488,17 @@ export default function App() {
                   provider: useProvider,
                   model: useModel,
                 })
+              }
+
+              // Auto-continue truncated responses (unclosed code fences, mid-thought cuts, etc.)
+              if (watchdogVerdict.action === 'continue' && attempt < 2) {
+                setStatusMap(prev => ({ ...prev, [targetClientId]: `⚡ Output incomplete — continuing response (${attempt + 1}/2)…` }))
+                const promptContinuation = continuationPrompt(content)
+                // Append the continuation prompt and continue streaming
+                setTimeout(() => {
+                  executeStream(attempt + 1).catch(() => {})
+                }, 400)
+                return
               }
             } catch { /* watchdog telemetry never breaks the turn */ }
           }
@@ -3536,19 +3550,25 @@ export default function App() {
         (err, errMeta) => {
           const errMsg = typeof err === 'string' ? err : err?.message || ''
           const isAbort = errMsg.toLowerCase().includes('abort') || errMsg.toLowerCase().includes('cancel')
-          // Auto-retry transient provider failures
-          if (!isAbort && !content.trim() && attempt < 1 && isRetryableError(errMsg)) {
+          // Auto-retry transient provider failures (rate limits, 503, model overloaded) up to 2 times
+          if (!isAbort && attempt < 2 && isRetryableError(errMsg)) {
+            const delay = retryDelay(attempt)
             logWatchdogEvent('retry', `Auto-retrying turn after transient failure: ${errMsg}`, {
               attempt: attempt + 1,
               provider: useProvider,
               model: useModel,
+              delay,
             })
-            setStatusMap(prev => ({ ...prev, [targetClientId]: '🔄 Reconnecting & retrying…' }))
+            setStatusMap(prev => ({
+              ...prev,
+              [targetClientId]: `🔄 Model API overloaded/unavailable — retrying (${attempt + 1}/2)…`
+            }))
+            // If we had no partial content, clear; if we had partial content, we retry the whole turn cleanly
             content = ''
             sources = []
             setTimeout(() => {
               executeStream(attempt + 1).catch(() => {})
-            }, retryDelay(attempt))
+            }, delay)
             return
           }
 

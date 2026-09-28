@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '11.1.0'
+export const APP_VERSION = '11.2.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 11.1.0 — Live Speech On-Device Whisper Fallback & Vision Modal JSON Formatter'
+export const APP_CODENAME = 'Yogatik 11.2.0 — Auto-Recovery for Model Overload & Autonomous Watchdog Reconnect'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,37 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "11.2.0",
+    "title": "Yogatik 11.2.0: Auto-Recovery for Model Overload & Autonomous Watchdog Reconnect",
+    "date": "September 29, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Overloaded Model Auto-Recovery: Automatic retry with exponential backoff when upstream provider APIs report high load or rate limits",
+      "Autonomous Watchdog Continuation: Truncated or incomplete responses (unclosed code fences, mid-sentence cuts) are automatically continued",
+      "Seamless Stream Healing: Reconnecting and self-healing stream errors even after initial tokens were received",
+      "Cross-Platform Release Sync: Coordinated v11.2.0 deployment across Web, Desktop (Windows, macOS, Linux), and Standalone Browser"
+    ],
+    "sections": [
+      {
+        "category": "⚡ Resilience & Self-Healing",
+        "items": [
+          {
+            "title": "Autonomous Transient Error Reconnection",
+            "description": "Integrated automatic retry in agent processStream and App.jsx for transient provider errors (429, 503, model overloaded) with exponential backoff and live status cues."
+          },
+          {
+            "title": "Response Quality Watchdog Auto-Continuation",
+            "description": "Watchdog assessResponse verdict now triggers real auto-continuation passes using continuationPrompt instead of merely logging telemetry."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "11.1.0",
     "title": "Yogatik 11.1.0: Live Voice On-Device Whisper Fallback & Vision Modal JSON Formatter",
     "date": "September 28, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Live Voice Desktop Fix: Skip failing cloud Web Speech in Electron and automatically fall back to on-device Whisper STT",
       "Vision Modal JSON Formatter: Interactive collapsible JSON tree viewer with Raw and Formatted view modes",
