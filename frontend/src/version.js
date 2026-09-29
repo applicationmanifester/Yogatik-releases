@@ -5,7 +5,7 @@
 
 export const APP_VERSION = '11.3.1'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 11.3.0 — Real-Time Reasoning Streaming & Robust Model Watchdog'
+export const APP_CODENAME = 'Yogatik 11.3.1 — Honest fs_read Truncation & StreamingMessage Parse Fix'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,50 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "11.3.1",
+    "title": "Yogatik 11.3.1: Honest fs_read Truncation & StreamingMessage Parse Fix",
+    "date": "September 29, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Honest fs_read Truncation: fs_smart_read and fs_outline now report the TRUE line count and flag head truncation — start_line past the readable head fails loudly with the exact continuation call instead of silently returning empty content",
+      "Smarter Symbol Reads: fs_smart_read reads until the NEXT definition (capped by max_lines) instead of a blind +150 lines, so long functions come back whole; missing symbols past the truncation point explain why and how to read deeper",
+      "StreamingMessage Parse Fix: Fixed an unclosed forwardRef parenthesis that made the streaming reply component fail to parse entirely",
+      "fs_outline PARTIAL Notes: Outlines of byte-capped files are marked partial with the readable range and how to read the rest"
+    ],
+    "sections": [
+      {
+        "category": "📖 File Reading & Truncation",
+        "items": [
+          {
+            "title": "True Total Line Count",
+            "description": "fs_smart_read and fs_outline read the real line count from the native fs_read result instead of counting the truncated head, so line ranges and outlines of large files are accurate."
+          },
+          {
+            "title": "Loud Empty-Read Guard",
+            "description": "A start_line past the readable head returns a clear error with the head size, true total, and the exact fs_read call to continue — never silent empty content."
+          },
+          {
+            "title": "Next-Definition Symbol Reads",
+            "description": "Symbol reads span to the next symbol's line (capped by max_lines) with truncated/continuation notes, so long function bodies are not silently cut mid-way."
+          }
+        ]
+      },
+      {
+        "category": "🔧 Component Fixes",
+        "items": [
+          {
+            "title": "StreamingMessage Parse Fix",
+            "description": "Closed the forwardRef parenthesis that broke parsing of the in-flight assistant reply component (Expected ')' but found end of file)."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "11.3.0",
     "title": "Yogatik 11.3.0: Real-Time Reasoning Streaming & Robust Model Watchdog",
     "date": "September 29, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Real-Time Reasoning Streaming: Fixed chat UI token streaming for reasoning models (Nemotron, Qwen, DeepSeek) so thinking steps and answers appear live without getting suppressed",
       "Robust Code Block & Markdown Streaming: Markdown JSON and code blocks are preserved and streamed without false-triggering internal tool call guards",
