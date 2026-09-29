@@ -143,10 +143,55 @@ async function injectExtensions(webContents, url) {
   }
 }
 
+// ── Chrome Web Store extension support (Tier 4) ───────────────────────────
+// Electron can load unpacked Chrome extensions natively (MV3 support is
+// partial — background service workers and some chrome.* APIs are limited).
+// Unpacked extension folders live in <userData>/chrome-extensions/ and load
+// at startup; a broken one never kills the browser.
+
+function getChromeExtensionsDir() {
+  try {
+    return path.join(app.getPath('userData'), 'chrome-extensions')
+  } catch {
+    return path.join(__dirname, '..', 'chrome-extensions')
+  }
+}
+
+const loadedChromeExtensions = []
+
+function loadChromeExtensions(ses) {
+  if (!ses || typeof ses.loadExtension !== 'function') return []
+  const dir = getChromeExtensionsDir()
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+  } catch {}
+  let dirs = []
+  try {
+    dirs = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name)
+  } catch {
+    return []
+  }
+  for (const name of dirs) {
+    const extDir = path.join(dir, name)
+    try {
+      const ext = ses.loadExtension(extDir, { allowFileAccess: false })
+      loadedChromeExtensions.push({ id: ext.id, name: ext.name, version: ext.version })
+      console.log(`[extensions] Loaded Chrome extension: ${ext.name} (${ext.id})`)
+    } catch (err) {
+      console.warn(`[extensions] Chrome extension ${name} failed:`, err.message)
+    }
+  }
+  return loadedChromeExtensions
+}
+
 module.exports = {
   getExtensionsDir,
   ensureExtensionsDir,
   loadExtensions,
   injectExtensions,
   matchPattern,
+  getChromeExtensionsDir,
+  loadChromeExtensions,
 }

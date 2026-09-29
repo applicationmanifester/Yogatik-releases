@@ -16,8 +16,9 @@ const { app, BrowserWindow, globalShortcut, Notification, ipcMain, shell, sessio
 const path = require('path')
 
 const { enableAdBlocker } = require('./adBlocker.cjs')
-const { registerBrowserControl, destroyAllSessions, restoreSavedSession } = require('./browserControl.cjs')
+const { registerBrowserControl, destroyAllSessions, restoreSavedSession, sessions, toggleSplitView } = require('./browserControl.cjs')
 const { get: getSetting } = require('./settings/store.cjs')
+const { loadChromeExtensions } = require('./extensions.cjs')
 
 // ── App Identity ──────────────────────────────────────────────────────────
 app.setName('Yogatik Browser')
@@ -204,6 +205,45 @@ const opts = {
 }
 
 // ── Security: CSP Headers & Permission Hardening ─────────────────────────
+// Network privacy: DNS-over-HTTPS (encrypted resolution — the ISP can no
+// longer see or poison domain lookups) and HTTPS-only mode (every plain
+// http:// request is transparently upgraded; localhost stays exempt).
+
+function applyNetworkPrivacy() {
+  // DNS-over-HTTPS via Chromium's DnsOverHttps feature. Quad9 (Switzerland,
+  // no-logs) is the privacy default; Cloudflare as the fallback template.
+  if (getSetting('dnsOverHttps') !== false) {
+    try {
+      app.commandLine.appendSwitch('enable-features', 'DnsOverHttps')
+      app.commandLine.appendSwitch(
+        'dns-over-https-templates',
+        getSetting('dohTemplate') || 'https://dns.quad9.net/dns-query https://cloudflare-dns.com/dns-query'
+      )
+    } catch {}
+  }
+
+  // HTTPS-only mode: redirect http:// → https:// at the request layer.
+  electronSession.defaultSession.webRequest.onBeforeRequest(
+    { urls: ['http://*/*'] },
+    (details, cb) => {
+      const url = details.url || ''
+      try {
+        const u = new URL(url)
+        // localhost / LAN / anything that is not a public http host stays.
+        const isLocal = u.hostname === 'localhost' ||
+          u.hostname === '127.0.0.1' || u.hostname === '::1' ||
+          /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(u.hostname)
+        if (isLocal || u.pathname === '/favicon.ico') { cb({ cancel: false }); return }
+        // Upgrading is a redirect — safe for idempotent GETs; POSTs to http
+        // endpoints are rare and a broken https endpoint would fail loudly.
+        cb({ redirectURL: 'https://' + u.host + u.pathname + u.search })
+      } catch {
+        cb({ cancel: false })
+      }
+    }
+  )
+}
+
 function applyCSP() {
   electronSession.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const url = details.url || ''
@@ -358,6 +398,12 @@ function registerShortcuts() {
       ipcMain.emit('browser:quick-action', null, { action: 'reopen-tab' })
       event.preventDefault()
     }
+    // Ctrl+\: Split View
+    if (ctrl && input.key === '\\') {
+      const s = [...sessions.values()].find(x => x.win === mainWin)
+      if (s) toggleSplitView(s)
+      event.preventDefault()
+    }
     // Ctrl+Shift+S: Screenshot
     if (ctrl && input.shift && input.key === 'S') {
       ipcMain.emit('browser:quick-action', null, { action: 'screenshot' })
@@ -373,9 +419,13 @@ app.whenReady().then(() => {
   // Enable ad/tracker blocking
   enableAdBlocker()
 
+  // Load unpacked Chrome extensions from <userData>/chrome-extensions/
+  loadChromeExtensions(electronSession.defaultSession)
+
   // Apply security headers & permission hardening
   applyCSP()
   setupPermissionHandler()
+  applyNetworkPrivacy()
 
   // Register browser IPC handlers
   registerBrowserControl(ipcMain, () => mainWin)
@@ -412,4 +462,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   if (mainWin) saveWindowState(mainWin)
   destroyAllSessions()
+  // Stop page monitors and their hidden view.
+  try { require('./pageMonitor.cjs').destroyMonitors() } catch {}
 })

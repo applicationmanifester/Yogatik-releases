@@ -12,9 +12,10 @@
 // Sessions are keyed by conversationId: a logged-in tab must not follow the user
 // into an unrelated chat.
 
-const { BrowserWindow, WebContentsView, ipcMain, session: electronSession, shell, clipboard, app } = require('electron')
+const { BrowserWindow, WebContentsView, ipcMain, dialog, session: electronSession, shell, clipboard, app } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
 const { pathToFileURL } = require('url')
 const { safeSend } = require('./safeWindow.cjs')
 const {
@@ -27,6 +28,11 @@ const { toggleReaderMode } = require('./readerMode.cjs')
 const { load: loadSettings, get: getSetting, set: setSetting } = require('./settings/store.cjs')
 const { injectExtensions } = require('./extensions.cjs')
 const aiEngine = require('./aiEngine.cjs')
+const { injectVideoControls } = require('./videoControls.cjs')
+const { injectConsentBlocker } = require('./consentBlocker.cjs')
+const { applyVimKeydown, toggleVimHints } = require('./vimNav.cjs')
+const { injectFingerprintShield } = require('./fingerprintShield.cjs')
+const pageMonitor = require('./pageMonitor.cjs')
 
 const NEW_TAB_URL = pathToFileURL(path.join(__dirname, 'newtab.html')).href
 
@@ -314,9 +320,22 @@ function layout(s) {
     const [w, hh] = h.getContentSize()
     if (s.isHtmlFullScreen) {
       t.view.setBounds({ x: 0, y: 0, width: w, height: hh })
+      const st = s.splitTabId ? s.tabs.get(s.splitTabId) : null
+      if (st?.view) st.view.setBounds({ x: 0, y: 0, width: 0, height: 0 }) // collapsed in fullscreen
     } else {
       const sideW = (s.mode === 'window' && s.aiPanelOpen) ? 340 : 0
-      t.view.setBounds({ x: 0, y: TAB_BAR_H, width: Math.max(200, w - sideW), height: Math.max(0, hh - TAB_BAR_H) })
+      const avail = Math.max(200, w - sideW)
+      // Split view: the active tab takes the left half, the secondary tab the
+      // right — 50/50, no draggable gutter (drag-state complexity for marginal
+      // value; 50/50 is what split view is FOR).
+      const splitTab = s.splitTabId ? s.tabs.get(s.splitTabId) : null
+      if (splitTab?.view && s.splitTabId !== s.activeTabId) {
+        const half = Math.floor(avail / 2)
+        t.view.setBounds({ x: 0, y: TAB_BAR_H, width: half, height: Math.max(0, hh - TAB_BAR_H) })
+        splitTab.view.setBounds({ x: half, y: TAB_BAR_H, width: avail - half, height: Math.max(0, hh - TAB_BAR_H) })
+      } else {
+        t.view.setBounds({ x: 0, y: TAB_BAR_H, width: avail, height: Math.max(0, hh - TAB_BAR_H) })
+      }
     }
   }
 }
@@ -327,12 +346,35 @@ function showActive(s) {
   for (const [tabId, t] of s.tabs) {
     if (!t.view) continue
     const attached = h.contentView.children.includes(t.view)
-    const shouldShow = tabId === s.activeTabId && !s.detached
+    // Split view: the secondary tab stays visible alongside the active tab.
+    const isSplitSecondary = s.splitTabId === tabId && tabId !== s.activeTabId && !s.detached && !s.isHtmlFullScreen
+    const shouldShow = tabId === s.activeTabId || isSplitSecondary
     if (shouldShow && !attached) h.contentView.addChildView(t.view)
     if (!shouldShow && attached) h.contentView.removeChildView(t.view)
   }
   layout(s)
   syncTabBar(s)
+}
+
+/** Toggle split view: active tab + the most recent other tab, 50/50. */
+function toggleSplitView(s) {
+  if (s.splitTabId) {
+    // Exit split — showActive() hides the secondary and re-lays-out.
+    s.splitTabId = null
+    showActive(s)
+    return { success: true, split: false }
+  }
+  // Enter split: pair the active tab with the most recent other tab.
+  const ids = [...s.tabs.keys()].filter(id => id !== s.activeTabId)
+  if (!ids.length) return { success: false, error: 'Only one tab — open another to split' }
+  const otherId = ids[ids.length - 1]
+  const other = s.tabs.get(otherId)
+  if (other?.hibernating) {
+    restoreTab(s, otherId).catch(() => {})
+  }
+  s.splitTabId = otherId
+  showActive(s)
+  return { success: true, split: true }
 }
 
 // The toolbar (address bar + back/forward/reload) needs the ACTIVE tab's own
@@ -603,6 +645,34 @@ function wireTabListeners(s, tabId, tab) {
     if (tab.failed.length > 50) tab.failed.shift()
   })
   wc.on('page-title-updated', () => syncTabBar(s))
+  // Fingerprint farbling must land BEFORE page scripts read fingerprints —
+  // dom-ready fires earlier than did-finish-load.
+  wc.on('dom-ready', () => {
+    if (getSetting('fingerprintRandomize') !== false) {
+      const u = safe(() => wc.getURL(), '')
+      if (u && (u.startsWith('http://') || u.startsWith('https://'))) {
+        injectFingerprintShield(wc).catch(() => {})
+      }
+    }
+  })
+  // Vim-style keyboard navigation (opt-in). Tab-level before-input-event so
+  // j/k/g/G/h/l and link hints work inside the page; typing is guarded in
+  // the injected script itself.
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    if (getSetting('vimNavEnabled') !== true) return
+    const key = input.key
+    if (key === 'f') {
+      toggleVimHints(wc).catch(() => {})
+      event.preventDefault()
+      return
+    }
+    if (['j', 'k', 'g', 'G', 'h', 'l'].includes(key)) {
+      applyVimKeydown(wc, key).then((res) => {
+        if (res && res.handled) event.preventDefault()
+      }).catch(() => {})
+    }
+  })
   wc.on('did-finish-load', () => {
     syncTabBar(s)
 
@@ -610,6 +680,14 @@ function wireTabListeners(s, tabId, tab) {
     const pageUrl = safe(() => wc.getURL(), '')
     if (pageUrl && (pageUrl.startsWith('http://') || pageUrl.startsWith('https://'))) {
       injectExtensions(wc, pageUrl).catch(() => {})
+      // Cookie banner auto-consent (auto-reject non-essential cookies)
+      if (getSetting('cookieAutoReject') !== false) {
+        injectConsentBlocker(wc).catch(() => {})
+      }
+      // Universal video controls on any page with a <video> element
+      if (getSetting('videoControlsEnabled') !== false) {
+        injectVideoControls(wc).catch(() => {})
+      }
     }
 
     // Automated Challenge / 2FA Detection for agent tabs (OpenBot pattern)
@@ -859,6 +937,8 @@ function closeTab(s, tabId) {
   }
   safe(() => t.view.webContents.close())
   s.tabs.delete(tabId)
+  // Closing the split's secondary (or promoting it to active) ends the split.
+  if (s.splitTabId === tabId) s.splitTabId = null
   if (s.activeTabId === tabId) s.activeTabId = [...s.tabs.keys()][0] || null
   // Last tab closed: hide the surface, but keep the session so the next call
   // reopens it. Hidden rather than destroyed for the same reason as setMode.
@@ -2355,6 +2435,128 @@ function registerBrowserControl(first, second) {
     return aiEngine.getStatus()
   })
 
+  // ── Scheduled page monitoring ──
+  pageMonitor.wireMonitors({
+    toast: (text) => {
+      // Push a toast into the browser chrome (first window-mode session wins).
+      const s = [...sessions.values()].find(x => x.win && !x.win.isDestroyed())
+      if (!s) return
+      s.win.webContents.executeJavaScript(`window.__setToast && window.__setToast(${JSON.stringify(text)})`).catch(() => {})
+    },
+  })
+  ipcMain.handle('browser:monitor-add', (_e, p = {}) => pageMonitor.addMonitor(p))
+  ipcMain.handle('browser:monitor-remove', (_e, p = {}) => pageMonitor.removeMonitor(p?.id))
+  ipcMain.handle('browser:monitor-list', () => pageMonitor.listMonitors())
+
+  // ── Encrypted profile backup (sync-free E2E) ──
+  // AES-256-GCM with a scrypt-derived key from the user's password. The
+  // password never leaves the machine and is never stored — lose it and the
+  // backup is unrecoverable, which is the point.
+  ipcMain.handle('browser:backup-export', async (_e, p = {}) => {
+    try {
+      const password = String(p.password || '')
+      if (password.length < 6) return { success: false, error: 'Password must be at least 6 characters' }
+      const s = [...sessions.values()].find(x => x.win && !x.win.isDestroyed())
+      let chromeData = {}
+      if (s) {
+        chromeData = await s.win.webContents.executeJavaScript(`
+          ({
+            bookmarks: localStorage.getItem('yogatik_browser_bookmarks') || '[]',
+            tabGroups: localStorage.getItem('yogatik_tab_groups') || '[]',
+            scratchpad: localStorage.getItem('yogatik_newtab_notes') || '',
+            theme: localStorage.getItem('yogatik_browser_theme') || 'midnight',
+            engineIdx: localStorage.getItem('yogatik_engine_idx') || '0',
+            verticalTabs: localStorage.getItem('yogatik_vertical_tabs') || 'false',
+          })
+        `).catch(() => ({}))
+      }
+      const settingsFile = path.join(app.getPath('userData'), 'settings.json')
+      const settingsData = fs.existsSync(settingsFile)
+        ? fs.readFileSync(settingsFile, 'utf-8')
+        : '{}'
+
+      const payload = JSON.stringify({
+        version: 1,
+        createdAt: Date.now(),
+        chrome: chromeData,
+        settings: JSON.parse(settingsData || '{}'),
+      })
+
+      const salt = crypto.randomBytes(16)
+      const iv = crypto.randomBytes(12)
+      const key = crypto.scryptSync(password, salt, 32)
+      const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
+      const ciphertext = Buffer.concat([cipher.update(payload, 'utf-8'), cipher.final()])
+      const tag = cipher.getAuthTag()
+
+      const envelope = JSON.stringify({
+        yogatikBackup: 1,
+        salt: salt.toString('base64'),
+        iv: iv.toString('base64'),
+        tag: tag.toString('base64'),
+        data: ciphertext.toString('base64'),
+      })
+
+      const { canceled, filePath } = await dialog.showSaveDialog(s?.win || null, {
+        title: 'Export Encrypted Profile Backup',
+        defaultPath: path.join(app.getPath('downloads'), `yogatik-browser-backup-${new Date().toISOString().slice(0, 10)}.yogabak`),
+        filters: [{ name: 'Yogatik Backup', extensions: ['yogabak'] }],
+      })
+      if (canceled || !filePath) return { success: false, canceled: true }
+      fs.writeFileSync(filePath, envelope, 'utf-8')
+      return { success: true, filePath }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('browser:backup-import', async (_e, p = {}) => {
+    try {
+      const password = String(p.password || '')
+      const { canceled, filePaths } = await dialog.showOpenDialog(null, {
+        title: 'Import Encrypted Profile Backup',
+        filters: [{ name: 'Yogatik Backup', extensions: ['yogabak'] }],
+        properties: ['openFile'],
+      })
+      if (canceled || !filePaths || !filePaths[0]) return { success: false, canceled: true }
+      const envelope = JSON.parse(fs.readFileSync(filePaths[0], 'utf-8'))
+      if (!envelope.yogatikBackup) return { success: false, error: 'Not a Yogatik backup file' }
+      const salt = Buffer.from(envelope.salt, 'base64')
+      const iv = Buffer.from(envelope.iv, 'base64')
+      const tag = Buffer.from(envelope.tag, 'base64')
+      const ciphertext = Buffer.from(envelope.data, 'base64')
+      const key = crypto.scryptSync(password, salt, 32)
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv)
+      decipher.setAuthTag(tag)
+      const payload = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf-8')
+      const parsed = JSON.parse(payload)
+
+      // Restore settings (permission grants, zoom map, AI config come back).
+      const settingsFile = path.join(app.getPath('userData'), 'settings.json')
+      fs.writeFileSync(settingsFile, JSON.stringify(parsed.settings || {}, null, 2), 'utf-8')
+
+      // Restore chrome localStorage in the live chrome (bookmarks, groups,
+      // scratchpad, theme).
+      const s = [...sessions.values()].find(x => x.win && !x.win.isDestroyed())
+      if (s && parsed.chrome) {
+        const chromeJson = JSON.stringify(parsed.chrome)
+        await s.win.webContents.executeJavaScript(`
+          (() => {
+            const data = ${chromeJson}
+            for (const [k, v] of Object.entries(data)) {
+              try { localStorage.setItem(k, v) } catch {}
+            }
+            return true
+          })()
+        `).catch(() => {})
+      }
+      return { success: true }
+    } catch (err) {
+      const msg = String(err.message || err)
+      return { success: false, error: /auth|Unsupported state|decrypt/i.test(msg) ? 'Wrong password or corrupted backup' : msg }
+    }
+  })
+
   // Clicks and typing in the window-mode toolbar/tab strip. This is real
   // browser chrome now (address bar, back/forward/reload, a manual + button)
   // and not just the tab strip the channel name still describes — kept as
@@ -2460,6 +2662,9 @@ function registerBrowserControl(first, second) {
             })()
           `).catch(() => {})
         }
+        break
+      case 'toggle-split':
+        toggleSplitView(s)
         break
       case 'toggle-shield':
         setAdShieldEnabled(!isAdShieldEnabled())

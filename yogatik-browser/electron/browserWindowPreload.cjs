@@ -6,7 +6,7 @@ const TAB_ID_ACTIONS = new Set(['close', 'select', 'cancel-download', 'open-down
 const VALID_ACTIONS = new Set([
   'close', 'select', 'new-tab', 'back', 'forward', 'reload', 'navigate',
   'zoom', 'find', 'find-stop', 'cancel-download', 'open-download', 'show-download',
-  'pip', 'toggle-mute', 'toggle-pin', 'toggle-shield', 'toggle-ai-panel', 'ai-query', 'send-to-main-chat',
+  'pip', 'toggle-mute', 'toggle-pin', 'toggle-split', 'toggle-shield', 'toggle-ai-panel', 'ai-query', 'send-to-main-chat',
   'toggle-reader', 'screenshot', 'theme', 'cmd-action',
   'new-tab-group', 'toggle-vertical-tabs', 'collapse-sidebar', 'rename-tab-group', 'delete-tab-group',
 ])
@@ -32,6 +32,22 @@ contextBridge.exposeInMainWorld('__settings', {
   get: (key) => ipcRenderer.invoke('settings:get', key),
   set: (key, val) => ipcRenderer.invoke('settings:set', key, val),
   all: () => ipcRenderer.invoke('settings:all'),
+})
+
+// AI engine state — local Ollama / cloud endpoint / offline templates.
+contextBridge.exposeInMainWorld('__aiStatus', () => ipcRenderer.invoke('browser:ai-status'))
+
+// Scheduled page monitoring.
+contextBridge.exposeInMainWorld('__monitor', {
+  add: (opts) => ipcRenderer.invoke('browser:monitor-add', opts),
+  remove: (id) => ipcRenderer.invoke('browser:monitor-remove', { id }),
+  list: () => ipcRenderer.invoke('browser:monitor-list'),
+})
+
+// Encrypted profile backup (sync-free E2E).
+contextBridge.exposeInMainWorld('__backup', {
+  export: (password) => ipcRenderer.invoke('browser:backup-export', { password }),
+  import: (password) => ipcRenderer.invoke('browser:backup-import', { password }),
 })
 
 contextBridge.exposeInMainWorld('__downloadAction', (action, id) => {

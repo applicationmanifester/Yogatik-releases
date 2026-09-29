@@ -106,6 +106,27 @@
       transition: background 0.2s, color 0.2s;
     }
 
+    /* ── Toast notifications ───────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2147483647;
+      background: rgba(13, 17, 23, 0.95);
+      backdrop-filter: blur(10px);
+      color: var(--text-primary);
+      font: 600 12px system-ui, sans-serif;
+      padding: 10px 18px;
+      border-radius: 99px;
+      border: 1px solid rgba(255, 122, 24, 0.4);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+      max-width: 70vw;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     /* ── Vertical Tabs Sidebar ──────────────────────────────────────────────── */
     :root {
       --sidebar-width: 260px;
@@ -986,6 +1007,57 @@
 
     .ai-messages { flex: 1 1 auto; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 11px; line-height: 1.45; }
     .ai-placeholder { color: var(--text-muted); text-align: center; margin-top: 40px; font-size: 11px; line-height: 1.5; padding: 0 16px; }
+    .ai-engine-badge {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: 99px;
+      padding: 2px 10px;
+      margin-top: 6px;
+      display: inline-block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ai-engine-badge.local {
+      color: #10b981;
+      border-color: rgba(16, 185, 129, 0.35);
+      background: rgba(16, 185, 129, 0.08);
+    }
+    .ai-engine-badge.cloud {
+      color: var(--accent);
+      border-color: rgba(255, 122, 24, 0.35);
+      background: rgba(255, 122, 24, 0.08);
+    }
+    .ai-progress {
+      font-size: 11px;
+      color: var(--accent);
+      padding: 6px 12px 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ai-progress::before {
+      content: '';
+      width: 10px;
+      height: 10px;
+      border: 2px solid rgba(255, 122, 24, 0.3);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: ai-spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes ai-spin { to { transform: rotate(360deg); } }
+    .ai-msg.streaming::after {
+      content: '▋';
+      color: var(--accent);
+      animation: ai-blink 1s steps(2) infinite;
+      font-size: 11px;
+    }
+    @keyframes ai-blink { 50% { opacity: 0; } }
     .ai-msg { padding: 8px 10px; border-radius: 8px; }
     .ai-msg.user { background: var(--bg-hover); color: var(--text-primary); align-self: flex-end; max-width: 90%; }
     .ai-msg.bot { background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-secondary); }
@@ -1039,6 +1111,7 @@
     <button class="nav-btn" id="zoom-in-btn" title="Zoom in">+</button>
     <button class="nav-btn" id="find-btn" title="Find in page (Ctrl+F)">&#128269;</button>
     <button class="nav-btn" id="pip-btn" title="Picture-in-Picture Video">&#128250;</button>
+    <button class="nav-btn" id="split-btn" title="Split View (Ctrl+\)">&#10697;</button>
 
     <!-- AdShield Wrap -->
     <div class="popover-wrap" id="shield-wrap">
@@ -1066,6 +1139,14 @@
           <span class="site-perm-origin" id="site-perm-origin">—</span>
         </div>
         <div id="site-perm-list"></div>
+        <div class="site-perm-divider"></div>
+        <div class="site-perm-header">
+          <span>&#128274; Encrypted Profile Backup</span>
+        </div>
+        <div class="stat-row">
+          <button class="site-perm-toggle" id="backup-export-btn">⬇ Export .yogabak</button>
+          <button class="site-perm-toggle" id="backup-import-btn">⬆ Restore</button>
+        </div>
       </div>
     </div>
 
@@ -1152,6 +1233,9 @@
     <span id="hint">Yogatik Browser</span>
   </div>
 
+  <!-- ── Toast notifications ─────────────────────────────────────────────── -->
+  <div id="toast" hidden></div>
+
   <!-- ── Command Palette Modal (Ctrl+K) ──────────────────────────────────── -->
   <div id="cmd-palette-backdrop">
     <div class="cmd-modal" id="cmd-modal">
@@ -1173,16 +1257,23 @@
     <div class="ai-panel-page">
       <div class="ai-page-badge" id="ai-page-badge">Active Page</div>
       <div class="ai-page-title" id="ai-page-title">New tab</div>
+      <div class="ai-engine-badge" id="ai-engine-badge" title="AI engine powering the companion">⚙️ Detecting engine…</div>
     </div>
     <div class="ai-quick-actions">
       <button class="ai-chip primary" id="ai-act-summarize">&#128196; Summarize</button>
       <button class="ai-chip" id="ai-act-keypoints">&#128203; Key Takeaways</button>
       <button class="ai-chip" id="ai-act-video" style="display:none;">&#127916; Video Analysis</button>
       <button class="ai-chip" id="ai-act-markdown">&#128203; Clean Markdown</button>
+      <button class="ai-chip" id="ai-act-all-tabs">&#128194; All Tabs</button>
+      <button class="ai-chip" id="ai-act-find-tabs">&#128269; Find in Tabs</button>
+      <button class="ai-chip" id="ai-act-research">&#129517; Research</button>
+      <button class="ai-chip" id="ai-act-group-tabs">&#129516; Auto-Group</button>
+      <button class="ai-chip" id="ai-act-watch">&#128064; Watch Page</button>
     </div>
+    <div class="ai-progress" id="ai-progress" hidden></div>
     <div class="ai-messages" id="ai-messages">
       <div class="ai-placeholder" id="ai-placeholder">
-        &#10024; Ask any question about this webpage, or click one of the quick actions above to analyze this content in real time.
+        &#10024; Ask about this page, search across your open tabs, run multi-source research, or auto-group tabs by topic — all powered by local Ollama when available.
       </div>
     </div>
     <form class="ai-form" id="ai-form">
@@ -1231,6 +1322,8 @@
     const aiPanelClose = document.getElementById('ai-panel-close')
     const aiPageBadge = document.getElementById('ai-page-badge')
     const aiPageTitle = document.getElementById('ai-page-title')
+    const aiEngineBadge = document.getElementById('ai-engine-badge')
+    const aiProgress = document.getElementById('ai-progress')
     const aiMessages = document.getElementById('ai-messages')
     const aiPlaceholder = document.getElementById('ai-placeholder')
     const aiInput = document.getElementById('ai-input')
@@ -1239,6 +1332,11 @@
     const aiActKeypoints = document.getElementById('ai-act-keypoints')
     const aiActVideo = document.getElementById('ai-act-video')
     const aiActMarkdown = document.getElementById('ai-act-markdown')
+    const aiActAllTabs = document.getElementById('ai-act-all-tabs')
+    const aiActFindTabs = document.getElementById('ai-act-find-tabs')
+    const aiActResearch = document.getElementById('ai-act-research')
+    const aiActGroupTabs = document.getElementById('ai-act-group-tabs')
+    const aiActWatch = document.getElementById('ai-act-watch')
 
     let currentNav = null
     let currentTabsList = []
@@ -1279,6 +1377,8 @@
     zoomPct.onclick = () => act('zoom', 'reset')
     const pipBtn = document.getElementById('pip-btn')
     if (pipBtn) pipBtn.onclick = () => act('pip')
+    const splitBtn = document.getElementById('split-btn')
+    if (splitBtn) splitBtn.onclick = () => act('toggle-split')
 
     // ── Theme Engine ────────────────────────────────────────────────────────
     function applyTheme(themeName) {
@@ -1367,6 +1467,42 @@
           } catch {}
         }
         sitePermList.appendChild(row)
+      }
+    }
+
+    // ── Encrypted Profile Backup ──
+    const backupExportBtn = document.getElementById('backup-export-btn')
+    const backupImportBtn = document.getElementById('backup-import-btn')
+    if (backupExportBtn) {
+      backupExportBtn.onclick = async () => {
+        const password = prompt('Set a backup password (min 6 chars). Lose it and the backup is unrecoverable:')
+        if (!password) return
+        backupExportBtn.textContent = 'Encrypting…'
+        try {
+          const res = await window.__backup.export(password)
+          if (res && res.success) {
+            window.__setToast && window.__setToast('🔒 Backup saved: ' + (res.filePath || '').split(/[\\/]/).pop())
+          } else if (res && !res.canceled) {
+            alert(res.error || 'Backup failed')
+          }
+        } catch {}
+        backupExportBtn.textContent = '⬇ Export .yogabak'
+      }
+    }
+    if (backupImportBtn) {
+      backupImportBtn.onclick = async () => {
+        const password = prompt('Enter the backup password:')
+        if (!password) return
+        backupImportBtn.textContent = 'Restoring…'
+        try {
+          const res = await window.__backup.import(password)
+          if (res && res.success) {
+            window.__setToast && window.__setToast('🔒 Profile restored — reload tabs to see everything back.')
+          } else if (res && !res.canceled) {
+            alert(res.error || 'Restore failed')
+          }
+        } catch {}
+        backupImportBtn.textContent = '⬆ Restore'
       }
     }
 
@@ -1620,19 +1756,20 @@
     aiPanelBtn.onclick = () => act('toggle-ai-panel')
     aiPanelClose.onclick = () => act('toggle-ai-panel')
 
+    const mdToHtml = (content) => content
+      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+      .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>')
+      .replace(/^- (.*$)/gim, '<li>$1</li>')
+      .replace(/\n\n/g, '<br>')
+
     const appendAiMessage = (role, content, actions = []) => {
       if (aiPlaceholder) aiPlaceholder.style.display = 'none'
       const msg = document.createElement('div')
       msg.className = 'ai-msg ' + role
 
-      const formatted = content
-        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-        .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>')
-        .replace(/^- (.*$)/gim, '<li>$1</li>')
-        .replace(/\n\n/g, '<br>')
-
+      const formatted = mdToHtml(content)
       msg.innerHTML = formatted.includes('<li>') ? formatted.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>') : formatted
 
       if (actions.length > 0) {
@@ -1651,7 +1788,26 @@
 
       aiMessages.appendChild(msg)
       aiMessages.scrollTop = aiMessages.scrollHeight
+      return msg
     }
+
+    // ── AI Engine badge (local Ollama / cloud / offline templates) ──
+    const refreshEngineBadge = async () => {
+      if (!aiEngineBadge) return
+      try {
+        const st = await window.__aiStatus()
+        if (!st) return
+        aiEngineBadge.textContent = (st.mode === 'local' ? '🦙 ' : st.mode === 'cloud' ? '☁️ ' : '⚙️ ') + st.label
+        aiEngineBadge.className = 'ai-engine-badge ' + (st.mode === 'local' ? 'local' : st.mode === 'cloud' ? 'cloud' : '')
+        aiEngineBadge.title = st.mode === 'local'
+          ? 'Running fully offline on your machine via Ollama — nothing leaves this computer.'
+          : st.mode === 'cloud'
+            ? 'Using your OpenAI-compatible endpoint from Settings.'
+            : 'No model available — install Ollama (ollama.com) or set an API endpoint. Templates in use.'
+      } catch {}
+    }
+    refreshEngineBadge()
+    setInterval(refreshEngineBadge, 60_000)
 
     aiForm.addEventListener('submit', (e) => {
       e.preventDefault()
@@ -1679,22 +1835,141 @@
       act('ai-query', { type: 'markdown' })
     }
 
-    window.__setAiResult = (res) => {
-      if (!res) return
-      if (res.error) {
-        appendAiMessage('bot', '⚠️ ' + res.error)
-        return
+    // ── Tier-1 capability chips ──
+    aiActAllTabs.onclick = () => {
+      appendAiMessage('user', 'Summarize all my open tabs as one workspace')
+      act('ai-query', { type: 'all-tabs' })
+    }
+    aiActFindTabs.onclick = () => {
+      const q = prompt('What are you looking for across your open tabs?')
+      if (!q || !q.trim()) return
+      appendAiMessage('user', 'Find in tabs: ' + q.trim())
+      act('ai-query', { type: 'find-tabs', question: q.trim() })
+    }
+    aiActResearch.onclick = () => {
+      const q = prompt('Research goal — the agent will search, read sources and write a cited report:')
+      if (!q || !q.trim()) return
+      appendAiMessage('user', '🧭 Research: ' + q.trim())
+      act('ai-query', { type: 'research', question: q.trim() })
+    }
+    aiActGroupTabs.onclick = () => {
+      appendAiMessage('user', 'Auto-group my tabs by topic')
+      act('ai-query', { type: 'group-tabs' })
+    }
+    aiActWatch.onclick = async () => {
+      const url = currentNav?.url || ''
+      if (!url) { alert('Open a page to watch first.'); return }
+      const mins = Number(prompt('Check this page for changes every N minutes:', '5')) || 5
+      try {
+        const res = await window.__monitor.add({ url, intervalMin: mins })
+        if (res && res.success) {
+          appendAiMessage('bot', `👁️ Watching this page — checking every ${res.intervalMin} min. You'll get a notification when it changes.`)
+        } else {
+          alert(res?.error || 'Could not start the watch.')
+        }
+      } catch {}
+    }
+
+    // ── Streaming + progress ──
+    // The main process streams tokens via __appendAiToken and posts the
+    // authoritative result via __setAiResult, which finalizes the streaming
+    // message in place.
+    let streamingMsg = null
+    let streamingBuf = ''
+
+    window.__appendAiToken = (tok) => {
+      if (!tok) return
+      if (aiPlaceholder) aiPlaceholder.style.display = 'none'
+      if (!streamingMsg) {
+        streamingMsg = document.createElement('div')
+        streamingMsg.className = 'ai-msg bot streaming'
+        aiMessages.appendChild(streamingMsg)
+        streamingBuf = ''
       }
+      streamingBuf += tok
+      streamingMsg.innerHTML = mdToHtml(streamingBuf)
+      aiMessages.scrollTop = aiMessages.scrollHeight
+    }
+
+    window.__setAiProgress = (text) => {
+      if (!aiProgress) return
+      if (text) {
+        aiProgress.hidden = false
+        aiProgress.textContent = text
+      } else {
+        aiProgress.hidden = true
+      }
+    }
+
+    const copyActions = (result, via) => {
       const actions = [
         {
           label: '📋 Copy',
           onClick: () => {
-            navigator.clipboard.writeText(res.result)
+            navigator.clipboard.writeText(result)
             alert('Copied analysis to clipboard!')
           }
         }
       ]
-      appendAiMessage('bot', res.result, actions)
+      if (via && via !== 'Templates') actions.push({ label: '⚡ ' + via, onClick: () => {} })
+      return actions
+    }
+
+    window.__setAiResult = (res) => {
+      if (!res) return
+      // Finalize an in-flight streaming message with the authoritative result.
+      if (streamingMsg) {
+        if (!res.error && res.result) {
+          streamingMsg.className = 'ai-msg bot'
+          streamingMsg.innerHTML = mdToHtml(res.result)
+          const actRow = document.createElement('div')
+          actRow.className = 'stat-row'
+          actRow.style.marginTop = '6px'
+          for (const a of copyActions(res.result, res.via)) {
+            const btn = document.createElement('button')
+            btn.className = 'shield-toggle-btn'
+            btn.textContent = a.label
+            btn.onclick = a.onClick
+            actRow.appendChild(btn)
+          }
+          streamingMsg.appendChild(actRow)
+          aiMessages.scrollTop = aiMessages.scrollHeight
+        } else {
+          streamingMsg.remove()
+        }
+        streamingMsg = null
+        streamingBuf = ''
+        if (!res.error && res.result) return
+      }
+      if (res.error) {
+        appendAiMessage('bot', '⚠️ ' + res.error)
+        return
+      }
+      appendAiMessage('bot', res.result, copyActions(res.result, res.via))
+    }
+
+    // ── Auto tab-grouping application (from the AI) ──
+    window.__applyAiGroups = (groups) => {
+      if (!groups || !Array.isArray(groups) || !groups.length) return
+      // Merge AI groups into the existing tab-group list: replace the default
+      // group's contents with AI clusters, keep custom groups untouched.
+      const validIds = new Set(currentTabsList.map(t => t.tabId))
+      const cleaned = groups
+        .map((g, i) => ({
+          id: i === 0 ? 'default' : 'group-' + (Date.now() + i),
+          name: g.name || 'Group',
+          color: g.color || '#ff7a18',
+          tabs: (g.tabIds || []).filter(id => validIds.has(id)),
+        }))
+        .filter(g => g.tabs.length)
+      if (!cleaned.length) return
+      // Preserve tabs not covered by the AI inside the first group.
+      const covered = new Set(cleaned.flatMap(g => g.tabs))
+      const missing = currentTabsList.filter(t => !covered.has(t.tabId)).map(t => t.tabId)
+      if (missing.length) cleaned[0].tabs.push(...missing)
+      tabGroups = cleaned
+      saveTabGroups()
+      if (verticalTabsEnabled) renderTabGroups()
     }
 
     // ── Find bar ──
@@ -1837,6 +2112,17 @@
     renderDownloads()
 
     // ── Tab Strip & Chrome Sync ──
+    // Toast notifications (page monitors, background events).
+    const toastEl = document.getElementById('toast')
+    let toastTimer = null
+    window.__setToast = (text) => {
+      if (!toastEl || !text) return
+      toastEl.textContent = text
+      toastEl.hidden = false
+      clearTimeout(toastTimer)
+      toastTimer = setTimeout(() => { toastEl.hidden = true }, 6000)
+    }
+
     window.__setTabs = (tabs, activeId, nav) => {
       currentTabsList = tabs || []
       for (const el of [...bar.querySelectorAll('.tab')]) el.remove()

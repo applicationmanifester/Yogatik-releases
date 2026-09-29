@@ -185,13 +185,13 @@
 
     <section class="hero">
       <span class="pill">
-        <span>🌐</span> Yogatik Browser v11.3.0 Standalone
+        <span>🌐</span> Yogatik Browser v12.0.0 Standalone
       </span>
       <h1>The AI-First Privacy Browser,<br /><span class="grad">built for speed &amp; zero surveillance.</span></h1>
       <p>An independent, lightweight desktop browser with hardware AdShield, YouTube video ad skipper, distraction-free reader mode, Spotlight command palette, and local data isolation. No account required.</p>
 
       <div class="release-meta" id="release-meta">
-        <span>Version <b>v11.3.0</b> (Core 11.3.0)</span>
+        <span>Version <b>v12.0.0</b> (Core 12.0.0)</span>
         <span class="dot"></span>
         <span>Released September 29, 2026</span>
         <span class="dot"></span>
@@ -354,6 +354,60 @@
           <h3>Reader Export & Real Privacy Stats</h3>
           <p>Save any article as clean Markdown from reader mode, and watch the new-tab dashboard report your real, cumulative trackers-blocked count — never a placeholder number.</p>
         </div>
+
+        <div class="feature">
+          <div class="ic">🦙</div>
+          <h3>Local AI Engine (Ollama)</h3>
+          <p>The AI companion runs on local Ollama models — fully offline, no API key, nothing sent to any cloud. Optional OpenAI-compatible endpoint when you want more. Every feature works without a connection.</p>
+        </div>
+
+        <div class="feature">
+          <div class="ic">🗂️</div>
+          <h3>Multi-Tab Intelligence</h3>
+          <p>Summarize your whole workspace as one, and search across every open tab by meaning — "which tab mentioned pricing?" — not just the active page.</p>
+        </div>
+
+        <div class="feature">
+          <div class="ic">🧭</div>
+          <h3>Agentic Research</h3>
+          <p>Give a goal; the agent plans diverse queries, opens tabs, reads sources, and writes a cited Markdown report — with live progress at every step.</p>
+        </div>
+
+        <div class="feature">
+          <div class="ic">🧠</div>
+          <h3>AI Auto Tab-Grouping</h3>
+          <p>Local embeddings cluster your open tabs into named topic groups — Research, Docs, Shopping — in one click. Falls back to smart keyword buckets offline.</p>
+        </div>
+
+        <div class="feature">
+          <div class="ic">⧉</div>
+          <h3>Split View & Video Controls</h3>
+          <p>Two tabs side by side with Ctrl+\, and a floating speed pill on any video site: 3× speed, ±10s seek, and RMS-based Skip Silence for lectures and podcasts.</p>
+        </div>
+
+        <div class="feature">
+          <div class="ic">🍪</div>
+          <h3>Cookie Banner Auto-Reject</h3>
+          <p>Auto-declines non-essential cookies on all major consent platforms (OneTrust, CookieBot, Quantcast, TrustArc…) before banners finish rendering. Never clicks accept.</p>
+        </div>
+
+        <div class="feature">
+          <div class="ic">🎭</div>
+          <h3>Fingerprint Randomization</h3>
+          <p>Brave-style farbling: canvas, WebGL, audio, and hardware fingerprints get per-session noise — trackers can't build a stable ID across sessions.</p>
+        </div>
+
+        <div class="feature">
+          <div class="ic">🔐</div>
+          <h3>DoH, HTTPS-Only & Encrypted Backup</h3>
+          <p>Encrypted DNS via Quad9, forced HTTPS upgrades, and an AES-256-GCM encrypted profile backup (.yogabak) — bookmarks, tabs and settings, portable and E2E.</p>
+        </div>
+
+        <div class="feature">
+          <div class="ic">👁️</div>
+          <h3>Page Monitoring & Vim Nav</h3>
+          <p>Watch any page for changes with scheduled AI alerts (price drops, restocks), and opt into vim-style keyboard navigation with link hints.</p>
+        </div>
       </div>
     </section>
 
@@ -435,8 +489,8 @@
         var meta = document.getElementById('release-meta');
         if (meta) {
           var exe = (rel.assets || []).find(function (as) { return as.name === 'YogatikBrowser-Setup.exe'; });
-          var tag = rel.tag_name || 'v11.3.0';
-          var bits = ['Version <b>' + tag + '</b> (Core 11.3.0)'];
+          var tag = rel.tag_name || 'v12.0.0';
+          var bits = ['Version <b>' + tag + '</b> (Core 12.0.0)'];
           if (rel.published_at) {
             var d = new Date(rel.published_at);
             if (!isNaN(d)) {
