@@ -1,75 +1,8 @@
-import React, { useEffect, useState, useMemo } from 'react'
-import { Loader2, Aperture, X, Copy, Check, MessageSquare, Braces, FileJson2, ChevronRight, ChevronDown } from 'lucide-react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
+import { Loader2, Aperture, X, Copy, Check, MessageSquare, Braces, FileJson2 } from 'lucide-react'
 import { announce } from './A11yAnnouncer'
+import { JsonViewer, AIResponse, useFocusTrap, useInert, tokens } from '../design-system/components'
 import '../styles/12-vision-modal-json.css'
-
-/**
- * JSON Tree Viewer Component - Renders JSON as an interactive collapsible tree
- */
-function JsonTree({ data, level = 0, keyName = '' }) {
-  const isObject = data !== null && typeof data === 'object' && !Array.isArray(data)
-  const isArray = Array.isArray(data)
-  const isPrimitive = data === null || (typeof data !== 'object' && typeof data !== 'function')
-  
-  const [expanded, setExpanded] = useState(level < 2) // Auto-expand first 2 levels
-
-  const toggleExpanded = () => setExpanded(!expanded)
-
-  if (isPrimitive) {
-    let displayValue = data
-    if (data === null) displayValue = 'null'
-    else if (typeof data === 'string') displayValue = `"${data}"`
-    else if (typeof data === 'boolean') displayValue = data.toString()
-    else if (typeof data === 'number') displayValue = data.toString()
-    
-    return (
-      <span className="json-primitive" style={{ color: typeof data === 'string' ? '#10b981' : typeof data === 'number' ? '#f59e0b' : typeof data === 'boolean' ? '#8b5cf6' : '#6b7280' }}>
-        {displayValue}
-      </span>
-    )
-  }
-
-  const entries = isObject ? Object.entries(data) : data.map((v, i) => [i, v])
-  
-  return (
-    <div className="json-node" style={{ marginLeft: `${level * 16}px` }}>
-      {(isObject || isArray) && level > 0 && (
-        <span className="json-toggle" onClick={toggleExpanded} style={{ cursor: 'pointer', marginRight: '8px', userSelect: 'none' }}>
-          <ChevronRight size={12} style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', display: 'inline-block' }} />
-        </span>
-      )}
-      <span className="json-bracket" style={{ color: '#94a3b8' }}>
-        {isObject ? '{' : '['}
-      </span>
-      {expanded && entries.length > 0 && (
-        <div className="json-children">
-          {entries.map(([key, value], index) => (
-            <div key={`${level}-${key}-${index}`} className="json-entry">
-              <span className="json-key" style={{ color: '#8b5cf6', marginRight: '8px' }}>
-                {isObject ? `"${key}":` : ''}
-              </span>
-              <JsonTree data={value} level={level + 1} keyName={key} />
-              {index < entries.length - 1 && <span className="json-comma" style={{ color: '#94a3b8' }}> ,</span>}
-            </div>
-          ))}
-        </div>
-      )}
-      {expanded && entries.length === 0 && (
-        <span style={{ color: '#94a3b8', padding: '0 8px' }}>{isObject ? '}' : ']'}</span>
-      )}
-      {!expanded && (
-        <>
-          <span className="json-preview" style={{ color: '#94a3b8', marginLeft: '8px', fontSize: '12px' }}>
-            {isObject ? `... {${entries.length} keys}` : `... [${entries.length} items]`}
-          </span>
-          <span className="json-bracket" style={{ color: '#94a3b8', marginLeft: '4px' }}>
-            {isObject ? '}' : ']'}
-          </span>
-        </>
-      )}
-    </div>
-  )
-}
 
 /**
  * Vision Modal - Analyze camera/screen frames with AI vision
@@ -96,30 +29,34 @@ export function VisionModal({
   copiedIdx,
   features,
 }) {
-  // Keyboard handling
-  useEffect(() => {
-    if (!isOpen) return
-    const handler = (e) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onAskVision(visionQ) }
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [isOpen, visionQ, onClose, onAskVision])
+  const modalRef = useRef(null)
+  
+  // Use shared focus trap hook
+  useFocusTrap(modalRef, {
+    active: isOpen,
+    onEscape: onClose,
+    initialFocus: 'first',
+    returnFocus: true,
+  })
+
+  // Use shared inert hook for accessibility — excludeRef is read at effect
+  // time (after the ref attaches); exclude:[modalRef.current] would capture
+  // null during render and inert nothing.
+  useInert(isOpen, {
+    excludeRef: modalRef,
+  })
 
   // Announce state changes for screen readers
   useEffect(() => {
     if (!isOpen) return
     if (visionLoading && !visionText) {
-      announce('Analyzing image…')
+      announce('Analyzing image...')
     } else if (visionText && !visionLoading) {
       announce('Analysis complete')
     }
   }, [isOpen, visionLoading, visionText])
 
   // JSON detection and formatting
-  const [viewMode, setViewMode] = useState('formatted') // 'formatted' | 'raw'
-  
   const isJson = useMemo(() => {
     if (!visionText || typeof visionText !== 'string') return false
     try {
@@ -142,12 +79,12 @@ export function VisionModal({
   if (!isOpen) return null
 
   return (
-    <div className="vision-modal-overlay">
+    <div className="vision-modal-overlay" ref={modalRef}>
       <div className="vision-modal">
         <div className="vision-modal-header">
           <h3>What am I looking at?</h3>
           {visionVia && <span className="vision-modal-via">via {visionVia}</span>}
-          <button className="vision-modal-close" onClick={onClose}>
+          <button className="vision-modal-close" onClick={onClose} aria-label="Close vision modal">
             <X size={20} />
           </button>
         </div>
@@ -157,7 +94,7 @@ export function VisionModal({
               <img
                 src={`data:image/jpeg;base64,${visionImage}`}
                 alt={visionText
-                  ? `Analysis: ${visionText.slice(0, 120)}${visionText.length > 120 ? '…' : ''}`
+                  ? `Analysis: ${visionText.slice(0, 120)}${visionText.length > 120 ? '...' : ''}`
                   : 'Captured scene awaiting analysis'
                 }
               />
@@ -165,6 +102,7 @@ export function VisionModal({
                 className={`vision-modal-retake ${retakeFlash ? 'flash' : ''}`}
                 onClick={onRetake}
                 disabled={visionLoading}
+                aria-label="Retake photo"
               >
                 <Aperture size={14} /> Retake
               </button>
@@ -179,7 +117,7 @@ export function VisionModal({
               autoFocus
               value={visionQ}
               onChange={(e) => onSetVisionQ(e.target.value)}
-              placeholder="Ask about this frame — or leave blank to describe it"
+              placeholder="Ask about this frame -- or leave blank to describe it"
               aria-label="Question about the current frame"
             />
             <button type="submit" className="btn" disabled={visionLoading} aria-label="Ask about this frame">
@@ -187,13 +125,13 @@ export function VisionModal({
             </button>
           </form>
 
-          <div className="vision-modal-chips">
+          <div className="vision-modal-chips" role="group" aria-label="Quick actions">
             {[
-              { label: '🔍 Summarize Scene', q: 'Describe exactly what you see: setting, objects, people, and main details.' },
-              { label: '📝 Extract Text (OCR)', q: 'Read all legible text visible in this frame word for word.' },
-              { label: '💻 Explain Code', q: 'Analyze and explain any code or technical content visible on screen.' },
-              { label: '🎯 Identify Objects', q: 'List all major objects visible in this image with high accuracy.' },
-              { label: '⚡ Spot Issues', q: 'Identify any obvious errors, issues, or unusual elements in this image.' },
+              { label: 'Summarize Scene', q: 'Describe exactly what you see: setting, objects, people, and main details.' },
+              { label: 'Extract Text (OCR)', q: 'Read all legible text visible in this frame word for word.' },
+              { label: 'Explain Code', q: 'Analyze and explain any code or technical content visible on screen.' },
+              { label: 'Identify Objects', q: 'List all major objects visible in this image with high accuracy.' },
+              { label: 'Spot Issues', q: 'Identify any obvious errors, issues, or unusual elements in this image.' },
             ].map(chip => (
               <button
                 key={chip.label}
@@ -207,41 +145,29 @@ export function VisionModal({
           <div className="vision-modal-text" aria-live="polite" aria-atomic="false">
             {visionLoading && !visionText && (
               <div className="vision-modal-loading">
-                <Loader2 size={16} className="spin" /> Looking…
+                <Loader2 size={16} className="spin" /> Looking...
               </div>
             )}
             {!visionLoading && visionText && isJson && parsedJson && (
-              <div className="vision-modal-json-viewer">
-                <div className="json-viewer-header">
-                  <span className="json-viewer-title">
-                    <FileJson2 size={14} /> JSON Response
-                  </span>
-                  <button
-                    className={`json-view-toggle ${viewMode === 'raw' ? 'active' : ''}`}
-                    onClick={() => setViewMode(viewMode === 'formatted' ? 'raw' : 'formatted')}
-                    title={viewMode === 'formatted' ? 'View raw JSON' : 'View formatted'}
-                  >
-                    {viewMode === 'formatted' ? <Braces size={14} /> : <FileJson2 size={14} />}
-                    <span>{viewMode === 'formatted' ? 'Formatted' : 'Raw'}</span>
-                  </button>
-                </div>
-                {viewMode === 'formatted' ? (
-                  <JsonTree data={parsedJson} />
-                ) : (
-                  <pre className="json-raw-view"><code>{visionText}</code></pre>
-                )}
-              </div>
+              <JsonViewer
+                data={parsedJson}
+                title="JSON Response"
+                collapsible={true}
+                defaultExpanded={2}
+              />
             )}
-            {!visionLoading && visionText && !isJson && <p>{visionText}</p>}
+            {!visionLoading && visionText && !isJson && (
+              <AIResponse content={visionText} />
+            )}
             {visionLoading && visionText && <span className="vision-modal-cursor" />}
           </div>
 
           {visionText && !visionLoading && (
             <div className="vision-modal-actions">
-              <button className="btn ghost" onClick={() => onCopyText(visionText)}>
+              <button className="btn ghost" onClick={() => onCopyText(visionText)} aria-label={copiedIdx === -2 ? 'Copied' : 'Copy response'}>
                 {copiedIdx === -2 ? <Check size={14} /> : <Copy size={14} />} Copy
               </button>
-              <button className="btn ghost" onClick={onAskInCall} disabled={!visionQ.trim()}>
+              <button className="btn ghost" onClick={onAskInCall} disabled={!visionQ.trim()} aria-label="Ask out loud">
                 <MessageSquare size={14} /> Ask out loud
               </button>
             </div>

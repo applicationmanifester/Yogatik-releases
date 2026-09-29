@@ -29,6 +29,8 @@ export const APP_RELEASES = [
     "isLatest": true,
     "highlights": [
       "Taskbar Icon Fix: The packaged Windows app now loads its brand icon from the shipped icon.ico (inside app.asar) instead of process.execPath — nativeImage cannot decode an exe, so packaged windows previously shipped with no explicit icon and the taskbar fell back to a generic icon",
+      "ArtifactCanvas Direct Edit: 'Prompt AI to Edit' now asks what to change first, then sends the full instruction demanding direct code output — it previously auto-sent a contentless prefix, so the model asked again and again instead of writing",
+      "Design System Completed: JsonTree, AIResponse, useFocusTrap and useInert modules created — VisionModal's design-system migration had been left half-finished and broke every build",
       "Window setIcon Alive: The explicit setIcon(appIcon) call now applies in packaged builds too — it was silently skipped when the exe-derived image came back empty",
       "NSIS Shortcut AUMID Preserved: Start Menu shortcuts keep the app.yogatik.desktop AppUserModelID so taskbar pins and grouping resolve the Yogatik branding"
     ],
@@ -43,6 +45,23 @@ export const APP_RELEASES = [
           {
             "title": "Explicit setIcon in Packaged Builds",
             "description": "The window's setIcon(appIcon) call no longer skips when the image is valid, so the taskbar button shows the Yogatik logo regardless of shell icon-cache state."
+          }
+        ]
+      },
+      {
+        "category": "🪟 Modal & Artifact Fixes",
+        "items": [
+          {
+            "title": "ArtifactCanvas Asks Once, Writes Directly",
+            "description": "The 'Prompt AI to Edit' button collects the requested change first and sends a complete instruction (prefix + request + apply-directly directive) instead of auto-sending an empty prefix that made the model ask clarifying questions on every click."
+          },
+          {
+            "title": "Design System Modules Completed",
+            "description": "Created the missing JsonTree (with formatted/raw toggle), AIResponse, useFocusTrap and useInert modules the VisionModal migration referenced — the incomplete barrel file failed every Vite build with 'Could not resolve ./JsonTree'."
+          },
+          {
+            "title": "useInert Ref Timing Fix",
+            "description": "excludeRef is read at effect time after the modal ref attaches; the old exclude:[modalRef.current] pattern captured null during render and inerted nothing."
           }
         ]
       }

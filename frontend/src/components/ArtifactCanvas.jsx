@@ -94,9 +94,24 @@ export function ArtifactCanvas({
   }
 
   const handleAskEdit = () => {
-    if (onAskAiToEdit) {
-      onAskAiToEdit(`Regarding artifact "${title}" (${language}):\n\n`, true)
-    }
+    if (!onAskAiToEdit) return
+    // Ask WHAT to change BEFORE sending. The old flow auto-sent a contentless
+    // prefix ("Regarding artifact X (language):") with no instruction at all,
+    // so the model had nothing to act on and replied with a clarifying
+    // question every time the button was clicked — the user asked, the model
+    // asked again, and no code was ever written until the user retyped the
+    // whole request by hand.
+    const what = prompt(
+      `What should I change in "${title}"?`,
+      'Refine and improve this artifact: fix any issues, improve code quality, design and responsiveness.',
+    )
+    if (!what || !what.trim()) return
+    onAskAiToEdit(
+      `Regarding artifact "${title}" (${language}):\n\nRequest: ${what.trim()}\n\n` +
+        'Apply the request directly: output the FULL updated artifact code in one code block, ready to replace the current version. ' +
+        'Do not ask follow-up questions — make reasonable choices and proceed.',
+      true,
+    )
   }
 
   return (
