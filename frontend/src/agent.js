@@ -1182,28 +1182,22 @@ function safelyParseToolArgs(raw) {
               .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*?<\/(?:think|thought|reasoning)>/gi, '')
               .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*$/i, '')
               .trimStart()
+            // Only suppress tokens if they match actual tool call invocation protocols,
+            // NOT regular markdown JSON or code blocks meant for the user.
             const looksLikeToolCall = /^\s*<(?:tool_call|function_call|function=|invoke\s|action:)/i.test(nonThinking)
               || /^\s*```(?:json)?\s*\{\s*["\u201c]tool_calls/i.test(nonThinking)
-              || /^\s*```(?:json)?\s*\[\s*\{\s*["\u201c](?:name|tool|function)/i.test(nonThinking)
-              || /^\s*\{\s*["\u201c]tool_calls/i.test(nonThinking)
+              || /^\s*\{\s*["\u201c]tool_calls["\u201d]\s*:/i.test(nonThinking)
               || /^\s*\[TOOL_CALL/i.test(nonThinking)
-              || /^\s*\{\s*["\u201c](?:name|tool|function)["\u201d]\s*:\s*["\u201c][^"\u201c]+["\u201d]\s*,\s*["\u201c](?:arguments|args|parameters)/i.test(nonThinking)
             if (!looksLikeToolCall) {
               fullContent += t
               onToken?.(t)
             }
           } else {
-            // In prompted mode the full response is buffered for tool-call detection.
-            // However <think>/<thought>/<reasoning> content can NEVER be a tool call —
-            // stream those tokens immediately so the Thinking panel and streaming
-            // message bubble show live reasoning as it generates.
-            const openCount = (roundContent.match(/<(?:think|thought|reasoning)\b[^>]*>/gi) || []).length
-            const closeCount = (roundContent.match(/<\/(?:think|thought|reasoning)>/gi) || []).length
-            const isInsideOpenBlock = openCount > closeCount
-            const isClosingThinkTag = /<\/(?:think|thought|reasoning)>/i.test(t)
-            if (isInsideOpenBlock || isClosingThinkTag) {
-              onToken?.(t)
-            }
+            // In prompted mode, stream all tokens immediately so the chat bubble and
+            // thinking UI update in real time. If a round contains a tool call, harvestPromptedCalls
+            // will extract the tool call and demote/clean fullContent for execution.
+            fullContent += t
+            onToken?.(t)
           }
         },
         onToolCall: (tc) => { toolCallsToProcess.push(tc) },
@@ -1785,6 +1779,21 @@ function safelyParseToolArgs(raw) {
 
     throwIfAborted()
     let cleanedContent = stripToolCallSyntax(fullContent)
+
+    if (!visibleAnswer(cleanedContent)) {
+      const { reasoning } = splitReasoning(fullContent || roundContent)
+      if (reasoning) {
+        cleanedContent = `<think>${reasoning}</think>\n\nI have analyzed the request and prepared the following plan:\n\n${reasoning.slice(0, 800)}${reasoning.length > 800 ? '…' : ''}\n\n*Click **Continue** below or confirm to execute these actions.*`
+        onToken?.(cleanedContent)
+      } else {
+        const gathered = summariseToolResults(toolResults)
+        const fallback = gathered
+          ? 'I have completed the requested actions (tool results):\n\n' + gathered
+          : 'I have finished inspecting the workspace and analyzing the requested task.'
+        cleanedContent = fallback
+        onToken?.(fallback)
+      }
+    }
 
     // ── Response Quality Watchdog ─────────────────────────────────────
     // Runs AFTER the existing auto-continuation loop and canary check, but

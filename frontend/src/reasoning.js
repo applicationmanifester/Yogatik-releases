@@ -155,16 +155,18 @@ export function createReasoningTagger() {
       }
 
       // Check for runaway dots / ellipses / filler tokens (e.g. "... ... ... ..." or "...........")
-      if (/(\.\s*|\.\.\.\s*){10,}/.test(contentTail)) {
+      // Require at least 25 consecutive dots/fillers to avoid false positives on legitimate formatting or ellipsis
+      if (/(\.\s*|\.\.\.\s*){25,}/.test(contentTail)) {
         contentLoopSuppressed = true
         return prefix + '\n\n*(…repetitive filler loop truncated)*'
       }
 
-      // Check if the tail contains a 3x repeating pattern (min 15 chars to avoid short table fragments).
-      // Skip entirely when the tail is dominated by markdown table content (pipe-delimited rows).
+      // Check if the tail contains a 4x repeating pattern of significant length (min 24 chars)
+      // Skip entirely when the tail is dominated by markdown table content or code blocks
       const hasTableContent = (contentTail.match(/\|/g) || []).length > 6
-      if (!hasTableContent) {
-        const loopMatch = contentTail.match(/(.{15,80}?)(?:\s*\1){2,}/is)
+      const hasCodeBlock = contentTail.includes('```') || (contentTail.match(/[{}\[\];]/g) || []).length > 10
+      if (!hasTableContent && !hasCodeBlock) {
+        const loopMatch = contentTail.match(/(.{24,80}?)(?:\s*\1){3,}/is)
         if (loopMatch) {
           contentLoopSuppressed = true
           return prefix + '\n\n*(…repetitive text loop truncated)*'

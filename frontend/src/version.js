@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '11.2.0'
+export const APP_VERSION = '11.3.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 11.2.0 — Auto-Recovery for Model Overload & Autonomous Watchdog Reconnect'
+export const APP_CODENAME = 'Yogatik 11.3.0 — Real-Time Reasoning Streaming & Robust Model Watchdog'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,41 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "11.3.0",
+    "title": "Yogatik 11.3.0: Real-Time Reasoning Streaming & Robust Model Watchdog",
+    "date": "September 29, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Real-Time Reasoning Streaming: Fixed chat UI token streaming for reasoning models (Nemotron, Qwen, DeepSeek) so thinking steps and answers appear live without getting suppressed",
+      "Robust Code Block & Markdown Streaming: Markdown JSON and code blocks are preserved and streamed without false-triggering internal tool call guards",
+      "Immediate Synthesis & Anti-Stall: Turns with pure reasoning or pending tool intents immediately synthesize user-facing action plans and avoid watchdog false-abort drops",
+      "Cross-Platform Release Sync: Coordinated v11.3.0 deployment across Web, Desktop (Windows, macOS, Linux), and Standalone Browser"
+    ],
+    "sections": [
+      {
+        "category": "⚡ Reasoning & Streaming Engine",
+        "items": [
+          {
+            "title": "Unrestricted Live Reasoning Streaming",
+            "description": "Streamed tokens in prompted and native mode are immediately rendered to the chat UI and thinking drawers, eliminating blank bubble stalls."
+          },
+          {
+            "title": "Strict Tool Call Discrimination",
+            "description": "Adjusted tool pattern matching to strictly identify structured function calls while allowing standard markdown JSON and code blocks to stream unimpeded."
+          },
+          {
+            "title": "Watchdog Pre-Synthesis Guard",
+            "description": "Ensured fallback synthesis runs before response quality evaluations to prevent premature empty retries on pure reasoning turns."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "11.2.0",
     "title": "Yogatik 11.2.0: Auto-Recovery for Model Overload & Autonomous Watchdog Reconnect",
     "date": "September 29, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Overloaded Model Auto-Recovery: Automatic retry with exponential backoff when upstream provider APIs report high load or rate limits",
       "Autonomous Watchdog Continuation: Truncated or incomplete responses (unclosed code fences, mid-sentence cuts) are automatically continued",

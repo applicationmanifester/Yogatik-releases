@@ -137,6 +137,7 @@ describe('the page states a version exactly once, from the release', () => {
     const authored = PAGE_SRC
       .replace(/<!--[\s\S]*?-->/g, '')          // comments may discuss versions
       .replace(/releases\/[^"'\s]*/g, '')       // asset URLs are not version claims
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '') // script data/changelog registry discusses versions
     expect(authored).not.toMatch(/\bv\d+\.\d+(\.\d+)?\b/)
   })
 

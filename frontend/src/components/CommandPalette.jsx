@@ -1,426 +1,396 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
-import {
-  Search, CornerDownLeft, MessageSquare, Sparkles, Cpu, Zap, Sliders,
-  Wrench, Download, Sun, Moon, Clock, ArrowRight, X, Layers, Check,
-  Bot, Shield, Key, FileText, Smartphone, ChevronRight
-} from 'lucide-react'
-import { searchChats } from '../chatSearch'
+/**
+ * CommandPalette — Unified command interface (Cmd+K)
+ * Searches conversations, runs slash commands, jumps to settings, etc.
+ */
+import React, { useEffect, useRef, useState, useMemo } from 'react'
+import { Search, X, Zap, Bot, Settings, FileText, Terminal, Keyboard, ChevronRight, MessageSquare, Folder, Tag, Sparkles, Plug, Shield, Download, Upload, Share2, HelpCircle } from 'lucide-react'
+import { tokens } from '../design-system/tokens'
 
-/** Subsequence match with word-boundary prioritization */
-function fuzzy(needle, haystack) {
-  const n = needle.toLowerCase().trim()
-  const h = haystack.toLowerCase().trim()
-  if (!n) return true
-  if (h.includes(n)) return true
-  let i = 0
-  for (const ch of h) {
-    if (ch === n[i]) i++
-    if (i === n.length) return true
-  }
-  return false
-}
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
-function formatRelativeTime(ts) {
-  if (!ts) return ''
-  const diff = Date.now() - ts
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'Just now'
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
-  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-
-function HighlightMatch({ text, query }) {
-  const str = String(text ?? '')
-  if (!query || !query.trim() || !str) return <span>{str}</span>
-  const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean)
-  if (!terms.length) return <span>{str}</span>
-  const regex = new RegExp(`(${terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi')
-  const parts = str.split(regex)
-  return (
-    <span>
-      {parts.map((part, i) =>
-        regex.test(part) ? <mark key={i} className="palette-highlight">{part}</mark> : part
-      )}
-    </span>
-  )
-}
-
-const FILTER_TABS = [
-  { id: 'all', label: 'All', prefix: '' },
-  { id: 'skills', label: 'Skills', icon: Sparkles, prefix: '@' },
-  { id: 'workflows', label: 'Workflows', icon: Zap, prefix: '~' },
-  { id: 'chats', label: 'Chats', icon: MessageSquare, prefix: '#' },
-  { id: 'models', label: 'Models', icon: Cpu, prefix: '$' },
-  { id: 'commands', label: 'Commands', icon: Layers, prefix: '>' },
-  { id: 'tools', label: 'Tools', icon: Wrench, prefix: '!' },
-  { id: 'personas', label: 'Personas', icon: Bot, prefix: '/' },
+// Built-in commands
+const BUILTIN_COMMANDS = [
+  { id: 'new-chat', label: 'New Chat', description: 'Start a fresh conversation', icon: MessageSquare, keywords: ['new', 'chat', 'fresh', 'start'] },
+  { id: 'search-chats', label: 'Search Conversations', description: 'Find previous conversations', icon: Search, keywords: ['search', 'find', 'history', 'conversations'] },
+  { id: 'settings', label: 'Open Settings', description: 'Preferences, providers, appearance', icon: Settings, keywords: ['settings', 'preferences', 'config', 'options'] },
+  { id: 'providers', label: 'Manage Providers & Keys', description: 'API keys and model configuration', icon: Plug, keywords: ['provider', 'api', 'key', 'model'] },
+  { id: 'agents', label: 'Agents', description: 'Specialist AI agents & delegation', icon: Bot, keywords: ['agent', 'specialist', 'delegate'] },
+  { id: 'skills', label: 'Skills & Workflows', description: 'Reusable prompts & automations', icon: Sparkles, keywords: ['skill', 'workflow', 'automation', 'prompt'] },
+  { id: 'mcp', label: 'MCP Servers', description: 'Connect external tools & data', icon: Plug, keywords: ['mcp', 'server', 'tool', 'external'] },
+  { id: 'terminal', label: 'Open Terminal', description: 'System terminal access', icon: Terminal, keywords: ['terminal', 'shell', 'command', 'cli'] },
+  { id: 'shortcuts', label: 'Keyboard Shortcuts', description: 'View all keyboard shortcuts', icon: Keyboard, keywords: ['shortcut', 'key', 'hotkey', 'help'] },
+  { id: 'export', label: 'Export Conversation', description: 'Download chat as file', icon: Download, keywords: ['export', 'download', 'save', 'file'] },
+  { id: 'import', label: 'Import Conversation', description: 'Load chat from file', icon: Upload, keywords: ['import', 'load', 'restore', 'backup'] },
+  { id: 'share', label: 'Share Conversation', description: 'Generate shareable link', icon: Share2, keywords: ['share', 'link', 'send'] },
+  { id: 'diagnostics', label: 'Diagnostics', description: 'Errors, traces & performance', icon: Shield, keywords: ['diagnostics', 'error', 'trace', 'debug'] },
+  { id: 'help', label: 'Help & Documentation', description: 'Open help center', icon: HelpCircle, keywords: ['help', 'docs', 'guide', 'tutorial'] },
 ]
 
-const GROUP_CONFIG = {
-  'In chats': { icon: MessageSquare, color: 'var(--accent, #ff6b35)' },
-  'Skills': { icon: Sparkles, color: '#06b6d4' },
-  'Workflows': { icon: Zap, color: '#f59e0b' },
-  'Chat': { icon: MessageSquare, color: '#3b82f6' },
-  'Model': { icon: Cpu, color: '#10b981' },
-  'Models': { icon: Cpu, color: '#10b981' },
-  'Provider': { icon: Zap, color: '#8b5cf6' },
-  'Settings': { icon: Sliders, color: '#f59e0b' },
-  'View': { icon: Sun, color: '#ec4899' },
-  'Data': { icon: Download, color: '#06b6d4' },
-  'Tools': { icon: Wrench, color: '#14b8a6' },
-  'Personas': { icon: Sparkles, color: '#f43f5e' },
-}
-
-export function CommandPalette({ commands = [], onClose, onOpenChat }) {
-  const [rawQuery, setRawQuery] = useState('')
-  const [activeTab, setActiveTab] = useState('all')
-  const [sel, setSel] = useState(0)
-  const [hits, setHits] = useState([])
-  const [searching, setSearching] = useState(false)
+export function CommandPalette({
+  isOpen,
+  onClose,
+  conversations = [],
+  activeConversationId,
+  onNewChat,
+  onNavigate,
+  onRunCommand,
+  recentCommands = [],
+}) {
+  const [query, setQuery] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef(null)
   const listRef = useRef(null)
+  const restoreFocusRef = useRef(null)
 
-  // Parse prefixes in search input like >, @, #, !, /, $
-  const { filterTab, cleanQuery } = useMemo(() => {
-    const trimmed = rawQuery.trimStart()
-    if (trimmed.startsWith('#')) return { filterTab: 'chats', cleanQuery: trimmed.slice(1).trimStart() }
-    if (trimmed.startsWith('@')) return { filterTab: 'models', cleanQuery: trimmed.slice(1).trimStart() }
-    if (trimmed.startsWith('>')) return { filterTab: 'commands', cleanQuery: trimmed.slice(1).trimStart() }
-    if (trimmed.startsWith('$')) return { filterTab: 'settings', cleanQuery: trimmed.slice(1).trimStart() }
-    if (trimmed.startsWith('!')) return { filterTab: 'tools', cleanQuery: trimmed.slice(1).trimStart() }
-    if (trimmed.startsWith('/')) return { filterTab: 'personas', cleanQuery: trimmed.slice(1).trimStart() }
-    return { filterTab: activeTab, cleanQuery: rawQuery }
-  }, [rawQuery, activeTab])
-
-  // Full-text indexed search across all conversation messages
   useEffect(() => {
-    if (!onOpenChat || cleanQuery.trim().length < 2 || (filterTab !== 'all' && filterTab !== 'chats')) {
-      setHits([])
-      setSearching(false)
-      return
+    if (isOpen) {
+      restoreFocusRef.current = document.activeElement
+      setQuery('')
+      setSelectedIndex(0)
+      setTimeout(() => inputRef.current?.focus(), 0)
+    } else {
+      restoreFocusRef.current?.focus?.()
     }
-    let live = true
-    setSearching(true)
-    const t = setTimeout(() => {
-      searchChats(cleanQuery, 16)
-        .then(r => { if (live) { setHits(r); setSearching(false) } })
-        .catch(() => { if (live) { setHits([]); setSearching(false) } })
-    }, 120)
-    return () => { live = false; clearTimeout(t) }
-  }, [cleanQuery, onOpenChat, filterTab])
+  }, [isOpen])
 
-  // Aggregate and filter commands by category
-  const results = useMemo(() => {
-    const q = cleanQuery.toLowerCase().trim()
+  useEffect(() => {
+    if (!isOpen) return
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose(); return }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filteredResults.length - 1)) }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
+      if (e.key === 'Enter') { e.preventDefault(); if (filteredResults[selectedIndex]) handleSelect(filteredResults[selectedIndex]) }
+      if (e.key === 'Tab') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filteredResults.length - 1)) }
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [isOpen, selectedIndex, filteredResults, onClose])
 
-    // 1. Process matching chats from full-text BM25 index
-    const chatHits = (filterTab === 'all' || filterTab === 'chats')
-      ? hits.map(h => ({
-          id: `msg-${h.conversationId}-${h.createdAt}`,
-          group: 'In chats',
-          label: h.title,
-          hint: formatRelativeTime(h.createdAt),
-          snippet: h.snippet,
-          role: h.role,
+  useEffect(() => {
+    const selected = listRef.current?.querySelector('[data-selected="true"]')
+    selected?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIndex])
+
+  const filteredResults = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) {
+      // Show recent commands + recent conversations
+      const recentConv = conversations
+        .filter(c => c.clientId !== activeConversationId)
+        .slice(0, 5)
+        .map(c => ({
+          type: 'conversation',
+          id: c.clientId,
+          label: c.title || 'Untitled',
+          description: c.messages?.length ? `${c.messages.length} messages` : 'Empty',
           icon: MessageSquare,
-          run: () => onOpenChat(h.conversationId),
+          matchScore: 0,
         }))
-      : []
-
-    // 2. Process standard commands matching query
-    const matchedCommands = commands.filter(c => {
-      const grp = (c.group || '').toLowerCase()
-      // Filter by category tab if selected
-      if (filterTab === 'chats' && grp !== 'chat' && grp !== 'in chats') return false
-      if (filterTab === 'models' && grp !== 'model' && grp !== 'models' && grp !== 'provider') return false
-      if (filterTab === 'commands' && grp !== 'chat' && grp !== 'view' && grp !== 'data') return false
-      if (filterTab === 'settings' && grp !== 'settings' && grp !== 'view') return false
-      if (filterTab === 'tools' && grp !== 'tools' && grp !== 'settings') return false
-      if (filterTab === 'personas' && grp !== 'personas' && grp !== 'persona') return false
-      if (filterTab === 'skills' && grp !== 'skills') return false
-      if (filterTab === 'workflows' && grp !== 'workflows') return false
-
-      if (!q) return true
-      return (
-        fuzzy(q, c.label || '') ||
-        fuzzy(q, c.group || '') ||
-        fuzzy(q, c.hint || '') ||
-        fuzzy(q, (c.keywords || []).join(' '))
-      )
-    })
-
-    return [...chatHits, ...matchedCommands]
-  }, [commands, cleanQuery, filterTab, hits, onOpenChat])
-
-  // Calculate live count per category for tabs
-  const categoryCounts = useMemo(() => {
-    const q = cleanQuery.toLowerCase().trim()
-    const counts = { all: commands.length + hits.length, chats: hits.length, models: 0, commands: 0, settings: 0, tools: 0, personas: 0 }
-
-    for (const c of commands) {
-      const grp = (c.group || '').toLowerCase()
-      const matches = !q || fuzzy(q, c.label || '') || fuzzy(q, c.group || '') || fuzzy(q, c.hint || '')
-      if (matches) {
-        if (grp === 'chat') counts.chats++
-        if (grp === 'model' || grp === 'models' || grp === 'provider') counts.models++
-        if (grp === 'view' || grp === 'data') counts.commands++
-        if (grp === 'settings') counts.settings++
-        if (grp === 'tools') counts.tools++
-        if (grp === 'personas' || grp === 'persona') counts.personas++
-      }
+      
+      const recentCmd = recentCommands.slice(0, 5).map(cmdId => {
+        const cmd = BUILTIN_COMMANDS.find(c => c.id === cmdId)
+        return cmd ? { ...cmd, type: 'command', matchScore: 0 } : null
+      }).filter(Boolean)
+      
+      return [...recentCmd, ...recentConv]
     }
-    return counts
-  }, [commands, hits, cleanQuery])
 
-  // Clamp selection on list changes
-  useEffect(() => {
-    setSel(0)
-  }, [results.length, filterTab])
-
-  // Scroll active item into view
-  useEffect(() => {
-    if (!listRef.current) return
-    const el = listRef.current.querySelector('[data-sel="true"]')
-    if (el) el.scrollIntoView({ block: 'nearest' })
-  }, [sel])
-
-  // Keyboard navigation
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        e.stopPropagation()
-        onClose()
-        return
+    // Score and filter
+    const score = (item) => {
+      const searchText = `${item.label} ${item.description} ${item.keywords?.join(' ') || ''}`.toLowerCase()
+      if (searchText === q) return 100
+      if (searchText.startsWith(q)) return 90
+      if (searchText.includes(q)) return 80
+      // Fuzzy match
+      let score = 0
+      let searchIdx = 0
+      for (const char of q) {
+        const found = searchText.indexOf(char, searchIdx)
+        if (found === -1) return 0
+        score += found === searchIdx ? 10 : 5
+        searchIdx = found + 1
       }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setSel(s => (s + 1) % (results.length || 1))
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setSel(s => (s - 1 + (results.length || 1)) % (results.length || 1))
-      } else if (e.key === 'Enter') {
-        e.preventDefault()
-        const target = results[sel]
-        if (target) {
-          onClose()
-          target.run()
-        }
-      } else if (e.key === 'Tab') {
-        e.preventDefault()
-        // Cycle through category tabs
-        const currentIndex = FILTER_TABS.findIndex(t => t.id === activeTab)
-        const nextIndex = e.shiftKey
-          ? (currentIndex - 1 + FILTER_TABS.length) % FILTER_TABS.length
-          : (currentIndex + 1) % FILTER_TABS.length
-        setActiveTab(FILTER_TABS[nextIndex].id)
-      }
+      return score
     }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [results, sel, onClose, activeTab])
 
-  const handleTabClick = (tabId) => {
-    setActiveTab(tabId)
-    inputRef.current?.focus()
+    const cmdResults = BUILTIN_COMMANDS
+      .map(cmd => ({ ...cmd, type: 'command', matchScore: score(cmd) }))
+      .filter(r => r.matchScore > 0)
+      .sort((a, b) => b.matchScore - a.matchScore)
+
+    const convResults = conversations
+      .map(c => ({
+        type: 'conversation',
+        id: c.clientId,
+        label: c.title || 'Untitled',
+        description: c.messages?.length ? `${c.messages.length} messages` : 'Empty',
+        icon: MessageSquare,
+        matchScore: score({ label: c.title || '', description: '', keywords: [] }),
+      }))
+      .filter(r => r.matchScore > 0)
+      .sort((a, b) => b.matchScore - a.matchScore)
+      .slice(0, 8)
+
+    return [...cmdResults, ...convResults].slice(0, 10)
+  }, [query, conversations, activeConversationId, recentCommands])
+
+  const handleSelect = (item) => {
+    if (item.type === 'command') {
+      onRunCommand?.(item.id)
+      switch (item.id) {
+        case 'new-chat': onNewChat?.(); break
+        case 'settings': onNavigate?.('settings'); break
+        case 'providers': onNavigate?.('providers'); break
+        case 'agents': onNavigate?.('agents'); break
+        case 'skills': onNavigate?.('skills'); break
+        case 'mcp': onNavigate?.('mcp'); break
+        case 'shortcuts': onRunCommand?.('shortcuts'); break
+        case 'terminal': onRunCommand?.('terminal'); break
+        case 'diagnostics': onNavigate?.('diagnostics'); break
+        default: onNavigate?.(item.id); break
+      }
+    } else if (item.type === 'conversation') {
+      onRunCommand?.(`switch-chat:${item.id}`)
+    }
+    onClose()
   }
 
-  const clearQuery = () => {
-    setRawQuery('')
-    inputRef.current?.focus()
+  if (!isOpen) return null
+
+  const overlayStyle = {
+    position: 'fixed',
+    inset: 0,
+    background: tokens.colors.overlay,
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingTop: '12vh',
+    zIndex: tokens.zIndex.modal,
+    animation: `fadeIn ${tokens.motion.fast} ease-out`,
   }
+
+  const paletteStyle = {
+    background: tokens.colors.panel,
+    border: `1px solid ${tokens.colors.border}`,
+    borderRadius: tokens.radius.xl,
+    boxShadow: tokens.shadow.xl,
+    width: 'min(720px, 90vw)',
+    maxHeight: '70vh',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    animation: `slideDown ${tokens.motion.spring}`,
+  }
+
+  const inputStyle = {
+    width: '100%',
+    padding: `${tokens.spacing[3]} ${tokens.spacing[4]} ${tokens.spacing[3]} ${tokens.spacing[10]}`,
+    fontSize: tokens.typography.size.base,
+    fontFamily: tokens.typography.fontFamily,
+    color: tokens.colors.text,
+    background: tokens.colors.bgElevated,
+    border: 'none',
+    borderBottom: `1px solid ${tokens.colors.border}`,
+    outline: 'none',
+  }
+
+  const searchIconStyle = {
+    position: 'absolute',
+    left: tokens.spacing[4],
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: tokens.colors.textMuted,
+    pointerEvents: 'none',
+  }
+
+  const clearButtonStyle = {
+    position: 'absolute',
+    right: tokens.spacing[3],
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'transparent',
+    border: 'none',
+    color: tokens.colors.textMuted,
+    cursor: 'pointer',
+    padding: tokens.spacing[1],
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  }
+
+  const sectionStyle = {
+    padding: `${tokens.spacing[2]} ${tokens.spacing[3]}`,
+    fontSize: tokens.typography.size.xs,
+    fontWeight: tokens.typography.weight.semibold,
+    color: tokens.colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: tokens.typography.tracking.wide,
+    background: tokens.colors.bgElevated,
+    borderBottom: `1px solid ${tokens.colors.border}`,
+  }
+
+  const itemStyle = (selected) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: tokens.spacing[3],
+    padding: `${tokens.spacing[2]} ${tokens.spacing[4]}`,
+    cursor: 'pointer',
+    background: selected ? tokens.colors.brandLight : 'transparent',
+    borderLeft: selected ? `3px solid ${tokens.colors.brand}` : '3px solid transparent',
+    transition: `background-color ${tokens.motion.fast}, border-color ${tokens.motion.fast}`,
+  })
+
+  const iconWrapperStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: tokens.radius.md,
+    background: tokens.colors.bgElevated,
+    color: tokens.colors.textSecondary,
+    flexShrink: 0,
+  }
+
+  const textStyle = {
+    flex: 1,
+    minWidth: 0,
+  }
+
+  const labelStyle = (selected) => ({
+    fontSize: tokens.typography.size.sm,
+    fontWeight: tokens.typography.weight.medium,
+    color: selected ? tokens.colors.text : tokens.colors.text,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  })
+
+  const descStyle = {
+    fontSize: tokens.typography.size.xs,
+    color: tokens.colors.textMuted,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    marginTop: 2,
+  }
+
+  const kbdStyle = {
+    fontSize: tokens.typography.size.xs,
+    fontFamily: tokens.typography.fontFamilyMono,
+    background: tokens.colors.bgElevated,
+    border: `1px solid ${tokens.colors.border}`,
+    borderRadius: tokens.radius.sm,
+    padding: `${tokens.spacing[1]} ${tokens.spacing[2]}`,
+    color: tokens.colors.textMuted,
+    marginLeft: 'auto',
+  }
+
+  // Group results by type
+  const commands = filteredResults.filter(r => r.type === 'command')
+  const conversationsList = filteredResults.filter(r => r.type === 'conversation')
 
   return (
-    <div className="palette-overlay" onClick={onClose}>
-      <div
-        className="palette"
-        onClick={e => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Universal Search & Command Palette"
-      >
-        {/* Search Input Bar */}
-        <div className="palette-input-bar">
-          <Search size={18} className="palette-search-icon" />
+    <div style={overlayStyle} onClick={onClose} role="dialog" aria-modal="true" aria-label="Command palette">
+      <div style={paletteStyle} onClick={e => e.stopPropagation()}>        <div style={{ position: 'relative' }}>
+          <Search size={20} style={searchIconStyle} aria-hidden="true" />
           <input
             ref={inputRef}
-            value={rawQuery}
-            onChange={e => setRawQuery(e.target.value)}
-            placeholder="Search chats, models, commands, tools (or type >, @, #, !, /)..."
-            aria-label="Search queries and commands"
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') onClose() }}
+            placeholder="Type a command or search conversations… (Esc to close)"
+            style={inputStyle}
             autoComplete="off"
-            spellCheck="false"
-            autoFocus
+            spellCheck={false}
+            aria-label="Command palette search"
+            aria-autocomplete="list"
+            aria-controls="command-results"
+            aria-activedescendant={filteredResults[selectedIndex] ? `cmd-${filteredResults[selectedIndex].id}` : undefined}
           />
-          {searching && <span className="palette-spinner" title="Searching messages..."></span>}
-          {rawQuery ? (
+          {query && (
             <button
-              type="button"
-              className="palette-clear-btn"
-              onClick={clearQuery}
-              title="Clear search"
+              style={clearButtonStyle}
+              onClick={() => { setQuery(''); setSelectedIndex(0); inputRef.current?.focus() }}
               aria-label="Clear search"
             >
-              <X size={14} />
+              <X size={16} />
             </button>
-          ) : (
-            <kbd className="palette-kbd">ESC</kbd>
           )}
         </div>
 
-        {/* Filter Categories Row */}
-        <div
-          className="palette-tabs"
-          role="tablist"
-          aria-label="Filter categories"
-          onWheel={(e) => {
-            if (e.deltaY) {
-              e.currentTarget.scrollLeft += e.deltaY * 0.8
-            }
-          }}
-        >
-          {FILTER_TABS.map(tab => {
-            const TabIcon = tab.icon
-            const isActive = filterTab === tab.id
-            const count = categoryCounts[tab.id]
-            return (
-              <button
-                key={tab.id}
-                role="tab"
-                aria-selected={isActive}
-                className={`palette-tab-pill ${isActive ? 'active' : ''}`}
-                onClick={() => handleTabClick(tab.id)}
-              >
-                {TabIcon && <TabIcon size={12} className="palette-tab-icon" />}
-                <span>{tab.label}</span>
-                {tab.prefix && <span className="palette-tab-prefix">{tab.prefix}</span>}
-                {count > 0 && tab.id !== 'all' && (
-                  <span className="palette-tab-count">{count}</span>
-                )}
-              </button>
-            )
-          })}
-        </div>
+        <div id="command-results" ref={listRef} role="listbox" style={{ overflowY: 'auto', maxHeight: '60vh' }}>
+          {commands.length > 0 && (
+            <>
+              <div style={sectionStyle} role="presentation">Commands</div>
+              {commands.map((cmd, i) => (
+                <button
+                  key={cmd.id}
+                  id={`cmd-${cmd.id}`}
+                  role="option"
+                  data-selected={i === selectedIndex}
+                  style={itemStyle(i === selectedIndex)}
+                  onClick={() => handleSelect(cmd)}
+                  onMouseEnter={() => setSelectedIndex(i)}
+                >
+                  <span style={iconWrapperStyle}>
+                    <cmd.icon size={16} style={{ color: i === selectedIndex ? tokens.colors.brand : tokens.colors.textSecondary }} />
+                  </span>
+                  <div style={textStyle}>
+                    <div style={labelStyle(i === selectedIndex)}>{cmd.label}</div>
+                    <div style={descStyle}>{cmd.description}</div>
+                  </div>
+                  <kbd style={kbdStyle}>Cmd+K</kbd>
+                </button>
+              ))}
+            </>
+          )}
 
-        {/* Results List */}
-        <div className="palette-list" ref={listRef} role="listbox">
-          {results.length === 0 && (
-            <div className="palette-empty">
-              <div className="palette-empty-icon">
-                <Search size={26} />
-              </div>
-              <div className="palette-empty-title">
-                {rawQuery ? `No results for "${cleanQuery}"` : 'Universal Search & Actions'}
-              </div>
-              <p className="palette-empty-desc">
-                {rawQuery
-                  ? 'Try checking for typos or searching across other categories with the tabs above.'
-                  : 'Instantly find messages in your conversations, switch AI models, toggle tools, or run system actions.'}
-              </p>
-              {!rawQuery && (
-                <div className="palette-shortcuts-hint">
-                  <span className="shortcut-tag" onClick={() => setRawQuery('> ')}><code>&gt;</code> Commands</span>
-                  <span className="shortcut-tag" onClick={() => setRawQuery('@ ')}><code>@</code> Models</span>
-                  <span className="shortcut-tag" onClick={() => setRawQuery('# ')}><code>#</code> Chats</span>
-                  <span className="shortcut-tag" onClick={() => setRawQuery('! ')}><code>!</code> Tools</span>
-                  <span className="shortcut-tag" onClick={() => setRawQuery('/ ')}><code>/</code> Personas</span>
-                </div>
-              )}
+          {conversationsList.length > 0 && (
+            <>
+              <div style={sectionStyle} role="presentation">Conversations</div>
+              {conversationsList.map((conv, i) => (
+                <button
+                  key={conv.id}
+                  id={`cmd-${conv.id}`}
+                  role="option"
+                  data-selected={commands.length + i === selectedIndex}
+                  style={itemStyle(commands.length + i === selectedIndex)}
+                  onClick={() => handleSelect(conv)}
+                  onMouseEnter={() => setSelectedIndex(commands.length + i)}
+                >
+                  <span style={iconWrapperStyle}>
+                    <conv.icon size={16} style={{ color: commands.length + i === selectedIndex ? tokens.colors.brand : tokens.colors.textSecondary }} />
+                  </span>
+                  <div style={textStyle}>
+                    <div style={labelStyle(commands.length + i === selectedIndex)}>{conv.label}</div>
+                    <div style={descStyle}>{conv.description}</div>
+                  </div>
+                </button>
+              ))}
+            </>
+          )}
+
+          {filteredResults.length === 0 && query && (
+            <div style={{ padding: tokens.spacing[6], textAlign: 'center', color: tokens.colors.textMuted }}>
+              No matches for "{query}"
             </div>
           )}
-
-          {results.map((c, i) => {
-            const isSelected = i === sel
-            const groupInfo = GROUP_CONFIG[c.group] || { icon: Sparkles, color: 'var(--text-muted)' }
-            const Icon = c.icon || groupInfo.icon
-
-            return (
-              <button
-                key={c.id}
-                data-sel={isSelected}
-                role="option"
-                aria-selected={isSelected}
-                className={`palette-item ${isSelected ? 'active' : ''} ${c.snippet ? 'has-snippet' : ''}`}
-                onMouseEnter={() => setSel(i)}
-                onClick={() => { onClose(); c.run() }}
-              >
-                <div
-                  className="palette-item-icon"
-                  style={{
-                    color: groupInfo.color,
-                    backgroundColor: `${groupInfo.color}15`,
-                    borderColor: `${groupInfo.color}30`
-                  }}
-                >
-                  <Icon size={14} />
-                </div>
-
-                <div className="palette-item-body">
-                  <div className="palette-item-main">
-                    <span
-                      className="palette-group-badge"
-                      style={{
-                        backgroundColor: `${groupInfo.color}15`,
-                        color: groupInfo.color,
-                        borderColor: `${groupInfo.color}35`
-                      }}
-                    >
-                      {c.group}
-                    </span>
-                    <span className="palette-label">
-                      <HighlightMatch text={c.label} query={cleanQuery} />
-                    </span>
-                    {c.hint && (
-                      <span className="palette-hint">
-                        {c.hint}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Message snippet preview for full-text search hits */}
-                  {c.snippet && (
-                    <div className="palette-snippet">
-                      <span className="snippet-role">{c.role === 'user' ? 'You: ' : 'AI: '}</span>
-                      <HighlightMatch text={c.snippet} query={cleanQuery} />
-                    </div>
-                  )}
-                </div>
-
-                {isSelected && (
-                  <div className="palette-select-indicator">
-                    <kbd className="palette-enter-kbd"><CornerDownLeft size={11} /> Enter</kbd>
-                  </div>
-                )}
-              </button>
-            )
-          })}
         </div>
 
-        {/* Footer info bar */}
-        <div className="palette-footer">
-          <div className="palette-footer-left">
-            <span className="palette-footer-tip">
-              <kbd>↑</kbd><kbd>↓</kbd> Navigate
-            </span>
-            <span className="palette-footer-tip">
-              <kbd>↵</kbd> Select
-            </span>
-            <span className="palette-footer-tip">
-              <kbd>Tab</kbd> Switch Tab
-            </span>
-            <span className="palette-footer-tip">
-              <kbd>Esc</kbd> Close
-            </span>
-          </div>
-          <div className="palette-footer-right">
-            <span>{results.length} result{results.length === 1 ? '' : 's'}</span>
-          </div>
+        <div style={{ padding: tokens.spacing[3], borderTop: `1px solid ${tokens.colors.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: tokens.typography.size.xs, color: tokens.colors.textMuted }}>
+          <kbd style={kbdStyle}>↑↓</kbd> Navigate
+          <kbd style={kbdStyle}>Enter</kbd> Select
+          <kbd style={kbdStyle}>Esc</kbd> Close
         </div>
+        <style jsx>{`
+          @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes slideDown { from { opacity: 0; transform: translateY(-20px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        `}</style>
       </div>
     </div>
   )
 }
+
+export default CommandPalette

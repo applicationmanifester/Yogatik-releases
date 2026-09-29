@@ -26,6 +26,7 @@ const { injectAdShield, getAdShieldStats, isAdShieldEnabled, setAdShieldEnabled 
 const { toggleReaderMode } = require('./readerMode.cjs')
 const { load: loadSettings, get: getSetting, set: setSetting } = require('./settings/store.cjs')
 const { injectExtensions } = require('./extensions.cjs')
+const aiEngine = require('./aiEngine.cjs')
 
 const NEW_TAB_URL = pathToFileURL(path.join(__dirname, 'newtab.html')).href
 
@@ -2348,6 +2349,11 @@ function registerBrowserControl(first, second) {
   ipcMain.handle('settings:get', (_e, key) => getSetting(key))
   ipcMain.handle('settings:set', (_e, key, val) => setSetting(key, val))
   ipcMain.handle('settings:all', () => loadSettings())
+  // AI engine state for the companion panel (local Ollama / cloud / templates).
+  ipcMain.handle('browser:ai-status', async () => {
+    await aiEngine.probeOllama()
+    return aiEngine.getStatus()
+  })
 
   // Clicks and typing in the window-mode toolbar/tab strip. This is real
   // browser chrome now (address bar, back/forward/reload, a manual + button)
@@ -2679,52 +2685,343 @@ function generateContextualAnswer(info, question) {
   return parts.join('\n')
 }
 
+// Reusable page-content extraction injected into a tab's webContents.
+const EXTRACT_PAGE_INFO_SRC = `
+  (function (maxChars) {
+    const title = document.title || 'Untitled Page'
+    const url = location.href
+    const isYouTube = location.hostname.includes('youtube.com')
+    const ytTitle = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.innerText || ''
+    const ytChannel = document.querySelector('#owner-sub-count, #upload-info #text a')?.innerText || ''
+    const ytDesc = document.querySelector('#description-inline-expander, #description')?.innerText || ''
+
+    const clone = document.body.cloneNode(true)
+    const remove = clone.querySelectorAll('script, style, noscript, svg, nav, footer, header, [role="banner"], [role="navigation"]')
+    remove.forEach(e => e.remove())
+    const text = (clone.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, maxChars || 15000)
+
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3'))
+      .map(h => h.innerText.trim())
+      .filter(h => h.length > 2 && h.length < 120)
+      .slice(0, 12)
+
+    return {
+      title: ytTitle || title,
+      url,
+      isYouTube,
+      channel: ytChannel,
+      description: ytDesc.slice(0, 1500),
+      text,
+      headings,
+    }
+  })
+`
+
+async function extractPageInfo(wc, maxChars) {
+  if (!wc || wc.isDestroyed()) return null
+  try {
+    return await wc.executeJavaScript(`${EXTRACT_PAGE_INFO_SRC}(${Number(maxChars) || 15000})`)
+  } catch {
+    return null
+  }
+}
+
+// ── Multi-tab intelligence ────────────────────────────────────────────────
+// The old companion could only ever see the ACTIVE tab. This gathers a
+// snippet from every open tab so the model can compare, cluster and search
+// across the whole workspace.
+async function collectAllTabsInfo(s, { perTab = 2500 } = {}) {
+  const out = []
+  for (const [tabId, t] of s.tabs) {
+    if (t.isAgent) continue
+    let title = ''
+    let url = ''
+    let text = ''
+    if (t.view && !t.hibernating) {
+      const info = await extractPageInfo(t.view.webContents, perTab)
+      if (info) {
+        title = info.title
+        url = info.url
+        text = info.text
+      }
+    }
+    if (!url) {
+      url = t.savedUrl || ''
+      title = t.savedTitle || 'Tab'
+    }
+    if (!url || isNewTabUrl(url)) continue
+    out.push({ tabId, title, url, text })
+  }
+  return out
+}
+
+// ── Auto tab-grouping ─────────────────────────────────────────────────────
+const GROUP_COLOR_POOL = ['#ff7a18', '#10b981', '#3b82f6', '#cba6f7', '#f59e0b', '#ec4899', '#06b6d4', '#84cc16']
+
+function heuristicGroups(tabs) {
+  const buckets = [
+    { name: 'Docs & Code', keys: /github|docs|stackoverflow|mdn|gitlab|npm|dev\.to|documentation/i },
+    { name: 'Media & Video', keys: /youtube|vimeo|netflix|twitch|spotify|soundcloud/i },
+    { name: 'News & Reading', keys: /news|hacker|reuters|bbc|guardian|medium|substack|blog/i },
+    { name: 'Shopping', keys: /amazon|flipkart|ebay|myntra|shop|store|price/i },
+    { name: 'AI & Research', keys: /openai|perplexity|anthropic|huggingface|ollama|chatgpt|gemini/i },
+  ].map(b => ({ ...b, tabs: [] }))
+  const general = { name: 'General', color: GROUP_COLOR_POOL[0], tabs: [] }
+  for (const t of tabs) {
+    const hay = `${t.title} ${t.url}`
+    const hit = buckets.find(b => b.keys.test(hay))
+    if (hit) hit.tabs.push(t.tabId)
+    else general.tabs.push(t.tabId)
+  }
+  return [...buckets.filter(b => b.tabs.length), general]
+    .map((g, i) => ({ name: g.name, color: g.color || GROUP_COLOR_POOL[i % GROUP_COLOR_POOL.length], tabIds: g.tabs }))
+}
+
+function applyGroupsToRenderer(s, groups) {
+  if (!s.win || s.win.isDestroyed()) return
+  s.win.webContents
+    .executeJavaScript(`window.__applyAiGroups && window.__applyAiGroups(${JSON.stringify(groups)})`)
+    .catch(() => {})
+}
+
+// ── AI Companion ──────────────────────────────────────────────────────────
 async function handleBrowserAiQuery(s, payload) {
   const t = activeTab(s)
-  if (!t || !s.win || s.win.isDestroyed()) return
-  const wc = t.view.webContents
   const type = payload.type || 'summarize'
   const question = payload.question || ''
 
+  const post = (obj) => {
+    if (!s.win || s.win.isDestroyed()) return
+    s.win.webContents
+      .executeJavaScript(`window.__setAiResult && window.__setAiResult(${JSON.stringify(obj)})`)
+      .catch(() => {})
+  }
+  const postProgress = (text) => {
+    if (!s.win || s.win.isDestroyed()) return
+    s.win.webContents
+      .executeJavaScript(`window.__setAiProgress && window.__setAiProgress(${JSON.stringify(text)})`)
+      .catch(() => {})
+  }
+  const postToken = (tok) => {
+    if (!s.win || s.win.isDestroyed()) return
+    s.win.webContents
+      .executeJavaScript(`window.__appendAiToken && window.__appendAiToken(${JSON.stringify(tok)})`)
+      .catch(() => {})
+  }
+
+  // Streamed LLM answer into the panel; falls back to the template answer
+  // when no model is reachable — the panel ALWAYS gets something.
+  const answerWithModel = async (system, user, fallbackMarkdown) => {
+    postProgress('Thinking with ' + aiEngine.getStatus().label + '…')
+    let got = false
+    let streamed = ''
+    try {
+      const { text, via, model } = await aiEngine.chat([
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ], {
+        onToken: (tok) => {
+          if (!got) { got = true; postProgress('') }
+          streamed += tok
+          postToken(tok)
+        },
+      })
+      if (!text.trim()) throw new Error('empty')
+      return { markdown: text, via, model }
+    } catch {
+      postProgress('')
+      if (streamed.trim()) return { markdown: streamed, via: 'Ollama (partial)', model: '' }
+      return { markdown: fallbackMarkdown, via: 'Templates', model: '' }
+    }
+  }
+
   try {
-    const info = await wc.executeJavaScript(`
-      (() => {
-        const title = document.title || 'Untitled Page'
-        const url = location.href
-        const isYouTube = location.hostname.includes('youtube.com')
-        const ytTitle = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.innerText || ''
-        const ytChannel = document.querySelector('#owner-sub-count, #upload-info #text a')?.innerText || ''
-        const ytDesc = document.querySelector('#description-inline-expander, #description')?.innerText || ''
-        
-        const clone = document.body.cloneNode(true)
-        const remove = clone.querySelectorAll('script, style, noscript, svg, nav, footer, header, [role="banner"], [role="navigation"]')
-        remove.forEach(e => e.remove())
-        const text = (clone.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 15000)
+    // ── Research agent: goal → plan → multi-tab read → cited report ──
+    if (type === 'research') {
+      const goal = (question || '').trim()
+      if (!goal) { post({ error: 'Describe what to research' }); return }
 
-        const headings = Array.from(document.querySelectorAll('h1, h2, h3'))
-          .map(h => h.innerText.trim())
-          .filter(h => h.length > 2 && h.length < 120)
-          .slice(0, 12)
+      postProgress('🧭 Planning search queries…')
+      const planned = await aiEngine.askJson(
+        'You are a web research planner. Given a goal, return ONLY a JSON array of 3 diverse, specific search engine queries. No prose.',
+        goal,
+      )
+      const queries = (Array.isArray(planned) && planned.length)
+        ? planned.map(q => String(q)).filter(Boolean).slice(0, 3)
+        : [goal]
 
-        return {
-          title: ytTitle || title,
-          url,
-          isYouTube,
-          channel: ytChannel,
-          description: ytDesc.slice(0, 1500),
-          text,
-          headings,
+      // Metasearch: run each query on a background tab, harvest result links.
+      const sources = []
+      const bgTabId = createTab(s, null, { lazy: true })
+      const bgTab = s.tabs.get(bgTabId)
+      try {
+        for (const q of queries) {
+          postProgress(`🔎 Searching: ${q.slice(0, 60)}…`)
+          if (!bgTab.view) ensureView(s, bgTabId)
+          if (!bgTab.view) break
+          const wc = bgTab.view.webContents
+          await navigate(s, bgTabId, 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q))
+          const links = await wc.executeJavaScript(
+            `Array.from(document.querySelectorAll('.result__a')).slice(0, 4).map(a => ({ title: (a.innerText || '').trim(), url: a.href }))`
+          ).catch(() => [])
+          for (const l of (links || [])) {
+            if (l.url && l.title && !sources.some(x => x.url === l.url)) sources.push(l)
+            if (sources.length >= 6) break
+          }
+          if (sources.length >= 6) break
         }
-      })()
-    `)
 
-    if (!info) {
-      s.win.webContents.executeJavaScript(
-        `window.__setAiResult && window.__setAiResult(${JSON.stringify({ error: 'Unable to read page contents' })})`
-      ).catch(() => {})
+        // Read the top pages.
+        const extracts = []
+        let i = 0
+        for (const src of sources) {
+          i++
+          postProgress(`📄 Reading (${i}/${sources.length}): ${src.title.slice(0, 60)}…`)
+          await navigate(s, bgTabId, src.url)
+          const info = await extractPageInfo(wc, 6000)
+          if (info && info.text && info.text.length > 200) {
+            extracts.push({ title: info.title, url: src.url, text: info.text })
+          }
+          if (extracts.length >= 4) break
+        }
+
+        if (!extracts.length) {
+          post({ type: 'research', result: '### 🧭 Research\n\nNo readable sources found for this goal. Try rephrasing it.', title: 'Research', url: '' })
+          return
+        }
+
+        postProgress('🧠 Synthesizing cited report…')
+        const context = extracts
+          .map((e, n) => `[${n + 1}] ${e.title}\nURL: ${e.url}\n${e.text}`)
+          .join('\n\n---\n\n')
+        const system = 'You are a rigorous research assistant. Synthesize the provided page extracts into a well-structured Markdown report answering the user goal. Cite sources inline as [1], [2] and end with a Sources list. If the extracts do not fully answer the goal, say what is missing.'
+        const fallback = '### 🧭 Research: ' + goal + '\n\n' + extracts
+          .map((e, n) => `**${n + 1}. ${e.title}**\n${e.url}\n${e.text.slice(0, 400)}…`)
+          .join('\n\n')
+        const { markdown, via, model } = await answerWithModel(system, `Goal: ${goal}\n\nPage extracts:\n\n${context}`, fallback)
+        post({ type: 'research', result: markdown, via, model, title: 'Research', url: '' })
+      } finally {
+        try {
+          if (bgTab?.view) closeTab(s, bgTabId)
+          else s.tabs.delete(bgTabId)
+        } catch {}
+      }
       return
     }
 
+    // ── Auto tab-grouping by topic ──
+    if (type === 'group-tabs') {
+      const tabs = await collectAllTabsInfo(s, { perTab: 400 })
+      if (tabs.length < 2) {
+        applyGroupsToRenderer(s, null)
+        post({ type: 'group-tabs', result: 'Open at least two real pages first.' })
+        return
+      }
+      postProgress('🧠 Clustering tabs by topic…')
+      const listing = tabs.map(t => `${t.tabId} | ${t.title} | ${t.url.slice(0, 120)}`).join('\n')
+      const planned = await aiEngine.askJson(
+        'You group browser tabs into topic groups. Return ONLY JSON: {"groups":[{"name":"short name","color":"#hex","tabIds":["tab-1"]}]} — every tabId must appear in exactly one group.',
+        listing,
+      )
+      let groups = null
+      if (planned && Array.isArray(planned.groups)) {
+        const validIds = new Set(tabs.map(t => t.tabId))
+        groups = planned.groups
+          .map(g => ({
+            name: String(g.name || 'Group').slice(0, 24),
+            color: /^#[0-9a-f]{6}$/i.test(g.color || '') ? g.color : GROUP_COLOR_POOL[Math.floor(Math.random() * GROUP_COLOR_POOL.length)],
+            tabIds: (Array.isArray(g.tabIds) ? g.tabIds : []).filter(id => validIds.has(id)),
+          }))
+          .filter(g => g.tabIds.length)
+        const covered = groups.flatMap(g => g.tabIds)
+        const missing = tabs.filter(t => !covered.includes(t.tabId))
+        if (missing.length && groups.length) {
+          groups[0].tabIds.push(...missing.map(t => t.tabId))
+        }
+      }
+      if (!groups || !groups.length) groups = heuristicGroups(tabs)
+      applyGroupsToRenderer(s, groups)
+      postProgress('')
+      post({ type: 'group-tabs', result: `Grouped ${tabs.length} tabs into ${groups.length} topic groups.`, title: 'Auto-Group', url: '' })
+      return
+    }
+
+    // ── Multi-tab intelligence ──
+    if (type === 'all-tabs' || type === 'find-tabs') {
+      const tabs = await collectAllTabsInfo(s)
+      if (!tabs.length) { post({ error: 'No open pages to analyze' }); return }
+      postProgress(`Reading ${tabs.length} open tab${tabs.length > 1 ? 's' : ''}…`)
+
+      if (type === 'find-tabs') {
+        const q = (question || '').trim()
+        if (!q) { post({ error: 'Type what to look for across tabs' }); return }
+        // With a model: ask which tabs answer the question. Without: keyword rank.
+        const listing = tabs.map((t, n) => `[${n + 1}] ${t.title}\nURL: ${t.url}\n${t.text.slice(0, 1200)}`).join('\n\n')
+        const system = 'You search across the user\'s open browser tabs. Given the question and tab extracts, return ONLY a JSON array of the tab numbers that answer it, best first, e.g. [3,1]. No prose.'
+        const picked = await aiEngine.askJson(system, `Question: ${q}\n\nTabs:\n\n${listing}`)
+        let ranked = []
+        if (Array.isArray(picked)) {
+          ranked = picked.map(n => tabs[Number(n) - 1]).filter(Boolean)
+        } else {
+          const terms = q.toLowerCase().split(/\s+/).filter(w => w.length > 2)
+          ranked = tabs
+            .map(t => ({ t, score: terms.reduce((a, w) => a + ((t.title + ' ' + t.text).toLowerCase().includes(w) ? 1 : 0), 0) }))
+            .filter(x => x.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .map(x => x.t)
+        }
+        postProgress('')
+        if (!ranked.length) {
+          post({ type: 'find-tabs', result: `No open tab matches “${q}”.`, title: 'Find in Tabs', url: '' })
+          return
+        }
+        const md = `### 🔎 Found in ${ranked.length} open tab${ranked.length > 1 ? 's' : ''}\n\n` +
+          ranked.map((t, n) => `**${n + 1}. ${t.title}**\n${t.url}\n> ${t.text.slice(0, 260)}…`).join('\n\n')
+        post({ type: 'find-tabs', result: md, title: 'Find in Tabs', url: ranked[0].url })
+        return
+      }
+
+      // all-tabs: cross-tab workspace summary (model) or per-tab digest.
+      const listing = tabs.map((t, n) => `[${n + 1}] ${t.title}\nURL: ${t.url}\n${t.text.slice(0, 1500)}`).join('\n\n---\n\n')
+      const system = 'You summarize the user\'s open browser tabs as one coherent workspace. Produce a Markdown overview: what the workspace is about, per-tab one-liners in a table, cross-tab themes, and suggested next actions.'
+      const fallback = '### 🗂️ Workspace: ' + tabs.length + ' tabs\n\n' +
+        tabs.map((t, n) => `**${n + 1}. ${t.title}** — ${t.url}`).join('\n')
+      const { markdown, via, model } = await answerWithModel(system, listing, fallback)
+      post({ type: 'all-tabs', result: markdown, via, model, title: 'All Tabs', url: '' })
+      return
+    }
+
+    // ── Single-tab types (summarize / keypoints / video / markdown / chat) ──
+    if (!t || !s.win || s.win.isDestroyed()) return
+    const wc = t.view.webContents
+    const info = await extractPageInfo(wc, 15000)
+    if (!info) {
+      post({ error: 'Unable to read page contents' })
+      return
+    }
+
+    // A real model is the primary path for page Q&A; the old templates are
+    // only the offline fallback now.
+    const systemByType = {
+      summarize: 'You summarize web pages. Produce a tight Markdown summary: one-line TL;DR, key points as bullets, and any numbers/claims worth noting. Plain, factual, no fluff.',
+      chat: 'You answer questions about the web page the user is viewing, using ONLY the provided page content. If the answer is not in the page, say so plainly. Markdown, concise.',
+    }
+    const userByType = {
+      summarize: `Page: ${info.title}\nURL: ${info.url}\n\nContent:\n${info.text}`,
+      chat: `Page: ${info.title}\nURL: ${info.url}\n\nQuestion: ${question}\n\nContent:\n${info.text}`,
+    }
+
+    const wantModel = type === 'summarize' || type === 'chat'
+    if (wantModel && aiEngine.getStatus().mode !== 'template') {
+      const fallback = type === 'summarize'
+        ? generateExecutiveSummary(info)
+        : generateContextualAnswer(info, question)
+      const { markdown, via, model } = await answerWithModel(systemByType[type], userByType[type], fallback)
+      post({ type, result: markdown, via, model, title: info.title, url: info.url })
+      return
+    }
+
+    // Template fallbacks (offline, no model).
     let responseMarkdown = ''
     if (type === 'summarize') {
       responseMarkdown = generateExecutiveSummary(info)
@@ -2738,18 +3035,9 @@ async function handleBrowserAiQuery(s, payload) {
       responseMarkdown = generateContextualAnswer(info, question)
     }
 
-    s.win.webContents.executeJavaScript(
-      `window.__setAiResult && window.__setAiResult(${JSON.stringify({
-        type,
-        result: responseMarkdown,
-        title: info.title,
-        url: info.url,
-      })})`
-    ).catch(() => {})
+    post({ type, result: responseMarkdown, via: 'Templates', title: info.title, url: info.url })
   } catch (err) {
-    s.win.webContents.executeJavaScript(
-      `window.__setAiResult && window.__setAiResult(${JSON.stringify({ error: err.message || 'Analysis failed' })})`
-    ).catch(() => {})
+    post({ error: err.message || 'Analysis failed' })
   }
 }
 

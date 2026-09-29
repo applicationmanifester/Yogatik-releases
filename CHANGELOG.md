@@ -1,5 +1,16 @@
 # Changelog
 
+## v11.3.0 - Real-Time Reasoning Streaming & Robust Model Watchdog (2026-09-29)
+
+### 🧠 Reasoning & Streaming Engine
+- **Real-Time Reasoning UI Streaming (`agent.js`)** — Streamed tokens in both prompted and native modes now immediately push to `onToken` and `fullContent`, ensuring thinking steps and model answers appear live in the UI without getting suppressed or leaving blank bubbles.
+- **Strict Tool Call Discrimination (`agent.js`)** — Refined tool invocation detection so regular markdown JSON and code blocks output by models (e.g., Nemotron, Qwen, DeepSeek) are treated as prose content and rendered directly into the chat bubble rather than misidentified as tool calls.
+- **Watchdog Pre-Synthesis Guard (`agent.js`)** — Positioned visible answer and plan synthesis prior to response quality watchdog evaluations, preventing pure reasoning turns or action plans from triggering false empty-response retries or `_[stopped]_` dropouts.
+- **Anti-Stall Reasoning Protection (`reasoning.js`)** — Adjusted loop suppression threshold to require 25+ consecutive dots and 4x identical repeats, protecting complex reasoning steps and technical tables from premature stream termination.
+
+### 🌐 Cross-Platform Synchronisation
+- **Synchronized v11.3.0** — Aligned version numbers and release manifests across Web, Desktop (Windows, macOS, Linux), and Standalone Browser pages.
+
 ## v11.2.0 - Overloaded Model Auto-Recovery & Autonomous Watchdog Continuation (2026-09-29)
 
 ### ⚡ Resilience & Auto-Recovery

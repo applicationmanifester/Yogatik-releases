@@ -665,20 +665,20 @@ if (!gotLock) {
     // TUI mode streaming handlers (renderer -> main -> TUI)
     ipcMain.on('tui:stream-token', (_, token) => {
       // Forward to TUI process if running
-      if (tuiWindow && !tuiWindow.isDestroyed()) {
-        tuiWindow.webContents.send('tui-stream-token', token)
+      if (tuiWindow) {
+        safeSend(tuiWindow, 'tui-stream-token', token)
       }
     })
 
     ipcMain.on('tui:stream-done', (_, content) => {
-      if (tuiWindow && !tuiWindow.isDestroyed()) {
-        tuiWindow.webContents.send('tui-stream-done', content)
+      if (tuiWindow) {
+        safeSend(tuiWindow, 'tui-stream-done', content)
       }
     })
 
     ipcMain.on('tui:stream-error', (_, error) => {
-      if (tuiWindow && !tuiWindow.isDestroyed()) {
-        tuiWindow.webContents.send('tui-stream-error', error)
+      if (tuiWindow) {
+        safeSend(tuiWindow, 'tui-stream-error', error)
       }
     })
 
