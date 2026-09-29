@@ -148,9 +148,14 @@ app.commandLine.appendSwitch('js-flags', '--max-old-space-size=8192')
 
 function createWindow() {
   const state = windowState.restore({ width: 1200, height: 820 })
-  const iconPath = process.platform === 'win32'
-    ? (app.isPackaged ? process.execPath : path.join(__dirname, 'icon.ico'))
-    : path.join(__dirname, 'icon.png')
+  // Load the brand icon from the SHIPPED FILE, in dev AND packaged. In a
+  // packaged build __dirname is inside app.asar and nativeImage reads .ico
+  // from asar archives fine. The old code used process.execPath here on
+  // Windows — nativeImage cannot decode an exe, so the icon came back empty,
+  // the path string failed Electron's converter too, and the packaged window
+  // shipped with NO explicit icon: the taskbar fell back to whatever the
+  // shell resolved, often the generic Electron icon.
+  const iconPath = path.join(__dirname, process.platform === 'win32' ? 'icon.ico' : 'icon.png')
   const appIcon = nativeImage.createFromPath(iconPath)
 
   mainWindow = new BrowserWindow({

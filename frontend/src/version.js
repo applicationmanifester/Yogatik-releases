@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '11.3.1'
+export const APP_VERSION = '11.3.2'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 11.3.1 — Honest fs_read Truncation & StreamingMessage Parse Fix'
+export const APP_CODENAME = 'Yogatik 11.3.2 — Taskbar Icon Fix (Packaged Window Icon from Shipped File)'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,36 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "11.3.2",
+    "title": "Yogatik 11.3.2: Taskbar Icon Fix — Packaged Window Icon from Shipped File",
+    "date": "September 29, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Taskbar Icon Fix: The packaged Windows app now loads its brand icon from the shipped icon.ico (inside app.asar) instead of process.execPath — nativeImage cannot decode an exe, so packaged windows previously shipped with no explicit icon and the taskbar fell back to a generic icon",
+      "Window setIcon Alive: The explicit setIcon(appIcon) call now applies in packaged builds too — it was silently skipped when the exe-derived image came back empty",
+      "NSIS Shortcut AUMID Preserved: Start Menu shortcuts keep the app.yogatik.desktop AppUserModelID so taskbar pins and grouping resolve the Yogatik branding"
+    ],
+    "sections": [
+      {
+        "category": "🖥️ Desktop App & Installation",
+        "items": [
+          {
+            "title": "Window Icon from Shipped File",
+            "description": "createWindow() loads electron/icon.ico from app.asar in packaged mode — the same reliable path the tray already used — instead of trying to decode the executable as an image."
+          },
+          {
+            "title": "Explicit setIcon in Packaged Builds",
+            "description": "The window's setIcon(appIcon) call no longer skips when the image is valid, so the taskbar button shows the Yogatik logo regardless of shell icon-cache state."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "11.3.1",
     "title": "Yogatik 11.3.1: Honest fs_read Truncation & StreamingMessage Parse Fix",
     "date": "September 29, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Honest fs_read Truncation: fs_smart_read and fs_outline now report the TRUE line count and flag head truncation — start_line past the readable head fails loudly with the exact continuation call instead of silently returning empty content",
       "Smarter Symbol Reads: fs_smart_read reads until the NEXT definition (capped by max_lines) instead of a blind +150 lines, so long functions come back whole; missing symbols past the truncation point explain why and how to read deeper",
