@@ -105,15 +105,23 @@ export const fsOutlineTool = {
       const content = typeof res === 'string' ? res : (res?.content || '')
       const ext = path.split('.').pop() || ''
       const symbols = extractFileSymbols(content, ext)
-      const lineCount = content ? content.split(/\r?\n/).length : 0
+      const allLines = content ? content.split(/\r?\n/) : []
+      // True total from the native read — allLines is only the readable head
+      // when the byte budget truncated the file.
+      const trueTotal = Number(res?.lines) > 0 ? Number(res?.lines) : allLines.length
+      const headTruncated = !!res?.truncated
 
       return ok({
         tool: 'fs_outline',
         path,
-        totalLines: lineCount,
+        totalLines: trueTotal,
         symbolCount: symbols.length,
         symbols,
-        summary: `Found ${symbols.length} definitions across ${lineCount} lines in ${path}. Use fs_smart_read(path, symbol) to inspect specific functions.`,
+        truncated: headTruncated,
+        ...(headTruncated ? {
+          note: `OUTLINE PARTIAL: symbols cover lines 1-${allLines.length} of ${trueTotal} total (fs_read's byte cap). Read deeper with fs_read(path, start_line: ${allLines.length + 1}) for the rest.`,
+        } : {}),
+        summary: `Found ${symbols.length} definitions across ${allLines.length}${headTruncated ? ` of ${trueTotal}` : ''} lines in ${path}. Use fs_smart_read(path, symbol) to inspect specific functions.`,
       })
     })
   },
@@ -148,10 +156,17 @@ export const fsSmartReadTool = {
     return guard(async () => {
       const res = await invoke('fs_read', { path, maxBytes: 5000000 }, opts?.ctx)
       const content = typeof res === 'string' ? res : (res?.content || '')
-      if (!content) return ok({ tool: 'fs_smart_read', path, lines: 0, content: '' })
+      if (!content) {
+        if (res?.binary) return ok({ tool: 'fs_smart_read', path, binary: true, note: res?.note })
+        return ok({ tool: 'fs_smart_read', path, lines: 0, content: '' })
+      }
 
       const allLines = content.split(/\r?\n/)
-      const total = allLines.length
+      // The native read knows the TRUE line count even when it truncated the
+      // head to fit its byte budget — allLines.length is only the head.
+      const trueTotal = Number(res?.lines) > 0 ? Number(res?.lines) : allLines.length
+      const headTruncated = !!res?.truncated
+      const readableEnd = headTruncated ? allLines.length : trueTotal
 
       // 1. Symbol targeted read
       if (symbol) {
@@ -159,9 +174,16 @@ export const fsSmartReadTool = {
         const symbols = extractFileSymbols(content, path.split('.').pop() || '')
         const target = symbols.find(s => s.name.toLowerCase() === cleanSym.toLowerCase())
         if (target) {
+          // Read until the NEXT definition so a whole function comes back,
+          // capped by max_lines — a blind +150 cut long functions mid-body
+          // with no note.
+          const cap = Math.min(Math.max(50, Number(rawLimit) || 1000), 1500)
+          const nextSym = symbols.filter(s => s.line > target.line).sort((a, b) => a.line - b.line)[0]
+          const naturalEnd = nextSym ? nextSym.line - 1 : target.line + cap
           const sLine = Math.max(1, target.line - 1)
-          const eLine = Math.min(total, target.line + 150)
+          const eLine = Math.min(naturalEnd, sLine - 1 + cap, readableEnd)
           const sliced = allLines.slice(sLine - 1, eLine).map((l, idx) => `${sLine + idx}: ${l}`).join('\n')
+          const cutEarly = eLine < naturalEnd
           return ok({
             tool: 'fs_smart_read',
             path,
@@ -169,16 +191,35 @@ export const fsSmartReadTool = {
             symbolType: target.type,
             startLine: sLine,
             endLine: eLine,
-            totalLines: total,
+            totalLines: trueTotal,
+            returnedLines: eLine - sLine + 1,
+            truncated: cutEarly,
+            ...(cutEarly ? {
+              note: (headTruncated && eLine >= readableEnd)
+                ? `Read stopped at line ${eLine}: the readable head ends here (file has ${trueTotal} lines total; fs_read's byte cap). Read deeper with fs_read(path, start_line: ${readableEnd + 1}) then retry.`
+                : `Symbol body continues past line ${eLine} (ends ~line ${naturalEnd}). Continue with fs_smart_read(path, start_line: ${eLine + 1}).`,
+            } : {}),
             content: sliced,
           })
+        }
+        // Symbol not found in the readable head of a truncated file: say WHY
+        // instead of silently reading the wrong range.
+        if (headTruncated) {
+          return fail(`Symbol "${String(symbol).trim()}" was not found in the readable head (lines 1-${allLines.length} of ${trueTotal} total — fs_read's byte cap truncated the file). Read deeper with fs_read(path, start_line: ${allLines.length + 1}), or use fs_search to locate it first.`)
         }
       }
 
       // 2. Range or full read (up to 1500 lines)
       const s = Number(rawStart) > 0 ? Number(rawStart) : 1
       const cap = Math.min(Math.max(50, Number(rawLimit) || 1000), 1500)
-      const e = rawEnd ? Math.min(total, Number(rawEnd)) : Math.min(total, s + cap - 1)
+      // A start past what is readable must fail LOUDLY — silently returning
+      // empty content made the model believe the file ended.
+      if (s > readableEnd) {
+        return fail(headTruncated
+          ? `start_line ${s} is past the readable head (lines 1-${allLines.length} of ${trueTotal} total — the file was truncated by fs_read's byte cap). Read deeper with fs_read(path, start_line: ${allLines.length + 1}) first.`
+          : `start_line ${s} is past the end of the file (${trueTotal} lines).`)
+      }
+      const e = rawEnd ? Math.min(readableEnd, Number(rawEnd)) : Math.min(readableEnd, s + cap - 1)
 
       const formatted = allLines.slice(s - 1, e).map((l, idx) => `${s + idx}: ${l}`).join('\n')
       return ok({
@@ -186,9 +227,14 @@ export const fsSmartReadTool = {
         path,
         startLine: s,
         endLine: e,
-        totalLines: total,
+        totalLines: trueTotal,
         returnedLines: (e - s + 1),
-        truncated: e < total,
+        truncated: e < trueTotal,
+        ...(headTruncated ? {
+          note: `The readable head covers lines 1-${allLines.length} of ${trueTotal} total (fs_read's byte cap). Read deeper sections with fs_read(path, start_line: ${allLines.length + 1}).`,
+        } : (e < trueTotal ? {
+          note: `Lines ${s}-${e} of ${trueTotal}. Continue with fs_smart_read(path, start_line: ${e + 1}).`,
+        } : {})),
         content: formatted,
       })
     })

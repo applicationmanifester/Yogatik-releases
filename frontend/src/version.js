@@ -3,7 +3,7 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '11.3.0'
+export const APP_VERSION = '11.3.1'
 export const BUILD_DATE = 'September 2026'
 export const APP_CODENAME = 'Yogatik 11.3.0 — Real-Time Reasoning Streaming & Robust Model Watchdog'
 
