@@ -561,7 +561,7 @@ const MessageBubble = React.memo(function MessageBubble({
           )}
           {msg.role === 'user' && onEdit && (
             <button className="icon-btn" onClick={() => onEdit(typeof msg.content === 'string' ? msg.content : '')}
-              title="Edit this message — earlier turns branch into a new chat, the original is kept"
+              title="Edit this message — rewind to this turn to edit and resend"
               aria-label="Edit this message">
               <Pencil size={12} />
             </button>

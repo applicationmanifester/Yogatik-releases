@@ -132,7 +132,7 @@
            downloadable. Hidden until it has a real answer: a version number is
            the one thing on this page nobody should have to doubt, and a stale
            or guessed one is worse than none. -->
-      <div class="release-meta" id="release-meta">Version <b>v11.5.0</b> <span class="dot"></span>Released Sep 30, 2026 <span class="dot"></span>136 MB</div>
+      <div class="release-meta" id="release-meta" hidden></div>
 
       <div class="platforms">
         <div class="card">
@@ -462,11 +462,44 @@
     (function () {
       var RELEASES = [
   {
+    "version": "11.6.0",
+    "title": "Yogatik 11.6.0: Adaptive Tool Calling, In-Place Prompt Rewind & Precision Code Editing Suite",
+    "date": "October 1, 2026",
+    "codename": "Adaptive Tool Calling, In-Place Prompt Rewind & Precision Code Editing Suite",
+    "isLatest": true,
+    "highlights": [
+      [
+        "In-Place Prompt Rewind & Edit",
+        "Editing any previous message now rewinds and truncates subsequent turns directly in-place, keeping the conversation, folder, and context intact without branch clutter"
+      ],
+      [
+        "Adaptive Tool Schema Limits",
+        "Dynamically caps tool schemas to an optimal 36 tools for open-weight and local models, eliminating function-calling confusion and token bloat"
+      ],
+      [
+        "Precision Code Editing Architecture",
+        "Strictly enforces fs_edit (search & replace) and fs_patch (unified diffs) over full-file overwrites, preventing code truncation and hallucinations"
+      ],
+      [
+        "Live Workspace Root Injection",
+        "Desktop agent system prompt automatically receives the active workspace directory path, eliminating hallucinated file paths and path-guessing"
+      ],
+      [
+        "Immediate Tool Error Self-Correction",
+        "Instantly feeds actionable reflection hints into the agent turn upon any tool failure, enabling rapid single-step healing"
+      ],
+      [
+        "Multi-Round Context Compaction",
+        "Automatically compacts older tool outputs in multi-turn runs, maintaining low latency and crisp reasoning"
+      ]
+    ]
+  },
+  {
     "version": "11.5.0",
     "title": "Yogatik 11.5.0: Flagship Yogatik AI, Zero-Stall Tool Calling & Code Engineering Suite",
     "date": "September 30, 2026",
     "codename": "Flagship Yogatik AI, Zero-Stall Tool Execution & Code Engineering Suite",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Native Flagship Yogatik AI",

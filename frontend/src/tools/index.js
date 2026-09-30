@@ -1187,7 +1187,7 @@ export const MAX_TOOLS_PER_REQUEST = 96
  * tool still outranks it.
  */
 const CORE_TOOL_SCORES = {
-  fs_read: 40, fs_write: 40, fs_edit: 40, fs_list: 40, fs_search: 38, fs_find_files: 38,
+  fs_read: 40, fs_write: 40, fs_edit: 40, fs_patch: 40, fs_list: 40, fs_search: 38, fs_find_files: 38,
   fs_codebase_map: 36,
   terminal_run: 40, proc_start: 30, browser_control: 38, computer_control: 30,
   spawn_agents: 34, memory: 34, doc_search: 34, web_search: 38, web_extract: 38, deep_research: 35, code_execute: 34,
@@ -1219,6 +1219,7 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
     scores['fs_read'] = 180
     scores['fs_write'] = 180
     scores['fs_edit'] = 180
+    scores['fs_patch'] = 180
     scores['fs_list'] = 180
     scores['fs_find_files'] = 175
     scores['fs_search'] = 170
@@ -1231,6 +1232,14 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
     scores['spawn_agents'] = 175
     scores['memory'] = 160
     scores['doc_export'] = 150
+  }
+
+  // Code editing and patch boosts
+  if (/\b(patch|diff|unified diff|hunk|hunks|search and replace|edit file|modify file|fix code|refactor|update code|implement)\b/i.test(text)) {
+    scores['fs_edit'] = 240
+    scores['fs_patch'] = 230
+    scores['fs_read'] = 220
+    scores['fs_write'] = 190
   }
 
   // Repository & GitHub search boosts

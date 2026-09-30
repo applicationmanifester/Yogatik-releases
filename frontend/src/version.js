@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '11.5.0'
-export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 11.5.0 — Flagship Yogatik AI, Zero-Stall Tool Execution & Code Engineering Suite'
+export const APP_VERSION = '11.6.0'
+export const BUILD_DATE = 'October 2026'
+export const APP_CODENAME = 'Yogatik 11.6.0 — Adaptive Tool Calling, In-Place Prompt Rewind & Precision Code Editing Suite'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,61 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "11.6.0",
+    "title": "Yogatik 11.6.0: Adaptive Tool Calling, In-Place Prompt Rewind & Precision Code Editing Suite",
+    "date": "October 1, 2026",
+    "isLatest": true,
+    "highlights": [
+      "In-Place Prompt Rewind & Edit: Editing any earlier turn now truncates subsequent turns in-place, keeping the conversation session and working folder intact without branch clutter",
+      "Adaptive Tool Schema Limits: Models on Groq, NVIDIA NIM, Ollama, and local providers receive an optimized 36-tool schema limit, eliminating schema overload and drastically improving tool call success rate",
+      "Precision Code Editing Architecture: Strictly enforces fs_edit (search & replace) and fs_patch (unified diffs) over full-file overwrites, preventing code truncation and lost lines",
+      "Live Workspace Root Injection: Desktop agent system prompt automatically receives the active workspace directory path, eliminating hallucinated file paths and path-guessing",
+      "Immediate Tool Error Self-Correction: Instantly feeds actionable reflection hints into the agent turn upon any tool failure, enabling rapid single-step healing",
+      "Multi-Round Context Compaction: Automatically compacts older tool outputs in multi-turn runs, maintaining low latency and crisp reasoning"
+    ],
+    "sections": [
+      {
+        "category": "⚡ Autonomous Execution & Tool Calling",
+        "items": [
+          {
+            "title": "Adaptive Schema Budgeting for Open Models",
+            "description": "Capped tool schemas dynamically to 36 for open-weight and local models while ensuring full priority for filesystem, terminal, and research tools, preventing token bloat and function-calling confusion."
+          },
+          {
+            "title": "Immediate Error Self-Correction Loop",
+            "description": "Injected actionable guidance upon the first tool failure to guide the model on line inspection, path discovery, or command adjustments."
+          }
+        ]
+      },
+      {
+        "category": "🛠️ Code Development & Workspace Context",
+        "items": [
+          {
+            "title": "fs_edit & fs_patch Standard",
+            "description": "Instructed Yogatik AI to prefer exact find-and-replace and unified diff patches for modifying existing files, reserving fs_write exclusively for brand new files."
+          },
+          {
+            "title": "Active Workspace Path Awareness",
+            "description": "Desktop agent prompt automatically contains the primary workspace path from roots management, preventing models from guessing file locations."
+          }
+        ]
+      },
+      {
+        "category": "💬 Conversation UX & Prompt Editing",
+        "items": [
+          {
+            "title": "In-Place Rewind & Resend",
+            "description": "Prompt edits now rewind the current chat by discarding subsequent turns directly in-place, preserving active folders, models, and conversation ID."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "11.5.0",
     "title": "Yogatik 11.5.0: Flagship Yogatik AI, Zero-Stall Tool Calling & Code Engineering Suite",
     "date": "September 30, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Native Flagship Yogatik AI: Dedicated autonomous intelligence endowed with permanent priority access to filesystem, terminal, live web search, and multi-agent delegation",
       "Zero-Stall Reasoning & Tool Unsticking: Fixed reasoning model tool dropouts in desktop app with active action-intent nudges and auto-seeding for fs_list and fs_write",

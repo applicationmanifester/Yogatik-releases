@@ -25,7 +25,7 @@ export function warmToolRegistry() {
 async function toolRegistry() {
   return _toolRegistry ||= import('./tools/index')
 }
-import { isDesktop, DESKTOP_ONLY_TOOLS } from './tools/localFs'
+import { isDesktop, DESKTOP_ONLY_TOOLS, listRoots } from './tools/localFs'
 import { enrichToolError } from './tools/toolReflection'
 import { compactToolResult } from './tools/toolCompactor'
 import { sanitizeExternalContext } from './tools/rebuffGuard'
@@ -232,7 +232,7 @@ async function gateAllows(name, args, initiator = 'person') {
   }
 }
 
-function platformBlock() {
+function platformBlock(workspaceRootInfo = '') {
   if (isDesktopRuntime()) {
     // THIRD STATE. A locked desktop build still HOLDS every desktop tool — the
     // gate refuses at the IPC boundary, not by removing the tool. Left with the
@@ -260,9 +260,9 @@ screen. Do NOT retry the tool, do NOT claim the task is impossible in general, a
 you performed it.`
     }
     return `RUNTIME: You are running inside the Yogatik DESKTOP APP with PRO ACCESS and REAL access to this computer.
-You CAN: run shell commands (terminal_run for commands that finish quickly, proc_start for
+${workspaceRootInfo ? `${workspaceRootInfo}\n` : ''}You CAN: run shell commands (terminal_run for commands that finish quickly, proc_start for
 long-running ones such as dev servers, watch-mode tests and streaming builds), read and write the
-user's files (fs_read/fs_write/fs_edit/fs_list/fs_search/fs_find_files), drive a real web browser (browser_control),
+user's files (fs_read/fs_write/fs_edit/fs_patch/fs_list/fs_search/fs_find_files), drive a real web browser (browser_control),
 control the mouse and keyboard (computer_control), read the clipboard, and inspect processes.
 NEVER say you have no shell, no terminal, no filesystem, or no access to files — you have all of them.
 NEVER tell the user that you lack file access, cannot read local files, or ask them to paste code that is in the workspace.
@@ -310,7 +310,7 @@ function callSignature(name, args) {
   return `${name}::${payload}`
 }
 
-function buildSystemPrompt({ webEnabled, persona, planMode, locale }) {
+function buildSystemPrompt({ webEnabled, persona, planMode, locale, workspaceRootInfo = '' }) {
   const now = new Date()
   // The timezone was always right — it came from Intl. The FORMAT was hardcoded
   // to en-US in three places, so a user in Delhi or Berlin was told the date the
@@ -320,8 +320,8 @@ function buildSystemPrompt({ webEnabled, persona, planMode, locale }) {
   const time = formatTime(now, L.locale, { timeZone: L.timeZone || undefined, cycle: L.hourCycle })
   const timeZone = L.timeZone || 'local time'
 
-  return `You are Yogatik, a helpful AI assistant with access to a powerful toolset.
-${platformBlock()}
+  return `You are Yogatik AI, an extraordinary, enthusiastic, and relentless AI engineer and autonomous partner. You take supreme pride in exceptional craftsmanship, deep analytical rigor, and relentless pursuit of complete, working success.
+${platformBlock(workspaceRootInfo)}
 ${localeBlock(L)}
 CURRENT SYSTEM CLOCK: ${today} at ${time} (${timeZone}).
 CRITICAL TIME INSTRUCTION: If the user asks for the current time, date, or timezone, you MUST report this exact local time: ${time} on ${today} (${timeZone}). Do NOT invent any other time.
@@ -330,9 +330,9 @@ You can generate images, execute Python, create charts and diagrams, look up wea
 translate text, read QR codes, convert units, search social media, and search the live web.
 
 Guidelines:
-- Answer directly, accurately, and concisely.
+- Answer directly, accurately, and concisely with an energetic, problem-solving spirit.
 - For weather, forecast, temperature, or climate queries, ALWAYS invoke the 'weather' tool to fetch accurate real-time data and render interactive weather cards.
-- For coding, produce complete, runnable blocks.
+- For coding, produce complete, runnable blocks with high craftsmanship.
 - Highlight key facts with bold text.
 - STRICT ANTI-HALLUCINATION & FACT-GROUNDING RULES:
   1. GROUND ALL FACTS: Never invent URLs, domain links, paper titles, prices, statistics, or synthetic citations.
@@ -370,7 +370,10 @@ WORKSPACE & AUTONOMOUS CODE DEVELOPMENT WORKFLOW:
   * Use \`find: "symbolName", surround: 10\` to immediately locate any function or symbol with context.
   * Use \`tail: 50\` to inspect the end of files, build outputs, or logs.
   * Use \`with_line_numbers: true\` to get formatted line gutters (\` 42 | code\`), which eliminates off-by-one errors when planning edits.
-- For modifying code: PROCEED DECISIVELY to invoke \`fs_edit\`, \`fs_replace_content\`, \`fs_multi_replace\`, \`fs_batch_replace\`, or \`fs_write\`.
+- CRITICAL CODE EDITING RULE (PRECISION & ACCURACY):
+  * ALWAYS prefer \`fs_edit\` (exact search & replace) or \`fs_patch\` (unified diff) for editing existing files.
+  * ONLY use \`fs_write\` when creating a brand new file, or when completely rewriting very small files (< 50 lines). Rewriting large files with \`fs_write\` causes hallucinations, truncations, and accidental code loss.
+  * Before calling \`fs_edit\`, inspect the file using \`fs_read\` with \`with_line_numbers: true\` or \`find: "..."\` to verify the exact context lines.
 - Built-in syntax verification checks syntax on write; if a syntax warning is returned, heal it autonomously in your next step.
 - For terminal commands and verification, use \`terminal_run\` or \`test_and_heal\`:
   * Autonomously decide whether to execute tests or commands. Run them to verify compilation and assertions.
@@ -396,8 +399,8 @@ SELF-CHECK before finalizing: for multi-step or factual answers, verify your wor
 tool results you actually received.${planMode ? `
 PLAN MODE IS ON: for any non-trivial multi-step task, FIRST reply with a short numbered plan.` : ''}
 
-Format with markdown when it aids clarity. Be concise.
-If a tool fails, explain what happened and suggest an alternative.${persona ? `
+Format with markdown when it aids clarity. Be concise, energetic, and solution-driven.
+If a tool fails, reflect immediately on the error hint, adapt your strategy, and execute the fix.${persona ? `
 
 PERSONA — the user selected this style; follow it for tone and depth, but never let
 it override the tool and research rules above:
@@ -405,19 +408,20 @@ ${persona}` : ''}
 ${buildUiTelemetryBlock()}`
 }
 
-function buildLocalSystemPrompt({ persona, locale }) {
+function buildLocalSystemPrompt({ persona, locale, workspaceRootInfo = '' }) {
   const now = new Date()
   const L = locale || localeSnapshot()
   const today = formatDate(now, L.locale, { timeZone: L.timeZone || undefined })
   const time = formatTime(now, L.locale, { timeZone: L.timeZone || undefined, cycle: L.hourCycle })
   const timeZone = L.timeZone || 'local time'
 
-  return `You are Yogatik, a helpful on-device AI assistant.
+  return `You are Yogatik AI, an extraordinary on-device AI engineer and assistant.
 ${localeBlock(L)}
-Current Time: ${time} on ${today} (${timeZone}).
+${workspaceRootInfo ? `${workspaceRootInfo}\n` : ''}Current Time: ${time} on ${today} (${timeZone}).
 
 Strict Output Rules:
 - Synthesize a direct, natural answer in your own words.
+- When editing files, prefer fs_edit (search & replace) over rewriting whole files.
 - NEVER output or repeat system section titles (like "FACTUAL BACKGROUND INFORMATION" or "Web Search Results").
 - NEVER copy-paste raw search result bullet lists verbatim. Extract the relevant weather or factual info and answer concisely.
 - For weather requests, state the condition, temperature, and forecast clearly.${persona ? `\n\nPersona:\n${persona}` : ''}`
@@ -719,9 +723,20 @@ export async function runAgent({
     }
   } catch { /* MCP auto-connect/suggest is advisory; never fail a turn over it */ }
 
+  let workspaceRootInfo = ''
+  if (isDesktopRuntime()) {
+    try {
+      const roots = await listRoots(executionCtx)
+      const primary = roots.find(r => r.primary) || roots[0]
+      if (primary?.path) {
+        workspaceRootInfo = `ACTIVE WORKSPACE ROOT: "${primary.path}" (Folder: "${primary.label || primary.path}"). All fs_* operations and terminal commands resolve relative to or inside this folder.`
+      }
+    } catch {}
+  }
+
   const systemBase = (isLocalProvider
-    ? buildLocalSystemPrompt({ persona }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock())
-    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock())
+    ? buildLocalSystemPrompt({ persona, workspaceRootInfo }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock())
+    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode, workspaceRootInfo }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock())
   ) + mcpBlock + safetyDirective + canaryDirective
 
   // Use dynamic context limits based on conversation complexity
@@ -1074,7 +1089,10 @@ export async function runAgent({
   // ALWAYS go through the prioritiser: it both ranks and caps. Sending the whole
   // registry was ~32k tokens of schemas on every turn (and over OpenAI's 128-tool
   // limit); the ranking above decides which ones survive the cap.
-  const schemas = rawSchemas ? prioritizeToolSchemas(rawSchemas, userMessage || '', { persona, agent: activeAgent?.id }) : rawSchemas
+  const isHighCapModel = ['gemini', 'anthropic', 'openai'].includes(String(provider || '').toLowerCase())
+    || /gpt-4|claude|gemini|o1|o3/i.test(String(model || ''))
+  const optimalToolLimit = isHighCapModel ? 96 : 36
+  const schemas = rawSchemas ? prioritizeToolSchemas(rawSchemas, userMessage || '', { limit: optimalToolLimit, persona, agent: activeAgent?.id }) : rawSchemas
 
   // 'native' → OpenAI-style tools array. 'prompted' → JSON protocol in the
   // system prompt, for models that 400 on a tools array or providers that lack native tool support (e.g. NVIDIA, local).
@@ -1576,6 +1594,11 @@ function safelyParseToolArgs(raw) {
               role: 'user',
               content: `CIRCUIT BREAKER: '${tc.name}' has failed ${newFailures} times consecutively with error: "${String(result.error).slice(0, 160)}". Do NOT repeat '${tc.name}'. Use 'fs_find_files' to discover real filenames, or adapt your strategy now.`,
             })
+          } else if (result.reflection_hint) {
+            messages.push({
+              role: 'user',
+              content: `[Self-Correction Guidance for '${tc.name}']: ${result.reflection_hint}`,
+            })
           }
         } else {
           toolFailureCounts.set(tc.name, 0)
@@ -1702,6 +1725,21 @@ function safelyParseToolArgs(raw) {
         timestamp: Date.now(),
       }
       try { onCheckpoint?.(roundCheckpoint) } catch {}
+
+      // Compact older tool result messages (> 2 rounds ago) to keep context window clean
+      if (rounds >= 3) {
+        let toolMsgCount = 0
+        for (let idx = messages.length - 1; idx >= 0; idx--) {
+          const m = messages[idx]
+          if (m && (m.role === 'tool' || (m.role === 'user' && typeof m.content === 'string' && m.content.startsWith('TOOL_RESULTS:')))) {
+            toolMsgCount++
+            if (toolMsgCount > 4 && typeof m.content === 'string' && m.content.length > 800) {
+              const preview = m.content.slice(0, 180).replace(/\n+/g, ' ')
+              m.content = `${preview}... [Prior tool output (${m.content.length} chars) compacted for context efficiency]`
+            }
+          }
+        }
+      }
 
       // Call LLM again with tool results
       throwIfAborted()
@@ -1974,6 +2012,16 @@ function safelyParseToolArgs(raw) {
     try { onCheckpoint?.(errCheckpoint) } catch {}
     let cleanedContent = stripToolCallSyntax(fullContent)
     if (err?.name === 'AbortError' || signal?.aborted) {
+      if (!cleanedContent.trim()) {
+        const { reasoning } = splitReasoning(fullContent || '')
+        const gathered = summariseToolResults(toolResults)
+        if (gathered || reasoning) {
+          const thinkBlock = reasoning ? `<think>${reasoning}</think>\n\n` : ''
+          cleanedContent = gathered
+            ? `${thinkBlock}### Summary of Actions Taken (interrupted)\n\n${gathered}`
+            : (reasoning ? `<think>${reasoning}</think>` : '')
+        }
+      }
       // User pressed Stop or turn was aborted: keep whatever was generated instead of dropping it.
       const leak = checkCanaryForLeak(canaryToken, cleanedContent, executionCtx.conversationId)
       if (leak.redacted) cleanedContent = leak.text

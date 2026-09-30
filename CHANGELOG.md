@@ -1,5 +1,22 @@
 # Changelog
 
+## v11.6.0 - Adaptive Tool Calling, In-Place Prompt Rewind & Precision Code Editing Suite (2026-10-01)
+
+### 💬 Conversation UX & Prompt Rewind
+- **In-Place Prompt Rewind & Edit (`App.jsx`, `MessageBubble.jsx`)** — Clicking edit on any earlier message now truncates subsequent turns directly in-place in the current chat session and storage, preserving working folder grants, model choices, and conversation ID without branching clutter.
+
+### ⚡ Autonomous Execution & Tool Calling Reliability
+- **Adaptive Tool Schema Limits (`agent.js`, `tools/index.js`)** — Open-weight and local models (Groq, NVIDIA NIM, Ollama, Cerebras, Together) now receive an optimized 36-tool schema limit rather than overwhelming 96-tool dumps (~25KB), eliminating function-calling confusion, drastically improving tool call success rate, and ensuring all core execution tools (`fs_*`, `terminal_run`, `web_search`, `deep_research`) are permanently available.
+- **Immediate Error Self-Correction Loop (`agent.js`, `toolReflection.js`)** — Injected actionable reflection hints directly into the turn on the very first tool failure, allowing the model to auto-correct file paths, inspect lines with `fs_read`, or heal syntax errors in a single step.
+
+### 🛠️ Precision Code Development & Workspace Awareness
+- **Precision Code Editing Standard (`agent.js`, `tools/index.js`)** — Upgraded Yogatik AI's core instructions to enforce `fs_edit` (search & replace) and `fs_patch` (unified diffs) over full-file overwrites (`fs_write`), preventing code truncation and hallucinations. Elevating `fs_patch` into core prioritized tools.
+- **Active Workspace Directory Awareness (`agent.js`, `tools/localFs.js`)** — In desktop mode, Yogatik AI automatically detects and injects the active workspace root directory path into the system prompt, eliminating hallucinated file paths and path-guessing.
+- **Multi-Round Context Compaction (`agent.js`)** — Automatically compacts older tool outputs (> 4 tool messages back) in multi-round turns to keep reasoning context crisp and maintain low latency.
+
+### 🌐 Cross-Platform Synchronisation
+- **Synchronized v11.6.0** — Aligned version numbers and release manifests across Web, Desktop (Windows, macOS, Linux), and Standalone Browser pages.
+
 ## v11.5.0 - Flagship Yogatik AI, Zero-Stall Tool Execution & Code Engineering Suite (2026-09-30)
 
 ### ⚡ Flagship Yogatik AI & Autonomous Engineering

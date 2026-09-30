@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue, startTransition } from 'react'
 import ReactDOM from 'react-dom' // Test edit after rename // Test edit on backup // TODO: test edit
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Film, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Star, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera, TrendingUp, Package } from 'lucide-react'
-import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, updateTemplate, deleteTemplate, addCustomModelToProvider } from './api'
+import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, syncCloudKeys, createTemplate, updateTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { getFavoriteLocations, addFavoriteLocation, removeFavoriteLocation, isFavoriteLocation, toggleFavoriteLocation, getRecentLocations, recordRecentLocation } from './tools/favoriteLocations'
 import { setUserQuestionHandler } from './tools/askUser'
@@ -804,13 +804,12 @@ export default function App() {
     const loadConfig = async () => {
       try {
         const config = await window.__YOGATIK_CONFIG__?.load()
-        if (config) {
-          // Apply config to app state
-          if (config.model && window.__YOGATIK_DESKTOP__) {
-            // Model will be applied when conversation starts
-            console.log('[yogatik] Loaded portable config:', config)
+          if (config) {
+            // Apply config to app state
+            if (config.model && window.__YOGATIK_DESKTOP__) {
+              // Model will be applied when conversation starts
+            }
           }
-        }
       } catch (err) {
         console.warn('[yogatik] Failed to load portable config:', err)
       }
@@ -827,7 +826,7 @@ export default function App() {
     const isHeadless = params.get('headless') === 'true'
     if (!isHeadless) return
     
-    console.log('[yogatik] Headless mode detected')
+    // Headless mode detected (silent)
     
     // Override send to capture result
     const originalSend = sendRef.current
@@ -1799,12 +1798,12 @@ export default function App() {
       setProviderStatus(await getAllProviderStatus())
     }).catch(() => {})
     getPrefs().then(pref => {
-      if (pref.temperature != null) setTemperatureState(pref.temperature)
-      if (pref.web_search != null) setWebSearchState(pref.web_search)
-      if (pref.tools_enabled != null) setToolsEnabledState(pref.tools_enabled)
+      if (pref.temperature !== null && pref.temperature !== undefined) setTemperatureState(pref.temperature)
+      if (pref.web_search !== null && pref.web_search !== undefined) setWebSearchState(pref.web_search)
+      if (pref.tools_enabled !== null && pref.tools_enabled !== undefined) setToolsEnabledState(pref.tools_enabled)
       if (pref.persona) setActiveTemplate(pref.persona)
-      if (pref.auto_route != null) setAutoRouteState(pref.auto_route)
-      if (pref.fallback != null) setFallbackState(pref.fallback)
+      if (pref.auto_route !== null && pref.auto_route !== undefined) setAutoRouteState(pref.auto_route)
+      if (pref.fallback !== null && pref.fallback !== undefined) setFallbackState(pref.fallback)
       setLocaleOverrides(overridesFromPrefs(pref))
       applyDocumentLocale()
       setPrefsState(pref)
@@ -2092,9 +2091,9 @@ export default function App() {
       activeIdxRef.current = 0
       setProviderState(activeP)
       setModel(activeM)
-      if (pref?.temperature != null) setTemperatureState(pref.temperature)
-      if (pref?.web_search != null) setWebSearchState(pref.web_search)
-      if (pref?.tools_enabled != null) setToolsEnabledState(pref.tools_enabled)
+      if (pref?.temperature !== null && pref?.temperature !== undefined) setTemperatureState(pref.temperature)
+      if (pref?.web_search !== null && pref?.web_search !== undefined) setWebSearchState(pref.web_search)
+      if (pref?.tools_enabled !== null && pref?.tools_enabled !== undefined) setToolsEnabledState(pref.tools_enabled)
       if (pref?.persona) setActiveTemplate(pref.persona)
       return
     }
@@ -3037,7 +3036,7 @@ export default function App() {
     }
     // Always read from refs so we get the freshest state, even if this closure
     // was captured before a newChat() state update was committed.
-    const targetIdx = explicitIdx != null ? explicitIdx : activeIdxRef.current
+    const targetIdx = (explicitIdx !== null && explicitIdx !== undefined) ? explicitIdx : activeIdxRef.current
     const targetConv = conversationsRef.current[targetIdx]
     if (!targetConv) return
     const targetClientId = targetConv.clientId
@@ -3497,13 +3496,27 @@ export default function App() {
             return
           }
 
+          if (!content.trim() && _final && typeof _final === 'string' && _final.trim()) {
+            content = _final
+          }
+
           if (!content.trim() && meta?.aborted) {
-            setStreamText(targetClientId, '')
-            setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
-            setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
-            delete toolRunMapRef.current[targetClientId]
-            delete traceMapRef.current[targetClientId]
-            return
+            endActivityTurn(targetClientId)
+            const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
+            const hasActions = (runData.used && runData.used.length > 0) || (Object.keys(runData.results || {}).length > 0) || (meta?.trace?.length > 0)
+            if (hasActions) {
+              const gathered = summariseToolResults(runData.results || meta?.toolResults || {})
+              content = gathered
+                ? `### Executed Actions (interrupted)\n\n${gathered}\n\n_[stopped]_`
+                : '_[stopped]_'
+            } else {
+              setStreamText(targetClientId, '')
+              setActiveToolsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+              setPendingToolResultsMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
+              delete toolRunMapRef.current[targetClientId]
+              delete traceMapRef.current[targetClientId]
+              return
+            }
           }
 
           // Quality watchdog assessment & auto-continuation/regeneration
@@ -3615,6 +3628,7 @@ export default function App() {
           }
 
           try { announceAssertive(typeof err === 'string' ? err : err?.message || 'Error occurred') } catch {}
+          endActivityTurn(targetClientId)
           setStatusMap(prev => ({ ...prev, [targetClientId]: '' }))
           setStreamIdMap(prev => ({ ...prev, [targetClientId]: null }))
           setLoadingMap(prev => { const n = { ...prev }; delete n[targetClientId]; return n })
@@ -4340,12 +4354,8 @@ export default function App() {
   }
 
   /**
-   * Edit an earlier turn without losing the thread it produced.
-   *
-   * The original conversation is left exactly as it was; everything before the
-   * edited turn is copied into a new one, which becomes active. So a different
-   * question is an extra branch, not a deletion — and the old answer is still
-   * one click away in the sidebar.
+   * Edit a prompt in-place: truncate subsequent generated things until that turn,
+   * populate composer input with the edited text, and allow user to edit and resend.
    */
   const editAndResend = useCallback(async (index, text) => {
     if (isStreamingHere) return
@@ -4353,68 +4363,22 @@ export default function App() {
     const source = conversationsRef.current[curIdx] || conversations[curIdx]
     const msgs = source?.messages || []
 
-    // Find the actual index of the last user message so we rewind in-place
-    // when editing it (nothing after it is worth keeping as a separate branch).
-    const lastUserIdx = msgs.reduceRight(
-      (found, m, i) => found >= 0 ? found : m.role === 'user' ? i : -1, -1
-    )
-    const isLastTurn = index >= lastUserIdx
-
-    // The very last turn has nothing after it worth preserving: rewind in place.
-    if (isLastTurn) {
-      const kept = msgs.slice(0, index)
-      setConversations(prev => {
-        const next = prev.map((c, i) => i === curIdx ? { ...c, messages: kept } : c)
-        conversationsRef.current = next
-        return next
-      })
-      if (source?.id) { try { await trimConversationFrom(source.id, index) } catch {} }
-      setInput(text)
-      textareaRef.current?.focus()
-      autoResize()
-      return
-    }
-
-    try {
-      const forked = await branchConversation(source?.id, index)
-      const newForked = {
-        ...forked,
-        clientId: `c_${forked.id || Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        provider: forked.provider || source?.provider || provider || 'local',
-        model: forked.model !== undefined ? forked.model : (source?.model || model || ''),
-        systemPrompt: forked.settings?.systemPrompt ?? source?.systemPrompt ?? '',
-        persona: forked.settings?.persona ?? source?.persona ?? 'default',
-        temperature: forked.settings?.temperature ?? source?.temperature ?? 1.0,
-        webSearch: forked.settings?.webSearch ?? source?.webSearch ?? true,
-        tools: forked.settings?.tools ?? source?.tools ?? true,
-        messages: (forked.messages || []).map(hydrate),
+    const kept = msgs.slice(0, index)
+    setConversations(prev => {
+      const next = prev.map((c, i) => i === curIdx ? { ...c, messages: kept } : c)
+      conversationsRef.current = next
+      return next
+    })
+    if (source?.id) {
+      try { await trimConversationFrom(source.id, index) } catch (e) {
+        console.warn('trimConversationFrom failed:', e)
       }
-      // Carry the source chat's agent / skill / style / tool bindings across.
-      // Without this a branch silently reverts to the global defaults, so the
-      // user would be talking to a different assistant than the one whose
-      // answer they were editing, with nothing on screen saying so.
-      // Both sides use the SAME identity rule as scopeId and runAgent
-      // (`id || clientId`). A branch is created saved, so it already has an id;
-      // copying under clientId would write a key nothing ever reads.
-      const fromScope = source?.id || source?.clientId
-      const toScope = newForked.id || newForked.clientId
-      if (fromScope && toScope) copyChatScope(fromScope, toScope).catch(() => {})
-      setConversations(prev => {
-        const next = [newForked, ...prev]
-        conversationsRef.current = next
-        return next
-      })
-      setActiveIdx(0)
-      activeIdxRef.current = 0
-      setVisibleCount(WINDOW_STEP)
-      setInput(text)
-      textareaRef.current?.focus()
-      autoResize()
-      showToast('Branched — the original chat is untouched')
-    } catch (e) {
-      setErrorModalMsg(`Could not branch this conversation.\n\n${e.message}`)
     }
-  }, [isStreamingHere, provider, model, autoResize, showToast])
+    setInput(text)
+    textareaRef.current?.focus()
+    autoResize()
+    showToast('Rewound to this turn — edit and resend')
+  }, [isStreamingHere, autoResize, showToast])
 
   const startRename = (idx) => {
     setRenamingIdx(idx)
@@ -4838,7 +4802,7 @@ export default function App() {
                               <span className={`conn-dot-inline ${dotClass}`} title={st?.state || (hasKey ? 'connected' : 'unknown')} />
                               <strong>{def.name || pid}</strong>
                               {isAct && <span className="provider-active-badge">Active</span>}
-                              {st?.state === 'connected' && st.latencyMs != null && (
+                              {st?.state === 'connected' && st.latencyMs !== null && st.latencyMs !== undefined && (
                                 <span className="provider-latency-badge" title="Last test latency">{st.latencyMs}ms</span>
                               )}
                             </div>

@@ -28,6 +28,16 @@ export default function ToolStatusPanel({ onRetry }) {
     return () => clearInterval(t)
   }, [anyRunning])
 
+  // Auto-dismiss completed tools after 5s so they do not linger above the input
+  React.useEffect(() => {
+    const doneItems = items.filter(i => i.phase === 'done' && !dismissed.has(i.id))
+    if (!doneItems.length) return
+    const timers = doneItems.map(i => setTimeout(() => {
+      setDismissed(prev => new Set([...prev, i.id]))
+    }, 5000))
+    return () => timers.forEach(clearTimeout)
+  }, [items, dismissed])
+
   const visible = items.filter(i => !dismissed.has(i.id))
   if (visible.length === 0) return null
 
