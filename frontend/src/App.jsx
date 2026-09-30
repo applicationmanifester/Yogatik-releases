@@ -250,7 +250,7 @@ export default function App() {
   const [showPalette, setShowPalette] = useState(false)
   const [user, setUser] = useState(null)
   const [promptTemplates, setPromptTemplates] = useState([])
-  const [activeTemplate, setActiveTemplate] = useState('default')
+  const [activeTemplate, setActiveTemplate] = useState('yogatik')
   const [activeToolsMap, setActiveToolsMap] = useState({})
   const [pendingToolResultsMap, setPendingToolResultsMap] = useState({})
   const [ttsPlaying, setTtsPlaying] = useState(false)

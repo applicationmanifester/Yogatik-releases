@@ -7,7 +7,7 @@
 //   tui        — Terminal UI mode (blessed-based)
 //   headless   — Headless automation mode
 
-const { app, BrowserWindow, shell, globalShortcut, ipcMain, desktopCapturer, screen, clipboard, nativeImage } = require('electron')
+const { app, BrowserWindow, shell, globalShortcut, ipcMain, desktopCapturer, screen, clipboard, nativeImage, Menu } = require('electron')
 const path = require('path')
 const os = require('os')
 const http = require('http')
@@ -107,7 +107,7 @@ if (process.platform === 'win32') {
 
   if (process.env.APPDATA) {
     try {
-      const startMenuDir = path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+      const startMenuDir = path.join(process.env.APPDATA, 'Microsoft', 'WindowsWindows', 'Start Menu', 'Programs')
       const shortcutPath = path.join(startMenuDir, 'Yogatik.lnk')
       if (app.isPackaged) {
         // Ensure the installed Start Menu shortcut always points explicitly to the exe icon

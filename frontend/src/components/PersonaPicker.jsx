@@ -22,10 +22,10 @@ export function PersonaPicker({
 
   const activePersona = useMemo(() => {
     return personas.find(p => p.id === activePersonaId) || personas[0] || {
-      id: 'default',
-      name: 'Default',
-      icon: '🤖',
-      system_prompt: 'You are a helpful AI assistant.',
+      id: 'yogatik',
+      name: 'Yogatik AI',
+      icon: '⚡',
+      system_prompt: 'You are Yogatik AI — the native, enthusiastic, and relentless flagship assistant of Yogatik.',
     }
   }, [personas, activePersonaId])
 

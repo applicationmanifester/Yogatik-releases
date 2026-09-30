@@ -131,6 +131,7 @@ export const APEX_AGENT = {
   canDelegate: true,
 
   subAgents: [
+    'agent_yogatik',
     'agent_researcher', 'agent_coder', 'agent_writer', 'agent_analyst', 'agent_planner',
     'agent_devops', 'agent_creative', 'agent_translator', 'agent_auditor',
     'agent_career', 'agent_growth', 'agent_legal', 'agent_academic',
