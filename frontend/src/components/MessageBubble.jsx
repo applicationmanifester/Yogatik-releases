@@ -19,6 +19,7 @@ import { ReasoningAccordion } from './ReasoningAccordion'
 import { AgentWorkflowStepper } from './AgentWorkflowStepper'
 import { FollowUpSuggestions } from './FollowUpSuggestions'
 import { CitationHoverCard } from './CitationHoverCard'
+import { summariseToolResults } from '../toolSummary'
 
 /**
  * "Why did I say this" — a plain-language summary of what shaped the reply
@@ -634,7 +635,16 @@ const MessageBubble = React.memo(function MessageBubble({
       {/* If there is no separate answer, show a clean action summary without duplicating internal thinking */}
       {msg.role === 'assistant' && typeof answer === 'string' && !answer && (
         <div className="message-content">
-          {msg.toolsUsed?.length ? (
+          {msg.toolResults && Object.keys(msg.toolResults).length > 0 ? (
+            <div className="message-tool-summary" style={{ padding: '12px 14px', background: 'var(--bg-secondary, rgba(255, 255, 255, 0.04))', borderRadius: '8px', border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))' }}>
+              <div style={{ fontWeight: 600, marginBottom: '8px', color: 'var(--text-primary)', fontSize: '13px' }}>
+                ✓ Completed actions ({Object.keys(msg.toolResults).join(', ')})
+              </div>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {summariseToolResults(msg.toolResults)}
+              </ReactMarkdown>
+            </div>
+          ) : msg.toolsUsed?.length ? (
             <div className="message-tool-summary" style={{ color: 'var(--text-secondary, #888)', fontStyle: 'italic' }}>
               ✓ Completed actions ({msg.toolsUsed.join(', ')}). See the Thinking & Actions panel for step details.
             </div>
@@ -704,11 +714,11 @@ const MessageBubble = React.memo(function MessageBubble({
                 : <ReactMarkdown key={`md-${pi}`} remarkPlugins={[remarkGfm]} components={markdownComponents}>{part.content}</ReactMarkdown>
             )}
           </div>
-        ) : (
+        ) : answer ? (
           <div className="message-content">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{answer}</ReactMarkdown>
           </div>
-        )}
+        ) : null}
       {actionChips?.length > 0 && (
         <div className="message-action-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
           {actionChips.map((chip, idx) => (

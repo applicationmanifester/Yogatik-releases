@@ -394,6 +394,8 @@ async function smartFetch(url, rawOptions, prov, timeoutMs) {
     return fetch(endpoint, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
   }
 
+  const isLocalUrl = typeof url === 'string' && /^(https?:\/\/)?(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\])(:\d+)?/i.test(url)
+
   // Try direct fetch first for CORS-compliant providers
   try {
     return await fetch(url, options)
@@ -402,8 +404,8 @@ async function smartFetch(url, rawOptions, prov, timeoutMs) {
     if (directErr?.name === 'AbortError' || options.signal?.aborted) throw directErr
 
     // If direct browser fetch failed (e.g. CORS preflight blocked on custom provider endpoint)
-    // and proxy is configured, seamlessly fallback to proxy
-    if (endpoint) {
+    // and proxy is configured, seamlessly fallback to proxy (never for private/localhost addresses)
+    if (endpoint && !isLocalUrl) {
       try {
         return await fetch(endpoint, { ...options, headers: { ...options.headers, 'X-Target-URL': url } })
       } catch (proxyErr) {
@@ -1204,9 +1206,11 @@ export async function fetchLiveModels(providerId, apiKey) {
         clearTimeout(timer)
       }
       if (!resp.ok) {
-        const errText = await resp.text().catch(() => '')
-        const msg = parseProviderError(resp.status, errText)
-        console.warn(`[fetchLiveModels] ${providerId} returned ${resp.status}:`, msg)
+        if (resp.status !== 401 && resp.status !== 403) {
+          const errText = await resp.text().catch(() => '')
+          const msg = parseProviderError(resp.status, errText)
+          console.warn(`[fetchLiveModels] ${providerId} returned ${resp.status}:`, msg)
+        }
         return []
       }
 

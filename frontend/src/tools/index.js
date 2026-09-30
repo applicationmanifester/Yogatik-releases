@@ -1284,10 +1284,14 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
   if (/\b(review|bottleneck|audit|inspect|refactor|clean code|code smell|bug risk|defect|snippet|codebase|project structure|file tree)\b/i.test(text)) {
     scores['code_review_scan'] = 240
     scores['fs_read'] = 230
+    scores['fs_write'] = 228
+    scores['fs_edit'] = 228
     scores['fs_list'] = 220
+    scores['diff'] = 215
     scores['fs_find_files'] = 210
     scores['fs_file_tree'] = 205
     scores['fs_search'] = 200
+    scores['fs_make_dir'] = 190
   }
   if (/\b(syntax|validate|check syntax|lint|bracket|tag|unclosed|malformed)\b/i.test(text)) {
     scores['code_validate'] = 250

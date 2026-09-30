@@ -1356,9 +1356,12 @@ function safelyParseToolArgs(raw) {
         lastMsg.content = assistantThought
       }
 
+      const isWriteIntent = /\b(fs_write|fs_edit|create|writing|write|refactor|update|apply)\b/i.test(assistantThought)
       messages.push({
         role: 'user',
-        content: 'You announced a plan above. Proceed immediately now: invoke the tool call(s) (such as fs_read, fs_edit, fs_write, fs_find_files, fs_list, etc.) to execute the plan and actions you announced above. Do NOT stop, output internal thoughts only, or wait for another prompt.',
+        content: isWriteIntent
+          ? 'You announced a plan to write/edit files or apply changes above. Proceed immediately now: emit the tool call(s) (such as fs_write with path and complete code content, or fs_edit) to create or update the files. Do NOT stop, output internal thoughts only, or wait for another prompt.'
+          : 'You announced a plan above. Proceed immediately now: invoke the tool call(s) (such as fs_read, fs_edit, fs_write, fs_find_files, fs_list, etc.) to execute the plan and actions you announced above. Do NOT stop, output internal thoughts only, or wait for another prompt.',
       })
       let actionNext = await processStream()
       if (actionNext?.rejectedTools && toolMode === 'native') {
@@ -1391,8 +1394,17 @@ function safelyParseToolArgs(raw) {
     // If the model formulated a clear plan to explore files/workspace but stalled without emitting tool markup:
     if (toolCallsToProcess.length === 0 && (hasUnexecutedToolIntent(fullContent, roundContent) || (roundContent.includes('<think>') && !visibleAnswer(roundContent)))) {
       const combinedThoughts = `${fullContent}\n${roundContent}`
+      const wantsList = /(?:check current directory|list files|inspect directory|fs_list)/i.test(combinedThoughts)
       const wantsFiles = /(?:electron|files?|project|codebase|structure|folders?|component|dir)/i.test(combinedThoughts)
-      if (wantsFiles && tools && tools.some(t => (t.name || t.function?.name) === 'fs_find_files')) {
+      if (wantsList && tools && tools.some(t => (t.name || t.function?.name) === 'fs_list')) {
+        toolCallsToProcess.push({
+          id: 'call_auto_seed_list',
+          name: 'fs_list',
+          arguments: JSON.stringify({ path: '.' }),
+          parsedArgs: { path: '.' },
+        })
+        onStatus?.('📂 Listing directory to execute planned refactor…')
+      } else if (wantsFiles && tools && tools.some(t => (t.name || t.function?.name) === 'fs_find_files')) {
         const pattern = /electron/i.test(combinedThoughts) ? '*electron*' : '*'
         toolCallsToProcess.push({
           id: 'call_auto_seed_0',
@@ -1778,10 +1790,12 @@ function safelyParseToolArgs(raw) {
           fullContent = recovered
           onToken?.(recovered)
         } else {
+          const { reasoning } = splitReasoning(fullContent || roundContent)
           const gathered = summariseToolResults(toolResults)
+          const thinkBlock = reasoning ? `<think>${reasoning}</think>\n\n` : ''
           const fallback = gathered
-            ? 'I have completed the requested actions (tool results):\n\n' + gathered
-            : 'I have finished inspecting the files and applying the requested changes.'
+            ? `${thinkBlock}### Summary of Actions & Findings (tool results)\n\n${gathered}`
+            : `${thinkBlock}I have finished inspecting the files and applying the requested changes.`
           fullContent = fallback
           onToken?.(fallback)
         }
@@ -1793,14 +1807,20 @@ function safelyParseToolArgs(raw) {
 
     if (!visibleAnswer(cleanedContent)) {
       const { reasoning } = splitReasoning(fullContent || roundContent)
-      if (reasoning) {
+      const hasExecutedActions = rounds > 0 || Object.keys(toolResults).length > 0
+      if (hasExecutedActions) {
+        const gathered = summariseToolResults(toolResults)
+        const thinkBlock = reasoning ? `<think>${reasoning}</think>\n\n` : ''
+        const fallback = gathered
+          ? `${thinkBlock}### Summary of Actions & Findings (tool results)\n\n${gathered}`
+          : `${thinkBlock}I have finished inspecting the workspace and analyzing the requested task.`
+        cleanedContent = fallback
+        onToken?.(fallback)
+      } else if (reasoning) {
         cleanedContent = `<think>${reasoning}</think>\n\nI have analyzed the request and prepared the following plan:\n\n${reasoning.slice(0, 800)}${reasoning.length > 800 ? '…' : ''}\n\n*Click **Continue** below or confirm to execute these actions.*`
         onToken?.(cleanedContent)
       } else {
-        const gathered = summariseToolResults(toolResults)
-        const fallback = gathered
-          ? 'I have completed the requested actions (tool results):\n\n' + gathered
-          : 'I have finished inspecting the workspace and analyzing the requested task.'
+        const fallback = 'I have finished inspecting the workspace and analyzing the requested task.'
         cleanedContent = fallback
         onToken?.(fallback)
       }
@@ -1903,14 +1923,20 @@ function safelyParseToolArgs(raw) {
 
     if (!visibleAnswer(cleanedContent)) {
       const { reasoning } = splitReasoning(fullContent || roundContent)
-      if (reasoning) {
+      const hasExecutedActions = rounds > 0 || Object.keys(toolResults).length > 0
+      if (hasExecutedActions) {
+        const gathered = summariseToolResults(toolResults)
+        const thinkBlock = reasoning ? `<think>${reasoning}</think>\n\n` : ''
+        const fallback = gathered
+          ? `${thinkBlock}### Summary of Actions & Findings (tool results)\n\n${gathered}`
+          : `${thinkBlock}I have finished inspecting the workspace and analyzing the requested task.`
+        cleanedContent = fallback
+        onToken?.(fallback)
+      } else if (reasoning) {
         cleanedContent = `<think>${reasoning}</think>\n\nI have analyzed the request and prepared the following plan:\n\n${reasoning.slice(0, 800)}${reasoning.length > 800 ? '…' : ''}\n\n*Click **Continue** below or confirm to execute these actions.*`
         onToken?.(cleanedContent)
       } else {
-        const gathered = summariseToolResults(toolResults)
-        const fallback = gathered
-          ? 'I have completed the requested actions (tool results):\n\n' + gathered
-          : 'I have finished inspecting the workspace and analyzing the requested task.'
+        const fallback = 'I have finished inspecting the workspace and analyzing the requested task.'
         cleanedContent = fallback
         onToken?.(fallback)
       }

@@ -340,6 +340,9 @@ export function stripToolCallSyntax(text) {
     .replace(/(?:\s*\{)+\s*["“](?:name|tool|function)["”]\s*:\s*["“][^"”]+["”]\s*,\s*["“](?:arguments|args|parameters)["”]\s*:\s*[\s\S]*?\}+/gi, '')
     // Stuttered / malformed tool call fragments (e.g. "{\n{\n{\n{\n\"tool{\n\"{\n")
     .replace(/(?:^|\n)\s*(?:\{\s*)+(?:["“]?tool\b[^:\n]*\{?[\s\S]*?["“]?\{?\s*)(?=[A-Za-z]|$)/gi, '\n')
+    // Broken aborted code blocks and leading JSON stubs (e.g. "{\n```json\n{\n")
+    .replace(/^\s*(?:\{\s*)*```(?:json)?\s*(?:\{\s*)*/gi, '')
+    .replace(/(?:^|\n)\s*(?:\{\s*)*```(?:json)?\s*(?:\{\s*)?(?=(?:I have completed|###|\*\*|\[Tool|Here is|To |Let's|We |I |The ))/gi, '\n')
     // XML formats
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
     .replace(/<function_call>[\s\S]*?<\/function_call>/gi, '')
