@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue, startTransition } from 'react'
-import ReactDOM from 'react-dom'
+import ReactDOM from 'react-dom' // Test edit after rename // Test edit on backup // TODO: test edit
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Film, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Star, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera, TrendingUp, Package } from 'lucide-react'
 import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, branchConversation, syncCloudKeys, createTemplate, updateTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
@@ -199,10 +199,52 @@ export default function App() {
   const [tools, setToolsEnabledState] = useState(true)
   const [temperature, setTemperatureState] = useState(1.0)
   const [models, setModels] = useState({})
-  const [showProviderModal, setShowProviderModal] = useState(false)
-  const [showAuthModal, setShowAuthModal] = useState(false)
-  const [showTerms, setShowTerms] = useState(false)
-  const [showPalette, setShowPalette] = useState(false)
+  // const [showProviderModal, setShowProviderModal] = useState(false)
+// const [showAuthModal, setShowAuthModal] = useState(false)
+  // Centralized modal state - will replace individual modal states above
+  const [modalState, setModalState] = useState({
+    provider: false,
+    auth: false,
+    terms: false,
+    palette: false,
+    ragDocs: false,
+    context: false,
+    shortcuts: false,
+    trading: false,
+    mediaStudio: false,
+    videoStudio: false,
+    upgrade: false,
+    onboarding: false,
+    settings: false,
+    settingsTab: 'providers',
+    diagnostics: false,
+    overview: false,
+    mcp: false,
+    torrent: false,
+    sessionReplay: false,
+    pluginManager: false,
+    costTracking: false,
+    billing: false,
+    autoSkills: false,
+    fileEditor: false,
+    workspace: false,
+    citationGraph: false,
+    evalDashboard: false,
+    // Confirmation and prompt modals (keep separate as they have different structures)
+    confirmModal: null,
+    projectNameModal: null,
+    restoreModal: null,
+    folderModalConv: null,
+    tagModalConv: null,
+    userQuestionPrompt: null,
+    userQuestionAnswer: '',
+    apiKeyInput: {},
+    savingApiKey: null,
+    errorModalMsg: null
+  });
+  // These will be moved to centralized modal state
+// const [showTerms, setShowTerms] = useState(false)
+// const [showPalette, setShowPalette] = useState(false)
   const [user, setUser] = useState(null)
   const [promptTemplates, setPromptTemplates] = useState([])
   const [activeTemplate, setActiveTemplate] = useState('default')
@@ -221,8 +263,9 @@ export default function App() {
   const [updateReady, setUpdateReady] = useState(null)   // () => apply
   const [storage, setStorage] = useState(null)
   const [docs, setDocs] = useState([])
-  const [showRagDocsModal, setShowRagDocsModal] = useState(false)
-  const [showContextModal, setShowContextModal] = useState(false)
+  // These will be moved to centralized modal state
+// const [showRagDocsModal, setShowRagDocsModal] = useState(false)
+// const [showContextModal, setShowContextModal] = useState(false)
   const [convQuery, setConvQuery] = useState('')
   const [activeFolder, setActiveFolder] = useState(null)
   const [activeTag, setActiveTag] = useState(null)
@@ -246,11 +289,11 @@ export default function App() {
   const [autoRoute, setAutoRouteState] = useState(false)
   const [fallback, setFallbackState] = useState(true)
   const [prefs, setPrefsState] = useState({})
-  const [showPersonalise, setShowPersonalise] = useState(false)
+// const [showPersonalise, setShowPersonalise] = useState(false)
   // Account/Providers/Privacy split off the one catch-all "Settings" page —
   // see the comment on DASHBOARD_SECTIONS in DashboardShell.jsx.
-  const [showAccount, setShowAccount] = useState(false)
-  const [showProviders, setShowProviders] = useState(false)
+// const [showAccount, setShowAccount] = useState(false)
+// const [showProviders, setShowProviders] = useState(false)
   const [showPrivacy, setShowPrivacy] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
   const [showAgents, setShowAgents] = useState(false)
@@ -273,9 +316,11 @@ export default function App() {
   // open — you are meant to chat and watch files at the same time. It IS in
   // browserOccluded, because it occupies the same pixels as the docked browser.
   const [showWorkspace, setShowWorkspace] = useState(false)
+  // These will be moved to centralized modal state
   const [showShortcutsModal, setShowShortcutsModal] = useState(false)
   const [showCitationGraph, setShowCitationGraph] = useState(false)
   const [showEvalDashboard, setShowEvalDashboard] = useState(false)
+  // These will be moved to centralized modal state
   const [showTradingModal, setShowTradingModal] = useState(false)
   const [showMediaStudio, setShowMediaStudio] = useState(false)
   const [showVideoStudio, setShowVideoStudio] = useState(false)
@@ -478,6 +523,7 @@ export default function App() {
   const draftInputRef = useRef('')
   const [isEnhancing, setIsEnhancing] = useState(false)
   const recognitionRef = useRef(null)
+  // These will be moved to centralized modal state
   const [showDemoModal, setShowDemoModal] = useState(false)
   const [showTour, setShowTour] = useState(false)
   const [showDownloadModal, setShowDownloadModal] = useState(false)
@@ -500,6 +546,7 @@ export default function App() {
     }
   }, [provider])
   const [notFoundRoute, setNotFoundRoute] = useState(null)
+  // These will be moved to centralized modal state
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [settingsModalTab, setSettingsModalTab] = useState('providers')
   const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false)
@@ -714,14 +761,14 @@ export default function App() {
   // a WebContentsView composites above the DOM, so an overlay would be painted
   // UNDER it.
   const browserOccluded = !!(
-    showPersonalise || showSkills || showToolPicker ||
-    showPalette || showProviderModal || showAuthModal || showDataDashboard ||
-    showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact ||
-    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor ||
-    showWorkspace || showTour || showBilling ||
-    showAgents || showMcpModal || showPlugins ||
-    showAccount || showProviders || showPrivacy
-  )
+     modalState.personalise || modalState.skills || modalState.toolPicker ||
+     modalState.palette || modalState.provider || modalState.auth || modalState.dataDashboard ||
+     modalState.diagnostics || modalState.domainHub || modalState.downloadModal || activeArtifact ||
+     modalState.terminal || modalState.scheduler || modalState.subAgents || modalState.autoSkills || modalState.fileEditor ||
+     modalState.workspace || modalState.tour || modalState.billing ||
+     modalState.agents || modalState.mcp || modalState.plugins ||
+     modalState.account || modalState.providers || modalState.privacy
+   )
 
   const webDockOccluded = !!(
     showPersonalise || showSkills || showToolPicker ||
