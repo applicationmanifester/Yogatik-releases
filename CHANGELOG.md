@@ -1,5 +1,21 @@
 # Changelog
 
+## v11.5.0 - Flagship Yogatik AI, Zero-Stall Tool Execution & Code Engineering Suite (2026-09-30)
+
+### ⚡ Flagship Yogatik AI & Autonomous Engineering
+- **Native Flagship Yogatik AI (`agents.js`, `api.js`)** — Introduced Yogatik AI as an autonomous, self-reliant intelligence with permanent priority access to the filesystem, terminal, live web search, and multi-agent delegation.
+- **Zero-Laziness Code Implementation Protocol (`agents.js`)** — Prohibited conversational placeholders, hand-wavy snippets, or unfinished stub functions. When code modifications are requested, Yogatik AI actively reads the file via `fs_read` and writes complete, working implementations via `fs_write` or `fs_edit`.
+- **Flagship Tool Suite Priority Boost (`tools/index.js`)** — Ensured core engineering tools (`fs_*`, `terminal_run`, `code_execute`, `web_search`, `spawn_agents`) maintain first-tier positioning in system prompts and declarations across every turn.
+
+### 🛠️ Agent Tool Calling & Stream Reliability
+- **Zero-Stall Reasoning & Tool Unsticking (`agent.js`)** — Eliminated reasoning model tool dropouts in the desktop app where deep thinking models (<think> blocks) stalled in internal monologues by actively intercepting deliberate action intents and auto-seeding tool actions for `fs_list` and `fs_write`.
+- **Full Code Writing & Refactoring Priority (`tools/index.js`)** — Guaranteed file write, edit, and diff tools remain active during code reviews, audits, and workspace refactoring rather than being pruned into read-only mode.
+- **Tool Results Synthesis Findings Card (`agent.js`, `MessageBubble.jsx`)** — Ensured executed actions are always synthesized into rich markdown findings cards with concrete file paths, diff statistics, and next steps, preventing blank bubbles.
+- **Localhost CORS & Cloudflare Proxy Guard (`llm.js`)** — Stopped 403 cloud proxy errors for local Ollama instances on web origins and quieted live model warnings.
+
+### 🌐 Cross-Platform Synchronisation
+- **Synchronized v11.5.0** — Aligned version numbers and release manifests across Web, Desktop (Windows, macOS, Linux), and Standalone Browser pages.
+
 ## v11.4.0 - AI Modal & Prompted-Mode Response Healing, Shell Stability & Cross-Platform Release (2026-09-30)
 
 ### 🤖 AI Model Execution & Streaming

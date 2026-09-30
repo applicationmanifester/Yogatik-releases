@@ -67,3 +67,4 @@ yogatik-browser/release/
 # It lives in Firebase secrets (functions:secrets:set LICENSE_PRIVATE_KEY).
 functions/.keys/
 openviking/
+.ai_backups/

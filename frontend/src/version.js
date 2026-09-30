@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '11.4.0'
+export const APP_VERSION = '11.5.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 11.4.0 — AI Modal & Prompted-Mode Response Healing, App Shell Stability & Synchronized Cross-Platform Release'
+export const APP_CODENAME = 'Yogatik 11.5.0 — Flagship Yogatik AI, Zero-Stall Tool Execution & Code Engineering Suite'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,51 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "11.5.0",
+    "title": "Yogatik 11.5.0: Flagship Yogatik AI, Zero-Stall Tool Calling & Code Engineering Suite",
+    "date": "September 30, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Native Flagship Yogatik AI: Dedicated autonomous intelligence endowed with permanent priority access to filesystem, terminal, live web search, and multi-agent delegation",
+      "Zero-Stall Reasoning & Tool Unsticking: Fixed reasoning model tool dropouts in desktop app with active action-intent nudges and auto-seeding for fs_list and fs_write",
+      "Full Code Writing & Refactoring Priority: Guaranteed write, edit, and diff tools remain active during code reviews, audits, and workspace refactoring",
+      "Tool Results Synthesis Card: Ensured executed actions are always synthesized into rich markdown findings, preventing empty message bubbles",
+      "Localhost CORS & Proxy Guard: Stopped 403 cloud proxy errors for local Ollama instances on web origins and quieted live model warnings"
+    ],
+    "sections": [
+      {
+        "category": "⚡ Flagship Yogatik AI & Autonomous Engineering",
+        "items": [
+          {
+            "title": "Zero-Laziness Code Implementation Protocol",
+            "description": "Enforced strict full-code production rules in Yogatik AI, ensuring all code reviews and refactors actively inspect via fs_read and apply complete, working code via fs_write/fs_edit."
+          },
+          {
+            "title": "Flagship Tool Suite Priority Boost",
+            "description": "Yogatik AI automatically receives maximum prioritization for all core execution tools (fs_*, terminal_run, code_execute, web_search, spawn_agents) across every turn."
+          }
+        ]
+      },
+      {
+        "category": "🛠️ Agent Tool Calling & Stream Reliability",
+        "items": [
+          {
+            "title": "Reasoning Intent Interception",
+            "description": "Intercepts deliberated tool actions in <think> tags (such as 'Use fs_write for each') and compels immediate tool calling instead of stalling in monologue."
+          },
+          {
+            "title": "Stream Buffer & JSON Stub Sanitization",
+            "description": "Automatically cleanses aborted leading JSON fences and broken code blocks before synthesizing tool findings."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "11.4.0",
     "title": "Yogatik 11.4.0: AI Modal & Prompted-Mode Response Healing, Shell Stability & Cross-Platform Sync",
     "date": "September 30, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Prompted-Mode Response & Token Healing: Resolved reply duplication in agent.js where responses were duplicated twice and raw tool call JSON leaked to users during unbuffered prompted execution",
       "AI Modals & App Shell Stability: Fixed ReferenceError in App.jsx (webDockOccluded modalState alignment) preventing startup crashes",
