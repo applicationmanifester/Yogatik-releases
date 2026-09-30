@@ -1198,7 +1198,7 @@ const CORE_TOOL_SCORES = {
 }
 
 /** Rank and prioritize tools based on the active user query context */
-export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = MAX_TOOLS_PER_REQUEST } = {}) {
+export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = MAX_TOOLS_PER_REQUEST, persona = '', agent = '' } = {}) {
   if (!Array.isArray(schemas) || schemas.length === 0) return []
   // No message to rank by still goes through scoring, so the core floor applies
   // and the cap does not decide by registry order alone.
@@ -1211,6 +1211,26 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
     doc_export: 20,
     code_execute: 15,
     timer: 15,
+  }
+
+  // Yogatik AI Flagship Boost: ensure Yogatik AI always holds its full powerhouse execution suite
+  const isYogatik = agent === 'agent_yogatik' || (typeof persona === 'string' && persona.toLowerCase().includes('yogatik')) || text.includes('yogatik')
+  if (isYogatik) {
+    scores['fs_read'] = 180
+    scores['fs_write'] = 180
+    scores['fs_edit'] = 180
+    scores['fs_list'] = 180
+    scores['fs_find_files'] = 175
+    scores['fs_search'] = 170
+    scores['terminal_run'] = 180
+    scores['code_execute'] = 170
+    scores['js_execute'] = 170
+    scores['web_search'] = 180
+    scores['deep_research'] = 175
+    scores['web_extract'] = 170
+    scores['spawn_agents'] = 175
+    scores['memory'] = 160
+    scores['doc_export'] = 150
   }
 
   // Repository & GitHub search boosts
