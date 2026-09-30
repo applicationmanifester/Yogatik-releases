@@ -105,7 +105,10 @@ const profileOf = (user) => ({
 async function saveProfile(f, user) {
   const userData = profileOf(user)
   try {
-    await f.setDoc(f.doc(f.db, 'users', user.uid), { profile: userData }, { merge: true })
+    await Promise.race([
+      f.setDoc(f.doc(f.db, 'users', user.uid), { profile: userData }, { merge: true }),
+      new Promise((resolve) => setTimeout(resolve, 3000))
+    ])
   } catch { /* Firestore rules or offline: the session is still valid */ }
   return userData
 }
@@ -192,7 +195,10 @@ export async function ensureFirebaseAuth(f) {
     const googleIdToken = _desktopUser?.googleIdToken || null
     if (googleIdToken && f.GoogleAuthProvider?.credential && f.signInWithCredential) {
       const cred = f.GoogleAuthProvider.credential(googleIdToken)
-      await f.signInWithCredential(f.auth, cred)
+      await Promise.race([
+        f.signInWithCredential(f.auth, cred),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ensureFirebaseAuth timed out')), 4000))
+      ])
     }
   } catch (err) {
     // Non-fatal: stay unauthenticated. Firestore will reject the request,
@@ -225,7 +231,10 @@ export async function signInWithGoogle() {
     if (googleIdToken && f.GoogleAuthProvider?.credential && f.signInWithCredential) {
       try {
         const cred = f.GoogleAuthProvider.credential(googleIdToken)
-        await f.signInWithCredential(f.auth, cred)
+        await Promise.race([
+          f.signInWithCredential(f.auth, cred),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Desktop Firebase auth sign-in timed out')), 4000))
+        ])
       } catch (authErr) {
         console.warn('Desktop Firebase auth sign-in notice:', authErr?.message)
       }
@@ -241,7 +250,10 @@ export async function signInWithGoogle() {
     // re-establish f.auth.currentUser after a relaunch without popping a
     // browser window.
     setDesktopUser({ ...user, idToken: idToken || null, googleIdToken })
-    const profile = await saveProfile(f, user)
+    const profile = await Promise.race([
+      saveProfile(f, user),
+      new Promise((resolve) => setTimeout(() => resolve(user), 3000))
+    ])
     // ── KEY FIX: surface the idToken so the caller can hand it to the licence
     // server immediately. `saveProfile` returns profileOf(user) which is only
     // { uid, displayName, email, photoURL } — idToken is stripped. App.jsx then

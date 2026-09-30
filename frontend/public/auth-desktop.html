@@ -164,7 +164,16 @@
         // two are not interchangeable, and Firebase silently rejects the wrong
         // kind. credentialFromResult() recovers Google's own token from the
         // popup result so the desktop side can actually authenticate with it.
-        const googleCred = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+        let googleIdToken = null;
+        try {
+          if (firebase.auth.GoogleAuthProvider?.credentialFromResult) {
+            const googleCred = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+            if (googleCred?.idToken) googleIdToken = googleCred.idToken;
+          }
+        } catch (_) {}
+        if (!googleIdToken && result.credential?.idToken) {
+          googleIdToken = result.credential.idToken;
+        }
 
         const payload = {
           uid: user.uid,
@@ -172,7 +181,7 @@
           email: user.email,
           photoURL: user.photoURL,
           idToken: idToken,
-          googleIdToken: googleCred?.idToken || null,
+          googleIdToken: googleIdToken || null,
         };
 
         btnText.textContent = 'Transferring to Desktop…';

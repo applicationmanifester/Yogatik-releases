@@ -3,13 +3,13 @@
 
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval'",
+  "script-src 'self' 'wasm-unsafe-eval' https://apis.google.com https://*.gstatic.com https://esm.run https://cdn.jsdelivr.net",
   "worker-src 'self' blob:",
-  "connect-src 'self' https://api.openai.com https://api.groq.com https://openrouter.ai https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://api.anthropic.com https://api.elevenlabs.io https://api.github.com https://raw.githubusercontent.com https://integrate.api.nvidia.com https://api.deepseek.com https://api.mistral.ai https://api.together.xyz https://api.x.ai https://api.perplexity.ai https://api.cohere.com https://api.tokenrouter.com https://api.kite.trade https://kite.zerodha.com",
+  "connect-src 'self' https: wss: blob: data: http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*",
   "img-src 'self' data: blob: https:",
-  "media-src 'self' blob:",
-  "font-src 'self' data:",
-  "style-src 'self' 'unsafe-inline'",
+  "media-src 'self' blob: data: https:",
+  "font-src 'self' data: https:",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'"

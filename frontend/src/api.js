@@ -62,7 +62,10 @@ export async function pullCloudKeys() {
   if (!secret) return { pulled: 0 }
   let pulled = 0
   try {
-    const keys = await getUserApiKeys(secret)
+    const keys = await Promise.race([
+      getUserApiKeys(secret),
+      new Promise((resolve) => setTimeout(() => resolve({}), 4000))
+    ])
     for (const [provider, key] of Object.entries(keys)) {
       if (!key) continue
       // Safety guard: reject any corrupted ciphertext pushed by older desktop builds
@@ -100,7 +103,10 @@ export async function pushCloudKeys() {
       if (!key || (typeof key === 'string' && key.startsWith('kc.v1:'))) continue
     }
     try {
-      const res = await saveUserApiKey(id, key, secret)
+      const res = await Promise.race([
+        saveUserApiKey(id, key, secret),
+        new Promise((resolve) => setTimeout(() => resolve({ synced: false, reason: 'timeout' }), 3000))
+      ])
       if (res?.synced) { await db.setSetting(`synced_${id}`, Date.now()); pushed++ }
     } catch { /* keep going: one provider failing is not a reason to stop */ }
   }
@@ -199,10 +205,11 @@ export async function loginWithGoogle() {
   if (user) {
     await db.setSetting('user', user)
     try { localStorage.setItem('yogatik_user', JSON.stringify(user)) } catch {}
-    // Signing in IS the sync step — nothing to type, no button to find.
-    try { await syncCloudKeys() } catch {}
-    try { await purgePlaintextKeys() } catch {}
-    try { await syncCloudData() } catch {}
+    // Background cloud sync — NEVER block the user's login completion or AuthModal!
+    // Signing in IS the sync step, but running in background keeps sign-in fast and failure-resilient.
+    syncCloudKeys().catch(e => console.warn('[Auth] syncCloudKeys background notice:', e?.message))
+    purgePlaintextKeys().catch(e => console.warn('[Auth] purgePlaintextKeys background notice:', e?.message))
+    syncCloudData().catch(e => console.warn('[Auth] syncCloudData background notice:', e?.message))
   }
   return user
 }
