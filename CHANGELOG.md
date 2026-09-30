@@ -1,5 +1,20 @@
 # Changelog
 
+## v11.4.0 - AI Modal & Prompted-Mode Response Healing, Shell Stability & Cross-Platform Release (2026-09-30)
+
+### 🤖 AI Model Execution & Streaming
+- **Prompted-Mode Response & Token Healing (`agent.js`)** — Resolved critical reply duplication in prompted mode where responses were doubled in message bubbles and raw tool call JSON leaked to users during unbuffered streaming. Restored proper tool syntax buffering and live `<think>` reasoning token streaming.
+- **Degenerate Stub Suppression (`reasoning.js`)** — Filtered bare degenerate stub outputs (`null`, `undefined`, `none`, `false`, `true`) emitted by stalled models to force continued synthesis instead of blank or broken bubbles.
+- **Checkpoint Error Resumption (`agent.js`, `checkpointResume.test.js`)** — Fixed error handling so mid-flight terminal errors properly trigger `onError` callbacks and attach complete state checkpoints for recovery.
+
+### 🪟 App Shell & AI Modal Stability
+- **Modal State Reference Fix (`App.jsx`)** — Fixed `ReferenceError: showPersonalise is not defined` by aligning `webDockOccluded` with `browserOccluded` to prevent app crash on initial render.
+- **Streaming Message Engine (`StreamingMessage.jsx`)** — Restored synchronous imperative ref handle methods, activeAction stepped progress tree, and clean null-state guards for zero-latency 60fps streaming.
+- **Entitlement & IPC Security Matrix (`entitlementCore.cjs`)** — Added Git worktree channels (`git_worktree_*`) and user config persistence (`yogatik:loadConfig`, `yogatik:saveConfig`) into the core capability matrix.
+
+### 🌐 Cross-Platform Synchronisation
+- **Synchronized v11.4.0** — Aligned version numbers and release manifests across Web, Desktop (Windows, macOS, Linux), and Standalone Browser pages.
+
 ## v11.3.0 - Real-Time Reasoning Streaming & Robust Model Watchdog (2026-09-29)
 
 ### 🧠 Reasoning & Streaming Engine

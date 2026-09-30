@@ -75,6 +75,8 @@ describe('Turn Checkpoint & Resume Engine', () => {
     scriptRounds([
       { toolCalls: [{ id: 'c1', name: 'fs_read', parsedArgs: { path: 'config.json' } }] },
       { throws: new Error('Watchdog timeout') },
+      { throws: new Error('Watchdog timeout') },
+      { throws: new Error('Watchdog timeout') },
     ])
 
     const checkpoints = []

@@ -462,11 +462,36 @@
     (function () {
       var RELEASES = [
   {
+    "version": "11.4.0",
+    "title": "Yogatik 11.4.0: AI Modal & Prompted-Mode Response Healing, Shell Stability & Cross-Platform Sync",
+    "date": "September 30, 2026",
+    "codename": "AI Prompted-Mode Response Healing, Shell Stability & Synchronized Platform Release",
+    "isLatest": true,
+    "highlights": [
+      [
+        "Prompted-Mode Response & Token Healing",
+        "Resolved reply duplication in agent.js where responses were duplicated twice and raw tool call JSON leaked to users during unbuffered prompted execution"
+      ],
+      [
+        "AI Modals & App Shell Stability",
+        "Fixed ReferenceError in App.jsx (webDockOccluded modalState alignment) preventing startup crashes"
+      ],
+      [
+        "Streaming Message Engine",
+        "Restored imperative ref methods, multi-agent pipeline stepped progress trees, and typewriter integration for zero-latency 60fps streaming"
+      ],
+      [
+        "Cross-Platform Release Sync",
+        "Coordinated v11.4.0 deployment across Web, Desktop (Windows, macOS, Linux), and Standalone Browser"
+      ]
+    ]
+  },
+  {
     "version": "11.3.0",
     "title": "Yogatik 11.3.0: Real-Time Reasoning Streaming & Robust Model Watchdog",
     "date": "September 29, 2026",
     "codename": "Real-Time Reasoning Streaming, Anti-Stall Guard & Cross-Platform Sync",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Real-Time Reasoning Streaming",

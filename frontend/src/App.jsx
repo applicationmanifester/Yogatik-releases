@@ -199,8 +199,11 @@ export default function App() {
   const [tools, setToolsEnabledState] = useState(true)
   const [temperature, setTemperatureState] = useState(1.0)
   const [models, setModels] = useState({})
-  // const [showProviderModal, setShowProviderModal] = useState(false)
-// const [showAuthModal, setShowAuthModal] = useState(false)
+  // Restored as real state: 26+ call sites and the modal render bindings still
+  // use these directly — the parallel migration commented the declarations but
+  // never migrated the callers, which crashed the app at mount.
+  const [showProviderModal, setShowProviderModal] = useState(false)
+  const [showAuthModal, setShowAuthModal] = useState(false)
   // Centralized modal state - will replace individual modal states above
   const [modalState, setModalState] = useState({
     provider: false,
@@ -243,8 +246,8 @@ export default function App() {
     errorModalMsg: null
   });
   // These will be moved to centralized modal state
-// const [showTerms, setShowTerms] = useState(false)
-// const [showPalette, setShowPalette] = useState(false)
+  const [showTerms, setShowTerms] = useState(false)
+  const [showPalette, setShowPalette] = useState(false)
   const [user, setUser] = useState(null)
   const [promptTemplates, setPromptTemplates] = useState([])
   const [activeTemplate, setActiveTemplate] = useState('default')
@@ -264,8 +267,8 @@ export default function App() {
   const [storage, setStorage] = useState(null)
   const [docs, setDocs] = useState([])
   // These will be moved to centralized modal state
-// const [showRagDocsModal, setShowRagDocsModal] = useState(false)
-// const [showContextModal, setShowContextModal] = useState(false)
+  const [showRagDocsModal, setShowRagDocsModal] = useState(false)
+  const [showContextModal, setShowContextModal] = useState(false)
   const [convQuery, setConvQuery] = useState('')
   const [activeFolder, setActiveFolder] = useState(null)
   const [activeTag, setActiveTag] = useState(null)
@@ -289,11 +292,11 @@ export default function App() {
   const [autoRoute, setAutoRouteState] = useState(false)
   const [fallback, setFallbackState] = useState(true)
   const [prefs, setPrefsState] = useState({})
-// const [showPersonalise, setShowPersonalise] = useState(false)
+  const [showPersonalise, setShowPersonalise] = useState(false)
   // Account/Providers/Privacy split off the one catch-all "Settings" page —
   // see the comment on DASHBOARD_SECTIONS in DashboardShell.jsx.
-// const [showAccount, setShowAccount] = useState(false)
-// const [showProviders, setShowProviders] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
+  const [showProviders, setShowProviders] = useState(false)
   const [showPrivacy, setShowPrivacy] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
   const [showAgents, setShowAgents] = useState(false)
@@ -770,15 +773,7 @@ export default function App() {
      modalState.account || modalState.providers || modalState.privacy
    )
 
-  const webDockOccluded = !!(
-    showPersonalise || showSkills || showToolPicker ||
-    showPalette || showProviderModal || showAuthModal || showDataDashboard ||
-    showDiagnosticsModal || showDomainHub || showDownloadModal || activeArtifact ||
-    showTerminal || showScheduler || showSubAgents || showAutoSkills || showFileEditor ||
-    showWorkspace || showTour || showBilling ||
-    showAgents || showMcpModal || showPlugins ||
-    showAccount || showProviders || showPrivacy
-  )
+  const webDockOccluded = browserOccluded
 
   const handleOpenBrowser = useCallback(async (url) => {
     const b = typeof window !== 'undefined' ? window.__YOGATIK_BROWSER__ : null

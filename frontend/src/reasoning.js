@@ -89,6 +89,11 @@ export function visibleAnswer(content) {
   // Pseudo tool announcements (e.g. "[Tool called: fs_file_tree for workspace exploration]")
   // are internal tool execution attempts, not visible answers to the user.
   const stripped = ans.replace(/\[(?:Tool called|Calling tool|Tool|Call tool|Invoke):\s*[\s\S]*?\]/gi, '').trim()
+  // Degenerate stub responses that models (especially Nemotron/Qwen) emit when they
+  // stall mid-task and have no real answer — treat these as empty so the agent
+  // continues to synthesize a proper response instead of stopping with junk.
+  const DEGENERATE_STUBS = /^(?:null|undefined|none|n\/a|na|false|true|0|\.|\.\.\.|\u2026|-|\?)$/i
+  if (DEGENERATE_STUBS.test(stripped)) return ''
   return stripped
 }
 

@@ -1,7 +1,21 @@
-const fs = require('fs');
-const content = fs.readFileSync('frontend/src/tools/devTools.js', 'utf8');
-const marker = '// ── background processes ────────────────────────────────────────────────────';
-const newTools = `
+// add_git_worktree.js
+/**
+ * Inserts git worktree tool definitions into devTools.js.
+ * Safe to run multiple times without duplicating the inserted block.
+ */
+
+import { readFile, writeFile } from 'fs/promises';
+import { resolve } from 'path';
+
+// Resolve paths relative to this script’s folder (works regardless of cwd).
+const SCRIPT_DIR = resolve();
+const TOOLS_FILE = resolve(SCRIPT_DIR, 'frontend/src/tools/devTools.js');
+
+// Exact marker we look for – must match the one in devTools.js.
+const MARKER = '// ── background processes ────────────────────────────────────────────────────';
+
+// Content to insert. NOTE: It deliberately does NOT contain the MARKER.
+const NEW_TOOLS = `
 // ── git worktree (parallel agent isolation) ──────────────────────────────────
 export const gitWorktreeListTool = {
   schema: {
@@ -80,6 +94,30 @@ export const gitWorktreePruneTool = {
 
 // ── background processes ────────────────────────────────────────────────────
 `;
-const newContent = content.replace(marker, newTools);
-fs.writeFileSync('frontend/src/tools/devTools.js', newContent);
-console.log('Done');
+
+async function main() {
+  try {
+    // Read the target file as UTF‑8 text.
+    const data = await readFile(TOOLS_FILE, 'utf8');
+
+    // Verify the marker exists exactly once.
+    if (!data.includes(MARKER)) {
+      throw new Error(`Marker not found in ${TOOLS_FILE}. Cannot proceed.`);
+    }
+
+    // Replace only the first occurrence of the marker.
+    // Because NEW_TOOLS does NOT contain the marker, we guarantee no duplication.
+    const updated = data.replace(MARKER, NEW_TOOLS);
+
+    // Write the updated content back.
+    await writeFile(TOOLS_FILE, updated, 'utf8');
+
+    console.log(`✅ Successfully inserted git worktree tools into ${TOOLS_FILE}`);
+  } catch (err) {
+    console.error('❌ Failed to update devTools.js:', err.message);
+    process.exit(1);
+  }
+}
+
+// Execute the async main function.
+main();

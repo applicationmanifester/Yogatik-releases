@@ -88,6 +88,8 @@ const CHANNELS = {
   git_run: P(CAP.FILES), git_status: P(CAP.FILES), git_log: P(CAP.FILES),
   git_diff: P(CAP.FILES), git_write: P(CAP.FILES), git_show_untracked: P(CAP.FILES),
   git_file_history: P(CAP.FILES), git_show_file: P(CAP.FILES),
+  git_worktree_list: P(CAP.FILES), git_worktree_add: P(CAP.FILES),
+  git_worktree_remove: P(CAP.FILES), git_worktree_prune: P(CAP.FILES),
   // A watcher reports the contents of a directory over time.
   watch_start: P(CAP.FILES), watch_stop: P(CAP.FILES), watch_changes: P(CAP.FILES),
   'watcher:start': P(CAP.FILES), 'watcher:stop': P(CAP.FILES),
@@ -229,6 +231,7 @@ const CHANNELS = {
   'torrent:getDefaultPath': FA, 'torrent:add': FA, 'torrent:list': FA,
   'torrent:pause': FA, 'torrent:resume': FA, 'torrent:remove': FA,
   'torrent:openFolder': FA,
+  'yogatik:loadConfig': FA, 'yogatik:saveConfig': FA,
 }
 
 /** Every capability a state grants, or null for "everything". */

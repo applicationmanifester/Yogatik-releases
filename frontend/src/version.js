@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '11.3.2'
+export const APP_VERSION = '11.4.0'
 export const BUILD_DATE = 'September 2026'
-export const APP_CODENAME = 'Yogatik 11.3.2 — Taskbar Icon Fix (Packaged Window Icon from Shipped File)'
+export const APP_CODENAME = 'Yogatik 11.4.0 — AI Modal & Prompted-Mode Response Healing, App Shell Stability & Synchronized Cross-Platform Release'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,51 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "11.4.0",
+    "title": "Yogatik 11.4.0: AI Modal & Prompted-Mode Response Healing, Shell Stability & Cross-Platform Sync",
+    "date": "September 30, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Prompted-Mode Response & Token Healing: Resolved reply duplication in agent.js where responses were duplicated twice and raw tool call JSON leaked to users during unbuffered prompted execution",
+      "AI Modals & App Shell Stability: Fixed ReferenceError in App.jsx (webDockOccluded modalState alignment) preventing startup crashes",
+      "Streaming Message Engine: Restored imperative ref methods, multi-agent pipeline stepped progress trees, and typewriter integration for zero-latency 60fps streaming",
+      "Entitlement & Capability Matrix: Classified Git worktrees (git_worktree_*) and persistent app configuration channels under security matrix",
+      "Cross-Platform Release Sync: Coordinated v11.4.0 deployment across Web, Desktop (Windows, macOS, Linux), and Standalone Browser"
+    ],
+    "sections": [
+      {
+        "category": "🤖 AI Model Execution & Streaming",
+        "items": [
+          {
+            "title": "Prompted-Mode Buffering & Deduplication",
+            "description": "Restored proper token buffering in agent.js so that raw tool-calling syntax and XML blocks never pollute user bubbles, and prose is never double-emitted upon harvest."
+          },
+          {
+            "title": "Real-Time Thought Streaming",
+            "description": "Live reasoning <think> tokens stream immediately while tool calls remain isolated and securely parsed."
+          }
+        ]
+      },
+      {
+        "category": "🪟 App Shell & Modal Stability",
+        "items": [
+          {
+            "title": "Modal State Reference Fix",
+            "description": "Fixed webDockOccluded reference in App.jsx to properly mirror modalState, preventing application crash on initial mount."
+          },
+          {
+            "title": "StreamingMessage Synchronous Ref",
+            "description": "Restored synchronous imperative ref handle methods, activeAction stepped progress tree, and clean null-state guards."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "11.3.2",
     "title": "Yogatik 11.3.2: Taskbar Icon Fix — Packaged Window Icon from Shipped File",
     "date": "September 29, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Taskbar Icon Fix: The packaged Windows app now loads its brand icon from the shipped icon.ico (inside app.asar) instead of process.execPath — nativeImage cannot decode an exe, so packaged windows previously shipped with no explicit icon and the taskbar fell back to a generic icon",
       "ArtifactCanvas Direct Edit: 'Prompt AI to Edit' now asks what to change first, then sends the full instruction demanding direct code output — it previously auto-sent a contentless prefix, so the model asked again and again instead of writing",

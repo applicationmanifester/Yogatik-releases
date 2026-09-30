@@ -1177,6 +1177,11 @@ function safelyParseToolArgs(raw) {
             streamingReported = true
             onStatus?.('⚡ Streaming response…')
           }
+          // Swallow bare degenerate stubs that Nemotron/Qwen emit when stalling
+          // after tool results - "null", "undefined", etc. are not real answers.
+          const tTrimmed = t.trim()
+          const isStubToken = /^(?:null|undefined|none|n\/a|na|false|true)$/i.test(tTrimmed)
+          if (isStubToken) return
           if (toolMode !== 'prompted') {
             const nonThinking = roundContent
               .replace(/<(?:think|thought|reasoning)\b[^>]*>[\s\S]*?<\/(?:think|thought|reasoning)>/gi, '')
@@ -1193,11 +1198,17 @@ function safelyParseToolArgs(raw) {
               onToken?.(t)
             }
           } else {
-            // In prompted mode, stream all tokens immediately so the chat bubble and
-            // thinking UI update in real time. If a round contains a tool call, harvestPromptedCalls
-            // will extract the tool call and demote/clean fullContent for execution.
-            fullContent += t
-            onToken?.(t)
+            // In prompted mode the full response is buffered for tool-call detection.
+            // However <think>/<thought>/<reasoning> content can NEVER be a tool call —
+            // stream those tokens immediately so the Thinking panel and streaming
+            // message bubble show live reasoning as it generates.
+            const openCount = (roundContent.match(/<(?:think|thought|reasoning)\b[^>]*>/gi) || []).length
+            const closeCount = (roundContent.match(/<\/(?:think|thought|reasoning)>/gi) || []).length
+            const isInsideOpenBlock = openCount > closeCount
+            const isClosingThinkTag = /<\/(?:think|thought|reasoning)>/i.test(t)
+            if (isInsideOpenBlock || isClosingThinkTag) {
+              onToken?.(t)
+            }
           }
         },
         onToolCall: (tc) => { toolCallsToProcess.push(tc) },
