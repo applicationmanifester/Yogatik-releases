@@ -98,6 +98,9 @@ process.on('unhandledRejection', (reason) => {
   console.error('[main] unhandled rejection:', reason?.stack || msg)
 })
 
+// ── App Identity ──────────────────────────────────────────────────────────
+app.setName('Yogatik')
+
 // Windows needs an explicit AppUserModelID for notifications and taskbar grouping.
 // In development, we create a Start Menu shortcut with the AppUserModelId pointing to icon.ico
 // so Windows Taskbar renders the Yogatik brand icon instead of the generic electron.exe binary icon.
@@ -121,6 +124,17 @@ if (process.platform === 'win32') {
         iconIndex: 0,
         description: 'Yogatik AI Workspace',
       })
+
+      // Clean up legacy/stale dev shortcut named "Electron.lnk" so Windows Search shows "Yogatik"
+      const legacyShortcut = path.join(startMenuDir, 'Electron.lnk')
+      if (fs.existsSync(legacyShortcut)) {
+        try {
+          const detail = shell.readShortcutLink(legacyShortcut)
+          if (detail?.target && (detail.target.includes('Yogatik') || detail.target.includes('electron.exe') || detail.target.includes('AI ChatBot'))) {
+            fs.unlinkSync(legacyShortcut)
+          }
+        } catch {}
+      }
     } catch {}
   }
 }
