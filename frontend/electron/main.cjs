@@ -51,6 +51,7 @@ const { registerOllamaIpc, destroyOllamaDaemon } = require('./ollamaDaemon.cjs')
 const { loadConfig: loadComfyConfig, registerComfyIpc, destroyComfyDaemon } = require('./comfyDaemon.cjs')
 const { registerCastIpc, destroyCastControl } = require('./castControl.cjs')
 const { registerTorrentIpc, destroyTorrentManager } = require('./torrentManager.cjs')
+const { registerVideoStudioIpc } = require('./videoStudioWindow.cjs')
 const windowState = require('./windowState.cjs')
 
 const isDev = !app.isPackaged
@@ -495,6 +496,8 @@ if (!gotLock) {
       registerCastIpc()
       // Native BitTorrent P2P download & swarm manager
       registerTorrentIpc(getWindow)
+      // Dedicated Video Studio & Precision Trimmer window manager
+      registerVideoStudioIpc({ dev: isDev })
     })
 
     // Start the local search sidecar WITHOUT awaiting it.

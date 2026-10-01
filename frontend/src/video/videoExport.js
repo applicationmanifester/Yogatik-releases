@@ -14,6 +14,17 @@ export function formatTime(sec) {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(ms).padStart(2, '0')}`
 }
 
+export function formatSMPTE(sec, fps = 30) {
+  if (sec == null || isNaN(sec)) return '00:00:00:00'
+  const totalSec = Math.max(0, Number(sec))
+  const hrs = Math.floor(totalSec / 3600)
+  const remSec = totalSec % 3600
+  const mins = Math.floor(remSec / 60)
+  const secs = Math.floor(remSec % 60)
+  const frame = Math.floor((totalSec % 1) * fps)
+  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}:${String(frame).padStart(2, '0')}`
+}
+
 export function parseTimeToSeconds(str) {
   if (!str) return 0
   const parts = String(str).trim().split(':')
@@ -29,13 +40,21 @@ export function parseTimeToSeconds(str) {
     const s = parseFloat(parts[2]) || 0
     return Math.max(0, h * 3600 + m * 60 + s)
   }
+  if (parts.length === 4) {
+    const h = parseFloat(parts[0]) || 0
+    const m = parseFloat(parts[1]) || 0
+    const s = parseFloat(parts[2]) || 0
+    const f = parseFloat(parts[3]) || 0
+    return Math.max(0, h * 3600 + m * 60 + s + f / 30)
+  }
   return 0
 }
 
 /**
- * Capture full-res snapshot frame from video element as Blob
+ * Capture full-res snapshot frame from video element as Blob,
+ * with optional CSS visual filters and text overlay.
  */
-export async function captureVideoSnapshot(videoEl) {
+export async function captureVideoSnapshot(videoEl, { filter = '', textOverlay = null } = {}) {
   if (!videoEl || !videoEl.videoWidth || !videoEl.videoHeight) {
     throw new Error('Video is not loaded or has invalid dimensions')
   }
@@ -43,7 +62,18 @@ export async function captureVideoSnapshot(videoEl) {
   canvas.width = videoEl.videoWidth
   canvas.height = videoEl.videoHeight
   const ctx = canvas.getContext('2d')
+
+  if (filter && filter !== 'none') {
+    ctx.filter = filter
+  }
+
   ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height)
+
+  // Draw optional text / lower third / watermark overlay
+  if (textOverlay && textOverlay.text) {
+    ctx.filter = 'none' // Reset filter for crisp text
+    drawCanvasOverlay(ctx, canvas.width, canvas.height, textOverlay)
+  }
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -51,6 +81,61 @@ export async function captureVideoSnapshot(videoEl) {
       else reject(new Error('Failed to generate snapshot blob'))
     }, 'image/png')
   })
+}
+
+function drawCanvasOverlay(ctx, w, h, { text, position = 'lowerThird', style = 'modern' }) {
+  if (!text) return
+  const fontSize = Math.max(18, Math.round(w * 0.035))
+  ctx.save()
+
+  if (position === 'lowerThird') {
+    const padY = Math.round(h * 0.08)
+    const boxH = fontSize * 2.2
+    const boxY = h - padY - boxH
+
+    // Background pill
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.75)'
+    ctx.beginPath()
+    ctx.roundRect(w * 0.05, boxY, Math.min(w * 0.9, ctx.measureText(text).width + fontSize * 3), boxH, 8)
+    ctx.fill()
+    ctx.strokeStyle = '#06b6d4'
+    ctx.lineWidth = 2
+    ctx.stroke()
+
+    // Text
+    ctx.font = `bold ${fontSize}px system-ui, -apple-system, sans-serif`
+    ctx.fillStyle = '#ffffff'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, w * 0.05 + fontSize, boxY + boxH / 2)
+  } else if (position === 'center') {
+    ctx.font = `900 ${Math.round(fontSize * 1.4)}px system-ui, -apple-system, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    // Shadow
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
+    ctx.shadowBlur = 12
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText(text, w / 2, h / 2)
+  } else if (position === 'topBanner') {
+    const bannerH = fontSize * 2
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+    ctx.fillRect(0, 0, w, bannerH)
+    ctx.font = `600 ${fontSize}px system-ui, -apple-system, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#38bdf8'
+    ctx.fillText(text, w / 2, bannerH / 2)
+  } else if (position === 'watermark') {
+    ctx.font = `600 ${Math.round(fontSize * 0.7)}px system-ui, -apple-system, sans-serif`
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'bottom'
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+    ctx.shadowBlur = 6
+    ctx.fillText(text, w - 24, h - 20)
+  }
+
+  ctx.restore()
 }
 
 /**
@@ -139,17 +224,59 @@ export async function renderTrimmedClip({
   startSec,
   endSec,
   playbackRate = 1.0,
+  filter = '',
+  textOverlay = null,
   onProgress,
   signal,
 }) {
   if (!videoEl) throw new Error('Video element required')
   const duration = Math.max(0.1, endSec - startSec)
 
-  const stream = (typeof videoEl.captureStream === 'function')
-    ? videoEl.captureStream()
-    : (typeof videoEl.mozCaptureStream === 'function')
-      ? videoEl.mozCaptureStream()
-      : null
+  let stream = null
+  let canvas = null
+  let animId = null
+  const hasFx = Boolean((filter && filter !== 'none') || (textOverlay && textOverlay.text))
+
+  if (hasFx && videoEl.videoWidth && videoEl.videoHeight) {
+    try {
+      canvas = document.createElement('canvas')
+      canvas.width = videoEl.videoWidth
+      canvas.height = videoEl.videoHeight
+      const ctx = canvas.getContext('2d')
+
+      const drawFrame = () => {
+        if (!canvas) return
+        ctx.save()
+        if (filter && filter !== 'none') ctx.filter = filter
+        ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height)
+        if (textOverlay && textOverlay.text) {
+          ctx.filter = 'none'
+          drawCanvasOverlay(ctx, canvas.width, canvas.height, textOverlay)
+        }
+        ctx.restore()
+        animId = requestAnimationFrame(drawFrame)
+      }
+      videoEl.addEventListener('play', () => { drawFrame() }, { once: true })
+
+      if (typeof canvas.captureStream === 'function') {
+        stream = canvas.captureStream(30)
+        const rawStream = (typeof videoEl.captureStream === 'function') ? videoEl.captureStream() : null
+        if (rawStream) {
+          rawStream.getAudioTracks().forEach(t => stream.addTrack(t))
+        }
+      }
+    } catch {
+      stream = null
+    }
+  }
+
+  if (!stream) {
+    stream = (typeof videoEl.captureStream === 'function')
+      ? videoEl.captureStream()
+      : (typeof videoEl.mozCaptureStream === 'function')
+        ? videoEl.mozCaptureStream()
+        : null
+  }
 
   if (!stream) {
     throw new Error('Your browser does not support video stream capture')

@@ -46,6 +46,16 @@ contextBridge.exposeInMainWorld('__YOGATIK_DESKTOP__', {
   openExternal: (url) => ipcRenderer.invoke('desktop:openExternal', url),
   loginWithGoogle: () => ipcRenderer.invoke('auth:google-desktop'),
   evalJs: (code, timeoutMs) => ipcRenderer.invoke('desktop:eval-js', { code, timeoutMs }),
+  // Dedicated Video Studio pop-out window controls
+  openVideoStudio: (params) => ipcRenderer.invoke('video-studio:open', params),
+  closeVideoStudio: () => ipcRenderer.invoke('video-studio:close'),
+  isVideoStudioOpen: () => ipcRenderer.invoke('video-studio:is-open'),
+  setVideoStudioAlwaysOnTop: (flag) => ipcRenderer.invoke('video-studio:set-always-on-top', flag),
+  onVideoStudioLoadMedia: (cb) => {
+    const handler = (_e, data) => { try { cb(data) } catch {} }
+    ipcRenderer.on('video-studio:load-media', handler)
+    return () => ipcRenderer.removeListener('video-studio:load-media', handler)
+  },
 })
 
 // Desktop AI Companion & Screen-Watcher bridge

@@ -105,8 +105,14 @@ window.addEventListener('error', (event) => {
 // the wrong language.
 try { applyDocumentLocale() } catch { /* never block boot on this */ }
 
-const isCompanion = new URLSearchParams(window.location.search).get('companion') === '1'
+const searchParams = new URLSearchParams(window.location.search)
+const isCompanion = searchParams.get('companion') === '1'
+const isVideoStudio = searchParams.get('video_studio') === '1' || searchParams.get('videostudio') === '1'
+
 if (isCompanion) document.documentElement.setAttribute('data-companion', '1')
+if (isVideoStudio) document.documentElement.setAttribute('data-video-studio', '1')
+
+const VideoStudioStandaloneView = React.lazy(() => import('./components/VideoStudioStandaloneView'))
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -120,7 +126,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             </div>
           </div>
         }>
-          {isCompanion ? <CompanionView /> : <App />}
+          {isCompanion ? (
+            <CompanionView />
+          ) : isVideoStudio ? (
+            <VideoStudioStandaloneView />
+          ) : (
+            <App />
+          )}
         </React.Suspense>
       </ErrorBoundary>
     </ToastProvider>

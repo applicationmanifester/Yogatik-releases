@@ -58,4 +58,38 @@ describe('VideoStudioModal Component', () => {
     fireEvent.click(vlcBtn)
     expect(window.__YOGATIK_DESKTOP__.openVlc).toHaveBeenCalledWith('https://example.com/test.mp4')
   })
+
+  it('triggers dedicated window pop-out when Dedicated Window button is clicked', async () => {
+    window.__YOGATIK_DESKTOP__.openVideoStudio = vi.fn().mockResolvedValue({ success: true, isOpened: true })
+    const handleClose = vi.fn()
+    render(<VideoStudioModal isOpen={true} onClose={handleClose} initialVideoUrl="https://example.com/test.mp4" />)
+    const popoutBtn = screen.getByTitle(/Pop out into a dedicated, resizable desktop window/i)
+    fireEvent.click(popoutBtn)
+    expect(window.__YOGATIK_DESKTOP__.openVideoStudio).toHaveBeenCalledWith(
+      expect.objectContaining({ videoUrl: 'https://example.com/test.mp4' })
+    )
+    await vi.waitFor(() => {
+      expect(handleClose).toHaveBeenCalled()
+    })
+  })
+
+  it('switches to Color FX tab and renders filter presets', () => {
+    render(<VideoStudioModal isOpen={true} onClose={() => {}} />)
+    const colorFxTab = screen.getByText('Color FX')
+    fireEvent.click(colorFxTab)
+    expect(screen.getByText('Live Color Grading')).toBeDefined()
+    expect(screen.getByText('Cinematic Warm')).toBeDefined()
+    expect(screen.getByText('Cyberpunk Neon')).toBeDefined()
+  })
+
+  it('switches to Titles tab and toggles title overlay', () => {
+    render(<VideoStudioModal isOpen={true} onClose={() => {}} />)
+    const titlesTab = screen.getByText('Titles')
+    fireEvent.click(titlesTab)
+    expect(screen.getByText('Enable Title Overlay')).toBeDefined()
+    const checkbox = screen.getByRole('checkbox')
+    fireEvent.click(checkbox)
+    expect(checkbox.checked).toBe(true)
+    expect(screen.getByText('Lower Third')).toBeDefined()
+  })
 })
