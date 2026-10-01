@@ -106,12 +106,16 @@ window.addEventListener('error', (event) => {
 try { applyDocumentLocale() } catch { /* never block boot on this */ }
 
 const searchParams = new URLSearchParams(window.location.search)
-const isCompanion = searchParams.get('companion') === '1'
-const isVideoStudio = searchParams.get('video_studio') === '1' || searchParams.get('videostudio') === '1'
-const isMediaStudio = searchParams.get('media_studio') === '1' || searchParams.get('mediastudio') === '1'
-const isTrading = searchParams.get('stock_trading') === '1' || searchParams.get('trading') === '1'
-const isTorrent = searchParams.get('torrent_downloader') === '1' || searchParams.get('torrents') === '1'
-const isDomainHub = searchParams.get('domain_hub') === '1' || searchParams.get('domainhub') === '1'
+const hashClean = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash
+const hashParams = new URLSearchParams(hashClean)
+const winType = (typeof window !== 'undefined' && (window.__YOGATIK_WINDOW_TYPE__ || window.__YOGATIK_DESKTOP__?.windowType)) || ''
+
+const isCompanion = searchParams.get('companion') === '1' || hashParams.get('companion') === '1' || winType === 'companion'
+const isVideoStudio = searchParams.get('video_studio') === '1' || searchParams.get('videostudio') === '1' || hashParams.get('video_studio') === '1' || hashParams.get('videostudio') === '1' || winType === 'video_studio'
+const isMediaStudio = searchParams.get('media_studio') === '1' || searchParams.get('mediastudio') === '1' || hashParams.get('media_studio') === '1' || hashParams.get('mediastudio') === '1' || winType === 'media_studio'
+const isTrading = searchParams.get('stock_trading') === '1' || searchParams.get('trading') === '1' || hashParams.get('stock_trading') === '1' || hashParams.get('trading') === '1' || winType === 'stock_trading'
+const isTorrent = searchParams.get('torrent_downloader') === '1' || searchParams.get('torrents') === '1' || hashParams.get('torrent_downloader') === '1' || hashParams.get('torrents') === '1' || winType === 'torrent_downloader'
+const isDomainHub = searchParams.get('domain_hub') === '1' || searchParams.get('domainhub') === '1' || hashParams.get('domain_hub') === '1' || hashParams.get('domainhub') === '1' || winType === 'domain_hub'
 
 if (isCompanion) document.documentElement.setAttribute('data-companion', '1')
 if (isVideoStudio) document.documentElement.setAttribute('data-video-studio', '1')

@@ -118,6 +118,10 @@ function createToolWindow(toolId, params = {}) {
       nodeIntegration: false,
       sandbox: false,
       backgroundThrottling: false,
+      additionalArguments: [
+        `--yogatik-window-type=${toolId}`,
+        `--yogatik-window-params=${encodeURIComponent(JSON.stringify(params || {}))}`,
+      ],
     },
   })
 
@@ -133,12 +137,48 @@ function createToolWindow(toolId, params = {}) {
     }
   }
 
-  if (isDevMode) {
-    win.loadURL(`http://localhost:5173/?${query.toString()}`)
-  } else {
-    win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), {
+  // Resolve best local bundle location (dist-electron is packaged; dist is fallback)
+  const candidatePaths = [
+    path.join(__dirname, '..', 'dist-electron', 'index.html'),
+    path.join(app.getAppPath(), 'dist-electron', 'index.html'),
+    path.join(__dirname, '..', 'dist', 'index.html'),
+  ]
+  const localBundlePath = candidatePaths.find(p => fs.existsSync(p)) || candidatePaths[0]
+
+  let hasFallenBack = false
+  const fallbackToLocal = () => {
+    if (hasFallenBack || !win || win.isDestroyed()) return
+    hasFallenBack = true
+    console.log(`[toolWindows] Loading local file for ${toolId}: ${localBundlePath}`)
+    win.loadFile(localBundlePath, {
       search: query.toString(),
+      hash: query.toString(),
+    }).catch(err => {
+      console.error(`[toolWindows] Failed to load local file for ${toolId}:`, err)
     })
+  }
+
+  win.webContents.once('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.warn(`[toolWindows] Load failed on ${validatedURL}: ${errorDescription} (${errorCode}). Falling back to local file.`)
+    fallbackToLocal()
+  })
+
+  // Detect dev server origin dynamically from active mainWindow if available
+  const mainWin = typeof mainWindowGetter === 'function' ? mainWindowGetter() : null
+  const mainUrl = (mainWin && !mainWin.isDestroyed()) ? (mainWin.webContents?.getURL() || '') : ''
+
+  if (mainUrl.startsWith('http://') || mainUrl.startsWith('https://')) {
+    try {
+      const u = new URL(mainUrl)
+      const targetUrl = `${u.origin}/?${query.toString()}#${query.toString()}`
+      win.loadURL(targetUrl).catch(() => fallbackToLocal())
+    } catch {
+      fallbackToLocal()
+    }
+  } else if (isDevMode) {
+    win.loadURL(`http://localhost:5173/?${query.toString()}#${query.toString()}`).catch(() => fallbackToLocal())
+  } else {
+    fallbackToLocal()
   }
 
   win.once('ready-to-show', () => {

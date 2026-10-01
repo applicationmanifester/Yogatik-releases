@@ -26,11 +26,14 @@ const FINGERPRINT_SCRIPT = `(() => {
     enumerable: true
   });
 
-  // Randomise canvas fingerprint
+  // Randomise canvas fingerprint (per-navigation randomization)
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   ctx.textBaseline = 'top';
-  ctx.font = '14px 'Arial'';
+  // Randomized font metrics + noise for entropy
+  const fonts = ['Arial', 'Helvetica', 'Tahoma', 'Verdana', 'sans-serif'];
+  const randomFont = fonts[Math.floor(Math.random() * fonts.length)];
+  ctx.font = '14px "' + randomFont + '"';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#f60';
   ctx.fillRect(125,1,62,20);
@@ -43,7 +46,15 @@ const FINGERPRINT_SCRIPT = `(() => {
 })();`;
 
 function injectFingerprintProtection(tabView) {
+  // Inject on creation
   tabView.webContents.executeJavaScript(FINGERPRINT_SCRIPT).catch(() => {})
+  // Re-inject on every navigation to protect against SPA route changes
+  tabView.webContents.on('did-navigate', () => {
+    tabView.webContents.executeJavaScript(FINGERPRINT_SCRIPT).catch(() => {})
+  })
+  tabView.webContents.on('did-navigate-in-page', () => {
+    tabView.webContents.executeJavaScript(FINGERPRINT_SCRIPT).catch(() => {})
+  })
 }
 
 module.exports = { injectFingerprintProtection }

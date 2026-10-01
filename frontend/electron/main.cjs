@@ -209,10 +209,24 @@ function createWindow() {
   // before it is ready would call .show() on null here.
   mainWindow.once('ready-to-show', () => { safeWin(mainWindow, w => w.show()) })
 
+  const candidateElectronHtml = [
+    path.join(__dirname, '..', 'dist-electron', 'index.html'),
+    path.join(app.getAppPath(), 'dist-electron', 'index.html'),
+  ].find(p => fs.existsSync(p)) || path.join(__dirname, '..', 'dist-electron', 'index.html')
+
+  mainWindow.webContents.once('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    if (validatedURL && validatedURL.startsWith('http://localhost:5173')) {
+      console.warn(`[main] Dev server unreachable (${errorDescription}). Falling back to local dist-electron bundle.`)
+      mainWindow.loadFile(candidateElectronHtml)
+    }
+  })
+
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.loadURL('http://localhost:5173').catch(() => {
+      mainWindow.loadFile(candidateElectronHtml)
+    })
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist-electron', 'index.html'))
+    mainWindow.loadFile(candidateElectronHtml)
   }
 
   // External links open in the user's default browser, not inside the Electron window.
@@ -498,7 +512,7 @@ if (!gotLock) {
       // Native BitTorrent P2P download & swarm manager
       registerTorrentIpc(getWindow)
       // Dedicated Video Studio & Precision Trimmer window manager
-      registerVideoStudioIpc({ dev: isDev })
+      registerVideoStudioIpc({ dev: isDev, getMainWindow: getWindow })
       // Dedicated Tool Windows (Media Studio, Trading Terminal, Torrent Downloader, Domain Hub)
       registerToolWindowsIpc({ dev: isDev, getMainWindow: getWindow })
     })

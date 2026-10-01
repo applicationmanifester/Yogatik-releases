@@ -50,6 +50,7 @@ function trackBounds(w) {
 
 let win = null
 let isDev = false
+let mainWindowGetter = null
 
 function getWindow() {
   return (win && !win.isDestroyed()) ? win : null
@@ -83,6 +84,10 @@ function createVideoStudioWindow({ videoUrl = '', videoName = '', filePath = '' 
       nodeIntegration: false,
       sandbox: false,
       backgroundThrottling: false,
+      additionalArguments: [
+        `--yogatik-window-type=video_studio`,
+        `--yogatik-window-params=${encodeURIComponent(JSON.stringify({ videoUrl, videoName, filePath }))}`,
+      ],
     },
   })
 
@@ -92,12 +97,48 @@ function createVideoStudioWindow({ videoUrl = '', videoName = '', filePath = '' 
   if (videoName) query.set('name', videoName)
   if (filePath) query.set('path', filePath)
 
-  if (isDev) {
-    win.loadURL(`http://localhost:5173/?${query.toString()}`)
-  } else {
-    win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), {
+  // Resolve best local bundle location (dist-electron is packaged; dist is fallback)
+  const candidatePaths = [
+    path.join(__dirname, '..', 'dist-electron', 'index.html'),
+    path.join(app.getAppPath(), 'dist-electron', 'index.html'),
+    path.join(__dirname, '..', 'dist', 'index.html'),
+  ]
+  const localBundlePath = candidatePaths.find(p => fs.existsSync(p)) || candidatePaths[0]
+
+  let hasFallenBack = false
+  const fallbackToLocal = () => {
+    if (hasFallenBack || !win || win.isDestroyed()) return
+    hasFallenBack = true
+    console.log(`[videoStudio] Loading local file: ${localBundlePath}`)
+    win.loadFile(localBundlePath, {
       search: query.toString(),
+      hash: query.toString(),
+    }).catch(err => {
+      console.error(`[videoStudio] Failed to load local file:`, err)
     })
+  }
+
+  win.webContents.once('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.warn(`[videoStudio] Load failed on ${validatedURL}: ${errorDescription} (${errorCode}). Falling back to local file.`)
+    fallbackToLocal()
+  })
+
+  // Detect dev server origin dynamically from active mainWindow if available
+  const mainWin = typeof mainWindowGetter === 'function' ? mainWindowGetter() : null
+  const mainUrl = (mainWin && !mainWin.isDestroyed()) ? (mainWin.webContents?.getURL() || '') : ''
+
+  if (mainUrl.startsWith('http://') || mainUrl.startsWith('https://')) {
+    try {
+      const u = new URL(mainUrl)
+      const targetUrl = `${u.origin}/?${query.toString()}#${query.toString()}`
+      win.loadURL(targetUrl).catch(() => fallbackToLocal())
+    } catch {
+      fallbackToLocal()
+    }
+  } else if (isDev) {
+    win.loadURL(`http://localhost:5173/?${query.toString()}#${query.toString()}`).catch(() => fallbackToLocal())
+  } else {
+    fallbackToLocal()
   }
 
   win.once('ready-to-show', () => {
@@ -112,8 +153,11 @@ function createVideoStudioWindow({ videoUrl = '', videoName = '', filePath = '' 
   return win
 }
 
-function registerVideoStudioIpc({ dev = false } = {}) {
+function registerVideoStudioIpc({ dev = false, getMainWindow = null } = {}) {
   isDev = !!dev
+  if (typeof getMainWindow === 'function') {
+    mainWindowGetter = getMainWindow
+  }
 
   ipcMain.handle('video-studio:open', (_e, params = {}) => {
     const w = createVideoStudioWindow(params)

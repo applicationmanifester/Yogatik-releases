@@ -789,13 +789,30 @@
 }
 
 /* Standalone Window & Popout Styles */
+html[data-video-studio="1"],
+html[data-media-studio="1"],
+html[data-stock-trading="1"],
+html[data-torrent-downloader="1"],
+html[data-domain-hub="1"] {
+  width: 100vw !important;
+  height: 100vh !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #0a0e14 !important;
+}
+
 .video-studio-standalone-root {
+  position: fixed;
+  inset: 0;
   width: 100vw;
   height: 100vh;
   margin: 0;
   padding: 0;
   overflow: hidden;
   background: #080c14;
+  display: flex;
+  flex-direction: column;
 }
 
 .video-studio-container.is-standalone,
@@ -807,16 +824,23 @@
   border-radius: 0 !important;
   border: none !important;
   box-shadow: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 !important;
 }
 
 /* Media Studio Standalone */
 .media-studio-standalone-root {
+  position: fixed;
+  inset: 0;
   width: 100vw;
   height: 100vh;
   margin: 0;
   padding: 0;
   overflow: hidden;
   background: #0a0e17;
+  display: flex;
+  flex-direction: column;
 }
 
 [data-media-studio="1"] .studio-backdrop,
@@ -827,7 +851,8 @@
   margin: 0 !important;
   width: 100vw !important;
   height: 100vh !important;
-  display: block !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 [data-media-studio="1"] .studio-modal-container,
@@ -839,16 +864,22 @@
   border-radius: 0 !important;
   border: none !important;
   box-shadow: none !important;
+  overflow-y: auto !important;
+  flex: 1 !important;
 }
 
 /* Trading Terminal Standalone */
 .trading-standalone-root {
+  position: fixed;
+  inset: 0;
   width: 100vw;
   height: 100vh;
   margin: 0;
   padding: 0;
   overflow: hidden;
   background: #0c0f17;
+  display: flex;
+  flex-direction: column;
 }
 
 [data-stock-trading="1"] .modal-overlay,
@@ -859,7 +890,8 @@
   margin: 0 !important;
   width: 100vw !important;
   height: 100vh !important;
-  display: block !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 [data-stock-trading="1"] .trading-modal,
@@ -871,16 +903,22 @@
   border-radius: 0 !important;
   border: none !important;
   box-shadow: none !important;
+  overflow-y: auto !important;
+  flex: 1 !important;
 }
 
 /* Torrent Downloader Standalone */
 .torrent-standalone-root {
+  position: fixed;
+  inset: 0;
   width: 100vw;
   height: 100vh;
   margin: 0;
   padding: 0;
   overflow: hidden;
   background: #0c0f17;
+  display: flex;
+  flex-direction: column;
 }
 
 [data-torrent-downloader="1"] .modal-overlay,
@@ -891,7 +929,8 @@
   margin: 0 !important;
   width: 100vw !important;
   height: 100vh !important;
-  display: block !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 [data-torrent-downloader="1"] .modal-content,
@@ -903,16 +942,22 @@
   border-radius: 0 !important;
   border: none !important;
   box-shadow: none !important;
+  overflow-y: auto !important;
+  flex: 1 !important;
 }
 
 /* Domain & Social Hub Standalone */
 .domain-hub-standalone-root {
+  position: fixed;
+  inset: 0;
   width: 100vw;
   height: 100vh;
   margin: 0;
   padding: 0;
   overflow: hidden;
   background: #0f1118;
+  display: flex;
+  flex-direction: column;
 }
 
 [data-domain-hub="1"] .domain-hub-overlay,
@@ -924,6 +969,7 @@
   width: 100vw !important;
   height: 100vh !important;
   display: flex !important;
+  flex-direction: column !important;
 }
 
 [data-domain-hub="1"] .domain-hub-modal,
@@ -935,6 +981,8 @@
   border-radius: 0 !important;
   border: none !important;
   box-shadow: none !important;
+  overflow-y: auto !important;
+  flex: 1 !important;
 }
 
 .video-studio-container.drag-over {

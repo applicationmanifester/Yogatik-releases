@@ -1,7 +1,7 @@
 /**
  * useA11y — Accessibility utilities and live region management
  */
-import { createContext, useContext, useRef, useCallback, useEffect, useState } from 'react'
+import React, { createContext, useContext, useRef, useCallback, useEffect, useState } from 'react'
 
 const A11yContext = createContext(null)
 

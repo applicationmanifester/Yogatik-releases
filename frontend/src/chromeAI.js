@@ -215,6 +215,8 @@ export async function streamChromeAI({ model, messages, temperature = 0.7, tools
     // here is cheap and turns a silent multi-second stall into a status line
     // that keeps moving.
     const replayCount = turns.length - 1
+    let replayFailures = 0
+    let contextTrimmed = false
     for (let i = 0; i < replayCount; i++) {
       if (signal?.aborted) break
       const t = turns[i]
@@ -225,9 +227,29 @@ export async function streamChromeAI({ model, messages, temperature = 0.7, tools
       // plain session — tag it so the replayed transcript still reads as a
       // conversation rather than a wall of unattributed user turns.
       const line = t.role === 'assistant' ? `[assistant]: ${text}` : text
-      await session.prompt(line).catch(() => {})
+      // Spec-grounded overflow guard: measureInputUsage()/inputQuota report
+      // exactly what the next prompt would consume; past ~85% of quota stop
+      // replaying rather than risk a throw or silent truncation mid-history.
+      try {
+        if (typeof session.measureInputUsage === 'function' && typeof session.inputQuota === 'number' && session.inputQuota > 0) {
+          const needed = await session.measureInputUsage(line)
+          if (typeof needed === 'number' && needed >= session.inputQuota * 0.85) {
+            contextTrimmed = true
+            break
+          }
+        }
+      } catch { /* quota introspection is optional; absence is fine */ }
+      const ok = await session.prompt(line).then(() => true).catch(() => false)
+      if (!ok) replayFailures++
     }
     if (signal?.aborted) { onDone?.(); return }
+    if (replayFailures > 0) {
+      // A failed replay means this fresh session is missing turns from the
+      // real history - never present that as a silently confident answer.
+      onStatus?.(`⚠️ ${replayFailures} of ${replayCount} earlier turn(s) failed to replay - this reply may be missing context.`)
+    } else if (contextTrimmed) {
+      onStatus?.('⚠️ Context nearly full - earlier turns were trimmed from this reply.')
+    }
 
     onStatus?.('Generating on-device…')
     const lastText = textOf(turns[turns.length - 1].content)

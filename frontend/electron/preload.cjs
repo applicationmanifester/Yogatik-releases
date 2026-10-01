@@ -35,8 +35,31 @@ contextBridge.exposeInMainWorld('__TAURI__', { core: { invoke } })
 // Marker so the renderer can tell it's the Electron build if it ever needs to.
 contextBridge.exposeInMainWorld('__YOGATIK_ELECTRON__', true)
 
+let detectedWindowType = ''
+let detectedWindowParams = {}
+try {
+  const typeArg = (process.argv || []).find(a => typeof a === 'string' && a.startsWith('--yogatik-window-type='))
+  if (typeArg) {
+    detectedWindowType = typeArg.split('=')[1] || ''
+  }
+  const paramsArg = (process.argv || []).find(a => typeof a === 'string' && a.startsWith('--yogatik-window-params='))
+  if (paramsArg) {
+    const raw = paramsArg.slice('--yogatik-window-params='.length)
+    detectedWindowParams = JSON.parse(decodeURIComponent(raw))
+  }
+} catch {}
+
+if (detectedWindowType) {
+  contextBridge.exposeInMainWorld('__YOGATIK_WINDOW_TYPE__', detectedWindowType)
+}
+if (detectedWindowParams && Object.keys(detectedWindowParams).length > 0) {
+  contextBridge.exposeInMainWorld('__YOGATIK_WINDOW_PARAMS__', detectedWindowParams)
+}
+
 // Desktop native system controls (Always on top, Explorer reveal, system hardware specs)
 contextBridge.exposeInMainWorld('__YOGATIK_DESKTOP__', {
+  windowType: detectedWindowType || null,
+  windowParams: detectedWindowParams || {},
   isAlwaysOnTop: () => ipcRenderer.invoke('desktop:isAlwaysOnTop'),
   toggleAlwaysOnTop: (flag) => ipcRenderer.invoke('desktop:toggleAlwaysOnTop', flag),
   getSystemInfo: () => ipcRenderer.invoke('desktop:getSystemInfo'),
