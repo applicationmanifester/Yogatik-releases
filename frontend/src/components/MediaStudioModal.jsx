@@ -10,7 +10,7 @@ import {
   saveStoredStudioRun, deleteStoredStudioRun, toggleFavoriteStudioRun
 } from '../mediaStudioCatalog'
 
-export function MediaStudioModal({ isOpen, onClose, onOpenVideoStudio }) {
+export function MediaStudioModal({ isOpen, onClose, onOpenVideoStudio, isStandalone = false }) {
   const [category, setCategory] = useState('all')
   const [selectedModelId, setSelectedModelId] = useState('kling-3-pro')
   const [searchQuery, setSearchQuery] = useState('')
@@ -208,6 +208,17 @@ export function MediaStudioModal({ isOpen, onClose, onOpenVideoStudio }) {
     setActiveViewerRun(null)
   }
 
+  const handlePopOut = () => {
+    if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.openMediaStudio) {
+      window.__YOGATIK_DESKTOP__.openMediaStudio()
+      onClose?.()
+    } else {
+      const popupUrl = `${window.location.origin}${window.location.pathname}?media_studio=1`
+      window.open(popupUrl, 'YogatikMediaStudio', 'width=1300,height=860')
+      onClose?.()
+    }
+  }
+
   if (!isOpen) return null
 
   return (
@@ -238,6 +249,16 @@ export function MediaStudioModal({ isOpen, onClose, onOpenVideoStudio }) {
               <Key size={13} />
               {apiKey ? 'API Key Configured' : 'Connect Key'}
             </button>
+            {!isStandalone && (
+              <button
+                className="icon-btn popout-btn"
+                onClick={handlePopOut}
+                title="Pop out to dedicated window"
+                aria-label="Pop out to dedicated window"
+              >
+                <ExternalLink size={16} />
+              </button>
+            )}
             <button className="icon-btn" onClick={onClose} title="Close Studio" aria-label="Close Studio">
               <X size={18} />
             </button>

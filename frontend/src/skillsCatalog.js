@@ -1,5 +1,5 @@
 /**
- * Yogatik Studio — Autonomous Skills & Workflow Engine (v11.6.0 Compatible)
+ * Yogatik Studio — Autonomous Skills & Workflow Engine (v12.0.0 Compatible)
  * 
  * Provides 100% offline, standalone discovery, dynamic @skill injection,
  * role-based bundles, and execution workflows matching the Stable Skills Manifest v1.

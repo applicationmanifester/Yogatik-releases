@@ -1,38 +1,45 @@
-import React, { useState } from 'react'
-import { User } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { User, RefreshCw, ExternalLink } from 'lucide-react'
 import { Modal } from './Modal'
-import { loginWithGoogle } from '../api'
+import { loginWithGoogle, preloadAuth } from '../api'
 
 // ─── Auth Modal ───
 function AuthModal({ onClose, onAuth }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-
   const [redirecting, setRedirecting] = useState(false)
   const [slow, setSlow] = useState(false)
 
-  const handleGoogleSignIn = async () => {
+  useEffect(() => {
+    // Warm up Firebase Auth so user gesture isn't lost to lazy dynamic imports
+    preloadAuth().catch(() => {})
+  }, [])
+
+  const handleGoogleSignIn = async (options = {}) => {
     setError('')
     setSlow(false)
     setLoading(true)
+    if (options.preferRedirect) {
+      setRedirecting(true)
+    }
     // Never leave the user staring at "Signing in…" with no way out.
-    const slowTimer = setTimeout(() => setSlow(true), 15000)
+    const slowTimer = setTimeout(() => setSlow(true), 12000)
     const hardTimer = setTimeout(() => {
       setLoading(false)
-      setError('Sign-in took too long. Please try again.')
-    }, 60000)
+      setSlow(true)
+      setError('Sign-in is taking longer than expected. You can retry or switch to full-page sign-in.')
+    }, 45000)
     try {
-      const user = await loginWithGoogle()
+      const user = await loginWithGoogle(options)
       if (!user) {
-        // Redirect flow: this page is about to be replaced by Google's. Closing
-        // the modal and calling onAuth(null) here wiped the session that was
-        // about to arrive.
+        // Redirect flow: this page is about to be replaced by Google's.
         setRedirecting(true)
         return
       }
       onAuth(user)
       onClose()
     } catch (err) {
+      console.error('[AuthModal] Google Sign-In failed:', err)
       setError(err.message || 'Google Sign-In failed')
     } finally {
       clearTimeout(slowTimer)
@@ -49,9 +56,9 @@ function AuthModal({ onClose, onAuth }) {
           </p>
           <button
             className="new-chat-btn"
-            onClick={handleGoogleSignIn}
+            onClick={() => handleGoogleSignIn()}
             disabled={loading && !slow}
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '10px', width: '100%' }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '10px', width: '100%', minHeight: '44px' }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24">
               <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.3 9 5 12 5z"/>
@@ -62,10 +69,19 @@ function AuthModal({ onClose, onAuth }) {
             {redirecting ? 'Opening Google…' : (loading && !slow) ? 'Signing in…' : slow ? 'Retry Sign in with Google' : 'Sign in with Google'}
           </button>
           {slow && !redirecting && (
-            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '12px' }}>
-              Still waiting on Google. Close any sign-in tab that opened and tap the button
-              again to retry or switch to full-page sign-in.
-            </p>
+            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
+                Still waiting on Google. If popup was blocked or closed:
+              </p>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => handleGoogleSignIn({ preferRedirect: true })}
+                style={{ width: '100%', fontSize: '12px', padding: '10px 14px', minHeight: '40px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                <ExternalLink size={14} /> Try Full-Page Sign-In (Redirect)
+              </button>
+            </div>
           )}
           {redirecting && (
             <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '12px' }}>

@@ -1,4 +1,5 @@
-import { renderHook, act } from '@testing-library/react-hooks';
+import { describe, test, expect } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
 import { useAdaptivePolling } from './useAdaptivePolling';
 
 describe('useAdaptivePolling', () => {
@@ -15,7 +16,7 @@ describe('useAdaptivePolling', () => {
       result.current.noteObservation({ changed: false, engaged: false });
     });
     expect(result.current.intervalMs).toBeCloseTo(6000 * 1.6); // 9600
-    expect(result.current.cadenceDesc).toMatch(/every ~16s/);
+    expect(result.current.cadenceDesc).toMatch(/every 10s/);
   });
 
   test('resets to floor after a change', () => {

@@ -717,8 +717,13 @@
     -webkit-backdrop-filter: blur(4px);
   }
 
+  /* Modal overlays MUST always sit on top of mobile sidebar (z-index 250) and sidebar-overlay (z-index 240) */
+  .modal-overlay {
+    z-index: 5000 !important;
+  }
+
   /* Touch-friendly min targets for mobile UI */
-  .send-btn, .mic-btn, .upload-btn, .sidebar-toggle-btn {
+  .send-btn, .mic-btn, .upload-btn, .sidebar-toggle-btn, .auth-btn {
     min-width: 44px;
     min-height: 44px;
   }

@@ -203,6 +203,18 @@ const CHANNELS = {
   'clipboard:write': F,   // putting text on the clipboard is not reading the system
   'companion:toggle': F, 'companion:show': F, 'companion:hide': F,
   'companion:close': F, 'companion:resize': F, 'companion:set-always-on-top': F,
+  // Video Studio window panel - same treatment as companion windows:
+  // opening/closing/pinning a panel of this app is window management,
+  // not a privileged operation.
+  'video-studio:open': F, 'video-studio:close': F,
+  'video-studio:is-open': F, 'video-studio:set-always-on-top': F,
+  // Standalone tool windows (Media Studio, Trading Terminal, Torrent, Domain Hub)
+  'media-studio:open': F, 'media-studio:close': F, 'media-studio:is-open': F,
+  'trading-terminal:open': F, 'trading-terminal:close': F, 'trading-terminal:is-open': F,
+  'torrent-downloader:open': F, 'torrent-downloader:close': F, 'torrent-downloader:is-open': F,
+  'domain-hub:open': F, 'domain-hub:close': F, 'domain-hub:is-open': F,
+  'tool-window:open': F, 'tool-window:close': F,
+  'desktop:send-prompt-to-main': F,
   // Buying is not a paid feature.
   'entitlement:get': F, 'entitlement:refresh': F, 'entitlement:checkout': F,
   'entitlement:sign-out': F,

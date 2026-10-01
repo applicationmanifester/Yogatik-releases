@@ -1290,12 +1290,12 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
       <div className="tool-result-card social-post-card">
         <div className="tool-result-header">
           <MessageSquare size={14} /> Social Content Blueprint: {result.platformName}
-          <span className="tool-result-meta">{result.contentType?.replace('_', ' ')} · {result.characterLimit} chars max</span>
+          <span className="tool-result-meta">{((result.contentType ?? '').toString()).replace('_', ' ')} · {result.characterLimit} chars max</span>
         </div>
         <div className="social-post-info">
           <div><strong>Topic:</strong> {result.topic}</div>
           <div><strong>Tone:</strong> {result.tone} · <strong>Audience:</strong> {result.audience}</div>
-          {result.guidelines && <div className="social-post-guideline">{result.guidelines}</div>}
+          {result.guidelines && <div className="social-post-guideline">{String(result.guidelines)}</div>}
         </div>
       </div>
     )

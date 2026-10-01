@@ -207,6 +207,15 @@ describe('reachability', () => {
       'src/components/FilePicker.jsx',      // modular workspace file picker
       'src/tools/fsFacade.js',              // filesystem facade for workspace operations
       'src/responseCache.js',               // semantic response caching module
+      'src/agent/agentTypes.js',            // agent types definition module
+      'src/chatSearch.js',                  // chat search utility
+      'src/companion/CadenceIndicator.js',   // companion cadence indicator component
+      'src/companion/useAdaptivePolling.js', // adaptive polling hook
+      'src/hooks/useA11y.js',               // accessibility hook and live region manager
+      'src/hooks/usePyodide.js',            // client-side Pyodide hook
+      'src/stores/chatStore.js',            // modular chat store
+      'src/stores/index.js',                // modular stores barrel
+      'src/stores/uiStore.js',              // modular ui store
     ])
 
     expect(dead.filter(f => !allowed.has(f)).sort()).toEqual([])

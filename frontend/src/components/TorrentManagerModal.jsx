@@ -41,8 +41,19 @@ import {
   formatEta
 } from '../tools/torrentClient'
 
-export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
+export default function TorrentManagerModal({ isOpen, onClose, showToast, isStandalone = false }) {
   const [torrents, setTorrents] = useState([])
+
+  const handlePopOut = () => {
+    if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.openTorrentDownloader) {
+      window.__YOGATIK_DESKTOP__.openTorrentDownloader()
+      onClose?.()
+    } else {
+      const popupUrl = `${window.location.origin}${window.location.pathname}?torrent_downloader=1`
+      window.open(popupUrl, 'YogatikTorrentDownloader', 'width=1100,height=780')
+      onClose?.()
+    }
+  }
   const [magnetInput, setMagnetInput] = useState('')
   const [targetPath, setTargetPath] = useState('')
   const [loading, setLoading] = useState(false)
@@ -643,16 +654,16 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
       <div
         className="modal-content"
         style={{
-          width: isMaximized ? '96vw' : '900px',
-          maxWidth: '96vw',
-          height: isMaximized ? '94vh' : 'auto',
-          maxHeight: '94vh',
+          width: isStandalone ? '100vw' : (isMaximized ? '96vw' : '900px'),
+          maxWidth: isStandalone ? '100vw' : '96vw',
+          height: isStandalone ? '100vh' : (isMaximized ? '94vh' : 'auto'),
+          maxHeight: isStandalone ? '100vh' : '94vh',
           display: 'flex',
           flexDirection: 'column',
-          borderRadius: '16px',
+          borderRadius: isStandalone ? '0px' : '16px',
           background: 'var(--bg-secondary, #18191e)',
-          border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
-          boxShadow: '0 24px 48px rgba(0, 0, 0, 0.5)',
+          border: isStandalone ? 'none' : '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
+          boxShadow: isStandalone ? 'none' : '0 24px 48px rgba(0, 0, 0, 0.5)',
           overflow: 'hidden',
           transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
         }}
@@ -707,6 +718,17 @@ export default function TorrentManagerModal({ isOpen, onClose, showToast }) {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {!isStandalone && (
+              <button
+                className="icon-btn popout-btn"
+                onClick={handlePopOut}
+                style={{ padding: '6px', borderRadius: '8px', cursor: 'pointer', color: '#9ca3af' }}
+                title="Pop out to dedicated window"
+                aria-label="Pop out to dedicated window"
+              >
+                <ExternalLink size={16} />
+              </button>
+            )}
             <button
               className="icon-btn"
               onClick={() => setIsMinimized(true)}

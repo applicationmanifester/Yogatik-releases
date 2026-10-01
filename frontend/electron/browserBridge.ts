@@ -102,6 +102,7 @@ interface PlaywrightContext {
   clearCookies(): Promise<void>
   storageState(): Promise<StorageState>
   pages(): PlaywrightPage[]
+  cookies(urls?: string | string[]): Promise<Cookie[]>
 }
 
 interface PlaywrightPage {
@@ -112,7 +113,7 @@ interface PlaywrightPage {
   reload(): Promise<void>
   screenshot(options?: any): Promise<Buffer>
   pdf(options?: any): Promise<Buffer>
-  evaluate(script: string, args?: any[]): Promise<any>
+  evaluate(script: string | ((...args: any[]) => any), ...args: any[]): Promise<any>
   click(selector: string, options?: any): Promise<void>
   fill(selector: string, value: string, options?: any): Promise<void>
   waitForSelector(selector: string, options?: any): Promise<any>
@@ -120,6 +121,7 @@ interface PlaywrightPage {
   title(): Promise<string>
   url(): string
   on(event: string, listener: (...args: any[]) => void): this
+  off?(event: string, listener: (...args: any[]) => void): this
   keyboard: { press(key: string, options?: any): Promise<void>; type(text: string, options?: any): Promise<void> }
   mouse: { click(x: number, y: number, options?: any): Promise<void> }
   setViewportSize(viewport: { width: number; height: number }): Promise<void>
@@ -171,8 +173,8 @@ async function cleanupSession(sessionId: string): Promise<void> {
   const page = pages.get(sessionId)
   if (page) {
     const handler = pageCrashHandlers.get(sessionId)
-    if (handler) {
-      try { page.off('crash', handler) } catch {}
+    if (handler && typeof (page as any).off === 'function') {
+      try { (page as any).off('crash', handler) } catch {}
     }
     try { await page.close() } catch {}
     pages.delete(sessionId)
@@ -319,8 +321,8 @@ export function registerBrowserBridge(): void {
         url: page.url(),
         title: await page.title()
       }
-    } catch (error) {
-      throw new Error(`Navigation failed for session ${request.sessionId}: ${error.message}`)
+    } catch (error: any) {
+      throw new Error(`Navigation failed for session ${request.sessionId}: ${error?.message || error}`)
     }
   })
 
@@ -417,8 +419,8 @@ export function registerBrowserBridge(): void {
       const result = await page.evaluate(script, ...args)
       // Ensure result is serializable
       return JSON.parse(JSON.stringify(result))
-    } catch (error) {
-      throw new Error(`Script evaluation failed: ${error.message}`)
+    } catch (error: any) {
+      throw new Error(`Script evaluation failed: ${error?.message || error}`)
     }
   })
 

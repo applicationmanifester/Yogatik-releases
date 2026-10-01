@@ -1,5 +1,5 @@
 import React from 'react'
-import { Loader2, CircleCheck, CircleAlert, RotateCw, X } from 'lucide-react'
+import { Loader2, CircleCheck, CircleAlert, RotateCw, X, Wrench } from 'lucide-react'
 import { subscribeToolStatus, isLongRunning, friendlyError } from '../toolStatus'
 
 /**
@@ -59,14 +59,31 @@ export default function ToolStatusPanel({ onRetry }) {
               {rec.phase === 'done' && `done in ${elapsed.toFixed(1)}s`}
               {rec.phase === 'error' && friendlyError(rec)}
             </span>
-            {rec.phase === 'error' && onRetry && (
-              <button
-                className="tool-status-retry"
-                title="Retry this tool"
-                onClick={() => onRetry(rec.name, rec.args)}
-              >
-                <RotateCw size={11} /> Retry
-              </button>
+            {rec.phase === 'error' && (
+              <>
+                {onRetry && (
+                  <button
+                    className="tool-status-retry"
+                    title="Retry this tool"
+                    onClick={() => onRetry(rec.name, rec.args)}
+                  >
+                    <RotateCw size={11} /> Retry
+                  </button>
+                )}
+                {rec.diagnosis && (
+                  <button
+                    className="tool-status-fix"
+                    title="Suggested fix"
+                    onClick={() => {
+                      const fixPrompt = rec.diagnosis.suggestion || `How can I fix this error with the ${rec.name} tool?`;
+                      console.log('Fix suggestion triggered:', fixPrompt);
+                      // TODO: Integrate with chat sending mechanism
+                    }}
+                  >
+                    <Wrench size={11} /> Fix
+                  </button>
+                )}
+              </>
             )}
             {rec.phase === 'error' && (
               <button

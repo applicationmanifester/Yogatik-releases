@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { X } from 'lucide-react'
+import { X, ExternalLink } from 'lucide-react'
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
@@ -8,7 +8,7 @@ const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:n
  * restored to whatever opened it. Every dialog in the app uses this so the
  * keyboard behaviour can't drift apart between them.
  */
-export function Modal({ title, icon, onClose, children, footer, labelledBy = 'modal-title', className = '', embedded = false }) {
+export function Modal({ title, icon, onClose, children, footer, labelledBy = 'modal-title', className = '', embedded = false, onPopOut }) {
   const ref = useRef(null)
   const restoreTo = useRef(null)
   const inertRootsRef = useRef([])
@@ -92,7 +92,19 @@ export function Modal({ title, icon, onClose, children, footer, labelledBy = 'mo
       >
         <div className="modal-header">
           <h2 id={labelledBy}>{icon} {title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close dialog"><X size={18} /></button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {onPopOut && (
+              <button
+                className="icon-btn popout-btn"
+                onClick={onPopOut}
+                title="Pop out to dedicated window"
+                aria-label="Pop out to dedicated window"
+              >
+                <ExternalLink size={16} />
+              </button>
+            )}
+            <button className="icon-btn" onClick={onClose} aria-label="Close dialog"><X size={18} /></button>
+          </div>
         </div>
         {children}
         {footer}

@@ -66,8 +66,19 @@ import {
 } from '../trading/tradeJournal'
 import { evaluateExplainableSignal } from '../trading/explainableSignal'
 
-export function TradingModal({ isOpen, onClose }) {
+export function TradingModal({ isOpen, onClose, isStandalone = false }) {
   const [activeTab, setActiveTab] = useState('positions') // 'positions' | 'orders' | 'scanner' | 'settings'
+
+  const handlePopOut = () => {
+    if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.openTradingTerminal) {
+      window.__YOGATIK_DESKTOP__.openTradingTerminal()
+      onClose?.()
+    } else {
+      const popupUrl = `${window.location.origin}${window.location.pathname}?stock_trading=1`
+      window.open(popupUrl, 'YogatikStockTrading', 'width=1320,height=880')
+      onClose?.()
+    }
+  }
   const [config, setConfig] = useState(getTradingConfig())
   const [requestToken, setRequestToken] = useState('')
   const [directAccessToken, setDirectAccessToken] = useState('')
@@ -619,6 +630,7 @@ export function TradingModal({ isOpen, onClose }) {
   return (
     <Modal
       onClose={onClose}
+      onPopOut={!isStandalone ? handlePopOut : undefined}
       title="Trading Terminal & Live Monitor"
       icon={<TrendingUp size={20} style={{ color: 'var(--accent, #ff6b35)' }} />}
       className="trading-modal"

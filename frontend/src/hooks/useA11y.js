@@ -157,10 +157,10 @@ export function A11yProvider({ children }) {
     announce(message, priority)
   }, [])
   
-  return (
-    <A11yContext.Provider value={{ announce: announceToRegion, assertive: (message) => announce(message, 'assertive') }}>
-      {children}
-    </A11yContext.Provider>
+  return React.createElement(
+    A11yContext.Provider,
+    { value: { announce: announceToRegion, assertive: (message) => announce(message, 'assertive') } },
+    children
   )
 }
 

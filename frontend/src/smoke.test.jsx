@@ -31,7 +31,7 @@ vi.mock('./api', () => {
   api.getVisionStatus = vi.fn(async () => ({ cached: null, guessed: false }))
   api.getSyncMode = vi.fn(async () => 'off')
   api.syncCloudKeys = vi.fn(async () => ({ pulled: 0, pushed: 0 }))
-  for (const n of ['getMe', 'getActiveProject', 'getLiveConfig', 'checkGoogleRedirect']) {
+  for (const n of ['getMe', 'getActiveProject', 'getLiveConfig', 'checkGoogleRedirect', 'authRedirectPending', 'enhancePromptText', 'updateConversationFolder', 'updateConversationTags', 'updateTemplate']) {
     api[n] = vi.fn(async () => null)
   }
   api.getActiveProvider = vi.fn(async () => 'groq')

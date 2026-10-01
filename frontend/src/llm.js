@@ -291,7 +291,25 @@ export function getProviderCapabilities(providerId) {
 // Custom providers merged at runtime
 let _customProviders = {}
 export function registerCustomProviders(custom) { _customProviders = custom || {} }
-export function getProviders() { return { ...PROVIDERS, ..._customProviders } }
+export function getProviders() {
+  const merged = { ...PROVIDERS }
+  for (const [id, custom] of Object.entries(_customProviders || {})) {
+    const builtin = PROVIDERS[id]
+    const isOllamaLike = id === 'ollama' || custom?.isOllama || (custom?.baseUrl && /:11434/i.test(custom.baseUrl)) || (custom?.name && /ollama/i.test(custom.name))
+    merged[id] = {
+      ...(isOllamaLike && builtin ? builtin : {}),
+      ...custom,
+      ...(isOllamaLike ? {
+        isOllama: true,
+        isLocal: true,
+        noKey: true,
+        publicModels: true,
+        offlineReady: true,
+      } : {}),
+    }
+  }
+  return merged
+}
 export function getProviderModels(providerId) { return getProviders()[providerId]?.models || [] }
 export function getDefaultModel(providerId) { return getProviders()[providerId]?.default || '' }
 // The RAW built-in table, bypassing custom_providers overrides. Saving a
@@ -1169,9 +1187,22 @@ export async function fetchLiveModels(providerId, apiKey) {
   const prov = getProviders()[providerId]
   // Keyless providers (Ollama, on-device) don't need an API key.
   // For keyed providers, bail early if no key is supplied.
-  const isKeyless = prov?.noKey || prov?.isOllama || prov?.isLocal
+  const isOllamaLike = providerId === 'ollama' || prov?.isOllama || (prov?.baseUrl && /:11434/i.test(prov.baseUrl)) || (prov?.name && /ollama/i.test(prov.name))
+  const isKeyless = isOllamaLike || prov?.noKey || prov?.isLocal
   if (!prov) return []
   if (!isKeyless && !apiKey) return []
+
+  // In Electron desktop app, probe the local daemon over IPC directly (fastest & bypasses browser networking)
+  if (isOllamaLike && typeof window !== 'undefined' && window.__YOGATIK_OLLAMA__?.list) {
+    try {
+      const direct = await window.__YOGATIK_OLLAMA__.list()
+      if (Array.isArray(direct) && direct.length > 0) {
+        const ids = [...new Set(direct.map(m => normalizeModelName(m?.name || m?.model || m)).filter(Boolean))]
+          .sort((a, b) => a.localeCompare(b))
+        if (ids.length > 0) return ids
+      }
+    } catch {}
+  }
 
   const dedupeKey = `${providerId}:${isKeyless ? 'keyless' : (apiKey || '').slice(0, 8)}`
   if (INFLIGHT_MODELS.has(dedupeKey)) {
@@ -1198,7 +1229,8 @@ export async function fetchLiveModels(providerId, apiKey) {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), timeoutMs)
 
-      const targetUrl = `${prov.baseUrl.replace(/\/+$/, '')}/models`
+      const baseUrlClean = (prov.baseUrl || 'http://127.0.0.1:11434/v1').replace(/\/+$/, '')
+      const targetUrl = isOllamaLike && !baseUrlClean.endsWith('/v1') ? `${baseUrlClean}/v1/models` : `${baseUrlClean}/models`
       let resp
       try {
         resp = await smartFetch(targetUrl, { method: 'GET', headers, signal: controller.signal }, prov)
@@ -1206,6 +1238,20 @@ export async function fetchLiveModels(providerId, apiKey) {
         clearTimeout(timer)
       }
       if (!resp.ok) {
+        // Fallback for Ollama native /api/tags if /v1/models didn't answer
+        if (isOllamaLike) {
+          try {
+            const tagsUrl = `${baseUrlClean.replace(/\/v1\/?$/, '')}/api/tags`
+            const tagsResp = await smartFetch(tagsUrl, { method: 'GET' }, prov)
+            if (tagsResp.ok) {
+              const tagsData = await tagsResp.json().catch(() => null)
+              const list = tagsData?.models || []
+              const ids = [...new Set(list.map(m => normalizeModelName(m?.name || m?.model || m)).filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b))
+              if (ids.length) return ids
+            }
+          } catch {}
+        }
         if (resp.status !== 401 && resp.status !== 403) {
           const errText = await resp.text().catch(() => '')
           const msg = parseProviderError(resp.status, errText)
@@ -1219,10 +1265,25 @@ export async function fetchLiveModels(providerId, apiKey) {
 
       const data = await resp.json()
       const modelList = data.data || data.models || []
-      const ids = [...new Set(modelList.map(m => normalizeModelName(m)).filter(id => id && id.length > 0 && id !== '[object Object]'))]
+      const ids = [...new Set(modelList.map(m => normalizeModelName(m?.id || m?.name || m?.model || m)).filter(id => id && id.length > 0 && id !== '[object Object]'))]
         .sort((a, b) => a.localeCompare(b))
       return ids
     } catch (err) {
+      // Secondary fallback for Ollama native /api/tags on connection errors
+      if (isOllamaLike) {
+        try {
+          const baseUrlClean = (prov.baseUrl || 'http://127.0.0.1:11434').replace(/\/+$/, '')
+          const tagsUrl = `${baseUrlClean.replace(/\/v1\/?$/, '')}/api/tags`
+          const tagsResp = await fetch(tagsUrl, { method: 'GET' })
+          if (tagsResp.ok) {
+            const tagsData = await tagsResp.json().catch(() => null)
+            const list = tagsData?.models || []
+            const ids = [...new Set(list.map(m => normalizeModelName(m?.name || m?.model || m)).filter(Boolean))]
+              .sort((a, b) => a.localeCompare(b))
+            if (ids.length) return ids
+          }
+        } catch {}
+      }
       console.warn(`[fetchLiveModels] ${providerId} error:`, err?.message)
       return []
     }
@@ -1241,8 +1302,21 @@ export async function fetchLiveModels(providerId, apiKey) {
 export async function queryProviderModels(providerId, apiKey, customProv = null) {
   const prov = customProv || getProviders()[providerId]
   if (!prov) return { success: false, error: 'Provider configuration not found.' }
-  const isKeyless = prov.noKey || prov.isOllama || prov.isLocal
+  const isOllamaLike = providerId === 'ollama' || prov?.isOllama || (prov?.baseUrl && /:11434/i.test(prov.baseUrl)) || (prov?.name && /ollama/i.test(prov.name))
+  const isKeyless = isOllamaLike || prov.noKey || prov.isLocal
   if (!isKeyless && !apiKey) return { success: false, error: 'Please enter an API key.' }
+
+  // Check desktop IPC directly if Ollama
+  if (isOllamaLike && typeof window !== 'undefined' && window.__YOGATIK_OLLAMA__?.list) {
+    try {
+      const direct = await window.__YOGATIK_OLLAMA__.list()
+      if (Array.isArray(direct) && direct.length > 0) {
+        const ids = [...new Set(direct.map(m => normalizeModelName(m?.name || m?.model || m)).filter(Boolean))]
+          .sort((a, b) => a.localeCompare(b))
+        if (ids.length > 0) return { success: true, models: ids, defaultModel: ids[0] }
+      }
+    } catch {}
+  }
 
   try {
     const headers = {}
@@ -1260,7 +1334,8 @@ export async function queryProviderModels(providerId, apiKey, customProv = null)
 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), isKeyless ? 5000 : 20000)
-    const targetUrl = `${prov.baseUrl.replace(/\/+$/, '')}/models`
+    const baseUrlClean = (prov.baseUrl || 'http://127.0.0.1:11434/v1').replace(/\/+$/, '')
+    const targetUrl = isOllamaLike && !baseUrlClean.endsWith('/v1') ? `${baseUrlClean}/v1/models` : `${baseUrlClean}/models`
 
     let resp
     try {
@@ -1270,6 +1345,19 @@ export async function queryProviderModels(providerId, apiKey, customProv = null)
     }
 
     if (!resp.ok) {
+      if (isOllamaLike) {
+        try {
+          const tagsUrl = `${baseUrlClean.replace(/\/v1\/?$/, '')}/api/tags`
+          const tagsResp = await smartFetch(tagsUrl, { method: 'GET' }, prov)
+          if (tagsResp.ok) {
+            const tagsData = await tagsResp.json().catch(() => null)
+            const list = tagsData?.models || []
+            const ids = [...new Set(list.map(m => normalizeModelName(m?.name || m?.model || m)).filter(Boolean))]
+              .sort((a, b) => a.localeCompare(b))
+            if (ids.length) return { success: true, models: ids, defaultModel: ids[0] }
+          }
+        } catch {}
+      }
       const errText = await resp.text().catch(() => '')
       const msg = parseProviderError(resp.status, errText)
       return { success: false, error: msg || `Provider returned status ${resp.status}` }
@@ -1279,7 +1367,7 @@ export async function queryProviderModels(providerId, apiKey, customProv = null)
     if (!data) return { success: false, error: 'Invalid response from provider (expected JSON).' }
 
     const modelList = data.data || data.models || []
-    const ids = [...new Set(modelList.map(m => normalizeModelName(m)).filter(id => id && id.length > 0 && id !== '[object Object]'))]
+    const ids = [...new Set(modelList.map(m => normalizeModelName(m?.id || m?.name || m?.model || m)).filter(id => id && id.length > 0 && id !== '[object Object]'))]
       .sort((a, b) => a.localeCompare(b))
 
     if (!ids.length) {

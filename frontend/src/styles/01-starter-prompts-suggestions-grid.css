@@ -281,7 +281,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: 5000;
   -webkit-app-region: no-drag;
   overscroll-behavior: contain;
   pointer-events: auto;

@@ -36,7 +36,7 @@ export function useAdaptivePolling(options = {}) {
   /** Report a new observation (screen changed / user engaged). */
   const handleNoteObservation = useCallback(
     (obs) => {
-      setState((prev) => noteObservation(prev, obs));
+      setState((prev) => ({ ...noteObservation({ ...prev }, obs) }));
     },
     [] // deps: none – noteObservation is pure
   );

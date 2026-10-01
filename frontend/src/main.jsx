@@ -108,11 +108,23 @@ try { applyDocumentLocale() } catch { /* never block boot on this */ }
 const searchParams = new URLSearchParams(window.location.search)
 const isCompanion = searchParams.get('companion') === '1'
 const isVideoStudio = searchParams.get('video_studio') === '1' || searchParams.get('videostudio') === '1'
+const isMediaStudio = searchParams.get('media_studio') === '1' || searchParams.get('mediastudio') === '1'
+const isTrading = searchParams.get('stock_trading') === '1' || searchParams.get('trading') === '1'
+const isTorrent = searchParams.get('torrent_downloader') === '1' || searchParams.get('torrents') === '1'
+const isDomainHub = searchParams.get('domain_hub') === '1' || searchParams.get('domainhub') === '1'
 
 if (isCompanion) document.documentElement.setAttribute('data-companion', '1')
 if (isVideoStudio) document.documentElement.setAttribute('data-video-studio', '1')
+if (isMediaStudio) document.documentElement.setAttribute('data-media-studio', '1')
+if (isTrading) document.documentElement.setAttribute('data-stock-trading', '1')
+if (isTorrent) document.documentElement.setAttribute('data-torrent-downloader', '1')
+if (isDomainHub) document.documentElement.setAttribute('data-domain-hub', '1')
 
 const VideoStudioStandaloneView = React.lazy(() => import('./components/VideoStudioStandaloneView'))
+const MediaStudioStandaloneView = React.lazy(() => import('./components/MediaStudioStandaloneView'))
+const TradingStandaloneView = React.lazy(() => import('./components/TradingStandaloneView'))
+const TorrentStandaloneView = React.lazy(() => import('./components/TorrentStandaloneView'))
+const DomainHubStandaloneView = React.lazy(() => import('./components/DomainHubStandaloneView'))
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -130,6 +142,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <CompanionView />
           ) : isVideoStudio ? (
             <VideoStudioStandaloneView />
+          ) : isMediaStudio ? (
+            <MediaStudioStandaloneView />
+          ) : isTrading ? (
+            <TradingStandaloneView />
+          ) : isTorrent ? (
+            <TorrentStandaloneView />
+          ) : isDomainHub ? (
+            <DomainHubStandaloneView />
           ) : (
             <App />
           )}

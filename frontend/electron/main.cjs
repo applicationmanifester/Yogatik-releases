@@ -52,6 +52,7 @@ const { loadConfig: loadComfyConfig, registerComfyIpc, destroyComfyDaemon } = re
 const { registerCastIpc, destroyCastControl } = require('./castControl.cjs')
 const { registerTorrentIpc, destroyTorrentManager } = require('./torrentManager.cjs')
 const { registerVideoStudioIpc } = require('./videoStudioWindow.cjs')
+const { registerToolWindowsIpc, destroyAllToolWindows } = require('./toolWindows.cjs')
 const windowState = require('./windowState.cjs')
 
 const isDev = !app.isPackaged
@@ -498,6 +499,8 @@ if (!gotLock) {
       registerTorrentIpc(getWindow)
       // Dedicated Video Studio & Precision Trimmer window manager
       registerVideoStudioIpc({ dev: isDev })
+      // Dedicated Tool Windows (Media Studio, Trading Terminal, Torrent Downloader, Domain Hub)
+      registerToolWindowsIpc({ dev: isDev, getMainWindow: getWindow })
     })
 
     // Start the local search sidecar WITHOUT awaiting it.
@@ -1044,6 +1047,7 @@ if (!gotLock) {
     stopAllWatchers()
     stopAllTerminals()
     killAllMcpStdio()
+    destroyAllToolWindows()
     killAllBgProcesses()   // never orphan a background process on quit
     stopAllFsWatchers()
     stopAllMcpStdioClients()

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue, startTransition } from 'react'
 import ReactDOM from 'react-dom' // Test edit after rename // Test edit on backup // TODO: test edit
 import { Send, Plus, Sun, Moon, Upload, Menu, X, Trash2, Plug, LogIn, LogOut, User, Square, Download, DownloadCloud, Share2, Sparkles, Mic, MicOff, Wrench, Smartphone, AlertTriangle, Globe, FileText, Film, Search, Pencil, RefreshCw, ChevronDown, Key, Cloud, CloudOff, Zap, GitCompare, Radio, Sliders, Cpu, Folder, Star, Tag, Filter, Clock, Bell, Monitor, Activity, Bot, ListPlus, Edit2, PanelLeft, TerminalSquare, Compass, FileCode, Wand2, CheckCircle2, PlayCircle, ShieldCheck, Brain, Play, DollarSign, LayoutDashboard, ExternalLink, Camera, TrendingUp, Package } from 'lucide-react'
-import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, hasAnyProviderKey, getStoredProvider, getVisionStatus, syncCloudKeys, createTemplate, updateTemplate, deleteTemplate, addCustomModelToProvider } from './api'
+import { streamMessage, stopGeneration, enhancePromptText, uploadDocument, getModels, removeProvider, testProvider, saveProviderApiKey, logout, getMe, getConversations, getConversation, deleteConversation, getTemplates, requestTTS, stopTTS, listDocuments, removeDocument, createConversation, saveMessage, renameConversation, updateConversationFolder, updateConversationTags, updateConversationModel, trimConversationFrom, getActiveProvider, setActiveProvider, getActiveModel, setActiveModel, getAllProviderStatus, ensureTested, autoPickModel, getTools, setToolEnabled, setToolsEnabledBulk, getPrefs, setPref, getTodayUsage, getProjects, createProject, deleteProject, getActiveProject, setActiveProject, hasAcceptedTerms, acceptTerms, downloadBackup, restoreBackup, getMeasuredModels, isRetiredModelError, pruneRetiredModel, getAllKeyInfo, forgetApiKey, getLiveConfig, checkGoogleRedirect, authRedirectPending, hasAnyProviderKey, getStoredProvider, getVisionStatus, syncCloudKeys, createTemplate, updateTemplate, deleteTemplate, addCustomModelToProvider } from './api'
 import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRoots, unbindChatRoots, setWorkspaceContext } from './tools/localFs'
 import { getFavoriteLocations, addFavoriteLocation, removeFavoriteLocation, isFavoriteLocation, toggleFavoriteLocation, getRecentLocations, recordRecentLocation } from './tools/favoriteLocations'
 import { setUserQuestionHandler } from './tools/askUser'
@@ -168,6 +168,7 @@ export default function App() {
   const [activeArtifact, setActiveArtifact] = useState(null)
   const [activeIdx, setActiveIdx] = useState(0)
   const [input, setInput] = useState('')
+  const intent = useMemo(() => classifyQueryIntent(input), [input])
   const [loadingMap, setLoadingMap] = useState({})
   // Streaming text is deliberately NOT React state. One setState per token
   // re-rendered the whole shell — sidebar, composer and every MessageBubble,
@@ -681,13 +682,21 @@ export default function App() {
   // Finish a Google sign-in redirect. A silent catch here is why a failed
   // mobile sign-in looked like nothing happening at all.
   useEffect(() => {
+    const wasPending = authRedirectPending()
     checkGoogleRedirect()
-      .then(u => { if (u) { setUser(u); loadConversations() } })
+      .then(u => {
+        if (u) {
+          setUser(u)
+          loadConversations()
+        } else if (wasPending) {
+          showToast('Sign-in redirect could not be restored by your browser. Please tap Sign In to try popup sign-in.', { duration: 6000 })
+        }
+      })
       .catch(err => {
         if (isDbClosedError(err)) return
         setErrorModalMsg(`Sign-in did not complete.\n\n${err.message || err}`)
       })
-  }, [])
+  }, [showToast])
 
   // Auto-show demo modal ONLY for brand new first-time users (0 messages & 0 API keys)
   useEffect(() => {
@@ -795,6 +804,47 @@ export default function App() {
       showToast('Yogatik Browser is only available in the desktop app')
     }
   }, [showToast])
+
+  const handleOpenVideoStudio = useCallback((url = null) => {
+    if (isDesktop() && window.__YOGATIK_DESKTOP__?.openVideoStudio) {
+      window.__YOGATIK_DESKTOP__.openVideoStudio({ videoUrl: url || '' })
+    } else {
+      setVideoStudioInitialUrl(url)
+      setShowVideoStudio(true)
+    }
+  }, [])
+
+  const handleOpenMediaStudio = useCallback((params = {}) => {
+    if (isDesktop() && window.__YOGATIK_DESKTOP__?.openMediaStudio) {
+      window.__YOGATIK_DESKTOP__.openMediaStudio(params)
+    } else {
+      setShowMediaStudio(true)
+    }
+  }, [])
+
+  const handleOpenTradingTerminal = useCallback((params = {}) => {
+    if (isDesktop() && window.__YOGATIK_DESKTOP__?.openTradingTerminal) {
+      window.__YOGATIK_DESKTOP__.openTradingTerminal(params)
+    } else {
+      setShowTradingModal(true)
+    }
+  }, [])
+
+  const handleOpenTorrentDownloader = useCallback((params = {}) => {
+    if (isDesktop() && window.__YOGATIK_DESKTOP__?.openTorrentDownloader) {
+      window.__YOGATIK_DESKTOP__.openTorrentDownloader(params)
+    } else {
+      setShowTorrentModal(true)
+    }
+  }, [])
+
+  const handleOpenDomainHub = useCallback((params = {}) => {
+    if (isDesktop() && window.__YOGATIK_DESKTOP__?.openDomainHub) {
+      window.__YOGATIK_DESKTOP__.openDomainHub(params)
+    } else {
+      setShowDomainHub(true)
+    }
+  }, [])
 
   useEffect(() => { setWorkspaceContext(() => wsCtxRef.current) }, [])
 
@@ -1935,7 +1985,11 @@ export default function App() {
       // Alt+D -> Social Media & Domain Intelligence Hub
       if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault()
-        setShowDomainHub(v => !v)
+        if (isDesktop() && window.__YOGATIK_DESKTOP__?.openDomainHub) {
+          window.__YOGATIK_DESKTOP__.openDomainHub()
+        } else {
+          setShowDomainHub(v => !v)
+        }
       }
       // Escape -> Stop generation (only if THIS chat is generating AND no modal is open)
       if (e.key === 'Escape') {
@@ -2235,11 +2289,13 @@ export default function App() {
    * per version, so a material update asks again.
    */
   const requestSignIn = async () => {
+    if (window.innerWidth <= 768) setSidebarOpen(false)
     if (await hasAcceptedTerms(TERMS_VERSION)) setShowAuthModal(true)
     else setShowTerms(true)
   }
 
   const handleAcceptTerms = async (version) => {
+    if (window.innerWidth <= 768) setSidebarOpen(false)
     await acceptTerms(version)
     setShowTerms(false)
     setShowAuthModal(true)
@@ -3863,6 +3919,18 @@ export default function App() {
     })
   }, [])
 
+  // Handle prompt forwarded from standalone tool windows (like Domain Hub)
+  useEffect(() => {
+    if (isDesktop() && window.__YOGATIK_DESKTOP__?.onExecutePromptFromWindow) {
+      const unsub = window.__YOGATIK_DESKTOP__.onExecutePromptFromWindow(({ prompt }) => {
+        if (prompt) {
+          sendRef.current?.(prompt)
+        }
+      })
+      return unsub
+    }
+  }, [])
+
   // Programmatic prompt submission from Action Chips and Verification HUD
   useEffect(() => {
     const handler = (e) => {
@@ -4431,9 +4499,9 @@ export default function App() {
       // opened, rather than being silently absent depending on the build.
       { id: 'terminal', group: 'Tools', label: '⌨️ Terminal — watch the assistant, run your own', hint: 'Ctrl+`', run: () => setShowTerminal(true) },
       { id: 'extensions-menu', group: 'Tools', label: '📦 Extensions & Power Tools (Trading, Torrents, Hub, Browser)', run: () => setExtensionsOpen(true) },
-      { id: 'indian-stock-trading', group: 'Trading', label: '📈 Zerodha & Indian Stock Trading (NSE/BSE)', hint: 'Live & Paper Trading', run: () => setShowTradingModal(true) },
-      { id: 'creative-media-studio', group: 'Tools', label: '🎬 Creative Media Studio (Kling, Seedance, Soul, Wan, Flux)', hint: 'AI Video & Image', run: () => setShowMediaStudio(true) },
-      { id: 'video-studio', group: 'Tools', label: '✂️ Video Studio & Precision Trimmer (VLC, WebCodecs, Audio Extract)', hint: 'Play & Edit Videos', run: () => setShowVideoStudio(true) },
+      { id: 'indian-stock-trading', group: 'Trading', label: '📈 Zerodha & Indian Stock Trading (NSE/BSE)', hint: 'Live & Paper Trading', run: () => handleOpenTradingTerminal() },
+      { id: 'creative-media-studio', group: 'Tools', label: '🎬 Creative Media Studio (Kling, Seedance, Soul, Wan, Flux)', hint: 'AI Video & Image', run: () => handleOpenMediaStudio() },
+      { id: 'video-studio', group: 'Tools', label: '✂️ Video Studio & Precision Trimmer (VLC, WebCodecs, Audio Extract)', hint: 'Play & Edit Videos', run: () => handleOpenVideoStudio() },
       { id: 'file-editor', group: 'Tools', label: '📝 Create or edit a file in the workspace', hint: isDesktop() ? 'Workspace' : 'Desktop app', run: () => setShowFileEditor(true) },
       { id: 'workspace', group: 'View', label: '🗂️ File explorer & changes', hint: isDesktop() ? 'Ctrl+B' : 'Desktop app', run: () => setShowWorkspace(v => !v) },
       { id: 'workspace-scm', group: 'View', label: '🔀 Review the agent’s file changes', hint: isDesktop() ? 'Source control' : 'Desktop app', run: () => setShowWorkspace(true) },
@@ -4441,7 +4509,7 @@ export default function App() {
       { id: 'sub-agents', group: 'Tools', label: '🧩 Sub-agent runner', hint: 'Isolated agents', run: () => setShowSubAgents(true) },
       ...(isDesktop() ? [
         { id: 'open-yogatik-browser', group: 'Tools', label: '🧭 Yogatik Browser (Desktop Window)', hint: 'Desktop Browser', run: () => handleOpenBrowser() },
-        { id: 'open-torrent-downloader', group: 'Tools', label: '⚡ P2P Torrent Downloader (Native Engine)', hint: 'P2P Torrents', run: () => setShowTorrentModal(true) },
+        { id: 'open-torrent-downloader', group: 'Tools', label: '⚡ P2P Torrent Downloader (Native Engine)', hint: 'P2P Torrents', run: () => handleOpenTorrentDownloader() },
       ] : []),
       { id: 'search-engine-crawler', group: 'Tools', label: '🔍 Yogatik Search Engine & Web Crawler (Private Index)', hint: 'Search & Crawl', run: () => { setSettingsModalTab('searchengine'); setShowSettingsModal(true) } },
       { id: 'auto-skills', group: 'Tools', label: '✨ Auto-generated skills', hint: 'Review & prune', run: () => setShowAutoSkills(true) },
@@ -4451,7 +4519,7 @@ export default function App() {
       { id: 'web', group: 'Settings', label: `${webSearch ? 'Disable' : 'Enable'} web research`, run: () => setWebSearch(!webSearch) },
       { id: 'route', group: 'Settings', label: `${autoRoute ? 'Disable' : 'Enable'} auto-routing`, run: () => setAutoRoute(!autoRoute) },
       { id: 'autopick', group: 'Models', label: 'Auto-pick the fastest model', run: () => handleAutoPick() },
-      { id: 'domain-hub', group: 'Navigation', label: '🌐 Social Media & Domain Hub (YouTube, X, Jobs, TikTok...)', hint: 'Alt+D', run: () => setShowDomainHub(true) },
+      { id: 'domain-hub', group: 'Navigation', label: '🌐 Social Media & Domain Hub (YouTube, X, Jobs, TikTok...)', hint: 'Alt+D', run: () => handleOpenDomainHub() },
       { id: 'naukri-jobs', group: 'Jobs & Careers', label: 'Search Tech Jobs on Naukri & Indeed', hint: 'Career AI', run: () => { setInput('Search Naukri and Indeed for Senior React and AI Engineer jobs in Bangalore and Remote. List top openings with salaries and requirements.'); textareaRef.current?.focus(); autoResize(); } },
       { id: 'youtube-summary', group: 'Video & Media', label: 'Summarize YouTube Video URL', hint: 'Video AI', run: () => { setInput('Please extract transcript, key insights, and timestamps for this YouTube video: '); textareaRef.current?.focus(); autoResize(); } },
       { id: 'x-thread', group: 'Social Content', label: 'Write Viral X (Twitter) Thread', hint: 'Thread Generator', run: () => { setInput('Write a viral 5-tweet thread explaining how AI agents transform productivity. Number [1/5] to [5/5].'); textareaRef.current?.focus(); autoResize(); } },
@@ -5677,7 +5745,7 @@ export default function App() {
                     </div>
                     <button
                       className="extensions-item"
-                      onClick={() => { setShowVideoStudio(true); setExtensionsOpen(false) }}
+                      onClick={() => { handleOpenVideoStudio(); setExtensionsOpen(false) }}
                       title="Video Studio & Precision Trimmer (VLC player launcher, audio extraction, cut and trim)"
                     >
                       <div className="extensions-item-icon">
@@ -5690,7 +5758,7 @@ export default function App() {
                     </button>
                     <button
                       className="extensions-item"
-                      onClick={() => { setShowMediaStudio(true); setExtensionsOpen(false) }}
+                      onClick={() => { handleOpenMediaStudio(); setExtensionsOpen(false) }}
                       title="Creative Media Studio (Kling 3, Seedance 2.5, Wan 2.7, Soul Cinema, Flux)"
                     >
                       <div className="extensions-item-icon">
@@ -5703,7 +5771,7 @@ export default function App() {
                     </button>
                     <button
                       className="extensions-item"
-                      onClick={() => { setShowTradingModal(true); setExtensionsOpen(false) }}
+                      onClick={() => { handleOpenTradingTerminal(); setExtensionsOpen(false) }}
                       title="Zerodha & Indian Stock Trading Terminal (NSE/BSE)"
                     >
                       <div className="extensions-item-icon">
@@ -5732,7 +5800,7 @@ export default function App() {
                     {isDesktop() && (
                       <button
                         className="extensions-item"
-                        onClick={() => { setShowTorrentModal(true); setExtensionsOpen(false) }}
+                        onClick={() => { handleOpenTorrentDownloader(); setExtensionsOpen(false) }}
                         title="P2P Torrent Downloader (Native Engine)"
                       >
                         <div className="extensions-item-icon">
@@ -5746,7 +5814,7 @@ export default function App() {
                     )}
                     <button
                       className="extensions-item"
-                      onClick={() => { setShowDomainHub(true); setExtensionsOpen(false) }}
+                      onClick={() => { handleOpenDomainHub(); setExtensionsOpen(false) }}
                       title="Social Media & Domain Hub (Alt+D)"
                     >
                       <div className="extensions-item-icon">
@@ -7318,8 +7386,7 @@ export default function App() {
             isOpen={showMediaStudio}
             onClose={() => setShowMediaStudio(false)}
             onOpenVideoStudio={(url) => {
-              setVideoStudioInitialUrl(url)
-              setShowVideoStudio(true)
+              handleOpenVideoStudio(url)
             }}
           />
         </React.Suspense>

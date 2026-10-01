@@ -122,15 +122,21 @@ async function saveProfile(f, user) {
  * is better (app state survives), but it still gets a deadline, because a hung
  * promise with no error is the worst of both worlds.
  */
-const POPUP_DEADLINE_MS = 90_000
+const POPUP_DEADLINE_MS = 40_000
+
+export function isStandalonePwa() {
+  if (typeof navigator === 'undefined') return false
+  return Boolean(
+    (typeof matchMedia !== 'undefined' && matchMedia('(display-mode: standalone)').matches) ||
+    navigator.standalone === true
+  )
+}
 
 function prefersRedirect() {
-  if (typeof navigator === 'undefined') return false
-  const standalone = typeof matchMedia !== 'undefined' &&
-    (matchMedia('(display-mode: standalone)').matches || navigator.standalone === true)
-  const phone = /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(navigator.userAgent) ||
-    (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches)
-  return standalone || phone
+  // Only standalone PWAs strictly require redirect because standalone display-mode
+  // cannot manage standard browser popups. Standard mobile browsers (iOS Safari, Android Chrome)
+  // support popup sign-in without running into cross-origin third-party storage partitioning issues.
+  return isStandalonePwa()
 }
 
 let _desktopUser = null
@@ -210,7 +216,7 @@ export async function ensureFirebaseAuth(f) {
   }
 }
 
-export async function signInWithGoogle() {
+export async function signInWithGoogle({ preferRedirect = false } = {}) {
   // ─── Electron Desktop Native OAuth Bridge ─────────────────────────────────
   if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.loginWithGoogle) {
     const res = await window.__YOGATIK_DESKTOP__.loginWithGoogle()
@@ -281,7 +287,7 @@ export async function signInWithGoogle() {
     return null            // the page is leaving; the answer arrives on return
   }
 
-  if (prefersRedirect()) return goRedirect()
+  if (preferRedirect || prefersRedirect()) return goRedirect()
 
   let timer
   try {
@@ -294,7 +300,10 @@ export async function signInWithGoogle() {
     const fallback = ['auth/popup-blocked', 'auth/popup-closed-by-user',
       'auth/cancelled-popup-request', 'auth/operation-not-supported-in-this-environment',
       'auth/web-storage-unsupported', 'yogatik/popup-stalled']
-    if (fallback.includes(err.code)) return goRedirect()
+    if (fallback.includes(err.code)) {
+      console.warn('[firebaseAuth] Popup sign-in fallback to redirect:', err.code)
+      return goRedirect()
+    }
     throw err
   } finally {
     clearTimeout(timer)
@@ -309,7 +318,12 @@ export async function signInWithGoogle() {
 export async function checkRedirectResult() {
   const f = await fb()
   try {
-    const result = await f.getRedirectResult(f.auth)
+    let result = null
+    try {
+      result = await f.getRedirectResult(f.auth)
+    } catch (redirectErr) {
+      console.warn('[firebaseAuth] getRedirectResult notice:', redirectErr?.message || redirectErr)
+    }
     if (result?.user) return await saveProfile(f, result.user)
 
     const user = f.auth.currentUser || await new Promise(resolve => {

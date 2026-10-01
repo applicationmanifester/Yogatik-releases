@@ -1,5 +1,19 @@
 # Changelog
 
+## v12.0.0 - Standalone Dedicated Tool Windows, Resilient Ollama Model Discovery & Multi-Window Production Suite (2026-10-01)
+
+### 🪟 Standalone Dedicated Tool Windows
+- **Independent Multi-Window Architecture (`toolWindows.cjs`, `MediaStudioStandaloneView.jsx`, `TradingStandaloneView.jsx`, `TorrentStandaloneView.jsx`, `DomainHubStandaloneView.jsx`)** — Media Studio, Trading & Algo Terminal, BitTorrent Manager, and Domain Hub now launch as independent Electron browser windows with their own state, hotkeys, and multi-monitor support.
+- **Multi-Window IPC Entitlement (`entitlementCore.cjs`, `preload.cjs`)** — Hardened capability isolation across secondary renderer processes, registering dedicated standalone channels under strict security bounds.
+
+### 🦙 Ollama & Local Model Discovery
+- **Provider Shadowing & Dynamic Discovery Fix (`llm.js`, `api.js`, `ollama.js`)** — Fixed provider definition merging so local Ollama instances dynamically probe, query, and populate installed models without default configuration clobbering.
+- **Active Connection Probing & Readiness Broadcast (`ProviderModal.jsx`, `ollama.js`)** — Testing provider connections immediately probes live models and dispatches `yogatik:ollama-ready` events on boot.
+
+### ⚡ Build & Codebase Health
+- **Electron TypeScript & Playwright Compilation Fix (`tsconfig.main.json`, `browserBridge.ts`)** — Standardized TypeScript compiler resolution and typed Playwright interfaces, enabling clean `npm run build:main` compilation.
+- **Comprehensive Test Suite Pass** — 292 test suites with 2,945 tests all passing without regressions.
+
 ## v11.6.0 - Adaptive Tool Calling, In-Place Prompt Rewind & Precision Code Editing Suite (2026-10-01)
 
 ### 💬 Conversation UX & Prompt Rewind

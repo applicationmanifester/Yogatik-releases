@@ -448,10 +448,21 @@ const DOMAIN_PRESETS = [
   },
 ]
 
-export function DomainHubModal({ isOpen, onClose, onExecutePrompt, onStreamStart }) {
+export function DomainHubModal({ isOpen, onClose, onExecutePrompt, onStreamStart, isStandalone = false }) {
   const [activeTab, setActiveTab] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [streamStarted, setStreamStarted] = useState(false)
+
+  const handlePopOut = () => {
+    if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.openDomainHub) {
+      window.__YOGATIK_DESKTOP__.openDomainHub()
+      onClose?.()
+    } else {
+      const popupUrl = `${window.location.origin}${window.location.pathname}?domain_hub=1`
+      window.open(popupUrl, 'YogatikDomainHub', 'width=1150,height=820')
+      onClose?.()
+    }
+  }
 
   useEffect(() => {
     if (!isOpen) {
@@ -547,9 +558,21 @@ export function DomainHubModal({ isOpen, onClose, onExecutePrompt, onStreamStart
               </p>
             </div>
           </div>
-          <button className="domain-hub-close-btn" onClick={onClose} aria-label="Close modal">
-            <X size={18} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {!isStandalone && (
+              <button
+                className="domain-hub-close-btn popout-btn"
+                onClick={handlePopOut}
+                title="Pop out to dedicated window"
+                aria-label="Pop out to dedicated window"
+              >
+                <ExternalLink size={16} />
+              </button>
+            )}
+            <button className="domain-hub-close-btn" onClick={onClose} aria-label="Close modal">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Search & Action Bar */}

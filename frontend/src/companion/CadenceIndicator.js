@@ -17,10 +17,10 @@ export function CadenceIndicator() {
     return () => clearInterval(id);
   }, [intervalMs, noteObservation]);
 
-  return (
-    <div className={styles.indicator}>
-      <div>Polling: {cadenceDesc}</div>
-      <div>{isBusy ? '🟢 Busy' : '⚪ Idle'}</div>
-    </div>
+  return React.createElement(
+    'div',
+    { className: styles.indicator },
+    React.createElement('div', null, `Polling: ${cadenceDesc}`),
+    React.createElement('div', null, isBusy ? '🟢 Busy' : '⚪ Idle')
   );
 }

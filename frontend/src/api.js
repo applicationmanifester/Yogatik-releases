@@ -200,6 +200,19 @@ export async function checkGoogleRedirect() {
   return user
 }
 
+export { authRedirectPending }
+
+/**
+ * Preload Firebase Auth SDK in the background to ensure user gesture activation
+ * is preserved when the user taps Sign In with Google.
+ */
+export async function preloadAuth() {
+  try {
+    const { getFirebase } = await import('./firebaseAuth')
+    await getFirebase()
+  } catch {}
+}
+
 export async function loginWithGoogle() {
   const user = await signInWithGoogle()
   if (user) {
@@ -1245,17 +1258,6 @@ export async function getModels() {
       liveModels = Object.keys(LOCAL_MODELS)
     } else if (p.isOllama && desktop) {
       // ASK THE DAEMON DIRECTLY, over IPC, not with a fetch from the renderer.
-      //
-      // The renderer path goes to http://localhost:11434 through the browser
-      // stack, so it depends on the CORS shim, on OLLAMA_ORIGINS, and on the
-      // page's own network state — and when any of those is off, the failure
-      // surfaces as "Could not reach the provider — network or CORS proxy
-      // issue", which tells the user nothing about the actual cause. The main
-      // process has no such constraints: it talks to the daemon over Node, and
-      // it can tell "not installed" apart from "not running" apart from
-      // "running with no models pulled". Those are three different problems
-      // with three different fixes, and the fetch path collapsed them into one
-      // unhelpful sentence.
       try {
         const { ollamaStatus } = await import('./ollama')
         const st = await ollamaStatus()
@@ -1264,14 +1266,29 @@ export async function getModels() {
         else if (!st.models?.length) ollamaReason = 'Ollama is running but has no models yet. Pull one, e.g. `ollama pull llama3.2`.'
         liveModels = (st.models || []).map(m => normalizeModelName(m?.name || m)).filter(Boolean)
       } catch {
-        // The bridge is missing (an older desktop build). Fall back to the
-        // HTTP path rather than reporting no models at all.
         const cached = await cachedModels(id, key, liveModels, allSettings)
         liveModels = (Array.isArray(cached) ? cached : []).map(normalizeModelName).filter(Boolean)
+      }
+      // If IPC didn't discover models or daemon was starting up, seamlessly query live endpoint
+      if (!liveModels.length) {
+        try {
+          const fallbackList = await fetchLiveModels(id, null)
+          if (fallbackList?.length) liveModels = fallbackList
+        } catch {}
+      }
+      if (liveModels.length > 0) {
+        ollamaReason = null
+        await db.setSetting(`models_${id}`, { ts: Date.now(), list: liveModels }).catch(() => {})
       }
     } else if (hasKey || p.publicModels || p.isOllama) {
       const cached = await cachedModels(id, key, liveModels, allSettings)
       liveModels = (Array.isArray(cached) ? cached : []).map(normalizeModelName).filter(Boolean)
+      if (!liveModels.length && p.isOllama) {
+        try {
+          const fallbackList = await fetchLiveModels(id, null)
+          if (fallbackList?.length) liveModels = fallbackList
+        } catch {}
+      }
     }
     // Every built-in provider now ships with `default: ''` (models are
     // discovered live), so `def` is normally empty. Falling straight to
@@ -1299,7 +1316,7 @@ export async function getModels() {
       // two statements that contradict each other and neither of which names
       // the actual problem.
       ...(ollamaReason ? { unavailable_reason: ollamaReason } : {}),
-      builtin: !custom[id], base_url: p.baseUrl, key_url: p.keyUrl,
+      builtin: !custom[id] || (id === 'ollama' && !custom[id]?.isCustomEndpoint), base_url: p.baseUrl, key_url: p.keyUrl,
     }
   }))
   return result
@@ -1330,26 +1347,24 @@ export async function addProvider(data) {
     ? data.preferred
     : (getBuiltinProvider(id)?.preferred || [])
 
-  // If user provided a key or it's a new provider endpoint, validate and discover live models
-  if (data.base_url && data.api_key && !liveModels.length) {
+  // If user provided a key or it's a new provider endpoint (including keyless local daemons like Ollama), validate and discover live models
+  const isKeylessEndpoint = Boolean(id === 'ollama' || (data.base_url && /:11434/i.test(data.base_url)) || (data.name && /ollama/i.test(data.name)))
+  if (data.base_url && (data.api_key || isKeylessEndpoint) && !liveModels.length) {
     const probeProv = {
       name: data.name || id,
       baseUrl: data.base_url,
       needsProxy,
       isAnthropic,
-      noKey: false,
+      noKey: isKeylessEndpoint,
+      isOllama: isKeylessEndpoint,
     }
-    const modelRes = await queryProviderModels(id, data.api_key, probeProv)
+    const modelRes = await queryProviderModels(id, data.api_key || '', probeProv)
     if (!modelRes.success) {
-      return { success: false, error: `Could not connect to ${data.name || id}: ${modelRes.error}` }
-    }
-    if (modelRes.models?.length) {
+      if (!isKeylessEndpoint) {
+        return { success: false, error: `Could not connect to ${data.name || id}: ${modelRes.error}` }
+      }
+    } else if (modelRes.models?.length) {
       liveModels = modelRes.models
-      // Prefer a curated known-good model over the raw alphabetically-first
-      // live one — the same reasoning testProvider's own no-model fallback
-      // uses. This config is never ping-tested here (only /models is
-      // queried), so picking a bad default silently ships a provider that
-      // "saved OK" but fails the moment the user actually sends a message.
       const preferredHit = preferredList.find(m => liveModels.includes(m))
       defaultModel = defaultModel || preferredHit || modelRes.defaultModel || liveModels[0]
     }
@@ -1367,6 +1382,7 @@ export async function addProvider(data) {
       default: defaultModel,
       needsProxy,
       isAnthropic,
+      ...(isKeylessEndpoint ? { isOllama: true, isLocal: true, noKey: true, publicModels: true, offlineReady: true } : {}),
       ...(preferredList.length ? { preferred: preferredList } : {}),
     }
     await db.setSetting('custom_providers', custom)
@@ -1461,6 +1477,74 @@ export async function testProvider(id, modelOverride) {
         : undefined,
       error: avail.available ? undefined : avail.reason,
     })
+  }
+
+  const isOllamaLike = id === 'ollama' || p?.isOllama || (p?.baseUrl && /:11434/i.test(p.baseUrl)) || (p?.name && /ollama/i.test(p.name))
+  if (isOllamaLike) {
+    let discovered = []
+    if (isDesktop()) {
+      try {
+        const { ollamaStatus } = await import('./ollama')
+        const st = await ollamaStatus()
+        discovered = (st?.models || []).map(m => normalizeModelName(m?.name || m?.model || m)).filter(Boolean)
+      } catch {}
+    }
+    if (!discovered.length) {
+      try {
+        discovered = await fetchLiveModels(id, null)
+      } catch {}
+    }
+    if (discovered.length) {
+      await db.setSetting(`models_${id}`, { ts: Date.now(), list: discovered })
+      if (!model || !discovered.includes(model)) {
+        const preferredHit = (p?.preferred || []).find(m => discovered.includes(m))
+        model = preferredHit || discovered[0]
+        await db.setSetting(`model_${id}`, model)
+      }
+    }
+
+    const started = performance.now()
+    try {
+      const baseUrlClean = (p.baseUrl || 'http://127.0.0.1:11434/v1').replace(/\/+$/, '')
+      const targetUrl = !baseUrlClean.endsWith('/v1') ? `${baseUrlClean}/v1/models` : `${baseUrlClean}/models`
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 4000)
+      let resp
+      try {
+        resp = await fetch(targetUrl, { signal: controller.signal })
+      } finally {
+        clearTimeout(timer)
+      }
+      if (!resp?.ok) {
+        // Fallback to /api/tags
+        const tagsUrl = `${baseUrlClean.replace(/\/v1\/?$/, '')}/api/tags`
+        const tagsResp = await fetch(tagsUrl)
+        if (!tagsResp?.ok) throw new Error(`Ollama returned status ${resp?.status || tagsResp?.status}`)
+      }
+      return remember({
+        success: true,
+        status: 'ok',
+        model: model || discovered[0] || 'default',
+        latencyMs: Math.round(performance.now() - started),
+        response: discovered.length ? `Connected (${discovered.length} model${discovered.length === 1 ? '' : 's'} available)` : 'Connected',
+      })
+    } catch (e) {
+      if (discovered.length) {
+        return remember({
+          success: true,
+          status: 'ok',
+          model: model || discovered[0],
+          latencyMs: 1,
+          response: `Connected (${discovered.length} models ready)`,
+        })
+      }
+      return remember({
+        success: false,
+        status: 'error',
+        model,
+        error: `Could not reach Ollama: ${e?.message || 'Connection failed'}. Ensure 'ollama serve' is running.`,
+      })
+    }
   }
 
   if (p.isLocal) {
@@ -1913,14 +1997,15 @@ export async function getAllProviderStatus() {
   const out = {}
   const entries = Object.entries(getLLMProviders())
   for (const [id, p] of entries) {
-    const hasKey = !!allSettings[`apikey_${id}`]
+    const isKeyless = Boolean(p.noKey || p.isOllama || p.isLocal || id === 'ollama' || id === 'local' || (p.baseUrl && /:11434/i.test(p.baseUrl)))
+    const hasKey = !!allSettings[`apikey_${id}`] || isKeyless
     const selected = allSettings[`model_${id}`] || p.default || p.models?.[0] || ''
     const status = allSettings[statusKey(id, selected)]
     out[id] = {
       hasKey,
       selected,
       state: !hasKey ? 'no-key'
-        : !status ? 'untested'
+        : !status ? (isKeyless ? 'connected' : 'untested')
         : status.success ? 'connected' : 'failed',
       error: status?.success ? null : status?.error || null,
       latencyMs: status?.latencyMs,

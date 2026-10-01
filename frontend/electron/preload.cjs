@@ -56,6 +56,27 @@ contextBridge.exposeInMainWorld('__YOGATIK_DESKTOP__', {
     ipcRenderer.on('video-studio:load-media', handler)
     return () => ipcRenderer.removeListener('video-studio:load-media', handler)
   },
+  // Dedicated Tool Windows (Media Studio, Trading, Torrents, Domain Hub)
+  openMediaStudio: (params) => ipcRenderer.invoke('media-studio:open', params),
+  closeMediaStudio: () => ipcRenderer.invoke('media-studio:close'),
+  isMediaStudioOpen: () => ipcRenderer.invoke('media-studio:is-open'),
+  openTradingTerminal: (params) => ipcRenderer.invoke('trading-terminal:open', params),
+  closeTradingTerminal: () => ipcRenderer.invoke('trading-terminal:close'),
+  isTradingTerminalOpen: () => ipcRenderer.invoke('trading-terminal:is-open'),
+  openTorrentDownloader: (params) => ipcRenderer.invoke('torrent-downloader:open', params),
+  closeTorrentDownloader: () => ipcRenderer.invoke('torrent-downloader:close'),
+  isTorrentDownloaderOpen: () => ipcRenderer.invoke('torrent-downloader:is-open'),
+  openDomainHub: (params) => ipcRenderer.invoke('domain-hub:open', params),
+  closeDomainHub: () => ipcRenderer.invoke('domain-hub:close'),
+  isDomainHubOpen: () => ipcRenderer.invoke('domain-hub:is-open'),
+  openToolWindow: (toolId, params) => ipcRenderer.invoke('tool-window:open', { toolId, params }),
+  closeToolWindow: (toolId) => ipcRenderer.invoke('tool-window:close', { toolId }),
+  sendPromptToMain: (prompt) => ipcRenderer.invoke('desktop:send-prompt-to-main', { prompt }),
+  onExecutePromptFromWindow: (cb) => {
+    const handler = (_e, data) => { try { cb(data) } catch {} }
+    ipcRenderer.on('desktop:execute-prompt', handler)
+    return () => ipcRenderer.removeListener('desktop:execute-prompt', handler)
+  },
 })
 
 // Desktop AI Companion & Screen-Watcher bridge
