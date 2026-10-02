@@ -20,6 +20,10 @@
         "destination": "/browser.html"
       },
       {
+        "source": "/mobile",
+        "destination": "/mobile.html"
+      },
+      {
         "source": "/guide",
         "destination": "/guide.html"
       },

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Yogatik — Mobile Apps for Android & iOS</title>
-  <meta name="description" content="Download Yogatik for Android and iOS. Private AI assistant with local models, file tools, and 177+ free tools — now on your phone." />
+  <meta name="description" content="Download Yogatik for Android and iOS. Private AI assistant with local models, file tools, and 177+ free tools — now on your phone. v12.4.0" />
   <meta property="og:title" content="Yogatik Mobile — Android & iOS" />
   <meta property="og:description" content="Private AI on your phone — local Ollama models, chat, tools and more." />
   <meta property="og:image" content="https://yogatik.web.app/icon-1024.png" />
@@ -184,7 +184,7 @@
         <div class="sub">Android 7.0+ · Chrome WebView 60+ · Free sideload APK — no Play Store needed</div>
 
         <a class="dl-btn primary-android" id="android-dl"
-           href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/Yogatik-v12.3.0-android.apk">
+           href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/Yogatik-v12.4.0-android.apk">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18L5.33 10h3.84v4h5.66v-4h3.84L12 2z"/></svg>
           Download APK
           <span class="badge new">Free</span>
@@ -212,7 +212,7 @@
         <div class="sub">iPhone / iPad · iOS 14+ · Unsigned IPA for sideloading via AltStore</div>
 
         <a class="dl-btn primary-ios" id="ios-dl"
-           href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/Yogatik-v12.3.0-ios.ipa">
+           href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/Yogatik-v12.4.0-ios.ipa">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18L5.33 10h3.84v4h5.66v-4h3.84L12 2z"/></svg>
           Download IPA
           <span class="badge soon">Sideload</span>
@@ -334,7 +334,7 @@
         </div>
         <div class="compat-item">
           <div class="ci-label">Built with</div>
-          <div class="ci-val">Capacitor 7 + Vite</div>
+          <div class="ci-val">Capacitor 8 + Vite</div>
         </div>
       </div>
     </section>
@@ -401,7 +401,7 @@
         });
         if (!r.ok) throw new Error('API error');
         const data = await r.json();
-        const tag = data.tag_name || 'v12.3.0';
+        const tag = data.tag_name || 'v12.4.0';
         const ver = tag.replace(/^v/, '');
         document.getElementById('ver-text').textContent = ver;
         // Update download links to use the actual latest tag
@@ -418,7 +418,7 @@
           document.getElementById('ios-dl').href = iosUrl;
         }
       } catch(e) {
-        document.getElementById('ver-text').textContent = '12.3.0';
+        document.getElementById('ver-text').textContent = '12.4.0';
       }
     }
     loadVersion();

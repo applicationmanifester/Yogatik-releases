@@ -31,7 +31,7 @@
     "description": "Ultra-fast desktop privacy browser with hardware AdShield, zero-latency YouTube ad skipper, distraction-free reader mode, Spotlight command palette, and local AI companion.",
     "url": "https://yogatik.web.app/browser",
     "downloadUrl": "https://yogatik.web.app/browser",
-    "softwareVersion": "12.3.0",
+    "softwareVersion": "12.4.0",
     "offers": {
       "@type": "Offer",
       "price": "0",
@@ -1149,6 +1149,7 @@
         <a class="nav-link" href="#features">Features</a>
         <a class="nav-link" href="#faq">FAQ</a>
         <a class="nav-cta" href="/platforms">Desktop App →</a>
+        <a class="nav-cta" href="/mobile">Mobile App →</a>
         <a class="nav-cta" href="/">Web App</a>
         <button class="theme-toggle-btn" id="theme-toggle" aria-label="Toggle theme">🌓</button>
       </nav>
@@ -1162,16 +1163,16 @@
         <div class="hero-glow"></div>
         <span class="pill">
           <span class="pulse-dot"></span>
-          <span>Yogatik Browser v12.3.0 Standalone · Zero Surveillance</span>
+          <span>Yogatik Browser v12.4.0 Standalone · Zero Surveillance</span>
         </span>
         <h1>Browse the Web at Pure Speed.<br /><span class="grad">Zero Ads. Zero Telemetry. 100% Private.</span></h1>
         <p>An independent, ultra-lightweight desktop browser engineered with hardware-accelerated AdShield, zero-latency YouTube ad skipper, distraction-free reader mode, Spotlight command palette, and local Ollama AI intelligence. No account required.</p>
 
         <!-- Dynamic Release Meta -->
         <div class="release-meta" id="release-meta">
-          <span>Version <b>v12.3.0</b> (Core 12.3.0)</span>
+          <span>Version <b>v12.4.0</b> (Core 12.4.0)</span>
           <span class="dot"></span>
-          <span>Released October 2, 2026</span>
+          <span>Released October 3, 2026</span>
           <span class="dot"></span>
           <span class="badge-green">● Windows · macOS · Linux Ready</span>
         </div>
@@ -1967,8 +1968,8 @@
         var meta = document.getElementById('release-meta');
         if (meta) {
           var exe = (rel.assets || []).find(function (as) { return as.name === 'YogatikBrowser-Setup.exe'; });
-          var tag = rel.tag_name || 'v12.3.0';
-          var bits = ['Version <b>' + tag + '</b> (Core 12.3.0)'];
+          var tag = rel.tag_name || 'v12.4.0';
+          var bits = ['Version <b>' + tag + '</b> (Core 12.4.0)'];
           if (rel.published_at) {
             var d = new Date(rel.published_at);
             if (!isNaN(d)) {

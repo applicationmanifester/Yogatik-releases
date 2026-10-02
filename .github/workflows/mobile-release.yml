@@ -80,7 +80,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           repository: applicationmanifester/Yogatik-releases
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
           files: Yogatik-*-android.apk
           body: |
@@ -166,7 +166,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           repository: applicationmanifester/Yogatik-releases
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
           files: Yogatik-*-ios.ipa
           body: |

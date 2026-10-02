@@ -201,6 +201,25 @@
         </a>
       </div>
 
+      <!-- Yogatik Mobile (Android & iOS) Callout -->
+      <div style="max-width:800px;margin:18px auto 0;background:linear-gradient(135deg, rgba(61,220,132,.1) 0%, rgba(110,110,247,.08) 100%);border:1px solid rgba(61,220,132,.3);border-radius:18px;padding:22px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:18px;text-align:left;">
+        <div style="display:flex;align-items:center;gap:16px;">
+          <div style="width:48px;height:48px;border-radius:12px;background:rgba(61,220,132,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg viewBox="0 0 24 24" style="width:28px;height:28px;" fill="none"><path d="M6.18 15a.565.565 0 0 1-.565-.565V10.56a.565.565 0 1 1 1.13 0v3.875a.565.565 0 0 1-.565.565zm11.64 0a.565.565 0 0 1-.565-.565V10.56a.565.565 0 1 1 1.13 0v3.875a.565.565 0 0 1-.565.565zM4.725 9.429A.726.726 0 0 1 4 8.703V8.28A4.283 4.283 0 0 1 7.3 4.075L6.664 2.97a.225.225 0 0 1 .39-.225l.649 1.125A5.81 5.81 0 0 1 9.994 3.43a5.81 5.81 0 0 1 2.291.44l.65-1.124a.225.225 0 0 1 .389.225l-.637 1.104A4.283 4.283 0 0 1 16 8.28v.424a.726.726 0 0 1-.726.725H4.725zm5.27-2.929a.451.451 0 1 0 0 .902.451.451 0 0 0 0-.902zm4 0a.451.451 0 1 0 0 .902.451.451 0 0 0 0-.902zM4.725 17.845A1.155 1.155 0 0 1 3.57 16.69V9.87h16.86v6.82a1.155 1.155 0 0 1-1.155 1.155H17.9v2.32a.565.565 0 1 1-1.13 0v-2.32H7.23v2.32a.565.565 0 1 1-1.13 0v-2.32H4.725z" fill="#3ddc84"/></svg>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <h4 style="margin:0;font-size:17px;font-weight:800;color:var(--text);">Yogatik for Android &amp; iOS</h4>
+              <span style="font-size:11px;font-weight:700;color:#3ddc84;background:rgba(61,220,132,.12);border:1px solid rgba(61,220,132,.28);padding:2px 8px;border-radius:6px;">New Mobile Edition</span>
+            </div>
+            <p style="margin:4px 0 0;font-size:13.5px;color:var(--muted);">Native Android APK (sideload, free) &amp; unsigned iOS IPA for AltStore — same AI, tools and privacy, now in your pocket.</p>
+          </div>
+        </div>
+        <a href="/mobile" style="display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:10px;background:linear-gradient(135deg, #3ddc84, #2fb872);color:#0a1a10;font-size:14px;font-weight:700;text-decoration:none;box-shadow:0 3px 12px rgba(61,220,132,.22);white-space:nowrap;">
+          📱 Get Mobile App →
+        </a>
+      </div>
+
       <!-- What's New & Updates Card -->
       <div class="whats-new-container" style="max-width:800px;margin:32px auto 0;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:26px 22px;box-shadow:0 8px 30px rgba(0,0,0,.15);transition:border-color .2s ease">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
@@ -463,11 +482,36 @@
     (function () {
       var RELEASES = [
   {
+    "version": "12.4.0",
+    "title": "Yogatik 12.4.0: Native Android & iOS Mobile Apps, Mobile Download Hub & Version Sync",
+    "date": "October 3, 2026",
+    "codename": "Native Android & iOS Mobile Apps, Mobile Download Hub & Version Sync",
+    "isLatest": true,
+    "highlights": [
+      [
+        "Native Android APK via Capacitor",
+        "Full-featured native Android application wrapping Yogatik AI chat, 177+ tools, and local storage. Direct APK download with sideloading support"
+      ],
+      [
+        "iOS IPA for AltStore & Sideloadly",
+        "Native iOS build for iPhone and iPad (iOS 14+) with full offline capabilities and camera/voice integration"
+      ],
+      [
+        "Dedicated Mobile Download Hub (/mobile)",
+        "Comprehensive mobile download portal at yogatik.web.app/mobile featuring direct APK/IPA downloads, install guides, and compatibility tables"
+      ],
+      [
+        "GitHub Actions Mobile CI/CD Release Automation",
+        "Automated multi-platform CI/CD pipeline building signed/unsigned APK and IPA binaries on every version tag push"
+      ]
+    ]
+  },
+  {
     "version": "12.3.0",
     "title": "Yogatik 12.3.0: Standalone Privacy Browser Session Healing, Canonical URL Resolution & Electric Orange Branding",
     "date": "October 2, 2026",
     "codename": "Standalone Privacy Browser Session Healing, Canonical URL Resolution & Electric Orange Branding",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Standalone Browser Cold-Start Session Healing",

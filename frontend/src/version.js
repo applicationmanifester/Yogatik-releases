@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '12.3.0'
+export const APP_VERSION = '12.4.0'
 export const BUILD_DATE = 'October 2026'
-export const APP_CODENAME = 'Yogatik 12.3.0 — Standalone Privacy Browser Session Healing, Canonical URL Resolution & Electric Orange Branding'
+export const APP_CODENAME = 'Yogatik 12.4.0 — Native Android & iOS Mobile Apps, Mobile Download Hub & Version Sync'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,55 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "12.4.0",
+    "title": "Yogatik 12.4.0: Native Android & iOS Mobile Apps, Mobile Download Hub & Version Sync",
+    "date": "October 3, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Native Android APK & iOS IPA: First official mobile release — Capacitor-powered native apps for Android 7.0+ and iOS 14+, automatically built and published via GitHub Actions on every version tag",
+      "Mobile Download Hub (/mobile): Dedicated landing page for Android and iOS with step-by-step installation guides, compatibility matrix, and direct APK/IPA download links",
+      "Platforms Page Mobile Card: /platforms now includes a Yogatik Mobile callout card linking to the full /mobile download hub alongside Desktop and Browser sections",
+      "Download Modal Mobile Tab: In-app download modal now features a Mobile card (Android & iOS) alongside Desktop and Browser, keeping all install paths in one place",
+      "GitHub Actions Mobile Release Workflow: Automated CI/CD pipeline builds Android APK on ubuntu-latest (Gradle) and iOS IPA on macos-latest (Xcode), publishing both to Yogatik-releases on every v* tag"
+    ],
+    "sections": [
+      {
+        "category": "📱 Mobile Apps (Android & iOS)",
+        "items": [
+          {
+            "title": "Android APK via Capacitor",
+            "description": "Native Android app built with Capacitor 8.x wrapping the full Yogatik web app — AI chat, 177+ tools, and file access. Sideload from /mobile or wait for Play Store listing."
+          },
+          {
+            "title": "iOS IPA via Capacitor + Xcode",
+            "description": "Unsigned IPA for sideloading via AltStore or Sideloadly on iPhone and iPad (iOS 14+). App Store submission planned for a future release."
+          },
+          {
+            "title": "Automated Mobile CI/CD",
+            "description": "mobile-release.yml GitHub Actions workflow builds and publishes both APK and IPA to Yogatik-releases on every version tag push."
+          }
+        ]
+      },
+      {
+        "category": "🌐 Mobile Landing Page & Navigation",
+        "items": [
+          {
+            "title": "/mobile Download Hub",
+            "description": "Full-page mobile download portal at yogatik.web.app/mobile with Android and iOS download cards, step-by-step install guides, and a compatibility matrix."
+          },
+          {
+            "title": "Platforms Page Integration",
+            "description": "/platforms now surfaces a mobile callout card so users on any platform can discover the Android and iOS apps."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "12.3.0",
     "title": "Yogatik 12.3.0: Standalone Privacy Browser Session Healing, Canonical URL Resolution & Electric Orange Branding",
     "date": "October 2, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Standalone Browser Cold-Start Session Healing: Resolved blank/black window on startup by ensuring default session registration and automatic initial tab mounting",
       "Canonical URL Resolution & Shorthand Navigation: Instant mapping for direct keywords (e.g. 'youtube' -> 'https://www.youtube.com') with privacy-first search query fallbacks",

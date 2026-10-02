@@ -19,7 +19,7 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
 
         <div style={{ 
           display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
           gap: 20, 
           marginBottom: 20,
           alignItems: 'stretch' 
@@ -56,8 +56,8 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
                 </div>
               </div>
               <ul style={{ margin: '16px 0', paddingLeft: 18, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                <li><strong style={{ color: 'var(--text-primary)' }}>Full Local Folder & Terminal Access:</strong> Read, write, search, edit files & execute terminal commands locally.</li>
-                <li><strong style={{ color: 'var(--text-primary)' }}>AI Model Tracing & Attribution:</strong> See exact model tags, reasoning thoughts & step-by-step tool actions.</li>
+                <li><strong style={{ color: 'var(--text-primary)' }}>Full Local Folder &amp; Terminal Access:</strong> Read, write, search, edit files &amp; execute terminal commands locally.</li>
+                <li><strong style={{ color: 'var(--text-primary)' }}>AI Model Tracing &amp; Attribution:</strong> See exact model tags, reasoning thoughts &amp; step-by-step tool actions.</li>
                 <li><strong style={{ color: 'var(--text-primary)' }}>Non-Blocking Multi-Tasking:</strong> High-performance async I/O keeps UI fluid during heavy tasks.</li>
               </ul>
             </div>
@@ -154,6 +154,69 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
             </a>
           </div>
 
+          {/* Mobile App Card — Android & iOS */}
+          <div style={{
+            background: 'var(--bg-tertiary)',
+            border: '1px solid rgba(61, 220, 132, 0.4)',
+            borderRadius: 12,
+            padding: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+          }}>
+            <span style={{
+              position: 'absolute',
+              top: -10,
+              right: 20,
+              background: 'linear-gradient(135deg, #3ddc84, #2fb872)',
+              color: '#0a1a10',
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: 10,
+              textTransform: 'uppercase',
+            }}>v12.4.0 New</span>
+
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <Smartphone size={24} style={{ color: '#3ddc84' }} />
+                <div>
+                  <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Mobile App</h4>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Android · iOS</span>
+                </div>
+              </div>
+              <ul style={{ margin: '16px 0', paddingLeft: 18, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                <li><strong style={{ color: 'var(--text-primary)' }}>Android APK (Free):</strong> Sideload the native APK — no Play Store needed. Android 7.0+.</li>
+                <li><strong style={{ color: 'var(--text-primary)' }}>iOS IPA (AltStore):</strong> Unsigned IPA for iPhone &amp; iPad via AltStore or Sideloadly. iOS 14+.</li>
+                <li><strong style={{ color: 'var(--text-primary)' }}>Full Yogatik Experience:</strong> AI chat, 177+ tools, and privacy — in your pocket.</li>
+              </ul>
+            </div>
+
+            <a
+              href="/mobile"
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: '12px 16px',
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                color: '#0a1a10',
+                background: 'linear-gradient(135deg, #3ddc84, #2fb872)',
+                textDecoration: 'none',
+                marginTop: 16,
+                cursor: 'pointer',
+                boxShadow: '0 3px 12px rgba(61,220,132,.25)',
+              }}
+            >
+              <Download size={18} /> Get Mobile App
+            </a>
+          </div>
+
           {/* Web App PWA Card */}
           <div style={{
             background: 'var(--bg-secondary)',
@@ -211,3 +274,4 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
     </Modal>
   )
 }
+

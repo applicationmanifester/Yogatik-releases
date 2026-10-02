@@ -57,7 +57,7 @@ export const LEGACY_SHORTCUTS = [
 ]
 
 export const STATIC_PAGES = [
-  '/platforms', '/guide', '/tools', '/how-it-works', '/faq',
+  '/platforms', '/mobile', '/guide', '/tools', '/how-it-works', '/faq',
   '/privacy', '/terms', '/pricing', '/refunds', '/checkout',
 ]
 
