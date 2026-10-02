@@ -851,20 +851,9 @@ export function TradingModal({ isOpen, onClose, isStandalone = false }) {
           <button
             type="button"
             onClick={() => setActiveTab('positions')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '7px 14px',
-              borderRadius: '7px',
-              border: activeTab === 'positions' ? '1px solid var(--accent, #ff6b35)' : '1px solid transparent',
-              background: activeTab === 'positions' ? 'var(--accent-glow, rgba(255,107,53,0.1))' : 'transparent',
-              color: activeTab === 'positions' ? 'var(--accent, #ff6b35)' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '12.5px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            title="Positions & P&L (press 1)"
+            aria-pressed={activeTab === 'positions'}
+            style={tradingTabStyle(activeTab === 'positions')}
           >
             <Layers size={15} /> Positions & P&L
             {portfolioData.positions.length > 0 && (
@@ -884,20 +873,9 @@ export function TradingModal({ isOpen, onClose, isStandalone = false }) {
           <button
             type="button"
             onClick={() => setActiveTab('orders')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '7px 14px',
-              borderRadius: '7px',
-              border: activeTab === 'orders' ? '1px solid var(--accent, #ff6b35)' : '1px solid transparent',
-              background: activeTab === 'orders' ? 'var(--accent-glow, rgba(255,107,53,0.1))' : 'transparent',
-              color: activeTab === 'orders' ? 'var(--accent, #ff6b35)' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '12.5px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            title="Order Book (press 2)"
+            aria-pressed={activeTab === 'orders'}
+            style={tradingTabStyle(activeTab === 'orders')}
           >
             <ListOrdered size={15} /> Order Book
             {ordersList.length > 0 && (
@@ -918,20 +896,9 @@ export function TradingModal({ isOpen, onClose, isStandalone = false }) {
           <button
             type="button"
             onClick={() => setActiveTab('scanner')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '7px 14px',
-              borderRadius: '7px',
-              border: activeTab === 'scanner' ? '1px solid var(--accent, #ff6b35)' : '1px solid transparent',
-              background: activeTab === 'scanner' ? 'var(--accent-glow, rgba(255,107,53,0.1))' : 'transparent',
-              color: activeTab === 'scanner' ? 'var(--accent, #ff6b35)' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '12.5px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            title="Market Scanner (press 3)"
+            aria-pressed={activeTab === 'scanner'}
+            style={tradingTabStyle(activeTab === 'scanner')}
           >
             <Radar size={15} /> Market Scanner
           </button>
@@ -939,20 +906,9 @@ export function TradingModal({ isOpen, onClose, isStandalone = false }) {
           <button
             type="button"
             onClick={() => setActiveTab('backtest')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '7px 14px',
-              borderRadius: '7px',
-              border: activeTab === 'backtest' ? '1px solid var(--accent, #ff6b35)' : '1px solid transparent',
-              background: activeTab === 'backtest' ? 'var(--accent-glow, rgba(255,107,53,0.1))' : 'transparent',
-              color: activeTab === 'backtest' ? 'var(--accent, #ff6b35)' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '12.5px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            title="Vector Backtest (press 4)"
+            aria-pressed={activeTab === 'backtest'}
+            style={tradingTabStyle(activeTab === 'backtest')}
           >
             <BarChart3 size={15} /> Vector Backtest
           </button>
@@ -960,20 +916,9 @@ export function TradingModal({ isOpen, onClose, isStandalone = false }) {
           <button
             type="button"
             onClick={() => setActiveTab('journal')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '7px 14px',
-              borderRadius: '7px',
-              border: activeTab === 'journal' ? '1px solid var(--accent, #ff6b35)' : '1px solid transparent',
-              background: activeTab === 'journal' ? 'var(--accent-glow, rgba(255,107,53,0.1))' : 'transparent',
-              color: activeTab === 'journal' ? 'var(--accent, #ff6b35)' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '12.5px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            title="Forensic Journal (press 5)"
+            aria-pressed={activeTab === 'journal'}
+            style={tradingTabStyle(activeTab === 'journal')}
           >
             <FileText size={15} /> Forensic Journal
             {journalEntries.length > 0 && (
@@ -993,21 +938,9 @@ export function TradingModal({ isOpen, onClose, isStandalone = false }) {
           <button
             type="button"
             onClick={() => setActiveTab('settings')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '7px 14px',
-              borderRadius: '7px',
-              border: activeTab === 'settings' ? '1px solid var(--accent, #ff6b35)' : '1px solid transparent',
-              background: activeTab === 'settings' ? 'var(--accent-glow, rgba(255,107,53,0.1))' : 'transparent',
-              color: activeTab === 'settings' ? 'var(--accent, #ff6b35)' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '12.5px',
-              cursor: 'pointer',
-              marginLeft: 'auto',
-              whiteSpace: 'nowrap',
-            }}
+            title="Settings & 2FA (press 6)"
+            aria-pressed={activeTab === 'settings'}
+            style={{ ...tradingTabStyle(activeTab === 'settings'), marginLeft: 'auto' }}
           >
             <SlidersHorizontal size={15} /> Settings & 2FA
           </button>

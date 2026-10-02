@@ -2,11 +2,11 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
 import {
   Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Wrench,
-  AlertTriangle, Monitor, MonitorOff, MessageSquare, Eye, EyeOff,
+  AlertTriangle, Monitor, MonitorOff, MessageSquare, Eye,
   Aperture, Volume2, VolumeX, Scan, ScanEye,
   RefreshCw, SwitchCamera, Settings2, Camera, Search,
   ChevronDown, ChevronUp, Check, Zap, Layers, PictureInPicture2, Maximize2, Square,
-  Sun, Moon, Copy, Bot, Brain, Clock, Sparkles,
+  Sun, Moon, Copy, Bot, Brain, Sparkles,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -31,7 +31,7 @@ import { LiveTelestration } from './LiveTelestration'
 import { openDocumentPip, isDocumentPipSupported } from '../pipCompanion'
 import { enumerate, canFlipCamera } from '../live/devices'
 import * as liveMetrics from '../live/metrics'
-import { db, getSetting, setSetting } from '../db'
+import { getSetting, setSetting } from '../db'
 import { preconnectProvider } from '../live/latencyOptimizer'
 import { backgroundWorkers } from '../backgroundWorkers'
 
@@ -1164,19 +1164,12 @@ export function LiveView({
     })
   }, [transcript, activeProvider, provider, model, onEnd])
 
-  // Build capability map for models
-  const modelCanSeeMap = useMemo(() => {
-    const map = {}
-    availableModels?.forEach(m => {
-      // Heuristic: vision-capable models often have 'vision', '4o', 'gemini', 'flash' in name
-      map[m] = /vision|gemini|4o|flash|pro/i.test(m)
-    })
-    return map
-  }, [availableModels])
-
-  const toolCapableModels = useMemo(() => {
-    return availableModels?.filter(m => !/mini|nano|1b|3b|0\.5b/i.test(m)) || []
-  }, [availableModels])
+  // Model vision capability is resolved authoritatively in vision/capability.js
+  // (name heuristic + cached 1-pixel probe) and arrives here as the `modelCanSee`
+  // prop — see App.jsx getVisionStatus() and LiveSettings. Do NOT re-derive it
+  // locally with a name regex: 'flash'/'pro' match text-only models and miss
+  // llava/pixtral/qwen-vl, which is exactly how the camera ends up on with a
+  // model that cannot see.
 
   // Orb scale tracks the model's own output level
   const orbScale = useMemo(() => 1 + (speaking ? assistantLevel * 0.45 : 0), [speaking, assistantLevel])
@@ -2079,6 +2072,37 @@ export function LiveView({
           >
             {screenOn ? <MonitorOff size={20} /> : <Monitor size={20} />}
           </button>
+          {/* Auto-scan and the object-detection HUD both need a live feed, so
+              they only appear when one is on. Both toggles already existed but
+              were wired to nothing — the only way to reach them was the global
+              feature flags, which is not somewhere you can get to mid-call.
+              `active-screen` is reused as the shared "engaged" button style. */}
+          {(camOn || screenOn) && (
+            <button
+              className={`live-btn ${autoScan ? 'active-screen' : ''}`}
+              onClick={toggleAutoScan}
+              aria-pressed={autoScan}
+              aria-label={autoScan ? 'Turn off auto-scan' : 'Turn on auto-scan'}
+              title={autoScan
+                ? 'Auto-scan ON — a frame is sent every 10s so the AI keeps up without being asked. This spends tokens; tap to stop.'
+                : 'Auto-scan: send a frame every 10s so the AI follows along unprompted'}
+            >
+              <Scan size={20} />
+            </button>
+          )}
+          {(camOn || screenOn) && (
+            <button
+              className={`live-btn ${objectDetect ? 'active-screen' : ''}`}
+              onClick={toggleObjectDetect}
+              aria-pressed={objectDetect}
+              aria-label={objectDetect ? 'Turn off object detection HUD' : 'Turn on object detection HUD'}
+              title={objectDetect
+                ? 'Object detection HUD ON — boxes are labelled on-device (no tokens spent). Tap to hide.'
+                : 'Object detection HUD: label what is in view, entirely on-device (no tokens spent)'}
+            >
+              <ScanEye size={20} />
+            </button>
+          )}
           {camOn && hasFlip && (
             <button className="live-btn" onClick={flipCam} aria-label="Switch between front and back camera" title="Flip camera">
               <SwitchCamera size={19} />

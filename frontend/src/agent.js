@@ -470,7 +470,8 @@ function pruneOldImages(messages) {
 /** Tools that surface citable web sources */
 const SOURCE_TOOLS = new Set([
   'deep_research', 'web_search', 'web_extract', 'link_preview',
-  'scholar', 'research_briefing', 'hackernews', 'wikipedia'
+  'scholar', 'research_briefing', 'hackernews', 'wikipedia',
+  'local_search', 'search', 'local_index', 'firecrawl', 'repo_finder'
 ])
 
 /**
@@ -1645,7 +1646,7 @@ function safelyParseToolArgs(raw) {
           }).catch(() => {})
         }
 
-        if (SOURCE_TOOLS.has(tc.name)) {
+        if (SOURCE_TOOLS.has(tc.name) || result?.sources || result?.results || (result?.url && typeof result.url === 'string')) {
           for (const s of collectSources(result)) {
             if (!sources.some(existing => existing.url === s.url)) sources.push(s)
           }

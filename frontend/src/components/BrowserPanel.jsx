@@ -22,8 +22,17 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
   const addrRef = useRef(null)
   const findRef = useRef(null)
   const downloadsWrapRef = useRef(null)
-  const [addrValue, setAddrValue] = useState(url || '')
-  const [nav, setNav] = useState({ tabs: [], activeTabId: null, url: url || '', canGoBack: false, canGoForward: false, loading: false, zoomPercent: 100 })
+  const initialUrl = url || 'https://yogatik.web.app/browser'
+  const [addrValue, setAddrValue] = useState(initialUrl)
+  const [nav, setNav] = useState({
+    tabs: [{ tabId: 'tab-1', url: initialUrl, title: 'Yogatik Browser' }],
+    activeTabId: 'tab-1',
+    url: initialUrl,
+    canGoBack: false,
+    canGoForward: false,
+    loading: false,
+    zoomPercent: 100
+  })
   const [findOpen, setFindOpen] = useState(false)
   const [findText, setFindText] = useState('')
   const [findResult, setFindResult] = useState({ matches: 0, activeMatchOrdinal: 0 })
@@ -170,16 +179,90 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
   const goBack = () => br()?.history({ conversationId, direction: 'back' })
   const goForward = () => br()?.history({ conversationId, direction: 'forward' })
   const doReload = () => br()?.reload({ conversationId })
-  const newTab = () => br()?.newTab({ conversationId })
-  const selectTab = (tabId) => br()?.selectTab({ conversationId, tabId })
-  const closeTab = (e, tabId) => { e.stopPropagation(); br()?.closeTab({ conversationId, tabId }) }
+
+  const newTab = () => {
+    if (br()) {
+      br()?.newTab({ conversationId })
+    } else {
+      const newId = `tab-${Date.now()}`
+      const newTabObj = { tabId: newId, url: '', title: 'New Tab' }
+      setNav((prev) => {
+        const existingTabs = prev.tabs && prev.tabs.length > 0
+          ? prev.tabs
+          : [{ tabId: 'tab-1', url: prev.url || '', title: 'Tab 1' }]
+        return {
+          ...prev,
+          tabs: [...existingTabs, newTabObj],
+          activeTabId: newId,
+          url: '',
+        }
+      })
+      setAddrValue('')
+      setTimeout(() => addrRef.current?.focus(), 50)
+    }
+  }
+
+  const selectTab = (tabId) => {
+    if (br()) {
+      br()?.selectTab({ conversationId, tabId })
+    } else {
+      setNav((prev) => {
+        const t = prev.tabs?.find((tab) => tab.tabId === tabId)
+        if (t) setAddrValue(t.url || '')
+        return {
+          ...prev,
+          activeTabId: tabId,
+          url: t ? t.url : prev.url,
+        }
+      })
+    }
+  }
+
+  const closeTab = (e, tabId) => {
+    e.stopPropagation()
+    if (br()) {
+      br()?.closeTab({ conversationId, tabId })
+    } else {
+      setNav((prev) => {
+        const remaining = (prev.tabs || []).filter((t) => t.tabId !== tabId)
+        const nextTabs = remaining.length > 0 ? remaining : [{ tabId: `tab-${Date.now()}`, url: '', title: 'New Tab' }]
+        const nextActive = prev.activeTabId === tabId ? nextTabs[0].tabId : prev.activeTabId
+        const activeTab = nextTabs.find((t) => t.tabId === nextActive)
+        if (activeTab) setAddrValue(activeTab.url || '')
+        return {
+          ...prev,
+          tabs: nextTabs,
+          activeTabId: nextActive,
+          url: activeTab ? activeTab.url : '',
+        }
+      })
+    }
+  }
+
   const zoom = (direction) => br()?.zoom({ conversationId, direction })
 
   const submitAddr = (e) => {
     e.preventDefault()
     const val = addrValue.trim()
     if (!val) return
-    br()?.navigate({ conversationId, url: val })
+    const targetUrl = val.startsWith('http://') || val.startsWith('https://') ? val : `https://${val}`
+    if (br()) {
+      br()?.navigate({ conversationId, url: targetUrl })
+    } else {
+      setNav((prev) => {
+        let title = targetUrl
+        try { title = new URL(targetUrl).hostname.replace(/^www\./, '') } catch {}
+        const updatedTabs = (prev.tabs || []).map((t) =>
+          t.tabId === prev.activeTabId ? { ...t, url: targetUrl, title } : t
+        )
+        return {
+          ...prev,
+          url: targetUrl,
+          tabs: updatedTabs.length > 0 ? updatedTabs : [{ tabId: 'tab-1', url: targetUrl, title }],
+          activeTabId: prev.activeTabId || 'tab-1',
+        }
+      })
+    }
     addrRef.current?.blur()
   }
 
@@ -206,7 +289,7 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
 
   const inProgressCount = downloads.filter((d) => d.state === 'progressing').length
 
-  const showTabStrip = nav.tabs && nav.tabs.length > 1
+  const showTabStrip = Boolean(nav.tabs && nav.tabs.length > 0)
 
   return (
     <div className="browser-panel">
@@ -364,6 +447,25 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
               <button onClick={(e) => closeTab(e, t.tabId)} title="Close tab" aria-label="Close tab">×</button>
             </div>
           ))}
+          <button
+            className="browser-panel-tab-plus"
+            onClick={newTab}
+            title="New tab"
+            aria-label="New tab"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#94a3b8',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '4px 8px',
+              borderRadius: '6px',
+            }}
+          >
+            <Plus size={14} />
+          </button>
         </div>
       )}
       {findOpen && (
@@ -548,7 +650,66 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
           </div>
         </div>
       )}
-      <div className="browser-panel-hole" ref={holeRef} />
+      {!br() ? (
+        <div className="browser-panel-web-wrap">
+          <div className="browser-panel-web-banner">
+            <div className="browser-panel-web-banner-info">
+              <span className="browser-panel-web-pill">Web Preview Mode</span>
+              <span>Running in web companion. For hardware AdShield &amp; YouTube ad skipper, use Yogatik Standalone.</span>
+            </div>
+            <a href="/browser" target="_blank" rel="noopener noreferrer" className="browser-panel-web-btn">
+              Download Browser →
+            </a>
+          </div>
+          {nav.url && !nav.url.startsWith('about:') ? (
+            <iframe
+              title="Yogatik Browser Web View"
+              src={nav.url}
+              className="browser-panel-iframe"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            />
+          ) : (
+            <div className="browser-panel-web-empty">
+              <Compass size={44} color="var(--accent, #ff6b35)" />
+              <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '8px 0 4px', color: 'var(--text-primary)' }}>Yogatik Browser Web Companion</h3>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', maxWidth: '340px', margin: '0 auto 16px', lineHeight: 1.5 }}>
+                Enter any address above to preview pages, or download the standalone desktop browser for full hardware AdShield and zero surveillance.
+              </p>
+              <div className="browser-panel-web-shortcuts">
+                <button type="button" onClick={() => {
+                  const target = 'https://news.ycombinator.com'
+                  setAddrValue(target)
+                  setNav((prev) => ({
+                    ...prev,
+                    url: target,
+                    tabs: (prev.tabs || []).map(t => t.tabId === prev.activeTabId ? { ...t, url: target, title: 'Hacker News' } : t)
+                  }))
+                }}>Hacker News</button>
+                <button type="button" onClick={() => {
+                  const target = 'https://en.wikipedia.org'
+                  setAddrValue(target)
+                  setNav((prev) => ({
+                    ...prev,
+                    url: target,
+                    tabs: (prev.tabs || []).map(t => t.tabId === prev.activeTabId ? { ...t, url: target, title: 'Wikipedia' } : t)
+                  }))
+                }}>Wikipedia</button>
+                <button type="button" onClick={() => {
+                  const target = 'https://github.com'
+                  setAddrValue(target)
+                  setNav((prev) => ({
+                    ...prev,
+                    url: target,
+                    tabs: (prev.tabs || []).map(t => t.tabId === prev.activeTabId ? { ...t, url: target, title: 'GitHub' } : t)
+                  }))
+                }}>GitHub</button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="browser-panel-hole" ref={holeRef} />
+      )}
     </div>
   )
 }

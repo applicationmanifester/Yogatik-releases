@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '12.1.1'
+export const APP_VERSION = '12.2.0'
 export const BUILD_DATE = 'October 2026'
-export const APP_CODENAME = 'Yogatik 12.1.1 — Electron Main Process CJS Compatibility & On-Device Auto-Recovery'
+export const APP_CODENAME = 'Yogatik 12.2.0 — Multi-Tab Browser Companion, Universal Search & Full-Index Link Architecture'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,50 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "12.2.0",
+    "title": "Yogatik 12.2.0: Multi-Tab Browser Companion, Universal Search & Full-Index Link Architecture",
+    "date": "October 2, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Multi-Tab Browser Companion: Full local multi-tab state engine for web preview and standalone modes with seamless tab creation, switching, and custom home shortcuts",
+      "Unified Search & Link Resolution: Command Palette website URL resolution, non-interfering HTTP/HTTPS link rendering, and expanded source citation tracking",
+      "Desktop Tab Strip Ergonomics: Inline '+' new-tab button in tab strip and global Ctrl+T/Cmd+T hotkey bindings",
+      "Global Search Visibility & SEO: Complete Schema.org WebBrowser structured data, robots indexation directives, and expanded sitemap"
+    ],
+    "sections": [
+      {
+        "category": "🧭 Browser Companion & Tab Management",
+        "items": [
+          {
+            "title": "Web Mode Multi-Tab State",
+            "description": "Implemented independent multi-tab state management for web preview mode, enabling new tab creation, switching, and closing."
+          },
+          {
+            "title": "Tab Strip Ergonomics",
+            "description": "Added inline '+' tab strip button in desktop browser window and wired global window-level Ctrl+T / Cmd+T shortcuts."
+          }
+        ]
+      },
+      {
+        "category": "🔍 Search Indexing & Citation Architecture",
+        "items": [
+          {
+            "title": "Command Palette & URL Navigation",
+            "description": "Enabled automatic URL detection in command search, direct website opening, and merged application commands."
+          },
+          {
+            "title": "Web Link Rendering & Citations",
+            "description": "Fixed document download regex so standard web URLs ending in .html render cleanly as clickable external hyperlinks, and expanded search citation tracking across all query tools."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "12.1.1",
     "title": "Yogatik 12.1.1: Electron Main Process CJS Compatibility & Desktop Launcher Stability",
     "date": "October 2, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Electron Main Process Compatibility: Migrated browserConfig to explicit .cjs format, resolving the 'module is not defined in ES module scope' startup crash on packaged desktop apps",
       "On-Device WebLLM Auto-Recovery: Automatic GPU weight reload and self-healing chat completions when no cloud keys are configured",

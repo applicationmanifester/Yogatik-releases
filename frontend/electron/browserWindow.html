@@ -135,6 +135,8 @@
   .tab-audio-btn { background: none; border: 0; color: #10b981; cursor: pointer; font-size: 11px; padding: 0 2px; display: inline-flex; align-items: center; }
   .tab-audio-btn:hover { color: #34d399; }
   .tab-audio-btn.muted { color: #ef4444; }
+  .tab-new-btn { background: none; border: 0; color: #8b93a3; cursor: pointer; font-size: 16px; padding: 3px 8px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; line-height: 1; transition: all 0.15s; }
+  .tab-new-btn:hover { color: #fff; background: #1a1f29; }
   #hint { margin-left: auto; color: #6b7280; font-size: 11px; padding-right: 4px; flex: 0 0 auto; }
 
   /* Fullscreen Mode: when HTML5 full-screen activates (e.g. YouTube video),
@@ -229,7 +231,10 @@
     <button id="find-close" title="Close find">&#215;</button>
   </div>
 </div>
-<div id="bar"><span id="hint">Yogatik is browsing</span></div>
+<div id="bar">
+  <button class="tab-new-btn" id="bar-new-tab-btn" title="New tab (Ctrl+T)">+</button>
+  <span id="hint">Yogatik is browsing</span>
+</div>
 
 <!-- AI Companion Dock -->
 <div id="ai-panel">
@@ -331,6 +336,20 @@
   fwdBtn.onclick = () => act('forward')
   reloadBtn.onclick = () => act('reload')
   document.getElementById('new-tab-btn').onclick = () => act('new-tab')
+  const barNewTabBtn = document.getElementById('bar-new-tab-btn')
+  if (barNewTabBtn) barNewTabBtn.onclick = () => act('new-tab')
+
+  // Global window keyboard shortcuts for new-tab, close-tab, reload
+  document.addEventListener('keydown', (e) => {
+    const mod = (navigator.platform.indexOf('Mac') >= 0) ? e.metaKey : e.ctrlKey
+    if (mod && !e.altKey && e.key.toLowerCase() === 't') {
+      e.preventDefault()
+      act('new-tab')
+    } else if (mod && !e.altKey && e.key.toLowerCase() === 'w') {
+      e.preventDefault()
+      if (currentNav?.activeTabId) act('close', currentNav.activeTabId)
+    }
+  })
   document.getElementById('zoom-out-btn').onclick = () => act('zoom', 'out')
   document.getElementById('zoom-in-btn').onclick = () => act('zoom', 'in')
   zoomPct.onclick = () => act('zoom', 'reset')
@@ -643,7 +662,7 @@
         el.appendChild(muteBtn)
       }
       el.onclick = () => act('select', t.tabId)
-      bar.insertBefore(el, hint)
+      bar.insertBefore(el, barNewTabBtn || hint)
     }
 
     currentNav = { ...(nav || {}), title: activeTitle }

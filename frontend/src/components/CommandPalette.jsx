@@ -3,13 +3,19 @@
  * Searches conversations, runs slash commands, jumps to settings, etc.
  */
 import React, { useEffect, useRef, useState, useMemo } from 'react'
-import { Search, X, Zap, Bot, Settings, FileText, Terminal, Keyboard, ChevronRight, MessageSquare, Folder, Tag, Sparkles, Plug, Shield, Download, Upload, Share2, HelpCircle } from 'lucide-react'
+import {
+  Search, X, Zap, Bot, Settings, FileText, Terminal, Keyboard, ChevronRight,
+  MessageSquare, Folder, Tag, Sparkles, Plug, Shield, Download, Upload,
+  Share2, HelpCircle, Globe, ExternalLink
+} from 'lucide-react'
 import { tokens } from '../design-system/tokens'
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
-// Built-in commands
+// Built-in commands & quick website destinations
 const BUILTIN_COMMANDS = [
+  { id: 'website-home', label: 'Yogatik Official Website', description: 'Visit https://yogatik.web.app', icon: Globe, keywords: ['website', 'site', 'yogatik', 'home', 'link', 'web', 'online'], url: 'https://yogatik.web.app' },
+  { id: 'website-browser', label: 'Yogatik Standalone Privacy Browser', description: 'Open Yogatik Browser landing & web companion', icon: Globe, keywords: ['browser', 'website', 'download', 'privacy', 'web', 'tab', 'link'], url: 'https://yogatik.web.app/browser' },
   { id: 'new-chat', label: 'New Chat', description: 'Start a fresh conversation', icon: MessageSquare, keywords: ['new', 'chat', 'fresh', 'start'] },
   { id: 'search-chats', label: 'Search Conversations', description: 'Find previous conversations', icon: Search, keywords: ['search', 'find', 'history', 'conversations'] },
   { id: 'settings', label: 'Open Settings', description: 'Preferences, providers, appearance', icon: Settings, keywords: ['settings', 'preferences', 'config', 'options'] },
@@ -23,15 +29,17 @@ const BUILTIN_COMMANDS = [
   { id: 'import', label: 'Import Conversation', description: 'Load chat from file', icon: Upload, keywords: ['import', 'load', 'restore', 'backup'] },
   { id: 'share', label: 'Share Conversation', description: 'Generate shareable link', icon: Share2, keywords: ['share', 'link', 'send'] },
   { id: 'diagnostics', label: 'Diagnostics', description: 'Errors, traces & performance', icon: Shield, keywords: ['diagnostics', 'error', 'trace', 'debug'] },
-  { id: 'help', label: 'Help & Documentation', description: 'Open help center', icon: HelpCircle, keywords: ['help', 'docs', 'guide', 'tutorial'] },
+  { id: 'help', label: 'Help & Documentation', description: 'Open help center & docs', icon: HelpCircle, keywords: ['help', 'docs', 'guide', 'tutorial', 'documentation'], url: 'https://yogatik.web.app/browser' },
 ]
 
 export function CommandPalette({
-  isOpen,
+  isOpen = true,
   onClose,
+  commands: propCommands = [],
   conversations = [],
   activeConversationId,
   onNewChat,
+  onOpenChat,
   onNavigate,
   onRunCommand,
   recentCommands = [],
@@ -53,23 +61,27 @@ export function CommandPalette({
     }
   }, [isOpen])
 
-  useEffect(() => {
-    if (!isOpen) return
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose(); return }
-      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filteredResults.length - 1)) }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
-      if (e.key === 'Enter') { e.preventDefault(); if (filteredResults[selectedIndex]) handleSelect(filteredResults[selectedIndex]) }
-      if (e.key === 'Tab') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filteredResults.length - 1)) }
+  // Combine passed application commands with built-in commands
+  const allCommands = useMemo(() => {
+    const list = [...BUILTIN_COMMANDS]
+    const seenIds = new Set(list.map(c => c.id))
+    if (Array.isArray(propCommands)) {
+      for (const p of propCommands) {
+        if (!p || !p.id || seenIds.has(p.id)) continue
+        seenIds.add(p.id)
+        list.push({
+          id: p.id,
+          label: p.label || p.id,
+          description: p.hint || p.group || 'Action',
+          icon: p.icon || (p.id.includes('browser') || p.id.includes('search') ? Globe : (p.id.includes('chat') ? MessageSquare : Zap)),
+          keywords: [p.id, p.group || '', ...(p.label || '').toLowerCase().split(/\s+/)],
+          run: p.run,
+          url: p.url,
+        })
+      }
     }
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => document.removeEventListener('keydown', onKeyDown, true)
-  }, [isOpen, selectedIndex, filteredResults, onClose])
-
-  useEffect(() => {
-    const selected = listRef.current?.querySelector('[data-selected="true"]')
-    selected?.scrollIntoView({ block: 'nearest' })
-  }, [selectedIndex])
+    return list
+  }, [propCommands])
 
   const filteredResults = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -87,12 +99,28 @@ export function CommandPalette({
           matchScore: 0,
         }))
       
-      const recentCmd = recentCommands.slice(0, 5).map(cmdId => {
-        const cmd = BUILTIN_COMMANDS.find(c => c.id === cmdId)
+      const recentCmd = (recentCommands.length ? recentCommands : ['website-home', 'website-browser', 'new-chat', 'settings']).slice(0, 6).map(cmdId => {
+        const cmd = allCommands.find(c => c.id === cmdId)
         return cmd ? { ...cmd, type: 'command', matchScore: 0 } : null
       }).filter(Boolean)
       
       return [...recentCmd, ...recentConv]
+    }
+
+    // Dynamic website URL detection
+    const isUrl = /^https?:\/\//i.test(q) || /^www\./i.test(q) || /^[a-z0-9-]+(\.[a-z0-9-]+)+([\/?#].*)?$/i.test(q)
+    const urlResults = []
+    if (isUrl) {
+      const targetUrl = q.startsWith('http://') || q.startsWith('https://') ? q : `https://${q}`
+      urlResults.push({
+        type: 'url',
+        id: `open-url-${targetUrl}`,
+        label: `Open Website: ${targetUrl}`,
+        description: `Navigate directly in browser`,
+        icon: Globe,
+        url: targetUrl,
+        matchScore: 999,
+      })
     }
 
     // Score and filter
@@ -113,7 +141,7 @@ export function CommandPalette({
       return score
     }
 
-    const cmdResults = BUILTIN_COMMANDS
+    const cmdResults = allCommands
       .map(cmd => ({ ...cmd, type: 'command', matchScore: score(cmd) }))
       .filter(r => r.matchScore > 0)
       .sort((a, b) => b.matchScore - a.matchScore)
@@ -131,28 +159,70 @@ export function CommandPalette({
       .sort((a, b) => b.matchScore - a.matchScore)
       .slice(0, 8)
 
-    return [...cmdResults, ...convResults].slice(0, 10)
-  }, [query, conversations, activeConversationId, recentCommands])
+    return [...urlResults, ...cmdResults, ...convResults].slice(0, 14)
+  }, [query, allCommands, conversations, activeConversationId, recentCommands])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose(); return }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filteredResults.length - 1)) }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
+      if (e.key === 'Enter') { e.preventDefault(); if (filteredResults[selectedIndex]) handleSelect(filteredResults[selectedIndex]) }
+      if (e.key === 'Tab') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filteredResults.length - 1)) }
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [isOpen, selectedIndex, filteredResults, onClose])
+
+  useEffect(() => {
+    const selected = listRef.current?.querySelector('[data-selected="true"]')
+    selected?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIndex])
 
   const handleSelect = (item) => {
-    if (item.type === 'command') {
-      onRunCommand?.(item.id)
-      switch (item.id) {
-        case 'new-chat': onNewChat?.(); break
-        case 'settings': onNavigate?.('settings'); break
-        case 'providers': onNavigate?.('providers'); break
-        case 'agents': onNavigate?.('agents'); break
-        case 'skills': onNavigate?.('skills'); break
-        case 'mcp': onNavigate?.('mcp'); break
-        case 'shortcuts': onRunCommand?.('shortcuts'); break
-        case 'terminal': onRunCommand?.('terminal'); break
-        case 'diagnostics': onNavigate?.('diagnostics'); break
-        default: onNavigate?.(item.id); break
+    if (item.type === 'url') {
+      if (item.url) {
+        if (typeof window !== 'undefined') window.open(item.url, '_blank', 'noopener,noreferrer')
+        onRunCommand?.(`open-url:${item.url}`)
+      }
+    } else if (item.type === 'command') {
+      if (typeof item.run === 'function') {
+        item.run()
+      } else {
+        onRunCommand?.(item.id)
+        switch (item.id) {
+          case 'website-home':
+          case 'website-browser':
+          case 'help':
+            if (item.url && typeof window !== 'undefined') window.open(item.url, '_blank', 'noopener,noreferrer')
+            break
+          case 'new-chat': onNewChat?.(); break
+          case 'settings': onNavigate?.('settings'); break
+          case 'providers': onNavigate?.('providers'); break
+          case 'agents': onNavigate?.('agents'); break
+          case 'skills': onNavigate?.('skills'); break
+          case 'mcp': onNavigate?.('mcp'); break
+          case 'shortcuts': onRunCommand?.('shortcuts'); break
+          case 'terminal': onRunCommand?.('terminal'); break
+          case 'diagnostics': onNavigate?.('diagnostics'); break
+          default:
+            if (item.url && typeof window !== 'undefined') {
+              window.open(item.url, '_blank', 'noopener,noreferrer')
+            } else {
+              onNavigate?.(item.id)
+            }
+            break
+        }
       }
     } else if (item.type === 'conversation') {
-      onRunCommand?.(`switch-chat:${item.id}`)
+      if (onOpenChat) {
+        onOpenChat(item.id)
+      } else {
+        onRunCommand?.(`switch-chat:${item.id}`)
+      }
     }
-    onClose()
+    onClose?.()
   }
 
   if (!isOpen) return null
@@ -287,12 +357,14 @@ export function CommandPalette({
   }
 
   // Group results by type
+  const urlResults = filteredResults.filter(r => r.type === 'url')
   const commands = filteredResults.filter(r => r.type === 'command')
   const conversationsList = filteredResults.filter(r => r.type === 'conversation')
 
   return (
     <div style={overlayStyle} onClick={onClose} role="dialog" aria-modal="true" aria-label="Command palette">
-      <div style={paletteStyle} onClick={e => e.stopPropagation()}>        <div style={{ position: 'relative' }}>
+      <div style={paletteStyle} onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'relative' }}>
           <Search size={20} style={searchIconStyle} aria-hidden="true" />
           <input
             ref={inputRef}
@@ -300,7 +372,7 @@ export function CommandPalette({
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape') onClose() }}
-            placeholder="Type a command or search conversations… (Esc to close)"
+            placeholder="Search commands, website links, or conversations… (Esc to close)"
             style={inputStyle}
             autoComplete="off"
             spellCheck={false}
@@ -321,54 +393,96 @@ export function CommandPalette({
         </div>
 
         <div id="command-results" ref={listRef} role="listbox" style={{ overflowY: 'auto', maxHeight: '60vh' }}>
+          {urlResults.length > 0 && (
+            <>
+              <div style={sectionStyle} role="presentation">Websites &amp; Direct Links</div>
+              {urlResults.map((urlItem) => {
+                const idx = filteredResults.indexOf(urlItem)
+                const isSel = idx === selectedIndex
+                return (
+                  <button
+                    key={urlItem.id}
+                    id={`cmd-${urlItem.id}`}
+                    role="option"
+                    data-selected={isSel}
+                    style={itemStyle(isSel)}
+                    onClick={() => handleSelect(urlItem)}
+                    onMouseEnter={() => setSelectedIndex(idx)}
+                  >
+                    <span style={iconWrapperStyle}>
+                      <Globe size={16} style={{ color: isSel ? tokens.colors.brand : '#38bdf8' }} />
+                    </span>
+                    <div style={textStyle}>
+                      <div style={labelStyle(isSel)}>{urlItem.label}</div>
+                      <div style={descStyle}>{urlItem.description}</div>
+                    </div>
+                    <ExternalLink size={14} style={{ color: tokens.colors.textMuted, marginRight: 4 }} />
+                    <kbd style={kbdStyle}>Enter ↵</kbd>
+                  </button>
+                )
+              })}
+            </>
+          )}
+
           {commands.length > 0 && (
             <>
               <div style={sectionStyle} role="presentation">Commands</div>
-              {commands.map((cmd, i) => (
-                <button
-                  key={cmd.id}
-                  id={`cmd-${cmd.id}`}
-                  role="option"
-                  data-selected={i === selectedIndex}
-                  style={itemStyle(i === selectedIndex)}
-                  onClick={() => handleSelect(cmd)}
-                  onMouseEnter={() => setSelectedIndex(i)}
-                >
-                  <span style={iconWrapperStyle}>
-                    <cmd.icon size={16} style={{ color: i === selectedIndex ? tokens.colors.brand : tokens.colors.textSecondary }} />
-                  </span>
-                  <div style={textStyle}>
-                    <div style={labelStyle(i === selectedIndex)}>{cmd.label}</div>
-                    <div style={descStyle}>{cmd.description}</div>
-                  </div>
-                  <kbd style={kbdStyle}>Cmd+K</kbd>
-                </button>
-              ))}
+              {commands.map((cmd) => {
+                const idx = filteredResults.indexOf(cmd)
+                const isSel = idx === selectedIndex
+                const IconComponent = cmd.icon || Zap
+                return (
+                  <button
+                    key={cmd.id}
+                    id={`cmd-${cmd.id}`}
+                    role="option"
+                    data-selected={isSel}
+                    style={itemStyle(isSel)}
+                    onClick={() => handleSelect(cmd)}
+                    onMouseEnter={() => setSelectedIndex(idx)}
+                  >
+                    <span style={iconWrapperStyle}>
+                      <IconComponent size={16} style={{ color: isSel ? tokens.colors.brand : tokens.colors.textSecondary }} />
+                    </span>
+                    <div style={textStyle}>
+                      <div style={labelStyle(isSel)}>{cmd.label}</div>
+                      <div style={descStyle}>{cmd.description}</div>
+                    </div>
+                    {cmd.url && <ExternalLink size={12} style={{ color: tokens.colors.textMuted, marginRight: 4 }} />}
+                    <kbd style={kbdStyle}>Cmd+K</kbd>
+                  </button>
+                )
+              })}
             </>
           )}
 
           {conversationsList.length > 0 && (
             <>
               <div style={sectionStyle} role="presentation">Conversations</div>
-              {conversationsList.map((conv, i) => (
-                <button
-                  key={conv.id}
-                  id={`cmd-${conv.id}`}
-                  role="option"
-                  data-selected={commands.length + i === selectedIndex}
-                  style={itemStyle(commands.length + i === selectedIndex)}
-                  onClick={() => handleSelect(conv)}
-                  onMouseEnter={() => setSelectedIndex(commands.length + i)}
-                >
-                  <span style={iconWrapperStyle}>
-                    <conv.icon size={16} style={{ color: commands.length + i === selectedIndex ? tokens.colors.brand : tokens.colors.textSecondary }} />
-                  </span>
-                  <div style={textStyle}>
-                    <div style={labelStyle(commands.length + i === selectedIndex)}>{conv.label}</div>
-                    <div style={descStyle}>{conv.description}</div>
-                  </div>
-                </button>
-              ))}
+              {conversationsList.map((conv) => {
+                const idx = filteredResults.indexOf(conv)
+                const isSel = idx === selectedIndex
+                const IconComponent = conv.icon || MessageSquare
+                return (
+                  <button
+                    key={conv.id}
+                    id={`cmd-${conv.id}`}
+                    role="option"
+                    data-selected={isSel}
+                    style={itemStyle(isSel)}
+                    onClick={() => handleSelect(conv)}
+                    onMouseEnter={() => setSelectedIndex(idx)}
+                  >
+                    <span style={iconWrapperStyle}>
+                      <IconComponent size={16} style={{ color: isSel ? tokens.colors.brand : tokens.colors.textSecondary }} />
+                    </span>
+                    <div style={textStyle}>
+                      <div style={labelStyle(isSel)}>{conv.label}</div>
+                      <div style={descStyle}>{conv.description}</div>
+                    </div>
+                  </button>
+                )
+              })}
             </>
           )}
 

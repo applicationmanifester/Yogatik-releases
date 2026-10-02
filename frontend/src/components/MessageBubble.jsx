@@ -193,20 +193,24 @@ function useMarkdownComponents(msgContent, onOpenArtifact) {
       }
 
       // 3. Document Download Links (.docx, .doc, .xlsx, .xls, .pptx, .ppt, .pdf, .md, .csv)
-      const isDocLink = (hrefStr && hrefStr.match(/\.(rtf|doc|docx|ppt|pptx|xlsx|xls|excel|pdf|csv|md|html|txt)($|\?)/i)) ||
-                        (rawLabel && rawLabel.match(/\.(rtf|doc|docx|ppt|pptx|xlsx|xls|excel|pdf|csv|md|html|txt)\b/i))
+      const isWebUrl = /^https?:\/\//i.test(hrefStr)
+      const isDocExtension = hrefStr && hrefStr.match(/\.(rtf|docx?|pptx?|xlsx?|excel|pdf|csv)($|\?)/i)
+      const isDocLabel = rawLabel && rawLabel.match(/\.(rtf|docx?|pptx?|xlsx?|excel|pdf|csv)\b/i) && !isWebUrl
+      const isDocLink = (!isWebUrl && ((hrefStr && hrefStr.match(/\.(rtf|docx?|pptx?|xlsx?|excel|pdf|csv|md|txt)($|\?)/i)) || isDocLabel)) ||
+                        (isWebUrl && isDocExtension)
+
       if (isDocLink || hrefStr.startsWith('data:') || hrefStr.startsWith('blob:')) {
-        const format = rawLabel.match(/\.(ppt|pptx)/i) || hrefStr.match(/\.(ppt|pptx)/i)
+        const format = (rawLabel.match(/\.(ppt|pptx)/i) || hrefStr.match(/\.(ppt|pptx)/i))
           ? 'pptx'
-          : rawLabel.match(/\.(xlsx|xls|excel)/i) || hrefStr.match(/\.(xlsx|xls|excel)/i)
+          : (rawLabel.match(/\.(xlsx|xls|excel)/i) || hrefStr.match(/\.(xlsx|xls|excel)/i))
             ? 'xlsx'
-            : rawLabel.match(/\.(rtf|doc|docx)/i) || hrefStr.match(/\.(rtf|doc|docx)/i)
+            : (rawLabel.match(/\.(rtf|doc|docx)/i) || hrefStr.match(/\.(rtf|doc|docx)/i))
               ? 'docx'
-              : rawLabel.match(/\.pdf/i) || hrefStr.match(/\.pdf/i)
+              : (rawLabel.match(/\.pdf/i) || hrefStr.match(/\.pdf/i))
                 ? 'pdf'
-                : rawLabel.match(/\.md/i) || hrefStr.match(/\.md/i)
+                : (rawLabel.match(/\.md/i) || hrefStr.match(/\.md/i))
                   ? 'md'
-                  : rawLabel.match(/\.csv/i) || hrefStr.match(/\.csv/i)
+                  : (rawLabel.match(/\.csv/i) || hrefStr.match(/\.csv/i))
                     ? 'csv'
                     : 'docx'
         return (

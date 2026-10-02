@@ -805,7 +805,12 @@ export default function App() {
     } else if (window.__YOGATIK_DESKTOP__?.openExternal && url) {
       window.__YOGATIK_DESKTOP__.openExternal(url)
     } else {
-      showToast('Yogatik Browser is only available in the desktop app')
+      if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        window.open(url, '_blank', 'noopener,noreferrer')
+      } else {
+        window.open('/browser', '_blank', 'noopener,noreferrer')
+      }
+      showToast('Opening Yogatik Browser in new tab')
     }
   }, [showToast])
 
@@ -4524,7 +4529,9 @@ export default function App() {
       ...(isDesktop() ? [
         { id: 'open-yogatik-browser', group: 'Tools', label: '🧭 Yogatik Browser (Desktop Window)', hint: 'Desktop Browser', run: () => handleOpenBrowser() },
         { id: 'open-torrent-downloader', group: 'Tools', label: '⚡ P2P Torrent Downloader (Native Engine)', hint: 'P2P Torrents', run: () => handleOpenTorrentDownloader() },
-      ] : []),
+      ] : [
+        { id: 'open-yogatik-browser', group: 'Tools', label: '🧭 Yogatik Browser (Standalone Privacy Browser)', hint: 'Browser', run: () => handleOpenBrowser() },
+      ]),
       { id: 'search-engine-crawler', group: 'Tools', label: '🔍 Yogatik Search Engine & Web Crawler (Private Index)', hint: 'Search & Crawl', run: () => { setSettingsModalTab('searchengine'); setShowSettingsModal(true) } },
       { id: 'auto-skills', group: 'Tools', label: '✨ Auto-generated skills', hint: 'Review & prune', run: () => setShowAutoSkills(true) },
       { id: 'tools-modal', group: 'Tools', label: 'Configure AI Tools (Search, Code, Image...)', run: () => navigateDashboard('capabilities') },
@@ -5796,21 +5803,19 @@ export default function App() {
                         <span className="extensions-item-desc">Live & Paper Trading (NSE/BSE)</span>
                       </div>
                     </button>
-                    {isDesktop() && (
-                      <button
-                        className="extensions-item"
-                        onClick={() => { handleOpenBrowser(); setExtensionsOpen(false) }}
-                        title="Yogatik Browser (Desktop Browser Window)"
-                      >
-                        <div className="extensions-item-icon">
-                          <Compass size={15} color="#3b82f6" />
-                        </div>
-                        <div className="extensions-item-text">
-                          <span className="extensions-item-title">Desktop Browser</span>
-                          <span className="extensions-item-desc">Native browser & web inspection</span>
-                        </div>
-                      </button>
-                    )}
+                    <button
+                      className="extensions-item"
+                      onClick={() => { handleOpenBrowser(); setExtensionsOpen(false) }}
+                      title={isDesktop() ? "Yogatik Browser (Desktop Browser Window)" : "Yogatik Browser (Standalone AI Privacy Browser)"}
+                    >
+                      <div className="extensions-item-icon">
+                        <Compass size={15} color="#3b82f6" />
+                      </div>
+                      <div className="extensions-item-text">
+                        <span className="extensions-item-title">{isDesktop() ? 'Desktop Browser' : 'Yogatik Browser'}</span>
+                        <span className="extensions-item-desc">{isDesktop() ? 'Native browser & web inspection' : 'Standalone AI Privacy Browser'}</span>
+                      </div>
+                    </button>
                     {isDesktop() && (
                       <button
                         className="extensions-item"
