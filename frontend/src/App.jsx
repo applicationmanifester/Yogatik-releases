@@ -5399,37 +5399,48 @@ export default function App() {
             </button>
           )}
 
-          {isDesktop() ? (
+          <div className="sidebar-footer-icons" role="group" aria-label="Download Yogatik apps">
             <a
-              className="sidebar-footer-link"
-              href="https://yogatik.web.app/"
-              target="_blank"
-              rel="noreferrer"
-              title="Open the Yogatik web app in a browser on your mobile or tablet"
-            >
-              <Smartphone size={13} /> <span>Use web app on mobile/tab</span>
-            </a>
-          ) : (
-            <a
-              className="sidebar-footer-link"
+              className="sidebar-footer-icon-btn"
               href="/platforms"
               target="_blank"
               rel="noreferrer"
-              title="Download the Yogatik desktop app for Windows, macOS or Linux"
+              title="Download Desktop App (Windows, macOS, Linux)"
+              aria-label="Download Desktop App"
             >
-              <Monitor size={13} /> <span>Download Desktop App</span>
+              <Monitor size={15} />
             </a>
-          )}
-
-          <a
-            className="sidebar-footer-link"
-            href="https://yogatik.web.app/browser"
-            target="_blank"
-            rel="noreferrer"
-            title="Download Yogatik Browser for Windows, macOS or Linux"
-          >
-            <Compass size={13} style={{ color: '#ff7a18' }} /> <span>Download Yogatik Browser</span>
-          </a>
+            <a
+              className="sidebar-footer-icon-btn"
+              href="https://yogatik.web.app/browser"
+              target="_blank"
+              rel="noreferrer"
+              title="Download Yogatik Browser"
+              aria-label="Download Yogatik Browser"
+            >
+              <Compass size={15} style={{ color: '#ff7a18' }} />
+            </a>
+            <a
+              className="sidebar-footer-icon-btn"
+              href="https://yogatik.web.app/mobile"
+              target="_blank"
+              rel="noreferrer"
+              title="Download Mobile App (Android APK & iOS IPA)"
+              aria-label="Download Mobile App"
+            >
+              <Smartphone size={15} style={{ color: '#3ddc84' }} />
+            </a>
+            <a
+              className="sidebar-footer-icon-btn"
+              href="https://github.com/applicationmanifester/Yogatik-releases/releases"
+              target="_blank"
+              rel="noreferrer"
+              title="All Downloads & Releases"
+              aria-label="All Downloads and Releases"
+            >
+              <Download size={15} style={{ color: '#6e6ef7' }} />
+            </a>
+          </div>
 
           <div className="sidebar-footer-links">
             <button

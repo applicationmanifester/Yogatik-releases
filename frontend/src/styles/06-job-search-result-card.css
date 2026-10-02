@@ -721,6 +721,36 @@
   color: var(--accent, #ff6b35);
 }
 .sidebar-footer-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sidebar-footer-icons {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 0;
+}
+.sidebar-footer-icon-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all var(--transition, 0.15s ease);
+}
+.sidebar-footer-icon-btn:hover {
+  background: color-mix(in srgb, var(--accent, #ff6b35) 12%, var(--bg-tertiary));
+  border-color: color-mix(in srgb, var(--accent, #ff6b35) 35%, transparent);
+  color: var(--accent, #ff6b35);
+  transform: translateY(-1px);
+}
+.sidebar-footer-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .account-page { max-width: 640px; }
 .account-card {
   background: var(--bg-tertiary);
