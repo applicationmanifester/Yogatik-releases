@@ -32,7 +32,11 @@
     "bot:telegram": "node bin/bot-gateway.mjs --telegram",
     "bot:server": "node bin/bot-gateway.mjs --port 8787",
     "postinstall": "node ./scripts/ensure-native-deps.mjs",
-    "rebuild:pty": "electron-rebuild -f -w node-pty"
+    "rebuild:pty": "electron-rebuild -f -w node-pty",
+    "mobile:sync": "npm run build && npx cap sync",
+    "mobile:android": "npm run mobile:sync && npx cap open android",
+    "mobile:ios": "npm run mobile:sync && npx cap open ios",
+    "mobile:build-android": "npm run mobile:sync && cd android && .\\gradlew assembleRelease"
   },
   "bin": {
     "yogatik": "bin/yogatik-cli.mjs",
@@ -40,6 +44,10 @@
     "yogatik-bot": "bin/bot-gateway.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.11.0",
     "@codemirror/lang-css": "^6.3.1",
