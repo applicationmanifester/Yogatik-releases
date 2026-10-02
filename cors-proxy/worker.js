@@ -50,6 +50,12 @@ export default {
     
     const isAllowed = ALLOWED_HOSTS.has(targetUrl.hostname);
     const isPreflight = request.method === 'OPTIONS';
+
+    // SECURITY FIX #1: enforce the host allowlist (previously computed but never checked).
+    if (!isAllowed) {
+      console.log(`[Proxy] BLOCKED origin=${origin} target=${targetUrl.hostname}`);
+      return new Response(`Target host not allowed: ${targetUrl.hostname}`, { status: 403 });
+    }
     
     // Rate limiting check
     const now = Date.now();

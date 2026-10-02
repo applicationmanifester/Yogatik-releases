@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '12.1.0'
+export const APP_VERSION = '12.1.1'
 export const BUILD_DATE = 'October 2026'
-export const APP_CODENAME = 'Yogatik 12.1.0 — Autonomous Relentless Loop, Interactive Staging Diff, Model-Aware Tool Sizing & Resilient Task Plan Recovery'
+export const APP_CODENAME = 'Yogatik 12.1.1 — Electron Main Process CJS Compatibility & On-Device Auto-Recovery'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,37 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "12.1.1",
+    "title": "Yogatik 12.1.1: Electron Main Process CJS Compatibility & Desktop Launcher Stability",
+    "date": "October 2, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Electron Main Process Compatibility: Migrated browserConfig to explicit .cjs format, resolving the 'module is not defined in ES module scope' startup crash on packaged desktop apps",
+      "On-Device WebLLM Auto-Recovery: Automatic GPU weight reload and self-healing chat completions when no cloud keys are configured",
+      "One-Click Model Loading: In-composer status badge and 1-click 'Load Model' button with live progress tracking",
+      "Dual ESM/CommonJS Bridge: Seamless interoperability between root ESM package definition and Electron CommonJS main process modules"
+    ],
+    "sections": [
+      {
+        "category": "🖥️ Desktop Platform & Runtime Reliability",
+        "items": [
+          {
+            "title": "Main Process Module Resolution Fix",
+            "description": "Fixed an issue where packaged Electron apps treated browserConfig as an ES module due to root package.json type=module, causing uncaught ReferenceError exceptions during main process initialization."
+          },
+          {
+            "title": "On-Device WebLLM Auto-Boot & Healing",
+            "description": "Proactive model preloading when cloud provider keys are absent, with automatic recovery and Turn retry if WebGPU cache is cleared."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "12.1.0",
     "title": "Yogatik 12.1.0: Autonomous Relentless Loop, Interactive Staging Diff, Model-Aware Tool Sizing & Resilient Task Plan Recovery",
     "date": "October 2, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Autonomous Relentless Loop: Automatic root-cause error diagnostics, anti-stagnation loop detection, and autonomous momentum directives across multi-turn plans",
       "Interactive Staging Diff Card: Visual syntax-colored diff preview for workspace modifications with 1-click Accept Change and TimeMachine Rollback controls",

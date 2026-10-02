@@ -24,7 +24,7 @@ const {
   findRelocationMatch, relocateScanSource, relocateResolverSource,
 } = require('./browserTree.cjs')
 const { injectAdShield, getAdShieldStats, isAdShieldEnabled, setAdShieldEnabled } = require('./adBlocker.cjs')
-const CONFIG = require('./browserConfig.js')
+const CONFIG = require('./browserConfig.cjs')
 
 const NEW_TAB_URL = pathToFileURL(path.join(__dirname, 'newtab.html')).href
 

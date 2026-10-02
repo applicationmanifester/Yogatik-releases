@@ -462,11 +462,36 @@
     (function () {
       var RELEASES = [
   {
+    "version": "12.1.1",
+    "title": "Yogatik 12.1.1: Electron Main Process CJS Compatibility & Desktop Launcher Stability",
+    "date": "October 2, 2026",
+    "codename": "Electron Main Process CJS Compatibility & Desktop Launcher Stability",
+    "isLatest": true,
+    "highlights": [
+      [
+        "Electron Main Process CJS Fix",
+        "Migrated browserConfig to explicit .cjs format, resolving the 'module is not defined in ES module scope' startup crash on packaged desktop apps"
+      ],
+      [
+        "On-Device WebLLM Auto-Boot & Healing",
+        "Automatic GPU model preloading when cloud keys are absent, with self-healing reload on model evictions"
+      ],
+      [
+        "In-Composer Loading Controls",
+        "Direct 1-click 'Load Model' button and real-time progress banner above composer for seamless on-device local execution"
+      ],
+      [
+        "Dual ESM / CommonJS Architecture",
+        "Ensures seamless module resolution across both Vite web application and Electron desktop main process"
+      ]
+    ]
+  },
+  {
     "version": "12.1.0",
     "title": "Yogatik 12.1.0: Autonomous Relentless Loop, Interactive Staging Diff, Model-Aware Tool Sizing & Resilient Task Plan Recovery",
     "date": "October 2, 2026",
     "codename": "Autonomous Relentless Loop, Interactive Staging Diff, Model-Aware Tool Sizing & Resilient Task Plan Recovery",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Autonomous Relentless Loop",

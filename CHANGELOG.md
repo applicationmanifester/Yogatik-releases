@@ -1,5 +1,12 @@
 # Changelog
 
+## v12.1.1 - Electron Main Process CommonJS Migration & Packaging Compatibility (2026-10-02)
+
+### 🖥️ Desktop Platform & Main Process Stability
+- **Electron Main Process CommonJS Migration (`browserConfig.cjs`, `browserControl.cjs`)** — Migrated `browserConfig` to an explicit `.cjs` format and updated imports across the main process. This permanently fixes the startup error `ReferenceError: module is not defined in ES module scope` caused by the root package declaration `"type": "module"` in packaged Electron releases.
+- **Dual ESM / CJS Compatibility Bridge (`browserConfig.js`)** — Implemented an ESM wrapper that delegates to the CommonJS configuration, ensuring clean module resolution across both Vite web application tooling and Electron desktop binaries.
+- **Yogatik Browser Standalone Alignment (`yogatik-browser/electron`)** — Synchronized configuration modules in the standalone browser edition with full CJS/ESM dual compatibility.
+
 ## v12.1.0 - Autonomous Relentless Loop, On-Device WebLLM Auto-Load, Staging Diffs & Multi-Action Checkpoints (2026-10-02)
 
 ### 🤖 Autonomous Relentless Loop & Checkpoint Persistence
