@@ -16,7 +16,7 @@ const { app, BrowserWindow, globalShortcut, Notification, ipcMain, shell, sessio
 const path = require('path')
 
 const { enableAdBlocker } = require('./adBlocker.cjs')
-const { registerBrowserControl, destroyAllSessions, restoreSavedSession, sessions, toggleSplitView } = require('./browserControl.cjs')
+const { registerBrowserControl, destroyAllSessions, restoreSavedSession, sessions, toggleSplitView, ensureSession, createTab, showActive } = require('./browserControl.cjs')
 const { get: getSetting } = require('./settings/store.cjs')
 const { loadChromeExtensions } = require('./extensions.cjs')
 
@@ -174,12 +174,15 @@ const opts = {
     closeSplash()
     mainWin.show()
     // Restore the previous session's tabs (urls, titles, active tab, pinned
-    // state). Falls back to a fresh new tab when nothing was saved — a
-    // restart must never silently reopen pages the user had already closed.
+    // state). Falls back to a fresh new tab when nothing was saved.
     setTimeout(() => {
+      const s = ensureSession('__default__', 'window')
+      s.win = mainWin
       const restored = restoreSavedSession(() => mainWin)
-      if (!restored) {
-        ipcMain.emit('browser:quick-action', null, { action: 'new-tab' })
+      if (!restored || !s.tabs.size) {
+        const id = createTab(s, null)
+        s.activeTabId = id
+        showActive(s)
       }
     }, 50)
   })

@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '12.2.0'
+export const APP_VERSION = '12.3.0'
 export const BUILD_DATE = 'October 2026'
-export const APP_CODENAME = 'Yogatik 12.2.0 — Multi-Tab Browser Companion, Universal Search & Full-Index Link Architecture'
+export const APP_CODENAME = 'Yogatik 12.3.0 — Standalone Privacy Browser Session Healing, Canonical URL Resolution & Electric Orange Branding'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,50 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "12.3.0",
+    "title": "Yogatik 12.3.0: Standalone Privacy Browser Session Healing, Canonical URL Resolution & Electric Orange Branding",
+    "date": "October 2, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Standalone Browser Cold-Start Session Healing: Resolved blank/black window on startup by ensuring default session registration and automatic initial tab mounting",
+      "Canonical URL Resolution & Shorthand Navigation: Instant mapping for direct keywords (e.g. 'youtube' -> 'https://www.youtube.com') with privacy-first search query fallbacks",
+      "Electric Orange Browser Emblem & Cyber Globe: Refined official browser logo and status emblems with pure orange halo accents and a luminous 4-tip AI compass star",
+      "IPC Capability & Lifecycle Stability: Synchronous window-to-tab binding preventing silently dropped tab creation and URL loading events"
+    ],
+    "sections": [
+      {
+        "category": "🌐 Standalone Browser & Tab Navigation",
+        "items": [
+          {
+            "title": "Cold-Start Session Binding",
+            "description": "Guaranteed default session registration and automatic tab mounting on launch, eliminating blank screen lockouts."
+          },
+          {
+            "title": "Shorthand Domain Recognition",
+            "description": "Instant canonical URL mapping for popular services like YouTube, GitHub, Google, Wikipedia, and Reddit directly from the address bar."
+          }
+        ]
+      },
+      {
+        "category": "🎨 Brand Identity & Visual Ergonomics",
+        "items": [
+          {
+            "title": "Pure Electric Orange Design System",
+            "description": "Replaced magenta tones across browser halos with 100% pure energetic orange and centered a luminous 4-tip star on an unobstructed cyber globe."
+          },
+          {
+            "title": "Native Status Bar Branding",
+            "description": "Integrated live browser status emblems across standalone and companion browser shells."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "12.2.0",
     "title": "Yogatik 12.2.0: Multi-Tab Browser Companion, Universal Search & Full-Index Link Architecture",
     "date": "October 2, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Multi-Tab Browser Companion: Full local multi-tab state engine for web preview and standalone modes with seamless tab creation, switching, and custom home shortcuts",
       "Unified Search & Link Resolution: Command Palette website URL resolution, non-interfering HTTP/HTTPS link rendering, and expanded source citation tracking",

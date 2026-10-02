@@ -1646,7 +1646,7 @@ function safelyParseToolArgs(raw) {
           }).catch(() => {})
         }
 
-        if (SOURCE_TOOLS.has(tc.name) || result?.sources || result?.results || (result?.url && typeof result.url === 'string')) {
+        if (SOURCE_TOOLS.has(tc.name)) {
           for (const s of collectSources(result)) {
             if (!sources.some(existing => existing.url === s.url)) sources.push(s)
           }

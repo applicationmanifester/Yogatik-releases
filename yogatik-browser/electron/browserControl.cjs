@@ -173,9 +173,15 @@ function ensureSession(conversationId, mode) {
       key, mode: mode || 'window', win: null,
       tabs: new Map(), activeTabId: null, bounds: null, detached: false,
     }
+    const mw = mainWindowGetter()
+    if (mw && !mw.isDestroyed()) s.win = mw
     sessions.set(key, s)
   } else if (mode && mode !== s.mode) {
     setMode(s, mode)
+  }
+  if (!s.win || s.win.isDestroyed()) {
+    const mw = mainWindowGetter()
+    if (mw && !mw.isDestroyed()) s.win = mw
   }
   return s
 }
@@ -2564,7 +2570,12 @@ function registerBrowserControl(first, second) {
   // shape, since every action here resolves against the SAME "which session
   // owns this window" lookup.
   ipcMain.on('browser:tab-action', (e, { action, tabId, arg } = {}) => {
-    const s = [...sessions.values()].find(x => x.win && x.win.webContents === e.sender)
+    let s = [...sessions.values()].find(x => x.win && (x.win.webContents === e.sender || (x.win.webContents && x.win.webContents.id === e.sender.id)))
+    if (!s) {
+      s = ensureSession('__default__', 'window')
+      const win = BrowserWindow.fromWebContents(e.sender) || (mainWindowGetter ? mainWindowGetter() : null)
+      if (win && !win.isDestroyed()) s.win = win
+    }
     if (!s) return
     const t = activeTab(s)
     switch (action) {
@@ -2744,7 +2755,8 @@ function registerBrowserControl(first, second) {
   })
 
   ipcMain.on('browser:quick-action', (_e, { action } = {}) => {
-    const s = getSession('__default__') || [...sessions.values()][0]
+    let s = getSession('__default__') || [...sessions.values()][0]
+    if (!s) s = ensureSession('__default__', 'window')
     if (!s) return
     const t = activeTab(s)
     switch (action) {

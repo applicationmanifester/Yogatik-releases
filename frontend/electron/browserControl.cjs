@@ -2380,7 +2380,12 @@ function registerBrowserControl(getMainWindow) {
   // shape, since every action here resolves against the SAME "which session
   // owns this window" lookup.
   ipcMain.on('browser:tab-action', (e, { action, tabId, arg } = {}) => {
-    const s = [...sessions.values()].find(x => x.win && x.win.webContents === e.sender)
+    let s = [...sessions.values()].find(x => x.win && (x.win.webContents === e.sender || (x.win.webContents && x.win.webContents.id === e.sender.id)))
+    if (!s) {
+      s = ensureSession('__default__', 'window')
+      const win = BrowserWindow.fromWebContents(e.sender) || (mainWindowGetter ? mainWindowGetter() : null)
+      if (win && !win.isDestroyed()) s.win = win
+    }
     if (!s) return
     const t = activeTab(s)
     switch (action) {

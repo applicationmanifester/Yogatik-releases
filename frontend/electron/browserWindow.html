@@ -137,7 +137,8 @@
   .tab-audio-btn.muted { color: #ef4444; }
   .tab-new-btn { background: none; border: 0; color: #8b93a3; cursor: pointer; font-size: 16px; padding: 3px 8px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; line-height: 1; transition: all 0.15s; }
   .tab-new-btn:hover { color: #fff; background: #1a1f29; }
-  #hint { margin-left: auto; color: #6b7280; font-size: 11px; padding-right: 4px; flex: 0 0 auto; }
+  #hint { margin-left: auto; color: #6b7280; font-size: 11px; padding-right: 4px; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; user-select: none; }
+  .browser-status-logo { width: 14px; height: 14px; vertical-align: middle; flex-shrink: 0; }
 
   /* Fullscreen Mode: when HTML5 full-screen activates (e.g. YouTube video),
      hide the chrome and side panels completely so the WebContentsView covers the entire window */
@@ -233,7 +234,14 @@
 </div>
 <div id="bar">
   <button class="tab-new-btn" id="bar-new-tab-btn" title="New tab (Ctrl+T)">+</button>
-  <span id="hint">Yogatik is browsing</span>
+  <span id="hint">
+    <svg class="browser-status-logo" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="10" stroke="#ff7a18" stroke-width="2"/>
+      <ellipse cx="12" cy="12" rx="6" ry="10" stroke="#06b6d4" stroke-width="1.4"/>
+      <circle cx="12" cy="12" r="2.5" fill="#ffffff"/>
+    </svg>
+    <span>Yogatik is browsing</span>
+  </span>
 </div>
 
 <!-- AI Companion Dock -->

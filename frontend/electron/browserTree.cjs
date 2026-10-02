@@ -407,6 +407,23 @@ function normalizeAddressInput(input) {
   const raw = String(input == null ? '' : input).trim()
   if (!raw) return ''
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return raw
+
+  const lower = raw.toLowerCase()
+  const WELL_KNOWN_SERVICES = {
+    youtube: 'https://www.youtube.com',
+    google: 'https://www.google.com',
+    github: 'https://github.com',
+    reddit: 'https://www.reddit.com',
+    twitter: 'https://twitter.com',
+    x: 'https://x.com',
+    wikipedia: 'https://www.wikipedia.org',
+    amazon: 'https://www.amazon.com',
+    netflix: 'https://www.netflix.com',
+    gmail: 'https://mail.google.com',
+    chatgpt: 'https://chatgpt.com',
+  }
+  if (WELL_KNOWN_SERVICES[lower]) return WELL_KNOWN_SERVICES[lower]
+
   const noSpace = !/\s/.test(raw)
   const looksLikeHost = noSpace && (
     /^localhost(:\d+)?(\/.*)?$/i.test(raw)

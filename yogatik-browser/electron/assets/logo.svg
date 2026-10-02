@@ -1,31 +1,65 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
   <defs>
-    <linearGradient id="yogatik-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ff7a18" />
-      <stop offset="50%" stop-color="#ff9900" />
+    <!-- Bright Radiant Orange Gradient -->
+    <linearGradient id="orb-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffaa22" />
+      <stop offset="50%" stop-color="#ff7a18" />
+      <stop offset="100%" stop-color="#ea580c" />
+    </linearGradient>
+
+    <!-- Star Radiant Orange Gradient -->
+    <linearGradient id="star-orange" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffb833" />
+      <stop offset="50%" stop-color="#ff7a18" />
       <stop offset="100%" stop-color="#ff5500" />
     </linearGradient>
-    <linearGradient id="needle-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" />
-      <stop offset="100%" stop-color="#ffe6cc" />
+
+    <!-- Cyber Cyan / Blue Gradient -->
+    <linearGradient id="cyan-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="50%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#38bdf8" />
     </linearGradient>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="4" result="blur" />
+
+    <!-- Deep Space Globe Background -->
+    <radialGradient id="globe-bg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="70%" stop-color="#0b0f19" />
+      <stop offset="100%" stop-color="#030712" />
+    </radialGradient>
+
+    <!-- Bright Orange Star Ambient Glow -->
+    <radialGradient id="star-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff9900" stop-opacity="0.85" />
+      <stop offset="45%" stop-color="#ff7a18" stop-opacity="0.4" />
+      <stop offset="75%" stop-color="#ff5500" stop-opacity="0.1" />
+      <stop offset="100%" stop-color="#ff5500" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Wide Bloom Filter -->
+    <filter id="bloom" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="3.5" result="blur" />
       <feComposite in="SourceGraphic" in2="blur" operator="over" />
     </filter>
   </defs>
 
-  <!-- Outer Ring with Yogatik Orange Gradient -->
-  <circle cx="64" cy="52" r="38" fill="none" stroke="url(#yogatik-grad)" stroke-width="7" stroke-linecap="round" />
+  <!-- Outer Dashed Navigation Halo (100% Pure Orange) -->
+  <circle cx="64" cy="64" r="54" fill="none" stroke="url(#orb-grad)" stroke-width="4.5" stroke-dasharray="24 10 44 10 18 10" stroke-linecap="round" filter="url(#bloom)" />
 
-  <!-- Inner Dynamic Navigation Compass Needle -->
-  <polygon points="64,28 76,58 64,52" fill="url(#needle-grad)" filter="url(#glow)" />
-  <polygon points="64,28 52,58 64,52" fill="#ffb066" />
-  <polygon points="64,76 76,58 64,52" fill="#ff6600" opacity="0.8" />
-  <polygon points="64,76 52,58 64,52" fill="#e64a00" opacity="0.9" />
-  <circle cx="64" cy="52" r="3.5" fill="#ffffff" />
+  <!-- Inner Web Sphere Globe -->
+  <circle cx="64" cy="64" r="41" fill="url(#globe-bg)" stroke="url(#cyan-grad)" stroke-width="3" />
 
-  <!-- Floating Hover Lines (Distinctive Yogatik Signature) -->
-  <line x1="38" y1="102" x2="90" y2="102" stroke="url(#yogatik-grad)" stroke-width="6" stroke-linecap="round" />
-  <line x1="48" y1="114" x2="80" y2="114" stroke="url(#yogatik-grad)" stroke-width="5" stroke-linecap="round" opacity="0.75" />
+  <!-- Smooth Global Meridian Curves (Curving smoothly away, leaving center open) -->
+  <path d="M 64 23 C 34 38, 34 90, 64 105" fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-opacity="0.5" stroke-linecap="round" />
+  <path d="M 64 23 C 94 38, 94 90, 64 105" fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-opacity="0.5" stroke-linecap="round" />
+  
+  <!-- Sweeping Latitude Arcs -->
+  <path d="M 30 46 Q 64 54 98 46" fill="none" stroke="#38bdf8" stroke-width="1.6" stroke-opacity="0.45" stroke-linecap="round" />
+  <path d="M 30 82 Q 64 74 98 82" fill="none" stroke="#38bdf8" stroke-width="1.6" stroke-opacity="0.45" stroke-linecap="round" />
+
+  <!-- Central Luminous 4-Tip Star (Bright Orange, No Square, No Center Turn Line, No White Dot) -->
+  <circle cx="64" cy="64" r="22" fill="url(#star-glow)" />
+  <polygon points="64,46 67.8,60.2 82,64 67.8,67.8 64,82 60.2,67.8 46,64 60.2,60.2" fill="url(#star-orange)" filter="url(#bloom)" />
+  <polygon points="64,47 67.6,60.4 81,64 67.6,67.6 64,81 60.4,67.6 47,64 60.4,60.4" fill="#ff7a18" />
+  <circle cx="64" cy="64" r="3.2" fill="#ffbb33" />
 </svg>
