@@ -76,14 +76,14 @@ function parseNaturalLanguageToCron(natural) {
     return `${minute} ${hour} * * *`
   }
   
-  // "weekly on DAY at HH:MM" / "every DAY at HH:MM"
+  // "weekly on DAY at HH:MM" / "every DAY at HH:MM" / "weekly on monday 10:30" (no 'at')
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-  const dayMatch = input.match(/(weekly|every)\s+on\s+(\w+)(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?/)
+  const dayMatch = input.match(/(weekly|every)\s+on\s+(\w+)(?:\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?/)
   if (dayMatch) {
     const dayName = dayMatch[2].toLowerCase()
     const dayIndex = days.indexOf(dayName)
     if (dayIndex === -1) throw new Error(`Unknown day: ${dayMatch[2]}`)
-    
+
     let hour = 9, minute = 0
     if (dayMatch[3]) {
       hour = parseInt(dayMatch[3])
@@ -160,17 +160,35 @@ function cronToHuman(cron) {
 
 // Calculate next run time from cron
 function getNextRun(cron) {
-  // Simple implementation - in production use a proper cron parser like cron-parser
   const now = new Date()
-  const [min, hour, dom, month, dow] = cron.split(/\s+/)
-  
-  // For simple cases, estimate next run
+  const [min, hour, dom, _month, dow] = cron.split(/\s+/)
+
+  // ── Interval patterns (/N fields) ─────────────────────────────────────────
+  // */N minutes  e.g. "*/30 * * * *"
+  if (min.startsWith('*/')) {
+    const interval = Math.max(1, parseInt(min.slice(2)))
+    const rem = interval - (now.getMinutes() % interval)
+    const next = new Date(now.getTime() + rem * 60 * 1000)
+    next.setSeconds(0, 0)
+    return next.toISOString()
+  }
+
+  // 0 */N hours  e.g. "0 */2 * * *"
+  if (hour.startsWith('*/')) {
+    const interval = Math.max(1, parseInt(hour.slice(2)))
+    const rem = interval - (now.getHours() % interval)
+    const next = new Date(now.getTime() + rem * 60 * 60 * 1000)
+    next.setMinutes(parseInt(min) || 0, 0, 0)
+    return next.toISOString()
+  }
+
+  // ── Fixed-time patterns ───────────────────────────────────────────────────
+  const targetHour = parseInt(hour)
+  const targetMin  = parseInt(min)
+
   let next = new Date(now)
   next.setSeconds(0, 0)
-  
-  const targetHour = parseInt(hour)
-  const targetMin = parseInt(min)
-  
+
   if (dow !== '*') {
     // Weekly
     const targetDays = dow.split(',').map(d => parseInt(d))
@@ -178,28 +196,45 @@ function getNextRun(cron) {
     let daysAhead = 7
     for (const d of targetDays) {
       let diff = d - currentDay
-      if (diff < 0 || (diff === 0 && (now.getHours() > targetHour || (now.getHours() === targetHour && now.getMinutes() >= targetMin)))) {
+      if (
+        diff < 0 ||
+        (diff === 0 &&
+          (now.getHours() > targetHour ||
+            (now.getHours() === targetHour && now.getMinutes() >= targetMin)))
+      ) {
         diff += 7
       }
       if (diff < daysAhead) daysAhead = diff
     }
     next.setDate(now.getDate() + daysAhead)
+    next.setHours(targetHour, targetMin, 0, 0)
   } else if (dom !== '*') {
     // Monthly
-    const targetDom = parseInt(dom)
-    next.setDate(targetDom)
-    if (next <= now) {
-      next.setMonth(next.getMonth() + 1)
-    }
+    next.setDate(parseInt(dom))
+    next.setHours(targetHour, targetMin, 0, 0)
+    if (next <= now) next.setMonth(next.getMonth() + 1)
   } else {
-    // Daily or hourly
-    next.setHours(targetHour, targetMin)
-    if (next <= now) {
-      next.setDate(next.getDate() + 1)
-    }
+    // Daily
+    next.setHours(targetHour, targetMin, 0, 0)
+    if (next <= now) next.setDate(next.getDate() + 1)
   }
-  
+
   return next.toISOString()
+}
+
+/**
+ * Append an execution record to job.logs (capped at 50 entries).
+ * Call this at every executeJob call site so the log modal is never empty.
+ */
+function appendJobLog(job, result, trigger = 'scheduled') {
+  if (!Array.isArray(job.logs)) job.logs = []
+  job.logs.unshift({
+    ts: new Date().toISOString(),
+    trigger,
+    success: !!(result && result.success),
+    error: (result && result.error) || null,
+  })
+  if (job.logs.length > 50) job.logs.length = 50
 }
 
 // Execute a job by sending IPC to renderer
@@ -273,6 +308,7 @@ function scheduleJob(job) {
     if (delay <= 0) {
       console.log('[Scheduler] Next run in past, executing now:', job.id)
       executeJob(job).then(result => {
+        appendJobLog(job, result, 'scheduled')
         job.lastRun = new Date().toISOString()
         job.lastResult = result
         saveJobs()
@@ -286,6 +322,7 @@ function scheduleJob(job) {
     const timer = setTimeout(() => {
       jobTimers.delete(job.id)
       executeJob(job).then(result => {
+        appendJobLog(job, result, 'scheduled')
         job.lastRun = new Date().toISOString()
         job.lastResult = result
         saveJobs()
@@ -328,11 +365,16 @@ function registerSchedulerIPC(opts = {}) {
 
   // Get all jobs
   ipcMain.handle('scheduler:get-jobs', () => {
-    return scheduledJobs.map(job => ({
-      ...job,
-      nextRun: job.nextRun || null,
-      humanSchedule: cronToHuman(job.cron)
-    }))
+    // Bug fix: SchedulerPanel reads result.success + result.jobs — must wrap.
+    return {
+      success: true,
+      jobs: scheduledJobs.map(job => ({
+        ...job,
+        nextRun: job.nextRun || null,
+        humanSchedule: cronToHuman(job.cron),
+        logs: job.logs || [],
+      })),
+    }
   })
   
   // Create job
@@ -416,8 +458,9 @@ function registerSchedulerIPC(opts = {}) {
   ipcMain.handle('scheduler:run-now', async (_e, id) => {
     const job = scheduledJobs.find(j => j.id === id)
     if (!job) return { success: false, error: 'Job not found' }
-    
+
     const result = await executeJob(job)
+    appendJobLog(job, result, 'manual')
     job.lastRun = new Date().toISOString()
     job.lastResult = result
     saveJobs()
