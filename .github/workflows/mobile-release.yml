@@ -47,7 +47,11 @@ jobs:
 
       - name: Sync Capacitor → Android
         working-directory: frontend
-        run: npx cap sync android
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+          npx cap sync android
 
       - name: Fix gradlew permissions
         working-directory: frontend/android
@@ -120,7 +124,11 @@ jobs:
 
       - name: Sync Capacitor → iOS
         working-directory: frontend
-        run: npx cap sync ios
+        run: |
+          if [ ! -d "ios" ]; then
+            npx cap add ios
+          fi
+          npx cap sync ios
 
       - name: Resolve Swift packages
         working-directory: frontend/ios/App

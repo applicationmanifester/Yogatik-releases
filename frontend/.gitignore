@@ -6,7 +6,3 @@ release-electron
 playwright-report/
 test-results/
 
-# Capacitor native projects (generated from dist/ by CI)
-# Commit capacitor.config.ts but not the generated native projects
-android/
-ios/
