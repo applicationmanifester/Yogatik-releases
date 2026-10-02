@@ -123,13 +123,93 @@ async function getPipeline(key, { onProgress } = {}) {
   try { return await job } finally { loading.delete(key) }
 }
 
+/** Maximum pixel length of the long edge sent to DETR/CLIP. */
+export const INFERENCE_MAX_EDGE = 320
+
+/**
+ * Compute the target canvas dimensions so the longest edge ≤ maxEdge,
+ * preserving aspect ratio and rounding to even numbers (JPEG chroma).
+ */
+export function fitInferenceDimensions(w, h, maxEdge = INFERENCE_MAX_EDGE) {
+  if (!w || !h || w <= 0 || h <= 0) return { width: 0, height: 0, scaled: false }
+  const longEdge = Math.max(w, h)
+  if (longEdge <= maxEdge) return { width: w, height: h, scaled: false }
+  const ratio = maxEdge / longEdge
+  return {
+    width: Math.max(2, Math.round(w * ratio / 2) * 2),
+    height: Math.max(2, Math.round(h * ratio / 2) * 2),
+    scaled: true,
+  }
+}
+
+/**
+ * Return a small JPEG data URL (≤ INFERENCE_MAX_EDGE px on the long edge) ready
+ * for DETR/CLIP inference, or the original value unchanged if it cannot be
+ * decoded (tainted canvas, non-image object, server-side render). The helper
+ * is intentionally bullet-proof: it must never turn a working detection call
+ * into a failing one; worst case it simply does nothing.
+ *
+ * @returns {Promise<unknown>} a small JPEG data URL, or the input unchanged
+ */
+export async function downscaleForInference(image, maxEdge = INFERENCE_MAX_EDGE) {
+  if (!image || typeof document === 'undefined') return image
+
+  let source
+  try {
+    if (typeof image === 'string') {
+      // Only attempt things that look like loadable images; leave RawImage
+      // JSON strings and stray values alone.
+      if (!/^(data:|blob:|https?:|\/)/i.test(image)) return image
+      source = await loadImageElement(image)
+    } else if (
+      (typeof HTMLCanvasElement !== 'undefined' && image instanceof HTMLCanvasElement) ||
+      (typeof HTMLImageElement !== 'undefined' && image instanceof HTMLImageElement) ||
+      (typeof HTMLVideoElement !== 'undefined' && image instanceof HTMLVideoElement) ||
+      (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap)
+    ) {
+      source = image
+    } else {
+      return image
+    }
+
+    const width = source.naturalWidth || source.videoWidth || source.width || 0
+    const height = source.naturalHeight || source.videoHeight || source.height || 0
+    const fit = fitInferenceDimensions(width, height, maxEdge)
+    if (!fit.width || !fit.height) return image
+
+    const canvas = document.createElement('canvas')
+    canvas.width = fit.width
+    canvas.height = fit.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return image
+    ctx.drawImage(source, 0, 0, fit.width, fit.height)
+
+    const out = canvas.toDataURL('image/jpeg', 0.8)
+    return out || image
+  } catch {
+    // A tainted canvas or an undecodable source is not worth failing the turn over.
+    return image
+  }
+}
+
+async function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
+}
+
 /**
  * "What kind of image is this?" — scored against a label list.
  * @returns {Promise<Array<{label, score}>>} best first
  */
 export async function classifyZeroShot(image, labels = DEFAULT_LABELS, opts = {}) {
   const pipe = await getPipeline('clip', opts)
-  const out = await pipe(image, labels)
+  const prepared = await downscaleForInference(image)
+  const out = await pipe(prepared, labels)
   return (Array.isArray(out) ? out : [])
     .map(r => ({ label: r.label, score: Number(r.score) }))
     .sort((a, b) => b.score - a.score)
@@ -141,7 +221,9 @@ export async function classifyZeroShot(image, labels = DEFAULT_LABELS, opts = {}
  */
 export async function detectObjects(image, { threshold = 0.5, ...opts } = {}) {
   const pipe = await getPipeline('detr', opts)
-  const out = await pipe(image, { threshold, percentage: true })
+  // Downscale first: boxes are percentages, so they still map to the full frame.
+  const prepared = await downscaleForInference(image)
+  const out = await pipe(prepared, { threshold, percentage: true })
   return (Array.isArray(out) ? out : []).map(r => ({
     label: r.label,
     score: Number(r.score),

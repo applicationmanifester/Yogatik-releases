@@ -1719,3 +1719,49 @@ html[data-domain-hub="1"] {
   font-family: monospace;
   font-size: 9.5px;
 }
+
+/* ─── Trading Terminal UI Polish ─── */
+.trading-tab-btn {
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease,
+    box-shadow 0.15s ease;
+}
+
+.trading-tab-btn:hover {
+  filter: brightness(1.12);
+}
+
+.trading-tab-btn:active {
+  transform: scale(0.97);
+}
+
+.trading-tab-btn:focus-visible {
+  outline: 2px solid var(--accent, #ff6b35);
+  outline-offset: 2px;
+}
+
+.trading-stat-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.trading-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+@keyframes trading-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.trading-refreshing {
+  animation: trading-pulse 1s ease-in-out infinite;
+}

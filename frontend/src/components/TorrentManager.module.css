@@ -1,0 +1,255 @@
+:root {
+  --torrent-table-bg: #1e293b;
+  --torrent-table-header-bg: #0f172a;
+  --torrent-table-row-bg: #1e293b;
+  --torrent-table-row-hover-bg: #334155;
+  --torrent-table-border: #334155;
+  --torrent-progress-bg: #475569;
+  --torrent-progress-fill: #3b82f6;
+  --torrent-progress-text: #f8fafc;
+  --torrent-speed-color: #22c55e;
+  --torrent-seeds-color: #22c55e;
+  --torrent-peers-color: #fbbf24;
+  --torrent-eta-color: #64748b;
+  --torrent-actions-color: #94a3b8;
+  --torrent-actions-hover: #f8fafc;
+  --font-family-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.torrent-manager-root {
+  font-family: var(--font-family-sans);
+}
+
+.torrent-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 1rem;
+  background-color: var(--torrent-table-bg);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.torrent-table-header {
+  background-color: var(--torrent-table-header-bg);
+}
+
+.torrent-table th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  border-bottom: 1px solid var(--torrent-table-border);
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+}
+
+.torrent-table th:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.torrent-table th.sorted::after {
+  content: '';
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+
+.torrent-table th.sorted-asc::after {
+  border-bottom: 4px solid #f8fafc;
+  transform: translateY(-30%);
+}
+
+.torrent-table th.sorted-desc::after {
+  border-top: 4px solid #f8fafc;
+  transform: translateY(30%);
+}
+
+.torrent-table tbody {
+  background-color: var(--torrent-table-row-bg);
+}
+
+.torrent-table tr {
+  border-bottom: 1px solid var(--torrent-table-border);
+}
+
+.torrent-table tr:last-child {
+  border-bottom: none;
+}
+
+.torrent-table td {
+  padding: 1rem;
+  font-size: 0.875rem;
+  color: #e2e8f0;
+}
+
+.torrent-table tr:hover td {
+  background-color: var(--torrent-table-row-hover-bg);
+}
+
+.torrent-progress-bar {
+  width: 100%;
+  height: 0.5rem;
+  background-color: var(--torrent-progress-bg);
+  border-radius: 0.25rem;
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+
+.torrent-progress-fill {
+  height: 100%;
+  background-color: var(--torrent-progress-fill);
+  border-radius: inherit;
+  transition: width 0.2s ease;
+}
+
+.torrent-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--torrent-progress-text);
+}
+
+.torrent-speed {
+  color: var(--torrent-speed-color);
+  font-weight: 500;
+}
+
+.torrent-seeds {
+  color: var(--torrent-seeds-color);
+}
+
+.torrent-peers {
+  color: var(--torrent-peers-color);
+}
+
+.torrent-eta {
+  color: var(--torrent-eta-color);
+}
+
+.torrent-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.torrent-actions button {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--torrent-actions-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.torrent-actions button:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: var(--torrent-actions-hover);
+}
+
+.torrent-actions button:active {
+  transform: scale(0.95);
+}
+
+.file-tree-panel {
+  background-color: #0f172a;
+  border-top: 1px solid var(--torrent-table-border);
+}
+
+.file-tree-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--torrent-table-border);
+}
+
+.file-tree-title {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.file-tree-stats {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.file-tree {
+  padding: 1rem;
+}
+
+.file-tree-item {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.file-tree-item:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.file-tree-item.file {
+} 
+
+.file-tree-item.folder {
+}
+
+.file-tree-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-right: 0.75rem;
+  flex-shrink: 0;
+}
+
+.file-tree-name {
+  flex-grow: 1;
+}
+
+.file-tree-size {
+  width: 4rem;
+  text-align: right;
+}
+
+.file-tree-priority {
+}
+
+.file-tree-priority select {
+  width: 6rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .torrent-table th,
+  .torrent-table td {
+    padding: 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .torrent-actions {
+    gap: 0.25rem;
+  }
+
+  .torrent-actions button {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+}
+
+/* Dark mode support */
+[data-theme='dark'] .torrent-manager-root {
+}
+
+[data-theme='light'] .torrent-manager-root {
+}
+osketch

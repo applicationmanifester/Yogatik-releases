@@ -66,6 +66,27 @@ import {
 } from '../trading/tradeJournal'
 import { evaluateExplainableSignal } from '../trading/explainableSignal'
 
+// Shared style for the trading tab-bar buttons — single source of truth.
+// Removes ~70 lines of repeated inline styling and keeps active/inactive
+// states perfectly consistent across all six tabs.
+const tradingTabStyle = (isActive) => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+  padding: '7px 14px',
+  borderRadius: '7px',
+  border: isActive ? '1px solid var(--accent, #ff6b35)' : '1px solid transparent',
+  background: isActive ? 'var(--accent-glow, rgba(255,107,53,0.1))' : 'transparent',
+  color: isActive ? 'var(--accent, #ff6b35)' : 'var(--text-secondary)',
+  fontWeight: 700,
+  fontSize: '12.5px',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+})
+
+// Tab order for keyboard shortcuts (press keys 1-6)
+const TRADING_TAB_KEYS = ['positions', 'orders', 'scanner', 'backtest', 'journal', 'settings']
+
 export function TradingModal({ isOpen, onClose, isStandalone = false }) {
   const [activeTab, setActiveTab] = useState('positions') // 'positions' | 'orders' | 'scanner' | 'settings'
 
@@ -123,11 +144,33 @@ export function TradingModal({ isOpen, onClose, isStandalone = false }) {
   const [expandedSetupSymbol, setExpandedSetupSymbol] = useState(null)
 
   const isLive = config.mode === 'live'
+  // Relative unrealized P&L (% of invested capital) for the summary stat card
+  const unrealizedPnlPct = portfolioData.totalInvested > 0
+    ? (portfolioData.totalUnrealizedPnl / portfolioData.totalInvested) * 100
+    : null
   const timerRef = useRef(null)
   // Keep a stable ref so fetchLiveData always reads the latest config
   // without config itself being a useCallback dependency (avoids interval restarts)
   const configRef = useRef(config)
   useEffect(() => { configRef.current = config }, [config])
+
+  // Keyboard shortcuts: press 1-6 to jump between tabs.
+  // Ignored while typing in inputs/textareas/selects or contentEditable fields,
+  // and when modifier keys are held (so browser/system shortcuts still work).
+  useEffect(() => {
+    if (!isOpen) return undefined
+    const onKeyDown = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const t = e.target
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      const idx = Number(e.key) - 1
+      if (Number.isInteger(idx) && idx >= 0 && idx < TRADING_TAB_KEYS.length) {
+        setActiveTab(TRADING_TAB_KEYS[idx])
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isOpen])
 
   // Daily Circuit Breaker Status
   const circuitStatus = checkDailyCircuitBreaker({

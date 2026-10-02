@@ -54,17 +54,39 @@ let cleanupTimer = null
 function startHibernationAndCleanupTimers() {
   if (hibernationTimer || cleanupTimer) return
   
-  // Hibernation check: every minute, hibernate tabs inactive > hibernateAfterMs
+  // Hibernation check: every minute, hibernate tabs based on inactivity AND memory pressure
   hibernationTimer = setInterval(() => {
     if (!CONFIG.hibernation?.enabled) return
     const now = Date.now()
-    const threshold = CONFIG.hibernation.afterMs || 5 * 60 * 1000
+    const timeThreshold = CONFIG.hibernation.afterMs || 5 * 60 * 1000
+    
+    // Check memory pressure for adaptive hibernation
+    let memoryPressureFactor = 1
+    try {
+      if (process.getSystemMemoryInfo) {
+        const memInfo = process.getSystemMemoryInfo()
+        const usagePercentage = (memInfo.total - memInfo.free) / memInfo.total
+        
+        // Increase hibernation aggression as memory usage increases
+        // At 50% usage: 1x normal aggression
+        // At 80% usage: 2x normal aggression (half the time threshold)
+        // At 95% usage: 4x normal aggression (quarter the time threshold)
+        if (usagePercentage > 0.5) {
+          memoryPressureFactor = Math.pow(2, (usagePercentage - 0.5) * 4)
+        }
+      }
+    } catch (e) {
+      // Fallback to time-based only if memory info unavailable
+      console.warn('[Hibernation] Could not get system memory info:', e.message)
+    }
+    
+    const adaptiveThreshold = timeThreshold / memoryPressureFactor
     
     for (const [sessionKey, s] of sessions) {
       for (const [tabId, tab] of s.tabs) {
         if (tab.hibernated) continue
         const lastActive = tabLastActive.get(tabId) || 0
-        if (now - lastActive > threshold && tabId !== s.activeTabId) {
+        if (now - lastActive > adaptiveThreshold && tabId !== s.activeTabId) {
           hibernateTab(s, tabId)
         }
       }
