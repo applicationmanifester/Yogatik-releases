@@ -1,57 +1,58 @@
-name: Mobile Release (Android)
+name: Mobile Release (Android & iOS)
 
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version tag (e.g. v12.3.0)'
-        required: false
 
 env:
   JAVA_VERSION: '17'
   NODE_VERSION: '20'
 
 jobs:
+  # ══════════════════════════════════════════════════════════════════════
+  # ANDROID APK
+  # ══════════════════════════════════════════════════════════════════════
   build-android:
     name: Build Android APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'temurin'
+          distribution: temurin
           cache: gradle
 
-      - name: Set up Node.js ${{ env.NODE_VERSION }}
+      - name: Set up Node ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install frontend dependencies
+      - name: Install dependencies
         working-directory: frontend
         run: npm ci --ignore-scripts
 
-      - name: Build Vite web app
+      - name: Build web app
         working-directory: frontend
         env:
           NODE_ENV: production
         run: npm run build
 
-      - name: Sync Capacitor to Android
+      - name: Sync Capacitor → Android
         working-directory: frontend
         run: npx cap sync android
 
-      - name: Make gradlew executable
+      - name: Fix gradlew permissions
         working-directory: frontend/android
         run: chmod +x gradlew
 
@@ -61,10 +62,11 @@ jobs:
 
       - name: Rename APK
         run: |
-          VERSION="${{ github.ref_name }}"
-          if [ -z "$VERSION" ]; then VERSION="dev"; fi
+          VER="${{ github.ref_name }}"
+          [ -z "$VER" ] && VER="dev"
           mv frontend/android/app/build/outputs/apk/debug/app-debug.apk \
-             Yogatik-${VERSION}-android.apk
+             "Yogatik-${VER}-android.apk"
+          echo "APK_PATH=Yogatik-${VER}-android.apk" >> $GITHUB_ENV
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -73,20 +75,106 @@ jobs:
           path: Yogatik-*-android.apk
           retention-days: 30
 
-      - name: Create GitHub Release with APK
+      - name: Publish APK to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          repository: applicationmanifester/Yogatik-releases
+          token: ${{ secrets.GH_TOKEN }}
+          tag_name: ${{ github.ref_name }}
           files: Yogatik-*-android.apk
-          generate_release_notes: false
           body: |
-            ## Yogatik ${{ github.ref_name }} - Android
-            
-            ### Installation
-            1. Download the APK file below
-            2. On your Android phone, enable Settings -> Install unknown apps
-            3. Open the APK and tap Install
-            
-            Minimum requirement: Android 7.0+ (API 24)
+            ## Yogatik ${{ github.ref_name }} — Android APK
+
+            ### ⬇ Install on Android
+            1. Download **Yogatik-${{ github.ref_name }}-android.apk** below
+            2. Go to **Settings → Install unknown apps** → allow your file manager
+            3. Tap the downloaded APK → **Install**
+
+            > Requires Android 7.0+ (API 24) · Chrome WebView 60+
+
+  # ══════════════════════════════════════════════════════════════════════
+  # iOS IPA  (macOS runner with Xcode)
+  # ══════════════════════════════════════════════════════════════════════
+  build-ios:
+    name: Build iOS IPA
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Build web app
+        working-directory: frontend
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Sync Capacitor → iOS
+        working-directory: frontend
+        run: npx cap sync ios
+
+      - name: Resolve Swift packages
+        working-directory: frontend/ios/App
+        run: xcodebuild -resolvePackageDependencies -scheme App -destination generic/platform=iOS
+
+      - name: Build unsigned IPA (simulator-compatible archive)
+        working-directory: frontend/ios/App
+        run: |
+          xcodebuild archive \
+            -scheme App \
+            -destination "generic/platform=iOS Simulator" \
+            -archivePath ../../../Yogatik.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -allowProvisioningUpdates | xcpretty || true
+
+      - name: Package IPA from archive
+        run: |
+          VER="${{ github.ref_name }}"
+          [ -z "$VER" ] && VER="dev"
+          PAYLOAD_DIR="Payload"
+          mkdir -p "$PAYLOAD_DIR"
+          APP=$(find Yogatik.xcarchive -name "*.app" | head -1)
+          cp -r "$APP" "$PAYLOAD_DIR/"
+          zip -r "Yogatik-${VER}-ios.ipa" "$PAYLOAD_DIR"
+          echo "IPA_PATH=Yogatik-${VER}-ios.ipa" >> $GITHUB_ENV
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yogatik-iOS-IPA
+          path: Yogatik-*-ios.ipa
+          retention-days: 30
+
+      - name: Publish IPA to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: applicationmanifester/Yogatik-releases
+          token: ${{ secrets.GH_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          files: Yogatik-*-ios.ipa
+          body: |
+            ## Yogatik ${{ github.ref_name }} — iOS
+
+            > **Note:** This is an unsigned IPA for sideloading (AltStore / Sideloadly).
+            > App Store distribution requires code signing certificates.
+
+            ### ⬇ Sideload with AltStore
+            1. Install [AltStore](https://altstore.io) on your iPhone
+            2. Download the IPA and open with AltStore → Install

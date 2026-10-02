@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Yogatik — Mobile Apps for Android & iOS</title>
+  <meta name="description" content="Download Yogatik for Android and iOS. Private AI assistant with local models, file tools, and 177+ free tools — now on your phone." />
+  <meta property="og:title" content="Yogatik Mobile — Android & iOS" />
+  <meta property="og:description" content="Private AI on your phone — local Ollama models, chat, tools and more." />
+  <meta property="og:image" content="https://yogatik.web.app/icon-1024.png" />
+  <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+  <link rel="canonical" href="https://yogatik.web.app/mobile" />
+  <meta name="google-adsense-account" content="ca-pub-8240433260986072" />
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8240433260986072" crossorigin="anonymous"></script>
+  <script src="/site-theme.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0e14; --panel: #121824; --panel2: #0f1520;
+      --line: rgba(255,255,255,.08); --text: #e8edf4; --muted: #93a0b4;
+      --brand: #ff6b35; --brand2: #ff9142;
+      --android: #3ddc84; --ios: #6e6ef7;
+    }
+    [data-theme="light"] {
+      --bg: #f5f6f8; --panel: #ffffff; --panel2: #edf0f4;
+      --line: rgba(0,0,0,.1); --text: #111827; --muted: #5a6575;
+      --brand: #e85d25; --brand2: #c44d1a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+    a { color: inherit; text-decoration: none; }
+    a:focus-visible, button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+    /* ── Header ── */
+    header { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+    .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; letter-spacing: -.02em; }
+    .logo img { width: 30px; height: 30px; border-radius: 7px; }
+    .nav-cta { padding: 9px 18px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; transition: border-color .15s, color .15s, background .15s; }
+    .nav-cta:hover { border-color: var(--brand); color: var(--brand2); background: color-mix(in srgb, var(--brand) 6%, transparent); }
+    .theme-toggle-btn { background: none; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 5px 9px; transition: border-color .15s, color .15s; }
+    .theme-toggle-btn:hover { border-color: var(--brand); color: var(--brand); }
+
+    /* ── Hero ── */
+    .hero { text-align: center; padding: 80px 0 56px; }
+    .pill { display: inline-block; font-size: 12.5px; font-weight: 600; color: var(--brand2); background: rgba(255,107,53,.1); border: 1px solid rgba(255,107,53,.28); border-radius: 999px; padding: 6px 14px; margin-bottom: 22px; }
+    .hero h1 { font-size: clamp(36px, 6vw, 64px); line-height: 1.05; letter-spacing: -.03em; font-weight: 900; margin-bottom: 18px; }
+    .grad-orange { background: linear-gradient(120deg, var(--brand), var(--brand2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .hero p { font-size: clamp(16px, 2.4vw, 20px); color: var(--muted); max-width: 640px; margin: 0 auto 40px; }
+
+    /* ── Platform cards ── */
+    .platforms { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin: 0 0 64px; }
+    .card { background: linear-gradient(160deg, var(--panel), var(--panel2)); border: 1px solid var(--line); border-radius: 24px; padding: 36px 32px; position: relative; overflow: hidden; transition: border-color .2s, transform .25s cubic-bezier(.16,1,.3,1), box-shadow .25s; }
+    .card:hover { transform: translateY(-6px); box-shadow: 0 24px 48px rgba(0,0,0,.32); }
+    .card.android { border-color: rgba(61,220,132,.18); }
+    .card.android:hover { border-color: rgba(61,220,132,.42); box-shadow: 0 24px 48px rgba(61,220,132,.08); }
+    .card.ios-card { border-color: rgba(110,110,247,.18); }
+    .card.ios-card:hover { border-color: rgba(110,110,247,.42); box-shadow: 0 24px 48px rgba(110,110,247,.08); }
+
+    .card-glow { position: absolute; top: -60px; right: -60px; width: 180px; height: 180px; border-radius: 50%; filter: blur(60px); opacity: .12; pointer-events: none; }
+    .android .card-glow { background: var(--android); }
+    .ios-card .card-glow { background: var(--ios); }
+
+    .platform-icon { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+    .platform-icon svg { width: 44px; height: 44px; flex-shrink: 0; }
+    .platform-icon .pl-name { font-size: 28px; font-weight: 800; letter-spacing: -.02em; }
+    .android .pl-name { color: var(--android); }
+    .ios-card .pl-name { color: var(--ios); }
+
+    .card .sub { font-size: 14.5px; color: var(--muted); margin-bottom: 28px; line-height: 1.5; }
+
+    /* Download buttons */
+    .dl-btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 15px 20px; border-radius: 14px; font-weight: 700; font-size: 15.5px; transition: all .18s ease; border: none; cursor: pointer; text-decoration: none; margin-bottom: 10px; }
+    .dl-btn.primary-android { background: linear-gradient(135deg, #3ddc84, #2fb872); color: #0a1a10; box-shadow: 0 4px 20px rgba(61,220,132,.28); }
+    .dl-btn.primary-android:hover { background: linear-gradient(135deg, #50e892, #3ddc84); box-shadow: 0 8px 28px rgba(61,220,132,.38); transform: translateY(-1px); }
+    .dl-btn.primary-ios { background: linear-gradient(135deg, #6e6ef7, #5a5ae8); color: #fff; box-shadow: 0 4px 20px rgba(110,110,247,.3); }
+    .dl-btn.primary-ios:hover { background: linear-gradient(135deg, #7e7ef9, #6e6ef7); box-shadow: 0 8px 28px rgba(110,110,247,.4); transform: translateY(-1px); }
+    .dl-btn:active { transform: scale(.97); }
+    .dl-btn.unavailable { background: transparent; border: 1.5px dashed var(--line); color: var(--muted); cursor: not-allowed; box-shadow: none; }
+    .dl-btn.unavailable:hover { transform: none; box-shadow: none; }
+    .dl-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+
+    .card .note { font-size: 12.5px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
+    .card .note a { color: var(--brand); }
+    .card .note a:hover { text-decoration: underline; }
+
+    .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; margin-left: 6px; vertical-align: middle; }
+    .badge.new { background: rgba(61,220,132,.15); color: var(--android); border: 1px solid rgba(61,220,132,.3); }
+    .badge.soon { background: rgba(110,110,247,.12); color: var(--ios); border: 1px solid rgba(110,110,247,.25); }
+    .badge.coming { background: rgba(255,107,53,.1); color: var(--brand2); border: 1px solid rgba(255,107,53,.25); }
+
+    /* Version badge */
+    .version-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+    .version-chip b { color: var(--text); }
+    .version-chip .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--android); }
+
+    /* ── Install guide ── */
+    .install-section { margin: 0 0 72px; }
+    .install-section h2 { font-size: clamp(24px, 4vw, 34px); font-weight: 800; letter-spacing: -.02em; margin-bottom: 8px; }
+    .install-section .lead { color: var(--muted); margin-bottom: 40px; }
+    .install-tabs { display: flex; gap: 8px; margin-bottom: 28px; }
+    .tab-btn { padding: 8px 18px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; cursor: pointer; background: none; color: var(--muted); transition: all .15s; }
+    .tab-btn.active-android { border-color: var(--android); color: var(--android); background: rgba(61,220,132,.08); }
+    .tab-btn.active-ios { border-color: var(--ios); color: var(--ios); background: rgba(110,110,247,.08); }
+    .tab-btn:not(.active-android):not(.active-ios):hover { border-color: var(--brand); color: var(--text); }
+    .tab-content { display: none; }
+    .tab-content.visible { display: block; }
+    .steps { display: flex; flex-direction: column; gap: 0; max-width: 680px; }
+    .step { display: flex; gap: 16px; padding: 18px 0; border-top: 1px solid var(--line); }
+    .step:last-child { border-bottom: 1px solid var(--line); }
+    .step .n { flex: 0 0 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 14px; }
+    .step .n.android-n { background: rgba(61,220,132,.14); color: var(--android); }
+    .step .n.ios-n { background: rgba(110,110,247,.14); color: var(--ios); }
+    .step-body h4 { font-size: 15.5px; font-weight: 700; margin-bottom: 4px; }
+    .step-body p { font-size: 14px; color: var(--muted); }
+    code { background: rgba(255,255,255,.06); padding: 2px 7px; border-radius: 5px; font-family: monospace; font-size: 13px; }
+
+    /* ── Compatibility ── */
+    .compat { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 0 0 72px; }
+    .compat-item { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+    .compat-item .ci-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+    .compat-item .ci-val { font-size: 17px; font-weight: 700; }
+
+    /* ── CTA ── */
+    .cta-section { background: linear-gradient(120deg, rgba(255,107,53,.08), rgba(110,110,247,.06)); border: 1px solid rgba(255,107,53,.2); border-radius: 22px; padding: 52px 32px; text-align: center; margin: 0 0 64px; }
+    .cta-section h2 { font-size: clamp(24px, 4vw, 34px); font-weight: 800; margin-bottom: 12px; }
+    .cta-section p { color: var(--muted); max-width: 560px; margin: 0 auto 28px; }
+    .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn { padding: 13px 26px; border-radius: 11px; font-weight: 700; font-size: 15px; transition: all .15s; }
+    .btn.primary { background: var(--brand); color: #fff; box-shadow: 0 4px 16px rgba(255,107,53,.25); }
+    .btn.primary:hover { background: var(--brand2); box-shadow: 0 6px 22px rgba(255,107,53,.35); }
+    .btn.ghost { border: 1px solid var(--line); }
+    .btn.ghost:hover { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 6%, transparent); }
+    .btn:active { transform: scale(.97); }
+
+    footer { border-top: 1px solid var(--line); padding: 30px 0; color: var(--muted); font-size: 13px; text-align: center; }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--brand); }
+
+    @media (max-width: 600px) {
+      .platforms { grid-template-columns: 1fr; }
+      .install-tabs { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- Header -->
+    <header>
+      <a class="logo" href="/"><img src="/icon-192.svg" alt="" /> Yogatik</a>
+      <nav style="display:flex;align-items:center;gap:10px">
+        <a class="nav-cta" href="/platforms">Desktop</a>
+        <a class="nav-cta" href="/browser">Browser</a>
+        <a class="nav-cta" href="/">Open App →</a>
+        <button class="theme-toggle-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle colour theme">☀️</button>
+      </nav>
+    </header>
+
+    <!-- Hero -->
+    <section class="hero">
+      <span class="pill">📱 Yogatik for Mobile</span>
+      <h1>AI in your pocket,<br /><span class="grad-orange">no cloud required.</span></h1>
+      <p>The full Yogatik experience — AI chat, local models, 177+ tools, and file access — now wrapped into a native mobile app for Android and iOS.</p>
+      <div class="version-chip" id="version-chip">
+        <span class="dot"></span>
+        <span>Latest: <b id="ver-text">loading…</b></span>
+      </div>
+    </section>
+
+    <!-- Download cards -->
+    <div class="platforms">
+      <!-- Android -->
+      <div class="card android">
+        <div class="card-glow"></div>
+        <div class="platform-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M6.18 15a.565.565 0 0 1-.565-.565V10.56a.565.565 0 1 1 1.13 0v3.875a.565.565 0 0 1-.565.565zm11.64 0a.565.565 0 0 1-.565-.565V10.56a.565.565 0 1 1 1.13 0v3.875a.565.565 0 0 1-.565.565zM4.725 9.429A.726.726 0 0 1 4 8.703V8.28A4.283 4.283 0 0 1 7.3 4.075L6.664 2.97a.225.225 0 0 1 .39-.225l.649 1.125A5.81 5.81 0 0 1 9.994 3.43a5.81 5.81 0 0 1 2.291.44l.65-1.124a.225.225 0 0 1 .389.225l-.637 1.104A4.283 4.283 0 0 1 16 8.28v.424a.726.726 0 0 1-.726.725H4.725zm5.27-2.929a.451.451 0 1 0 0 .902.451.451 0 0 0 0-.902zm4 0a.451.451 0 1 0 0 .902.451.451 0 0 0 0-.902zM4.725 17.845A1.155 1.155 0 0 1 3.57 16.69V9.87h16.86v6.82a1.155 1.155 0 0 1-1.155 1.155H17.9v2.32a.565.565 0 1 1-1.13 0v-2.32H7.23v2.32a.565.565 0 1 1-1.13 0v-2.32H4.725z" fill="#3ddc84"/>
+          </svg>
+          <div class="pl-name">Android</div>
+        </div>
+        <div class="sub">Android 7.0+ · Chrome WebView 60+ · Free sideload APK — no Play Store needed</div>
+
+        <a class="dl-btn primary-android" id="android-dl"
+           href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/Yogatik-v12.3.0-android.apk">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18L5.33 10h3.84v4h5.66v-4h3.84L12 2z"/></svg>
+          Download APK
+          <span class="badge new">Free</span>
+        </a>
+        <a class="dl-btn unavailable" href="https://play.google.com/store" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.76c.28.16.6.17.9.05l12.66-7.32-2.84-2.84-10.72 10.11zM.5 1.26C.19 1.56 0 2.05 0 2.69v18.62c0 .64.19 1.13.5 1.43l.07.07L10.69 12.1v-.24L.57 1.19.5 1.26zm19.23 10.21L16.74 9.5 13.8 12.44l2.93 2.93 2.99-1.72c.86-.5.86-1.32 0-1.82l.01.04zM3.18.24L15.84 7.56l-2.84 2.84L2.28.29c.28-.16.63-.15.9-.05z"/></svg>
+          Google Play
+          <span class="badge coming">Soon</span>
+        </a>
+        <p class="note">
+          The APK is built automatically from the latest source on every release.<br/>
+          <a href="https://github.com/applicationmanifester/Yogatik-releases/releases" target="_blank" rel="noopener">Browse all releases →</a>
+        </p>
+      </div>
+
+      <!-- iOS -->
+      <div class="card ios-card">
+        <div class="card-glow"></div>
+        <div class="platform-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.05c-.22.13-2.19 1.27-2.16 3.8.03 3.02 2.65 4.03 2.68 4.04l-.07.29zM13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" fill="#6e6ef7"/>
+          </svg>
+          <div class="pl-name">iOS</div>
+        </div>
+        <div class="sub">iPhone / iPad · iOS 14+ · Unsigned IPA for sideloading via AltStore</div>
+
+        <a class="dl-btn primary-ios" id="ios-dl"
+           href="https://github.com/applicationmanifester/Yogatik-releases/releases/latest/download/Yogatik-v12.3.0-ios.ipa">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18L5.33 10h3.84v4h5.66v-4h3.84L12 2z"/></svg>
+          Download IPA
+          <span class="badge soon">Sideload</span>
+        </a>
+        <a class="dl-btn unavailable" href="https://apps.apple.com" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.22.13-2.19 1.27-2.16 3.8.03 3.02 2.65 4.03 2.68 4.04l-.07.29c-.83 1.24-1.71 2.45-3.05 2.47z"/></svg>
+          App Store
+          <span class="badge coming">Planned</span>
+        </a>
+        <p class="note">
+          Requires <a href="https://altstore.io" target="_blank" rel="noopener">AltStore</a> or <a href="https://sideloadly.io" target="_blank" rel="noopener">Sideloadly</a> for installation.
+          App Store submission is planned for a future release.<br/>
+          <a href="https://github.com/applicationmanifester/Yogatik-releases/releases" target="_blank" rel="noopener">Browse all releases →</a>
+        </p>
+      </div>
+    </div>
+
+    <!-- Install guide tabs -->
+    <section class="install-section">
+      <h2>How to install</h2>
+      <p class="lead">Step-by-step guide for both platforms.</p>
+      <div class="install-tabs">
+        <button class="tab-btn active-android" id="tab-android" onclick="switchTab('android')">🤖 Android</button>
+        <button class="tab-btn" id="tab-ios" onclick="switchTab('ios')">🍎 iOS</button>
+      </div>
+
+      <!-- Android steps -->
+      <div class="tab-content visible" id="content-android">
+        <div class="steps">
+          <div class="step">
+            <div class="n android-n">1</div>
+            <div class="step-body">
+              <h4>Download the APK</h4>
+              <p>Tap <strong>Download APK</strong> above. Your browser will save the <code>.apk</code> file to Downloads.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="n android-n">2</div>
+            <div class="step-body">
+              <h4>Allow install from unknown sources</h4>
+              <p>Go to <strong>Settings → Apps → Special app access → Install unknown apps</strong> and enable your browser or Files app.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="n android-n">3</div>
+            <div class="step-body">
+              <h4>Open the APK and install</h4>
+              <p>Tap the downloaded file in your notifications or Files app, then tap <strong>Install</strong>. The app icon will appear on your home screen.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="n android-n">4</div>
+            <div class="step-body">
+              <h4>Sign in (optional)</h4>
+              <p>Open Yogatik and sign in with Google to sync your conversations — or use it entirely offline with a local Ollama model.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- iOS steps -->
+      <div class="tab-content" id="content-ios">
+        <div class="steps">
+          <div class="step">
+            <div class="n ios-n">1</div>
+            <div class="step-body">
+              <h4>Install AltStore on your iPhone</h4>
+              <p>Download <a href="https://altstore.io" target="_blank" rel="noopener" style="color:var(--ios)">AltStore</a> from altstore.io using the AltServer desktop companion (Mac or Windows).</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="n ios-n">2</div>
+            <div class="step-body">
+              <h4>Download the IPA</h4>
+              <p>Tap <strong>Download IPA</strong> above and save the <code>.ipa</code> file. Transfer it to your iPhone via AirDrop, Files, or iCloud Drive.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="n ios-n">3</div>
+            <div class="step-body">
+              <h4>Install via AltStore</h4>
+              <p>In AltStore on your iPhone, tap <strong>My Apps → +</strong> and select the Yogatik IPA. AltStore will sign and install it with your Apple ID (free account works).</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="n ios-n">4</div>
+            <div class="step-body">
+              <h4>Trust the developer certificate</h4>
+              <p>Go to <strong>Settings → General → VPN & Device Management</strong>, find your Apple ID under Developer App, and tap <strong>Trust</strong>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Compatibility grid -->
+    <section style="margin:0 0 72px">
+      <h2 style="font-size:clamp(22px,4vw,30px);font-weight:800;letter-spacing:-.02em;margin-bottom:24px">Compatibility</h2>
+      <div class="compat">
+        <div class="compat-item">
+          <div class="ci-label">Android minimum</div>
+          <div class="ci-val">Android 7.0 (API 24)</div>
+        </div>
+        <div class="compat-item">
+          <div class="ci-label">WebView minimum</div>
+          <div class="ci-val">Chrome 60+</div>
+        </div>
+        <div class="compat-item">
+          <div class="ci-label">iOS minimum</div>
+          <div class="ci-val">iOS 14+</div>
+        </div>
+        <div class="compat-item">
+          <div class="ci-label">Architecture</div>
+          <div class="ci-val">arm64 · x86_64</div>
+        </div>
+        <div class="compat-item">
+          <div class="ci-label">App size</div>
+          <div class="ci-val">~15 MB base</div>
+        </div>
+        <div class="compat-item">
+          <div class="ci-label">Built with</div>
+          <div class="ci-val">Capacitor 7 + Vite</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <div class="cta-section">
+      <h2>Also available everywhere else</h2>
+      <p>Yogatik runs on Windows, macOS, Linux, and the web — all from the same codebase.</p>
+      <div class="cta-row">
+        <a class="btn primary" href="/platforms">Desktop Apps</a>
+        <a class="btn ghost" href="/browser">Yogatik Browser</a>
+        <a class="btn ghost" href="/">Open Web App</a>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="wrap" style="display:flex;justify-content:center;align-items:center;gap:20px;flex-wrap:wrap">
+      <span>© 2025 Yogatik</span>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="https://github.com/applicationmanifester/Yogatik-releases/releases" target="_blank" rel="noopener">GitHub Releases</a>
+      <a href="/">Web App</a>
+    </div>
+  </footer>
+
+  <script>
+    // ── Theme toggle ──────────────────────────────────────────────────────
+    const root = document.documentElement;
+    const btn = document.getElementById('theme-btn');
+    const saved = localStorage.getItem('yogatik-theme');
+    if (saved) root.setAttribute('data-theme', saved);
+    function updateIcon() {
+      btn.textContent = root.getAttribute('data-theme') === 'light' ? '🌙' : '☀️';
+    }
+    updateIcon();
+    btn.addEventListener('click', () => {
+      const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('yogatik-theme', next);
+      updateIcon();
+    });
+
+    // ── Tab switching ─────────────────────────────────────────────────────
+    function switchTab(platform) {
+      ['android', 'ios'].forEach(p => {
+        document.getElementById('content-' + p).classList.remove('visible');
+        const t = document.getElementById('tab-' + p);
+        t.classList.remove('active-android', 'active-ios');
+      });
+      document.getElementById('content-' + platform).classList.add('visible');
+      document.getElementById('tab-' + platform).classList.add(
+        platform === 'android' ? 'active-android' : 'active-ios'
+      );
+    }
+
+    // ── Fetch latest release version from GitHub ──────────────────────────
+    async function loadVersion() {
+      const REPO = 'applicationmanifester/Yogatik-releases';
+      const BASE = 'https://github.com/' + REPO + '/releases/latest/download/';
+      try {
+        const r = await fetch('https://api.github.com/repos/' + REPO + '/releases/latest', {
+          headers: { Accept: 'application/vnd.github+json' }
+        });
+        if (!r.ok) throw new Error('API error');
+        const data = await r.json();
+        const tag = data.tag_name || 'v12.3.0';
+        const ver = tag.replace(/^v/, '');
+        document.getElementById('ver-text').textContent = ver;
+        // Update download links to use the actual latest tag
+        const androidUrl = BASE + 'Yogatik-' + tag + '-android.apk';
+        const iosUrl = BASE + 'Yogatik-' + tag + '-ios.ipa';
+        // Only update if asset actually exists
+        const assets = data.assets || [];
+        const hasAndroid = assets.some(a => a.name.includes('android'));
+        const hasIos = assets.some(a => a.name.includes('ios'));
+        if (hasAndroid) {
+          document.getElementById('android-dl').href = androidUrl;
+        }
+        if (hasIos) {
+          document.getElementById('ios-dl').href = iosUrl;
+        }
+      } catch(e) {
+        document.getElementById('ver-text').textContent = '12.3.0';
+      }
+    }
+    loadVersion();
+  </script>
+</body>
+</html>
