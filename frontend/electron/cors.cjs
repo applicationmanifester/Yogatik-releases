@@ -81,6 +81,9 @@ const isStudioAuth = (url) => STUDIO_AUTH_PATTERNS.some(re => re.test(url))
  */
 function isInteractive(details) {
   const url = details.url || ''
+  // Local daemons (Ollama, LM Studio) and LLM providers are AI inference calls, NEVER interactive web navigation
+  if (LOCALHOST_ORIGIN.test(url) || isProvider(url)) return false
+
   // 1. Navigation requests
   if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame') return true
   // 2. Video and audio media streaming (YouTube MSE chunks, MP4/WebM, audio)

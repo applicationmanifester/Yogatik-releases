@@ -63,6 +63,7 @@ const OLLAMA_PATHS = {
 
 let _daemonProcess = null   // child_process for the managed daemon
 let _pullProcesses = {}     // { [model]: child_process }
+let _activeChatRequests = new Map() // { [id]: http.ClientRequest }
 let _startPromise = null    // deduplicate concurrent start requests
 let _ollamaBin = null       // resolved binary path (cached after first find)
 
@@ -203,8 +204,8 @@ async function startDaemon(bin) {
       detached: false,
       stdio: 'ignore',
       windowsHide: true,
-      // Inherit parent env so PATH is correct inside the child.
-      env: { ...process.env },
+      // Inherit parent env so PATH is correct inside the child, and permit all origins.
+      env: { ...process.env, OLLAMA_ORIGINS: '*' },
     })
 
     _daemonProcess.on('error', err => log(`daemon error: ${err.message}`))
@@ -440,11 +441,128 @@ function registerOllamaIpc(getWindow) {
     return { ok: true }
   })
 
+  /**
+   * ollama:chat-stream { id, model, messages, temperature, maxTokens, tools, options }
+   * Direct Node http streaming proxy to local Ollama daemon.
+   * Completely immune to renderer CORS, origin checks, or CSP.
+   */
+  ipcMain.handle('ollama:chat-stream', async (event, { id, model, messages, temperature, maxTokens, tools, options }) => {
+    const running = await probeHttp()
+    if (!running) {
+      const bin = await findOllamaBin()
+      if (bin) await startDaemon(bin)
+    }
+
+    const win = getWindow?.()
+    const postData = JSON.stringify({
+      model,
+      messages,
+      stream: true,
+      ...(typeof temperature === 'number' ? { temperature } : {}),
+      ...(maxTokens ? { max_tokens: maxTokens } : {}),
+      ...(tools && tools.length ? { tools } : {}),
+      options: {
+        num_ctx: Math.min(maxTokens ? maxTokens * 4 : 8192, 16384),
+        ...(options?.options || options || {}),
+      },
+    })
+
+    const startTime = Date.now()
+    let firstTokenTime = null
+    let tokenCount = 0
+
+    const req = http.request({
+      host: '127.0.0.1',
+      port: 11434,
+      path: '/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+    }, (res) => {
+      if (res.statusCode && res.statusCode >= 400) {
+        let errBody = ''
+        res.on('data', d => { errBody += d })
+        res.on('end', () => {
+          safeSend(win, `ollama:chat-error:${id}`, { message: `Ollama returned ${res.statusCode}: ${errBody || res.statusMessage}` })
+          _activeChatRequests.delete(id)
+        })
+        return
+      }
+
+      let buffer = ''
+      res.on('data', (chunk) => {
+        buffer += chunk.toString('utf8')
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+
+        for (const rawLine of lines) {
+          const line = rawLine.trim()
+          if (!line || line.startsWith(':')) continue
+          if (line === 'data: [DONE]') continue
+          if (line.startsWith('data: ')) {
+            try {
+              const parsed = JSON.parse(line.slice(6))
+              const choice = parsed?.choices?.[0]
+              if (!choice) continue
+              const delta = choice.delta || {}
+              if (delta.content || delta.reasoning_content) {
+                if (!firstTokenTime) firstTokenTime = Date.now()
+                tokenCount++
+                safeSend(win, `ollama:chat-chunk:${id}`, {
+                  content: delta.content || '',
+                  reasoning: delta.reasoning_content || '',
+                })
+              }
+              if (delta.tool_calls) {
+                safeSend(win, `ollama:chat-tool:${id}`, delta.tool_calls)
+              }
+            } catch {}
+          }
+        }
+      })
+
+      res.on('end', () => {
+        _activeChatRequests.delete(id)
+        const durationMs = Date.now() - startTime
+        const ttftMs = firstTokenTime ? firstTokenTime - startTime : durationMs
+        const genSec = (Date.now() - (firstTokenTime || startTime)) / 1000
+        const tokPerSec = (tokenCount > 0 && genSec > 0.05) ? Math.round((tokenCount / genSec) * 10) / 10 : 0
+        safeSend(win, `ollama:chat-done:${id}`, { ttftMs, tokPerSec, tokenCount, durationMs })
+      })
+    })
+
+    req.on('error', (err) => {
+      _activeChatRequests.delete(id)
+      safeSend(win, `ollama:chat-error:${id}`, { message: err.message })
+    })
+
+    _activeChatRequests.set(id, req)
+    req.write(postData)
+    req.end()
+    return { ok: true }
+  })
+
+  /**
+   * ollama:chat-abort { id } — cancel an in-flight chat stream.
+   */
+  ipcMain.handle('ollama:chat-abort', async (_, { id }) => {
+    const req = _activeChatRequests.get(id)
+    if (req) {
+      req.destroy()
+      _activeChatRequests.delete(id)
+    }
+    return { ok: true }
+  })
+
   log('IPC registered')
 }
 
 /** Kill managed daemon and all pull processes cleanly at app exit. */
 function destroyOllamaDaemon() {
+  _activeChatRequests.forEach(r => { try { r.destroy() } catch {} })
+  _activeChatRequests.clear()
   Object.values(_pullProcesses).forEach(c => { try { c.kill('SIGTERM') } catch {} })
   _pullProcesses = {}
   if (_daemonProcess) {

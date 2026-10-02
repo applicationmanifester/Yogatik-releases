@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '12.0.0'
+export const APP_VERSION = '12.1.0'
 export const BUILD_DATE = 'October 2026'
-export const APP_CODENAME = 'Yogatik 12.0.0 — Standalone Dedicated Tool Windows, Resilient Ollama Model Discovery & Multi-Window Production Suite'
+export const APP_CODENAME = 'Yogatik 12.1.0 — Autonomous Relentless Loop, Interactive Staging Diff, Model-Aware Tool Sizing & Resilient Task Plan Recovery'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,55 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "12.1.0",
+    "title": "Yogatik 12.1.0: Autonomous Relentless Loop, Interactive Staging Diff, Model-Aware Tool Sizing & Resilient Task Plan Recovery",
+    "date": "October 2, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Autonomous Relentless Loop: Automatic root-cause error diagnostics, anti-stagnation loop detection, and autonomous momentum directives across multi-turn plans",
+      "Interactive Staging Diff Card: Visual syntax-colored diff preview for workspace modifications with 1-click Accept Change and TimeMachine Rollback controls",
+      "Model-Aware Tool Schema Sizing: Scaled tool limits for Ollama, WebLLM, and ChromeAI to 24 prioritized tools, cutting prompt eval latency by 80%",
+      "Workspace Mode Presets: Domain-focused tool scoring and ranking for Developer, Researcher, and Creator/Executive workflows",
+      "Durable Mission Checkpoints: Crash/restart recovery for multi-turn task plans via persistent storage in taskPlanMemory"
+    ],
+    "sections": [
+      {
+        "category": "⚡ Autonomous Intelligence & Agent Core",
+        "items": [
+          {
+            "title": "Automated Root-Cause Diagnostics",
+            "description": "Integrated compiler/runtime diagnostics that automatically pinpoint missing modules, syntax errors, and undefined references, injecting targeted architectural fixes into the agent's autonomous rework loop."
+          },
+          {
+            "title": "Anti-Stagnation & Momentum Directives",
+            "description": "Continuous monitoring of repeated read operations to prevent analysis paralysis, compelling the agent to pivot directly into code implementation and test verification."
+          },
+          {
+            "title": "Durable Task Plan Memory",
+            "description": "Persistent localStorage backed task plan checkpoints allow multi-step background missions to survive browser reloads or app restarts."
+          }
+        ]
+      },
+      {
+        "category": "🛠️ Developer Superpowers & UI Intelligence",
+        "items": [
+          {
+            "title": "Interactive Staging Diff Card",
+            "description": "File write and edit operations now render clean diff previews showing additions and removals with one-click Accept and TimeMachine rollback buttons."
+          },
+          {
+            "title": "Structured Assertion Failure Extraction",
+            "description": "test_and_heal autonomously extracts failing test names, expected vs received values, and stack frames for one-shot healing."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "12.0.0",
     "title": "Yogatik 12.0.0: Standalone Dedicated Tool Windows, Resilient Ollama Model Discovery & Multi-Window Production Suite",
     "date": "October 1, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Standalone Dedicated Tool Windows: Media Studio, Trading & Algo Terminal, BitTorrent Manager, and Domain Hub now launch into independent Electron windows with multi-screen productivity",
       "Resilient Ollama Model Discovery: Fixed local provider model shadowing and auto-discovery, instantly probing models on test connection and auto-broadcasting Ollama readiness",

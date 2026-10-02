@@ -10,6 +10,53 @@ import { terminalRunTool } from './terminalRun'
 import { parseTerminalDiagnostics } from './terminalDiagnostics'
 import { isDesktop } from './localFs'
 
+/**
+ * Extracts structured assertion failures and failing test details from test runner output.
+ * @param {string} rawOutput
+ * @returns {Array<{ file?: string, title?: string, expected?: string, received?: string, message?: string, line?: number }>}
+ */
+export function extractAssertionFailures(rawOutput = '') {
+  if (!rawOutput || typeof rawOutput !== 'string') return []
+  const failures = []
+
+  const chunks = rawOutput.split(/(?=(?:FAIL\s+|●\s+|FAILED\s+))/g)
+
+  for (const chunk of chunks) {
+    if (!/(?:FAIL|●|FAILED)/.test(chunk)) continue
+
+    const fileMatch = chunk.match(/(?:FAIL\s+|FAILED\s+)?([a-zA-Z0-9_\-./\\]+\.(?:test|spec)\.[a-zA-Z0-9]+|[a-zA-Z0-9_\-./\\]+\.(?:py|go|rs))/i)
+    const file = fileMatch ? fileMatch[1].replace(/\\/g, '/') : null
+
+    const titleMatch = chunk.match(/(?:FAIL|●|FAILED)\s+(?:[^\n>]+>\s+)?([^\n]+)/)
+    const title = titleMatch ? titleMatch[1].trim() : ''
+
+    const expectedMatch = chunk.match(/(?:Expected|expected):\s*([^\n\r]+)/i)
+    const receivedMatch = chunk.match(/(?:Received|actual):\s*([^\n\r]+)/i)
+    const errorMatch = chunk.match(/(?:AssertionError|Error|assert\s+):\s*([^\n\r]+)/i)
+
+    const stackMatch = chunk.match(/(?:at\s+[^\n]*\(([^:)]+):(\d+):(\d+)\)|at\s+([^:)\s]+):(\d+):(\d+)|❯\s+([^:)\s]+):(\d+):(\d+)|([^\s:]+\.py):(\d+):)/i)
+    let line = null
+    let stackFile = null
+    if (stackMatch) {
+      stackFile = (stackMatch[1] || stackMatch[4] || stackMatch[7] || stackMatch[10] || '').replace(/\\/g, '/')
+      line = parseInt(stackMatch[2] || stackMatch[5] || stackMatch[8] || stackMatch[11] || '0', 10) || null
+    }
+
+    if (file || stackFile || errorMatch || title) {
+      failures.push({
+        file: file || stackFile || null,
+        title: title || 'Test failure',
+        line: line || null,
+        expected: expectedMatch ? expectedMatch[1].trim() : null,
+        received: receivedMatch ? receivedMatch[1].trim() : null,
+        message: errorMatch ? errorMatch[1].trim() : null,
+      })
+    }
+  }
+
+  return failures.slice(0, 10)
+}
+
 export const testAndHealTool = {
   schema: {
     name: 'test_and_heal',
@@ -77,6 +124,8 @@ export const testAndHealTool = {
     const passedCount = testsPassedMatch ? parseInt(testsPassedMatch[1], 10) : (passed ? 1 : 0)
     const failedCount = testsFailedMatch ? parseInt(testsFailedMatch[1], 10) : (passed ? 0 : (diagnostics.length || 1))
 
+    const assertionFailures = extractAssertionFailures(rawOutput)
+
     if (passed) {
       return {
         tool: 'test_and_heal',
@@ -86,6 +135,7 @@ export const testAndHealTool = {
         passed_count: passedCount,
         failed_count: 0,
         diagnostics: [],
+        assertion_failures: [],
         message: `✅ All tests passed cleanly (${passedCount} passed). No healing needed.`,
       }
     }
@@ -97,10 +147,11 @@ export const testAndHealTool = {
       exit_code: runResult.exit_code ?? 1,
       passed_count: passedCount,
       failed_count: failedCount,
+      assertion_failures: assertionFailures,
       diagnostics: diagnostics.slice(0, 10),
       stdout_tail: (runResult.stdout || '').slice(-2000),
       stderr: (runResult.stderr || '').slice(-2000),
-      message: `❌ Tests failed (${failedCount} failure(s)). Inspect diagnostics and fix target files autonomously.`,
+      message: `❌ Tests failed (${failedCount} failure(s)). Inspect assertion failures and diagnostics to fix target files autonomously.`,
     }
   },
 }

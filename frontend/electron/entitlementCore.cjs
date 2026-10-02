@@ -218,8 +218,9 @@ const CHANNELS = {
   // Buying is not a paid feature.
   'entitlement:get': F, 'entitlement:refresh': F, 'entitlement:checkout': F,
   'entitlement:sign-out': F,
-  // Local model discovery & management
+  // Local model discovery & management & inference (free)
   'ollama:status': F, 'ollama:start': F, 'ollama:list': F, 'ollama:pull': F, 'ollama:cancel': F,
+  'ollama:chat-stream': F, 'ollama:chat-abort': F,
   // Local generation discovery & setup — same free/gated split as Ollama:
   // finding out whether ComfyUI is installed, pointing at a folder, and
   // starting it are not the paid part; actually generating is (above).

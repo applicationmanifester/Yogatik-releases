@@ -42,8 +42,14 @@ export function getModelContextLimits(provider = '', model = '') {
   const p = String(provider || '').toLowerCase()
   const m = String(model || '').toLowerCase()
 
-  if (p === 'local') {
+  if (p === 'local' || p === 'chromeai') {
     return { budget: 4000, maxTurns: 6, estimatedMaxTokens: 4096 }
+  }
+  if (p === 'ollama' || m.includes(':11434')) {
+    const isMediumOrLarge = /(?:14b|32b|70b)/i.test(m)
+    return isMediumOrLarge
+      ? { budget: 16000, maxTurns: 14, estimatedMaxTokens: 16384 }
+      : { budget: 8000, maxTurns: 8, estimatedMaxTokens: 8192 }
   }
   if (p === 'gemini' || m.includes('gemini')) {
     return { budget: 120000, maxTurns: 40, estimatedMaxTokens: 1000000 }

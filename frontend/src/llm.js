@@ -669,6 +669,54 @@ export async function streamChat({
     return streamChromeAI({ model: cleanModel, messages, temperature, tools, signal, onToken, onToolCall, onDone, onError, onStatus })
   }
 
+  // Desktop native Ollama daemon — direct IPC to Node main process (zero browser CORS/CSP issues)
+  const isOllamaProvider = provider === 'ollama' || prov?.isOllama || /:11434/i.test(prov?.baseUrl || '')
+  if (isOllamaProvider && typeof window !== 'undefined' && window.__YOGATIK_OLLAMA__?.chatStream) {
+    const reasoningTagger = createReasoningTagger()
+    return new Promise((resolve) => {
+      window.__YOGATIK_OLLAMA__.chatStream({
+        model: cleanModel,
+        messages: sanitizeMessagesForToolCalling(messages),
+        temperature: shouldOmitTemp ? undefined : (isFixedTemp ? 1.0 : Math.max(0.2, temperature)),
+        maxTokens: resolvedMaxTokens,
+        tools: tools && tools.length ? tools : null,
+        options: {
+          num_ctx: Math.min(resolvedMaxTokens ? resolvedMaxTokens * 4 : 8192, 16384),
+          ...(providerOptions?.options || providerOptions || {}),
+        },
+        signal,
+        onChunk: ({ content, reasoning }) => {
+          if (reasoning) {
+            const tagged = reasoningTagger.tag(reasoning)
+            if (tagged) onToken?.(tagged)
+          }
+          if (content) {
+            const endReasoning = reasoningTagger.end()
+            if (endReasoning) onToken?.(endReasoning)
+            onToken?.(content)
+          }
+        },
+        onToolCall: (tc) => {
+          if (Array.isArray(tc)) {
+            tc.forEach(item => onToolCall?.(item))
+          } else {
+            onToolCall?.(tc)
+          }
+        },
+        onDone: (telemetry) => {
+          const tail = reasoningTagger.end()
+          if (tail) onToken?.(tail)
+          onDone?.(telemetry)
+          resolve()
+        },
+        onError: (err) => {
+          onError?.(err)
+          resolve()
+        },
+      })
+    })
+  }
+
   const headers = { 'Content-Type': 'application/json' }
   if (prov.isAnthropic) {
     // Anthropic uses x-api-key instead of Bearer, plus version, beta prompt caching, and browser access headers
@@ -695,6 +743,13 @@ export async function streamChat({
     model: cleanModel,
     messages: sanitizeMessagesForToolCalling(messages),
     stream: true,
+  }
+
+  if (isOllamaProvider) {
+    body.options = {
+      num_ctx: Math.min(resolvedMaxTokens ? resolvedMaxTokens * 4 : 8192, 16384),
+      ...(providerOptions?.options || {}),
+    }
   }
 
   if (shouldOmitTemp) {
@@ -1081,6 +1136,19 @@ export async function streamChat({
         : 0
       onDone?.({ ttftMs, tokPerSec, tokenCount, durationMs })
     } else {
+      if (isOllamaProvider) {
+        const isConnError = /failed to fetch|networkerror|connection refused|econnrefused|failed to connect/i.test(err?.message || '')
+        if (isConnError) {
+          const isWeb = typeof window !== 'undefined' && window.location?.protocol?.startsWith('http')
+          const helpMsg = isWeb
+            ? `Could not reach local Ollama daemon (127.0.0.1:11434). Web browsers restrict web-to-localhost requests (CORS/Private Network restrictions). Launch Ollama with: OLLAMA_ORIGINS="*" ollama serve, or use the Yogatik Desktop App.`
+            : `Could not reach local Ollama daemon (127.0.0.1:11434). Please ensure Ollama is installed and running ('ollama serve') with model '${cleanModel}'.`
+          const wrapped = new Error(helpMsg)
+          wrapped.originalError = err
+          onError?.(wrapped)
+          return
+        }
+      }
       onError?.(err)
     }
   }

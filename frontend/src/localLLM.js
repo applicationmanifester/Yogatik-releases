@@ -58,7 +58,12 @@ export async function webGpuDetails() {
 }
 
 export function isLocalReady(model = DEFAULT_LOCAL_MODEL) {
-  return _engineMap.has(model)
+  const eng = _engineMap.get(model)
+  if (!eng) return false
+  if (eng.loadedModelIdToPipeline instanceof Map) {
+    return eng.loadedModelIdToPipeline.has(model)
+  }
+  return true
 }
 
 /**
@@ -66,7 +71,12 @@ export function isLocalReady(model = DEFAULT_LOCAL_MODEL) {
  * @param {(p:{progress:number,text:string}) => void} onProgress
  */
 export async function loadLocalModel(model = DEFAULT_LOCAL_MODEL, onProgress) {
-  if (_engineMap.has(model)) return _engineMap.get(model)
+  const existing = _engineMap.get(model)
+  if (existing) {
+    if (!existing.loadedModelIdToPipeline || (existing.loadedModelIdToPipeline instanceof Map && existing.loadedModelIdToPipeline.has(model))) {
+      return existing
+    }
+  }
   if (_loadingByModel.has(model)) return _loadingByModel.get(model)
 
   const promise = (async () => {
@@ -74,6 +84,23 @@ export async function loadLocalModel(model = DEFAULT_LOCAL_MODEL, onProgress) {
     if (!gpu.available) throw new Error(gpu.reason)
 
     const webllm = await import(/* @vite-ignore */ CDN)
+
+    // Reuse any existing engine if already in memory
+    const anyEngine = existing || Array.from(_engineMap.values())[0]
+    if (anyEngine && typeof anyEngine.reload === 'function') {
+      if (typeof anyEngine.setInitProgressCallback === 'function') {
+        anyEngine.setInitProgressCallback((r) => {
+          onProgress?.({
+            progress: typeof r.progress === 'number' ? r.progress : 0,
+            text: r.text || 'Preparing…',
+          })
+        })
+      }
+      await anyEngine.reload(model)
+      _engineMap.set(model, anyEngine)
+      return anyEngine
+    }
+
     const engine = await webllm.CreateMLCEngine(model, {
       initProgressCallback: (r) => {
         onProgress?.({
@@ -82,6 +109,12 @@ export async function loadLocalModel(model = DEFAULT_LOCAL_MODEL, onProgress) {
         })
       },
     })
+
+    // If reload was cancelled or not yet mounted to pipeline, force reload once
+    if (engine.loadedModelIdToPipeline instanceof Map && !engine.loadedModelIdToPipeline.has(model)) {
+      await engine.reload(model)
+    }
+
     _engineMap.set(model, engine)
     return engine
   })()
@@ -89,6 +122,9 @@ export async function loadLocalModel(model = DEFAULT_LOCAL_MODEL, onProgress) {
   _loadingByModel.set(model, promise)
   try {
     return await promise
+  } catch (err) {
+    _engineMap.delete(model)
+    throw err
   } finally {
     _loadingByModel.delete(model)
   }
@@ -139,7 +175,9 @@ export async function streamLocal({ model = DEFAULT_LOCAL_MODEL, messages, tempe
     // Hold the engine this turn loaded. Reading the module-level _engine after
     // an await means a concurrent model switch nulls it mid-turn.
     let engine = _engineMap.get(model)
-    if (!engine) {
+    const isModelLoaded = engine && (!engine.loadedModelIdToPipeline || (engine.loadedModelIdToPipeline instanceof Map && engine.loadedModelIdToPipeline.has(model)))
+
+    if (!isModelLoaded) {
       onStatus?.('Initializing on-device AI model…')
       engine = await loadLocalModel(model, (p) => {
         const pct = Math.round((p.progress || 0) * 100)
@@ -157,6 +195,7 @@ export async function streamLocal({ model = DEFAULT_LOCAL_MODEL, messages, tempe
 
     try {
       const req = {
+        model,
         messages,
         temperature,
         top_p: 0.9,
@@ -167,7 +206,24 @@ export async function streamLocal({ model = DEFAULT_LOCAL_MODEL, messages, tempe
       // Small on-device models (0.5B/1B) cannot drive native function calling.
       // Disabled in api.js; never inject here so the stream isn't broken.
 
-      const chunks = await engine.chat.completions.create(req)
+      let chunks
+      try {
+        chunks = await engine.chat.completions.create(req)
+      } catch (err) {
+        if (/model not loaded|reload/i.test(err?.message || '')) {
+          onStatus?.('Reloading model into GPU memory…')
+          if (typeof engine.setInitProgressCallback === 'function') {
+            engine.setInitProgressCallback((p) => {
+              const pct = Math.round((p.progress || 0) * 100)
+              onStatus?.(`Loading model weights (${pct}%): ${p.text || ''}`)
+            })
+          }
+          await engine.reload(model)
+          chunks = await engine.chat.completions.create(req)
+        } else {
+          throw err
+        }
+      }
 
       let toolCalls = {}
 

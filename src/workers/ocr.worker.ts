@@ -1,5 +1,5 @@
 import { Job } from 'bullmq';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 // pdf-parse v2 is a class-based API: new PDFParse({ data }) then getText().
 // The v1 default-callable import no longer exists.
@@ -38,7 +38,16 @@ export const processDocument = async (job: Job) => {
     text = JSON.stringify(metadata);
   }
 
-  // TODO: store extracted text back to DB or S3
+    // Store OCR result in S3
+    const ocrKey = `${key}_ocr.txt`
+    await s3.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: ocrKey,
+      Body: Buffer.from(text),
+      ContentType: 'text/plain',
+    }))
+
+
 
   // cleanup
   await fs.unlink(localPath);

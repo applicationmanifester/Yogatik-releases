@@ -24,6 +24,7 @@ const {
   findRelocationMatch, relocateScanSource, relocateResolverSource,
 } = require('./browserTree.cjs')
 const { injectAdShield, getAdShieldStats, isAdShieldEnabled, setAdShieldEnabled } = require('./adBlocker.cjs')
+const CONFIG = require('./browserConfig.js')
 
 const NEW_TAB_URL = pathToFileURL(path.join(__dirname, 'newtab.html')).href
 
@@ -44,6 +45,118 @@ const sessions = new Map() // conversationId -> session
 let mainWindowGetter = () => null
 let tabSeq = 0
 
+// ===== TAB HIBERNATION & SESSION CLEANUP =====
+// Tracks last active time per tab for hibernation
+tabLastActive = new Map() // tabId -> timestamp
+let hibernationTimer = null
+let cleanupTimer = null
+
+function startHibernationAndCleanupTimers() {
+  if (hibernationTimer || cleanupTimer) return
+  
+  // Hibernation check: every minute, hibernate tabs inactive > hibernateAfterMs
+  hibernationTimer = setInterval(() => {
+    if (!CONFIG.hibernation?.enabled) return
+    const now = Date.now()
+    const threshold = CONFIG.hibernation.afterMs || 5 * 60 * 1000
+    
+    for (const [sessionKey, s] of sessions) {
+      for (const [tabId, tab] of s.tabs) {
+        if (tab.hibernated) continue
+        const lastActive = tabLastActive.get(tabId) || 0
+        if (now - lastActive > threshold && tabId !== s.activeTabId) {
+          hibernateTab(s, tabId)
+        }
+      }
+    }
+  }, 60 * 1000)
+  
+  // Session cleanup: every 5 minutes, destroy sessions idle > sessionTTL
+  cleanupTimer = setInterval(() => {
+    const now = Date.now()
+    const ttl = CONFIG.browser?.sessionTTL || 30 * 60 * 1000
+    
+    for (const [sessionKey, s] of sessions) {
+      // Skip if session has active tabs or is the default session with recent activity
+      let hasRecentActivity = false
+      for (const [tabId, tab] of s.tabs) {
+        const lastActive = tabLastActive.get(tabId) || 0
+        if (now - lastActive < ttl) {
+          hasRecentActivity = true
+          break
+        }
+      }
+      if (!hasRecentActivity && s.tabs.size === 0) {
+        destroySession(sessionKey)
+      }
+    }
+  }, 5 * 60 * 1000)
+}
+
+function stopHibernationAndCleanupTimers() {
+  if (hibernationTimer) { clearInterval(hibernationTimer); hibernationTimer = null }
+  if (cleanupTimer) { clearInterval(cleanupTimer); cleanupTimer = null }
+}
+
+function markTabActive(tabId) {
+  tabLastActive.set(tabId, Date.now())
+}
+
+function hibernateTab(s, tabId) {
+  const tab = s.tabs.get(tabId)
+  if (!tab || tab.hibernated) return
+  
+  try {
+    // Save scroll position and form state before hibernating
+    const state = tab.view.webContents.executeJavaScript(`(() => ({
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      url: location.href,
+      title: document.title,
+      forms: Array.from(document.forms).map(f => ({
+        id: f.id,
+        data: Object.fromEntries(new FormData(f).entries())
+      }))
+    }))()`, false)
+    
+    // Never hibernate an unreadable/blank page — we would lose it entirely.
+    if (!state || !state.url || state.url === 'about:blank') return
+
+    tab.hibernationState = state
+    tab.hibernated = true
+    
+    // Clear the view content to free memory
+    tab.view.webContents.executeJavaScript('document.body.innerHTML = ""').catch(() => {})
+    
+    console.log(`[Hibernation] Tab ${tabId} hibernated`)
+  } catch (e) {
+    console.warn('[Hibernation] Failed to hibernate tab:', e.message)
+  }
+}
+
+function restoreTab(s, tabId) {
+  const tab = s.tabs.get(tabId)
+  if (!tab || !tab.hibernated) return
+  
+  try {
+    // Restore the page by navigating back
+    if (tab.hibernationState?.url) {
+      navigate(s, tabId, tab.hibernationState.url)
+    }
+    tab.hibernated = false
+    tab.hibernationState = null
+    console.log(`[Hibernation] Tab ${tabId} restored`)
+  } catch (e) {
+    console.warn('[Hibernation] Failed to restore tab:', e.message)
+  }
+}
+
+// Hibernation restore-on-activate is handled inside the real showActive below.
+// A second `function showActive` here would be shadowed by it (the last
+// declaration in a scope wins), so this wrapper would never run.
+
+// NOTE: a truncated duplicate navigate() was removed here; the complete
+// implementation is defined further down in this file.
 function newTabId() { return `tab-${++tabSeq}` }
 
 function safe(fn, fallback) {
@@ -61,12 +174,93 @@ function ensureSession(conversationId, mode) {
     s = {
       key, mode: mode || 'window', win: null,
       tabs: new Map(), activeTabId: null, bounds: null, detached: false,
+      // Tab groups / workspaces
+      tabGroups: new Map(), // groupId -> { id, label, tabIds: [] }
+      nextGroupId: 1,
+      // AI panel state
+      aiPanelOpen: false,
+      aiPanelWidth: CONFIG.ui?.aiPanelWidth || 340,
+      // Tab orientation
+      tabOrientation: CONFIG.ui?.tabOrientation || 'horizontal',
     }
     sessions.set(key, s)
+    // Start timers on first session creation
+    startHibernationAndCleanupTimers()
   } else if (mode && mode !== s.mode) {
     setMode(s, mode)
   }
   return s
+}
+
+// ===== TAB GROUPS / WORKSPACES =====
+function createTabGroup(s, label = 'New Group') {
+  const groupId = `group-${s.nextGroupId++}`
+  const group = { id: groupId, label, tabIds: [], createdAt: Date.now() }
+  s.tabGroups.set(groupId, group)
+  return group
+}
+
+function moveTabToGroup(s, tabId, groupId) {
+  // Remove from current group
+  for (const g of s.tabGroups.values()) {
+    const idx = g.tabIds.indexOf(tabId)
+    if (idx >= 0) g.tabIds.splice(idx, 1)
+  }
+  // Add to new group
+  const group = s.tabGroups.get(groupId)
+  if (group) group.tabIds.push(tabId)
+  return group
+}
+
+function deleteTabGroup(s, groupId) {
+  const group = s.tabGroups.get(groupId)
+  if (!group) return false
+  // Move tabs to ungrouped
+  for (const tabId of group.tabIds) {
+    const tab = s.tabs.get(tabId)
+    if (tab) tab.groupId = null
+  }
+  s.tabGroups.delete(groupId)
+  return true
+}
+
+function listTabGroups(s) {
+  return [...s.tabGroups.values()].map(g => ({
+    id: g.id,
+    label: g.label,
+    tabIds: g.tabIds,
+    count: g.tabIds.length,
+  }))
+}
+
+// ===== VERTICAL TABS TOGGLE =====
+function setTabOrientation(s, orientation) {
+  if (!['horizontal', 'vertical'].includes(orientation)) return false
+  s.tabOrientation = orientation
+  syncTabBar(s)
+  return true
+}
+
+function toggleTabOrientation(s) {
+  const next = s.tabOrientation === 'horizontal' ? 'vertical' : 'horizontal'
+  return setTabOrientation(s, next)
+}
+
+// ===== RESIZABLE AI SIDECAR =====
+function setAiPanelWidth(s, width) {
+  const min = 200
+  const max = 600
+  s.aiPanelWidth = Math.max(min, Math.min(max, Math.round(width)))
+  layout(s)
+  syncTabBar(s)
+  return s.aiPanelWidth
+}
+
+function toggleAiPanel(s) {
+  s.aiPanelOpen = !s.aiPanelOpen
+  layout(s)
+  syncTabBar(s)
+  return s.aiPanelOpen
 }
 
 function activeTab(s) {
@@ -179,6 +373,9 @@ function layout(s) {
 }
 
 function showActive(s) {
+  // Bring a hibernated tab back before layout (its view was blanked).
+  const active = activeTab(s)
+  if (active && active.hibernated) restoreTab(s, s.activeTabId)
   const h = host(s)
   if (!h || h.isDestroyed()) return
   for (const [tabId, t] of s.tabs) {
@@ -1135,13 +1332,10 @@ function stopFindInPage(s, { tabId, action = 'clearSelection' } = {}) {
 //
 // Every WebContentsView created above shares Electron's default session (no
 // `partition` was ever set — deliberately, so the agent browser sees the
-// same cookies/logins as the rest of the app), which means 'will-download'
-// fires from ONE place for every tab across every conversation. The event's
-// third argument is the initiating webContents, which is the only way to
-// attribute a download back to the tab/session that triggered it.
-
+// ===== PERSISTENT DOWNLOAD REGISTRY =====
+// Module-level registry that survives window close/reopen and mode switches
 const DOWNLOAD_CAP = 200
-const downloads = new Map() // id -> record (JSON-serialisable, crosses IPC)
+const downloadRegistry = new Map() // id -> record (persistent across windows)
 const downloadItems = new Map() // id -> live DownloadItem (main-process only, for cancel)
 let downloadSeq = 0
 let downloadsWired = false
@@ -1156,24 +1350,25 @@ function findTabOwner(wc) {
 }
 
 function pruneDownloads() {
-  if (downloads.size <= DOWNLOAD_CAP) return
-  // Never evict something still in flight — only completed/cancelled/failed
-  // entries are eligible, oldest first.
-  const evictable = [...downloads.values()]
+  if (downloadRegistry.size <= DOWNLOAD_CAP) return
+  const evictable = [...downloadRegistry.values()]
     .filter(d => d.state !== 'progressing')
     .sort((a, b) => a.startedAt - b.startedAt)
   for (const d of evictable) {
-    if (downloads.size <= DOWNLOAD_CAP) break
-    downloads.delete(d.id)
+    if (downloadRegistry.size <= DOWNLOAD_CAP) break
+    downloadRegistry.delete(d.id)
     downloadItems.delete(d.id)
   }
 }
 
 function broadcastDownload(rec) {
-  const s = rec.sessionKey ? sessions.get(rec.sessionKey) : null
-  if (s?.mode === 'window' && s.win && !s.win.isDestroyed()) {
-    safe(() => s.win.webContents.executeJavaScript(`window.__setDownload && window.__setDownload(${JSON.stringify(rec)})`).catch(() => {}))
+  // Broadcast to all windows (window mode)
+  for (const s of sessions.values()) {
+    if (s.mode === 'window' && s.win && !s.win.isDestroyed()) {
+      safe(() => s.win.webContents.executeJavaScript(`window.__setDownload && window.__setDownload(${JSON.stringify(rec)})`).catch(() => {}))
+    }
   }
+  // Broadcast to panel mode via main window
   safeSend(mainWindowGetter(), 'browser:download', rec)
 }
 
@@ -1195,7 +1390,7 @@ function wireDownloads() {
       tabId: owner?.tabId || null,
       sessionKey: owner?.sessionKey || null,
     }
-    downloads.set(id, rec)
+    downloadRegistry.set(id, rec)
     downloadItems.set(id, item)
     pruneDownloads()
     const push = () => {
@@ -1207,7 +1402,6 @@ function wireDownloads() {
     item.once('done', (_e2, state) => {
       rec.state = state
       push()
-      // The item is only needed for cancel(), which is meaningless once done.
       downloadItems.delete(id)
     })
     push()
@@ -1221,7 +1415,7 @@ function wireDownloads() {
 function listDownloads(conversationKey, { limit } = {}) {
   const n = Math.min(Math.max(1, Number(limit) || 50), DOWNLOAD_CAP)
   const key = conversationKey || '__default__'
-  const scoped = [...downloads.values()]
+  const scoped = [...downloadRegistry.values()]
     .filter(d => d.sessionKey === key)
     .sort((a, b) => b.startedAt - a.startedAt)
     .slice(0, n)
@@ -1229,7 +1423,7 @@ function listDownloads(conversationKey, { limit } = {}) {
 }
 
 function findDownload(id) {
-  return downloads.get(id) || null
+  return downloadRegistry.get(id) || null
 }
 
 // Shared by the panel's invoke-based bridge and the window-mode toolbar's
@@ -1988,6 +2182,146 @@ function registerBrowserControl(getMainWindow) {
     return { success: true, detached: s.detached }
   })
 
+  // ===== TAB GROUPS / WORKSPACES =====
+  ipcMain.handle('browser:tab-group-create', (_e, p = {}) => {
+    const s = S(p)
+    const group = createTabGroup(s, p.label)
+    return { success: true, group, groups: listTabGroups(s) }
+  })
+
+  ipcMain.handle('browser:tab-group-move', (_e, p = {}) => {
+    const s = S(p)
+    if (!p.tabId || !p.groupId) return { success: false, error: 'tabId and groupId required' }
+    const group = moveTabToGroup(s, p.tabId, p.groupId)
+    return { success: true, group, groups: listTabGroups(s) }
+  })
+
+  ipcMain.handle('browser:tab-group-delete', (_e, p = {}) => {
+    const s = S(p)
+    if (!p.groupId) return { success: false, error: 'groupId required' }
+    const ok = deleteTabGroup(s, p.groupId)
+    return { success: ok, groups: listTabGroups(s) }
+  })
+
+  ipcMain.handle('browser:tab-groups', (_e, p = {}) => {
+    const s = getSession(p.conversationId)
+    if (!s) return { success: true, groups: [] }
+    return { success: true, groups: listTabGroups(s) }
+  })
+
+  // ===== VERTICAL TABS TOGGLE =====
+  ipcMain.handle('browser:set-tab-orientation', (_e, p = {}) => {
+    const s = S(p)
+    const ok = setTabOrientation(s, p.orientation)
+    return { success: ok, orientation: s.tabOrientation }
+  })
+
+  ipcMain.handle('browser:toggle-tab-orientation', (_e, p = {}) => {
+    const s = S(p)
+    const orientation = toggleTabOrientation(s)
+    return { success: true, orientation }
+  })
+
+  // ===== RESIZABLE AI SIDECAR =====
+  ipcMain.handle('browser:set-ai-panel-width', (_e, p = {}) => {
+    const s = S(p)
+    if (typeof p.width !== 'number') return { success: false, error: 'width required' }
+    const width = setAiPanelWidth(s, p.width)
+    return { success: true, width }
+  })
+
+  ipcMain.handle('browser:toggle-ai-panel', (_e, p = {}) => {
+    const s = S(p)
+    const open = toggleAiPanel(s)
+    return { success: true, open }
+  })
+
+  // ===== FULL-PAGE SCREENSHOT =====
+  ipcMain.handle('browser:capture-full-page', async (_e, p = {}) => {
+    const s = S(p)
+    const t = tabFor(s, p.tabId)
+    if (!t) return { success: false, error: 'No such tab' }
+    try {
+      // Get full page dimensions
+      const dims = await t.view.webContents.executeJavaScript(`({
+        width: document.documentElement.scrollWidth,
+        height: document.documentElement.scrollHeight,
+        clientWidth: document.documentElement.clientWidth,
+        clientHeight: document.documentElement.clientHeight
+      })`, false)
+      
+      if (!dims || dims.width === 0 || dims.height === 0) {
+        return { success: false, error: 'Could not determine page dimensions' }
+      }
+      
+      // Capture full page
+      const img = await t.view.webContents.capturePage({
+        x: 0, y: 0,
+        width: Math.ceil(dims.width),
+        height: Math.ceil(dims.height)
+      })
+      
+      if (img.isEmpty()) throw new Error('empty capture')
+      
+      return { success: true, image: img.toDataURL(), width: dims.width, height: dims.height }
+    } catch (err) {
+      return { success: false, error: err?.message || String(err) }
+    }
+  })
+
+  // ===== READER MODE =====
+  ipcMain.handle('browser:toggle-reader-mode', async (_e, p = {}) => {
+    const s = S(p)
+    const t = tabFor(s, p.tabId)
+    if (!t) return { success: false, error: 'No such tab' }
+    try {
+      const result = await t.view.webContents.executeJavaScript(`(() => {
+        // Check if already in reader mode
+        if (document.body.classList.contains('yogatik-reader-mode')) {
+          // Exit reader mode
+          document.body.classList.remove('yogatik-reader-mode')
+          const original = document.body.getAttribute('data-reader-original')
+          if (original) document.body.innerHTML = original
+          return { enabled: false }
+        }
+        
+        // Enter reader mode - extract article content
+        const article = document.querySelector('article') || 
+          document.querySelector('[role="main"]') ||
+          document.querySelector('main') ||
+          document.body
+        
+        const clone = article.cloneNode(true)
+        // Remove scripts, styles, ads, nav, etc.
+        clone.querySelectorAll('script, style, nav, header, footer, aside, [role="banner"], [role="navigation"], .ad, .ads, #ads, [class*="advertisement"]').forEach(e => e.remove())
+        
+        // Save original
+        document.body.setAttribute('data-reader-original', document.body.innerHTML)
+        document.body.classList.add('yogatik-reader-mode')
+        document.body.innerHTML = ''
+        document.body.appendChild(clone)
+        
+        // Add reader mode styles
+        const style = document.createElement('style')
+        style.textContent = \`
+          .yogatik-reader-mode { background: #0d1117 !important; color: #e6e6e6 !important; }
+          .yogatik-reader-mode * { background: transparent !important; color: inherit !important; }
+          .yogatik-reader-mode article, .yogatik-reader-mode main, .yogatik-reader-mode [role="main"] { max-width: 800px; margin: 0 auto; padding: 2rem 1rem; line-height: 1.7; font-size: 1.1rem; }
+          .yogatik-reader-mode img, .yogatik-reader-mode video { max-width: 100%; height: auto; }
+          .yogatik-reader-mode a { color: #6b8afd; }
+          .yogatik-reader-mode h1, .yogatik-reader-mode h2, .yogatik-reader-mode h3 { color: #fff; margin-top: 2rem; margin-bottom: 1rem; }
+          .yogatik-reader-mode p { margin-bottom: 1rem; }
+        \`
+        document.head.appendChild(style)
+        
+        return { enabled: true }
+      })()`, false)
+      return { success: true, ...result }
+    } catch (err) {
+      return { success: false, error: err?.message || String(err) }
+    }
+  })
+
   ipcMain.handle('browser:close', (_e, p = {}) => {
     destroySession((p && p.conversationId) || '__default__')
     return { success: true }
@@ -2332,4 +2666,10 @@ module.exports = {
   tabFor, activeTab, readPage, click, typeText, pressKey, scroll, screenshot,
   zoomTab, findInPage, stopFindInPage, listDownloads, navSnapshot,
   registerBrowserControl,
+  // New exports
+  createTabGroup, moveTabToGroup, deleteTabGroup, listTabGroups,
+  setTabOrientation, toggleTabOrientation,
+  setAiPanelWidth, toggleAiPanel,
+  hibernateTab, restoreTab, markTabActive,
+  startHibernationAndCleanupTimers, stopHibernationAndCleanupTimers,
 }

@@ -96,6 +96,71 @@ export function buildReworkFeedbackMessage(tracker, { isStagnant = false } = {})
       `read surrounding files, or use a cleaner, alternative implementation.\n\n`
   }
 
+  const errText = `${last?.diagnostics || ''}\n${last?.error || ''}`
+  const commonFix = diagnoseCommonError(errText)
+  if (commonFix) {
+    directive += `💡 ROOT CAUSE INSIGHT: ${commonFix}\n\n`
+  }
+
   directive += `Do NOT stop or ask permission. Proceed autonomously: inspect the faulty file(s), apply the fix, and re-run the verification.`
   return directive
 }
+
+/**
+ * Maps common compiler/runtime errors to immediate, targeted architectural fixes.
+ * @param {string} errorText
+ * @returns {string|null}
+ */
+export function diagnoseCommonError(errorText = '') {
+  const text = String(errorText || '')
+  if (!text) return null
+
+  if (/Cannot find module ['"]([^'"]+)['"]/i.test(text)) {
+    const mod = text.match(/Cannot find module ['"]([^'"]+)['"]/i)?.[1] || 'module'
+    return `Missing module "${mod}": Verify the import path relative to the file, check file extensions (.js vs .jsx vs .ts), or check package.json dependencies.`
+  }
+  if (/SyntaxError:\s*Unexpected token/i.test(text) || /Unexpected identifier/i.test(text)) {
+    return 'Syntax Error: Check for unclosed brackets, missing commas in object literals, or JSX syntax inside a plain .js file.'
+  }
+  if (/ReferenceError:\s*(\w+)\s*is not defined/i.test(text)) {
+    const sym = text.match(/ReferenceError:\s*(\w+)\s*is not defined/i)?.[1] || 'symbol'
+    return `Reference Error: "${sym}" is not defined. Ensure it is imported or declared in the current file scope before use.`
+  }
+  if (/TypeError:\s*(\w+)\s*is not a function/i.test(text)) {
+    const fn = text.match(/TypeError:\s*(\w+)\s*is not a function/i)?.[1] || 'target'
+    return `Type Error: "${fn}" is not callable. Check default vs named exports (e.g. import { foo } vs import foo) and verify the exported object shape.`
+  }
+  if (/ENOENT:\s*no such file or directory/i.test(text)) {
+    return 'File Not Found: The specified path does not exist. Use fs_find_files or fs_file_tree to verify the exact relative path in the workspace.'
+  }
+  return null
+}
+
+/**
+ * Checks whether an agent is repeatedly reading the same target without performing actions.
+ * @param {object} tracker
+ * @param {string} action
+ * @param {string} target
+ * @returns {boolean}
+ */
+export function detectRepetitiveAction(tracker, action = '', target = '') {
+  if (!tracker?.history || tracker.history.length < 3) return false
+  const recent = tracker.history.slice(-3)
+  return recent.every(h => h.action === action && (h.command === target || h.target === target))
+}
+
+/**
+ * Constructs a structured momentum checkpoint message to maintain focus across multi-turn plans.
+ * @param {object} opts
+ * @param {number} opts.step
+ * @param {number} [opts.totalSteps]
+ * @param {string} opts.summary
+ * @returns {string}
+ */
+export function buildAutonomousMomentumDirective({ step = 1, totalSteps = null, summary = '' } = {}) {
+  const progressStr = totalSteps ? `Step ${step}/${totalSteps}` : `Step ${step}`
+  return `[AUTONOMOUS MOMENTUM DIRECTIVE - ${progressStr}]:\n` +
+    `Checkpoint reached: ${summary || 'Previous step complete.'}\n` +
+    `Proceed immediately to the next action without pausing or asking confirmation.`
+}
+

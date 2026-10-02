@@ -52,7 +52,14 @@ let cursor = 0             // round-robin position across scope keys
 /** Set the global concurrency budget (clamped to MIN_LIMIT..MAX_LIMIT). */
 export function configureConcurrency(n) {
   const v = Math.floor(Number(n))
-  if (Number.isFinite(v)) limit = Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, v))
+  // Clamp invalid / non-numeric input to the SAFE (lowest) end rather than
+  // leaving whatever budget was previously set in place. The old form
+  // (`if (Number.isFinite(v)) ...`) failed OPEN: a bad or empty
+  // chat_prefs.max_parallel_agents silently kept a wide concurrency guard,
+  // so the one fan-out nobody configured was the one that stormed providers.
+  limit = Number.isFinite(v)
+    ? Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, v))
+    : MIN_LIMIT
   // A raised limit may let queued waiters proceed immediately.
   pump()
   return limit

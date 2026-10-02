@@ -69,6 +69,19 @@ describe('tool prioritization and schema availability', () => {
     const kept = namesOf(prioritizeToolSchemas(schemas(), 'summarize this youtube video'))
     expect(kept[0]).toBe('youtube')
   })
+
+  it('boosts developer tools when workspaceMode is developer', () => {
+    const kept = namesOf(prioritizeToolSchemas(schemas(), '', { workspaceMode: 'developer', limit: 10 }))
+    expect(kept).toContain('fs_read')
+    expect(kept).toContain('fs_edit')
+    expect(kept).toContain('terminal_run')
+  })
+
+  it('boosts researcher tools when workspaceMode is researcher', () => {
+    const kept = namesOf(prioritizeToolSchemas(schemas(), '', { workspaceMode: 'researcher', limit: 10 }))
+    expect(kept).toContain('web_search')
+    expect(kept).toContain('deep_research')
+  })
 })
 
 describe('missing-argument behaviour', () => {

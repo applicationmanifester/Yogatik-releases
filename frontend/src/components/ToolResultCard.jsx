@@ -101,6 +101,8 @@ export const TOOL_ICONS = {
   paper_trade: TrendingUp,
   trade_indian_stock: TrendingUp,
   zerodha: TrendingUp,
+  test_and_heal: Code,
+  test_runner: Code,
 }
 
 /**
@@ -401,7 +403,63 @@ function RenderedFiles({ files }) {
   )
 }
 
+function FileDiffViewer({ diff, oldString, newString }) {
+  const [expanded, setExpanded] = React.useState(true)
+
+  let lines = []
+  if (diff && typeof diff === 'string') {
+    lines = diff.split('\n')
+  } else if (oldString !== undefined || newString !== undefined) {
+    const oldLines = String(oldString || '').split('\n').filter(Boolean)
+    const newLines = String(newString || '').split('\n').filter(Boolean)
+    lines = [
+      ...oldLines.map(l => `-${l}`),
+      ...newLines.map(l => `+${l}`),
+    ]
+  }
+
+  if (!lines.length) return null
+
+  const displayLines = expanded ? lines : lines.slice(0, 8)
+
+  return (
+    <div style={{ marginTop: 8, borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '4px 8px', background: 'rgba(0,0,0,0.3)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary, #94a3b8)'
+      }}>
+        <span>Diff Preview ({lines.length} line{lines.length === 1 ? '' : 's'})</span>
+        {lines.length > 8 && (
+          <button
+            onClick={() => setExpanded(e => !e)}
+            style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: 11 }}
+          >
+            {expanded ? 'Collapse diff' : `Show all (+${lines.length - 8} lines)`}
+          </button>
+        )}
+      </div>
+      <div style={{
+        fontFamily: 'monospace', fontSize: 11.5, lineHeight: 1.45,
+        maxHeight: expanded ? 260 : 160, overflowY: 'auto', background: 'rgba(0,0,0,0.4)', padding: '6px 8px'
+      }}>
+        {displayLines.map((line, idx) => {
+          const isAdd = line.startsWith('+')
+          const isDel = line.startsWith('-')
+          const bg = isAdd ? 'rgba(16, 185, 129, 0.12)' : isDel ? 'rgba(239, 68, 68, 0.12)' : 'transparent'
+          const color = isAdd ? '#34d399' : isDel ? '#f87171' : 'var(--text-secondary, #cbd5e1)'
+          return (
+            <div key={idx} style={{ background: bg, color, padding: '1px 4px', borderRadius: 2 }}>
+              {line}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function WorkspaceFileModCard({ result, tool }) {
+  const [accepted, setAccepted] = React.useState(false)
   const [rolledBack, setRolledBack] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
   const [statusMsg, setStatusMsg] = React.useState('')
@@ -419,6 +477,7 @@ function WorkspaceFileModCard({ result, tool }) {
       const res = await rollbackSnapshot(latest.id, (args) => fsWriteTool.execute(args))
       if (res.success) {
         setRolledBack(true)
+        setAccepted(false)
         setStatusMsg('↺ Restored previous file version!')
       } else {
         setStatusMsg(res.error || 'Rollback failed')
@@ -430,38 +489,63 @@ function WorkspaceFileModCard({ result, tool }) {
     }
   }
 
+  const isEdit = tool === 'fs_edit' || tool === 'fs_replace_content' || tool === 'fs_patch' || tool === 'fs_multi_replace'
+  const title = isEdit ? 'File Modified' : 'File Saved'
+
   return (
-    <div className="tool-result-card" style={{ borderLeft: '4px solid #10b981', padding: 12 }}>
-      <div className="tool-result-header" style={{ color: '#10b981', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="tool-result-card" style={{ borderLeft: accepted ? '4px solid #3b82f6' : '4px solid #10b981', padding: 12 }}>
+      <div className="tool-result-header" style={{ color: accepted ? '#60a5fa' : '#10b981', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
-          <Files size={14} /> {tool === 'fs_edit' ? 'File Modified' : 'File Saved'}
+          <Files size={14} /> {title} {accepted ? '(Accepted)' : ''}
         </span>
-        <CopyButton text={result.path || ''} title="Copy Path" label="Copy Path" iconSize={11} />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <CopyButton text={result.path || ''} title="Copy Path" label="Copy Path" iconSize={11} />
+        </div>
       </div>
       <div className="tool-detail" style={{ margin: '6px 0', fontSize: 12.5 }}>
         Target: <code style={{ background: 'var(--code-bg, rgba(0,0,0,0.2))', padding: '2px 6px', borderRadius: 4 }}>{result.path}</code>
       </div>
       {result.message && <div className="tool-detail" style={{ opacity: 0.8, fontSize: 12 }}>{result.message}</div>}
+
+      <FileDiffViewer diff={result.diff} oldString={result.old_string} newString={result.new_string} />
+
       {statusMsg && (
         <div style={{ marginTop: 6, fontSize: 12, color: rolledBack ? '#10b981' : '#f87171', fontWeight: 600 }}>
           {statusMsg}
         </div>
       )}
-      {!rolledBack && (
-        <button
-          className="small-btn"
-          onClick={handleRollback}
-          disabled={loading}
-          style={{
-            marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5,
-            background: '#1e293b', color: '#38bdf8', border: '1px solid #334155',
-            padding: '4px 10px', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', fontWeight: 600,
-          }}
-          title="Restore this file to the state before the AI edited it"
-        >
-          <RotateCcw size={12} /> {loading ? 'Restoring…' : '↺ Undo / Rollback Change'}
-        </button>
-      )}
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+        {!accepted && !rolledBack && (
+          <button
+            className="small-btn"
+            onClick={() => setAccepted(true)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              background: '#064e3b', color: '#6ee7b7', border: '1px solid #059669',
+              padding: '4px 10px', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', fontWeight: 600,
+            }}
+            title="Mark this file edit as reviewed and accepted"
+          >
+            <Check size={12} /> Accept Change
+          </button>
+        )}
+        {!rolledBack && (
+          <button
+            className="small-btn"
+            onClick={handleRollback}
+            disabled={loading}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              background: '#1e293b', color: '#38bdf8', border: '1px solid #334155',
+              padding: '4px 10px', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', fontWeight: 600,
+            }}
+            title="Restore this file to the state before the AI edited it"
+          >
+            <RotateCcw size={12} /> {loading ? 'Restoring…' : '↺ Undo / Rollback'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -486,6 +570,97 @@ function BackgroundTaskCard({ result }) {
   )
 }
 
+function TestAndHealCard({ result }) {
+  const [showRaw, setShowRaw] = React.useState(false)
+  const isPassed = Boolean(result.passed)
+  const passedCount = result.passed_count ?? (isPassed ? 1 : 0)
+  const failedCount = result.failed_count ?? (isPassed ? 0 : 1)
+  const assertions = Array.isArray(result.assertion_failures) ? result.assertion_failures : []
+
+  return (
+    <div
+      className="tool-result-card"
+      style={{
+        borderLeft: isPassed ? '4px solid #10b981' : '4px solid #ef4444',
+        padding: 12,
+        borderRadius: 8,
+      }}
+    >
+      <div className="tool-result-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, color: isPassed ? '#10b981' : '#f87171' }}>
+          <Code size={14} /> {isPassed ? 'Test Suite Passed' : 'Test Suite Failed'}
+        </span>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', fontWeight: 600 }}>
+            ✓ {passedCount} passed
+          </span>
+          {failedCount > 0 && (
+            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: 'rgba(239, 68, 68, 0.15)', color: '#f87171', fontWeight: 600 }}>
+              ✕ {failedCount} failed
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div style={{ margin: '8px 0', fontSize: 12, fontFamily: 'monospace', opacity: 0.85 }}>
+        <code>{result.command || 'npm test'}</code>
+      </div>
+
+      {result.message && (
+        <div style={{ fontSize: 12.5, marginBottom: 8, color: isPassed ? 'var(--text-primary)' : '#fca5a5' }}>
+          {result.message}
+        </div>
+      )}
+
+      {assertions.length > 0 && (
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: '#f87171' }}>
+            Assertion Failures ({assertions.length})
+          </div>
+          {assertions.map((a, idx) => (
+            <div
+              key={idx}
+              style={{
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: 6,
+                padding: '6px 8px',
+                fontSize: 12,
+              }}
+            >
+              <div style={{ fontWeight: 600, color: '#fca5a5' }}>
+                {a.file ? `${a.file}${a.line ? `:${a.line}` : ''}` : 'Failure'} {a.title ? `— ${a.title}` : ''}
+              </div>
+              {a.expected && (
+                <div style={{ fontSize: 11, fontFamily: 'monospace', marginTop: 3 }}>
+                  <span style={{ color: '#10b981' }}>Expected: {a.expected}</span> · <span style={{ color: '#f87171' }}>Received: {a.received}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(result.stdout_tail || result.stderr) && (
+        <div style={{ marginTop: 8 }}>
+          <button
+            className="tool-error-toggle"
+            onClick={() => setShowRaw(r => !r)}
+            style={{ fontSize: 11, background: 'transparent', border: 'none', color: 'var(--text-secondary, #94a3b8)', cursor: 'pointer', padding: 0 }}
+          >
+            {showRaw ? 'Hide runner logs' : 'Show runner logs'}
+          </button>
+          {showRaw && (
+            <pre className="code-output" style={{ maxHeight: 200, overflowY: 'auto', marginTop: 4, fontSize: 11.5 }}>
+              {result.stdout_tail || result.stderr}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Tool Result Display ───
 /**
  * Memoised: a card can hold a rendered image, video or chart, and re-running
@@ -493,6 +668,12 @@ function BackgroundTaskCard({ result }) {
  * Results are immutable once produced, so identity comparison is enough.
  */
 const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result }) {
+  if (tool === 'test_and_heal' || tool === 'test_runner') {
+    return <TestAndHealCard result={result} />
+  }
+  if (['fs_edit', 'fs_write', 'fs_replace_content', 'fs_patch', 'fs_multi_replace'].includes(tool) && result?.path) {
+    return <WorkspaceFileModCard result={result} tool={tool} />
+  }
   if ((tool === 'text_to_audio' || tool === 'podcast_generate' || tool === 'audio_overview') && result?.success !== false && (result.audio_url || result.media_id)) {
     const title = tool === 'podcast_generate' ? 'Generated Multi-Speaker Podcast' : tool === 'audio_overview' ? 'Audio Overview / Briefing' : 'Narrated Audio'
     return <RenderedAudio result={result} title={title} />
@@ -1341,8 +1522,10 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
     )
   }
 
-  if ((tool === 'deep_research' || tool === 'web_search') && (result.pages || result.results)) {
-    const items = result.pages || result.results
+  const researchItems = Array.isArray(result?.pages) ? result.pages
+    : (Array.isArray(result?.results) ? result.results : null)
+  if ((tool === 'deep_research' || tool === 'web_search') && researchItems) {
+    const items = researchItems
     return (
       <div className="tool-result-card">
         <div className="tool-result-header">

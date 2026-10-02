@@ -59,7 +59,7 @@ import { detectReflexCandidate } from './agentReflex'
 import { recordReflexEvent } from './live/metrics'
 import { detectMcpNeed } from './mcpRegistry'
 import * as mcpMod from './mcp'
-import { createExecutionTracker, recordExecutionOutcome, detectStagnation, buildReworkFeedbackMessage } from './relentlessLoop'
+import { createExecutionTracker, recordExecutionOutcome, detectStagnation, buildReworkFeedbackMessage, detectRepetitiveAction, buildAutonomousMomentumDirective } from './relentlessLoop'
 import { initializeTaskPlan, updateTaskPlanItem, renderTaskPlanPrompt } from './taskPlanMemory'
 import { assessResponse, regenerationPrompt, continuationPrompt as watchdogContinuationPrompt, isToolReceiptStub, isRetryableError, retryDelay } from './responseWatchdog'
 import { buildUiTelemetryBlock } from './uiContext'
@@ -1091,8 +1091,11 @@ export async function runAgent({
   // limit); the ranking above decides which ones survive the cap.
   const isHighCapModel = ['gemini', 'anthropic', 'openai'].includes(String(provider || '').toLowerCase())
     || /gpt-4|claude|gemini|o1|o3/i.test(String(model || ''))
-  const optimalToolLimit = isHighCapModel ? 96 : 36
-  const schemas = rawSchemas ? prioritizeToolSchemas(rawSchemas, userMessage || '', { limit: optimalToolLimit, persona, agent: activeAgent?.id }) : rawSchemas
+  const isLocalOrSmall = ['ollama', 'local', 'chromeai', 'webllm'].includes(String(provider || '').toLowerCase())
+    || /(:11434|:1234|1b|2b|3b|7b|8b|mini|nano)/i.test(String(model || ''))
+  const optimalToolLimit = isHighCapModel && !isLocalOrSmall ? 96 : (isLocalOrSmall ? 24 : 48)
+  const activeWorkspaceMode = chatPrefs?.workspace_mode || chatPrefs?.workspaceMode || 'omni'
+  const schemas = rawSchemas ? prioritizeToolSchemas(rawSchemas, userMessage || '', { limit: optimalToolLimit, persona, agent: activeAgent?.id, workspaceMode: activeWorkspaceMode }) : rawSchemas
 
   // 'native' → OpenAI-style tools array. 'prompted' → JSON protocol in the
   // system prompt, for models that 400 on a tools array or providers that lack native tool support (e.g. NVIDIA, local).
@@ -1612,15 +1615,23 @@ function safelyParseToolArgs(raw) {
           hadFileAccessThisTurn = true
         }
 
-        if (executionTracker && ['terminal_run', 'terminal_exec', 'test_and_heal', 'test_runner', 'fs_write', 'fs_edit', 'fs_batch_replace'].includes(tc.name)) {
+        if (executionTracker) {
+          const target = tc.parsedArgs?.path || (Array.isArray(tc.parsedArgs?.paths) ? tc.parsedArgs.paths[0] : '') || tc.parsedArgs?.pattern || tc.parsedArgs?.command || tc.parsedArgs?.cmd || tc.parsedArgs?.query || ''
           const exitCode = result?.exitCode ?? (result?.success === false || result?.error ? 1 : 0)
           recordExecutionOutcome(executionTracker, {
             action: tc.name,
+            target,
             command: tc.parsedArgs?.command || tc.parsedArgs?.cmd || tc.parsedArgs?.testCommand,
             error: result?.error,
             diagnostics: result?.diagnostics || result?.output || result?.message,
             exitCode,
           })
+          if (detectRepetitiveAction(executionTracker, tc.name, target)) {
+            messages.push({
+              role: 'user',
+              content: `⚠️ ANTI-STAGNATION WARNING: You have called '${tc.name}' repeatedly on '${target}' without advancing workspace progress. Do not repeat this action. Pivot now: apply code edits, run tests, or provide your final response to the user.`,
+            })
+          }
         }
 
         if (executionCtx.conversationId && result?.error) {
@@ -1683,13 +1694,34 @@ function safelyParseToolArgs(raw) {
         if (lastOutcome && !lastOutcome.isSuccess && !signal?.aborted) {
           const isStagnant = detectStagnation(executionTracker)
           const reworkMsg = buildReworkFeedbackMessage(executionTracker, { isStagnant })
-          messages.push({
-            role: 'user',
-            content: reworkMsg,
-          })
+          const lastMsg = messages[messages.length - 1]
+          if (lastMsg && lastMsg.role === 'user' && typeof lastMsg.content === 'string') {
+            lastMsg.content += `\n\n${reworkMsg}`
+          } else {
+            messages.push({
+              role: 'user',
+              content: reworkMsg,
+            })
+          }
           onStatus?.(isStagnant
             ? '⚠️ Stagnation detected — pivoting implementation strategy…'
             : '🔄 Autonomous rework: Diagnosing failure & applying code fixes…')
+        } else if (lastOutcome && lastOutcome.isSuccess && !signal?.aborted && rounds < maxRounds) {
+          const stepSummary = lastOutcome.action ? `Completed ${lastOutcome.action}` : 'Action completed successfully'
+          const momentumDirective = buildAutonomousMomentumDirective({
+            step: rounds,
+            totalSteps: maxRounds < 100 ? maxRounds : null,
+            summary: stepSummary,
+          })
+          const lastMsg = messages[messages.length - 1]
+          if (lastMsg && lastMsg.role === 'user' && typeof lastMsg.content === 'string') {
+            lastMsg.content += `\n\n${momentumDirective}`
+          } else {
+            messages.push({
+              role: 'user',
+              content: momentumDirective,
+            })
+          }
         }
       }
 

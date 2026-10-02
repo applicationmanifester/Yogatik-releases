@@ -188,6 +188,20 @@ export function diagnoseError(error) {
     }
   }
 
+  if (lower.includes('ollama') || lower.includes('11434')) {
+    const isBrowserBlock = lower.includes('browser') || lower.includes('origins') || lower.includes('cors') || lower.includes('private network')
+    return {
+      type: 'ollama',
+      category: 'Local Ollama Daemon',
+      title: 'Ollama Connection Failed',
+      suggestion: isBrowserBlock
+        ? 'Your browser cannot reach local Ollama due to CORS/Private Network restrictions. Launch Ollama with OLLAMA_ORIGINS="*" before starting, or use the Yogatik Desktop App.'
+        : 'Could not connect to Ollama on 127.0.0.1:11434. Make sure Ollama is running (`ollama serve`) and the model is downloaded.',
+      actionType: 'retry',
+      actionLabel: 'Retry Turn',
+    }
+  }
+
   if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('offline') || lower.includes('timeout') || lower.includes('abort') || lower.includes('connection refused') || lower.includes('err_connection')) {
     return {
       type: 'network',
@@ -336,6 +350,17 @@ export function diagnoseError(error) {
         : 'This capability exists only in the Yogatik desktop app, and the browser build cannot provide it.',
       actionType: needsFolder ? 'retry' : 'none',
       actionLabel: needsFolder ? 'Try Again' : '',
+    }
+  }
+
+  if (/model not loaded|reload\(model\)|CreateMLCEngine/i.test(msg)) {
+    return {
+      type: 'local_model_not_loaded',
+      category: 'On-Device Model Not Loaded',
+      title: 'Model Weights Not Loaded into GPU',
+      suggestion: 'The on-device model weights need to be loaded into WebGPU memory before running queries. Click "Load Model Now" to download or initialize the model.',
+      actionType: 'load_local_model',
+      actionLabel: 'Load Model Now',
     }
   }
 

@@ -45,4 +45,31 @@ describe('RelentlessReworkLoop', () => {
     expect(msg).toContain('FAIL src/math.test.js')
     expect(msg).toContain('Do NOT stop or ask permission')
   })
+
+  it('diagnoses common compiler and runtime errors', () => {
+    const { diagnoseCommonError } = require('./relentlessLoop')
+    expect(diagnoseCommonError("Error: Cannot find module './utils'")).toContain('Missing module "./utils"')
+    expect(diagnoseCommonError("TypeError: calculate is not a function")).toContain('Type Error: "calculate" is not callable')
+    expect(diagnoseCommonError("ReferenceError: foo is not defined")).toContain('Reference Error: "foo" is not defined')
+    expect(diagnoseCommonError("SyntaxError: Unexpected token '<'")).toContain('Syntax Error')
+    expect(diagnoseCommonError("ENOENT: no such file or directory, open 'src/main.js'")).toContain('File Not Found')
+  })
+
+  it('detects repetitive action when same action is performed 3 times', () => {
+    const { detectRepetitiveAction } = require('./relentlessLoop')
+    const tracker = createExecutionTracker()
+    tracker.history.push({ action: 'fs_read', target: 'src/main.js' })
+    tracker.history.push({ action: 'fs_read', target: 'src/main.js' })
+    tracker.history.push({ action: 'fs_read', target: 'src/main.js' })
+    expect(detectRepetitiveAction(tracker, 'fs_read', 'src/main.js')).toBe(true)
+    expect(detectRepetitiveAction(tracker, 'fs_read', 'src/other.js')).toBe(false)
+  })
+
+  it('generates structured autonomous momentum directive', () => {
+    const { buildAutonomousMomentumDirective } = require('./relentlessLoop')
+    const directive = buildAutonomousMomentumDirective({ step: 2, totalSteps: 5, summary: 'Read config files.' })
+    expect(directive).toContain('AUTONOMOUS MOMENTUM DIRECTIVE - Step 2/5')
+    expect(directive).toContain('Read config files.')
+  })
 })
+

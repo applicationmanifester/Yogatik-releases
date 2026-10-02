@@ -885,6 +885,9 @@ export const fsEditTool = {
         hash: res.hash,
         stale: res.stale || false,
         warning: res.warning || undefined,
+        old_string: String(old_string),
+        new_string: String(new_string),
+        diff: res.diff || undefined,
         message: `Edited ${path} (${res.replaced ?? 1} replacement(s))`,
       })
     })

@@ -1,45 +1,90 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import {
   initializeTaskPlan,
   updateTaskPlanItem,
   renderTaskPlanPrompt,
   parseTaskPlanMarkdown,
-  serializeTaskPlanToMarkdown
+  serializeTaskPlanToMarkdown,
+  saveTaskPlanToStorage,
+  loadTaskPlanFromStorage,
+  clearTaskPlanStorage,
+  getPendingMission,
 } from './taskPlanMemory'
 
-describe('TaskPlanMemory', () => {
-  it('initializes task plan with structured phases', () => {
-    const plan = initializeTaskPlan('Build OAuth Authentication', [
-      'Validate existing auth files',
-      'Implement JWT token verification',
-      'Run integration tests'
-    ])
-    expect(plan.title).toBe('Build OAuth Authentication')
-    expect(plan.tasks.length).toBe(3)
+describe('taskPlanMemory', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('initializes a structured task plan with pending statuses', () => {
+    const plan = initializeTaskPlan('Refactor Auth', ['Write tests', 'Implement handler', 'Verify'])
+    expect(plan.title).toBe('Refactor Auth')
+    expect(plan.tasks).toHaveLength(3)
     expect(plan.tasks[0].status).toBe('pending')
+    expect(plan.tasks[0].description).toBe('Write tests')
   })
 
-  it('updates task item status and renders ground truth markdown for system prompt', () => {
-    const plan = initializeTaskPlan('Feature X', ['Task A', 'Task B'])
-    updateTaskPlanItem(plan, 0, 'completed')
-    const md = renderTaskPlanPrompt(plan)
-    expect(md).toContain('- [x] Task A')
-    expect(md).toContain('- [ ] Task B')
-  })
-
-  it('serializes and parses markdown roundtrip preserving statuses', () => {
-    const plan = initializeTaskPlan('Core Setup', ['Init repo', 'Setup CI', 'Write tests'])
+  it('updates task item status', () => {
+    const plan = initializeTaskPlan('Bugfix', ['Step 1', 'Step 2'])
     updateTaskPlanItem(plan, 0, 'completed')
     updateTaskPlanItem(plan, 1, 'in_progress')
+    expect(plan.tasks[0].status).toBe('completed')
+    expect(plan.tasks[1].status).toBe('in_progress')
+  })
 
-    const md = serializeTaskPlanToMarkdown(plan)
-    expect(md).toContain('- [x] Init repo')
-    expect(md).toContain('- [-] Setup CI')
-    expect(md).toContain('- [ ] Write tests')
+  it('renders task plan as markdown prompt with appropriate checkboxes', () => {
+    const plan = initializeTaskPlan('Upgrade Core', ['Step 1', 'Step 2', 'Step 3'])
+    updateTaskPlanItem(plan, 0, 'completed')
+    updateTaskPlanItem(plan, 1, 'in_progress')
+    const prompt = renderTaskPlanPrompt(plan)
+    expect(prompt).toContain('# ACTIVE TASK PLAN: Upgrade Core')
+    expect(prompt).toContain('- [x] Step 1')
+    expect(prompt).toContain('- [-] Step 2')
+    expect(prompt).toContain('- [ ] Step 3')
+  })
 
-    const parsed = parseTaskPlanMarkdown(md)
-    expect(parsed.tasks[0].status).toBe('completed')
-    expect(parsed.tasks[1].status).toBe('in_progress')
-    expect(parsed.tasks[2].status).toBe('pending')
+  it('parses markdown task lists correctly into structured plan', () => {
+    const md = `# ACTIVE TASK PLAN: Deploy App
+- [x] Build bundle
+- [-] Upload to CDN
+- [ ] Run health check`
+    const plan = parseTaskPlanMarkdown(md)
+    expect(plan.title).toBe('Deploy App')
+    expect(plan.tasks).toHaveLength(3)
+    expect(plan.tasks[0].status).toBe('completed')
+    expect(plan.tasks[1].status).toBe('in_progress')
+    expect(plan.tasks[2].status).toBe('pending')
+  })
+
+  it('persists and loads task plans from local storage', () => {
+    const plan = initializeTaskPlan('Database Migration', ['Create migration', 'Run migrate'])
+    saveTaskPlanToStorage('conv_123', plan)
+
+    const loaded = loadTaskPlanFromStorage('conv_123')
+    expect(loaded).toBeDefined()
+    expect(loaded.title).toBe('Database Migration')
+    expect(loaded.tasks).toHaveLength(2)
+
+    clearTaskPlanStorage('conv_123')
+    expect(loadTaskPlanFromStorage('conv_123')).toBeNull()
+  })
+
+  it('reports pending mission status correctly', () => {
+    const plan = initializeTaskPlan('Build Feature', ['Step 1', 'Step 2'])
+    saveTaskPlanToStorage('conv_pending', plan)
+
+    let mission = getPendingMission('conv_pending')
+    expect(mission.hasPending).toBe(true)
+    expect(mission.completed).toBe(0)
+    expect(mission.remaining).toBe(2)
+
+    updateTaskPlanItem(plan, 0, 'completed')
+    updateTaskPlanItem(plan, 1, 'completed')
+    saveTaskPlanToStorage('conv_pending', plan)
+
+    mission = getPendingMission('conv_pending')
+    expect(mission.hasPending).toBe(false)
+    expect(mission.completed).toBe(2)
+    expect(mission.remaining).toBe(0)
   })
 })

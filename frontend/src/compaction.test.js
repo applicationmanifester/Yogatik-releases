@@ -139,6 +139,22 @@ describe('getModelContextLimits & estimateTokens', () => {
     expect(local.maxTurns).toBe(6)
   })
 
+  it('provides tailored context limits for ollama and chromeai models', () => {
+    const ollamaLimits = getModelContextLimits('ollama', 'llama3.2:3b')
+    expect(ollamaLimits.budget).toBe(8000)
+    expect(ollamaLimits.maxTurns).toBe(8)
+    expect(ollamaLimits.estimatedMaxTokens).toBe(8192)
+
+    const ollamaLargeLimits = getModelContextLimits('ollama', 'qwen2.5:32b')
+    expect(ollamaLargeLimits.budget).toBe(16000)
+    expect(ollamaLargeLimits.maxTurns).toBe(14)
+    expect(ollamaLargeLimits.estimatedMaxTokens).toBe(16384)
+
+    const chromeAiLimits = getModelContextLimits('chromeai', 'gemini-nano')
+    expect(chromeAiLimits.budget).toBe(4000)
+    expect(chromeAiLimits.maxTurns).toBe(6)
+  })
+
   it('estimates token counts with character ratios and turn overheads', () => {
     const tokens = estimateTokens('Hello world! How are you?')
     expect(tokens).toBeGreaterThan(0)

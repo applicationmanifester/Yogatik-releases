@@ -1198,7 +1198,7 @@ const CORE_TOOL_SCORES = {
 }
 
 /** Rank and prioritize tools based on the active user query context */
-export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = MAX_TOOLS_PER_REQUEST, persona = '', agent = '' } = {}) {
+export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = MAX_TOOLS_PER_REQUEST, persona = '', agent = '', workspaceMode = '' } = {}) {
   if (!Array.isArray(schemas) || schemas.length === 0) return []
   // No message to rank by still goes through scoring, so the core floor applies
   // and the cap does not decide by registry order alone.
@@ -1211,6 +1211,44 @@ export function prioritizeToolSchemas(schemas = [], userMessage = '', { limit = 
     doc_export: 20,
     code_execute: 15,
     timer: 15,
+  }
+
+  // Workspace Mode Presets (Developer, Researcher, Creator/Executive)
+  const mode = String(workspaceMode || '').toLowerCase()
+  if (mode === 'developer' || mode === 'dev') {
+    scores['fs_read'] = 220
+    scores['fs_write'] = 220
+    scores['fs_edit'] = 220
+    scores['fs_patch'] = 210
+    scores['fs_list'] = 200
+    scores['fs_find_files'] = 200
+    scores['fs_search'] = 190
+    scores['terminal_run'] = 220
+    scores['test_and_heal'] = 210
+    scores['code_execute'] = 190
+    scores['js_execute'] = 180
+    scores['fs_git'] = 180
+  } else if (mode === 'researcher' || mode === 'research') {
+    scores['web_search'] = 240
+    scores['deep_research'] = 230
+    scores['web_extract'] = 210
+    scores['scholar'] = 200
+    scores['wikipedia'] = 180
+    scores['pdf_extract'] = 180
+    scores['doc_search'] = 170
+    scores['doc_export'] = 160
+    scores['research_briefing'] = 180
+  } else if (mode === 'creator' || mode === 'executive') {
+    scores['image_generate'] = 240
+    scores['local_image_generate'] = 230
+    scores['video_render'] = 220
+    scores['local_video_generate'] = 210
+    scores['text_to_audio'] = 200
+    scores['podcast_generate'] = 200
+    scores['audio_overview'] = 200
+    scores['doc_export'] = 190
+    scores['chart'] = 180
+    scores['sticker_generate'] = 180
   }
 
   // Yogatik AI Flagship Boost: ensure Yogatik AI always holds its full powerhouse execution suite

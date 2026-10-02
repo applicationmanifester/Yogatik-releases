@@ -108,3 +108,68 @@ export function parseTaskPlanMarkdown(markdown = '') {
     tasks,
   }
 }
+
+const STORAGE_PREFIX = 'yogatik_mission_'
+
+/**
+ * Persists a task plan to local storage for crash/restart recovery.
+ * @param {string} conversationId
+ * @param {object} plan
+ */
+export function saveTaskPlanToStorage(conversationId = 'default', plan = null) {
+  if (!plan) return
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(`${STORAGE_PREFIX}${conversationId}`, JSON.stringify(plan))
+    }
+  } catch {}
+}
+
+/**
+ * Loads a persisted task plan for a conversation.
+ * @param {string} conversationId
+ * @returns {object|null}
+ */
+export function loadTaskPlanFromStorage(conversationId = 'default') {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(`${STORAGE_PREFIX}${conversationId}`)
+      if (raw) return JSON.parse(raw)
+    }
+  } catch {}
+  return null
+}
+
+/**
+ * Clears a persisted task plan for a conversation.
+ * @param {string} conversationId
+ */
+export function clearTaskPlanStorage(conversationId = 'default') {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(`${STORAGE_PREFIX}${conversationId}`)
+    }
+  } catch {}
+}
+
+/**
+ * Checks whether an in-progress mission exists with pending steps.
+ * @param {string} conversationId
+ * @returns {{ hasPending: boolean, total: number, completed: number, remaining: number, title?: string, tasks: Array } | null}
+ */
+export function getPendingMission(conversationId = 'default') {
+  const plan = loadTaskPlanFromStorage(conversationId)
+  if (!plan || !Array.isArray(plan.tasks) || !plan.tasks.length) return null
+
+  const completed = plan.tasks.filter(t => t.status === 'completed').length
+  const remaining = plan.tasks.length - completed
+  return {
+    hasPending: remaining > 0,
+    total: plan.tasks.length,
+    completed,
+    remaining,
+    title: plan.title,
+    tasks: plan.tasks,
+  }
+}
+

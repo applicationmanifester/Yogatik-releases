@@ -438,6 +438,54 @@ contextBridge.exposeInMainWorld('__YOGATIK_OLLAMA__', {
     ipcRenderer.on('ollama:pull-progress', handler)
     return () => ipcRenderer.removeListener('ollama:pull-progress', handler)
   },
+  /** Direct native IPC chat completion stream from main process */
+  chatStream: ({ model, messages, temperature, maxTokens, tools, options, onChunk, onToolCall, onDone, onError, signal }) => {
+    const id = `ollama_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const onChunkHandler = (_e, payload) => { try { onChunk?.(payload) } catch {} }
+    const onToolHandler = (_e, payload) => { try { onToolCall?.(payload) } catch {} }
+    const onDoneHandler = (_e, telemetry) => {
+      cleanup()
+      try { onDone?.(telemetry) } catch {}
+    }
+    const onErrorHandler = (_e, err) => {
+      cleanup()
+      try { onError?.(new Error(err?.message || 'Ollama stream failed')) } catch {}
+    }
+
+    const cleanup = () => {
+      ipcRenderer.removeListener(`ollama:chat-chunk:${id}`, onChunkHandler)
+      ipcRenderer.removeListener(`ollama:chat-tool:${id}`, onToolHandler)
+      ipcRenderer.removeListener(`ollama:chat-done:${id}`, onDoneHandler)
+      ipcRenderer.removeListener(`ollama:chat-error:${id}`, onErrorHandler)
+      signal?.removeEventListener('abort', onAbort)
+    }
+
+    const onAbort = () => {
+      cleanup()
+      ipcRenderer.invoke('ollama:chat-abort', { id }).catch(() => {})
+    }
+
+    if (signal?.aborted) {
+      onAbort()
+      return () => {}
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+
+    ipcRenderer.on(`ollama:chat-chunk:${id}`, onChunkHandler)
+    ipcRenderer.on(`ollama:chat-tool:${id}`, onToolHandler)
+    ipcRenderer.on(`ollama:chat-done:${id}`, onDoneHandler)
+    ipcRenderer.on(`ollama:chat-error:${id}`, onErrorHandler)
+
+    ipcRenderer.invoke('ollama:chat-stream', {
+      id, model, messages, temperature, maxTokens, tools, options
+    }).catch(err => {
+      cleanup()
+      onError?.(err)
+    })
+
+    return onAbort
+  },
+  abortChat: (id) => ipcRenderer.invoke('ollama:chat-abort', { id }),
 })
 
 // Zero-touch ComfyUI manager — local image/video generation. The main process

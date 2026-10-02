@@ -70,4 +70,24 @@ describe('testAndHealTool', () => {
       expect.anything(),
     )
   })
+
+  it('extracts structured assertion failures from Vitest output', async () => {
+    terminalRunTool.execute.mockResolvedValueOnce({
+      exit_code: 1,
+      stdout: `FAIL src/tools/relentless.test.js > suite > should diagnose error
+AssertionError: expected 'syntax' to be 'runtime'
+Expected: runtime
+Received: syntax
+❯ src/tools/relentless.test.js:42:15`,
+      stderr: '',
+      diagnostics: [],
+    })
+
+    const res = await testAndHealTool.execute({ command: 'npm test' })
+    expect(res.passed).toBe(false)
+    expect(res.assertion_failures).toHaveLength(1)
+    expect(res.assertion_failures[0].file).toBe('src/tools/relentless.test.js')
+    expect(res.assertion_failures[0].expected).toBe('runtime')
+    expect(res.assertion_failures[0].received).toBe('syntax')
+  })
 })

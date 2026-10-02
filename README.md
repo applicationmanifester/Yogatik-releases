@@ -1,6 +1,6 @@
 # Yogatik Studio
 
-**Standalone unrestricted AI agentic assistant & desktop environment** - Electron desktop app + CLI + bot integrations. Monorepo: `yogatik-monorepo` v12.0.0.
+**Standalone unrestricted AI agentic assistant & desktop environment** - Electron desktop app + CLI + bot integrations. Monorepo: `yogatik-monorepo` v12.1.0.
 
 ## Repository layout
 

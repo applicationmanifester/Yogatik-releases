@@ -149,6 +149,30 @@ let playwright: PlaywrightModule | null = null
 let mainWindow: BrowserWindow | null = null
 let cleanupInterval: NodeJS.Timeout | null = null
 
+// Concurrency control
+const MAX_SESSIONS = 50
+const sessionSemaphore = {
+  current: 0,
+  waitQueue: [] as Array<() => void>,
+  async acquire() {
+    if (this.current < MAX_SESSIONS) {
+      this.current++
+      return
+    }
+    return new Promise<void>(resolve => {
+      this.waitQueue.push(resolve)
+    })
+  },
+  release() {
+    this.current--
+    if (this.waitQueue.length > 0) {
+      this.current++
+      const next = this.waitQueue.shift()
+      if (next) next()
+    }
+  }
+}
+
 export function setMainWindow(window: BrowserWindow): void {
   mainWindow = window
 }

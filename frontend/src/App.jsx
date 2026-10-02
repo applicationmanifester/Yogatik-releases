@@ -52,7 +52,7 @@ import { prepareImage, isImageFile, imageFromClipboard, imageFromDrop } from './
 import { registerServiceWorker } from './pwa'
 import { enqueueOutbox, flushOutbox } from './offlineQueue'
 import { requestPersistence, storageReport, formatBytes } from './storage'
-import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clearLocalModelCache } from './localLLM'
+import { DEFAULT_LOCAL_MODEL, webGpuDetails, loadLocalModel, LOCAL_MODELS, clearLocalModelCache, isLocalReady, isLocalModelCached } from './localLLM'
 import { isDirectTimeQuery } from './timeQuery'
 import { matchReflex } from './live/reflexEngine'
 import { isInstalledApp, shareYogatik, nativeShareAvailable } from './share'
@@ -475,20 +475,23 @@ export default function App() {
   useEffect(() => {
     let cancelled = false
     const run = async () => {
-      if (await getStoredProvider()) return
-      if (await hasAnyProviderKey()) return
+      const storedProv = await getStoredProvider()
+      const hasAnyKey = await hasAnyProviderKey()
 
+      // User chose another provider (like 'groq', 'gemini') or has API keys configured: leave them alone
+      if (hasAnyKey || (storedProv && storedProv !== 'local')) return
 
       if (cancelled) return
 
       const gpu = await webGpuDetails()
       if (cancelled || !gpu?.available) return
 
-      const id = DEFAULT_LOCAL_MODEL
+      const id = (await getActiveModel('local')) || DEFAULT_LOCAL_MODEL
       setProviderState('local')
       setModel(id)
       await Promise.all([setActiveProvider('local'), setActiveModel('local', id)]).catch(() => {})
-      setLocalBoot({ progress: 0, text: 'Preparing on-device AI…' })
+      const isCached = await isLocalModelCached()
+      setLocalBoot({ progress: 0, text: isCached ? 'Loading cached model to WebGPU…' : 'Preparing on-device AI…' })
       try {
         await loadLocalModel(id, p => { if (!cancelled) setLocalBoot(p) })
         if (!cancelled) { setLocalBoot({ ready: true }); refreshModels() }
@@ -1181,6 +1184,16 @@ export default function App() {
     setModel(defModel)
     setActiveProvider(id).catch(() => {})
     setActiveModel(id, defModel).catch(() => {})
+
+    if (id === 'local') {
+      const localTargetModel = defModel || DEFAULT_LOCAL_MODEL
+      if (!isLocalReady(localTargetModel)) {
+        setLocalBoot({ progress: 0, text: 'Preparing on-device model…' })
+        loadLocalModel(localTargetModel, p => setLocalBoot(p))
+          .then(() => { setLocalBoot({ ready: true }); refreshModels() })
+          .catch(e => { setLocalBoot({ error: e.message }) })
+      }
+    }
 
     setConversations(prev => {
       const curIdx = activeIdxRef.current
@@ -6124,7 +6137,19 @@ export default function App() {
                     onRetry={m.error && !isStreamingHere ? regenerate : undefined}
                     onResume={m.error && m.checkpoint && !isStreamingHere ? () => resumeTurn(m) : undefined}
                     onOpenSettings={handleOpenSettings}
-                    onAutoPick={handleAutoPick} />
+                    onAutoPick={handleAutoPick}
+                    onLoadLocalModel={async (modelId) => {
+                      const targetMdl = modelId || DEFAULT_LOCAL_MODEL
+                      setLocalBoot({ progress: 0, text: 'Loading on-device model…' })
+                      try {
+                        await loadLocalModel(targetMdl, p => setLocalBoot(p))
+                        setLocalBoot({ ready: true })
+                        refreshModels()
+                        regenerate()
+                      } catch (err) {
+                        setLocalBoot({ error: err.message })
+                      }
+                    }} />
                 )
               })}
               {/* Show pending tool results while streaming */}
@@ -6348,6 +6373,43 @@ export default function App() {
               formatLatency={formatLatency}
               disabled={!models[conv?.provider || provider]?.available}
               onChange={(m) => chooseModel(m, conv?.provider || provider)} />
+
+            {/* On-device WebLLM model status and 1-click Load button */}
+            {(conv?.provider || provider) === 'local' && (
+              <div className="local-model-status-wrapper">
+                {localBoot && !localBoot.ready && !localBoot.error ? (
+                  <div className="local-model-badge loading" title={localBoot.text || 'Loading weights…'}>
+                    <Cpu size={12} className="spin" />
+                    <span>{Math.round((localBoot.progress || 0) * 100)}% Loading</span>
+                  </div>
+                ) : isLocalReady(conv?.model || model || DEFAULT_LOCAL_MODEL) ? (
+                  <div className="local-model-badge ready" title="On-device WebGPU model is loaded in memory">
+                    <CheckCircle2 size={12} />
+                    <span>GPU Ready</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="local-model-load-btn"
+                    title="Load on-device model weights into GPU"
+                    onClick={async () => {
+                      const m = conv?.model || model || DEFAULT_LOCAL_MODEL
+                      setLocalBoot({ progress: 0, text: 'Starting on-device AI…' })
+                      try {
+                        await loadLocalModel(m, p => setLocalBoot(p))
+                        setLocalBoot({ ready: true })
+                        refreshModels()
+                      } catch (err) {
+                        setLocalBoot({ error: err.message })
+                      }
+                    }}
+                  >
+                    <Download size={12} />
+                    <span>Load Model</span>
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Composer icon actions */}
             <div className="composer-icon-actions" role="toolbar" aria-label="Chat Actions">
@@ -6670,6 +6732,20 @@ export default function App() {
                   onClose={() => setShowMentionMenu(false)}
                 />
               </React.Suspense>
+            )}
+            {localBoot && !localBoot.ready && !localBoot.error && (
+              <div className="local-active-progress-banner">
+                <div className="local-active-progress-info">
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Cpu size={13} className="spin" />
+                    <strong>On-device AI:</strong> {localBoot.text || 'Downloading model weights…'}
+                  </span>
+                  <span style={{ fontWeight: 600 }}>{Math.round((localBoot.progress || 0) * 100)}%</span>
+                </div>
+                <div className="local-bar" style={{ height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden', marginTop: 4 }}>
+                  <div className="local-bar-fill" style={{ width: `${Math.round((localBoot.progress || 0) * 100)}%`, height: '100%', background: 'var(--accent, #f59e0b)', transition: 'width 0.2s' }} />
+                </div>
+              </div>
             )}
             <textarea ref={textareaRef} aria-label="Message" value={input}
               onChange={e => {

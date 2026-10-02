@@ -72,6 +72,7 @@ export default {
       rateLimit.count++;
       rateLimit.targets.add(targetUrl.hostname);
     } else {
+      if (rateLimitMap.size >= 10_000) rateLimitMap.clear(); // SECURITY FIX #3: cap map growth under spoofed Origins
       rateLimitMap.set(origin, { count: 1, windowStart: now, targets: new Set([targetUrl.hostname]) });
     }
     

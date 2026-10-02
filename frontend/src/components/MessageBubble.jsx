@@ -280,11 +280,12 @@ function areMessageBubblePropsEqual(prev, next) {
   if (Boolean(prev.onContinue) !== Boolean(next.onContinue)) return false
   if (Boolean(prev.onRetry) !== Boolean(next.onRetry)) return false
   if (Boolean(prev.onResume) !== Boolean(next.onResume)) return false
+  if (Boolean(prev.onLoadLocalModel) !== Boolean(next.onLoadLocalModel)) return false
   return true
 }
 
 const MessageBubble = React.memo(function MessageBubble({
-   msg, onTTS, onOpenArtifact, onRegenerate, onContinue, onEdit, onRetry, onResume, onOpenSettings, onAutoPick, showToolCards = true,
+   msg, onTTS, onOpenArtifact, onRegenerate, onContinue, onEdit, onRetry, onResume, onOpenSettings, onAutoPick, onLoadLocalModel, showToolCards = true,
 }) {
    const [copied, setCopied] = useState(false)
    const [showExportMenu, setShowExportMenu] = useState(false)
@@ -447,6 +448,23 @@ const MessageBubble = React.memo(function MessageBubble({
             {(diagnosis.actionType === 'autopick' || diagnosis.type === 'quota' || diagnosis.type === 'model_not_found' || diagnosis.type === 'stream_stall') && onAutoPick && (
               <button type="button" className="error-btn-secondary" onClick={() => onAutoPick(msg.provider)}>
                 <Zap size={13} /> {diagnosis.actionLabel || 'Auto-Pick Model'}
+              </button>
+            )}
+
+            {(diagnosis.actionType === 'load_local_model' || /model not loaded|reload/i.test(msg.error || '')) && onLoadLocalModel && (
+              <button
+                type="button"
+                className="error-btn-primary"
+                onClick={() => onLoadLocalModel(msg.model || msg.provider)}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  borderColor: '#059669',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+                }}
+              >
+                <Download size={13} /> Load Model to GPU
               </button>
             )}
           </div>

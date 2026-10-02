@@ -1,5 +1,17 @@
 # Changelog
 
+## v12.1.0 - Autonomous Relentless Loop, On-Device WebLLM Auto-Load, Staging Diffs & Multi-Action Checkpoints (2026-10-02)
+
+### 🤖 Autonomous Relentless Loop & Checkpoint Persistence
+- **Autonomous Relentless Loop (`relentlessLoop.js`, `agent.js`)** — Multi-step mission loop that automatically tracks execution progress, detects stagnation or loop traps, diagnoses failure root causes, and issues structured momentum directives.
+- **Interactive Staging Diff Review Card (`DiffReviewCard.jsx`, `diffPreview.js`)** — Visual code diff preview showing additions, deletions, and line modifications with direct Accept & Apply or Reject actions.
+- **Persistent Mission Checkpoints (`taskPlanMemory.js`, `App.jsx`, `MessageBubble.jsx`)** — Automatic per-task plan persistence to IndexedDB allowing one-click resume from any arbitrary action step across page reloads.
+
+### 🧠 On-Device Model Loading & Zero-Key Autoload
+- **Verified WebLLM Pipeline & Resilient Auto-Reload (`localLLM.js`)** — Rebuilt WebLLM engine initialization to verify pipeline readiness before completion requests, auto-reloading model weights into WebGPU if unloaded or uninitialized and eliminating `Model not loaded before trying to complete ChatCompletionRequest`.
+- **Zero-Key Autoload when Providers Unavailable (`App.jsx`)** — Automatically initializes and preloads the on-device AI model into WebGPU when other providers have no configured API keys or when the on-device provider is active.
+- **1-Click Model Load & Live Progress Indicators (`App.jsx`, `MessageBubble.jsx`, `02-sidebar-polish.css`)** — Added a dedicated "Load Model" / "GPU Ready" badge in the model picker bar, a real-time progress banner directly above the composer input, and a "Load Model to GPU" recovery button on execution error cards.
+
 ## v12.0.0 - Standalone Dedicated Tool Windows, Resilient Ollama Model Discovery & Multi-Window Production Suite (2026-10-01)
 
 ### 🪟 Standalone Dedicated Tool Windows
