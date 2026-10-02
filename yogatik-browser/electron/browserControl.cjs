@@ -36,6 +36,9 @@ const pageMonitor = require('./pageMonitor.cjs')
 
 const NEW_TAB_URL = pathToFileURL(path.join(__dirname, 'newtab.html')).href
 
+const CHROME_VERSION = process.versions.chrome || '130.0.6723.117'
+const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_VERSION} Safari/537.36`
+
 function isNewTabUrl(u) {
   if (!u) return true
   const str = String(u)
@@ -89,7 +92,6 @@ async function restoreTab(s, tabId) {
   if (!tab || !tab.hibernating || tab.view) return
 
   const webPrefs = {
-    preload: path.join(__dirname, 'browserWindowPreload.cjs'),
     contextIsolation: true,
     nodeIntegration: false,
     sandbox: true,
@@ -99,12 +101,7 @@ async function restoreTab(s, tabId) {
   const wc = tab.view.webContents
   injectAdShield(wc)
   try {
-    const defaultUA = wc.getUserAgent()
-    const cleanedUA = defaultUA
-      .replace(/Electron\/[0-9\.]+\s?/gi, '')
-      .replace(/Yogatik[A-Za-z0-9_-]*\/[0-9\.]+\s?/gi, '')
-      .trim()
-    wc.setUserAgent(cleanedUA)
+    wc.setUserAgent(CHROME_UA)
   } catch {}
 
   wireTabListeners(s, tabId, tab)
@@ -551,19 +548,11 @@ function ensureView(s, tabId) {
   if (!tab || tab.view) return
 
   const webPrefs = { ...tab.webPrefs }
-  if (!webPrefs.preload) {
-    webPrefs.preload = path.join(__dirname, 'browserWindowPreload.cjs')
-  }
   tab.view = new WebContentsView({ webPreferences: webPrefs })
   const wc = tab.view.webContents
   injectAdShield(wc)
   try {
-    const defaultUA = wc.getUserAgent()
-    const cleanedUA = defaultUA
-      .replace(/Electron\/[0-9\.]+\s?/gi, '')
-      .replace(/Yogatik[A-Za-z0-9_-]*\/[0-9\.]+\s?/gi, '')
-      .trim()
-    wc.setUserAgent(cleanedUA)
+    wc.setUserAgent(CHROME_UA)
   } catch {}
 
   wireTabListeners(s, tabId, tab)

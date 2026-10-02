@@ -247,6 +247,21 @@ function applyNetworkPrivacy() {
   )
 }
 
+function configureSecureUserAgent() {
+  const CHROME_VERSION = process.versions.chrome || '130.0.6723.117'
+  const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_VERSION} Safari/537.36`
+
+  app.userAgentFallback = CHROME_UA
+  electronSession.defaultSession.setUserAgent(CHROME_UA)
+
+  electronSession.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = { ...details.requestHeaders }
+    headers['User-Agent'] = CHROME_UA
+    headers['Sec-Ch-Ua'] = `"Chromium";v="${CHROME_VERSION.split('.')[0]}", "Google Chrome";v="${CHROME_VERSION.split('.')[0]}", "Not?A_Brand";v="99"`
+    callback({ requestHeaders: headers })
+  })
+}
+
 function applyCSP() {
   electronSession.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const url = details.url || ''
@@ -426,6 +441,7 @@ app.whenReady().then(() => {
   loadChromeExtensions(electronSession.defaultSession)
 
   // Apply security headers & permission hardening
+  configureSecureUserAgent()
   applyCSP()
   setupPermissionHandler()
   applyNetworkPrivacy()
