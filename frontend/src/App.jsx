@@ -5495,6 +5495,14 @@ export default function App() {
               88px is a floor the h1 still ellipsizes inside. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 88, flex: 1, overflow: 'hidden' }}>
             {!sidebarOpen && <button className="icon-btn" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar"><Menu size={18} /></button>}
+            <span
+              style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', flexShrink: 0 }}
+              onClick={() => setShowOverviewModal(true)}
+              title="Yogatik Overview"
+              aria-label="Yogatik Overview"
+            >
+              <YogatikLogo size={20} />
+            </span>
             <h1 style={{ margin: 0, fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '420px' }}>
               {conv?.title || 'New Chat'}
             </h1>

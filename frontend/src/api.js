@@ -213,8 +213,8 @@ export async function preloadAuth() {
   } catch {}
 }
 
-export async function loginWithGoogle() {
-  const user = await signInWithGoogle()
+export async function loginWithGoogle(options = {}) {
+  const user = await signInWithGoogle(options)
   if (user) {
     await db.setSetting('user', user)
     try { localStorage.setItem('yogatik_user', JSON.stringify(user)) } catch {}

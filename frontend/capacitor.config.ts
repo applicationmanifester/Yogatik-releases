@@ -26,6 +26,8 @@ const config: CapacitorConfig = {
   android: {
     // Use the same dark background as the web app
     backgroundColor: '#0a0a0a',
+    // Standard Mobile Chrome User-Agent without WebView markers to enable Google OAuth
+    overrideUserAgent: 'Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36',
   },
   ios: {
     contentInset: 'automatic',

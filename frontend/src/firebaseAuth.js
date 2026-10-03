@@ -139,12 +139,28 @@ export function isStandalonePwa() {
  */
 export function isCapacitorApp() {
   try {
-    return Boolean(
-      typeof window !== 'undefined' &&
-      window.Capacitor &&
-      window.Capacitor.isNativePlatform &&
-      window.Capacitor.isNativePlatform()
-    )
+    if (typeof window === 'undefined') return false
+    if (window.Capacitor) {
+      if (typeof window.Capacitor.isNativePlatform === 'function') {
+        return window.Capacitor.isNativePlatform()
+      }
+      if (typeof window.Capacitor.getPlatform === 'function') {
+        return window.Capacitor.getPlatform() !== 'web'
+      }
+      if (window.Capacitor.platform && window.Capacitor.platform !== 'web') {
+        return true
+      }
+    }
+    if (window.androidBridge) return true
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.bridge) return true
+    if (typeof window.location !== 'undefined') {
+      const proto = window.location.protocol
+      const host = window.location.hostname
+      if (proto === 'capacitor:' || (proto === 'https:' && host === 'localhost' && !window.location.port)) {
+        return true
+      }
+    }
+    return false
   } catch { return false }
 }
 

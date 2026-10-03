@@ -1390,31 +1390,30 @@
 
 /* ─── Safe-area insets (notch, home-indicator, status-bar) ─── */
 @media (max-width: 600px) {
-  /* Push the whole shell below the status bar on iOS/Android */
+  /* Do NOT add padding-top to body: it creates an empty dead band above the header.
+     Instead, body stays flush and safe-area is handled inside the header. */
   body {
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: 0;
+  }
+
+  /* Chat header: flush to top with safe-area padding for notch/status bar */
+  .chat-header {
+    padding: max(8px, env(safe-area-inset-top, 0px)) 10px 8px 10px;
+    min-height: 48px;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow: hidden;
   }
 
   /* Sidebar takes the full height but respects safe areas */
   aside.sidebar {
-    padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+    padding-top: max(12px, env(safe-area-inset-top, 0px));
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
   }
 
   /* Chat area: leave room for the home indicator at the bottom */
   .chat-area {
     padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-}
-
-/* ─── Chat header: fit on narrow screens ─── */
-@media (max-width: 600px) {
-  .chat-header {
-    padding: 6px 10px;
-    min-height: 48px;
-    gap: 6px;
-    flex-wrap: nowrap;
-    overflow: hidden;
   }
 
   /* Title area: allow it to shrink without disappearing */

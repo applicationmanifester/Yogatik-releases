@@ -2,18 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { User, RefreshCw, ExternalLink, LogIn } from 'lucide-react'
 import { Modal } from './Modal'
 import { loginWithGoogle, preloadAuth } from '../api'
-
-/** True when running inside the Capacitor native Android / iOS app. */
-function isCapacitorNative() {
-  try {
-    return Boolean(
-      typeof window !== 'undefined' &&
-      window.Capacitor &&
-      window.Capacitor.isNativePlatform &&
-      window.Capacitor.isNativePlatform()
-    )
-  } catch { return false }
-}
+import { isCapacitorApp } from '../firebaseAuth'
 
 // ─── Auth Modal ───
 function AuthModal({ onClose, onAuth }) {
@@ -21,7 +10,7 @@ function AuthModal({ onClose, onAuth }) {
   const [loading, setLoading] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
   const [slow, setSlow] = useState(false)
-  const isNative = isCapacitorNative()
+  const isNative = isCapacitorApp()
 
   useEffect(() => {
     // Warm up Firebase Auth so user gesture isn't lost to lazy dynamic imports
