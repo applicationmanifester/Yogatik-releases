@@ -80,6 +80,20 @@ function AuthModal({ onClose, onAuth }) {
                   You will be taken to Google to sign in, then returned to Yogatik automatically.
                 </p>
               )}
+              <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--border)' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  Or open Yogatik in your device browser to sign in:
+                </p>
+                <a
+                  href="https://yogatik.web.app/?signin=1"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-secondary"
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '10px 14px', fontSize: '12.5px', textDecoration: 'none', color: 'var(--text)', borderRadius: '10px', border: '1px solid var(--border)' }}
+                >
+                  <ExternalLink size={14} /> Open in Chrome / Safari
+                </a>
+              </div>
             </>
           ) : (
             /* ── Standard web: popup with redirect fallback ── */

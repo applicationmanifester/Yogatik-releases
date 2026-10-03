@@ -1396,18 +1396,22 @@
     padding-top: 0;
   }
 
-  /* Chat header: flush to top with safe-area padding for notch/status bar */
+  /* Chat header: allocate proper top clearance so status bar icons, clock, battery,
+     and camera cutouts never overlap the hamburger menu, logo, or title */
   .chat-header {
-    padding: max(8px, env(safe-area-inset-top, 0px)) 10px 8px 10px;
-    min-height: 48px;
-    gap: 6px;
+    padding-top: max(44px, calc(env(safe-area-inset-top, 0px) + 12px)) !important;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-bottom: 10px;
+    min-height: 56px;
+    gap: 8px;
     flex-wrap: nowrap;
     overflow: hidden;
   }
 
-  /* Sidebar takes the full height but respects safe areas */
+  /* Sidebar takes the full height with matching status bar clearance */
   aside.sidebar {
-    padding-top: max(12px, env(safe-area-inset-top, 0px));
+    padding-top: max(44px, calc(env(safe-area-inset-top, 0px) + 12px)) !important;
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
   }
 
