@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { Search, X, Check, Sparkles, Eye, Zap, Brain, ChevronRight } from 'lucide-react'
+import { Search, X, Check, Sparkles, Eye, Zap, Brain, ChevronRight, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 export function LiveModelSearchModal({
   open,
@@ -137,456 +137,120 @@ export function LiveModelSearchModal({
   const providerList = Object.keys(allProviders || {})
 
   return (
-    <div
-      className="live-modal-overlay"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.65)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        zIndex: 9999,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '16px',
-        animation: 'fadeIn 0.15s ease-out',
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div
-        className="live-search-dialog"
-        style={{
-          width: '100%',
-          maxWidth: '560px',
-          maxHeight: '82vh',
-          backgroundColor: 'var(--live-modal-bg, #ffffff)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          border: '1px solid var(--live-modal-border, rgba(148, 163, 184, 0.25))',
-          borderRadius: '18px',
-          boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.25), 0 0 20px rgba(56, 189, 248, 0.12)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          color: 'var(--live-text, #0f172a)',
-          fontFamily: 'inherit',
-        }}
-      >
-        {/* Header with Search Bar */}
-        <div
-          style={{
-            padding: '16px 20px 12px',
-            borderBottom: '1px solid var(--live-modal-border, rgba(148, 163, 184, 0.18))',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-            background: 'var(--live-modal-header, rgba(0, 0, 0, 0.02))',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Sparkles size={18} style={{ color: '#0ea5e9' }} />
-              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--live-text, #0f172a)' }}>
-                Search & Switch AI Model
-              </h3>
-            </div>
+    <div className="live-model-search-modal">
+      <div className="live-model-search-modal__content">
+        <div className="live-model-search-header">
+          <h2 className="live-model-search-title">Select Model</h2>
+          <button
+            className="live-model-search-close"
+            onClick={onClose}
+            aria-label="Close model search"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="live-model-search-tabs">
+          <button
+            className={`live-model-search-tab ${selectedProviderFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setSelectedProviderFilter('all')}
+          >
+            All
+          </button>
+          <button
+            className={`live-model-search-tab ${selectedProviderFilter === 'fast' ? 'active' : ''}`}
+            onClick={() => setSelectedProviderFilter('fast')}
+          >
+            <Zap size={12} style={{ marginRight: 4 }} /> Fast
+          </button>
+          {providerList.map(pId => (
             <button
-              type="button"
-              onClick={onClose}
-              style={{
-                background: 'var(--live-btn-bg, rgba(0, 0, 0, 0.05))',
-                border: '1px solid var(--live-btn-border, rgba(0, 0, 0, 0.08))',
-                color: 'var(--live-text-dim, #64748b)',
-                borderRadius: '50%',
-                width: '28px',
-                height: '28px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-              title="Close (Esc)"
+              key={pId}
+              className={`live-model-search-tab ${selectedProviderFilter === pId ? 'active' : ''}`}
+              onClick={() => setSelectedProviderFilter(pId)}
             >
-              <X size={15} />
+              {allProviders[pId]?.name || pId}
             </button>
+          ))}
+        </div>
+
+        <div className="live-model-search-body">
+          <input
+            ref={inputRef}
+            type="text"
+            className="live-model-search-input"
+            placeholder="Search models… (e.g. gemini, vision, reasoning)"
+            value={query}
+            onChange={e => { setQuery(e.target.value); setFocusedIdx(0) }}
+            autoComplete="off"
+          />
+
+          <div className="live-model-search-provider-filters">
+            {providerList.map(pId => (
+              <button
+                key={pId}
+                className={`live-model-search-provider-btn ${selectedProviderFilter === pId ? 'active' : ''}`}
+                onClick={() => setSelectedProviderFilter(pId)}
+                disabled={!checkProviderReady(pId)}
+              >
+                {allProviders[pId]?.name || pId}
+              </button>
+            ))}
           </div>
 
-          <div
-            style={{
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'center',
-              background: 'var(--live-vm-input-bg, rgba(0, 0, 0, 0.04))',
-              borderRadius: '12px',
-              border: '1px solid var(--live-vm-input-border, rgba(148, 163, 184, 0.28))',
-              padding: '0 12px',
-            }}
-          >
-            <Search size={16} style={{ color: 'var(--live-text-faint, #94a3b8)', marginRight: '8px', flexShrink: 0 }} />
-            <input
-              ref={inputRef}
-              type="text"
-              placeholder="Search by model name, provider, vision, fast, r1..."
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setFocusedIdx(0)
-              }}
-              style={{
-                flex: 1,
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                color: 'var(--live-text, #0f172a)',
-                fontSize: '13px',
-                padding: '10px 0',
-                fontFamily: 'inherit',
-              }}
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery('')
-                  inputRef.current?.focus()
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--live-text-dim, #64748b)',
-                  cursor: 'pointer',
-                  padding: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                <X size={14} />
-              </button>
+          <div className="live-model-list" ref={listRef} role="listbox" aria-label="Available models">
+            {filteredModels.length === 0 ? (
+              <div className="live-model-empty" style={{ padding: '24px', textAlign: 'center', color: 'var(--live-text-dim)' }}>
+                <Search size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
+                <p>No models match your search.</p>
+              </div>
+            ) : (
+              filteredModels.map((item, idx) => (
+                <div
+                  key={`${item.provider}:${item.model}`}
+                  className={`live-model-item ${item === filteredModels[focusedIdx] ? 'focused' : ''} ${item.provider === activeProvider && item.model === activeModel ? 'selected' : ''}`}
+                  data-idx={idx}
+                  onClick={() => { onSelectModel(item.provider, item.model); onClose() }}
+                  onMouseEnter={() => setFocusedIdx(idx)}
+                  role="option"
+                  aria-selected={item.provider === activeProvider && item.model === activeModel}
+                >
+                  <div className="live-model-item-info">
+                    <div className="live-model-name">
+                      {item.displayName}
+                      {item.isVision && <span className="live-model-badge" style={{ marginLeft: 6, fontSize: '10px', background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', padding: '1px 6px', borderRadius: '9999px' }}>👁 Vision</span>}
+                      {item.isReasoning && <span className="live-model-badge" style={{ marginLeft: 6, fontSize: '10px', background: 'rgba(168, 85, 247, 0.2)', color: '#a855f7', padding: '1px 6px', borderRadius: '9999px' }}>🧠 Reasoning</span>}
+                      {item.isFast && <span className="live-model-badge" style={{ marginLeft: 6, fontSize: '10px', background: 'rgba(34, 197, 94, 0.2)', color: '#22c55e', padding: '1px 6px', borderRadius: '9999px' }}>⚡ Fast</span>}
+                    </div>
+                    <div className="live-model-provider">{item.providerName}</div>
+                  </div>
+                  <div className="live-model-meta">
+                    {!item.isReady && !item.isAvailable && (
+                      <span style={{ color: 'var(--live-text-accent-error)', fontSize: '10px' }}>
+                        <AlertTriangle size={10} style={{ verticalAlign: '-1px', marginRight: 2 }} />
+                        API key needed
+                      </span>
+                    )}
+                    {!item.isReady && item.isAvailable && (
+                      <span style={{ color: 'var(--live-text-accent-info)', fontSize: '10px' }}>
+                        <Sparkles size={10} style={{ verticalAlign: '-1px', marginRight: 2 }} />
+                        Ready
+                      </span>
+                    )}
+                    {item.isReady && (
+                      <span style={{ color: 'var(--live-text-accent-success)', fontSize: '10px' }}>
+                        <CheckCircle2 size={10} style={{ verticalAlign: '-1px', marginRight: 2 }} />
+                        Connected
+                      </span>
+                    )}
+                  </div>
+                  {item.provider === activeProvider && item.model === activeModel && (
+                    <div className="live-model-check"><Check size={14} /></div>
+                  )}
+                </div>
+              ))
             )}
           </div>
-
-          {/* Provider Filter Badges */}
-          <div
-            style={{
-              display: 'flex',
-              gap: '6px',
-              overflowX: 'auto',
-              paddingBottom: '2px',
-              scrollbarWidth: 'none',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedProviderFilter('all')
-                setFocusedIdx(0)
-              }}
-              style={{
-                background: selectedProviderFilter === 'all' ? 'rgba(14, 165, 233, 0.16)' : 'var(--live-btn-bg, rgba(0,0,0,0.04))',
-                color: selectedProviderFilter === 'all' ? 'var(--live-text-accent-info, #0284c7)' : 'var(--live-text-dim, #475569)',
-                border: selectedProviderFilter === 'all' ? '1px solid rgba(14, 165, 233, 0.55)' : '1px solid var(--live-btn-border, rgba(0,0,0,0.08))',
-                borderRadius: '8px',
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              All Providers ({allModelItems.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedProviderFilter('fast')
-                setFocusedIdx(0)
-              }}
-              style={{
-                background: selectedProviderFilter === 'fast' ? 'rgba(34, 197, 94, 0.18)' : 'var(--live-btn-bg, rgba(0,0,0,0.04))',
-                color: selectedProviderFilter === 'fast' ? 'var(--live-text-accent-success, #15803d)' : 'var(--live-text-dim, #475569)',
-                border: selectedProviderFilter === 'fast' ? '1px solid rgba(34, 197, 94, 0.55)' : '1px solid var(--live-btn-border, rgba(0,0,0,0.08))',
-                borderRadius: '8px',
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.15s ease',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              <Zap size={11} style={{ color: '#16a34a' }} />
-              Fast for Live ({allModelItems.filter(m => m.isFast).length})
-            </button>
-            {providerList.map(p => {
-              const count = (allProviders[p]?.models || []).length
-              if (!count) return null
-              const isSelected = selectedProviderFilter === p
-              const isReady = checkProviderReady(p)
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => {
-                    setSelectedProviderFilter(p)
-                    setFocusedIdx(0)
-                  }}
-                  style={{
-                    background: isSelected ? 'rgba(14, 165, 233, 0.16)' : 'var(--live-btn-bg, rgba(0,0,0,0.04))',
-                    color: isSelected ? 'var(--live-text-accent-info, #0284c7)' : 'var(--live-text-dim, #475569)',
-                    border: isSelected ? '1px solid rgba(14, 165, 233, 0.55)' : '1px solid var(--live-btn-border, rgba(0,0,0,0.08))',
-                    borderRadius: '8px',
-                    padding: '4px 10px',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    textTransform: 'capitalize',
-                    transition: 'all 0.15s ease',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                  }}
-                >
-                  <span
-                    style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      backgroundColor: isReady ? '#22c55e' : 'rgba(148, 163, 184, 0.45)',
-                      boxShadow: isReady ? '0 0 6px #22c55e' : 'none',
-                      display: 'inline-block',
-                      flexShrink: 0,
-                    }}
-                    title={isReady ? 'API Key ready' : 'Needs key'}
-                  />
-                  <span>{allProviders[p]?.name || p} ({count})</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Model Results List */}
-        <div
-          ref={listRef}
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '8px 12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '4px',
-          }}
-        >
-          {filteredModels.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--live-text-dim, #64748b)' }}>
-              <p style={{ margin: '0 0 6px', fontSize: '13px', fontWeight: 500 }}>No models matching &ldquo;{query}&rdquo;</p>
-              <span style={{ fontSize: '11px' }}>Try searching by provider name, model tag, or clear filters</span>
-            </div>
-          ) : (
-            filteredModels.map((item, idx) => {
-              const isActive = activeProvider === item.provider && activeModel === item.model
-              const isFocused = focusedIdx === idx
-
-              return (
-                <div
-                  key={`${item.provider}::${item.model}`}
-                  data-idx={idx}
-                  onClick={() => {
-                    onSelectModel(item.provider, item.model)
-                    onClose()
-                  }}
-                  onMouseEnter={() => setFocusedIdx(idx)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    borderRadius: '10px',
-                    background: isActive
-                      ? 'rgba(16, 185, 129, 0.12)'
-                      : isFocused
-                      ? 'var(--live-btn-hover, rgba(0, 0, 0, 0.05))'
-                      : 'transparent',
-                    border: isActive
-                      ? '1px solid rgba(16, 185, 129, 0.45)'
-                      : isFocused
-                      ? '1px solid var(--live-btn-border, rgba(0, 0, 0, 0.12))'
-                      : '1px solid transparent',
-                    cursor: 'pointer',
-                    transition: 'background 0.1s ease, border 0.1s ease',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '6px',
-                        background: isActive ? 'rgba(16, 185, 129, 0.22)' : 'var(--live-btn-bg, rgba(0, 0, 0, 0.05))',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        color: isActive ? '#059669' : 'var(--live-text-faint, #94a3b8)',
-                      }}
-                    >
-                      {isActive ? <Check size={14} /> : <ChevronRight size={13} />}
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap' }}>
-                        <span
-                          style={{
-                            fontSize: '13px',
-                            fontWeight: isActive ? 600 : 500,
-                            color: isActive ? 'var(--live-text-accent-success, #059669)' : 'var(--live-text, #0f172a)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {item.displayName}
-                        </span>
-                        {isActive && (
-                          <span
-                            style={{
-                              fontSize: '9px',
-                              padding: '1px 5px',
-                              borderRadius: '4px',
-                              background: '#10b981',
-                              color: '#ffffff',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                            }}
-                          >
-                            Active
-                          </span>
-                        )}
-                        {!item.isReady && (
-                          <span
-                            style={{
-                              fontSize: '9px',
-                              padding: '1px 5px',
-                              borderRadius: '4px',
-                              background: 'rgba(239, 68, 68, 0.12)',
-                              color: '#dc2626',
-                              border: '1px solid rgba(239, 68, 68, 0.25)',
-                              fontWeight: 600,
-                            }}
-                            title="Needs API key in Settings"
-                          >
-                            Needs Key
-                          </span>
-                        )}
-                      </div>
-                      <span style={{ fontSize: '11px', color: 'var(--live-text-dim, #64748b)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <span
-                          style={{
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '50%',
-                            backgroundColor: item.isReady ? '#22c55e' : 'rgba(148, 163, 184, 0.45)',
-                            boxShadow: item.isReady ? '0 0 6px #22c55e' : 'none',
-                            display: 'inline-block',
-                            flexShrink: 0,
-                          }}
-                          title={item.isReady ? 'API Key configured & ready' : 'Needs API Key'}
-                        />
-                        {item.providerName}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Feature Badges */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                    {item.isVision && (
-                      <span
-                        title="Supports live camera inspection"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '3px',
-                          fontSize: '10px',
-                          padding: '2px 6px',
-                          borderRadius: '6px',
-                          background: 'rgba(14, 165, 233, 0.12)',
-                          color: 'var(--live-text-accent-info, #0284c7)',
-                          border: '1px solid rgba(14, 165, 233, 0.25)',
-                          fontWeight: 500,
-                        }}
-                      >
-                        <Eye size={10} /> Vision
-                      </span>
-                    )}
-                    {item.isReasoning && (
-                      <span
-                        title="Reasoning / Thinking model"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '3px',
-                          fontSize: '10px',
-                          padding: '2px 6px',
-                          borderRadius: '6px',
-                          background: 'rgba(168, 85, 247, 0.12)',
-                          color: '#7e22ce',
-                          border: '1px solid rgba(168, 85, 247, 0.25)',
-                          fontWeight: 500,
-                        }}
-                      >
-                        <Brain size={10} /> Reasoning
-                      </span>
-                    )}
-                    {item.isFast && (
-                      <span
-                        title="Ultra-low latency streaming"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '3px',
-                          fontSize: '10px',
-                          padding: '2px 6px',
-                          borderRadius: '6px',
-                          background: 'rgba(234, 179, 8, 0.12)',
-                          color: '#a16207',
-                          border: '1px solid rgba(234, 179, 8, 0.25)',
-                          fontWeight: 500,
-                        }}
-                      >
-                        <Zap size={10} /> Fast
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )
-            })
-          )}
-        </div>
-
-        {/* Footer info */}
-        <div
-          style={{
-            padding: '10px 16px',
-            borderTop: '1px solid var(--live-modal-border, rgba(148, 163, 184, 0.18))',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            fontSize: '11px',
-            color: 'var(--live-text-dim, #64748b)',
-            background: 'var(--live-modal-header, rgba(0, 0, 0, 0.02))',
-          }}
-        >
-          <span>Use ↑↓ to navigate, Enter to select, Esc to close</span>
-          <span>{filteredModels.length} models</span>
         </div>
       </div>
     </div>

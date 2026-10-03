@@ -1380,3 +1380,257 @@
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   CAPACITOR / NATIVE MOBILE APP OPTIMISATIONS
+   These rules activate when the viewport is phone-sized,
+   which is always the case inside the Capacitor WebView.
+   They do NOT affect desktop or tablet layouts.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── Safe-area insets (notch, home-indicator, status-bar) ─── */
+@media (max-width: 600px) {
+  /* Push the whole shell below the status bar on iOS/Android */
+  body {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* Sidebar takes the full height but respects safe areas */
+  aside.sidebar {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  }
+
+  /* Chat area: leave room for the home indicator at the bottom */
+  .chat-area {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* ─── Chat header: fit on narrow screens ─── */
+@media (max-width: 600px) {
+  .chat-header {
+    padding: 6px 10px;
+    min-height: 48px;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  /* Title area: allow it to shrink without disappearing */
+  .chat-header > div:first-child {
+    min-width: 60px !important;
+    flex-shrink: 1;
+  }
+
+  /* Collapse verbose action badges in the header */
+  .trial-chip {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  /* Hide low-priority header actions on very small screens */
+  .header-actions .edition-badge {
+    display: none;
+  }
+
+  /* Ensure icon buttons are always tappable (44 px min target) */
+  .header-actions .icon-btn {
+    min-width: 36px;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* The activity panel toggle is the most useful — keep it prominent */
+  .header-actions {
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+}
+
+/* ─── Composer top-bar: horizontal scroll instead of wrapping ─── */
+@media (max-width: 600px) {
+  .composer-top-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    gap: 6px;
+  }
+
+  .composer-top-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Persona bar shrinks but never disappears */
+  .persona-bar-section {
+    flex-shrink: 0;
+  }
+
+  /* RAG badge: compact on mobile */
+  .rag-docs-badge {
+    font-size: 11px;
+    padding: 3px 7px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+}
+
+/* ─── Upload / composer action row ─── */
+@media (max-width: 600px) {
+  .upload-area {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 6px;
+    padding-bottom: 2px;
+  }
+
+  .upload-area::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Provider and model pickers: shrink gracefully */
+  .provider-picker,
+  .model-picker {
+    flex-shrink: 0;
+    max-width: 130px;
+  }
+
+  /* Icon action buttons in composer row: 40 px touch target */
+  .composer-icon-action-btn {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 8px;
+  }
+}
+
+/* ─── Feature/mode action bar below composer ─── */
+@media (max-width: 600px) {
+  /* The row of small tool/feature buttons */
+  .composer-action-btns,
+  .composer-features {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 4px;
+    padding-bottom: 2px;
+  }
+
+  .composer-action-btns::-webkit-scrollbar,
+  .composer-features::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Individual small feature buttons: comfortably tappable */
+  .small-btn {
+    flex-shrink: 0;
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+}
+
+/* ─── Message bubbles: better word-break on narrow screens ─── */
+@media (max-width: 600px) {
+  .message-content,
+  .message-bubble {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  /* Code blocks: horizontal scroll rather than overflowing */
+  pre {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+}
+
+/* ─── Sidebar footer: icon dock stays tight on mobile ─── */
+@media (max-width: 600px) {
+  .sidebar-footer-icons {
+    justify-content: space-around;
+    gap: 4px;
+  }
+
+  .sidebar-footer-icon-btn {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* Hide verbose footer link row — save vertical space */
+  .sidebar-footer-links {
+    display: none;
+  }
+}
+
+/* ─── Auth / Sign-in button: prominent on mobile ─── */
+@media (max-width: 600px) {
+  .auth-btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 40px;
+    font-size: 13px;
+  }
+}
+
+/* ─── Modals: full-width on small screens ─── */
+@media (max-width: 600px) {
+  .modal-overlay > .modal-card,
+  .modal-overlay > [class*="modal"] {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    border-radius: 16px;
+  }
+}
+
+/* ─── Starter/suggestions grid: 1-column on phones ─── */
+@media (max-width: 480px) {
+  .suggestions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .starter-card {
+    padding: 12px 14px;
+  }
+}
+
+/* ─── Dashboard shell (settings panels): full screen on mobile ─── */
+@media (max-width: 600px) {
+  .dashboard-shell {
+    border-radius: 0;
+    width: 100vw;
+    height: 100dvh;
+    top: 0;
+    left: 0;
+    position: fixed;
+    inset: 0;
+  }
+}
+
+/* ─── Textarea / composer input: comfortable on iOS ─── */
+@media (max-width: 600px) {
+  .chat-input,
+  textarea.chat-input {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+    min-height: 44px;
+    border-radius: 14px;
+  }
+}
+
+/* ─── Send button: always visible and tappable ─── */
+@media (max-width: 600px) {
+  .send-btn {
+    min-width: 40px;
+    min-height: 40px;
+    flex-shrink: 0;
+  }
+}

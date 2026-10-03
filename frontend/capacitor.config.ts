@@ -8,12 +8,17 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
     allowNavigation: [
+      // Google OAuth sign-in (signInWithRedirect navigates here)
       '*.google.com',
+      'accounts.google.com',
       '*.googleapis.com',
       '*.gstatic.com',
+      // Firebase Auth handler (processes the OAuth callback)
       '*.firebase.com',
       '*.firebaseapp.com',
+      'yogatik.firebaseapp.com',
       '*.firebaseio.com',
+      // App domains
       'yogatik.web.app',
       '*.yogatik.app',
     ],

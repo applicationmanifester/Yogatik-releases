@@ -132,10 +132,28 @@ export function isStandalonePwa() {
   )
 }
 
+/**
+ * Detect if running inside a Capacitor native WebView (Android / iOS app).
+ * Capacitor sets window.Capacitor before any JS runs; checking isNativePlatform()
+ * confirms we are in the compiled native shell, not a mobile browser tab.
+ */
+export function isCapacitorApp() {
+  try {
+    return Boolean(
+      typeof window !== 'undefined' &&
+      window.Capacitor &&
+      window.Capacitor.isNativePlatform &&
+      window.Capacitor.isNativePlatform()
+    )
+  } catch { return false }
+}
+
 function prefersRedirect() {
-  // Only standalone PWAs strictly require redirect because standalone display-mode
-  // cannot manage standard browser popups. Standard mobile browsers (iOS Safari, Android Chrome)
-  // support popup sign-in without running into cross-origin third-party storage partitioning issues.
+  // Capacitor WebViews cannot host OAuth popups: the system browser opens a
+  // separate process and the credential handshake back to the WebView is broken.
+  // Use redirect flow (full-page navigation inside the WebView) instead.
+  if (isCapacitorApp()) return true
+  // Standalone PWAs also cannot manage popup windows.
   return isStandalonePwa()
 }
 
