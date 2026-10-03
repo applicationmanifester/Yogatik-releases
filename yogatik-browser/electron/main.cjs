@@ -146,6 +146,25 @@ let mainWin = null
 
 function createMainWindow() {
   const saved = loadWindowState()
+
+  // Drop saved x/y that would land on a disconnected monitor so the window
+  // always restores onto a visible display instead of stranding off-screen.
+  if (saved?.bounds && Number.isFinite(saved.bounds.x) && Number.isFinite(saved.bounds.y)) {
+    try {
+      const visible = require('electron').screen.getAllDisplays().some((d) => {
+        const wa = d.workArea
+        return (
+          saved.bounds.x >= wa.x - 40 && saved.bounds.x < wa.x + wa.width &&
+          saved.bounds.y >= wa.y - 40 && saved.bounds.y < wa.y + wa.height
+        )
+      })
+      if (!visible) {
+        delete saved.bounds.x
+        delete saved.bounds.y
+      }
+    } catch {}
+  }
+
 const opts = {
     width: saved?.bounds?.width || 1200,
     height: saved?.bounds?.height || 850,
@@ -237,8 +256,15 @@ function applyNetworkPrivacy() {
           u.hostname === '127.0.0.1' || u.hostname === '::1' ||
           /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(u.hostname)
         if (isLocal || u.pathname === '/favicon.ico') { cb({ cancel: false }); return }
-        // Upgrading is a redirect — safe for idempotent GETs; POSTs to http
-        // endpoints are rare and a broken https endpoint would fail loudly.
+        // Only upgrade idempotent requests (GET/HEAD/OPTIONS). A redirected
+        // POST can be re-issued as GET by the redirect layer, silently
+        // corrupting form submissions and logins — mirrors Chrome's
+        // HTTPS-First Mode behavior.
+        const method = (details.method || 'GET').toUpperCase()
+        if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+          cb({ cancel: false })
+          return
+        }
         cb({ redirectURL: 'https://' + u.host + u.pathname + u.search })
       } catch {
         cb({ cancel: false })

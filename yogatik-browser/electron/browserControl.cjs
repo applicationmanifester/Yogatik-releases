@@ -271,7 +271,9 @@ function createWindowSurface(s) {
       preload: path.join(__dirname, 'browserWindowPreload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // Sandboxed like the main window — the chrome preload only uses
+      // contextBridge + ipcRenderer, which are sandbox-compatible.
+      sandbox: true,
     },
   })
   s.win.loadFile(path.join(__dirname, 'browserWindow.html'))

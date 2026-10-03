@@ -28,13 +28,15 @@ function load() {
   try {
     if (fs.existsSync(file)) {
       const raw = fs.readFileSync(file, 'utf-8')
-      cache = deepMerge({ ...DEFAULTS }, JSON.parse(raw))
+      // structuredClone prevents deepMerge from mutating nested objects that
+      // are shared with module-level DEFAULTS (factory defaults stay intact).
+      cache = deepMerge(structuredClone(DEFAULTS), JSON.parse(raw))
     } else {
-      cache = { ...DEFAULTS }
+      cache = structuredClone(DEFAULTS)
     }
   } catch (err) {
     console.warn('[settings/store] Failed to read settings, using defaults:', err.message)
-    cache = { ...DEFAULTS }
+    cache = structuredClone(DEFAULTS)
   }
   return cache
 }
@@ -57,7 +59,11 @@ function save(settings) {
   const file = getSettingsFile()
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    fs.writeFileSync(file, JSON.stringify(cache, null, 2), 'utf-8')
+    // Atomic write: temp file + rename so a crash mid-write can never
+    // truncate settings.json and lose the user's preferences.
+    const tmpFile = file + '.tmp'
+    fs.writeFileSync(tmpFile, JSON.stringify(cache, null, 2), 'utf-8')
+    fs.renameSync(tmpFile, file)
   } catch (err) {
     console.error('[settings/store] Failed to write settings:', err.message)
   }
@@ -90,7 +96,9 @@ function set(key, value) {
 }
 
 function reset() {
-  cache = { ...DEFAULTS }
+  // structuredClone restores a true deep copy of factory defaults — a
+  // shallow spread would reuse polluted nested objects from DEFAULTS.
+  cache = structuredClone(DEFAULTS)
   const file = getSettingsFile()
   try {
     if (fs.existsSync(file)) fs.unlinkSync(file)

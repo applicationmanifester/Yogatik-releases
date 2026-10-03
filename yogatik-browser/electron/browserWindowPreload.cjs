@@ -50,7 +50,11 @@ contextBridge.exposeInMainWorld('__backup', {
   import: (password) => ipcRenderer.invoke('browser:backup-import', { password }),
 })
 
+// Download actions are whitelisted — never forward arbitrary action strings.
+const DOWNLOAD_ACTIONS = new Set(['cancel-download', 'open-download', 'show-download'])
+
 contextBridge.exposeInMainWorld('__downloadAction', (action, id) => {
+  if (!DOWNLOAD_ACTIONS.has(action)) return
   if (typeof id !== 'string') return
   ipcRenderer.send('browser:tab-action', { action, arg: id, tabId: id })
 })
