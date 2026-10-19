@@ -9,6 +9,10 @@ import {
   sessions, _resetLiveMetrics, END_REASON,
   checkSLO, latencyGrade, recordLatency, shouldSuggestTextFallback,
   recordReflexEvent, getReflexStats, _resetReflexMetrics,
+  recordSttCloudFail, recordSttWhisperFallback, recordSttWhisperFail, getSttStats,
+  recordBlindModelRefusal, getBlindRefusals,
+  recordAutoVisionSwitch, getAutoVisionSwitches,
+  recordBatteryLevel, batteryStats,
   VOICE_SLO_MS, MULTIMODAL_SLO_MS, TEXT_SLO_MS,
 } from './metrics'
 
@@ -122,6 +126,63 @@ describe('latency SLOs', () => {
     expect(shouldSuggestTextFallback(3)).toBe(false)
   })
 
+  it('tracks STT fallback handovers without making Whisper the default', () => {
+    expect(getSttStats()).toEqual({ cloudFails: 0, whisperFallbacks: 0, whisperFails: 0 })
+    recordSttCloudFail()
+    recordSttCloudFail()
+    recordSttWhisperFallback()
+    expect(getSttStats()).toEqual({ cloudFails: 2, whisperFallbacks: 1, whisperFails: 0 })
+    recordSttWhisperFail()
+    expect(getSttStats().whisperFails).toBe(1)
+    expect(report().stt.whisperFallbacks).toBe(1)
+  })
+
+  it('counts blind-model camera refusals', () => {
+    expect(getBlindRefusals()).toBe(0)
+    recordBlindModelRefusal()
+    recordBlindModelRefusal()
+    expect(getBlindRefusals()).toBe(2)
+    expect(report().blindRefusals).toBe(2)
+  })
+
+  it('counts auto vision switches beside the blind refusals', () => {
+    // Horizon-1's final item: the camera guard can now RESOLVE the block by
+    // switching to a same-provider vision model. The pair of counters below
+    // says one sentence: refusals low + switches high = the trap is closed.
+    expect(getAutoVisionSwitches()).toBe(0)
+    expect(report().autoVisionSwitches).toBe(0)   // the empty-session branch too
+    recordAutoVisionSwitch()
+    recordAutoVisionSwitch()
+    expect(getAutoVisionSwitches()).toBe(2)
+    startSession({}, 0)
+    endSession(END_REASON.USER, 1000)
+    expect(report().autoVisionSwitches).toBe(2)   // and the per-sessions branch
+  })
+
+  describe('battery sampling [live-capture]', () => {
+    it('stores coarse 10% buckets and surfaces them beside the other counters', () => {
+      expect(report().battery.samples).toBe(0)
+      startSession({}, 0)
+      recordBatteryLevel(0.55)   // → bucket 5
+      recordBatteryLevel(0.07)   // → 0
+      recordBatteryLevel(1)      // → 10 (the 100% bucket)
+      recordBatteryLevel('nowhere')  // unknown readings are recorded NOWHERE
+      endSession(END_REASON.USER, 60_000)
+      const b = report().battery
+      expect(b.samples).toBe(3)
+      expect(b.buckets).toEqual({ 0: 1, 5: 1, 10: 1 })
+      expect(b.lowRate).toBe(0.33)   // time spent at/below 20% while on a call
+    })
+
+    it('is a no-op outside a session, ring-caps long sessions, live session too', () => {
+      expect(() => recordBatteryLevel(0.5)).not.toThrow()
+      startSession({}, 0)
+      for (let i = 0; i < 130; i++) recordBatteryLevel(0.5)
+      expect(currentSession().batteryBuckets.length).toBe(120)   // ~2h cap
+      expect(batteryStats().samples).toBe(120)   // includes the LIVE session
+    })
+  })
+
   it('tracks reflex prefetch hits, misses, and saved latency', () => {
     expect(getReflexStats()).toEqual({ triggered: 0, hits: 0, misses: 0, savedMsTotal: 0, hitRate: 0, avgSavedMs: 0 })
 
@@ -173,6 +234,31 @@ describe('wiring', () => {
   })
 
   it('guards against turning on the camera with a blind model', () => {
-    expect(view).toMatch(/modelCanSee === false/)
+    expect(view).toMatch(/cameraGuard\(modelCanSee\)/)
+    expect(view).toMatch(/recordBlindModelRefusal\(\)/)
+  })
+
+  it('auto-switches to a vision model instead of blocking, when one is reachable', () => {
+    // Horizon-1's FINAL item: the guard first tries to resolve the block on
+    // the same provider (cache-first resolution via vision/capability.js),
+    // with the preference as its gate, and counts every switch it makes.
+    expect(view).toMatch(/resolveCameraAction\(/)
+    expect(view).toMatch(/findVisionCandidate\(/)
+    expect(view).toMatch(/liveVisionAutoSwitch/)
+    expect(view).toMatch(/recordAutoVisionSwitch\(\)/)
+  })
+
+  it('refuses pitch-dark frames instead of guessing', () => {
+    expect(cascade).toMatch(/honestFrameNote/)
+    expect(cascade).toMatch(/assessReadability\(analysis\)\.severity === 'block'/)
+    expect(view).toMatch(/honestFrameNote/)
+  })
+
+  it('keeps on-device Whisper as the fallback and counts every handover', () => {
+    // Sequencing: Whisper is the fallback, NOT the default — Web Speech stays
+    // primary and each cloud failure + Whisper handover is metered.
+    expect(cascade).toMatch(/recordSttWhisperFallback\(\)/)
+    expect(cascade).toMatch(/recordSttCloudFail\(\)/)
+    expect(cascade).toMatch(/recordSttWhisperFail\(\)/)
   })
 })

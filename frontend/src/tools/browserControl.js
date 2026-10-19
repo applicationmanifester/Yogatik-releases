@@ -14,6 +14,7 @@
 import { getWorkspaceCtx } from './localFs'
 import { getSetting } from '../db'
 import { extractReadable } from './readability'
+import { resolveSelfHealingSelector } from './stagehandHealing'
 
 function bridge() {
   return (typeof window !== 'undefined' && window.__YOGATIK_BROWSER__) || null
@@ -22,6 +23,80 @@ function bridge() {
 const DESKTOP_ONLY = {
   success: false,
   error: 'Browser control runs only in the Yogatik desktop app.',
+}
+
+// ── [stagehand-healing] ───────────────────────────────────────────────────
+// A stale ref is refused (never clicked blind) — but the refusal still costs
+// the model a turn, even though the element usually still exists under a NEW
+// ref after the app re-rendered. Every tree this chat is handed flows through
+// this module, so the tool can remember what a ref used to name and, when the
+// same accessible name shows up again on a fresh tree, resolve the
+// replacement with stagehandHealing's progressive matcher and retry once —
+// exactly what the model would do with the re-read tree, minus the round trip.
+//
+// Guards, in order of importance: (1) EXACT accessible-name match only — never
+// a fuzzy guess ("search" must not heal into "save"); (2) the name must be
+// UNIQUE on the fresh page, two matches resolves nothing; (3) one retry, and
+// only the same action with its consent flags carried through unchanged.
+const refMemory = new Map() // `${conversationId}|${tabId}` → Map(ref ⇒ {role, text, ref})
+
+// The desktop bridge writes `role "label" [ref_epoch_i]`, but a line carries
+// the ref and the name in whatever shape the producing side chose — accept
+// both orders: find the ref token first, then take the quoted accessible name
+// (falling back to any text after the bracket).
+const REF_TOKEN = /\[(ref_\d+_\d+)\]/
+const QUOTED_LABEL = /"([^"]*)"/
+
+function parseTreeRefs(tree) {
+  const out = []
+  for (const line of String(tree || '').split('\n')) {
+    const refm = REF_TOKEN.exec(line)
+    if (!refm) continue
+    const qm = QUOTED_LABEL.exec(line)
+    const roleWord = qm ? line.slice(0, qm.index).trim() : ''
+    out.push({
+      role: roleWord ? roleWord.split(/\s+/).pop() : '',
+      text: qm ? qm[1] : line.slice(refm.index + refm[0].length).trim(),
+      ref: refm[1],
+    })
+  }
+  return out
+}
+
+function rememberTree(base, tabId, tree) {
+  const els = parseTreeRefs(tree)
+  if (!els.length) return
+  // Only the most recent tree per session is kept: a ref is never matched
+  // against a page that is already gone.
+  refMemory.set(`${base?.conversationId ?? ''}|${tabId || ''}`, new Map(els.map(e => [e.ref, e])))
+}
+
+function recallTree(base, tabId) {
+  return refMemory.get(`${base?.conversationId ?? ''}|${tabId || ''}`)
+}
+
+/**
+ * Match a dead ref's element on a fresh tree.
+ *
+ * Returns the replacement ref for an AUTO-retry only when the dead element's
+ * accessible name resolves to exactly ONE element on the fresh page under
+ * stagehandHealing's exact-text strategy. An unambiguous fuzzy result comes
+ * back as a HINT (candidate refs for the model to judge); ambiguity of any
+ * other kind refuses to heal.
+ */
+export function resolveHealedRef(previous, freshTree) {
+  if (!previous || !previous.text || !freshTree) return null
+  const candidates = parseTreeRefs(freshTree).filter(c => c.ref)
+  if (!candidates.length) return null
+  const match = resolveSelfHealingSelector(candidates, previous.text)
+  if (!match || match.strategy !== 'exact_text_aria') {
+    const q = String(previous.text).toLowerCase()
+    const near = candidates.filter(c => c.text && c.text.toLowerCase().includes(q)).slice(0, 3)
+    return near.length ? { hint: near, strategy: match?.strategy || null } : null
+  }
+  const same = candidates.filter(c => c.text === previous.text)
+  if (same.length !== 1) return null
+  return { ref: match.element.ref, strategy: match.strategy }
 }
 
 // The chat owns its browsing session. Supplied here, never a tool parameter —
@@ -121,7 +196,7 @@ export const browserControlTool = {
         'ALWAYS call action "read" before clicking: it returns the page as a tree where every clickable element has a [ref_N] handle. ' +
         'Then click or type using that ref — do not guess x/y coordinates unless the target is a canvas or custom widget with no ref. ' +
         'Refs go stale when the page changes; if you get a stale-ref error, call "read" again. ' +
-        'On click/hover/type/select, if the exact element moved (an app re-rendered it) the browser will try to find the same element again automatically — a result carrying relocated:true means that happened; treat it exactly like a normal success. ' +
+        'On click/hover/type/select, if the exact element moved (an app re-rendered it) the browser will try to find the same element again automatically — a result carrying relocated:true — or self_healed (which also names the old and the new ref) — means that happened; treat it exactly like a normal success. ' +
         'Ask the user before any action that submits, sends, deletes, buys, or posts anything. Desktop app only.',
       parameters: {
         type: 'object',
@@ -236,12 +311,35 @@ export const browserControlTool = {
      * Only for refs. A stale COORDINATE is not a thing, and re-reading after an
      * ordinary failure would spend a page read on every unrelated error.
      */
-    const withFreshTree = async (res) => {
+    const withFreshTree = async (res, retry, allowHeal = false) => {
       if (!res?.stale || !b.read) return res
       try {
         const page = await b.read({ ...base, tabId })
         const tree = page?.tree || page?.text
         if (!tree) return res
+        // [stagehand-healing] Look the dead ref up BEFORE the fresh tree
+        // replaces the memory — the remembered definition of the DEAD ref
+        // exists only in the LAST tree the model was handed, and it is what
+        // the healing resolves from.
+        const prior = recallTree(base, tabId)?.get(ref) ?? null
+        rememberTree(base, tabId, tree)
+        if (allowHeal && typeof retry === 'function') {
+          const healed = resolveHealedRef(prior, tree)
+          if (healed && healed.ref) {
+            const re = await retry(healed.ref)
+            const note = `Self-healed: ${ref} is now ${healed.ref} — same element, new position.`
+            return {
+              tool: 'browser_control', action,
+              ...re,
+              self_healed: { from: ref, to: healed.ref, strategy: healed.strategy },
+              note,
+              // If even the healed ref went stale again (the page moved once
+              // more), the fresh tree still rides along so the model recovers
+              // in one step instead of paying for another read.
+              ...(re?.stale ? { page_after_reload: tree, note: `${note} It went stale again — use the fresh refs above.` } : {}),
+            }
+          }
+        }
         return { ...res, page_after_reload: tree, note: 'The page was re-read for you — use the refs below and retry.' }
       } catch { return res }
     }
@@ -251,8 +349,13 @@ export const browserControlTool = {
         case 'navigate':
           if (!url) return { success: false, error: 'url is required to navigate' }
           return { tool: 'browser_control', action, ...(await b.navigate({ ...base, url, tabId })) }
-        case 'read':
-          return { tool: 'browser_control', action, ...(await b.read({ ...base, tabId })) }
+        case 'read': {
+          const r = await b.read({ ...base, tabId })
+          // [stagehand-healing] a read is where refs become memory.
+          const t = r?.tree || r?.text
+          if (t) rememberTree(base, tabId, t)
+          return { tool: 'browser_control', action, ...r }
+        }
         case 'click':
         case 'double_click':
         case 'right_click':
@@ -262,7 +365,11 @@ export const browserControlTool = {
               ...base, tabId, ref, x, y,
               button: action === 'right_click' ? 'right' : 'left',
               double: action === 'double_click',
-            }))),
+            }), (r) => b.click({
+              ...base, tabId, ref: r, x, y,
+              button: action === 'right_click' ? 'right' : 'left',
+              double: action === 'double_click',
+            }), true)),
           }
         case 'hover':
           // NEVER fall back to click. Hover is the read-only action — it is how
@@ -289,7 +396,7 @@ export const browserControlTool = {
           // append-to-existing case.
           return {
             tool: 'browser_control', action,
-            ...(await withFreshTree(await b.type({ ...base, tabId, ref, text, submit, clear: clear ?? !!ref }))),
+            ...(await withFreshTree(await b.type({ ...base, tabId, ref, text, submit, clear: clear ?? !!ref }), (r) => b.type({ ...base, tabId, ref: r, text, submit, clear: clear ?? !!ref }), true)),
           }
         case 'select': {
           // A <select> cannot be driven by typing: characters go nowhere and
@@ -300,7 +407,7 @@ export const browserControlTool = {
           const wanted = value ?? text
           if (!ref && !selector) return { success: false, error: 'ref or selector is required to select an option' }
           if (wanted == null || wanted === '') return { success: false, error: 'value is required — the option value, its visible label, or its index' }
-          return { tool: 'browser_control', action, ...(await withFreshTree(await b.select({ ...base, tabId, ref, selector, value: String(wanted) }))) }
+          return { tool: 'browser_control', action, ...(await withFreshTree(await b.select({ ...base, tabId, ref, selector, value: String(wanted) }), (r) => b.select({ ...base, tabId, ref: r, selector, value: String(wanted) }), true)) }
         }
         case 'upload_file': {
           // A file input has no settable .value from outside the page (browsers
@@ -310,7 +417,7 @@ export const browserControlTool = {
           if (!Array.isArray(files) || !files.length) {
             return { success: false, error: 'files is required — an array of absolute file paths. Use file_dialog to let the user pick real files first; do not invent paths.' }
           }
-          return { tool: 'browser_control', action, ...(await withFreshTree(await b.upload({ ...base, tabId, ref, files }))) }
+          return { tool: 'browser_control', action, ...(await withFreshTree(await b.upload({ ...base, tabId, ref, files }), (r) => b.upload({ ...base, tabId, ref: r, files }), true)) }
         }
         case 'network':
           if (!b.network) return { success: false, error: 'network inspection is not supported by this browser bridge version' }

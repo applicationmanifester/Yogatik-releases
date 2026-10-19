@@ -126,14 +126,57 @@ function runSettingsStoreTests() {
 }
 
 // ── Main ────────────────────────────────────────────────────────────────
-syntaxCheckAllModules()
-runSettingsStoreTests()
+async function main() {
+  syntaxCheckAllModules()
+  runSettingsStoreTests()
 
-section('Summary')
-console.log('Passed: ' + passes + '   Failed: ' + failures)
-if (failures > 0) {
-  console.error('\u2716 TEST SUITE FAILED')
-  process.exit(1)
+  // ── 3. Page-as-Context AI pipeline (pagePipeline.cjs + preload bridge) ──
+  section('3. Page-as-Context AI pipeline tests')
+  try {
+    const res = await require('./pagePipeline.test.cjs').run()
+    passes += res.passes
+    failures += res.failures
+  } catch (e) {
+    fail('pagePipeline test suite crashed before completing', e)
+  }
+
+  // ── 4. Chromium privacy & network stack ([chromium-privacy]) ────────────
+  // DoH/ECH switch matrix, CSP injection decision, container partitions,
+  // storage-audit grouping, and the privacy-block settings defaults.
+  section('4. Chromium privacy & network stack tests')
+  try {
+    const res = await require('./privacyStack.test.cjs').run()
+    passes += res.passes
+    failures += res.failures
+  } catch (e) {
+    fail('privacyStack test suite crashed before completing', e)
+  }
+
+  // ── 5. Tab lifecycle & performance ([lifecycle]) ────────────────────────
+  // Sleeping tabs, wake-at-position, crash single-auto-restore guard,
+  // per-tab metrics mapping, spellcheck locale mapping, and the
+  // performance.* settings defaults round-trip.
+  section('5. Tab lifecycle & performance tests')
+  try {
+    const res = await require('./tabLifecycle.test.cjs').run()
+    passes += res.passes
+    failures += res.failures
+  } catch (e) {
+    fail('tabLifecycle test suite crashed before completing', e)
+  }
+
+  section('Summary')
+  console.log('Passed: ' + passes + '   Failed: ' + failures)
+  if (failures > 0) {
+    console.error('\u2716 TEST SUITE FAILED')
+    process.exit(1)
+  }
+  console.log('\u2714 TEST SUITE PASSED')
+  process.exit(0)
 }
-console.log('\u2714 TEST SUITE PASSED')
-process.exit(0)
+
+main().catch((e) => {
+  console.error('\u2716 TEST SUITE CRASHED')
+  console.error(e)
+  process.exit(1)
+})

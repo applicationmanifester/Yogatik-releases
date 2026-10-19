@@ -3,12 +3,15 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { 
-  sanitizeHtml, 
-  sanitizeHtmlStrict, 
-  sanitizeMarkdownHtml, 
-  createSafeHtmlElement, 
-  stripHtml 
+import {
+  sanitizeHtml,
+  sanitizeHtmlStrict,
+  sanitizeMarkdownHtml,
+  createSafeHtmlElement,
+  stripHtml,
+  sanitize,
+  sanitise,
+  sanitizeSvg,
 } from './sanitize';
 
 describe('sanitizeHtml', () => {
@@ -138,5 +141,29 @@ describe('stripHtml', () => {
     expect(stripHtml('')).toBe('');
     expect(stripHtml(null)).toBe('');
     expect(stripHtml(undefined)).toBe('');
+  });
+});
+
+describe('sanitize() — the one DOMPurify choke point for LLM/tool HTML', () => {
+  it('is a single shared helper (both spellings, same function)', () => {
+    expect(sanitize).toBeTypeOf('function');
+    expect(sanitise).toBe(sanitize);
+  });
+
+  it('strips scripts, event handlers and javascript: URLs from HTML', () => {
+    const out = sanitize('<div onclick="evil()">hi<script>alert(1)</script><a href="javascript:alert(1)">x</a></div>');
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('onclick');
+    expect(out).not.toContain('javascript:');
+    expect(out).toContain('hi');
+  });
+
+  it('routes SVG through the DOMPurify SVG profile and rejects non-SVG', () => {
+    const good = sanitize('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>');
+    expect(good).toContain('<svg');
+    expect(sanitize('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><rect/></svg>')).not.toContain('onload');
+    expect(sanitizeSvg('<div>nope</div>')).toBe('');
+    expect(sanitize('')).toBe('');
+    expect(sanitize(null)).toBe('');
   });
 });

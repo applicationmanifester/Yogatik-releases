@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { encryptSecret, decryptSecret, isEncrypted } from './crypto'
+import { encryptSecret, decryptSecret, isEncrypted, KEY_STORAGE_DISCLOSURE } from './crypto'
 
 const KEY = 'nvapi-abc123def456ghi789'
 const PASS = 'correct horse battery staple'
@@ -75,5 +75,26 @@ describe('isEncrypted', () => {
     expect(isEncrypted('')).toBe(false)
     expect(isEncrypted(null)).toBe(false)
     expect(isEncrypted('v1.only.three')).toBe(false)
+  })
+})
+
+describe('shipped key model — account-derived AES-GCM via Firebase Auth', () => {
+  it('round-trips through the account secret api.js derives (yogatik.account.v1.<uid>)', async () => {
+    const uid = 'test-uid-123'
+    const accountSecret = `yogatik.account.v1.${uid}`
+    const sealed = await encryptSecret(KEY, accountSecret)
+    expect(isEncrypted(sealed)).toBe(true)
+    expect(sealed).not.toContain(KEY)
+    expect(await decryptSecret(sealed, accountSecret)).toBe(KEY)
+    // Scoped to the account: another uid cannot open it.
+    expect(await decryptSecret(sealed, `yogatik.account.v1.other-uid`)).toBeNull()
+  })
+
+  it('discloses the honest threat model next to key entry (not zero-knowledge)', async () => {
+    // Rendered verbatim by ProviderModal.jsx + ProvidersTab.jsx via
+    // KEY_STORAGE_DISCLOSURE — this pins the shipped wording.
+    expect(KEY_STORAGE_DISCLOSURE).toContain('encrypted at rest')
+    expect(KEY_STORAGE_DISCLOSURE).toContain('scoped to your account')
+    expect(KEY_STORAGE_DISCLOSURE.toLowerCase()).toContain('not zero-knowledge')
   })
 })

@@ -1,7 +1,8 @@
 import React from 'react'
 import {
   Plug, Plus, Trash2, RefreshCw, Server, Sparkles, Check, ChevronDown, ChevronRight,
-  Key, TerminalSquare, Search, Play, Activity, Power, Database, FolderGit2, Cpu, Globe, Brain, HelpCircle
+  Key, TerminalSquare, Search, Play, Activity, Power, Database, FolderGit2, Cpu, Globe, Brain, HelpCircle,
+  Store
 } from 'lucide-react'
 import { getMcpServers, setMcpServers, refreshMcpTools, pingMcpServer, testMcpTool, getMcpSchemas } from '../mcp'
 // Single source of truth for the curated preset list — also read by
@@ -10,6 +11,10 @@ import { getMcpServers, setMcpServers, refreshMcpTools, pingMcpServer, testMcpTo
 // too many times already — the youtube.js relay list, the old context-limits
 // table) is the whole reason this import exists instead of a local literal.
 import { KNOWN_MCP_SERVERS } from '../mcpRegistry'
+// Discovery lives in the gallery (McpMarketplace.jsx, same registry import —
+// no second list) behind a toggle below, so install-hunting never pushes the
+// configured power-user list it belongs beside off the screen.
+import { McpMarketplace } from './McpMarketplace'
 
 const hasStdio = typeof window !== 'undefined' && !!window.__YOGATIK_MCP_STDIO__
 
@@ -26,6 +31,10 @@ export function McpServers() {
   const [token, setToken] = React.useState('')
   const [expanded, setExpanded] = React.useState({})
   const [pingStatus, setPingStatus] = React.useState({})
+  // Connector gallery (McpMarketplace) — collapsed by default so discovery
+  // browsing never becomes clutter on top of the hand-configured list below.
+  const [showMarketplace, setShowMarketplace] = React.useState(false)
+  const tokenRef = React.useRef(null)
 
   // Local (stdio) server draft — desktop only.
   const [localName, setLocalName] = React.useState('')
@@ -114,6 +123,19 @@ export function McpServers() {
     setPingStatus(p => ({ ...p, [server.id]: res }))
   }
 
+  /** Token-required marketplace install routes HERE — pre-fill the existing
+   * custom-add row (Name + URL) and focus its Bearer-token field, instead of
+   * letting the gallery grow a second token form. The user types the
+   * credential and presses the row's own Add button; nothing is persisted
+   * before that. */
+  const openTokenFor = (preset) => {
+    if (preset?.transport === 'stdio') return // stdio presets take no token
+    setName(preset?.name || '')
+    setUrl(preset?.url || '')
+    tokenRef.current?.scrollIntoView?.({ block: 'nearest' })
+    tokenRef.current?.focus()
+  }
+
   const openToolTester = (serverId, toolName) => {
     const schemas = getMcpSchemas()
     const found = schemas.find(s => s.function.name === `mcp__${serverId}__${toolName}`)
@@ -167,6 +189,36 @@ export function McpServers() {
       <p className="personalise-hint" style={{ marginBottom: 12 }}>
         Connect remote Streamable HTTP / SSE servers or local machine processes (stdio) to dynamically discover tools, resources, and prompt templates.
       </p>
+
+      {/* Connector gallery — behind a toggle, so browsing the registry never
+          rearranges the configured list above; open it only when installing. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <button
+          className="small-btn"
+          data-testid="browse-connectors"
+          aria-expanded={showMarketplace}
+          onClick={() => setShowMarketplace(v => !v)}
+          style={{ padding: '4px 10px', fontSize: 11.5 }}
+        >
+          <Store size={12} /> {showMarketplace ? 'Hide connector gallery' : 'Browse connectors'}
+        </button>
+        {showMarketplace && (
+          <span className="personalise-hint" style={{ fontSize: 10 }}>
+            Installing from here writes into the same connector list below.
+          </span>
+        )}
+      </div>
+      {showMarketplace && (
+        <McpMarketplace
+          servers={servers}
+          status={status}
+          onChanged={(nextServers, nextStatus) => {
+            setServers(nextServers)
+            if (nextStatus) setStatus(nextStatus) // the gallery's install already ran refreshMcpTools
+          }}
+          onNeedsToken={openTokenFor}
+        />
+      )}
 
       {/* Global Search Filter */}
       {servers.length > 2 && (
@@ -463,6 +515,7 @@ export function McpServers() {
           />
           <input
             type="password"
+            ref={tokenRef}
             value={token}
             onChange={e => setToken(e.target.value)}
             placeholder="Bearer token (optional)"

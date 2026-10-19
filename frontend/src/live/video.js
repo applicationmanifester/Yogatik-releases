@@ -11,6 +11,7 @@
 
 import { videoConstraints } from './devices'
 import { temporalVideoBuffer } from '../vision/temporalBuffer'
+import { zoomPlan, getCaptureZoom } from './capture'   // [live-capture]
 
 const MAX_EDGE = 768        // MEDIA_RESOLUTION_MEDIUM gets nothing from more
 const HASH_EDGE = 16        // 16x16 grayscale average hash
@@ -153,15 +154,20 @@ async function attach(stream) {
       const { maxEdge = MAX_EDGE, quality = 0.7, crop = 0 } = profile
       const vw = video.videoWidth
       const vh = video.videoHeight
-      const sw = crop > 0 && crop < 1 ? Math.round(vw * crop) : vw
-      const sh = crop > 0 && crop < 1 ? Math.round(vh * crop) : vh
-      const sx = (vw - sw) / 2
-      const sy = (vh - sh) / 2
-
-      const scale = Math.min(1, maxEdge / Math.max(sw, sh))
-      canvas.width = Math.round(sw * scale)
-      canvas.height = Math.round(sh * scale)
-      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+      // [live-capture] Digital zoom happens HERE, on the grab canvas — not as
+      // CSS on the preview element (that would only change what the USER
+      // sees). The zoomed centre-crop is what EVERY downstream consumer
+      // receives: the model, OCR, the object-detection HUD, the `see` tool.
+      // zoomPlan stacks the profile's crop fraction multiplicatively and
+      // edge-guards so the no-upscale encoder never gets a slice too tiny to
+      // read. Zoom 1 with crop 0 reproduces the previous rect exactly.
+      const rect = zoomPlan({ width: vw, height: vh }, getCaptureZoom(), crop)
+      const scale = Math.max(rect.sw, rect.sh) > 0
+        ? Math.min(1, maxEdge / Math.max(rect.sw, rect.sh))
+        : 1
+      canvas.width = Math.round(rect.sw * scale)
+      canvas.height = Math.round(rect.sh * scale)
+      ctx.drawImage(video, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, canvas.width, canvas.height)
 
       const b64 = canvas.toDataURL('image/jpeg', quality).split(',')[1]
       prevFrame = lastFrame

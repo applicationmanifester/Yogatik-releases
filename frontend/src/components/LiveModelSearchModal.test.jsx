@@ -43,11 +43,15 @@ describe('LiveModelSearchModal', () => {
       />
     )
 
-    expect(screen.getByText('Search & Switch AI Model')).toBeDefined()
-    expect(screen.getByPlaceholderText(/Search by model name/i)).toBeDefined()
+    // Strings pinned to the component as it exists at HEAD ("Select Model",
+    // guidance-in-placeholder, "API key needed" chip) — the old copy
+    // ("Search & Switch AI Model" / "Search by model name" / "Needs Key")
+    // does not exist anywhere in the shipped component.
+    expect(screen.getByText('Select Model')).toBeDefined()
+    expect(screen.getByPlaceholderText(/Search models/i)).toBeDefined()
     expect(screen.getByText('gemini-2.5-flash')).toBeDefined()
-    expect(screen.getByText('llama-3.3-70b-versatile')).toBeDefined()
-    expect(screen.getByText('Needs Key')).toBeDefined()
+    expect(screen.getByText('llama-3.1-nemotron-70b-instruct')).toBeDefined()
+    expect(screen.getByText(/API key needed/i)).toBeDefined()
   })
 
   it('filters models by multi-term search query', () => {
@@ -63,7 +67,7 @@ describe('LiveModelSearchModal', () => {
       />
     )
 
-    const input = screen.getByPlaceholderText(/Search by model name/i)
+    const input = screen.getByPlaceholderText(/Search models/i)
     fireEvent.change(input, { target: { value: 'groq r1' } })
 
     expect(screen.getByText('deepseek-r1-distill-llama-70b')).toBeDefined()

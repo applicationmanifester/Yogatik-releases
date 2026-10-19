@@ -8,6 +8,7 @@ import { latencyReport } from '../telemetry'
 import { report as liveReport, getReflexStats } from '../live/metrics'
 import { runSafetyScreenEval, runAndRecordEval } from '../evalHarness'
 import { db, getAgentTraces } from '../db'
+import { EvalRunsCard } from './EvalRunsCard'
 
 function fmtDelta(d) {
   if (d == null || Number.isNaN(d)) return null
@@ -25,7 +26,12 @@ function formatTime(ts) {
   })
 }
 
-export function DiagnosticsModal({ onClose, embedded = false }) {
+// `respond` — optional async (prompt) => string turn fn. When a caller supplies
+// one (the same message-send machinery App uses for a normal chat turn), the
+// quality-eval runner below runs the FULL golden set through it with grading;
+// without one the runner stays in its always-available offline safety-screen
+// baseline (pure assessSafety — no model, no network).
+export function DiagnosticsModal({ onClose, embedded = false, respond = null }) {
   const [activeTab, setActiveTab] = useState('diagnostics') // 'diagnostics' | 'traces'
   const [logs, setLogs] = useState(() => getErrorLog().slice().reverse())
   const [traces, setTraces] = useState([])
@@ -226,6 +232,18 @@ export function DiagnosticsModal({ onClose, embedded = false }) {
                     <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
                       ended: {Object.entries(live.endReasons).map(([k, v]) => `${k} ${v}`).join(' · ')}
                     </div>
+                    {/* Whisper stays the fallback, not the default — but every
+                        handover is counted so the call has data. */}
+                    {(live.stt?.whisperFallbacks > 0 || live.stt?.cloudFails > 0) && (
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                        on-device speech: {live.stt.whisperFallbacks} fallback{live.stt.whisperFallbacks === 1 ? '' : 's'} · {live.stt.cloudFails} cloud fail{live.stt.cloudFails === 1 ? '' : 's'}{live.stt.whisperFails > 0 && <> · {live.stt.whisperFails} fallback failed</>}
+                      </div>
+                    )}
+                    {live.blindRefusals > 0 && (
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                        blind-model camera refusals: {live.blindRefusals}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Start a Live call to collect timings. Local only — never sent anywhere.</div>
@@ -283,6 +301,13 @@ export function DiagnosticsModal({ onClose, embedded = false }) {
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>unit · calc · weather · tz · translate</div>
               </div>
+            </div>
+
+            {/* Interactive quality-eval runner ("turn on measurement" made
+                visible): run the golden + red-team set on demand, see failing
+                cases with expected/received, and the persisted run history. */}
+            <div style={{ padding: '10px 18px', borderBottom: '1px solid var(--border-color, rgba(255,255,255,0.06))' }}>
+              <EvalRunsCard respond={respond} />
             </div>
 
             {/* Search / Filter Filter Input if errors exist */}

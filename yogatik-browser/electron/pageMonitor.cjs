@@ -63,14 +63,32 @@ function fingerprint(text) {
   return String(h)
 }
 
+// [page-pipeline] Change-event subscribers — pagePipeline.watchPage registers
+// here to own the desktop notification (with a permission gate) and the watch
+// log. With no subscribers the built-in notification below still fires, so
+// standalone pageMonitor behavior is unchanged.
+const changeSubscribers = new Set()
+
+function onPageChange(fn) {
+  if (typeof fn !== 'function') return () => {}
+  changeSubscribers.add(fn)
+  return () => changeSubscribers.delete(fn)
+}
+
 function notifyChange(m) {
-  try {
-    new Notification({
-      title: 'Yogatik Browser — Page Changed',
-      body: `${m.lastTitle || m.url} was just updated.`,
-      icon: path.join(__dirname, 'assets', 'icon.png'),
-    }).show()
-  } catch {}
+  if (changeSubscribers.size) {
+    for (const fn of changeSubscribers) {
+      try { fn({ id: m.id, url: m.url, title: m.lastTitle || '' }) } catch {}
+    }
+  } else {
+    try {
+      new Notification({
+        title: 'Yogatik Browser — Page Changed',
+        body: `${m.lastTitle || m.url} was just updated.`,
+        icon: path.join(__dirname, 'assets', 'icon.png'),
+      }).show()
+    } catch {}
+  }
   if (toastFn) {
     try { toastFn(`👁️ Page changed: ${m.lastTitle || m.url}`) } catch {}
   }
@@ -140,4 +158,5 @@ function destroyMonitors() {
 
 module.exports = {
   wireMonitors, addMonitor, removeMonitor, listMonitors, destroyMonitors, fingerprint,
+  onPageChange, // [page-pipeline] change-event subscription
 }

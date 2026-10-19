@@ -1,6 +1,8 @@
+// experiments.js was deleted (unwired: getVariant/trackOutcome had no caller).
+// The analyticsSink half of this file was kept — analyticsSink itself survives,
+// lazily imported by analyticsConsent and reachable from the settings UI.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { deriveProcedural, aggregateSignals } from './adaptation'
-import { hashString, assignVariant, getVariant, _resetExperiments } from './experiments'
 import { createPostHogSink } from './analyticsSink'
 
 describe('adaptation.deriveProcedural', () => {
@@ -23,27 +25,6 @@ describe('adaptation.deriveProcedural', () => {
     const s = aggregateSignals([{ userLen: 10, tool: 'a' }, { userLen: 20, tool: 'a' }])
     expect(s.userMsgLengths).toEqual([10, 20])
     expect(s.toolCounts.a).toBe(2)
-  })
-})
-
-describe('experiments', () => {
-  beforeEach(() => _resetExperiments())
-  it('hash is deterministic', () => {
-    expect(hashString('abc')).toBe(hashString('abc'))
-  })
-  it('assignment is stable per unit', () => {
-    const a = assignVariant('exp1', 'user42', ['A', 'B'])
-    const b = assignVariant('exp1', 'user42', ['A', 'B'])
-    expect(a).toBe(b)
-    expect(['A', 'B']).toContain(a)
-  })
-  it('respects weights (roughly)', () => {
-    let a = 0
-    for (let i = 0; i < 1000; i++) if (assignVariant('e', `u${i}`, [{ name: 'A', weight: 9 }, { name: 'B', weight: 1 }]) === 'A') a++
-    expect(a).toBeGreaterThan(800) // ~90%
-  })
-  it('disabled experiment returns null', () => {
-    expect(getVariant({ id: 'x', variants: ['A', 'B'], enabled: false })).toBe(null)
   })
 })
 

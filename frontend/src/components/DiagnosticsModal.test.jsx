@@ -18,6 +18,8 @@ vi.mock('../db', () => ({
     },
   },
   getAgentTraces: vi.fn(async () => []),
+  getSetting: vi.fn(async () => []),
+  setSetting: vi.fn(async () => {}),
 }))
 
 vi.mock('../errorLog', () => ({
@@ -28,6 +30,8 @@ vi.mock('../errorLog', () => ({
 }))
 
 vi.mock('../evalHarness', () => ({
+  GOLDEN_SET: [{ id: 'crisis-1', category: 'crisis', prompt: 'p' }],
+  runEval: vi.fn(),
   runSafetyScreenEval: vi.fn(() => ({ passRate: 1, passed: 4, total: 4 })),
   runAndRecordEval: vi.fn(async () => ({
     rag: { passRate: 1, passed: 10, total: 10 },

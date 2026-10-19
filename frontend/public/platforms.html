@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0e14" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
   <title>Yogatik — Download for Desktop</title>
   <meta name="description" content="Get Yogatik on your desktop: a private AI assistant with local Ollama models, local-file editing, live web research and 177 free tools. Runs on your machine." />
   <meta property="og:title" content="Yogatik for Desktop" />
@@ -27,30 +29,46 @@
     .theme-toggle-btn:hover{border-color:var(--brand);color:var(--brand)}
     *{box-sizing:border-box;margin:0;padding:0}
     html{scroll-behavior:smooth}
-    body{font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased}
+    body{
+      font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+      background:var(--bg);color:var(--text);line-height:1.6;
+      -webkit-font-smoothing:antialiased;
+      /* Safe area for notch phones */
+      padding-left:env(safe-area-inset-left);
+      padding-right:env(safe-area-inset-right);
+    }
     a{color:inherit;text-decoration:none}
     a:focus-visible,button:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
     .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
-    header{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
+    header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;position:relative}
     .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;letter-spacing:-.02em}
     .logo img{width:30px;height:30px;border-radius:7px}
-    .nav-cta{padding:9px 18px;border:1px solid var(--line);border-radius:999px;font-size:14px;font-weight:600;transition:border-color .15s ease,color .15s ease,background .15s ease}
+    .nav-cta{padding:9px 18px;border:1px solid var(--line);border-radius:999px;font-size:14px;font-weight:600;transition:border-color .15s ease,color .15s ease,background .15s ease;min-height:40px;display:inline-flex;align-items:center}
     .nav-cta:hover{border-color:var(--brand);color:var(--brand2);background:color-mix(in srgb,var(--brand) 6%,transparent)}
 
-    .hero{text-align:center;padding:70px 0 40px}
-    .hero .pill{display:inline-block;font-size:12.5px;font-weight:600;color:var(--brand2);background:rgba(255,107,53,.1);border:1px solid rgba(255,107,53,.28);border-radius:999px;padding:6px 14px;margin-bottom:22px}
-    .hero h1{font-size:clamp(34px,6vw,58px);line-height:1.05;letter-spacing:-.03em;font-weight:800;margin-bottom:18px}
-    .hero h1 .grad{background:linear-gradient(120deg,var(--brand),var(--brand2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-    .hero p{font-size:clamp(16px,2.4vw,20px);color:var(--muted);max-width:640px;margin:0 auto 34px}
+    /* ── Hamburger menu (mobile) ── */
+    .nav-hamburger{display:none;flex-direction:column;justify-content:center;gap:5px;width:40px;height:40px;background:none;border:1px solid var(--line);border-radius:9px;cursor:pointer;padding:8px;z-index:200;flex-shrink:0}
+    .nav-hamburger span{display:block;height:2px;background:var(--text);border-radius:2px;transition:transform .2s,opacity .2s}
+    .nav-hamburger.open span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+    .nav-hamburger.open span:nth-child(2){opacity:0}
+    .nav-hamburger.open span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
 
-    .platforms{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin:16px 0 8px}
+    #main-nav{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+
+    .hero{text-align:center;padding:56px 0 36px}
+    .hero .pill{display:inline-block;font-size:12.5px;font-weight:600;color:var(--brand2);background:rgba(255,107,53,.1);border:1px solid rgba(255,107,53,.28);border-radius:999px;padding:6px 14px;margin-bottom:22px}
+    .hero h1{font-size:clamp(30px,6vw,58px);line-height:1.08;letter-spacing:-.03em;font-weight:800;margin-bottom:18px}
+    .hero h1 .grad{background:linear-gradient(120deg,var(--brand),var(--brand2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+    .hero p{font-size:clamp(15px,2.4vw,20px);color:var(--muted);max-width:640px;margin:0 auto 30px}
+
+    .platforms{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:18px;margin:16px 0 8px}
     .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:18px;padding:28px 24px;text-align:left;transition:border-color .2s ease,transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s ease;position:relative}
     .card:hover{border-color:rgba(255,107,53,.4);transform:translateY(-4px);box-shadow:0 12px 32px rgba(0,0,0,.28)}
     [data-theme="light"] .card:hover{box-shadow:0 12px 32px rgba(17,24,39,.1)}
     .card .os{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;margin-bottom:6px}
     .card .os svg{width:22px;height:22px;fill:var(--text)}
     .card .sub{font-size:13px;color:var(--muted);margin-bottom:18px;min-height:34px}
-    .dl{display:block;text-align:center;background:var(--brand);color:#fff;font-weight:700;font-size:14.5px;padding:12px;border-radius:11px;transition:background .15s ease,transform .1s ease,box-shadow .15s ease;box-shadow:0 3px 12px rgba(255,107,53,.22)}
+    .dl{display:block;text-align:center;background:var(--brand);color:#fff;font-weight:700;font-size:14.5px;padding:13px;border-radius:11px;transition:background .15s ease,transform .1s ease,box-shadow .15s ease;box-shadow:0 3px 12px rgba(255,107,53,.22);min-height:44px}
     .dl:hover{background:var(--brand2);box-shadow:0 5px 18px rgba(255,107,53,.32)}
     .dl:active{transform:scale(.98)}
     .dl.ghost{background:transparent;border:1px solid var(--line);color:var(--text);box-shadow:none}
@@ -69,27 +87,27 @@
     .soon{position:absolute;top:16px;right:16px;font-size:10.5px;font-weight:700;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
     .note{font-size:12.5px;color:var(--muted);margin-top:10px}
 
-    section.feat{padding:64px 0 20px}
-    .feat h2{text-align:center;font-size:clamp(26px,4vw,38px);font-weight:800;letter-spacing:-.02em;margin-bottom:12px}
-    .feat .lead{text-align:center;color:var(--muted);max-width:620px;margin:0 auto 42px}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
-    .feature{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px;transition:border-color .2s ease,transform .2s ease}
+    section.feat{padding:52px 0 16px}
+    .feat h2{text-align:center;font-size:clamp(22px,4vw,38px);font-weight:800;letter-spacing:-.02em;margin-bottom:12px}
+    .feat .lead{text-align:center;color:var(--muted);max-width:620px;margin:0 auto 36px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+    .feature{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;transition:border-color .2s ease,transform .2s ease}
     .feature:hover{border-color:rgba(255,107,53,.3);transform:translateY(-2px)}
     .feature .ic{font-size:22px;margin-bottom:10px}
-    .feature h3{font-size:16.5px;margin-bottom:6px}
+    .feature h3{font-size:16px;margin-bottom:6px}
     .feature p{font-size:14px;color:var(--muted)}
 
-    .steps{max-width:760px;margin:56px auto 0}
+    .steps{max-width:760px;margin:48px auto 0}
     .step{display:flex;gap:16px;padding:16px 0;border-top:1px solid var(--line)}
     .step .n{flex:0 0 34px;height:34px;border-radius:50%;background:rgba(255,107,53,.14);color:var(--brand2);font-weight:800;display:grid;place-items:center}
     .step h4{font-size:15.5px}
     .step p{font-size:14px;color:var(--muted)}
 
-    .cta{text-align:center;margin:72px 0 40px;background:linear-gradient(120deg,rgba(255,107,53,.1),rgba(255,145,66,.05));border:1px solid rgba(255,107,53,.22);border-radius:22px;padding:52px 24px}
-    .cta h2{font-size:clamp(24px,4vw,34px);font-weight:800;margin-bottom:12px}
+    .cta{text-align:center;margin:60px 0 36px;background:linear-gradient(120deg,rgba(255,107,53,.1),rgba(255,145,66,.05));border:1px solid rgba(255,107,53,.22);border-radius:22px;padding:44px 24px}
+    .cta h2{font-size:clamp(22px,4vw,34px);font-weight:800;margin-bottom:12px}
     .cta p{color:var(--muted);margin-bottom:26px}
     .cta .row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-    .btn{padding:13px 26px;border-radius:11px;font-weight:700;font-size:15px;transition:background .15s ease,transform .1s ease,box-shadow .15s ease}
+    .btn{padding:13px 26px;border-radius:11px;font-weight:700;font-size:15px;transition:background .15s ease,transform .1s ease,box-shadow .15s ease;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
     .btn.primary{background:var(--brand);color:#fff;box-shadow:0 4px 16px rgba(255,107,53,.25)}
     .btn.primary:hover{background:var(--brand2);box-shadow:0 6px 22px rgba(255,107,53,.35)}
     .btn:active{transform:scale(.98)}
@@ -101,18 +119,197 @@
     .user-chip .signout-link{color:var(--muted);font-size:12px;margin-left:6px;cursor:pointer;background:none;border:none;padding:0;font-weight:500}
     .user-chip .signout-link:hover{color:var(--brand)}
 
-    footer{border-top:1px solid var(--line);padding:30px 0;color:var(--muted);font-size:13px;text-align:center}
+    footer{
+      border-top:1px solid var(--line);
+      padding:30px 0 calc(30px + env(safe-area-inset-bottom));
+      color:var(--muted);font-size:13px;text-align:center
+    }
+    footer p{line-height:2;display:flex;flex-wrap:wrap;justify-content:center;gap:4px 0}
+
+    /* ═══════════════════════════════════════════════
+       MOBILE BREAKPOINTS
+       ═══════════════════════════════════════════════ */
+
+    /* ── 560px: force single-column platform cards ── */
+    @media(max-width:560px){
+      .platforms{grid-template-columns:1fr !important}
+    }
+
+    /* ── 768px: main mobile layout ── */
+    @media(max-width:768px){
+      .wrap{padding:0 16px}
+      header{padding:14px 0}
+
+      /* ── Hamburger nav drawer ── */
+      .nav-hamburger{display:flex}
+
+      #main-nav{
+        /* Hidden by default — revealed via .open class */
+        visibility:hidden;
+        opacity:0;
+        pointer-events:none;
+        transform:translateY(-8px);
+        transition:opacity .2s ease,transform .2s ease,visibility 0s linear .2s;
+
+        flex-direction:column;
+        align-items:stretch;
+        position:absolute;
+        /* Offset by header height; clamp keeps it within the viewport */
+        top:calc(100% + 6px);
+        left:0;right:0;
+        background:var(--panel);
+        border:1px solid var(--line);
+        border-radius:14px;
+        padding:10px;
+        gap:6px;
+        z-index:200;
+        box-shadow:0 16px 40px rgba(0,0,0,.3);
+
+        /* Force flex even when display toggled */
+        display:flex;
+      }
+      #main-nav.open{
+        visibility:visible;
+        opacity:1;
+        pointer-events:auto;
+        transform:translateY(0);
+        transition:opacity .2s ease,transform .2s ease,visibility 0s linear 0s;
+      }
+      .nav-cta{
+        padding:12px 16px;
+        border-radius:10px;
+        border-radius:10px;
+        font-size:14.5px;
+        width:100%;
+        text-align:center;
+        justify-content:center;
+        border-radius:10px !important;
+      }
+      /* auth-container — when it wraps a user-chip or sign-in link */
+      #auth-container{
+        display:flex !important;
+        width:100%;
+      }
+      #auth-container .nav-cta,
+      #auth-container .user-chip{
+        width:100%;
+        justify-content:center;
+        text-align:center;
+      }
+
+      /* ── Hero ── */
+      .hero{padding:36px 0 28px}
+      .hero h1{font-size:clamp(28px,8vw,44px);letter-spacing:-.025em}
+      .hero p{font-size:15px;margin-bottom:24px;padding:0 4px}
+      .release-meta{
+        font-size:12px;
+        padding:5px 10px;
+        justify-content:center;
+        text-align:center;
+      }
+
+      /* ── Platform download cards ── */
+      .platforms{grid-template-columns:1fr;gap:12px}
+      .card{padding:20px 16px;border-radius:16px}
+      .card .sub{min-height:unset;margin-bottom:14px}
+
+      /* ── What's New card ── */
+      .whats-new-container{padding:20px 16px !important;border-radius:14px !important}
+      .wn-release-row{
+        flex-direction:column !important;
+        align-items:flex-start !important;
+        gap:12px !important
+      }
+      .wn-version-wrap{
+        margin-left:0 !important;
+        width:100%;
+        flex-direction:row;
+      }
+      .wn-version-wrap select{flex:1;width:100%}
+
+      /* ── Features / grid sections ── */
+      section.feat{padding:36px 0 10px}
+      .feat h2{font-size:clamp(20px,5vw,32px)}
+      .feat .lead{margin-bottom:20px;font-size:14.5px}
+      .grid{grid-template-columns:1fr !important;gap:10px}
+      .feature{padding:16px 14px}
+      .feature .ic{font-size:20px;margin-bottom:8px}
+
+      /* ── Steps ── */
+      .steps{margin-top:28px}
+      .step{gap:12px;padding:14px 0}
+
+      /* ── CTA banner ── */
+      .cta{margin:40px 0 20px;padding:28px 14px;border-radius:14px}
+      .cta h2{font-size:clamp(20px,5vw,28px)}
+      .cta .row{flex-direction:column;gap:10px}
+      .btn{width:100%;justify-content:center}
+
+      /* ── Callout cards (Browser / Mobile) ── */
+      .callout-card{
+        flex-direction:column !important;
+        align-items:flex-start !important;
+        padding:18px 16px !important;
+        gap:14px !important;
+      }
+      .callout-card > a{
+        width:100% !important;
+        text-align:center;
+        justify-content:center;
+        white-space:normal !important;
+      }
+
+      /* ── Pricing grid override (inline style uses minmax(280px)) ── */
+      .grid[style*="280px"]{
+        grid-template-columns:1fr !important;
+      }
+
+      /* ── Footer ── */
+      footer p{font-size:12.5px;gap:2px 0}
+    }
+
+    /* ── 420px: phones (SE, Galaxy A series) ── */
+    @media(max-width:420px){
+      .wrap{padding:0 12px}
+      .logo{font-size:16px;gap:8px}
+      .logo img{width:26px;height:26px}
+      .hero{padding:28px 0 20px}
+      .hero h1{font-size:26px;letter-spacing:-.02em}
+      .hero .pill{font-size:11.5px;padding:4px 10px;margin-bottom:16px}
+      .hero p{font-size:14px}
+      .release-meta{font-size:11.5px}
+      .platforms{gap:8px}
+      .card{padding:16px 13px;border-radius:13px}
+      .card .os{font-size:15px}
+      .dl{font-size:13.5px;padding:11px}
+      .note{font-size:12px}
+      .whats-new-container{padding:16px 13px !important}
+      .feature{padding:14px 12px}
+      .feature h3{font-size:14.5px}
+      .feature p{font-size:13px}
+      .grid{gap:8px}
+      .step{gap:10px;padding:12px 0}
+      .step .n{flex:0 0 28px;height:28px;font-size:13px}
+      .step h4{font-size:14.5px}
+      .step p{font-size:13px}
+      .cta{padding:22px 12px;border-radius:12px}
+      .cta h2{font-size:20px}
+      footer{font-size:11.5px;padding-bottom:calc(20px + env(safe-area-inset-bottom))}
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <a class="logo" href="/"><img src="/icon-192.svg" alt="" /> Yogatik</a>
-      <nav id="main-nav" style="display:flex;align-items:center;gap:10px">
+      <button class="nav-hamburger" id="nav-hamburger" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <nav id="main-nav">
         <a class="nav-cta" href="/mobile">📱 Mobile</a>
         <a class="nav-cta" href="/browser">Yogatik Browser</a>
         <a class="nav-cta" href="#pricing">Pricing</a>
-        <div id="auth-container" style="display:inline-flex;align-items:center;gap:8px">
+        <div id="auth-container" style="display:flex;align-items:center;gap:8px">
           <a class="nav-cta" id="signin-btn" href="/?signin=1">Sign in</a>
         </div>
         <a class="nav-cta" href="/">Open in browser →</a>
@@ -125,7 +322,7 @@
            remembers to edit it for. The version now appears once, below, read
            from the release actually being served. -->
       <span class="pill">Yogatik for Desktop</span>
-      <h1>Your private AI,<br /><span class="grad">running on your machine.</span></h1>
+      <h1>Your private AI, <span class="grad">running on your machine.</span></h1>
       <p>Download the desktop app to chat with local <strong>Ollama</strong> models, and let the agent read, edit and organise files in a folder you choose — plus every tool from the web app. No account, no cloud lock-in.</p>
 
       <!-- Filled in from the same release lookup that drives the cards, so it
@@ -183,39 +380,39 @@
       <!-- End of Desktop Platforms -->
 
       <!-- Yogatik Browser Dedicated Portal Callout -->
-      <div style="max-width:800px;margin:28px auto 0;background:linear-gradient(135deg, rgba(255,122,24,.12) 0%, rgba(255,153,0,.06) 100%);border:1px solid rgba(255,122,24,.35);border-radius:18px;padding:22px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:18px;text-align:left;">
-        <div style="display:flex;align-items:center;gap:16px;">
+      <div class="callout-card" style="max-width:800px;margin:28px auto 0;background:linear-gradient(135deg, rgba(255,122,24,.12) 0%, rgba(255,153,0,.06) 100%);border:1px solid rgba(255,122,24,.35);border-radius:18px;padding:22px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:18px;text-align:left;">
+        <div style="display:flex;align-items:center;gap:16px;flex:1;min-width:0">
           <div style="width:48px;height:48px;border-radius:12px;background:rgba(255,122,24,.15);display:flex;align-items:center;justify-content:center;color:#ff7a18;flex-shrink:0;">
             <svg viewBox="0 0 24 24" style="width:28px;height:28px;fill:#ff7a18;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
           </div>
-          <div>
-            <div style="display:flex;align-items:center;gap:8px;">
+          <div style="min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <h4 style="margin:0;font-size:17px;font-weight:800;color:var(--text);">Looking for Yogatik Browser?</h4>
               <span style="font-size:11px;font-weight:700;color:#ff7a18;background:rgba(255,122,24,.15);border:1px solid rgba(255,122,24,.3);padding:2px 8px;border-radius:6px;">New Edition</span>
             </div>
             <p style="margin:4px 0 0;font-size:13.5px;color:var(--muted);">Download Yogatik Browser for Windows, macOS &amp; Linux — standalone privacy browser with hardware AdShield and Reader Mode.</p>
           </div>
         </div>
-        <a href="/browser" style="display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:10px;background:linear-gradient(135deg, #ff7a18, #ff9900);color:#fff;font-size:14px;font-weight:700;text-decoration:none;box-shadow:0 3px 12px rgba(255,122,24,.25);white-space:nowrap;">
+        <a href="/browser" style="display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:10px;background:linear-gradient(135deg, #ff7a18, #ff9900);color:#fff;font-size:14px;font-weight:700;text-decoration:none;box-shadow:0 3px 12px rgba(255,122,24,.25);white-space:nowrap;min-height:44px;justify-content:center;">
           Get Yogatik Browser →
         </a>
       </div>
 
       <!-- Yogatik Mobile (Android & iOS) Callout -->
-      <div style="max-width:800px;margin:18px auto 0;background:linear-gradient(135deg, rgba(61,220,132,.1) 0%, rgba(110,110,247,.08) 100%);border:1px solid rgba(61,220,132,.3);border-radius:18px;padding:22px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:18px;text-align:left;">
-        <div style="display:flex;align-items:center;gap:16px;">
+      <div class="callout-card" style="max-width:800px;margin:18px auto 0;background:linear-gradient(135deg, rgba(61,220,132,.1) 0%, rgba(110,110,247,.08) 100%);border:1px solid rgba(61,220,132,.3);border-radius:18px;padding:22px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:18px;text-align:left;">
+        <div style="display:flex;align-items:center;gap:16px;flex:1;min-width:0">
           <div style="width:48px;height:48px;border-radius:12px;background:rgba(61,220,132,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
             <svg viewBox="0 0 24 24" style="width:28px;height:28px;" fill="none"><path d="M6.18 15a.565.565 0 0 1-.565-.565V10.56a.565.565 0 1 1 1.13 0v3.875a.565.565 0 0 1-.565.565zm11.64 0a.565.565 0 0 1-.565-.565V10.56a.565.565 0 1 1 1.13 0v3.875a.565.565 0 0 1-.565.565zM4.725 9.429A.726.726 0 0 1 4 8.703V8.28A4.283 4.283 0 0 1 7.3 4.075L6.664 2.97a.225.225 0 0 1 .39-.225l.649 1.125A5.81 5.81 0 0 1 9.994 3.43a5.81 5.81 0 0 1 2.291.44l.65-1.124a.225.225 0 0 1 .389.225l-.637 1.104A4.283 4.283 0 0 1 16 8.28v.424a.726.726 0 0 1-.726.725H4.725zm5.27-2.929a.451.451 0 1 0 0 .902.451.451 0 0 0 0-.902zm4 0a.451.451 0 1 0 0 .902.451.451 0 0 0 0-.902zM4.725 17.845A1.155 1.155 0 0 1 3.57 16.69V9.87h16.86v6.82a1.155 1.155 0 0 1-1.155 1.155H17.9v2.32a.565.565 0 1 1-1.13 0v-2.32H7.23v2.32a.565.565 0 1 1-1.13 0v-2.32H4.725z" fill="#3ddc84"/></svg>
           </div>
-          <div>
-            <div style="display:flex;align-items:center;gap:8px;">
+          <div style="min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <h4 style="margin:0;font-size:17px;font-weight:800;color:var(--text);">Yogatik for Android &amp; iOS</h4>
               <span style="font-size:11px;font-weight:700;color:#3ddc84;background:rgba(61,220,132,.12);border:1px solid rgba(61,220,132,.28);padding:2px 8px;border-radius:6px;">New Mobile Edition</span>
             </div>
             <p style="margin:4px 0 0;font-size:13.5px;color:var(--muted);">Native Android APK (sideload, free) &amp; unsigned iOS IPA for AltStore — same AI, tools and privacy, now in your pocket.</p>
           </div>
         </div>
-        <a href="/mobile" style="display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:10px;background:linear-gradient(135deg, #3ddc84, #2fb872);color:#0a1a10;font-size:14px;font-weight:700;text-decoration:none;box-shadow:0 3px 12px rgba(61,220,132,.22);white-space:nowrap;">
+        <a href="/mobile" style="display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:10px;background:linear-gradient(135deg, #3ddc84, #2fb872);color:#0a1a10;font-size:14px;font-weight:700;text-decoration:none;box-shadow:0 3px 12px rgba(61,220,132,.22);white-space:nowrap;min-height:44px;justify-content:center;">
           📱 Get Mobile App →
         </a>
       </div>
@@ -228,10 +425,10 @@
           </div>
         </div>
 
-        <div style="background:linear-gradient(135deg, rgba(255, 107, 53, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%);border:1px solid rgba(255, 107, 53, 0.25);border-radius:14px;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:18px">
-          <div style="display:flex;align-items:center;gap:14px">
+        <div class="wn-release-row" style="background:linear-gradient(135deg, rgba(255, 107, 53, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%);border:1px solid rgba(255, 107, 53, 0.25);border-radius:14px;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:18px">
+          <div style="display:flex;align-items:center;gap:14px;flex:1;min-width:0">
             <img src="/icon-192.svg" alt="" style="width:42px;height:42px;border-radius:10px;flex-shrink:0" />
-            <div>
+            <div style="min-width:0">
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <h3 style="margin:0;font-size:18px;font-weight:800;color:var(--text)">
                   Yogatik <span id="wn-release-tag">Release</span>
@@ -249,9 +446,9 @@
           </div>
 
           <!-- Version Selector Dropdown -->
-          <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
-            <label for="wn-version-select" style="font-size:12px;color:var(--muted);font-weight:600">Version:</label>
-            <select id="wn-version-select" aria-label="Select App Version" style="background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:600;cursor:pointer;outline:none"></select>
+          <div class="wn-version-wrap" style="display:flex;align-items:center;gap:8px;margin-left:auto">
+            <label for="wn-version-select" style="font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap">Version:</label>
+            <select id="wn-version-select" aria-label="Select App Version" style="background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:600;cursor:pointer;outline:none;min-height:40px"></select>
           </div>
         </div>
 
@@ -317,7 +514,7 @@
         website stops showing ads. Sign in on any computer and it follows you.
       </p>
 
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));max-width:820px;margin:0 auto">
+      <div class="grid pricing-grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));max-width:820px;margin:0 auto">
         <div class="feature">
           <div class="ic">🆓</div>
           <h3>Free — ₹0</h3>
@@ -375,14 +572,20 @@
     <div class="wrap">
       <!-- Cross-links so every static page is reachable from every other one;
            a crawler that lands here can walk the whole set. -->
-      <p style="margin-bottom:10px">
-        <a href="/" style="color:var(--brand2)">App</a> ·
-        <a href="/guide" style="color:var(--brand2)">Guide</a> ·
-        <a href="/tools" style="color:var(--brand2)">Tools</a> ·
-        <a href="/how-it-works" style="color:var(--brand2)">How it works</a> ·
-        <a href="/faq" style="color:var(--brand2)">FAQ</a> ·
-        <a href="/privacy" style="color:var(--brand2)">Privacy</a> ·
-        <a href="/terms" style="color:var(--brand2)">Terms</a>
+      <p style="margin-bottom:10px;flex-wrap:wrap;justify-content:center;display:flex;gap:0">
+        <a href="/" style="color:var(--brand2);padding:2px 6px">App</a>
+        <span style="opacity:.4">·</span>
+        <a href="/guide" style="color:var(--brand2);padding:2px 6px">Guide</a>
+        <span style="opacity:.4">·</span>
+        <a href="/tools" style="color:var(--brand2);padding:2px 6px">Tools</a>
+        <span style="opacity:.4">·</span>
+        <a href="/how-it-works" style="color:var(--brand2);padding:2px 6px">How it works</a>
+        <span style="opacity:.4">·</span>
+        <a href="/faq" style="color:var(--brand2);padding:2px 6px">FAQ</a>
+        <span style="opacity:.4">·</span>
+        <a href="/privacy" style="color:var(--brand2);padding:2px 6px">Privacy</a>
+        <span style="opacity:.4">·</span>
+        <a href="/terms" style="color:var(--brand2);padding:2px 6px">Terms</a>
       </p>
       Yogatik · Private browser-native AI · <a href="/" style="color:var(--brand2)">yogatik.web.app</a>
     </div>
@@ -482,11 +685,44 @@
     (function () {
       var RELEASES = [
   {
+    "version": "13.0.0",
+    "title": "Yogatik 13.0.0: Next-Gen AI Agentic Assistant, Unified Live Studio & Multi-Platform Core",
+    "date": "October 19, 2026",
+    "codename": "Next-Gen AI Agentic Assistant & Unified Studio",
+    "isLatest": true,
+    "highlights": [
+      [
+        "Single-Bar Live Cockpit Redesign",
+        "Redesigned the entire Live Studio interface around an ergonomic command bar, top status telemetry strip, accessible sheaf panel, and dedicated artifact rail"
+      ],
+      [
+        "Hardware-True Digital Zoom (1-4x) & Camera Torch",
+        "Implemented true canvas-level digital zoom so vision models and OCR inspect magnified details directly, along with low-light torch detection and controls"
+      ],
+      [
+        "Sharpest-of-3 Laplacian Auto-Focus",
+        "Stride-sampled focus scoring automatically captures the sharpest frame over a 350ms window to eliminate blur and refocus noise"
+      ],
+      [
+        "Chromium Privacy & Security Stack",
+        "Hardened Yogatik Browser with strict DNS over HTTPS (DoH + ECH), conservative CSP injection, cookie container tabs, and origin storage audit"
+      ],
+      [
+        "Post-Call Recap Briefs & Action Items",
+        "Interactive post-call recap card delivering executive summaries, actionable todos, generated artifacts, and full session markdown persistence"
+      ],
+      [
+        "Full Multi-Platform Desktop & Mobile Sync",
+        "Unified releases across Windows (.exe), macOS (.dmg/.zip), Linux (.AppImage/.deb), Android (.apk), and iOS (.ipa)"
+      ]
+    ]
+  },
+  {
     "version": "12.4.1",
     "title": "Yogatik 12.4.1: Mobile UI Status Bar Spacing, Dark Launcher Icon & Mobile Google Sign-In",
     "date": "October 3, 2026",
     "codename": "Mobile UI & OAuth Polish",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       [
         "Status Bar & Notch Clearance",
@@ -2385,6 +2621,10 @@
         var authEl = document.getElementById('auth-container');
         var priceCta = document.querySelector('#pricing a.btn.primary');
         if (!authEl) return;
+        // Keep the container visible in flex layout after innerHTML replacement
+        authEl.style.display = 'flex';
+        authEl.style.alignItems = 'center';
+        authEl.style.gap = '8px';
         if (user && (user.displayName || user.email)) {
           var name = user.displayName || (user.email ? user.email.split('@')[0] : 'Account');
           var photo = user.photoURL || '/icon-192.svg';
@@ -2453,6 +2693,35 @@
           };
         } catch (err) {}
       }
+    })();
+
+    // Hamburger nav toggle for mobile
+    (function () {
+      var btn = document.getElementById('nav-hamburger');
+      var nav = document.getElementById('main-nav');
+      if (!btn || !nav) return;
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var open = nav.classList.toggle('open');
+        btn.classList.toggle('open', open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      // Close when tapping outside
+      document.addEventListener('click', function (e) {
+        if (!nav.contains(e.target) && !btn.contains(e.target)) {
+          nav.classList.remove('open');
+          btn.classList.remove('open');
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+      // Close on nav link click (smooth scroll / same-page anchors)
+      nav.querySelectorAll('a').forEach(function (a) {
+        a.addEventListener('click', function () {
+          nav.classList.remove('open');
+          btn.classList.remove('open');
+          btn.setAttribute('aria-expanded', 'false');
+        });
+      });
     })();
   </script>
 </body>

@@ -88,9 +88,35 @@ many sessions end in the first 30 seconds. **You cannot PM this module blind.**
 
 ### Horizon 1 — make it trustworthy (next 4 weeks) — **1, 2 and part of 4 SHIPPED**
 
-Status as of 30 Aug: instrumentation and the vision guardrails are built,
+Status as of Oct 2026: instrumentation and the vision guardrails are built,
 tested and wired. Items 3 and 4 are described below as originally scoped, with
 notes on what changed.
+
+Sprint 4 update (Oct 2026): the blind-model trap is now closed — Live refuses
+the camera for text-only models via `live/guard.js` (one-line why, refusal
+counted in `live/metrics.js` and surfaced in Diagnostics). Pitch-dark /
+blown-out frames get an honest spoken refusal via `live/visionGuard.js`
+(block-severity short-circuits `describeIfVisual` and the vision panel before
+any model call; the readable.js first-caveat still leads every other
+description). Whisper remains the FALLBACK, not the default, per the
+sequencing note — but every cloud-STT failure and Whisper handover is now
+metered (`stt` in the live report + Diagnostics) so the default-vs-fallback
+call has data.
+
+Sprint 5 update (Oct 2026): the LAST Horizon-1 item is closed — the camera
+guard now auto-switches. Pressing the camera on a text-only model first tries
+to RESOLVE the block on the SAME provider instead of refusing: stored probe
+verdicts (the IndexedDB cache in vision/capability.js) are consulted first,
+touching no network at all; 1-pixel probes are then spent only on models whose
+NAME says vision, capped at four and skipped entirely when offline. A hit
+switches the live call mid-session — no teardown, `setModel` on either engine
+— with one transient line saying why ("Switched to <model> — it can see your
+camera") before the camera opens. The policy is pure (`live/guard.js`
+`resolveCameraAction`) and the resolution is `vision/capability.js`
+`findVisionCandidate`, so the switch-vs-block decision stays testable without
+a call. The user keeps the strict block via Personalise's "Switch to a vision
+model when the camera turns on" (default ON), and every switch is counted:
+`autoVisionSwitches` in the live report, to be read beside `blindRefusals`.
 
 
 1. ~~**Instrument it.**~~ **DONE** — `live/metrics.js`. Time-to-first-word
@@ -102,28 +128,64 @@ notes on what changed.
    has-a-turn flag, and a timestamp of 0 is falsy, so a turn beginning at t=0
    recorded nothing. `Date.now()` is never 0 in production, which is why that
    class survives review and only a fake clock finds it.
-2. ~~**Vision guardrails**~~ **DONE (2 of 3)** — `vision/readable.js`. Darkness,
+ 2. ~~**Vision guardrails**~~ **DONE (3 of 3)** — `vision/readable.js`. Darkness,
    overexposure and no-detail frames are detected and the caveat is put FIRST
    in the description, ahead of anything derived from the pixels; OCR from a bad
    frame is labelled as noise the model must not interpret. 17 assertions.
    `imageStats` now also returns the luma tails it was already computing and
    throwing away — a mean alone cannot tell an evenly lit scene from a black
    frame with one bright lamp in it.
-   **Still open:** refusing to *start* with a text-only model and the camera on.
-   That is a product decision about whether to block or degrade, and it belongs
-   with the data from item 1 rather than ahead of it.
+   **Sprint 4:** the third guardrail landed — the camera is BLOCKED for
+   text-only models (`live/guard.js`, one-line why, refusals metered), and
+   block-severity frames get an honest spoken refusal via
+   `live/visionGuard.js` before any model call. Auto-switch to a vision model
+   was left as a follow-up there: blocking is honest, silent switching is
+   surprising.
+   **Sprint 5:** ~~the auto-switch follow-up~~ SHIPPED — Horizon-1 item 2 is
+   fully DONE (guard + auto-resolution + preference, see the update above;
+   `resolveCameraAction` + `findVisionCandidate`, 12 assertions across
+   `trust.test.js` / `capability.test.js`, the switch counted in
+   `autoVisionSwitches`).
 3. **On-device Whisper as cascade's default input** where the hardware allows,
    with Web Speech as the fallback rather than the primary.
    **Sequencing note:** deliberately NOT done yet. Whisper is *slower* than Web
    Speech, so making it the default trades measured latency for a privacy gain
    nobody has quantified — exactly the decision item 1 exists to inform. Ship
    the metric, look at the p95, then choose.
+   **Sprint 4:** the metric shipped — every cloud-STT failure and Whisper
+   handover is counted (`stt` in the live report + Diagnostics) while Whisper
+   stays the fallback. The default flip waits on measured p95s.
 4. **Session recap that is actually useful.** `sessionHandoff.js` exists; make
    every call end with a short written summary, the artefacts produced, and the
    sources cited. A voice call that leaves nothing behind is a call you cannot
    act on afterwards.
 
 ### Horizon 2 — make it the hands-busy assistant (weeks 5–12)
+
+Sprint 6 update (Oct 2026): capture quality shipped [live-capture] — the four
+capture-side quality problems from the use-case pass are built and wired. The
+TORCH: honest per-track support detection (`getCapabilities().torch === true`
+or nothing) with an `applyConstraints({advanced:[{torch}]})` toggle that
+speaks its refusals, a command-bar/​sheaf button that only exists when the
+hardware agrees to it, and — the point — the dark-frame refusal in the vision
+panel now UPDATES to "Too dark — tap the torch" instead of the generic shrug
+when the torch can actually help. DIGITAL ZOOM: real zoom, not CSS —
+`live/capture.js zoomPlan` pre-crops the grab canvas (1..4×, profile-crop
+stacked multiplicatively, edge-guarded at 240px because the encoder never
+upscales) inside `video.js grab()` so the MODEL, OCR, the `see` tool and the
+object HUD all see the zoomed pixels; LiveView drives it with a sheaf slider
+and two-touch pinch. FOCUS: sharpest-of-3 on the describe/OCR path only
+(`sharpestFrame` scores three grabs ~350ms apart by Laplacian variance and
+cascade's `describeIfVisual` + the vision panel's on-device branch answer
+from the best frame, not the first grabbed — the mid-autofocus grab is the
+one that loses a pill imprint). BATTERY: §8's unmeasured risk is metered —
+`metrics.js` records per-minute coarse 10% battery buckets (content-free)
+across sessions with a `lowRate` surfaced in `report().battery`, so the
+"1fps + neural voice + WebGPU cooks a handset" claim gets its number before
+any performance decision leans on it. All pure logic in one module
+(`live/capture.js`, 39 tests; `metrics.test.js` extended; wiring pins in the
+same file). Horizon-2 item 5 (the front-door rebuild) remains open — this
+sprint built the capture layer the front door will drive.
 
 5. **"Point and ask" as the front door.** A camera-first entry — big shutter,
    the HUD, the three actions — rather than a phone-call metaphor with a camera

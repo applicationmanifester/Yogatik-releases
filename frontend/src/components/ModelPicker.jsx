@@ -20,6 +20,20 @@ function modelId(model) {
  * current value, so once a model was selected, reopening the list showed only
  * models with near-identical names — the other 70 became unreachable. Here the
  * filter box is separate from the selection, so the full list is always there.
+ *
+ * Sprint 3 accessibility (WCAG 2.1 AA):
+ * - Trigger is a real <button> with aria-haspopup="listbox",
+ *   aria-expanded, and aria-controls pointing at the panel.
+ * - Keyboard: Enter/Space/ArrowDown opens and moves focus into the filter;
+ *   Escape closes and returns focus to the trigger; ArrowUp/Down + Enter
+ *   move/choose inside the filter input; Tab order is trigger → filter →
+ *   category pills → options (all native buttons, no tabindex hacks).
+ * - Options expose role="option" + aria-selected inside role="listbox";
+ *   the filter input uses aria-activedescendant to point at the highlighted
+ *   option id so screen readers track the active choice.
+ * - Manual axe checklist: button-name (trigger has aria-label), listbox
+ *   children are all role="option", aria-valid-attr-value, color-contrast
+ *   inherited from panel tokens incl. high-contrast theme.
  */
 const CATEGORIES = [
   { id: 'all', label: 'All' },
@@ -38,6 +52,8 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
   const boxRef = useRef(null)
   const inputRef = useRef(null)
   const listRef = useRef(null)
+  const triggerRef = useRef(null)
+  const panelId = useRef(`model-panel-${Math.random().toString(36).slice(2, 8)}`).current
 
   const modelIds = useMemo(
     () => [...new Set((Array.isArray(models) ? models : []).map(modelId).filter(Boolean))],
@@ -72,6 +88,8 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
     return list.filter(m => needle.split(/\s+/).every(part => m.toLowerCase().includes(part)))
   }, [ordered, q, category])
 
+  const activeId = filtered[sel] ? `model-opt-${panelId}-${sel}` : ''
+
   useEffect(() => {
     if (!open) return
     setQ('')
@@ -92,10 +110,17 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
     listRef.current?.querySelector('[data-sel="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [sel, open])
 
-  const pick = (m) => { onChange(m); setOpen(false) }
+  const pick = (m) => { onChange(m); setOpen(false); triggerRef.current?.focus() }
+
+  const onTriggerKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      setOpen(true)
+    }
+  }
 
   const onKeyDown = (e) => {
-    if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); return }
+    if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); triggerRef.current?.focus(); return }
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(s + 1, filtered.length - 1)) }
     if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(s - 1, 0)) }
     if (e.key === 'Enter') {
@@ -111,8 +136,8 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
 
   return (
     <div className={`model-picker${compact ? ' compact' : ''}`} ref={boxRef}>
-      <button className="model-trigger" onClick={() => setOpen(o => !o)} disabled={disabled}
-        aria-haspopup="listbox" aria-expanded={open}
+      <button ref={triggerRef} className="model-trigger" onClick={() => setOpen(o => !o)} onKeyDown={onTriggerKeyDown} disabled={disabled}
+        aria-haspopup="listbox" aria-expanded={open} aria-controls={panelId}
         aria-label={`Model: ${label}. Change model`}
         title={`${prefix ? prefix + ' — ' : ''}${label}`}>
         {prefix && <span className="model-prefix">{prefix}</span>}
@@ -124,11 +149,12 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
       </button>
 
       {open && (
-        <div className="model-panel" role="listbox" style={{ minWidth: '320px' }}>
+        <div className="model-panel" role="listbox" id={panelId} aria-label="Available models" style={{ minWidth: '320px' }}>
           <div className="model-search">
             <Search size={12} />
             <input ref={inputRef} value={q} onChange={e => { setQ(e.target.value); setSel(0) }}
-              onKeyDown={onKeyDown} placeholder={`Filter or enter custom model…`} aria-label="Filter models" />
+              onKeyDown={onKeyDown} placeholder={`Filter or enter custom model…`} aria-label="Filter models"
+              aria-activedescendant={activeId || undefined} aria-controls={panelId} role="combobox" aria-expanded="true" aria-autocomplete="list" />
             {q && <button className="icon-btn" onClick={() => setQ('')} aria-label="Clear filter"><X size={11} /></button>}
           </div>
 
@@ -147,6 +173,7 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
               <button
                 key={cat.id}
                 type="button"
+                aria-pressed={category === cat.id}
                 className={`category-pill ${category === cat.id ? 'active' : ''}`}
                 onClick={() => { setCategory(cat.id); setSel(0) }}
                 style={{
@@ -183,7 +210,7 @@ export function ModelPicker({ models = [], value, measured = {}, onChange, forma
             {filtered.map((m, i) => {
               const st = measured[m]
               return (
-                <button key={m} data-sel={i === sel}
+                <button key={m} id={`model-opt-${panelId}-${i}`} data-sel={i === sel}
                   className={`model-option ${m === selectedValue ? 'active' : ''} ${i === sel ? 'hover' : ''}`}
                   onMouseEnter={() => setSel(i)} onClick={() => pick(m)}
                   role="option" aria-selected={m === selectedValue}>

@@ -4,6 +4,9 @@ import {
   syncCloudKeys, pushCloudData, pullCloudData, cloudSyncStatus,
   downloadBackup
 } from '../../api'
+import { pullPrefs, pushPrefs } from '../../prefsSync'
+import { AnalyticsToggle } from '../AnalyticsToggle'
+import AuditPanel from '../AuditPanel'
 
 export function SyncTab({
   user = null,
@@ -26,6 +29,11 @@ export function SyncTab({
       await syncCloudKeys()
       await pullCloudData('merge')
       await pushCloudData()
+      // Manual Sync Now bypasses the auto-sync gate, and that is the point:
+      // "bring everything over" means prefs and feature flags too, not just
+      // chats. Field-level LWW resolves inside prefsSync; both best-effort.
+      try { await pullPrefs({ force: true }) } catch { /* prefs are best-effort */ }
+      try { await pushPrefs({ force: true }) } catch { /* prefs are best-effort */ }
       const st = await cloudSyncStatus()
       setSyncState(s => ({ ...s, ...st, syncing: false }))
       onProviderSaved?.()
@@ -66,6 +74,13 @@ export function SyncTab({
           )}
         </div>
       </div>
+
+      <AnalyticsToggle />
+
+      {/* The audit panel lives beside the analytics toggle — both are "what
+          does this app record / send" transparency surfaces. It pulls its data
+          through auditTrail.js itself; SyncTab passes no props. */}
+      <AuditPanel />
 
       <div className="settings-section-card">
         <h4>Local Storage &amp; Backup</h4>

@@ -175,7 +175,7 @@ export function DownloadModal({ isOpen, onClose, onInstallPwa, showPwa }) {
               padding: '2px 8px',
               borderRadius: 10,
               textTransform: 'uppercase',
-            }}>v12.4.0 New</span>
+            }}>v13.0.0 New</span>
 
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>

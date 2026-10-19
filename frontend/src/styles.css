@@ -16,3 +16,15 @@
 @import './styles/09-pulsing-dot-streaming-indicator-in.css';
 @import './styles/10-timeline-card.css';
 @import './styles/11-section.css';
+@import './styles/12-vision-modal-json.css';
+@import './styles/13-live-components.css';
+@import './styles/14-high-contrast.css';
+@import './styles/mobile-optimizations.css';
+/*
+ * 15-device-adaptive.css stays the LAST import (after high-contrast AND the
+ * mobile-optimization layers it thumbs — the 44px targets, the 16px input
+ * fight): [data-device]/[data-density] selection from deviceClass.js wins
+ * the cascade without leaning on !important. Do not reorder.
+ */
+@import './styles/15-device-adaptive.css';
+@import './styles/16-design-tokens.css';

@@ -72,18 +72,15 @@ describe('reachability', () => {
       path.join('components', 'AdModal.jsx'),
       path.join('components', 'TerminalPanel.jsx'),
       path.join('components', 'ContextMeter.jsx'),
-      path.join('components', 'McpModal.jsx'),
-      path.join('components', 'EmptyState.jsx'),
-      path.join('components', 'EmptyStates.jsx'),
-      path.join('components', 'OnboardingTour.jsx'),
-      path.join('components', 'SkeletonLoaders.jsx'),
-      path.join('components', 'ToastContainer.jsx'),
-      // LivePill.jsx is an UNSHIPPED alternative Live HUD: 112 lines and 13
-      // stylesheet rules, and nothing renders it, while the HUD that IS
-      // rendered (LiveHudOverlay) styles itself inline. Either wire it or
-      // delete it and its CSS — it is listed here so that choice stays visible
-      // instead of looking like a feature nobody can reach.
-      path.join('components', 'LivePill.jsx'),
+      // ToastContainer.jsx, EmptyState.jsx, EmptyStates.jsx,
+      // SkeletonLoaders.jsx and OnboardingTour.jsx: DELETED in an earlier
+      // sweep (see the module guard below) — their entries here were stale
+      // no-ops for files that no longer exist.
+      // LivePill.jsx was RETIRED (2026-10-18): the dead alternative Live HUD
+      // (112 lines, 13 CSS rules) was deleted rather than allowlisted, so the
+      // guard now DOES fire if anyone re-adds it unrendered. It was
+      // git-tracked, so `git show HEAD:src/components/LivePill.jsx` brings it
+      // back — but re-adding it needs a real user, not silence.
       // ComfyPanel.jsx: removed from PersonalisePanel on request (it read as
       // depending on an "external API" — it does not, ComfyUI is a local
       // server on the user's own machine, but the confusion is the point:
@@ -94,8 +91,10 @@ describe('reachability', () => {
       // are unaffected and still configure themselves via comfyStatus() if
       // ComfyUI is already running on its default port.
       path.join('components', 'ComfyPanel.jsx'),
-      path.join('components', 'FileBrowser.jsx'),
-      path.join('components', 'FilePicker.jsx'),
+      // McpModal.jsx, FileBrowser.jsx and FilePicker.jsx are gone (this sweep)
+      // — the retired MCP wrapper and an unwired Next.js-styled duplicate of
+      // the real workspace dock (WorkspacePanel.jsx hosts ExplorerPanel,
+      // WorkspaceSearch and CodeEditorPane, and is loaded from App.jsx).
     ])
     // ArtifactCanvas.jsx was listed here too. It is imported (App.jsx), so
     // allowlisting it did nothing except widen the hole this guard exists to
@@ -192,30 +191,62 @@ describe('reachability', () => {
       // be listed: the reverse check below fails on an allowlist entry for a
       // reachable file, which is what keeps this list honest.
 
-      // Kept only because each still has a test naming it, so deleting the
-      // module means deciding about the test too:
-      'src/downloadConsent.js',             // consent is the features.* toggle (setLocalVLMConsent / setSemanticConsent); enhancements.test.js covers it
-      'src/analyticsSink.js',               // initAnalyticsFromSettings is never called, so analytics is inert (it is opt-in anyway)
-      'src/experiments.js',                 // getVariant/trackOutcome called by nothing; phase1.test.js covers it
-      'src/components/McpModal.jsx',        // retired wrapper: McpServers hosted directly in DashboardShell
-
-      // BUILT, NEVER WIRED, and worth a decision:
-      'src/tools/stagehandHealing.js',      // self-healing selector fallback — the browser tool refuses a stale ref outright instead
-      'src/components/LivePill.jsx',        // an alternative Live HUD, 112 lines + 13 CSS rules; UNTRACKED, so deleting it is unrecoverable
+      // BUILT, NEVER WIRED — resolved this sweep, two WIRED + the REST DELETED.
+      // stagehandHealing.js left this list when tools/browserControl.js started
+      // importing its selector healing fallback — the stale allowlist entry
+      // would have silently disarmed the reverse check. The wiring: a stale
+      // ref is resolved against the tree the tool remembered (what the dead
+      // ref used to NAME) and the action retries once against the new ref only
+      // when the accessible name matches EXACTLY and uniquely; a fuzzy-only
+      // match surfaces as a hint for the model, never an auto-click. Pinned in
+      // browserActions.test.js.
+      // LivePill.jsx was DELETED rather than listed: the retired alternative
+      // Live HUD left the allowlist when the file left the tree (git-tracked,
+      // so recoverable). The entry had claimed it was "UNTRACKED, so deleting
+      // it is unrecoverable" — that was never true, and the wrong claim is what
+      // kept the dead HUD alive.
+      // chatSearch.js was removed from this list, not because the module died
+      // but because the reverse check below requires it: CommandPalette (the
+      // sidebar's universal Search & Commands) now statically imports
+      // searchChats over message bodies, so the file IS reachable and listing
+      // it as dead would have silently disabled the guard for the name.
+      //
+      // DELETED with their tests (all git-tracked, `git show HEAD:<path>`
+      // brings each back):
+      //  - responseCache.js — semantic exact-duplicate answering wanted an
+      //    agent.js pre-turn hook, and agent.js is mid-flight in another
+      //    track; answering a CURRENT-events question with a 30-minute-old
+      //    page is the failure mode no default-on toggle should carry until
+      //    it is wired deliberately.
+      //  - FileBrowser.jsx / FilePicker.jsx / fsFacade.js / phase1's
+      //    experiments half — FileBrowser + FilePicker were an unwired
+      //    duplicate of the workspace dock (WorkspacePanel.jsx hosts
+      //    ExplorerPanel + WorkspaceSearch + CodeEditorPane, loaded from
+      //    App.jsx; FileBrowser's <style jsx> never worked under Vite),
+      //    fsFacade re-wrapped localFs's own invoke helpers, and
+      //    experiments.js's getVariant/trackOutcome had no caller.
+      //  - McpModal.jsx — the retired wrapper; McpServers is hosted directly
+      //    in DashboardShell.
+      //  - stores/chatStore.js + uiStore.js + index.js — duplicate state that
+      //    App.jsx owns live (pendingToolResultsMap et al); nobody imported
+      //    the barrel.
+      //  - hooks/useA11y.js — superseded by the wired components/
+      //    A11yAnnouncer.jsx (App, VisionModal, StreamingMessage all call it).
+      //  - hooks/usePyodide.js — the wired Pyodide client is the non-React
+      //    workers/pyodideWorkerClient.js used by tools/codeExec ("codeExec
+      //    runs outside React, so it cannot use hooks/usePyodide"); a hook
+      //    wrapper with no consumer.
+      //  - agent/agentTypes.js — agent.js owns its own state shapes; these
+      //    classes were imported by nothing.
+      //  - companion/CadenceIndicator.js + CadenceIndicator.module.css +
+      //    useAdaptivePolling.js — a Math.random demo of adaptive polling and
+      //    its hook, while the real wiring already exists where real
+      //    observations live: liveWatch.js calls adaptive.noteObservation /
+      //    describeCadence inside the companion's watch loop, and the brain's
+      //    summary() reports the real cadence.
+      //
+      // Still here on purpose:
       'src/components/ComfyPanel.jsx',      // removed from PersonalisePanel on request; comfy.js + local_image_generate/local_video_generate still work unattended
-      'src/components/FileBrowser.jsx',     // modular workspace file browser
-      'src/components/FilePicker.jsx',      // modular workspace file picker
-      'src/tools/fsFacade.js',              // filesystem facade for workspace operations
-      'src/responseCache.js',               // semantic response caching module
-      'src/agent/agentTypes.js',            // agent types definition module
-      'src/chatSearch.js',                  // chat search utility
-      'src/companion/CadenceIndicator.js',   // companion cadence indicator component
-      'src/companion/useAdaptivePolling.js', // adaptive polling hook
-      'src/hooks/useA11y.js',               // accessibility hook and live region manager
-      'src/hooks/usePyodide.js',            // client-side Pyodide hook
-      'src/stores/chatStore.js',            // modular chat store
-      'src/stores/index.js',                // modular stores barrel
-      'src/stores/uiStore.js',              // modular ui store
     ])
 
     expect(dead.filter(f => !allowed.has(f)).sort()).toEqual([])
@@ -237,10 +268,12 @@ describe('reachability', () => {
 })
 
 describe('build guards', () => {
-  it('every .js file parses as plain JS — JSX in a .js file breaks the build', async () => {
+  it('every .js file parses as plain JS — JSX in a .js file breaks the build', { timeout: 30000 }, async () => {
     // Parse with the same tool the build uses instead of pattern-matching for
     // "<": HTML inside template literals looks like JSX to a regex and does not
     // bother esbuild at all.
+    // timeout: the cold esbuild service spawn inside the vitest fork plus a
+    // full walk of src (800 files) can exceed the 5s default on Windows.
     const esbuild = await import('esbuild')
     const offenders = []
     for (const file of walk(SRC)) {

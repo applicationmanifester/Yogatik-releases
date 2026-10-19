@@ -493,8 +493,62 @@ export async function getVaultMeta() {
   }
 }
 
-/** One-shot cleanup of pre-encryption plaintext keys left in Firestore. */
-export async function purgePlaintextKeys() {
+// ─── Encrypted prefs vault (feature flags + chat/UI preferences) ───
+// prefsSync.js's counterpart of the conversation vault above — same owner
+// scoping, same ensureFirebaseAuth dance — but a SINGLE doc at
+// users/{uid}/prefs/prefs_v1: a prefs snapshot is a few KB, nowhere near the
+// 1 MB doc limit, so the 700 KB chunking ceremony would be pure overhead.
+// Firestore rules cascade from the users/{uid} match, so no rule change is
+// needed (the vault subcollection relies on the same recursion).
+
+/** Write the encrypted prefs snapshot; returns { synced } like saveVault. */
+export async function savePrefsSnapshot(cipher, meta = {}) {
+  try {
+    const f = await fb()
+    // Desktop relaunches lose f.auth.currentUser — same fix as saveVault.
+    await ensureFirebaseAuth(f)
+    const user = getActiveAuthUser(f)
+    if (!user) return { synced: false, reason: 'signed-out' }
+    await f.setDoc(
+      f.doc(f.db, 'users', user.uid, 'prefs', 'prefs_v1'),
+      { cipher, meta: { ...meta, at: Date.now() } },
+      { merge: true }
+    )
+    return { synced: true }
+  } catch (err) {
+    return { synced: false, reason: err?.message || 'prefs-write-restricted' }
+  }
+}
+
+/** Read the encrypted prefs snapshot string, or null if none. */
+export async function loadPrefsSnapshot() {
+  try {
+    const f = await fb()
+    await ensureFirebaseAuth(f)
+    const user = getActiveAuthUser(f)
+    if (!user) return null
+    const snap = await f.getDoc(f.doc(f.db, 'users', user.uid, 'prefs', 'prefs_v1'))
+    return snap.exists() ? (snap.data()?.cipher || null) : null
+  } catch {
+    return null
+  }
+}
+
+/** When prefs last changed in the cloud — mirrors getVaultMeta, for any UI that wants a "last synced". */
+export async function getPrefsMeta() {
+  try {
+    const f = await fb()
+    await ensureFirebaseAuth(f)
+    const user = getActiveAuthUser(f)
+    if (!user) return null
+    const snap = await f.getDoc(f.doc(f.db, 'users', user.uid, 'prefs', 'prefs_v1'))
+    return snap.exists() ? (snap.data()?.meta || null) : null
+  } catch {
+    return null
+  }
+}
+
+/** One-shot cleanup of pre-encryption plaintext keys left in Firestore. */export async function purgePlaintextKeys() {
   try {
     const f = await fb()
     await ensureFirebaseAuth(f)

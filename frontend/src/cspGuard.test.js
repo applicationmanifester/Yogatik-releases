@@ -96,4 +96,28 @@ describe('index.html CSP', () => {
     expect(headerCsp).toContain('https://*.gstatic.com')
     expect(headerCsp).toContain('https://apis.google.com')
   })
+
+  it('meta tag stays in sync with the enforced firebase.json header', () => {
+    // The meta tag is the offline/desktop fallback for the same policy. If the
+    // two drift, one surface is hardened and the other is not — or worse, the
+    // stricter one blocks what the other allows (e.g. the page's own inline
+    // service-worker unregister snippet needs 'unsafe-inline' wherever the
+    // header allows it).
+    const firebaseJson = JSON.parse(fs.readFileSync(path.join(ROOT, '..', 'firebase.json'), 'utf8'))
+    const allHeaders = firebaseJson.hosting?.headers?.flatMap((h) => h.headers || []) || []
+    const headerCsp = allHeaders.find((h) => h.key === 'Content-Security-Policy')?.value || ''
+    const headerScript = headerCsp.split(';').map(s => s.trim()).find(s => s.startsWith('script-src '))
+    const metaScript = (directive('script-src') || []).join(' ')
+    for (const token of ['https://esm.run', "'wasm-unsafe-eval'", "'unsafe-inline'"]) {
+      expect(headerScript, `firebase.json script-src should contain ${token}`).toContain(token)
+      expect(metaScript, `index.html meta script-src should contain ${token}`).toContain(token)
+    }
+    // Hardening directives must survive on both surfaces.
+    expect(headerCsp).toContain("object-src 'none'")
+    expect(directive('object-src')).toContain("'none'")
+  })
+})
+
+describe('sanitize() — the one DOMPurify choke point for LLM/tool HTML', () => {
+  it.todo('covered in sanitize.test.js (jsdom) — cspGuard runs in node env where DOMPurify has no window')
 })

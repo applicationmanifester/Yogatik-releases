@@ -7,57 +7,30 @@ import DOMPurify from 'dompurify';
 
 /**
  * Sanitize SVG content for safe rendering.
- * Only allows valid SVG elements and strips all event handlers and javascript: URLs.
- * 
+ * DOMPurify-based: only valid SVG elements survive; event handlers,
+ * javascript: URLs, and non-SVG roots are stripped/rejected.
+ *
  * @param {string} svg - Raw SVG string to sanitize
  * @returns {string} Sanitized SVG safe for DOM insertion, or empty string if not valid SVG
  */
 export function sanitizeSvg(svg) {
-  if (!svg || typeof svg !== 'string') return '';
-  
+  if (!svg || typeof svg !== 'string') return ''
+  const trimmed = svg.trim()
+  if (!trimmed.startsWith('<svg') && !trimmed.startsWith('<?xml')) return ''
   try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svg, 'image/svg+xml');
-    
-    // Check if it's actually an SVG document
-    const root = doc.documentElement;
-    if (root.tagName !== 'svg' || root.namespaceURI !== 'http://www.w3.org/2000/svg') {
-      return '';
-    }
-    
-    // Check for parser errors
-    const parserError = doc.querySelector('parsererror');
-    if (parserError) {
-      return '';
-    }
-    
-    // Remove all event handlers from ALL elements (including root)
-    // querySelectorAll('*') includes the root when called on document
-    const allElements = doc.querySelectorAll('*');
-    for (const el of allElements) {
-      // Remove all on* event attributes
-      for (const attr of el.attributes) {
-        if (attr.name.startsWith('on')) {
-          el.removeAttribute(attr.name);
-        }
-        // Remove javascript: URLs from href, xlink:href, etc.
-        if (attr.value && attr.value.toLowerCase().startsWith('javascript:')) {
-          el.removeAttribute(attr.name);
-        }
-      }
-    }
-    
-    // Also check the root element explicitly (in case querySelectorAll misses it)
-    for (const attr of root.attributes) {
-      if (attr.name.startsWith('on') || (attr.value && attr.value.toLowerCase().startsWith('javascript:'))) {
-        root.removeAttribute(attr.name);
-      }
-    }
-    
-    // Serialize back to string
-    return new XMLSerializer().serializeToString(doc);
+    const clean = DOMPurify.sanitize(trimmed, {
+      USE_PROFILES: { svg: true },
+      FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'a'],
+      ALLOW_UNKNOWN_PROTOCOLS: false,
+    })
+    // DOMPurify with the SVG profile returns '' for non-SVG input; double-check
+    // the root is still an <svg> so a smuggled <div> can never pass as a diagram.
+    const t = String(clean).trim()
+    if (!t.startsWith('<svg')) return ''
+    if (/on\w+\s*=/i.test(t) || /javascript:/i.test(t)) return ''
+    return t
   } catch {
-    return '';
+    return ''
   }
 }
 
@@ -178,7 +151,30 @@ export function stripHtml(html) {
   return DOMPurify.sanitize(html, { ALLOWED_TAGS: [], ALLOWED_ATTR: [], KEEP_CONTENT: true });
 }
 
+/**
+ * Unified DOMPurify-based sanitiser for ALL LLM / tool HTML.
+ * Single choke point so no caller hand-rolls its own stripping:
+ * SVG-looking input goes through the SVG profile, everything else through
+ * the strict HTML profile. Non-string input returns ''.
+ *
+ * @param {string} html - Raw LLM/tool output
+ * @param {Object} [options] - Passed through to sanitizeHtml for HTML input
+ * @returns {string} Sanitized output safe for DOM insertion
+ */
+export function sanitize(html, options) {
+  if (!html || typeof html !== 'string') return ''
+  const t = html.trim()
+  if (t.startsWith('<svg') || t.startsWith('<?xml')) return sanitizeSvg(html)
+  return options ? sanitizeHtml(html, options) : sanitizeHtmlStrict(html)
+}
+
+/** British-spelling alias — same function, so both spellings stay one code path. */
+export const sanitise = sanitize
+
 export default {
+  sanitize,
+  sanitise,
+  sanitizeSvg,
   sanitizeHtml,
   sanitizeHtmlStrict,
   sanitizeMarkdownHtml,

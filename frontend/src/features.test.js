@@ -23,6 +23,11 @@ describe('feature switches', () => {
   it('keeps auto-scan off unless asked for — it costs tokens', () => {
     expect(FEATURE_DEFAULTS.autoScan).toBe(false)
   })
+
+  it('keeps TV voice control off until asked for — the mic opens on purpose, not by default', () => {
+    expect(FEATURE_DEFAULTS.tvVoice).toBe(false)
+    expect(isEnabled({ tvVoice: false }, 'tvVoice')).toBe(false)
+  })
 })
 
 describe('buzz', () => {

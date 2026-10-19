@@ -8,13 +8,11 @@
  */
 
 import { normalizeSpec, frameAt, LIMITS, SCENE_TYPES } from '../video/timeline'
-import { paintFrame } from '../video/draw'
-import { encodeVideo } from '../video/encode'
-import { mixPcm, applyEdgeFades, planNarration, captionCues } from '../video/audio'
-import { synthesize, cleanForSpeech, VOICES, DEFAULT_VOICE, SAMPLE_RATE } from '../video/speech'
-import { proxyFetch } from './http'
-import { fetchImage } from './imageGen'
-import { saveMedia } from '../db'
+// NOTE: everything heavy (draw, encode, audio, speech/Kokoro-90MB, image
+// fetching, db) is dynamically imported INSIDE execute() so none of it rides
+// the initial bundle — first paint pays nothing for a video never rendered.
+// VOICES labels are needed for the schema; speech.js's engine itself stays lazy.
+import { VOICES, DEFAULT_VOICE } from '../video/speech'
 
 /**
  * Load an image so the canvas stays untainted. A tainted canvas cannot be
@@ -24,6 +22,9 @@ import { saveMedia } from '../db'
  * then the proxy.
  */
 async function loadImage(url) {
+  // Dynamic: image fetching rides the render call, not the initial bundle.
+  const [{ proxyFetch }] = await Promise.all([import('./http')]).catch(() => [{ proxyFetch: fetch }])
+  const { fetchImage } = await import('./imageGen').catch(() => ({}))
   const isImageHost = /(^|\.)pollinations\.ai/i.test((() => { try { return new URL(url).hostname } catch { return '' } })())
 
   if (isImageHost) {
@@ -138,6 +139,15 @@ export const videoRenderTool = {
     // ─── Narration first: the voice decides how long each scene must be ───
     // Rendering to a fixed duration and hoping the line fits is how you get a
     // sentence cut in half at the cut.
+    // Heavy engines load HERE, on first render — never in the initial bundle.
+    const [{ paintFrame }, { encodeVideo }, { mixPcm, applyEdgeFades, planNarration, captionCues },
+      { synthesize, cleanForSpeech, SAMPLE_RATE }, { saveMedia }] = await Promise.all([
+      import('../video/draw'),
+      import('../video/encode'),
+      import('../video/audio'),
+      import('../video/speech'),
+      import('../db'),
+    ])
     const wantsSpeech = args.narrate !== false &&
       (args.scenes || []).some(s => cleanForSpeech(s?.narration))
     let clips = []

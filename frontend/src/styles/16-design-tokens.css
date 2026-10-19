@@ -1,0 +1,538 @@
+/*
+ * 16-design-tokens.css — Design-system foundation + precision polish.
+ *
+ * LOADS LAST in styles.css import order, so every rule here wins ties on
+ * equal specificity. Discipline of this file:
+ *   1) Token layer — NEW custom-property names ONLY. The base palette in
+ *      00-sidebar.css is declared on `:root` and re-declared per-theme
+ *      (`[data-theme="light"]`, `[data-theme="contrast"]`) at equal
+ *      specificity (0,1,0) — redeclaring any of those names here at :root
+ *      would silently override both themes for EVERY table. Never do it.
+ *   2) Semantic aliases are var() chains (e.g. --surface-2: var(--bg)),
+ *      so they resolve PER ELEMENT and automatically track the light and
+ *      high-contrast themes — including the audited 14-high-contrast.css
+ *      values (black surfaces, #ffff00 accent).
+ *   3) Polish layer — additive overrides that retune existing visual
+ *      language onto the tokens (8px rhythm, bubble width, control
+ *      heights, scrollbar geometry, skeleton shimmer). No existing rule
+ *      is rewritten in place; conflicts are resolved purely by cascade.
+ *
+ * Canonical text tokens already exist and are mapped across all themes:
+ *   --text-primary / --text-secondary / --text-muted
+ *   (dark 00-sidebar.css:root · light [data-theme="light"] · contrast
+ *   [data-theme="contrast"] 21:1/17.7:1) — --fg* below are thin pointers,
+ *   never re-declarations.
+ *
+ * Device contracts: `data-device="tv|mobile|tablet|laptop|desktop"` and
+ * `data-density="touch|coarse|normal"` are written onto <html> by
+ * deviceClass.js (initDeviceClass → applyDeviceAttributes) and styled by
+ * 15-device-adaptive.css; this file honours the same values where its own
+ * geometry needs them, with standard media queries replicating the same
+ * behaviour before the attributes exist or when JS is disabled.
+ */
+
+/* ═══ 1. MOTION TOKENS ══════════════════════════════════════════════════ */
+:root {
+  /* Durations: hover/press feedback rides --dur-fast (150ms) everywhere;
+     panel/drawer growth uses --dur-normal; full overlays use --dur-slow. */
+  --dur-fast: 150ms;
+  --dur-normal: 240ms;
+  --dur-slow: 420ms;
+  /* The app's signature settle curve (matches the 0.16/1/0.3 palette
+     already used by .palette-fade-in and mobile drawers), formalized. */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Legacy alias, unchanged in value — documented relationship only. */
+  /* (deliberately NOT redeclared: --transition stays owned by 00-sidebar) */
+
+  /* ═══ 2. TYPE SCALE — fluid, device-aware (clamp) ══════════════════
+     Each step: min at phones, grows gently with viewport width on
+     laptop/desktop, stops at the cap. Rem-based so user font scaling in
+     the OS/browser still applies. Slopes are tuned so common laptop
+     widths (1280–1440) sit at the step's nominal size. */
+  --font-xs: clamp(0.6875rem, 0.66rem + 0.10vw, 0.75rem);   /* 11–12px */
+  --font-sm: clamp(0.75rem, 0.71rem + 0.12vw, 0.8125rem);   /* 12–13px */
+  --font-md: clamp(0.8125rem, 0.775rem + 0.18vw, 0.875rem); /* 13–14px */
+  --font-base: var(--font-md);                              /* body copy */
+  --font-lg: clamp(0.9375rem, 0.90rem + 0.12vw, 1rem);      /* 15–16px */
+  --font-xl: clamp(1.0625rem, 0.99rem + 0.25vw, 1.1875rem); /* 17–19px */
+  --font-2xl: clamp(1.25rem, 1.10rem + 0.56vw, 1.5rem);     /* 20–24px */
+  --font-3xl: clamp(1.5rem, 1.28rem + 0.95vw, 2rem);        /* 24–32px */
+
+  /* ═══ 3. SPACING SCALE — 4px base, 8px rhythm ══════════════════════ */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px; /* value matches design-system/global.css harmony */
+
+  /* ═══ 4. RADII — consistent corner language ════════════════════════ */
+  --radius-sm: 6px;   /* chips, tiny inline controls */
+  --radius-md: 8px;   /* buttons, inputs, icon buttons */
+  --radius-lg: 12px;  /* cards, bubbles, panels (== legacy --radius) */
+  --radius-xl: 16px;  /* modals, bottom sheets, large overlays */
+  --radius-pill: 999px;
+
+  /* ═══ 5. ELEVATION ═════════════════════════════════════════════════ */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.20);
+  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.30);
+  --shadow-3: 0 18px 48px rgba(0, 0, 0, 0.45);
+
+  /* ═══ 6. CONTROL GEOMETRY (per density) ════════════════════════════
+     Unified heights: 32 (chips/small) · 36 (standard) · 44 (primary/
+     touch minimum). data-device / data-density hooks adjust one step. */
+  --control-h-sm: 32px;
+  --control-h-md: 36px;
+  --control-h-lg: 44px;
+  --btn-pad-sm: 8px;
+  --btn-pad-md: 12px;
+  --btn-pad-lg: 16px;
+}
+
+/* Light elevation: softer, bluer shadows on white surfaces. New names
+   only — the light block's existing palette declarations stay untouched. */
+[data-theme="light"] {
+  --shadow-1: 0 1px 2px rgba(20, 30, 45, 0.10), 0 2px 6px rgba(20, 30, 45, 0.08);
+  --shadow-2: 0 4px 14px rgba(20, 30, 45, 0.14);
+  --shadow-3: 0 18px 48px rgba(20, 30, 45, 0.22);
+}
+
+/* Density/device hooks (attribute-first, as added with the device-class
+   work; media fallbacks for the same behaviour live in §9). */
+/* Touch density steps the control heights up (thumb targets); 15-device-
+   adaptive.css ALSO floors button min-heights at 44px on touch, so these
+   tokens plus that floor agree on the same numbers. */
+[data-device="mobile"], [data-device="tablet"], [data-density="touch"] {
+  --control-h-sm: 40px;
+  --control-h-md: 44px;
+  --control-h-lg: 48px;
+}
+/* TV (10-foot) and coarse-pointer screens step them up too — a D-pad
+   cannot hover, so size, not proximity, carries the affordance.
+   (Neither value collides with the default 32/36/44 triad above.) */
+[data-device="tv"], [data-density="coarse"] {
+  --control-h-sm: 36px;
+  --control-h-md: 44px;
+  --control-h-lg: 48px;
+}
+
+/* ═══ 7. SEMANTIC ALIASES — var() chains track every theme ═════════════ */
+:root {
+  /* Surfaces → the bg ladder. High contrast resolves to pure black/beige
+     because it re-declares the bg tokens itself. */
+  --surface: var(--bg);
+  --surface-2: var(--bg-secondary);
+  --surface-3: var(--bg-tertiary);
+  --surface-raised: var(--bg-elevated);
+  --surface-input: var(--bg-input);
+
+  /* Borders: subtle = hairline dividers (rgba-based --border-color),
+     strong = tactile outlines (solid --border / #ffffff in contrast). */
+  --border-subtle: var(--border-color);
+  --border-strong: var(--border);
+
+  /* Text pointers (canonical tokens are --text-primary/secondary/muted). */
+  --fg: var(--text-primary);
+  --fg-secondary: var(--text-secondary);
+  --fg-muted: var(--text-muted);
+
+  /* Scrollbar geometry tokens (theme-aware, 8px thin). */
+  --scrollbar-size: 8px;
+  --scrollbar-thumb: color-mix(in srgb, var(--text-secondary) 32%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--text-secondary) 58%, transparent);
+
+  /* Skeleton shimmer tokens (loading states). */
+  --skeleton-base: var(--bg-tertiary);
+  --skeleton-highlight: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+  --skeleton-shimmer: linear-gradient(90deg,
+      var(--skeleton-base) 0%,
+      var(--skeleton-highlight) 45%,
+      var(--skeleton-base) 90%);
+  --skeleton-speed: 1.4s;
+  --skeleton-radius: var(--radius-md);
+
+  /* Focus ring token: 3px accent ring, 2px offset, :focus-visible only.
+     The high-contrast theme re-points the colour (same geometry) inside
+     its own block below; no !important is used here so its rules keep
+     winning where they can. */
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: var(--accent);
+}
+
+/* High-contrast keeps its audited ring colour (yellow, 13:1+ on black)
+   even though --accent would already resolve there — pinned literally so
+   a future accent change can never degrade the guaranteed ring. */
+[data-theme="contrast"] {
+  --focus-ring-color: #ffff00;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.72);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.95);
+  --skeleton-highlight: rgba(255, 255, 255, 0.24);
+}
+
+/* ═══ 8. PRECISION POLISH ═══════════════════════════════════════════════ */
+
+/* ── 8.1 Typography application (safe, ≥769 only — phones keep their
+        15px touch-size rules from mobile-optimizations.css) ── */
+@media (min-width: 769px) {
+  .message { font-size: var(--font-md); }             /* fluid 13–14      */
+  .dash-topbar-text h2 { font-size: var(--font-xl); } /* fluid 17–19      */
+  .palette-empty-title, .modal-header h2 { font-size: var(--font-lg); }
+}
+
+/* ── 8.2 Chat column: 72ch measure on pointer devices, full-bleed on touch */
+@media (min-width: 769px) {
+  .message-bubble { max-width: 72ch; }
+}
+@media (hover: none) and (pointer: coarse) {
+  .message-bubble { max-width: 100%; }
+}
+/* Attribute-escalated twins (equal specificity to 15-device-adaptive.css,
+   later import wins): touch densities go full-bleed, desk classes get the
+   72ch reading measure instead of the px widths that layer set. */
+[data-device="mobile"] .message-bubble,
+[data-device="tablet"] .message-bubble,
+[data-density="touch"] .message-bubble {
+  max-width: 100%;
+}
+[data-device="laptop"] .message-bubble,
+[data-device="desktop"] .message-bubble {
+  max-width: 72ch;
+}
+/* Long tokens/URLs must wrap inside the reduced measure, not overflow it. */
+.message-bubble { overflow-wrap: break-word; }
+
+/* ── 8.3 8px rhythm — retire stray 6/10/14px offsets ─────────────────── */
+/* Sidebar shell */
+.sidebar { padding: var(--space-4) var(--space-4) calc(var(--space-2) + env(safe-area-inset-bottom)); }
+.sidebar-header { margin-bottom: var(--space-4); }
+/* Message internals */
+.message-bottom-actions { margin-top: var(--space-2); }
+.tool-results { display: flex; flex-direction: column; gap: var(--space-2); }
+.tool-result-card { margin: 0; }           /* rhythm now owned by the gap */
+.attached-file { margin: 0 auto var(--space-2); }
+.message-failed { padding: var(--space-4) var(--space-5); }
+.message-partial-content { padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); }
+/* Composer region */
+.composer-footer { margin-top: var(--space-2); }
+.upload-area { margin: 0 auto var(--space-2); }
+.local-panel { margin: var(--space-2) 0; padding: var(--space-3); }
+.local-progress { margin-top: var(--space-2); }
+.local-actions { margin-top: var(--space-2); }
+.key-saved { margin: var(--space-2) 0; }
+.cloud-sync { margin: var(--space-2) 0; }
+.backup-row { margin: var(--space-3) 0; }
+.setup-card h3 { margin: var(--space-2) 0 var(--space-2); }
+/* Data-panel shell (Diagnostics/Billing family) */
+.yg-panel-header { padding: var(--space-4) var(--space-5); }
+.yg-panel-body { padding: var(--space-3) var(--space-5); }
+.yg-panel-footer { padding: var(--space-2) var(--space-5); }
+.yg-panel-header h3 { font-size: var(--font-lg); }
+.dash-topbar { padding: var(--space-4) var(--space-7); }
+/* Mobile gutters snap onto the 4/8 grid (12 → 16) */
+@media (max-width: 768px) {
+  .input-wrapper { padding-inline: var(--space-4); }
+  .smart-route-banner,
+  .context-meter,
+  .local-active-progress-banner { margin-inline: var(--space-4); }
+}
+
+/* ── 8.4 Icon buttons — exact 1px stroke alignment + token hovers ────── */
+.icon-btn,
+.bottom-action-btn,
+.sidebar-action-icon-btn,
+.yg-panel-icon-btn,
+.sidebar-footer-icon-btn,
+.composer-icon-action-btn {
+  line-height: 0;               /* kills the baseline half-pixel drift */
+}
+.icon-btn > svg,
+.bottom-action-btn > svg,
+.sidebar-action-icon-btn > svg,
+.yg-panel-icon-btn > svg,
+.composer-icon-action-btn > svg {
+  display: block;               /* box-center the viewBox, not the text row */
+}
+/* Hovers speak through color/background tokens — never opacity. */
+.bottom-action-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--border-subtle);
+  color: var(--fg);
+}
+.icon-btn:active,
+.bottom-action-btn:active,
+.sidebar-action-icon-btn:active {
+  color: var(--accent);
+}
+/* Opacity-based hover that became unreadable in light/contrast: replaced
+   with a color-token darken (same perceived affordance). */
+.upload-area .stop-btn:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--error) 86%, #000);
+  border-color: var(--border-strong);
+  color: #fff;
+}
+
+/* ── 8.5 Buttons — unified heights + 8/12/16 padding tokens ─────────── */
+@media (hover: hover) and (pointer: fine) {
+  .upload-btn,
+  .upload-area .small-btn,
+  .upload-area .voice-btn,
+  .upload-area .stop-btn,
+  .upload-area .model-trigger,
+  .model-trigger,
+  .temp-control-pill,
+  .measured-chip,
+  .local-model-load-btn {
+    height: var(--control-h-sm);
+  }
+  .sidebar-action-icon-btn,
+  .new-chat-btn { height: var(--control-h-md); }
+  .send-btn { min-height: var(--control-h-lg); }
+}
+.send-btn { padding-inline: var(--btn-pad-lg); }
+.model-trigger { min-height: var(--control-h-sm); }
+.btn-primary,
+.btn-secondary { padding: var(--space-2) var(--btn-pad-lg); }
+.smart-route-banner .small-btn { padding: var(--space-2) var(--btn-pad-md); }
+.queue-btn { padding: var(--space-2) var(--btn-pad-lg) !important; }
+.composer-textarea { min-height: var(--control-h-lg); }
+/* Touch minimums are enforced by the density hooks + the coarse media in
+   mobile-optimizations.css; nothing shrinks them back here. */
+
+/* ── 8.6 Transitions — color/transform only, on the 150ms token ─────── */
+.icon-btn,
+.bottom-action-btn,
+.sidebar-action-icon-btn,
+.yg-panel-icon-btn,
+.composer-icon-action-btn,
+.small-btn,
+.new-chat-btn,
+.send-btn,
+.stop-btn,
+.queue-btn,
+.conversation-item,
+.model-trigger,
+.model-option,
+.measured-chip,
+.palette-tab-pill,
+.palette-item,
+.palette-clear-btn,
+.shortcut-tag,
+.dash-back-btn,
+.dash-topbar-back-btn,
+.dash-nav-item,
+.dash-nav-icon,
+.sidebar-search-btn,
+.sidebar-settings-btn,
+.sidebar-footer-links a,
+.sidebar-footer-link-btn,
+.yg-panel-tab,
+.temp-control-pill,
+.local-model-load-btn,
+.source-row {
+  transition:
+    color var(--dur-fast) var(--ease-out-quint),
+    background-color var(--dur-fast) var(--ease-out-quint),
+    border-color var(--dur-fast) var(--ease-out-quint),
+    box-shadow var(--dur-fast) var(--ease-out-quint),
+    transform var(--dur-fast) var(--ease-out-quint);
+}
+/* Panels/drawers that grow: layout-safe properties use the normal token. */
+.sidebar, .yg-panel, .modal, .palette {
+  transition: transform var(--dur-normal) var(--ease-out-quint),
+              opacity var(--dur-normal) var(--ease-out-quint);
+}
+
+/* ── 8.7 Scrollbars — 8px thin, theme-aware, overlay on touch ───────── */
+.messages,
+.sidebar-scroll,
+.settings-body,
+.tool-picker,
+.modal-content,
+.palette-list,
+.model-list,
+.dash-content,
+.terms-body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+.messages::-webkit-scrollbar,
+.sidebar-scroll::-webkit-scrollbar,
+.settings-body::-webkit-scrollbar,
+.tool-picker::-webkit-scrollbar,
+.modal-content::-webkit-scrollbar,
+.palette-list::-webkit-scrollbar,
+.model-list::-webkit-scrollbar,
+.dash-content::-webkit-scrollbar,
+.terms-body::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+.messages::-webkit-scrollbar-track,
+.sidebar-scroll::-webkit-scrollbar-track,
+.settings-body::-webkit-scrollbar-track,
+.tool-picker::-webkit-scrollbar-track,
+.modal-content::-webkit-scrollbar-track,
+.palette-list::-webkit-scrollbar-track,
+.model-list::-webkit-scrollbar-track,
+.dash-content::-webkit-scrollbar-track,
+.terms-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.messages::-webkit-scrollbar-thumb,
+.sidebar-scroll::-webkit-scrollbar-thumb,
+.settings-body::-webkit-scrollbar-thumb,
+.tool-picker::-webkit-scrollbar-thumb,
+.modal-content::-webkit-scrollbar-thumb,
+.palette-list::-webkit-scrollbar-thumb,
+.model-list::-webkit-scrollbar-thumb,
+.dash-content::-webkit-scrollbar-thumb,
+.terms-body::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--scrollbar-size);
+  border: 2px solid transparent;      /* keeps the 8px lane visually thin */
+  background-clip: content-box;
+}
+.messages::-webkit-scrollbar-thumb:hover,
+.sidebar-scroll::-webkit-scrollbar-thumb:hover,
+.settings-body::-webkit-scrollbar-thumb:hover,
+.tool-picker::-webkit-scrollbar-thumb:hover,
+.modal-content::-webkit-scrollbar-thumb:hover,
+.palette-list::-webkit-scrollbar-thumb:hover,
+.model-list::-webkit-scrollbar-thumb:hover,
+.dash-content::-webkit-scrollbar-thumb:hover,
+.terms-body::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: content-box;
+}
+/* Touch: overlay feel — native bars get out of the way (content keeps
+   momentum scrolling from mobile-optimizations.css). */
+@media (hover: none) and (pointer: coarse) {
+  .messages,
+  .sidebar-scroll,
+  .settings-body,
+  .tool-picker,
+  .modal-content,
+  .palette-list,
+  .model-list,
+  .dash-content,
+  .terms-body {
+    scrollbar-width: none;
+  }
+  .messages::-webkit-scrollbar,
+  .sidebar-scroll::-webkit-scrollbar,
+  .settings-body::-webkit-scrollbar,
+  .tool-picker::-webkit-scrollbar,
+  .modal-content::-webkit-scrollbar,
+  .palette-list::-webkit-scrollbar,
+  .model-list::-webkit-scrollbar,
+  .dash-content::-webkit-scrollbar,
+  .terms-body::-webkit-scrollbar {
+    display: none;
+  }
+}
+html[data-device="mobile"] .messages,
+html[data-device="tablet"] .messages,
+html[data-device="mobile"] .sidebar-scroll,
+html[data-device="tablet"] .sidebar-scroll,
+html[data-device="mobile"] .modal-content,
+html[data-device="tablet"] .modal-content,
+html[data-device="mobile"] .dash-content,
+html[data-device="tablet"] .dash-content {
+  scrollbar-width: none;
+}
+html[data-device="mobile"] .messages::-webkit-scrollbar,
+html[data-device="tablet"] .messages::-webkit-scrollbar,
+html[data-device="mobile"] .sidebar-scroll::-webkit-scrollbar,
+html[data-device="tablet"] .sidebar-scroll::-webkit-scrollbar,
+html[data-device="mobile"] .modal-content::-webkit-scrollbar,
+html[data-device="tablet"] .modal-content::-webkit-scrollbar,
+html[data-device="mobile"] .dash-content::-webkit-scrollbar,
+html[data-device="tablet"] .dash-content::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── 8.8 Skeleton shimmer (loading states) ──────────────────────────── */
+.skeleton,
+.yg-skeleton {
+  background-color: var(--skeleton-base);
+  background-image: var(--skeleton-shimmer);
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  border-radius: var(--skeleton-radius);
+  color: transparent;
+  animation: yg-shimmer var(--skeleton-speed) linear infinite;
+}
+@keyframes yg-shimmer {
+  from { background-position: 130% 0; }
+  to   { background-position: -130% 0; }
+}
+/* Retokenize the existing workspace skeleton in place (08 keeps its own
+   fade guard for reduced motion; tokens just refresh the gradient). */
+.ws-skeleton > span {
+  background-image: var(--skeleton-shimmer);
+  background-size: 220% 100%;
+}
+
+/* ═══ 9. DEVICE MEDIA FALLBACKS (mirror of the density hooks) ══════════ */
+@media (hover: none) and (pointer: coarse) {
+  :root {
+    --control-h-sm: 40px;
+    --control-h-md: 44px;
+    --control-h-lg: 48px;
+  }
+}
+
+/* ═══ 10. FOCUS RING — token geometry, keyboard-only ═══════════════════ */
+/* (0,2,0) — wins over the (0,1,1) element rings in 00-sidebar.css so the
+   audited token geometry applies app-wide. The high-contrast theme's own
+   [data-theme="contrast"] :focus-visible rule carries !important and
+   therefore keeps winning; no guard war here. */
+:root :focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+/* Inset ring re-asserted (nav rail items ring inside their substrate). */
+.dash-nav-item:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
+/* 10-foot twin: the TV layer widens the ring to 4px/4px — my global rule
+   would pixel-tie it on source order, so re-assert the zoomed geometry
+   here (colour rides the same token, so high contrast stays yellow). */
+[data-device="tv"] :focus-visible {
+  outline: 4px solid var(--focus-ring-color);
+  outline-offset: 4px;
+}
+/* Windows High Contrast Mode: system colors own the ring. */
+@media (forced-colors: active) {
+  :root :focus-visible { outline-color: Highlight; }
+}
+
+/* ═══ 11. REDUCED MOTION — honored globally at the token level ═════════ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0.01ms;
+    --dur-normal: 0.01ms;
+    --dur-slow: 0.01ms;
+    --skeleton-speed: 0s;
+  }
+  .skeleton,
+  .yg-skeleton,
+  .ws-skeleton > span { animation: none; opacity: 0.7; }
+  html, .dash-content { scroll-behavior: auto; }
+}
+
+/* ═══ 12. LEGACY SHADOW ALIASES ════════════════════════════════════════
+   mobile-optimizations.css already consumes var(--shadow-lg) — undefined
+   until now (the .toast box-shadow silently no-op'd). Point them at the
+   elevation ladder so stale usages render rather than vanish. */
+:root {
+  --shadow-sm: var(--shadow-1);
+  --shadow-md: var(--shadow-2);
+  --shadow-lg: var(--shadow-2);
+  --shadow-xl: var(--shadow-3);
+}

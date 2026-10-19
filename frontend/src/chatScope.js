@@ -125,3 +125,66 @@ export async function rebindChatScope(oldId, newId, bases = SCOPED_KEYS) {
 
 /** The keys that are per-chat. Named once so nothing drifts out of the set. */
 export const SCOPED_KEYS = ['active_agent', 'active_skill', 'active_style', 'disabled_tools']
+
+// ─── Per-project scoping ───
+// Memory/projects foundation (Sprint 4): some choices belong to a PROJECT
+// (all its chats), not to one chat and not to the whole app — e.g. which
+// memory scope a turn recalls from, or a project's default agent. Same
+// inherit-or-override shape as per-chat scope above: a project with its own
+// binding keeps it, otherwise it follows the global default.
+
+/** The db key holding a project's own binding, or null when no project. */
+export function projectScopedKey(base, projectId) {
+  const id = projectId == null ? '' : String(projectId)
+  return id ? `${base}::project::${id}` : null
+}
+
+/** A project's value, falling back to the global default, then `fallback`. */
+export async function getProjectScoped(base, projectId, fallback = null) {
+  const key = projectScopedKey(base, projectId)
+  if (key) {
+    try {
+      const own = await getSetting(key, null)
+      if (own === NONE) return null
+      if (own != null) return own
+    } catch { /* fall through to the global default */ }
+  }
+  try {
+    const g = await getSetting(base, null)
+    if (g === NONE) return null
+    return g == null ? fallback : g
+  } catch { return fallback }
+}
+
+/** Bind a value to ONE project. With no projectId this sets the global default. */
+export async function setProjectScoped(base, projectId, value) {
+  const key = projectScopedKey(base, projectId) || base
+  await setSetting(key, value == null ? NONE : value)
+  return value
+}
+
+/** Drop a project's binding so it inherits the global default again. */
+export async function clearProjectScoped(base, projectId) {
+  const key = projectScopedKey(base, projectId)
+  if (!key) return
+  try { await setSetting(key, null) } catch { /* already gone */ }
+}
+
+/**
+ * Resolve chat → project → global, the same order rootsCore.cjs uses for
+ * working folders. A chat's own binding wins; else its project's; else global.
+ */
+export async function getChatInProject(base, conversationId, projectId, fallback = null) {
+  const key = scopedKey(base, conversationId)
+  if (key) {
+    try {
+      const own = await getSetting(key, null)
+      if (own === NONE) return null
+      if (own != null) return own
+    } catch { /* fall through */ }
+  }
+  return getProjectScoped(base, projectId, fallback)
+}
+
+/** The keys that are per-project. Named once so nothing drifts out of the set. */
+export const PROJECT_SCOPED_KEYS = ['active_agent', 'active_skill', 'memory_scope']

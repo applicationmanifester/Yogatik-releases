@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { conversationSignature, selectIncoming, countNewConversations } from './syncMerge'
+import { conversationSignature, selectIncoming, countNewConversations, mergeSnapshotsLWW, pickConversationWinner, pickDocumentWinner } from './syncMerge'
 
 const mk = (id, title, createdAt, msgs) => ({
   conversations: [{ id, title, createdAt, updatedAt: createdAt }],
@@ -49,5 +49,40 @@ describe('syncMerge', () => {
   it('preserves the backup envelope so importAll accepts it', () => {
     const sel = selectIncoming(mk(2, 'X', 1, ['q']), { conversations: [], messages: [] })
     expect(sel.format).toBe('yogatik-backup')
+  })
+
+  it('skips incoming documents already stored locally (hash identity)', () => {
+    const local = { ...mk(1, 'A', 100, ['hello']), documents: [{ id: 1, hash: 'h1', name: 'd.pdf', updatedAt: 100 }] }
+    const incoming = { ...mk(5, 'B', 200, ['world']), documents: [{ id: 9, hash: 'h1', name: 'd.pdf', updatedAt: 100 }] }
+    const sel = selectIncoming(incoming, local)
+    expect(sel.documents).toHaveLength(0)
+    expect(sel.conversations).toHaveLength(1)
+  })
+
+  it('keeps an incoming document only when its metadata is newer', () => {
+    const local = { conversations: [], messages: [], documents: [{ id: 1, hash: 'h1', name: 'old.pdf', updatedAt: 100 }] }
+    const incoming = { conversations: [], messages: [], format: 'yogatik-backup', version: 1, documents: [{ id: 9, hash: 'h1', name: 'new.pdf', updatedAt: 900 }] }
+    expect(selectIncoming(incoming, local).documents).toHaveLength(1)
+  })
+
+  it('mergeSnapshotsLWW: newer metadata wins, messages union, ties keep local', () => {
+    const local = {
+      conversations: [{ id: 1, syncId: 's1', title: 'T', updatedAt: 100 }],
+      messages: [{ id: 1, conversationId: 1, role: 'user', content: 'a' }],
+      documents: [],
+    }
+    const remote = {
+      conversations: [{ id: 2, syncId: 's1', title: 'T2', updatedAt: 200 }],
+      messages: [
+        { id: 1, conversationId: 2, role: 'user', content: 'a' },
+        { id: 2, conversationId: 2, role: 'assistant', content: 'b' },
+      ],
+      documents: [],
+    }
+    const m = mergeSnapshotsLWW(local, remote)
+    expect(m.conversations[0].title).toBe('T2')
+    expect(m.messages.map(x => x.content).sort()).toEqual(['a', 'b'])
+    expect(pickConversationWinner(local.conversations[0], { ...local.conversations[0], updatedAt: 100 })).toBe(local.conversations[0])
+    expect(pickDocumentWinner(null, { hash: 'x' })).toEqual({ hash: 'x' })
   })
 })

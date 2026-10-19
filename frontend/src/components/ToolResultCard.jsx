@@ -1566,7 +1566,10 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
         </div>
         {result.passages.map((p, i) => (
           <div key={i} className="passage">
-            <div className="passage-src">{p.document} · chunk {p.chunk}/{p.of}</div>
+            <div className="passage-src">
+              {/* [citations] show the same bracketed number the model cites by (n set by doc_search; older results fall back to position) */}
+              {p.n != null ? `[${p.n}] ` : ''}{p.document} · chunk {p.chunk}/{p.of}
+            </div>
             <p className="passage-text">{p.passage.slice(0, 260)}{p.passage.length > 260 ? '…' : ''}</p>
           </div>
         ))}

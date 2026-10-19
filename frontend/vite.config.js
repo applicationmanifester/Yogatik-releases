@@ -169,6 +169,16 @@ export default defineConfig({
           if (id.includes('/src/tools/localGen.js')) return 'local-gen'
           if (id.includes('/src/tools/videoRender.js')) return 'video-render'
           if (id.includes('/src/tools/docGenerator.js')) return 'doc-generator'
+          // Sprint 2 Performance & Trust: heavy engines stay out of first
+          // paint. codeExec runs in /worker-pyodide.js (main thread holds no
+          // Pyodide); ocr/vision, video draw/encode/speech and the heavy
+          // worker clients load only on first use via dynamic import().
+          if (id.includes('/src/tools/codeExec.js')) return 'code-exec'
+          if (id.includes('/src/tools/ocr.js')) return 'ocr-tools'
+          if (id.includes('/src/vision/')) return 'vision-pipeline'
+          if (id.includes('/src/video/')) return 'video-pipeline'
+          if (id.includes('/src/workers/')) return 'heavy-workers'
+          if (id.includes('/src/tools/manimEngine.js')) return 'manim-engine'
           if (id.includes('/src/trading/')) return 'trading-core'
           if (id.includes('/src/companion/')) return 'companion-core'
 

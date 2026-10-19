@@ -82,6 +82,29 @@ export async function checkBackupNudge(conversationCount) {
   return shouldNudgeBackup({ persisted, conversationCount, lastNudgeAt, lastBackupAt })
 }
 
+/**
+ * Eviction-safety snapshot for Settings: one call tells the UI whether the
+ * origin is in the durable "persistent" bucket or still best-effort (the
+ * browser may evict everything when the disk gets tight), plus whether the
+ * backup nudge is currently due. Best-effort + due nudge → warn in Settings.
+ */
+export async function getEvictionSafety(conversationCount = 0) {
+  const [report, nudgeDue] = await Promise.all([
+    storageReport(),
+    checkBackupNudge(conversationCount).catch(() => false),
+  ])
+  const persisted = report?.persisted ?? false
+  return {
+    persisted,
+    bestEffort: !persisted,
+    warn: !persisted,          // Settings shows the eviction warning
+    nudgeDue: !!nudgeDue,      // toolbar/nudge should prompt a backup now
+    used: report?.used ?? 0,
+    quota: report?.quota ?? 0,
+    pct: report?.pct ?? 0,
+  }
+}
+
 export function formatBytes(n = 0) {
   if (n < 1024) return `${n} B`
   const units = ['KB', 'MB', 'GB', 'TB']

@@ -31,6 +31,29 @@ const rateLimitMap = new Map(); // origin -> { count, windowStart, targets: Set 
 
 const SENSITIVE_HEADERS = ['cookie', 'x-auth-token', 'x-access-token'];
 
+// Named exports for unit tests (corsPolicy.test.js). The default export
+// below is the live worker entry point — same behaviour either way.
+export {
+  ALLOWED_HOSTS,
+  CREDENTIAL_ALLOWLIST,
+  SENSITIVE_HEADERS,
+  RATE_LIMIT_WINDOW_MS,
+  RATE_LIMIT_MAX_REQUESTS,
+  rateLimitMap,
+};
+
+export function isHostAllowed(hostname) {
+  return ALLOWED_HOSTS.has(hostname);
+}
+
+export function canReceiveCredentials(hostname) {
+  return CREDENTIAL_ALLOWLIST.has(hostname);
+}
+
+export function resetRateLimits() {
+  rateLimitMap.clear();
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);

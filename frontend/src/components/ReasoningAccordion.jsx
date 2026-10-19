@@ -6,6 +6,14 @@ import remarkGfm from 'remark-gfm'
 /**
  * Modern Collapsible Extended Thinking / Reasoning Widget.
  * Formats internal chain-of-thought tokens from models like DeepSeek-R1, o1/o3, and Claude 3.7.
+ *
+ * Sprint 3 accessibility (WCAG 2.1 AA): the header is a native <button>
+ * (not a div with role="button") so Tab order, Enter/Space activation, and
+ * focus-visible styling work without handlers. aria-expanded + aria-controls
+ * point at the content region; the copy control is a nested button that stops
+ * propagation so its label ("Copy reasoning chain") is announced distinctly.
+ * Manual axe checklist: button-name, aria-valid-attr-value, color-contrast
+ * (badge + labels audited in the high-contrast theme), region.
  */
 export function ReasoningAccordion({
   reasoning = '',
@@ -53,15 +61,18 @@ export function ReasoningAccordion({
 
   if (!reasoning && !isStreaming) return null
 
+  const contentId = `reasoning-body-${tokenEstimate}-${String(reasoning).length}`
   return (
     <div className={`reasoning-accordion-card ${isStreaming ? 'streaming' : ''} ${isExpanded ? 'expanded' : 'collapsed'}`}>
-      <div
+      <div className="reasoning-accordion-header-row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <button
+        type="button"
         className="reasoning-accordion-header"
         onClick={toggleExpanded}
-        role="button"
-        tabIndex={0}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpanded() } }}
         aria-expanded={isExpanded}
+        aria-controls={contentId}
+        aria-label={isExpanded ? 'Collapse thought process' : 'Expand thought process'}
+        style={{ flex: 1 }}
       >
         <div className="reasoning-header-left">
           <div className="reasoning-brain-icon">
@@ -86,25 +97,27 @@ export function ReasoningAccordion({
         </div>
 
         <div className="reasoning-header-right">
-          {reasoning && isExpanded && (
-            <button
-              type="button"
-              className="reasoning-copy-btn"
-              onClick={copyReasoning}
-              title="Copy reasoning chain"
-            >
-              {copied ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
-              <span>{copied ? 'Copied' : 'Copy'}</span>
-            </button>
-          )}
-          <div className="reasoning-toggle-icon">
+          <div className="reasoning-toggle-icon" aria-hidden="true">
             {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
           </div>
         </div>
+      </button>
+      {reasoning && isExpanded && (
+        <button
+          type="button"
+          className="reasoning-copy-btn"
+          onClick={copyReasoning}
+          title="Copy reasoning chain"
+          aria-label="Copy reasoning chain"
+        >
+          {copied ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+          <span>{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+      )}
       </div>
 
       {isExpanded && (
-        <div className="reasoning-accordion-content">
+        <div className="reasoning-accordion-content" id={contentId} role="region" aria-label="Thought process details">
           <div className="reasoning-markdown-body" ref={scrollRef}>
             <div className="reasoning-body">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>

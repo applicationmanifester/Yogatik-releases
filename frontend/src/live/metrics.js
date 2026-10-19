@@ -14,6 +14,9 @@
  * Pure and DOM-free so it can be tested without a call.
  */
 
+import { track, latencyBucket } from '../analytics'
+import { batteryBucket } from './capture'   // [live-capture] (pure fn, no DOM)
+
 const MAX_SESSIONS = 50
 
 /**
@@ -81,10 +84,88 @@ const emptySession = () => ({
   sloViolations: { voice: 0, multimodal: 0, text: 0 },  // Phase 4: SLO violation counts
   consecutiveSloBreaches: 0, // for fallback suggestion trigger
   lastLatencyMs: null,       // most recent first-word latency
+  batteryBuckets: [],        // [live-capture] coarse 10% battery samples
 })
 
 let current = null
 const finished = []
+
+/* ── STT fallback instrumentation ──────────────────────────────────────
+ * Roadmap sequencing: on-device Whisper stays the FALLBACK, not the default
+ * (it is slower than Web Speech; the privacy/latency trade needs measured
+ * p95s first). What ships now is the wiring + the metric: every cloud-STT
+ * failure and every Whisper handover is counted, so the decision has data.
+ */
+let sttStats = { cloudFails: 0, whisperFallbacks: 0, whisperFails: 0 }
+
+/** Web Speech errored (network / service unavailable). */
+export function recordSttCloudFail() { sttStats.cloudFails++ }
+/** The mic was handed to on-device Whisper (fallback or local-provider direct). */
+export function recordSttWhisperFallback() { sttStats.whisperFallbacks++ }
+/** On-device speech itself failed to start or transcribe. */
+export function recordSttWhisperFail() { sttStats.whisperFails++ }
+export function getSttStats() { return { ...sttStats } }
+function _resetSttStats() { sttStats = { cloudFails: 0, whisperFallbacks: 0, whisperFails: 0 } }
+
+/* ── Blind-model refusals ───────────────────────────────────────────────
+ * How often the camera was blocked because the model is text-only. If this
+ * is high, the fix is product (default people onto vision models), not UI.
+ */
+let blindRefusals = 0
+export function recordBlindModelRefusal() { blindRefusals++ }
+export function getBlindRefusals() { return blindRefusals }
+
+/* ── Auto vision switches ────────────────────────────────────────────────
+ * Horizon-1's final item: when a text-only model would block the camera,
+ * Live first tries a vision-capable model on the SAME provider and switches
+ * to it. Read next to blindRefusals above: if switches are high and refusals
+ * are low, the camera guard is doing its product job; the reverse means the
+ * providers people use have no reachable vision model.
+ */
+let autoVisionSwitches = 0
+export function recordAutoVisionSwitch() { autoVisionSwitches++ }
+export function getAutoVisionSwitches() { return autoVisionSwitches }
+
+/* ── Battery sampling ─────────────────────────────────────────────────────
+ * [live-capture] LIVE_ROADMAP §8's unmeasured risk: "Battery and heat on
+ * phones. 1fps encode plus a neural voice plus WebGPU will cook a handset.
+ * Nobody has measured it. Measure before Horizon 2."
+ *
+ * Sampled once a minute by LiveView (capture.sampleBattery owns the
+ * getBattery guard). Only COARSE 10% buckets are stored — content-free by
+ * construction, the same terms as everything else here: a bucket is a number
+ * 0–10, there is no id, no timestamp and nothing a level could identify.
+ */
+const BATTERY_SAMPLES_MAX = 120   // ~2h of per-minute samples, ring-capped
+
+/** Record one battery reading (0..1) as its coarse 10% bucket. */
+export function recordBatteryLevel(level) {
+  if (!current) return
+  const bucket = batteryBucket(level)
+  if (bucket < 0) return
+  current.batteryBuckets.push(bucket)
+  if (current.batteryBuckets.length > BATTERY_SAMPLES_MAX) current.batteryBuckets.shift()
+}
+
+/**
+ * Battery samples across the sessions in `list` (defaults to every known
+ * session, the live one included). report() passes its own list so the two
+ * surfaces always count the same sessions.
+ */
+export function batteryStats(list = [...finished, ...(current ? [current] : [])]) {
+  const buckets = {}
+  let samples = 0
+  let low = 0
+  for (const s of list) {
+    if (!Array.isArray(s?.batteryBuckets)) continue
+    samples += s.batteryBuckets.length
+    for (const b of s.batteryBuckets) {
+      if (b <= 2) low++    // time at/below 20% while on a call
+      buckets[b] = (buckets[b] || 0) + 1
+    }
+  }
+  return { samples, buckets, lowRate: rate(low, samples) }
+}
 
 /* ── recording ─────────────────────────────────────────────────────────── */
 
@@ -152,7 +233,25 @@ export function endSession(reason = END_REASON.USER, now = Date.now()) {
   finished.push(clean)
   if (finished.length > MAX_SESSIONS) finished.shift()
   current = null
+  // Sprint 3: anonymised funnel event via the opt-in analytics hub.
+  // Counts + bucketed timings only — no audio, transcripts, or identifiers.
+  // track() is a no-op unless the user explicitly opted in.
+  try {
+    track('live_session', {
+      tool: clean.engine || 'live',
+      ok: reason === END_REASON.USER,
+      ...(reason === END_REASON.USER ? {} : { errorType: String(reason).slice(0, 32) }),
+      latencyBucket: latencyBucket(firstWordP50(clean.firstWordMs)),
+      count: Math.max(0, clean.turns | 0),
+    })
+  } catch { /* analytics must never break session teardown */ }
   return clean
+}
+
+function firstWordP50(arr) {
+  if (!arr?.length) return null
+  const s = [...arr].sort((a, b) => a - b)
+  return s[Math.max(0, Math.ceil(0.5 * s.length) - 1)]
 }
 
 export function currentSession() { return current }
@@ -161,6 +260,9 @@ export function _resetLiveMetrics() {
   current = null
   finished.length = 0
   _resetReflexMetrics()
+  _resetSttStats()
+  blindRefusals = 0
+  autoVisionSwitches = 0
 }
 
 /* ── Reflex Prefetch instrumentation ────────────────────────────────────── */
@@ -245,7 +347,7 @@ export function percentile(values, p) {
  * Live is a voice app competing on latency, which is the race it cannot win.
  */
 export function report(list = finished) {
-  if (!list.length) return { sessions: 0, reflex: getReflexStats() }
+  if (!list.length) return { sessions: 0, reflex: getReflexStats(), stt: getSttStats(), blindRefusals, autoVisionSwitches, battery: batteryStats(list) }  // [live-capture] battery surface
   const durations = list.map(s => Math.max(0, (s.endedAt || s.startedAt) - s.startedAt) / 1000)
   const firstWords = list.flatMap(s => s.firstWordMs)
   const turns = list.reduce((a, s) => a + s.turns, 0)
@@ -271,6 +373,11 @@ export function report(list = finished) {
       return acc
     }, {}),
     reflex: getReflexStats(),
+    stt: getSttStats(),
+    blindRefusals,
+    autoVisionSwitches,
+    // [live-capture] Same terms as ever — coarse 10% buckets, count only.
+    battery: batteryStats(list),
   }
 }
 

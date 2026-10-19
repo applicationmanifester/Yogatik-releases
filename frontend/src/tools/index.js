@@ -81,6 +81,7 @@ import {
   DESKTOP_ONLY_TOOLS as REAL_DESKTOP_ONLY_TOOLS,
 } from './localFs'
 import { requestPermission } from '../permissions'
+import { lazyTool } from './heavyLazy'
 import { terminalRunTool } from './terminalRun'
 import { testAndHealTool } from './testAndHeal'
 import { mcpResourceTool, mcpPromptTool } from './mcpResources'
@@ -222,8 +223,8 @@ export const desktopActionTool = {
   execute: executeDesktopAction,
 }
 
-export const torrentDownloadTool = {
-  schema: {
+export const torrentDownloadTool = lazyTool(
+  {
     type: 'function',
     function: {
       name: 'download_torrent',
@@ -238,14 +239,20 @@ export const torrentDownloadTool = {
       }
     }
   },
-  execute: async ({ uri, download_path }) => {
+  // Rarely used, desktop-only: the torrent engine stays in its own async
+  // chunk instead of riding the initial bundle (Sprint 2 lazy-tool pattern).
+  async () => {
     const { addTorrent, isTorrentAvailable } = await import('./torrentClient.js')
-    if (!isTorrentAvailable()) {
-      return { success: false, error: 'BitTorrent engine is available in Yogatik Desktop app only.' }
+    return {
+      execute: async ({ uri, download_path }) => {
+        if (!isTorrentAvailable()) {
+          return { success: false, error: 'BitTorrent engine is available in Yogatik Desktop app only.' }
+        }
+        return addTorrent({ uri, downloadPath: download_path })
+      },
     }
-    return addTorrent({ uri, downloadPath: download_path })
-  }
-}
+  },
+)
 
 export const browserAutopilotTool = {
   schema: {

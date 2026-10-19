@@ -16,7 +16,7 @@ const { app, BrowserWindow, globalShortcut, Notification, ipcMain, shell, sessio
 const path = require('path')
 
 const { enableAdBlocker } = require('./adBlocker.cjs')
-const { registerBrowserControl, destroyAllSessions, restoreSavedSession, sessions, toggleSplitView, ensureSession, createTab, showActive } = require('./browserControl.cjs')
+const { registerBrowserControl, destroyAllSessions, restoreSavedSession, sessions, toggleSplitView, ensureSession, createTab, showActive, layout, syncTabBar } = require('./browserControl.cjs') // layout/syncTabBar: [page-pipeline]
 const { get: getSetting } = require('./settings/store.cjs')
 const { loadChromeExtensions } = require('./extensions.cjs')
 
@@ -51,6 +51,21 @@ app.setPath('userData', BROWSER_DATA)
 // ── Single Instance Lock ──────────────────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) { app.quit(); return }
+
+// ── [chromium-privacy] Privacy & network stack — boot block ───────────────
+// Encrypted DNS (DoH + ECH): command-line switches only take effect when
+// appended BEFORE app.ready, so this stays at module top-level — never move
+// it inside whenReady. Everything else the stack needs (CSP injection hook,
+// container sessions, storage-audit IPC) installs from the matching
+// [chromium-privacy] block in whenReady below. Honors settings privacy.dns
+// { mode: 'off'|'secure'|'auto', template }.
+const privacyStack = require('./privacyStack.cjs')
+try {
+  privacyStack.enableSecureDns(app, getSetting('privacy.dns'))
+} catch (err) {
+  console.warn('[chromium-privacy] secure DNS setup failed:', (err && err.message) || err)
+}
+// ── [/chromium-privacy] boot block ─────────────────────────────────────────
 
 // ── Window State Persistence ──────────────────────────────────────────────
 const fs = require('fs')
@@ -324,13 +339,16 @@ const csp = [
     // For user web content (external sites like YouTube, GitHub, Wikipedia):
     // Do NOT inject strict application CSP that blocks site assets, Polymer, or video streams.
     // Ensure standard baseline security headers are preserved.
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'X-Content-Type-Options': ['nosniff'],
-        'Referrer-Policy': ['strict-origin-when-cross-origin'],
-      },
-    })
+    // [chromium-privacy] Optional CSP injection (privacy.cspInjection, off by
+    // default) must run in THIS handler: Electron registers a single
+    // onHeadersReceived listener per session, so a second handler would
+    // silently replace applyCSP and drop the baseline headers below.
+    const responseHeaders = privacyStack.withOptionalCsp(url, {
+      ...details.responseHeaders,
+      'X-Content-Type-Options': ['nosniff'],
+      'Referrer-Policy': ['strict-origin-when-cross-origin'],
+    }, getSetting('privacy.cspInjection'))
+    callback({ responseHeaders })
   })
 }
 
@@ -474,6 +492,67 @@ app.whenReady().then(() => {
 
   // Register browser IPC handlers
   registerBrowserControl(ipcMain, () => mainWin)
+
+  // ── [page-pipeline] ─────────────────────────────────────────────────────
+  // Page-as-Context AI pipeline: one bounded IPC bridge, the tab context
+  // menu ("Ask Yogatik about selection" / "Save page as PDF" / "Read this
+  // page"), and pageMonitor change events → notification + watch log. All
+  // logic lives in pagePipeline.cjs; this is the only hook in main.cjs.
+  try {
+    const pagePipeline = require('./pagePipeline.cjs')
+    pagePipeline.wirePagePipeline({
+      ipcMain,
+      app,
+      getMainWindow: () => mainWin,
+      sessions,
+      layout,
+      syncTabBar,
+    })
+  } catch (err) {
+    console.warn('[page-pipeline] wiring failed:', err?.message || err)
+  }
+  // ── [/page-pipeline] ────────────────────────────────────────────────────
+
+  // ── [lifecycle] ─────────────────────────────────────────────────────────
+  // Tab lifecycle & performance: sleeping tabs (settings
+  // performance.sleepAfterMs + blocklist), a 10s per-tab CPU/memory sampler
+  // (browser:metrics-style API for a future HUD), crash resilience — a gone
+  // renderer is auto-restored at most once, then needs user action —
+  // spellcheck on the default session, and a power-save blocker that holds
+  // the display awake only while the ACTIVE tab plays media. Entirely
+  // additive: removing this block returns the browser to plain tab behavior.
+  try {
+    const lifecycle = require('./tabLifecycle.cjs')
+    lifecycle.init({ sessions })
+    app.on('will-quit', () => lifecycle.stopAll())
+  } catch (err) {
+    console.warn('[lifecycle] wiring failed:', err?.message || err)
+  }
+  // ── [/lifecycle] ────────────────────────────────────────────────────────
+
+  // ── [chromium-privacy] Privacy & network stack — session-level block ────
+  // Container sessions (isolated persist:container-<id> partitions, distinct
+  // user agents opt-in), the privacy IPC bridge (containers list/create/open,
+  // per-origin storage audit + wipe), and CSP injection for container
+  // sessions. All logic lives in privacyStack.cjs; DNS switches were already
+  // appended in the [chromium-privacy] boot block at module top-level.
+  try {
+    const { set: setSetting } = require('./settings/store.cjs')
+    privacyStack.wirePrivacyStack({
+      ipcMain,
+      getSetting,
+      setSetting,
+      defaultSession: electronSession.defaultSession,
+      sessions,
+      ensureSession,
+      createTab,
+      showActive,
+      mainWindowGetter: () => mainWin,
+    })
+  } catch (err) {
+    console.warn('[chromium-privacy] privacy stack wiring failed:', err?.message || err)
+  }
+  // ── [/chromium-privacy] session-level block ─────────────────────────────
 
   // Create the main browser window
   createMainWindow()

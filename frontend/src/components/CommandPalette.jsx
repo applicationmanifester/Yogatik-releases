@@ -9,6 +9,7 @@ import {
   Share2, HelpCircle, Globe, ExternalLink
 } from 'lucide-react'
 import { tokens } from '../design-system/tokens'
+import { searchChats } from '../chatSearch'
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
@@ -49,6 +50,26 @@ export function CommandPalette({
   const inputRef = useRef(null)
   const listRef = useRef(null)
   const restoreFocusRef = useRef(null)
+
+  // Chat search beyond titles ([chat-search]): the sidebar's universal search
+  // opens THIS palette, and App's openChatById exists precisely because
+  // "the palette searches messages, which know their conversation but not its
+  // position in the sidebar" — yet only titles were ever searched. BM25-search
+  // the stored messages under the same query, debounced so a typing burst does
+  // not hammer the index (chatSearch caches it internally and catches up
+  // incrementally; the debounce just keeps quiet keystrokes quiet).
+  const [messageHits, setMessageHits] = useState([])
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) { setMessageHits([]); return undefined }
+    let alive = true
+    const t = setTimeout(() => {
+      searchChats(q, 6)
+        .then(hits => { if (alive) setMessageHits(hits) })
+        .catch(() => { if (alive) setMessageHits([]) })
+    }, 150)
+    return () => { alive = false; clearTimeout(t) }
+  }, [query])
 
   useEffect(() => {
     if (isOpen) {
@@ -159,8 +180,17 @@ export function CommandPalette({
       .sort((a, b) => b.matchScore - a.matchScore)
       .slice(0, 8)
 
-    return [...urlResults, ...cmdResults, ...convResults].slice(0, 14)
-  }, [query, allCommands, conversations, activeConversationId, recentCommands])
+    const msgResults = messageHits.map(h => ({
+      type: 'message',
+      id: `msg-${h.conversationId}`,
+      conversationId: h.conversationId,
+      label: h.title || 'Chat',
+      description: `${h.role === 'user' ? 'You said' : 'This chat mentions'}: ${h.snippet}`,
+      icon: MessageSquare,
+      matchScore: h.score,
+    }))
+    return [...urlResults, ...cmdResults, ...convResults, ...msgResults].slice(0, 20)
+  }, [query, allCommands, conversations, activeConversationId, recentCommands, messageHits])
 
   useEffect(() => {
     if (!isOpen) return
@@ -220,6 +250,15 @@ export function CommandPalette({
         onOpenChat(item.id)
       } else {
         onRunCommand?.(`switch-chat:${item.id}`)
+      }
+    } else if (item.type === 'message') {
+      // A message hit names the conversation its message lives in; App's
+      // openChatById loads that conversation whether or not it is in the
+      // in-memory list. Its id is the DB id, which is what searchChats returns.
+      if (onOpenChat) {
+        onOpenChat(item.conversationId)
+      } else {
+        onRunCommand?.(`switch-chat:${item.conversationId}`)
       }
     }
     onClose?.()
@@ -359,7 +398,7 @@ export function CommandPalette({
   // Group results by type
   const urlResults = filteredResults.filter(r => r.type === 'url')
   const commands = filteredResults.filter(r => r.type === 'command')
-  const conversationsList = filteredResults.filter(r => r.type === 'conversation')
+  const conversationsListFull = filteredResults.filter(r => r.type === 'conversation' || r.type === 'message')
 
   return (
     <div style={overlayStyle} onClick={onClose} role="dialog" aria-modal="true" aria-label="Command palette">
@@ -456,10 +495,10 @@ export function CommandPalette({
             </>
           )}
 
-          {conversationsList.length > 0 && (
+          {conversationsListFull.length > 0 && (
             <>
-              <div style={sectionStyle} role="presentation">Conversations</div>
-              {conversationsList.map((conv) => {
+              <div style={sectionStyle} role="presentation">{messageHits.length > 0 ? 'Conversations & Message Matches' : 'Conversations'}</div>
+              {conversationsListFull.map((conv) => {
                 const idx = filteredResults.indexOf(conv)
                 const isSel = idx === selectedIndex
                 const IconComponent = conv.icon || MessageSquare

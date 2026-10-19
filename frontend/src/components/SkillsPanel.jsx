@@ -5,6 +5,12 @@ import {
   getSkills, upsertSkill, deleteSkill, getActiveSkillId, setActiveSkill, exportSkill, parseSkill,
 } from '../skills'
 import { getWorkflows, upsertWorkflow, deleteWorkflow, workflowVars } from '../workflows'
+// ── [proactive-scheduler] ── manager UI for the schedules listed under the
+// Workflows tab: created/edited/cancelled by the user only (scheduler.js contract).
+import { ScheduledPanel } from './ScheduledPanel'
+// ── [pack-share] ── bundle skills + workflows + agents into one shareable
+// .yogatik-pack.json (or import one with a review-before-commit step).
+import { PackShareSection } from './PackShareSection'
 
 function download(name, text) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
@@ -60,6 +66,8 @@ export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter, conversation
   }
 
   const [workflowVarsModal, setWorkflowVarsModal] = React.useState(null) // { wf, vars, values }
+  // ── [proactive-scheduler] ── scheduled-runs section visibility (workflow settings area)
+  const [schedOpen, setSchedOpen] = React.useState(false)
 
   const runFlow = (wf) => {
     const vars = workflowVars(wf)
@@ -73,6 +81,10 @@ export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter, conversation
         <button className={tab === 'skills' ? 'active' : ''} onClick={() => setTab('skills')}><Sparkles size={12} /> Skills</button>
         <button className={tab === 'flows' ? 'active' : ''} onClick={() => setTab('flows')}><Workflow size={12} /> Workflows</button>
       </div>
+
+      {/* ── [pack-share] ── visible on both tabs: export the checked items as a
+          single shareable pack, or import a pack with a collision review step. */}
+      <PackShareSection skills={skills} workflows={flows} onImported={reload} />
 
       {tab === 'skills' && (
         <div className="personalise-group">
@@ -176,6 +188,18 @@ export function SkillsPanel({ onClose, onRunWorkflow, onUseStarter, conversation
           ) : (
             <button className="small-btn" style={{ marginTop: 10 }} onClick={() => setFlowEdit({ name: '', stepsText: '' })}><Plus size={12} /> New workflow</button>
           )}
+
+          {/* ── [proactive-scheduler] ── Scheduled runs: user-approved timings for the
+              workflows above (once / every-N-min / daily / weekly). Mounting it in the
+              workflow settings area keeps every schedule visible next to what it runs;
+              the panel itself owns load + pause/resume/cancel via scheduler.js. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
+            <button className="small-btn" onClick={() => setSchedOpen(p => !p)} aria-expanded={schedOpen} title="Run a workflow on a schedule (proactive assistant)">
+              <Plus size={12} /> Scheduled runs
+            </button>
+            <span className="personalise-hint" style={{ margin: 0 }}>run a workflow automatically while Yogatik is open</span>
+          </div>
+          {schedOpen && <ScheduledPanel />}
         </div>
       )}
       {workflowVarsModal && (

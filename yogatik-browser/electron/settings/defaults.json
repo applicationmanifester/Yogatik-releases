@@ -9,13 +9,33 @@
   "privacy": {
     "isolateSessions": true,
     "clearOnExit": false,
-    "doNotTrack": true
+    "doNotTrack": true,
+    "pageWatchNotifications": true,
+    "dns": {
+      "mode": "secure",
+      "template": ""
+    },
+    "cspInjection": {
+      "enabled": false,
+      "allowlist": [],
+      "policy": ""
+    },
+    "containers": {
+      "enabled": false,
+      "distinctUserAgents": false,
+      "list": []
+    }
   },
   "newTab": {
     "showClock": true,
     "showSpeedDial": true,
     "showPrivacyStats": true,
     "showScratchpad": true
+  },
+  "performance": {
+    "sleepAfterMs": 1200000,
+    "blocklist": [],
+    "spellcheck": true
   },
   "version": "1.0.0"
 }

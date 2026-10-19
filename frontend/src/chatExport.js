@@ -106,9 +106,102 @@ function triggerDownload(blob, filename) {
   a.download = filename
   a.click()
   setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+  noteDownloadAudit(filename)   // [audit] data_export (extension only)
+}
+
+/* ── [audit] every download/export funnels through triggerDownload ───────────
+ * The trail records ONLY the file extension (metadata that a file went out) —
+ * never titles, conversation content or blob payloads. This fires for
+ * conversation exports AND for the audit trail's own export (self-auditing).
+ * The record is fire-and-forget and doubly failure-isolated; a trail failure
+ * must never disturb a user-triggered download.
+ */
+function noteDownloadAudit(filename) {
+  try {
+    const ext = String(filename || '').split('.').pop().replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase()
+    import('./auditTrail').then(m => m.record('data_export', { ext })).catch(() => {})
+  } catch { /* [audit] never block a download */ }
+}
+
+/**
+ * Download one blob under a chosen filename — the single-file flavour of the
+ * helpers above, so feature code (Artifacts v2 export) reuses the exact same
+ * download plumbing as the conversation exporters instead of hand-rolling an
+ * <a download>.
+ */
+export function downloadBlob(blob, filename) {
+  triggerDownload(blob, filename)
 }
 
 const safeName = (t) => (t || 'conversation').replace(/[^a-z0-9\- ]+/gi, '').trim().slice(0, 60) || 'conversation'
+
+/**
+ * One-click JSON export: the same conversation, losslessly. Reuses textOf/who
+ * so multimodal parts and speaker names stay consistent with the Markdown and
+ * HTML paths above — one normalisation, not three.
+ */
+export function conversationToJson(conv) {
+  const msgs = (conv?.messages || [])
+    .filter(m => m.role !== 'system')
+    .map(m => ({ role: m.role, content: textOf(m.content), createdAt: m.createdAt ?? null }))
+  return {
+    format: 'yogatik-conversation',
+    version: 1,
+    title: conv?.title || 'Conversation',
+    exportedAt: new Date().toISOString(),
+    messages: msgs,
+  }
+}
+
+/**
+ * Import a JSON blob produced by conversationToJson (or a raw array of
+ * {role, content} messages). Returns a normalised {title, messages} or throws
+ * with a human-readable reason — never a bare TypeError.
+ */
+export function conversationFromJson(data) {
+  const obj = typeof data === 'string' ? JSON.parse(data) : data
+  const list = Array.isArray(obj) ? obj : obj?.messages
+  if (!Array.isArray(list)) throw new Error('Not a Yogatik conversation file (no messages array).')
+  const messages = list
+    .filter(m => m && typeof m.content !== 'undefined' && m.role !== 'system')
+    .map(m => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: textOf(m.content),
+      ...(m.createdAt != null ? { createdAt: m.createdAt } : {}),
+    }))
+  if (!messages.length) throw new Error('This file has no messages to import.')
+  const title = (typeof obj === 'object' && !Array.isArray(obj) && obj.title) || 'Imported conversation'
+  return { title: String(title), messages }
+}
+
+/** Trigger a JSON download for one conversation (toolbar one-click export). */
+export function downloadConversationJson(conv) {
+  const name = safeName(conv?.title)
+  triggerDownload(
+    new Blob([JSON.stringify(conversationToJson(conv), null, 2)], { type: 'application/json' }),
+    `${name}.json`,
+  )
+}
+
+/** Read a File picked from an <input> into a normalised conversation. */
+export async function importConversationFile(file) {
+  if (!file) throw new Error('No file selected.')
+  const text = await file.text()
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch {
+    throw new Error('This is not a JSON conversation file.')
+  }
+  const conv = conversationFromJson(data)
+  // [audit] data_import — the message COUNT is metadata; the file name, its
+  // bytes and every message body are never recorded, and a trail failure must
+  // never fail the import the user just asked for.
+  try {
+    import('./auditTrail').then(m => m.record('data_import', { messages: conv.messages.length })).catch(() => {})
+  } catch { /* [audit] never block an import */ }
+  return conv
+}
 
 /** Download the conversation in the given format: 'md' | 'html' | 'pdf'. */
 export async function downloadChat(conv, format = 'md') {

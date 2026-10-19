@@ -62,6 +62,12 @@ function scheduleTabHibernation(s, tabId) {
 async function hibernateTab(s, tabId) {
   const tab = s.tabs.get(tabId)
   if (!tab || tab.hibernating || tabId === s.activeTabId || !tab.view) return
+  // [lifecycle] Never destroy an audible tab's renderer — that kills its
+  // playback — and never a pinned or agent tab: pinned tabs are kept on
+  // purpose and an agent tab's automation state cannot survive a reload.
+  // tabLifecycle.cjs's settings-driven sweeper applies the same guards.
+  if (tab.pinned || tab.isAgent) return
+  if (safe(() => tab.view.webContents.isCurrentlyAudible(), false)) return
 
   try {
     tab.savedUrl = safe(() => tab.view.webContents.getURL(), tab._pendingUrl || '')
@@ -435,7 +441,21 @@ function navSnapshot(s) {
 // MAIN window's renderer, which has no equivalent inbound call — it is
 // pushed a plain IPC event instead, mirroring the __YOGATIK_MENU__ push
 // pattern rather than making the panel poll.
+// [lifecycle] Optional observer hook. tabLifecycle.cjs registers here to
+// see every tab mutation (they all funnel through syncTabBar) so it can
+// timestamp activity and track the power-save blocker. Set to null to detach.
+let tabBarSyncHook = null
+function setTabBarSyncHook(fn) { tabBarSyncHook = typeof fn === 'function' ? fn : null }
+
+// [lifecycle] Crash handler override. When set, a gone renderer keeps its
+// tab node (marked 'crashed' with the reason) instead of being deleted;
+// tabLifecycle.cjs owns the single-auto-restore policy. Called as
+// (session, tabId, detail) where detail is webContents 'render-process-gone'.
+let onTabCrashed = null
+function setCrashHandler(fn) { onTabCrashed = typeof fn === 'function' ? fn : null }
+
 function syncTabBar(s) {
+  if (tabBarSyncHook) { try { tabBarSyncHook(s) } catch {} }
   // Every tab mutation (create/close/activate/pin/navigate) funnels through
   // showActive → syncTabBar, so this is the single hook for session
   // persistence. Debounced inside persistSession.
@@ -861,11 +881,18 @@ function wireTabListeners(s, tabId, tab) {
     return { action: 'deny' }
   })
 
-  wc.on('render-process-gone', () => {
+  wc.on('render-process-gone', (_e, detail) => {
     const t = s.tabs.get(tabId)
     const h = host(s)
     if (t && t.view && h && !h.isDestroyed() && h.contentView.children.includes(t.view)) {
       safe(() => h.contentView.removeChildView(t.view))
+    }
+    // [lifecycle] With a crash handler registered the tab NODE is kept —
+    // marked 'crashed' with the reason, restored automatically at most once
+    // (see tabLifecycle.handleCrash) — instead of being deleted outright.
+    if (onTabCrashed) {
+      try { onTabCrashed(s, tabId, detail) } catch {}
+      return
     }
     s.tabs.delete(tabId)
     if (s.activeTabId === tabId) s.activeTabId = [...s.tabs.keys()][0] || null
@@ -3256,4 +3283,8 @@ module.exports = {
   zoomTab, findInPage, stopFindInPage, listDownloads, navSnapshot,
   registerBrowserControl,
   restoreSavedSession, reopenLastTab, cycleTab, persistSession,
+  syncTabBar, // [page-pipeline] lets pagePipeline push companion-panel state
+  // [lifecycle] seams tabLifecycle.cjs builds on: listener re-wiring for
+  // woken views, plus the mutation/crash hooks it registers at init.
+  wireTabListeners, setTabBarSyncHook, setCrashHandler,
 }

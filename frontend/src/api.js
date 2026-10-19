@@ -21,6 +21,7 @@ import { logError } from './errorLog'
 
 import { signInWithGoogle, checkRedirectResult, logOutGoogle, saveUserApiKey, getUserApiKeys, purgePlaintextKeys, authRedirectPending, saveVault, loadVault, getVaultMeta } from './firebaseAuth'
 import { encryptSecret, decryptSecret } from './crypto'
+import { pullPrefs, pushPrefs } from './prefsSync'
 import { selectIncoming } from './syncMerge'
 import { recordTurnUsage, getModelPricing } from './usageAnalytics'
 import { splitReasoning } from './reasoning'
@@ -42,7 +43,13 @@ function accountSecret(uid) {
   return uid ? `yogatik.account.v1.${uid}` : null
 }
 
-async function vaultSecret() {
+/**
+ * The account-derived encryption secret for this session. Exported so
+ * prefsSync (feature flags + chat/UI preferences) reuses the SAME
+ * derivation for its prefs doc instead of growing a second one — prefs and
+ * keys must never disagree about who can open what.
+ */
+export async function vaultSecret() {
   let user = await db.getSetting('user')
   if (!user && typeof localStorage !== 'undefined') {
     try {
@@ -117,6 +124,8 @@ export async function pushCloudKeys() {
 export async function syncCloudKeys() {
   const pulled = await pullCloudKeys()
   const pushed = await pushCloudKeys()
+  // [audit] key-vault movement: counts only (no provider ids, no key material).
+  noteAudit('key_vault_pull', { pulled: pulled?.pulled || 0, pushed: pushed?.pushed || 0 })
   return { ...pulled, ...pushed }
 }
 
@@ -125,6 +134,19 @@ export async function syncCloudKeys() {
 // with the account secret, and stored as chunks in Firestore — so signing in on
 // another device restores your chats. Reuses the tested exportAll/importAll
 // merge logic rather than risky per-message live sync.
+
+/* ── [audit] cloud sync outcomes → local audit trail ─────────────────────────
+ * Key-vault pulls/pushes, corpus sync and preference syncs are consequential
+ * data movements, so each lands in the trail as counts/booleans ONLY. Never
+ * recorded: provider ids, key material, payload sizes beyond counts, anything
+ * that could describe a conversation. Fire-and-forget, doubly isolated — a
+ * trail failure never touches an outcome that already happened.
+ */
+function noteAudit(type, detail = {}) {
+  try {
+    import('./auditTrail').then(m => m.record(type, detail)).catch(() => {})
+  } catch { /* [audit] never block a sync */ }
+}
 
 export function cloudSyncEnabled() {
   return db.getSetting('chat_prefs', {}).then(p => p?.cloud_sync === true)
@@ -171,7 +193,22 @@ export async function syncCloudData() {
   if (!(await cloudSyncEnabled())) return { synced: false, reason: 'disabled' }
   const pulled = await pullCloudData('merge').catch(() => ({ pulled: 0 }))
   const pushed = await pushCloudData().catch((e) => ({ synced: false, reason: e?.message }))
-  return { ...pulled, ...pushed }
+  // Preferences (chat_prefs scalars, feature flags, theme, model prefs) ride
+  // the SAME opt-in gate, after the big corpus sync has run. Pull first so a
+  // fresh device has the account's prefs before it pushes its own state, then
+  // push — prefsSync resolves the merge field-by-field. Both are best-effort:
+  // a prefs failure must never fail the conversation sync that already
+  // succeeded, and never blocks sign-in either (callers .catch these).
+  let prefs = { pulled: 0, pushed: false }
+  try { prefs = { ...prefs, ...(await pullPrefs()) } } catch { /* prefs are best-effort */ }
+  // [audit] prefs pull landed (coarse count only).
+  noteAudit('prefs_pull', { pulled: prefs?.pulled || 0 })
+  try { prefs = { ...prefs, ...(await pushPrefs()) } } catch { /* prefs are best-effort */ }
+  // [audit] prefs push landed (coarse boolean only).
+  noteAudit('prefs_push', { pushed: prefs?.pushed === true })
+  // [audit] the whole encrypted corpus sync finished — counts/booleans only.
+  noteAudit('cloud_sync', { pulled: pulled?.pulled || 0, synced: pushed?.synced === true })
+  return { ...pulled, ...pushed, prefs }
 }
 
 export async function cloudSyncStatus() {

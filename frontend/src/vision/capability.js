@@ -67,6 +67,58 @@ export async function probeVision({ provider, apiKey, model }) {
 }
 
 /**
+ * Find a vision-capable model on the SAME provider — the Live camera guard's
+ * auto-resolution (Horizon 1's final item, LIVE_ROADMAP 4a).
+ *
+ * Cache-first on purpose: a verdict we already hold needs no network at all,
+ * so a camera press decided from it can never stall mid-turn. Probes are only
+ * spent where the cache has nothing to say, and only on models whose NAME
+ * says vision — every probe is a real round trip, so blind-probing the whole
+ * provider list is not on.
+ *
+ * @param {{
+ *   provider: string,
+ *   apiKey?: string,
+ *   models?: string[],   // the active provider's model list
+ *   skip?: string,       // the ACTIVE model — known text-only, never re-probed
+ *   maxProbes?: number,
+ * }} o
+ * @returns {Promise<string|null>} a vision-capable model, or null: none is
+ *   reachable (empty/unknown list, offline, probes failed) — the caller then
+ *   keeps the strict block instead of switching blind.
+ */
+export async function findVisionCandidate({ provider, apiKey, models = [], skip = '', maxProbes = 4 } = {}) {
+  const list = (models || []).filter(m => m && m !== skip)
+  if (!provider || !list.length) return null
+
+  // Pass 1 — the cache, and ONLY the cache. "already-known cached capability
+  // first": if anything here answers, no network is touched at all.
+  const verdict = new Map()
+  for (const m of list) {
+    const cached = await getCachedVision(provider, m)
+    if (cached === true) return m
+    verdict.set(m, cached)
+  }
+
+  // Offline there is nobody to ask: decide from the cache or not at all.
+  const canProbe = typeof navigator === 'undefined' || navigator.onLine !== false
+  if (!canProbe) return null
+
+  // Pass 2 — the name heuristic shortlists the candidates worth a real probe;
+  // ones the cache already ruled OUT are excluded here rather than re-asked.
+  const guesses = list.filter(m => looksVisionCapable(m) && verdict.get(m) !== false)
+  let probed = 0
+  for (const m of guesses) {
+    if (probed >= maxProbes) break
+    probed++
+    // probeVision re-checks this model's cache itself, then asks it to look
+    // at one pixel — a 400 ("I do not take images") travels in milliseconds.
+    if (await probeVision({ provider, apiKey, model: m })) return m
+  }
+  return null
+}
+
+/**
  * The routing decision for anything that needs to see.
  * @returns {Promise<{mode:'model'|'local'|'none', model?:string, reason?:string}>}
  */

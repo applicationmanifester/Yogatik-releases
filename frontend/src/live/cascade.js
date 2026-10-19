@@ -73,6 +73,7 @@ import { getToolMode, setToolMode } from '../api'
 import { splitReasoning } from '../reasoning'
 import { createCamera, createScreenCapture, switchCamera as switchCameraTrack } from './video'
 import { pickFiller } from './fillers'
+import { sharpestFrame } from './capture'   // [live-capture]
 import * as metrics from './metrics'
 import { enumerate, nextCamera, loadPreferredDevices, savePreferredDevices } from './devices'
 import { createSpeaker, defaultLang } from './voice'
@@ -334,6 +335,9 @@ export function createCascadeSession({
   async function startLocalRecognition() {
     if (localRecognizer || closed) return
     try { recog?.abort?.() } catch { /* already dead */ }
+    // Roadmap sequencing: Whisper stays the FALLBACK, not the default — but
+    // every handover is counted so the default-vs-fallback call has data.
+    metrics.recordSttWhisperFallback()
     emit({ type: 'status', message: 'Speech service unreachable — switching to on-device speech.' })
     try {
       const { createLocalRecognizer } = await import('./localSTT')
@@ -348,10 +352,14 @@ export function createCascadeSession({
           if (!speakerMuted && speaking) interrupt(false)
           handleUtterance(text, 1)
         },
-        onError: (err) => emit({ type: 'error', message: `On-device speech: ${err.message}` }),
+        onError: (err) => {
+          metrics.recordSttWhisperFail()
+          emit({ type: 'error', message: `On-device speech: ${err.message}` })
+        },
       })
     } catch (err) {
       localRecognizer = null
+      metrics.recordSttWhisperFail()
       emit({
         type: 'error',
         message: 'Speech recognition is unavailable: the cloud service could not be reached and on-device speech failed to start. You can still type in the transcript panel.',
@@ -786,9 +794,34 @@ export function createCascadeSession({
     // vision-capable or not, "see" the live camera/screen and answer about it.
     const want = visionMode === 'always' || isVisualQuestion(userText)
     let b64 = null
-    if (want) b64 = src.grab(true, captureProfile(userText))
-    else if (watched) { b64 = watched; watched = null }
+    // [live-capture] Sharpest-of-3 on the describe/OCR path: three grabs
+    // ~350ms apart, scored by Laplacian variance, and the description is read
+    // from the sharpest frame, never merely the first grabbed — a mid-autofocus
+    // grab is exactly the one that turns a pill imprint into OCR noise. The
+    // frame-sent-to-a-real-vision-model path (visualParts) is untouched.
+    if (want) {
+      const profile = captureProfile(userText)
+      const pick = await sharpestFrame(() => src.grab(true, profile), { count: 3, gapMs: 350 })
+      if (pick) b64 = pick.frame
+    } else if (watched) { b64 = watched; watched = null }
     if (!b64) return null
+    // Horizon 1b: a pitch-dark (or otherwise unreadable) frame gets an honest
+    // refusal, not a guess. describeWithoutModel already leads with the
+    // readability caveat, but a BLOCK-severity frame should never reach the
+    // model at all — OCR/VLM output from it is invention, not reading.
+    try {
+      const [{ analyseImage }, { assessReadability }, { honestFrameNote }] = await Promise.all([
+        import('../vision/imageStats'),
+        import('../vision/readable'),
+        import('./visionGuard'),
+      ])
+      const analysis = await analyseImage(`data:image/jpeg;base64,${b64}`).catch(() => null)
+      if (analysis && assessReadability(analysis).severity === 'block') {
+        const refusal = honestFrameNote(analysis) || 'It is too dark for me to read that.'
+        emit({ type: 'status', text: refusal })
+        return refusal
+      }
+    } catch { /* frame check unavailable — fall through to description */ }
     try {
       emit({ type: 'status', text: 'Looking (on-device)…' })
       const { text } = await describeWithoutModel(`data:image/jpeg;base64,${b64}`, userText)
@@ -1388,6 +1421,7 @@ export function createCascadeSession({
         return
       }
       if (e.error === 'network' || e.error === 'service-not-available') networkFails++
+      if (e.error === 'network' || e.error === 'service-not-available') metrics.recordSttCloudFail()
       restartDelay = Math.min(restartDelay ? restartDelay * 2 : 500, 8000)
       const reconnectMsg = `Reconnecting speech recognition (${e.error})…`
       emit({ type: 'status', text: reconnectMsg, message: reconnectMsg })

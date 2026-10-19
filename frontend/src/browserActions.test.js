@@ -14,7 +14,7 @@ import { createRequire } from 'module'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { browserControlTool, VALID_ACTIONS, ACTION_ALIASES } from './tools/browserControl'
+import { browserControlTool, VALID_ACTIONS, ACTION_ALIASES, resolveHealedRef } from './tools/browserControl'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const require_ = createRequire(import.meta.url)
@@ -293,6 +293,58 @@ describe('browser automation suite — extended actions', () => {
     expect(res.page_after_reload).toContain('ref_2_1')
     expect(read).toHaveBeenCalledTimes(1)
     global.window = undefined
+  })
+
+  it('a stale ref heals itself when the same named element exists under a new ref', async () => {
+    // Refusing costs a turn even when the element is still there with the same
+    // name. The tool remembers what a ref named (from the tree the model was
+    // handed) and, when the fresh tree holds exactly one element with that
+    // accessible name, retries the same action against the new ref itself.
+    const read = vi.fn()
+      .mockResolvedValueOnce({ success: true, tree: '[ref_1_5] button "Sign in"' })
+      .mockResolvedValueOnce({ success: true, tree: '[ref_2_3] button "Sign in"' })
+    const click = vi.fn()
+      .mockResolvedValueOnce({ success: false, stale: true, error: 'stale ref' })
+      .mockResolvedValueOnce({ success: true })
+    global.window = { __YOGATIK_BROWSER__: { click, read } }
+    // Seed the memory the way real use does: the model READ the page, the app
+    // re-rendered (bumping the ref epoch), THEN the model clicked.
+    await browserControlTool.execute({ action: 'read' })
+    const res = await browserControlTool.execute({ action: 'click', ref: 'ref_1_5' })
+    expect(res.success).toBe(true)
+    expect(click).toHaveBeenCalledTimes(2)
+    expect(click.mock.calls[1][0].ref).toBe('ref_2_3')
+    expect(res.self_healed).toEqual({ from: 'ref_1_5', to: 'ref_2_3', strategy: 'exact_text_aria' })
+    global.window = undefined
+  })
+
+  it('healing never guesses: an ambiguous name is a refusal with the fresh page', async () => {
+    // Two elements share the dead element's name on the new page — picking
+    // either would click blind exactly like the bug the refusal exists for.
+    const read = vi.fn()
+      .mockResolvedValueOnce({ success: true, tree: '[ref_1_4] button "Sign in"' })
+      .mockResolvedValueOnce({ success: true, tree: '[ref_2_1] button "Sign in"\n[ref_2_2] button "Sign in"' })
+    const click = vi.fn().mockResolvedValue({ success: false, stale: true, error: 'stale ref' })
+    global.window = { __YOGATIK_BROWSER__: { click, read } }
+    await browserControlTool.execute({ action: 'read' })
+    const res = await browserControlTool.execute({ action: 'click', ref: 'ref_1_4' })
+    expect(res.success).toBe(false)
+    expect(res.page_after_reload).toContain('ref_2_1')
+    expect(click).toHaveBeenCalledTimes(1) // never retried
+    expect(res.self_healed).toBeUndefined()
+    global.window = undefined
+  })
+
+  it('resolveHealedRef returns a HINT, not a retry, for a fuzzy-only match', () => {
+    // No exact "Payment" element; "Complete Payment Now" matches fuzzily. The
+    // matcher hands the CANDIDATE to the model instead of clicking "anything
+    // payment-ish" itself.
+    const out = resolveHealedRef({ role: 'button', text: 'Payment' }, '[ref_9_1] button "Complete Payment Now"')
+    expect(out).not.toBeNull()
+    expect(out.ref).toBeUndefined()
+    expect(out.hint[0].ref).toBe('ref_9_1')
+    const refusal = resolveHealedRef({ role: 'button', text: 'Search' }, '[ref_9_1] button "Save"')
+    expect(refusal).toBeNull()
   })
 
   it('an ordinary failure does not spend a page read', async () => {

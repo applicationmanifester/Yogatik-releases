@@ -18,10 +18,43 @@
 // persistent worker, keep the best by confidence, and say plainly when the
 // result is not trustworthy.
 
-import { loadImageData, classifyImage, describeStructure } from '../vision/imageStats'
-import { buildOcrVariants } from '../vision/preprocess'
+// Tesseract.js — OCR in the browser, via CDN.
+//
+// Lazy by design: the vision analysis helpers (imageStats/preprocess) and the
+// Tesseract script are dynamically imported INSIDE execute(), never at module
+// top level, so the ~15MB engine plus its image pipeline stay out of the
+// initial bundle. Raw single-pass recognition prefers the dedicated heavy
+// worker (stateful engine, zero main-thread jank); the multi-variant
+// preprocessed pipeline below is the high-accuracy fallback.
 
 const CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
+
+// Tiny client (no heavy deps): safe to hold statically — the ENGINE stays lazy.
+import { callHeavyWorker, getHeavyWorker } from '../workers/heavyToolsWorkerClient'
+
+/**
+ * Fast path: single-pass raw recognition inside the dedicated heavy worker
+ * (stateful Tesseract engine, zero main-thread cost, image bytes ride as a
+ * transferable where possible). Returns null when the fast path cannot serve
+ * so the caller falls through to the high-accuracy pipeline below — the fast
+ * path must never fail a turn on its own.
+ */
+async function tryWorkerOcr(image_url, lang) {
+  try {
+    if (!getHeavyWorker()) return null
+    // Workers fetch http(s) directly; data:/blob: URLs go through the pipeline.
+    if (!/^https?:\/\//i.test(image_url)) return null
+    const res = await fetch(image_url)
+    if (!res.ok) return null
+    const buffer = await res.arrayBuffer()
+    if (!buffer?.byteLength) return null
+    const out = await callHeavyWorker('ocr', { lang, image: { buffer, mime: res.headers.get('content-type') || 'image/png' } }, { transfer: [buffer], timeoutMs: 90_000 })
+    if (out?.success === false || !out?.text) return null
+    return out
+  } catch {
+    return null
+  }
+}
 
 /** Below this mean confidence the text is noise, and saying so is the answer. */
 export const MIN_TRUSTED_CONFIDENCE = 55
@@ -139,6 +172,25 @@ export const ocrTool = {
     if (typeof image_url !== 'string' || !image_url.trim()) {
       return { success: false, error: 'image_url is required' }
     }
+    // Raw single-pass: prefer the dedicated heavy worker (off-main-thread,
+    // stateful engine). Untrusted or unservable results fall through to the
+    // confidence-filtered pipeline below — same honesty gate, both paths.
+    if (raw) {
+      const fast = await tryWorkerOcr(image_url, lang)
+      if (fast?.text && isTrustworthy({ meanConfidence: fast.confidence || 0, text: fast.text })) {
+        return {
+          success: true, tool: 'ocr', text: fast.text, reliable: true,
+          confidence: Math.round(fast.confidence || 0), variant: 'heavy-worker',
+          preprocessing: 'none (raw)', lang, via: 'worker',
+        }
+      }
+    }
+    // Dynamic imports: keeps imageStats/preprocess/tesseract out of the
+    // initial bundle — they load on first OCR use, not first paint.
+    const [{ loadImageData, classifyImage, describeStructure }, { buildOcrVariants }] = await Promise.all([
+      import('../vision/imageStats'),
+      import('../vision/preprocess'),
+    ])
     try {
       const worker = await getWorker(lang)
 

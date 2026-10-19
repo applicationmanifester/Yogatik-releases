@@ -1,10 +1,31 @@
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import { Command, X, Keyboard } from 'lucide-react'
+
+/**
+ * Documented shortcut map (Sprint 3). Single source of truth for the
+ * keyboard cheat sheet AND the global handler in App.jsx. `?` (Shift+/)
+ * toggles this modal when focus is not in a text field; Ctrl+/ always works.
+ */
+export const SHORTCUT_MAP = [
+  { keys: ['?'], action: 'toggle-shortcuts', desc: 'Open/close this shortcut map' },
+  { keys: ['ctrl+/'], action: 'toggle-shortcuts', desc: 'Open Keyboard Shortcuts cheat sheet' },
+  { keys: ['ctrl+n'], action: 'new-conversation', desc: 'New conversation' },
+  { keys: ['ctrl+b'], action: 'toggle-sidebar', desc: 'Toggle conversations sidebar' },
+  { keys: ['ctrl+k', 'ctrl+p'], action: 'command-palette', desc: 'Open Command Palette & Tools' },
+  { keys: ['ctrl+`'], action: 'toggle-terminal', desc: 'Toggle PTY Terminal panel' },
+  { keys: ['ctrl+shift+d'], action: 'open-diagnostics', desc: 'Open Error Diagnostics & Tool Traces' },
+  { keys: ['ctrl+shift+s'], action: 'open-skills', desc: 'Open Autonomous Skills library' },
+  { keys: ['ctrl+shift+p'], action: 'open-personalise', desc: 'Open Personalise & Model Settings' },
+  { keys: ['enter'], action: 'send', desc: 'Send prompt' },
+  { keys: ['shift+enter'], action: 'newline', desc: 'Insert new line in composer' },
+  { keys: ['esc'], action: 'close-modal', desc: 'Close active modal / popover' },
+]
 
 const SHORTCUT_GROUPS = [
   {
     title: 'General & Navigation',
     shortcuts: [
+      { key: '?', desc: 'Open/close this shortcut map' },
       { key: 'Ctrl + N', desc: 'New conversation' },
       { key: 'Ctrl + B', desc: 'Toggle conversations sidebar' },
       { key: 'Ctrl + K / Ctrl + P', desc: 'Open Command Palette & Tools' },
@@ -32,6 +53,17 @@ const SHORTCUT_GROUPS = [
 ]
 
 export function ShortcutsModal({ onClose }) {
+  const closeRef = useRef(null)
+  // Focus the Close control on mount and close on Escape; focus returns to
+  // the invoker via Modal-style restore (App re-focuses the composer).
+  // Axe checklist: dialog has aria-modal + accessible name, all controls
+  // are labelled buttons, kbd text has ≥4.5:1 contrast in both themes.
+  useEffect(() => {
+    closeRef.current?.focus()
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose?.() } }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [onClose])
   return (
     <div className="palette-overlay" onClick={onClose}>
       <div
@@ -50,6 +82,7 @@ export function ShortcutsModal({ onClose }) {
             </h3>
           </div>
           <button
+            ref={closeRef}
             type="button"
             className="palette-clear-btn"
             onClick={onClose}

@@ -38,19 +38,19 @@ export function LiveSettings({
   const voices = [...GENDER.female, ...GENDER.male]
 
   return (
-    <div className="ldp-backdrop" onClick={onClose} role="presentation">
-      <div className="ldp-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Live settings">
-        <div className="ldp-head">
+    <div className="live-settings-backdrop" onClick={onClose} role="presentation">
+      <div className="live-settings-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Live settings">
+        <div className="live-settings-header">
           <span>Live settings</span>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={16} /></button>
+          <button className="live-settings-close" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
 
         {/* ── Vision ─────────────────────────────────────────────────────── */}
-        <div className="ldp-group">
-          <div className="ldp-group-title"><Eye size={13} /> What the model sees</div>
+        <div className="live-settings-group">
+          <div className="live-settings-group-title"><Eye size={13} /> What the model sees</div>
 
           {!modelCanSee && (
-            <div className="ls-warn">
+            <div className="live-settings-warn">
               <AlertTriangle size={14} />
               <div>
                 <b>{model || provider} cannot see images.</b>
@@ -76,7 +76,7 @@ export function LiveSettings({
             return (
               <>
                 <select
-                  className="style-select ls-select"
+                  className="live-settings-select"
                   value={model || ''}
                   onChange={e => onModelChange?.(e.target.value)}
                   aria-label="Model"
@@ -93,7 +93,7 @@ export function LiveSettings({
                   )}
                 </select>
                 {seeing.length === 0 && (
-                  <p className="ldp-empty">
+                  <p className="live-settings-empty">
                     None of this provider&rsquo;s models take images. Switching provider, or
                     turning on on-device vision in Personalise, are the two ways to improve
                     what it can tell you about the camera.
@@ -103,110 +103,90 @@ export function LiveSettings({
             )
           })()}
 
-          <div className="ls-seg" role="group" aria-label="How often to look">
+          <div className="live-settings-seg" role="group" aria-label="How often to look">
             <button
-              className={`ls-seg-btn${visionMode === 'off' ? ' active' : ''}`}
+              className={`live-settings-seg-btn ${visionMode === 'off' ? 'active' : ''}`}
               onClick={() => onVisionMode?.('off')}
             >
               Off
             </button>
             <button
-              className={`ls-seg-btn${visionMode === 'auto' ? ' active' : ''}`}
+              className={`live-settings-seg-btn ${visionMode === 'auto' ? 'active' : ''}`}
               onClick={() => onVisionMode?.('auto')}
             >
               When relevant
             </button>
             <button
-              className={`ls-seg-btn${visionMode === 'always' ? ' active' : ''}`}
+              className={`live-settings-seg-btn ${visionMode === 'always' ? 'active' : ''}`}
               onClick={() => onVisionMode?.('always')}
             >
               Every turn
             </button>
           </div>
-          <p className="ldp-empty">
+          <p className="live-settings-empty">
             {visionMode === 'always'
-              ? 'Looks at the camera on every turn. More accurate, and more tokens.'
-              : visionMode === 'off'
-              ? 'Camera is on but vision is disabled. No frames are sent or described.'
-              : 'Looks when you ask something visual or the scene changes.'}
+              ? 'Looks at the camera on every turn — best for demos, uses more tokens.'
+              : visionMode === 'auto'
+              ? 'Looks only when the question seems visual ("what is this?", "read this").'
+              : 'Camera is off for the model. You can still see yourself.'}
           </p>
         </div>
 
         {/* ── Voice ──────────────────────────────────────────────────────── */}
-        <div className="ldp-group">
-          <div className="ldp-group-title"><Volume2 size={13} /> Voice</div>
-          <div className="ls-seg" role="group" aria-label="Voice engine">
-            <button
-              className={`ls-seg-btn${voiceEngine === 'system' ? ' active' : ''}`}
-              onClick={() => onVoiceEngine?.('system')}
-            >
-              ⚡ System (Instant)
-            </button>
-            <button
-              className={`ls-seg-btn${voiceEngine === 'neural' ? ' active' : ''}`}
-              onClick={() => onVoiceEngine?.('neural')}
-            >
-              <Sparkles size={12} /> Neural
-            </button>
-          </div>
-          <p className="ldp-empty">
-            {voiceEngine === 'system'
-              ? '⚡ Built-in browser speech. Ultra-fast (<50ms), zero lag.'
-              : '🧠 On-device neural voice. Natural human tone, requires local compute.'}
-          </p>
-
-          {voices.length > 0 && (
+        <div className="live-settings-group">
+          <div className="live-settings-group-title"><Mic size={13} /> Voice output</div>
+          <select
+            className="live-settings-select"
+            value={voiceEngine || 'kokoro'}
+            onChange={e => onVoiceEngine?.(e.target.value)}
+            aria-label="Voice engine"
+          >
+            <option value="kokoro">Kokoro (local, fast, 82M)</option>
+            <option value="browser">Browser SpeechSynthesis</option>
+          </select>
+          {voiceEngine === 'kokoro' && (
             <select
-              className="style-select ls-select"
+              className="live-settings-select"
               value={voice || ''}
               onChange={e => onVoice?.(e.target.value)}
               aria-label="Voice"
             >
-              {voices.map(id => <option key={id} value={id}>{VOICE_LABELS?.[id] || id}</option>)}
+              {voices.map(v => <option key={v} value={v}>{VOICE_LABELS[v] || v}</option>)}
             </select>
           )}
-        </div>
-
-        {/* ── Speech rate ────────────────────────────────────────────────── */}
-        <div className="ldp-group">
-          <div className="ldp-group-title"><Gauge size={13} /> Speaking speed</div>
-          <div className="ls-row">
+          <div className="live-settings-row">
+            <label className="live-settings-label">Speech rate</label>
             <input
-              type="range" min="0.7" max="1.3" step="0.05"
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.1"
               value={rate}
               onChange={e => onRate?.(Number(e.target.value))}
-              aria-label="Speaking speed"
+              className="live-settings-range"
             />
-            <span className="ls-value">{Number(rate).toFixed(2)}×</span>
+            <span className="live-settings-value">{rate.toFixed(1)}x</span>
           </div>
         </div>
 
-        {/* ── Noise Suppression ─────────────────────────────────────────── */}
-        <div className="ldp-group">
-          <div className="ldp-group-title"><Mic size={13} /> Noise suppression</div>
-          <button
-            className={`ldp-row${noiseSuppression ? ' active' : ''}`}
-            onClick={() => onNoiseSuppression?.(!noiseSuppression)}
-          >
-            <span className="ldp-label">Filter background noise (fan, typing, room echo)</span>
-            <span className="ldp-tag">{noiseSuppression ? 'On' : 'Off'}</span>
-          </button>
-          <p className="ldp-empty">
-            Uses the browser's built-in noise suppression. Turning this off may improve
-            voice pickup in very quiet environments but will let through more ambient sound.
-          </p>
+        {/* ── Captions ───────────────────────────────────────────────────── */}
+        <div className="live-settings-group">
+          <div className="live-settings-group-title"><Captions size={13} /> Live captions</div>
+          <label className="live-settings-toggle">
+            <input type="checkbox" checked={captions} onChange={e => onCaptions?.(e.target.checked)} />
+            <span className="live-settings-toggle-slider" />
+            <span>Show live captions on screen</span>
+          </label>
         </div>
 
-        {/* ── Captions ───────────────────────────────────────────────────── */}
-        <div className="ldp-group">
-          <div className="ldp-group-title"><Captions size={13} /> Captions</div>
-          <button
-            className={`ldp-row${captions ? ' active' : ''}`}
-            onClick={() => onCaptions?.(!captions)}
-          >
-            <span className="ldp-label">Show what is being said on screen</span>
-            <span className="ldp-tag">{captions ? 'On' : 'Off'}</span>
-          </button>
+        {/* ── Noise suppression ─────────────────────────────────────────── */}
+        <div className="live-settings-group">
+          <div className="live-settings-group-title"><Gauge size={13} /> Noise suppression</div>
+          <label className="live-settings-toggle">
+            <input type="checkbox" checked={noiseSuppression} onChange={e => onNoiseSuppression?.(e.target.checked)} />
+            <span className="live-settings-toggle-slider" />
+            <span>Reduce background noise (may affect quality on slow devices)</span>
+          </label>
         </div>
       </div>
     </div>

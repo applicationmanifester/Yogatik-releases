@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { conversationToMarkdown, conversationToHtml } from './chatExport'
+import {
+  conversationToMarkdown, conversationToHtml,
+  conversationToJson, conversationFromJson,
+} from './chatExport'
 import { BUILT_IN_STYLES } from './styles'
 
 const conv = {
@@ -33,6 +36,27 @@ describe('conversationToHtml', () => {
     expect(html).toContain('<pre><code>')
     expect(html).toContain('<strong>there</strong>')
     expect(html).not.toContain('ignore me')
+  })
+})
+
+describe('conversation JSON backup (one-click export/import)', () => {
+  it('round-trips losslessly through fromJson, dropping system like the other formats', () => {
+    const json = conversationToJson(conv)
+    expect(json.format).toBe('yogatik-conversation')
+    expect(json.title).toBe('My Chat')
+    const back = conversationFromJson(JSON.parse(JSON.stringify(json)))
+    expect(back.title).toBe('My Chat')
+    expect(back.messages).toHaveLength(3)
+    expect(back.messages.every(m => m.role !== 'system')).toBe(true)
+    expect(back.messages.map(m => m.content).join('\n')).toContain('multimodal text')
+  })
+  it('accepts a raw message array and normalises roles', () => {
+    const back = conversationFromJson([{ role: 'user', content: 'hi' }, { role: 'weird', content: 'yo' }])
+    expect(back.messages[1].role).toBe('assistant')
+  })
+  it('rejects non-conversation files with a human message, not a TypeError', () => {
+    expect(() => conversationFromJson({ nope: true })).toThrow(/no messages/i)
+    expect(() => conversationFromJson({ messages: [] })).toThrow(/no messages/i)
   })
 })
 

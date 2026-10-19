@@ -1,0 +1,450 @@
+/* ==========================================================================
+   15 — DEVICE-CLASS ADAPTIVE LAYER
+   ==========================================================================
+
+   Loaded by styles.css as the LAST @import (after 14-high-contrast and
+   mobile-optimizations), so the [data-device] / [data-density] selections
+   here win the cascade without needing !important on anything except the
+   one place a prior layer shipped !important itself (TV composer font).
+
+   The two attributes are written onto <html> by `deviceClass.js`
+   (initDeviceClass → applyDeviceAttributes) on mount and on every
+   resize / orientation change:
+
+     data-device    tv | mobile | tablet | laptop | desktop
+     data-density   touch | coarse | normal
+
+   Three different truths drive the whole adaptive story:
+
+   1. THE ROOM (data-device="tv") — 10-foot UI. The pointer is a D-pad or
+      an air-mouse: hover cannot be trusted, focus must be visible from
+      three metres, and text is read across a couch.
+
+   2. THE FINGERTIP (data-density="touch") — 44px minimum targets, roomy
+      paddings, and (on narrow screens) bottom-sheet modals the thumb can
+      reach.
+
+   3. THE DESK (laptop / desktop) — a fine pointer and bright screen:
+      tighten utility text to 13–14px, keep hover affordances (they are
+      safe when a cursor exists), and keep the sidebar docked instead of
+      floating over content.
+
+   A fourth story is NOT attribute-bound: clamp() fluid typography, which
+   scales headings and bubbles continuously between the breakpoints so
+   the 820px cut never re-types a paragraph mid-word.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Fluid type scale — used by the attribute-scoped rules below. Each var
+   clamps between a comfortable floor (small phones) and a ceiling (1440px+
+   where anything bigger stops helping).
+   -------------------------------------------------------------------------- */
+:root {
+  --fl-display: clamp(20px, 16px + 1.1vw, 30px);
+  --fl-h1:      clamp(17px, 14px + 0.8vw, 24px);
+  --fl-h2:      clamp(15px, 13px + 0.55vw, 20px);
+  --fl-bubble:  clamp(14px, 13px + 0.3vw, 16.5px);   /* chat + bubbles */
+  --fl-ui:      clamp(12px, 11.5px + 0.25vw, 14px); /* utility chrome */
+  --fl-read:    clamp(13.5px, 13px + 0.2vw, 15.5px);/* long-form text */
+
+  /* 10-foot + touch knobs */
+  --tv-font: 18px;
+  --touch-min-target: 44px;
+}
+
+/* Headings and bubbles interpolate instead of jumping at media cuts.
+   [data-device] is ALWAYS present once deviceClass.js has run, so this
+   stays an ordinary base (one attribute selector) rather than a surprise. */
+[data-device] .chat-header h1 { font-size: var(--fl-h1); }
+[data-device] .sidebar-header h2 { font-size: var(--fl-h2); }
+[data-device] .modal h1 { font-size: var(--fl-h1); }
+[data-device] .modal h2,
+[data-device] .modal-card h2,
+[data-device] .modal-dialog h2 { font-size: var(--fl-h2); }
+[data-device] .message { font-size: var(--fl-bubble); line-height: 1.6; }
+[data-device] .sidebar { font-size: var(--fl-ui); }
+
+/* ==========================================================================
+   1. TV — 10-FOOT DESIGN ([data-device="tv"])
+   ==========================================================================
+   Rules of the living room:
+   - the D-pad moves focus, the mouse cursor may not exist at all, so
+     hover-decorated affordances must have a :focus-visible twin;
+   - the smallest legible text is 18px at the couch (root font-size changes
+     rem-based rules upward with one declaration);
+   - the composer is the thing being typed into from across the room: 24px.
+   ========================================================================== */
+
+[data-device="tv"] {
+  /* On <html> this is the ROOT font-size: 1rem == 18px app-wide, and any
+     rem-based sizing in the base cascade scales itself to the room. */
+  font-size: var(--tv-font);
+}
+
+/* 4px focus outline — legible at 2.5m, and the ONLY state a remote can
+   produce. Beats the 2px base ring from 00-sidebar.css on specificity,
+   and 14-high-contrast's 3px on source order (accent var shared, so
+   high-contrast keeps its palette; TV only widens the ring). */
+[data-device="tv"] :focus-visible {
+  outline: 4px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* Spotlight nav: the focused control visibly LIFTS from the grid instead
+   of relying on hover, which a remote can never produce. :where() keeps
+   the list itself zero-specificity where it does not need to fight. */
+[data-device="tv"] :where(button, [role="button"], a, select, input:not([type="checkbox"]):not([type="radio"]), textarea, [tabindex]):focus-visible {
+  background-color: var(--accent-soft);
+  box-shadow: 0 0 0 4px var(--accent-glow), 0 0 28px var(--accent-glow);
+}
+
+/* Hover-safe: mirror the hover-only highlight treatments onto focus, and
+   stop hover transforms from existing as the sole signal. */
+[data-device="tv"] :where(.icon-btn, .composer-icon-action-btn, .conv-actions button, .modal-header button):focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+[data-device="tv"] .tool-result-card:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Oversized composer: 24px typing surface. !important is required once
+   here ONLY to outrank mobile-optimizations.css's `font-size: 16px
+   !important` (same origin, later import wins at equal importance). */
+[data-device="tv"] .input-area textarea,
+[data-device="tv"] .composer-textarea {
+  font-size: 24px !important;
+  line-height: 1.5;
+  min-height: 104px;
+  padding: 14px 18px;
+}
+[data-device="tv"] .input-area {
+  padding: 0 16px max(18px, var(--sab, env(safe-area-inset-bottom, 0px)));
+}
+
+/* 10-foot spacing + type */
+[data-device="tv"] .messages { padding: 32px 40px 48px; }
+[data-device="tv"] .message,
+[data-device="tv"] .message.user { max-width: 980px; padding: 22px 28px; line-height: 1.7; }
+[data-device="tv"] .sidebar { width: 320px; padding: 20px 16px max(16px, var(--sab, env(safe-area-inset-bottom, 0px))); }
+[data-device="tv"] .conversation-item { padding: 16px 18px; }
+[data-device="tv"] .chat-header h1 { font-size: var(--fl-display); }
+
+/* The remote scrolls; make the motion read as motion instead of jumps. */
+[data-device="tv"] .messages,
+[data-device="tv"] .sidebar-scroll {
+  scroll-behavior: smooth;
+}
+[data-device="tv"] ::-webkit-scrollbar { width: 14px; height: 14px; }
+[data-device="tv"] ::-webkit-scrollbar-thumb { border-radius: 8px; background: var(--border-color, rgba(255, 255, 255, 0.2)); }
+
+/* --------------------------------------------------------------------------
+   TV voice overlay (components/TvVoiceOverlay.jsx) — the hands-free input the
+   10-foot UI needs. Rendered only on a TV with features.tvVoice on (OFF by
+   default, so this CSS is latent on the 4 other device classes and on
+   un-aware TVs). Its one overlay job: readable from the couch, reachable by
+   the D-pad, and gone on Escape without trapping focus anywhere.
+   -------------------------------------------------------------------------- */
+[data-device="tv"] .tv-voice-overlay {
+  /* Sits just above the oversized composer, never covering it. z-index 240
+     keeps it under modals (9000+) and toasts (9999) but over the composer
+     chrome (10-50) — with 04-mobile-responsive's sheet layer. */
+  position: fixed;
+  left: 50%;
+  bottom: calc(168px + var(--sab, env(safe-area-inset-bottom, 0px)));
+  transform: translateX(-50%);
+  z-index: 240;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  max-width: min(920px, 94vw);
+  padding: 14px 18px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.16));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-primary, #141518) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+/* The wake control: a D-pad-sized TARGET — 56px of button at 20px type, well
+   over the 48px asked of it and the 44px density floor. The TV focus story
+   (4px accent ring) is inherited from the layer above; this rule repeats the
+   outline at higher specificity so nothing between layers can mute it, and
+   adds the same glow treatment the spotlight rules give ordinary buttons. */
+[data-device="tv"] .tv-voice-wake {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 12px 22px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.2));
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text-primary, #fff);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* A div[role=button] by design: Enter/Space are handled explicitly so the
+   remote can never double-fire a native click on top of the keydown. */
+[data-device="tv"] .tv-voice-wake:focus-visible,
+[data-device="tv"] .tv-voice-mic-toggle:focus-visible {
+  outline: 4px solid var(--accent);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 4px var(--accent-glow), 0 0 28px var(--accent-glow);
+}
+/* Listening state reads loudly from the couch: accent border + pulsing dot. */
+[data-device="tv"] .tv-voice-wake.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+[data-device="tv"] .tv-voice-wake.active::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: tv-voice-pulse 1.2s ease-in-out infinite;
+}
+@keyframes tv-voice-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.82); }
+}
+
+/* Status line: an aria-live region the screen reader repeats, and the one
+   piece of 16px+ text that explains what the mic is doing right now. */
+[data-device="tv"] .tv-voice-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.45;
+  color: var(--text-secondary, #a8b3cf);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The mic mute toggle is a smaller sibling — still a 48px target. */
+[data-device="tv"] .tv-voice-mic-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 18px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.2));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary, #a8b3cf);
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+[data-device="tv"] .tv-voice-mic-toggle.muted {
+  color: var(--error, #f43f5e);
+  border-color: var(--error, #f43f5e);
+}
+
+/* Touch density surfaced on a TV (coarse kiosks) keeps targets honest. */
+[data-device="tv"][data-density="coarse"] .tv-voice-wake,
+[data-device="tv"][data-density="coarse"] .tv-voice-mic-toggle {
+  min-height: 60px;
+}
+
+/* ==========================================================================
+   2. TOUCH DENSITY ([data-density="touch"])
+   ==========================================================================
+   Pointer truth, independent of screen size: a finger needs 44px of
+   target, not 32. :where() on the big selector list keeps this a *floor*
+   for existing rules rather than a rewrite of specific components.
+   ========================================================================== */
+
+[data-density="touch"] :where(
+  button,
+  [role="button"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  .icon-btn,
+  .sidebar-action-icon-btn,
+  .composer-icon-action-btn,
+  .nav-cta,
+  .dl-btn,
+  .cta,
+  .hero-btn,
+  .new-chat-btn,
+  .tool-badge,
+  .conv-actions button,
+  .conversation-item,
+  .platform-icon,
+  .modal-header button,
+  .toast-action
+):not(:disabled) {
+  min-height: var(--touch-min-target);
+  min-width: var(--touch-min-target);
+}
+
+/* Roomier text and chrome for thumbs */
+[data-density="touch"] .message { padding: 18px 18px; }
+[data-density="touch"] .conversation-item { padding: 14px 16px; }
+[data-density="touch"] .input-area { padding-bottom: max(12px, var(--sab, env(safe-area-inset-bottom, 0px))); }
+[data-density="touch"] :where(.modal-header, .modal-body, .modal-footer) { padding-block: 16px; }
+
+/* ---------------------------------------------------------------------------
+   Bottom-sheet modals — thumbs reach the bottom of the screen, not the top.
+   Scoped to narrow widths so the touch floor still looks like a DIALOG on
+   an iPad that happens to be in range of the density attribute.
+   --------------------------------------------------------------------------- */
+@media (max-width: 820px) {
+  [data-density="touch"] .modal-overlay,
+  [data-density="touch"] .modal-backdrop {
+    align-items: flex-end;
+  }
+
+  [data-density="touch"] :where(.modal, .modal-card, .modal-dialog, .studio-modal-container) {
+    position: relative;
+    width: 100%;
+    max-width: 100vw;
+    margin: 0;
+    border-radius: 18px 18px 0 0;
+    border-bottom-width: 0;
+    max-height: calc(100dvh - 64px);
+    overflow: visible;
+    padding-bottom: max(14px, var(--sab, env(safe-area-inset-bottom, 0px)));
+    animation: device-sheet-up 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Drag handle affordance — pure decoration, communicates "sheet" */
+  [data-density="touch"] :where(.modal, .modal-card, .modal-dialog)::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 44px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-color, rgba(255, 255, 255, 0.18));
+    pointer-events: none;
+  }
+}
+
+@keyframes device-sheet-up {
+  from { transform: translateY(28px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* The sheet is decorative motion only — never required for comprehension. */
+@media (prefers-reduced-motion: reduce) {
+  [data-density="touch"] :where(.modal, .modal-card, .modal-dialog) { animation: none; }
+}
+
+/* ==========================================================================
+   3. LAPTOP & DESKTOP ([data-device="laptop"], [data-device="desktop"])
+   ==========================================================================
+   A fine pointer and a bright screen: tighten the utility chrome toward
+   13–14px, give reading columns their disciplined width, and keep the
+   sidebar DOCKED — on this class the drawer-over-content behaviour is a
+   regression, not a feature.
+   ========================================================================== */
+
+[data-device="laptop"],
+[data-device="desktop"] {
+  /* 13–14px chrome scale. The `.message`/sidebar rules below pick these
+     up; hover affordances stay enabled because a cursor exists here. */
+  --fs-ui: 13px;
+  --fs-ui-strong: 14px;
+  --fs-body: 14px;
+}
+
+/* Tightened chrome: utility text at 13px, emphasized UI at 14px */
+[data-device="laptop"] .chat-header,
+[data-device="laptop"] .composer-footer,
+[data-device="desktop"] .chat-header,
+[data-device="desktop"] .composer-footer {
+  font-size: var(--fs-ui);
+}
+[data-device="laptop"] .message,
+[data-device="desktop"] .message {
+  font-size: var(--fs-body);
+}
+/* Long-form assistant replies read a touch denser at a desk */
+[data-device="laptop"] .message.assistant,
+[data-device="desktop"] .message.assistant {
+  line-height: 1.6;
+}
+
+/* Reading columns: slightly narrower for laps, wider for large monitors */
+[data-device="laptop"] .message { max-width: 760px; }
+[data-device="desktop"] .message { max-width: 860px; }
+
+/* Keyboard-first: on the desk the keyboard shortcut pass applies to
+   everything, so keep focus rings reserved to :focus-visible (a mouse
+   click must NOT draw a ring) — that is the global 00-sidebar.css rule,
+   which this class intentionally does not override. */
+
+/* Sidebar persistent: docked in-flow (never an overlay) at this class.
+   .sidebar.collapsed keeps its own absolute+translateX collapse below so
+   an explicit user collapse still works after we moved the base rule. */
+[data-device="laptop"] .sidebar,
+[data-device="desktop"] .sidebar {
+  position: relative;
+  flex-shrink: 0;
+}
+[data-device="laptop"] .sidebar.collapsed,
+[data-device="desktop"] .sidebar.collapsed {
+  position: absolute;
+  transform: translateX(-272px);
+}
+
+/* ==========================================================================
+   4. CONTAINER QUERIES — per-panel responsiveness independent of viewport
+   ==========================================================================
+   Where the browser advertises support, each scroll panel becomes a query
+   container so ITS width (not the window's) decides bubble geometry. A
+   docked workspace or narrow split still gets phone-tight bubbles at any
+   window size, and a wide chat column gets room, even on a tablet.
+   ========================================================================== */
+
+@supports (container-type: inline-size) {
+  .messages {
+    container-type: inline-size;
+    container-name: chat;
+  }
+
+  @container chat (min-width: 1360px) {
+    .message { max-width: 900px; }
+  }
+
+  @container chat (max-width: 480px) {
+    .message { padding: 12px 14px; }
+    .tool-result-card { padding: 12px; border-radius: 10px; }
+    .msg-image { max-height: 40dvw; }
+  }
+
+  @container chat (max-width: 360px) {
+    .message { padding: 10px 12px; }
+  }
+}
+
+/* ==========================================================================
+   Notes & maintenance
+   ==========================================================================
+   - This import is LAST in styles.css on purpose ("after high-contrast"):
+     attribute winners here must be able to close the cascade. If a newer
+     layer ever needs to beat one of these rules, reconsider whether the
+     device story changed rather than adding !important.
+   - Safe-area vars: --sat/--sab/--sal/--sar are injected onto <html> by
+     deviceClass.js (probed from env(safe-area-inset-*), written only when
+     missing). Every use here falls back to env() directly so a no-JS
+     first paint still respects the notch.
+   - breakpoint unit tests: deviceClass.test.js pins the thresholds quoted
+     in this file's header narrative (820 / 1279 / 1919 / 1600).
+   ========================================================================== */

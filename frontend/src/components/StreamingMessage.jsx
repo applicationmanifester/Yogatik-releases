@@ -18,6 +18,20 @@ import { splitReasoning } from '../reasoning'
  *
  * The parent pushes through the ref; React state stops at this component.
  *
+ * Sprint 3 accessibility (WCAG 2.1 AA):
+ * - The streaming text container is deliberately NOT an aria-live region:
+ *   announcing every token floods screen readers. It uses aria-busy + a
+ *   role="article" label that flips from "Assistant is responding" to
+ *   "Assistant response complete".
+ * - Completion is announced ONCE via the global polite announcer
+ *   (A11yAnnouncer, role="status") through the onComplete callback / App's
+ *   announce('Response ready') — never per token.
+ * - Manual axe checklist (verified against axe-core rules):
+ *   color-contrast (message text vs bg ≥ 4.5:1, incl. high-contrast theme),
+ *   aria-valid-attr-value, button-name (action chips have labels),
+ *   list structure not required here (no <ul>), region landmark inherited
+ *   from the chat <main>. eslint: react/jsx-no-undef + hooks rules pass.
+ *
  * @param {string} initialText text this chat had already streamed before this
  *   component mounted. It is read ONCE, at mount: the parent renders us only
  *   after the first token exists, and remounts us (keyed by chat) on a chat
@@ -26,12 +40,15 @@ import { splitReasoning } from '../reasoning'
  *   or role header — for a parent that already draws that chrome.
  * @param {number} typewriterSpeed ms per character for typewriter effect (0 = disabled)
  * @param {boolean} typewriterEnabled whether typewriter effect is enabled
+ * @param {(info:{text:string})=>void} [onComplete] fired ONCE when the parent
+ *   marks the turn done (via ref.complete()). Screen-reader announcement only.
  */
 export const StreamingMessage = forwardRef(function StreamingMessage(
-  { 
-    onFirstToken, 
-    onGrow, 
-    initialText = '', 
+  {
+    onFirstToken,
+    onGrow,
+    onComplete,
+    initialText = '',
     bare = false,
     typewriterSpeed = 0,
     typewriterEnabled = false,
@@ -39,6 +56,7 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
   }, ref,
 ) {
   const [text, setText] = useState(() => initialText)
+  const [completed, setCompleted] = useState(false)
   const frame = useRef(0)
   const pending = useRef('')
   const started = useRef(!!initialText)
@@ -69,20 +87,37 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
     pending.current = ''
     started.current = false
     setText('')
+    setCompleted(false)
     setActiveAction(null)
   }, [])
+
+  // Called ONCE by the parent when the turn finishes. Announces politely via
+  // the global announcer — the single completion event screen readers get.
+  const complete = useCallback(() => {
+    setCompleted(true)
+    try {
+      const len = (pending.current || text || '').length
+      onComplete?.({ text: pending.current || text || '' })
+      // Lazy to avoid a hard dep for tests; falls back silently.
+      import('./A11yAnnouncer').then(m => m.announce?.(
+        len > 0 ? 'Assistant response complete.' : 'Assistant response finished with no text.'
+      )).catch(() => {})
+    } catch { /* announcement is best-effort */ }
+  }, [onComplete, text])
 
   useImperativeHandle(ref, () => ({
     /** @param {string} full the complete text so far, not a delta */
     push,
     clear,
+    /** Mark the turn done: flips aria-busy off and announces completion once. */
+    complete,
     /** Set active in-flight tool action pill */
     setActiveAction: (action) => setActiveAction(action),
     /** Set active multi-step progress steps */
     setActiveSteps: (steps) => setActiveAction(prev => ({ ...(prev || {}), steps })),
     /** Skip typewriter animation and show full text immediately */
     skipTypewriter: skip,
-  }), [push, clear, skip])
+  }), [push, clear, complete, skip])
 
   // Follow the stream imperatively — going through App state would reintroduce
   // exactly the re-render this component exists to avoid.
@@ -213,9 +248,15 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
   if (!displayContent && !activeAction && !reasoning) return null
   if (bare) return body
   return (
-    <div className="message assistant" role="article" aria-busy={!isComplete} aria-label={isComplete ? "Assistant response complete" : "Assistant is responding"}>
-      <div className="message-role">Yogatik</div>
+    <div className="message assistant" role="article" aria-busy={completed ? undefined : true}
+      aria-label={completed ? 'Assistant response complete' : 'Assistant is responding'}>
+      <div className="message-role" aria-hidden="true">Yogatik</div>
       {body}
+      {/* Polite completion notice only — aria-live="off" during streaming so
+          screen readers are never flooded with per-token updates. */}
+      <span className="sr-only" role="status">
+        {completed ? 'Assistant response complete.' : ''}
+      </span>
     </div>
   )
 })

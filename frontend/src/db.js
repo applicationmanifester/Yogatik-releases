@@ -1,4 +1,5 @@
 import Dexie from 'dexie'
+import { lineDiff, summarizeDiff } from './diffPreview.js'
 
 export const db = new Dexie('YogatikDB')
 db.version(1).stores({
@@ -83,6 +84,40 @@ db.version(8).stores({
   traces: '++id, conversationId, tool, createdAt, [conversationId+createdAt]',
   indexed_pages: '++id, url, domain, title, createdAt, [domain+createdAt]',
 })
+// v9: artifact version history (Artifacts v2). Regenerating or restoring an
+// artifact body archives the body it replaces instead of destroying it, so the
+// canvas can list, view, diff and restore past versions. `artifactKey` groups
+// the versions of one artifact (title+language); `createdAt` orders the strip.
+db.version(9).stores({
+  conversations: '++id, title, updatedAt, projectId',
+  messages: '++id, conversationId, role, createdAt, [conversationId+createdAt]',
+  settings: 'key',
+  documents: '++id, name, createdAt, projectId, hash',
+  projects: '++id, name, createdAt',
+  media: '++id, createdAt',
+  memories: '++id, store, at',
+  traces: '++id, conversationId, tool, createdAt, [conversationId+createdAt]',
+  indexed_pages: '++id, url, domain, title, createdAt, [domain+createdAt]',
+  artifact_versions: '++id, artifactKey, createdAt',
+})
+// v10: live call recordings (turn-by-turn + tool events + ≤12 aHash-gated
+// camera thumbnails, all on-device ONLY). `conversationId` is indexed because a
+// rehearsal for a given chat should be reachable from where the work happened;
+// `startedAt` orders the recordings list. Rows can carry no conversation at all
+// (a Live call does not always belong to a chat), which the schema tolerates.
+db.version(10).stores({
+  conversations: '++id, title, updatedAt, projectId',
+  messages: '++id, conversationId, role, createdAt, [conversationId+createdAt]',
+  settings: 'key',
+  documents: '++id, name, createdAt, projectId, hash',
+  projects: '++id, name, createdAt',
+  media: '++id, createdAt',
+  memories: '++id, store, at',
+  traces: '++id, conversationId, tool, createdAt, [conversationId+createdAt]',
+  indexed_pages: '++id, url, domain, title, createdAt, [domain+createdAt]',
+  artifact_versions: '++id, artifactKey, createdAt',
+  live_recordings: '++id, conversationId, startedAt',
+})
 
 // A backgrounded/hidden tab (mobile especially) can have IndexedDB closed out
 // from under us; the next Dexie call throws DatabaseClosedError / InvalidStateError
@@ -130,6 +165,54 @@ export async function getMedia(id) {
 
 export async function deleteMedia(id) {
   return db.media.delete(Number(id))
+}
+
+// ─── Live recordings (call recap + ≤12 camera thumbnails, [live-recording]) ───
+// Same discipline as media: rows are megabyte-ish (frames), so the cap is
+// mandatory and eviction is keys-only — blobs are never read just to evict.
+const RECORDING_KEEP = 20        // newest N calls kept; older recordings are disposable
+
+export async function saveLiveRecording(rec) {
+  if (!rec || !Array.isArray(rec.turns)) return null
+  try {
+    return await withReopen(async () => {
+      const id = await db.live_recordings.add({ ...rec, createdAt: rec.createdAt || Date.now() })
+      const count = await db.live_recordings.count()
+      if (count > RECORDING_KEEP) {
+        // orderBy('startedAt') + primaryKeys(): the index gives the OLDEST rows'
+        // primary keys without loading any frame data into memory.
+        const toDelete = await db.live_recordings
+          .orderBy('startedAt').limit(count - RECORDING_KEEP).primaryKeys()
+        if (toDelete.length > 0) await db.live_recordings.bulkDelete(toDelete)
+      }
+      return id
+    })
+  } catch { return null }   // a recording must never break ending a call
+}
+
+/** Newest first. `conversationId === undefined` → every recording, else scoped. */
+export async function getLiveRecordings(limit = 20, conversationId = undefined) {
+  try {
+    return await withReopen(async () => {
+      const rows = await db.live_recordings
+        .orderBy('startedAt').reverse().limit(limit).toArray()
+      if (conversationId === undefined) return rows
+      return rows.filter(r => (r.conversationId ?? null) === (conversationId ?? null))
+    })
+  } catch { return [] }
+}
+
+export async function getLiveRecording(id) {
+  if (id == null) return null
+  try {
+    return await withReopen(() => db.live_recordings.get(Number(id)))
+  } catch { return null }
+}
+
+export async function deleteLiveRecording(id) {
+  try {
+    return await withReopen(() => db.live_recordings.delete(Number(id)))
+  } catch {}   // deleting history the row may already be gone — never a user-facing error
 }
 
 // ─── Agent Traces & Replay Log (Only tracking failures) ───
@@ -245,10 +328,118 @@ db.getAllSettings = getAllSettings
 if (typeof window !== 'undefined' || typeof globalThis !== 'undefined') {
   getAllSettings().catch(() => {})
 }
+
+// ─── Artifact version history (Artifacts v2) ───
+// Regenerating an artifact must never erase what it replaced: the previous
+// body is archived in `artifact_versions` first, and restores APPEND instead of
+// rewinding, so history is strictly non-destructive. The per-key cap works the
+// same way as media's (videos keep 10) — heavy iteration must not grow
+// IndexedDB without bound.
+const ARTIFACT_VERSION_KEEP = 30
+
+/**
+ * Archive one artifact body. Returns the row id, or null when the call was a
+ * no-op (empty body) or churn (identical to the latest stored body for the
+ * same key). The ±lines badge is frozen at save time — recomputing it later
+ * would need both neighbours on the strip for every chip.
+ */
+export async function saveArtifactVersion({ artifactKey, title = null, language = null, code, note = null }) {
+  const key = String(artifactKey || 'artifact')
+  const body = String(code ?? '')
+  if (!body) return null
+  try {
+    return await withReopen(async () => {
+      // Identical re-save must not fill the strip with lookalike chips.
+      const latest = await db.artifact_versions
+        .where('artifactKey').equals(key).reverse().first()
+      if (latest && latest.code === body) return latest.id
+
+      const rows = lineDiff(latest ? latest.code : '', body)
+      const { added, removed } = summarizeDiff(rows)
+      const id = await db.artifact_versions.add({
+        artifactKey: key, title, language, code: body, note,
+        lineCount: body.split('\n').length,
+        charCount: body.length,
+        added, removed,
+        createdAt: Date.now(),
+      })
+      // Evict the OLDEST rows for this key (index order = id ascending within
+      // one key), keys-only so large bodies are never pulled just to evict.
+      const count = await db.artifact_versions.where('artifactKey').equals(key).count()
+      if (count > ARTIFACT_VERSION_KEEP) {
+        const toDelete = await db.artifact_versions
+          .where('artifactKey').equals(key).limit(count - ARTIFACT_VERSION_KEEP).primaryKeys()
+        if (toDelete.length > 0) await db.artifact_versions.bulkDelete(toDelete)
+      }
+      return id
+    })
+  } catch { return null }   // history is best-effort; the canvas must keep working
+}
+
+/** Versions of one artifact, oldest → newest (id ascending). */
+export async function getArtifactVersions(artifactKey, limit = 50) {
+  if (!artifactKey) return []
+  try {
+    return await withReopen(() =>
+      db.artifact_versions
+        .where('artifactKey').equals(String(artifactKey))
+        .limit(limit)
+        .toArray())
+  } catch { return [] }
+}
+
+export async function getArtifactVersion(id) {
+  return withReopen(() => db.artifact_versions.get(Number(id)))
+}
+
+export async function clearArtifactVersions(artifactKey) {
+  return withReopen(() =>
+    artifactKey
+      ? db.artifact_versions.where('artifactKey').equals(String(artifactKey)).delete()
+      : db.artifact_versions.clear())
+}
+
+// ─── Artifact pin ───
+// A pinned artifact should not vanish when the user switches panels/chats and
+// comes back. Persisted per-conversation via settings; conversation-less
+// contexts (e.g. arena snippets) fall back to a module-local ref.
+let _pinnedArtifactKey = null
+
+export async function getArtifactPinned(conversationId, artifactKey = null) {
+  if (conversationId != null) {
+    try {
+      return !!(await getSetting(`artifact_pinned_${conversationId}`, false))
+    } catch { /* fall through to the in-memory ref */ }
+  }
+  return _pinnedArtifactKey != null &&
+    (artifactKey == null || _pinnedArtifactKey === artifactKey)
+}
+
+export async function setArtifactPinned(conversationId, pinned, artifactKey = null) {
+  _pinnedArtifactKey = pinned ? (artifactKey ?? 'artifact') : null
+  if (conversationId == null) return
+  try { await setSetting(`artifact_pinned_${conversationId}`, !!pinned) } catch {}
+}
+
+/** Test support: reset the conversation-less pin ref (settings are per-test via _clearSettingsCache). */
+export function _resetArtifactPin() {
+  _pinnedArtifactKey = null
+}
 // ─── Conversations ───
+const newSyncId = () => {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  } catch {}
+  return `local-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`
+}
+
 export async function createConversation(title = 'New Chat', projectId = null, provider = null, model = null, settings = null) {
   return withReopen(async () => {
-    const id = await db.conversations.add({ title, updatedAt: Date.now(), projectId, provider, model, settings })
+    // Stable cross-device identity for LWW sync (syncMerge.js): auto-increment
+    // ids differ per device, so identity is content-derived unless a syncId
+    // exists. Mint one at creation; old rows without it keep working via the
+    // content signature fallback.
+    const id = await db.conversations.add({ title, updatedAt: Date.now(), projectId, provider, model, settings, syncId: newSyncId() })
     return { id, title, projectId, provider, model, settings, messages: [] }
   })
 }
@@ -336,7 +527,7 @@ export async function trimMessages(conversationId, from) {
 
 // ─── Documents (local retrieval corpus) ───
 export async function addDocument(doc) {
-  const id = await db.documents.add({ ...doc, createdAt: Date.now() })
+  const id = await db.documents.add({ ...doc, syncId: doc?.syncId || newSyncId(), createdAt: doc?.createdAt || Date.now() })
   return { id, ...doc }
 }
 export async function findDocumentByHash(hash, projectId) {
@@ -404,6 +595,11 @@ export async function exportAll() {
     // API keys are deliberately excluded — a backup file is not an encrypted
     // store, and users share these without thinking.
     settings: settings.filter(r => !/^apikey_|^synced_|^user$/.test(r.key)),
+    // [live-recording] live_recordings is deliberately excluded too: a backup
+    // file is meant to be shared/restored, and the ≤12 camera thumbnails a call
+    // recorded are exactly the kind of imagery that should stay on the machine
+    // that captured it. Delete is the only exit for a recording (or Export-JSON,
+    // which is an explicit per-row ask, not a bulk side effect).
   }
 }
 

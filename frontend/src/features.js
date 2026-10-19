@@ -92,6 +92,34 @@ export const FEATURES = {
     hint: 'Mute AI voice output. Fast mic-in, instant streaming text-out with zero audio synthesis or playback delay',
     default: false,
   },
+  liveVisionAutoSwitch: {
+    label: 'Switch to a vision model when the camera turns on',
+    // Horizon-1 Live's final item: the camera guard first tries to RESOLVE the
+    // text-only model (vision model on the same provider) instead of blocking.
+    // Off = the strict block, exactly as before — silent switching is
+    // surprising, so the user is the one who turns it on... by leaving a
+    // default ON, and can keep the block.
+    hint: 'When the Live model is text-only, pick a vision-capable model on the same provider before opening the camera. Off keeps the strict block',
+    default: true,
+  },
+  liveRecording: {
+    label: 'Live recording & playback',
+    // [live-recording] OFF by default: a call recording is spoken history plus
+    // camera imagery stored in this browser — it exists only when asked for,
+    // and the frame-capture consent prompt states the storage size up front.
+    hint: 'At call end keep a recap card, tool list and up to 12 on-device camera thumbnails per call, with a playback timeline. Nothing is uploaded',
+    default: false,
+  },
+  tvVoice: {
+    label: 'TV voice control',
+    // OFF by default, for the same reason soundCues is: a device that fans a
+    // microphone open on its own is a room with ears, and nobody opted in.
+    // Turned on deliberately from the Personalise panel on the couch, it gives
+    // the 10-foot UI hands-free input — the trick the whole dl class exists
+    // for, since typing from a remote is the slowest thing a living room does.
+    hint: 'Hands-free dictation on the 10-foot UI — an overlay mic that speaks into the composer. Stay silent until you turn it on',
+    default: false,
+  },
   semanticSearch: {
     label: 'Semantic document search',
     hint: 'Re-rank document search by meaning, not just keywords. Downloads ~23MB once',

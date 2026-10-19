@@ -1,5 +1,11 @@
 # Yogatik — Project Knowledge
 
+## Sprint 2 Performance & Trust — workers, consent, eviction safety (2026-10-15)
+- HEAVY TOOLS RULE: Pyodide/Tesseract/video-encode never run on the main thread and never ride the initial bundle. `code_execute` → `/worker-pyodide.js` via `workers/pyodideWorkerClient.js` (stateful kernel); raw OCR → `/worker-heavy.js` via `workers/heavyToolsWorkerClient.js` (transferables, same confidence gate); vision/video/torrent load via dynamic `import()` + `tools/heavyLazy.js:lazyTool`. Pinned by `heavyTools.test.js` bundle gate + `code-exec`/`ocr-tools`/`video-pipeline`/`heavy-workers` vite chunks — a new static import of these engines fails the gate on purpose.
+- DOWNLOAD CONSENT RULE: every on-device model download is a BLOCKING, size-labelled decision (`downloadConsent.js:consentMessage`, `blocking: true`) — detection 40MB, embeddings 23MB (up to 230MB), WebLLM 350MB, Kokoro 90MB, Whisper 145MB, local VLM 230MB — remembered per feature and mirrored into `features.*` toggles. Never add a silent model fetch; route it through `ensureDownloadConsent` first.
+- EVICTION RULE: all state is browser-local, so `storage.js:getEvictionSafety` + `BackupNudge.jsx` (Data Hub) is the one warning surface, and `chatExport.js` JSON (`conversationToJson`/`conversationFromJson`) + `ChatExportToolbar.jsx` is the one-click backup path. Weekly-at-most nudge after 5+ conversations, never once `persist()` is granted.
+- VERIFIED FOR REAL: vitest 6 files/60 tests pass (heavyTools, chatExport, enhancements, toolRegistry, schemaContract, jsExec); eslint 0 errors on all touched files; real `vite build` exit 0 with the new chunks emitted. KNOWN GAP, not mine: `buildGuards.test.js` flags `src/memory.js` unreachable — nothing imports it outside its test (concurrent-session fallout or pre-existing; untouched by this sprint).
+
 ## "Add a Live voice dropdown, curated male/female, matching text output" — already shipped, verified not re-built (2026-09-04)
 - ASKED FOR: a dropdown to pick the AI's voice in Live, spoken audio that matches the displayed
   text, and a curated male/female voice set that reads as normal/neutral rather than emotionally
@@ -4421,3 +4427,11 @@ web_search (Brave if apikey_brave set, else DuckDuckGo Lite via proxy), deep_res
   Opened from storage-details button. components/OnboardingModal.jsx: 3-step first-run (persona/style/
   boundary/privacy) → seeds procedural memory + setActiveTemplate; gated by localStorage yogatik_onboarded.
 - Tests: phase1.test.js (13). Total ~376. Premium billing + marketplace need backend (not built).
+
+## Sprint 1 Security hardening (2026-10-15) - sanitize.js, index.html, cors-proxy/worker.js, crypto tests
+- sanitize.js: new sanitize()/sanitise() single DOMPurify choke point for all LLM/tool HTML; sanitizeSvg reimplemented on the DOMPurify SVG profile (was hand-rolled DOMParser). sanitize.test.js pins both.
+- index.html meta CSP re-synced with enforced firebase.json header ('unsafe-inline' restored so the page's own inline SW snippet is not self-blocked); stale Report-Only comment fixed. cspGuard.test.js pins meta/header sync.
+- cors-proxy/worker.js: allowlist 403, Authorization only to credential-allowlisted hosts, per-origin 60/min limit + target logging; named exports for tests. corsPolicy.test.js covers worker (403, credential strip, 429+log).
+- crypto.js: confirmed ONE model (account-derived AES-GCM, disclosure already in ProviderModal/ProvidersTab); crypto.test.js pins account-secret round-trip, cross-uid rejection, disclosure wording.
+- VERIFIED: node ./scripts/run-vitest.mjs --run src/crypto src/cspGuard src/corsPolicy src/sanitize (+ enhancements/keysync/cloudSync) - all pass; npx eslint on touched frontend files - 0 errors; node --check cors-proxy/worker.js - clean.
+

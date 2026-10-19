@@ -1,2 +1,1257 @@
-/* 13-live-components.css — Live view UI components */
-/* Additional live session component styles are in 04-mobile-responsive-adjustments.css */
+/* 13-live-components.css — Live cockpit (stage-first redesign)
+ *
+ * [live-redesign] This file owns ALL chrome added by the "Live cockpit"
+ * redesign. It is imported before 15/16 (and before the legacy layers that
+ * ship further live-week rules), so nothing here can legally override
+ * `.live-self`, the arena, or 15-device-adaptive's touch floor — every
+ * important rule below is a fresh class name nothing else uses, sized with
+ * the 16-design-tokens.css contract (--space-*, --radius-*, --shadow-*,
+ * --dur-*, --control-h-*, --ease-out-quint) and glassed with the existing
+ * --live-* theme variables from .live-view.
+ *
+ * Layer map of the new cockpit:
+ *   z 55  .live-settings-backdrop         (modal, top of everything)
+ *   z 40  .live-cockpit-sheaf             (the "more" sheaf)
+ *   z 30  .live-cockpit-bar               (the bottom command bar)
+ *   z 20  .live-cockpit-top               (status strip)
+ *   z 16  .live-cockpit-rail              (artifact rail, above .live-transcript-panel's 15)
+ *   z 15  .live-transcript-panel          (owned by 04 — drawer/sheet/lower-third variants here)
+ *
+ * Device variants ([data-device] from deviceClass.js on <html>):
+ *   tv           sheaf = focus grid, transcript = lower-third, TV focus rings come from 15
+ *   mobile / tablet (touch)  sheaf = bottom sheet, transcript = bottom sheet, art= overlay card
+ *   laptop / desktop        sheaf = right panel, transcript = right drawer, art = right rail
+ */
+
+/* ────────────────────────────────────────────────────────────────────────
+ * 0. LivePill retirement
+ *    .live-pill-* chrome, the orbPulse/orbSpin/livePillSlideUp keyframes and
+ *    the LivePill component itself were removed in the redesign (the old
+ *    rules lived in 08-a-running-agent-command-reported-o.css, the component
+ *    in components/LivePill.jsx — both were NOT part of the LiveView wiring).
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/* ─── 1. Top status strip ─── */
+.live-cockpit-top {
+  position: absolute;
+  top: var(--space-4);
+  left: var(--space-4);
+  right: var(--space-4);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  /* Status is look-don't-touch: the stage underneath stays draggable/clickable */
+  pointer-events: none;
+  transition: transform var(--dur-normal) var(--ease-out-quint), opacity var(--dur-normal) var(--ease-out-quint);
+}
+.live-cockpit-top > * { pointer-events: auto; }
+
+.live-ck-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  border-radius: var(--radius-pill);
+  background: var(--live-surface);
+  color: var(--live-text-dim);
+  border: 1px solid var(--live-border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-ck-pill .live-ready-indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+.live-ck-pill.provider {
+  color: var(--accent, #ff6b35);
+  border-color: color-mix(in srgb, var(--accent, #ff6b35) 30%, transparent);
+  background: color-mix(in srgb, var(--accent, #ff6b35) 10%, transparent);
+}
+.live-ck-pill.model { color: var(--live-text); }
+.live-ck-pill.scene { color: var(--live-text-dim); box-shadow: none; }
+.live-ck-muted-btn {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* The latency SLO badge keeps its legacy class (it is already themed);
+   give it a glassy home in the strip and push it to the far end. */
+.live-cockpit-top .live-latency-badge {
+  height: var(--control-h-sm);
+  margin-left: auto;
+}
+.live-cockpit-top .live-status.warning-status {
+  height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-pill);
+}
+
+/* ─── 2. Bottom command bar ─── */
+.live-cockpit-bar {
+  position: absolute;
+  bottom: var(--space-5);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--live-surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--live-border);
+  box-shadow: var(--shadow-2);
+  max-width: min(96vw, 720px);
+  transition: transform var(--dur-slow) var(--ease-out-quint);
+}
+
+/* A fresh class to never collide with legacy `.live-btn` sizing wars:
+   one round control + a tiny word label underneath. */
+.live-cb-btn {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 54px;
+  min-height: 54px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--live-btn-border);
+  background: var(--live-btn-bg);
+  color: var(--live-text);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out-quint),
+              border-color var(--dur-fast) var(--ease-out-quint),
+              transform var(--dur-fast) var(--ease-out-quint),
+              box-shadow var(--dur-fast) var(--ease-out-quint);
+}
+.live-cb-btn:hover { background: var(--live-btn-hover); }
+.live-cb-btn:active { transform: scale(.94); }
+.live-cb-btn:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+.live-cb-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--live-text-dim);
+  line-height: 1;
+  white-space: nowrap;
+}
+.live-cb-btn svg { flex-shrink: 0; }
+
+/* Explicit states (only styling; wiring is unchanged logic) */
+.live-cb-btn.is-off {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+.live-cb-btn.is-off .live-cb-label { color: #fca5a5; }
+.live-cb-btn.is-engaged {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.45);
+  color: #7dd3fc;
+}
+.live-cb-btn.is-engaged .live-cb-label { color: #7dd3fc; }
+.live-cb-btn.is-stop {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fecaca;
+}
+.live-cb-btn.is-end {
+  background: rgba(220, 38, 38, 0.22);
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+}
+.live-cb-btn.is-end:hover { background: rgba(220, 38, 38, 0.4); }
+.live-cb-btn.is-hub { border-style: dashed; }
+.live-cb-btn.is-hub.is-open {
+  background: var(--live-btn-hover);
+  border-color: var(--live-btn-hborder);
+}
+.live-cb-btn.is-hub.is-open .live-cb-label { color: var(--live-text); }
+.live-cb-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ─── 3. The "more" sheaf ─── */
+.live-cockpit-sheaf {
+  position: absolute;
+  top: calc(var(--space-7) + var(--control-h-sm));
+  right: var(--space-5);
+  bottom: calc(var(--control-h-lg) * 2 + var(--space-7));
+  width: min(400px, 94vw);
+  max-width: 94vw;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--live-panel-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--live-panel-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(var(--space-2)) scale(.985);
+  transform-origin: bottom right;
+  transition: opacity var(--dur-normal) var(--ease-out-quint),
+              transform var(--dur-normal) var(--ease-out-quint);
+}
+.live-cockpit-sheaf.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0) scale(1);
+}
+.live-cockpit-sheaf:focus-visible { outline: none; box-shadow: var(--shadow-3), 0 0 0 2px rgba(56, 189, 248, .5); }
+
+.live-cockpit-sheaf-viewport {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.live-cockpit-sheaf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--live-panel-border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--live-text);
+}
+.live-cockpit-sheaf-close {
+  display: grid;
+  place-items: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--live-text-dim);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out-quint), color var(--dur-fast) var(--ease-out-quint);
+}
+.live-cockpit-sheaf-close:hover { background: var(--live-btn-hover); color: var(--live-text); }
+.live-cockpit-sheaf-close:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+
+.live-cockpit-sheaf-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2) var(--space-2) var(--space-4);
+  scrollbar-width: thin;
+  scrollbar-color: var(--live-panel-border) transparent;
+}
+.live-cockpit-sheaf-section {
+  padding: var(--space-3);
+}
+.live-cockpit-sheaf-section + .live-cockpit-sheaf-section,
+.live-cockpit-sheaf-section + [role="group"].live-cockpit-sheaf-section {
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--live-panel-border);
+}
+.live-cockpit-sheaf-section h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--live-text-dim);
+}
+.live-cockpit-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--live-text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out-quint);
+}
+.live-cockpit-row:hover { background: var(--live-btn-hover); }
+.live-cockpit-row:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+.live-cockpit-row:disabled { opacity: .45; cursor: not-allowed; }
+.live-cockpit-row > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-cockpit-row svg { flex-shrink: 0; }
+.live-cockpit-row.is-engaged {
+  background: rgba(56, 189, 248, 0.14);
+  border-color: rgba(56, 189, 248, 0.3);
+  color: #7dd3fc;
+}
+.live-cockpit-row.warn { color: #fbbf24; }
+.live-cockpit-row .live-btn-badge {
+  position: static;
+  flex-shrink: 0;
+}
+
+/* Provider / model pickers moved VERBATIM into the sheaf: their absolutely
+   positioned glass panels must flow INSIDE the sheaf (otherwise they are
+   clipped by its overflow + scroll). */
+.live-ck-dropdowns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+.live-ck-dropdowns > div,
+.live-ck-dropdowns > button { width: 100%; }
+.live-cockpit-sheaf .live-custom-dropdown-panel {
+  position: static;
+  top: auto;
+  left: auto;
+  width: 100%;
+  max-width: 100%;
+  box-shadow: none;
+  z-index: auto;
+}
+.live-cockpit-sheaf .live-badge.provider-custom-btn,
+.live-cockpit-sheaf .live-badge.model-custom-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: var(--control-h-md);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+}
+
+/* ─── 4. Artifact rail (desktop: right rail — touch: overlay card — TV: corner card) ─── */
+.live-cockpit-rail {
+  position: absolute;
+  top: calc(var(--space-7) + var(--control-h-sm));
+  right: var(--space-5);
+  bottom: calc(var(--control-h-lg) * 2 + var(--space-7));
+  width: min(440px, 36vw);
+  min-width: 300px;
+  z-index: 16;
+  display: flex;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-3);
+  animation: railIn var(--dur-slow) var(--ease-out-quint);
+}
+@keyframes railIn {
+  from { opacity: 0; transform: translateX(var(--space-4)); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.live-cockpit-rail .live-artifact-stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--live-panel-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--live-panel-border);
+  border-radius: var(--radius-xl);
+}
+.live-cockpit-rail .live-artifact-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--live-panel-border);
+  flex-shrink: 0;
+}
+.live-cockpit-rail .live-artifact-header button {
+  display: grid;
+  place-items: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--live-text-dim);
+  cursor: pointer;
+}
+.live-cockpit-rail .live-artifact-header button:hover { background: var(--live-btn-hover); color: var(--live-text); }
+.live-cockpit-rail .live-artifact-header button:disabled { opacity: .35; cursor: not-allowed; }
+.live-cockpit-rail .live-artifact-header button:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+.live-cockpit-rail .live-artifact-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3);
+  scrollbar-width: thin;
+  scrollbar-color: var(--live-panel-border) transparent;
+}
+.live-artifact-fallback {
+  padding: var(--space-4);
+  color: var(--live-text-dim);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.live-artifact-rail:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: -2px;
+}
+
+/* ─── 5. Transcript drawer additions (variants by device) ─── */
+/* Legacy base in 04 ships a right drawer; the additions below redesign its
+   inner surface and add touch/TV variants + jump-to-live + entry cards. */
+.live-transcript-panel:focus-visible { outline: none; box-shadow: -12px 0 36px rgba(0, 0, 0, .25), 0 0 0 2px rgba(56, 189, 248, .5); }
+.live-transcript-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--live-text);
+}
+/* Old markup had duplicated filter rows (one in the header, one below);
+   the rewrite keeps the single group under the header. */
+.live-transcript-filter {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--live-panel-border);
+  flex-shrink: 0;
+}
+.live-filter-btn {
+  height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--live-text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out-quint), color var(--dur-fast) var(--ease-out-quint);
+}
+.live-filter-btn:hover { background: var(--live-btn-hover); color: var(--live-text); }
+.live-filter-btn.active {
+  background: var(--live-btn-bg);
+  border-color: var(--live-btn-border);
+  color: #7dd3fc;
+  font-weight: 600;
+}
+.live-filter-btn:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+
+/* Entry cards — the old markup's .live-transcript-item had no chrome at all;
+   inherit the .live-transcript-msg card language (user indigo / AI accent). */
+.live-transcript-item {
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-3);
+  background: var(--live-surface);
+  border: 1px solid var(--live-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  animation: transcriptIn var(--dur-normal) var(--ease-out-quint);
+}
+@keyframes transcriptIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.live-transcript-item.user { border-left: 2px solid #818cf8; }
+.live-transcript-item.assistant { border-left: 2px solid var(--accent, #ff6b35); }
+.live-transcript-item.user .live-transcript-role { display: inline-flex; color: #818cf8; }
+.live-transcript-item.assistant .live-transcript-role { display: inline-flex; color: var(--accent, #ff6b35); }
+.live-transcript-item .live-transcript-role { display: inline-flex; align-items: center; gap: var(--space-1); }
+.live-transcript-item .live-transcript-text {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--live-text);
+  word-break: break-word;
+}
+.live-transcript-item .live-transcript-reasoning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--live-text-dim);
+  font-style: italic;
+}
+.live-transcript-item .live-transcript-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--live-text-dim);
+}
+.live-transcript-end { height: 1px; }
+.live-transcript-jump {
+  position: absolute;
+  bottom: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-h-md);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--live-btn-hborder);
+  background: var(--live-hud-bg);
+  color: var(--live-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-2);
+}
+.live-transcript-jump:hover { background: var(--live-btn-hover); }
+.live-transcript-jump:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+
+/* ─── 6. Live settings sheet (component had NO chrome; tokens only) ─── */
+.live-settings-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 55;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: rgba(2, 6, 16, .55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.live-settings-sheet {
+  width: min(420px, 94vw);
+  max-height: min(76vh, 680px);
+  overflow-y: auto;
+  background: var(--live-modal-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--live-modal-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-3);
+}
+.live-settings-header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--live-modal-header);
+  border-bottom: 1px solid var(--live-modal-border);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--live-text);
+}
+.live-settings-close {
+  display: grid;
+  place-items: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--live-text-dim);
+  cursor: pointer;
+}
+.live-settings-close:hover { background: var(--live-btn-hover); color: var(--live-text); }
+.live-settings-close:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+.live-settings-group { padding: var(--space-3) var(--space-4); }
+.live-settings-group + .live-settings-group { border-top: 1px solid var(--live-panel-border); }
+.live-settings-group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--live-text);
+}
+.live-settings-warn {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(245, 158, 11, .35);
+  background: rgba(245, 158, 11, .12);
+  color: #fbbf24;
+  font-size: 12px;
+}
+.live-settings-warn b { color: #fde68a; }
+.live-settings-warn p { margin: var(--space-1) 0 0; font-size: 11.5px; color: var(--live-text-dim); }
+.live-settings-select {
+  width: 100%;
+  height: var(--control-h-md);
+  margin-top: var(--space-2);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--live-vm-input-border);
+  background: var(--live-vm-input-bg);
+  color: var(--live-vm-text);
+  font-size: 13px;
+}
+.live-settings-select:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+.live-settings-empty {
+  margin: var(--space-2) 0 0;
+  font-size: 12px;
+  color: var(--live-text-faint);
+}
+.live-settings-seg {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--live-surface);
+  border: 1px solid var(--live-border);
+}
+.live-settings-seg-btn {
+  flex: 1;
+  height: var(--control-h-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--live-text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.live-settings-seg-btn:hover { background: var(--live-btn-hover); color: var(--live-text); }
+.live-settings-seg-btn.active {
+  background: var(--live-btn-bg);
+  border-color: var(--live-btn-border);
+  color: #7dd3fc;
+  font-weight: 600;
+}
+.live-settings-seg-btn:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+.live-settings-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.live-settings-label { flex: 1; font-size: 12.5px; color: var(--live-text-dim); }
+.live-settings-range {
+  flex: 1.4;
+  accent-color: var(--accent, #ff6b35);
+}
+.live-settings-range:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+.live-settings-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--live-text);
+  min-width: 34px;
+  text-align: right;
+}
+.live-settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  font-size: 12.5px;
+  color: var(--live-text-dim);
+  cursor: pointer;
+}
+.live-settings-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.live-settings-toggle-slider {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, .16);
+  transition: background-color var(--dur-normal) var(--ease-out-quint);
+}
+.live-settings-toggle-slider::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-pill);
+  background: #f8fafc;
+  transition: transform var(--dur-normal) var(--ease-out-quint);
+}
+.live-settings-toggle input:checked + .live-settings-toggle-slider {
+  background: rgba(34, 197, 94, .55);
+}
+.live-settings-toggle input:checked + .live-settings-toggle-slider::after {
+  transform: translateX(18px);
+}
+.live-settings-toggle input:focus-visible + .live-settings-toggle-slider {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+/* ─── 7. Arena shifts when panels dock (desktop) ───
+   Legacy 03 already shifts the arena -210px for has-side-panel; the rail is
+   a SECOND surface, so when drawer + rail are open the stage moves further
+   left, and the command bar follows the same dance. */
+@media (min-width: 960px) {
+  .live-view.live-drawer-open:not(.live-rail-open) .live-cockpit-bar,
+  .live-view.live-rail-open:not(.live-drawer-open) .live-cockpit-bar {
+    transform: translateX(calc(-50% - 210px));
+  }
+  .live-view.live-drawer-open.live-rail-open .live-center-arena,
+  .live-view.live-drawer-open.live-rail-open .live-orb-wrap {
+    transform: translateX(-430px);
+  }
+  .live-view.live-drawer-open.live-rail-open .live-cockpit-bar {
+    transform: translateX(calc(-50% - 430px));
+  }
+  /* Two docking surfaces side by side: rail slides left of the drawer. */
+  .live-view.live-drawer-open.live-rail-open .live-cockpit-rail {
+    right: calc(min(440px, 92vw) + var(--space-4));
+    width: min(420px, calc(100vw - min(440px, 92vw) - 64px));
+    min-width: 0;
+  }
+}
+@media (max-width: 959px) {
+  .live-view.live-drawer-open .live-cockpit-bar,
+  .live-view.live-rail-open .live-cockpit-bar {
+    transform: translateX(-50%);
+  }
+}
+
+/* ─── 8. Touch devices (mobile / tablet): sheets instead of side panels ─── */
+[data-device="mobile"] .live-cb-label,
+[data-device="tablet"] .live-cb-label { display: none; }
+[data-device="mobile"] .live-cb-btn,
+[data-device="tablet"] .live-cb-btn {
+  min-width: var(--control-h-lg);
+  min-height: var(--control-h-lg);
+}
+[data-device="mobile"] .live-cockpit-bar,
+[data-device="tablet"] .live-cockpit-bar {
+  bottom: var(--space-4);
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+[data-device="mobile"] .live-cockpit-top,
+[data-device="tablet"] .live-cockpit-top {
+  top: var(--space-3);
+  left: var(--space-3);
+  right: var(--space-3);
+  gap: var(--space-1);
+}
+
+/* Sheaf → bottom sheet pinned above the command bar */
+[data-device="mobile"] .live-cockpit-sheaf,
+[data-device="tablet"] .live-cockpit-sheaf {
+  top: auto;
+  right: 0;
+  left: 0;
+  bottom: calc(var(--control-h-lg) + var(--space-5) * 2);
+  width: 100%;
+  max-width: 100%;
+  max-height: min(64vh, 620px);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  transform: translateY(var(--space-4)) scale(.99);
+  transform-origin: bottom center;
+  box-shadow: var(--shadow-3);
+}
+[data-device="mobile"] .live-cockpit-sheaf.is-open,
+[data-device="tablet"] .live-cockpit-sheaf.is-open {
+  transform: translateY(0) scale(1);
+}
+
+/* Artifact rail → floating overlay card above the command bar */
+[data-device="mobile"] .live-cockpit-rail,
+[data-device="tablet"] .live-cockpit-rail {
+  top: auto;
+  left: 50%;
+  right: auto;
+  bottom: calc(var(--control-h-lg) + var(--space-5) * 2);
+  transform: translateX(-50%);
+  width: min(94vw, 440px);
+  min-width: 0;
+  max-height: min(46vh, 480px);
+  border-radius: var(--radius-xl);
+}
+[data-device="mobile"] .live-cockpit-rail .live-artifact-stage,
+[data-device="tablet"] .live-cockpit-rail .live-artifact-stage {
+  border-radius: var(--radius-xl);
+}
+
+/* Transcript → bottom sheet (panes open from the bottom, not the right) */
+[data-device="mobile"] .live-transcript-panel,
+[data-device="tablet"] .live-transcript-panel {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: min(62vh, 560px);
+  border-left: 0;
+  border-top: 1px solid var(--live-panel-border);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  transform: translateY(100%);
+  transition: transform var(--dur-slow) var(--ease-out-quint);
+}
+[data-device="mobile"] .live-transcript-panel.open,
+[data-device="tablet"] .live-transcript-panel.open {
+  transform: translateY(0);
+}
+/* One surface at a time on small screens: the artifact card wins and the
+   transcript sheet yields (React remounts it when the card closes). */
+[data-device="mobile"] .live-view.live-drawer-open.live-rail-open .live-transcript-panel,
+[data-device="tablet"] .live-view.live-drawer-open.live-rail-open .live-transcript-panel {
+  display: none;
+}
+/* Sheets should not be pushed sideways by the desktop arena shift */
+
+/* ─── 9. TV (10-foot): focus-grid sheaf, lower-third transcript ─── */
+[data-device="tv"] .live-cockpit-top {
+  top: var(--space-6);
+  left: var(--space-7);
+  right: var(--space-7);
+  gap: var(--space-3);
+}
+[data-device="tv"] .live-ck-pill {
+  height: var(--control-h-md);
+  font-size: 13px;
+  padding: 0 var(--space-4);
+}
+[data-device="tv"] .live-cockpit-bar {
+  bottom: var(--space-6);
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+[data-device="tv"] .live-cb-btn {
+  min-width: 64px;
+  min-height: 64px;
+  border-radius: var(--radius-lg);
+}
+[data-device="tv"] .live-cb-label { font-size: 12px; }
+
+/* Sheaf as a wide focus grid floating above the command bar */
+[data-device="tv"] .live-cockpit-sheaf {
+  top: auto;
+  right: var(--space-7);
+  left: var(--space-7);
+  bottom: calc(var(--control-h-lg) * 2 + var(--space-7));
+  width: auto;
+  max-width: none;
+  max-height: min(60vh, 520px);
+  border-radius: var(--radius-xl);
+  transform: translateY(var(--space-3)) scale(.99);
+  transform-origin: bottom center;
+}
+[data-device="tv"] .live-cockpit-sheaf.is-open {
+  transform: translateY(0) scale(1);
+}
+[data-device="tv"] .live-cockpit-sheaf-scroll {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+  align-content: start;
+  padding: var(--space-4);
+}
+[data-device="tv"] .live-cockpit-sheaf-section {
+  padding: 0;
+  display: contents;
+}
+[data-device="tv"] .live-cockpit-sheaf-section h3 {
+  grid-column: 1 / -1;
+  font-size: 12px;
+}
+[data-device="tv"] .live-cockpit-row {
+  height: var(--control-h-lg);
+  font-size: 15px;
+  border-radius: var(--radius-md);
+}
+[data-device="tv"] .live-cockpit-row:focus-visible { outline-width: 3px; }
+
+/* Transcript as a lower-third band across the bottom */
+[data-device="tv"] .live-transcript-panel {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 36vh;
+  border-left: 0;
+  border-top: 1px solid var(--live-panel-border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  transform: translateY(101%);
+  transition: transform var(--dur-slow) var(--ease-out-quint);
+}
+[data-device="tv"] .live-transcript-panel.open {
+  transform: translateY(0);
+}
+[data-device="tv"] .live-view.live-drawer-open .live-center-arena,
+[data-device="tv"] .live-view.live-drawer-open .live-orb-wrap {
+  transform: translateY(-12vh);
+}
+[data-device="tv"] .live-filter-btn {
+  height: var(--control-h-md);
+  font-size: 14px;
+  padding: 0 var(--space-4);
+}
+[data-device="tv"] .live-transcript-jump {
+  height: var(--control-h-md);
+  font-size: 14px;
+  bottom: var(--space-5);
+}
+[data-device="tv"] .live-filter-btn,
+[data-device="tv"] .live-transcript-close,
+[data-device="tv"] .live-cockpit-sheaf-close,
+[data-device="tv"] .live-settings-close {
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+}
+
+/* ─── 10. Small flyweight: reduced-motion contract ───
+   The sheaf, sheets, rails, cards and jump pill animate; kill every one of
+   them for prefers-reduced-motion (the accessibility contract in
+   16-design-tokens.css already zeroes --dur-*, this also drops the keyframes
+   themselves and the transforms). */
+@media (prefers-reduced-motion: reduce) {
+  .live-cockpit-sheaf,
+  .live-cockpit-sheaf.is-open,
+  .live-cockpit-top,
+  .live-cockpit-bar,
+  .live-cb-btn,
+  .live-cockpit-row,
+  .live-cockpit-rail,
+  .live-artifact-stage,
+  .live-transcript-item,
+  .live-transcript-panel,
+  [data-device="mobile"] .live-transcript-panel,
+  [data-device="mobile"] .live-transcript-panel.open,
+  [data-device="tablet"] .live-transcript-panel,
+  [data-device="tablet"] .live-transcript-panel.open,
+  [data-device="tv"] .live-transcript-panel,
+  [data-device="tv"] .live-transcript-panel.open,
+  .live-rec-card,
+  .live-rec-player,
+  .live-rec-mini,
+  .live-rec-btn,
+  .live-rec-row,
+  [data-device="mobile"] .live-cockpit-sheaf,
+  [data-device="tablet"] .live-cockpit-sheaf,
+  [data-device="tv"] .live-cockpit-sheaf {
+    transition: none !important;
+    animation: none !important;
+  }
+  .live-settings-toggle-slider,
+  .live-settings-toggle-slider::after {
+    transition: none;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * 11. [live-recording] — call recording + playback + recap card chrome.
+ * Fresh class names only, tokens per the 16-design-tokens contract and the
+ * --live-* glass variables from .live-view. nothing here may override
+ * .live-self or the arena (the file's standing rule).
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/* Sheaf recordings panel */
+.live-rec-sheaf {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+}
+.live-rec-panel {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.live-rec-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--live-border);
+}
+.live-rec-panel-row:first-child { border-top: 0; }
+.live-rec-panel-when {
+  font-size: 11px;
+  color: var(--live-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-rec-panel-actions { display: inline-flex; gap: var(--space-1); }
+.live-rec-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  color: var(--live-text);
+  background: var(--live-surface);
+  border: 1px solid var(--live-border);
+  cursor: pointer;
+  transition: background var(--dur-fast, .12s) var(--ease-out-quint);
+}
+.live-rec-mini:hover { background: color-mix(in srgb, var(--accent, #ff6b35) 14%, transparent); }
+.live-rec-mini.is-danger:hover { background: color-mix(in srgb, #ef4444 16%, transparent); }
+.live-rec-panel-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--live-text-dim);
+}
+
+/* Post-call recap card (Horizon-1 item 4) */
+.live-rec-card {
+  position: relative;
+  width: min(520px, 92vw);
+  max-height: min(84vh, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: 20px;
+  background: var(--live-modal-bg);
+  border: 1px solid var(--live-modal-border);
+  box-shadow: var(--shadow-lg);
+  animation: vision-slide-up .25s cubic-bezier(.16, 1, .3, 1);
+}
+.live-rec-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.live-rec-card-head h3 { margin: 0; font-size: 16px; color: var(--live-text); }
+.live-rec-card-close,
+.live-rec-player-close {
+  display: grid;
+  place-items: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  border-radius: var(--radius-pill);
+  color: var(--live-text-dim);
+  background: var(--live-surface);
+  border: 1px solid var(--live-border);
+  cursor: pointer;
+}
+.live-rec-card-close:hover,
+.live-rec-player-close:hover { color: var(--live-text); }
+.live-rec-card-body { overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-3); min-height: 0; }
+.live-rec-card-section h4 {
+  margin: 0 0 var(--space-1);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--live-text-dim);
+}
+.live-rec-card-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.live-rec-card-row { font-size: 13px; color: var(--live-text); line-height: 1.45; }
+.live-rec-card-todos .live-rec-card-row::before { content: "☐ "; color: var(--accent, #ff6b35); }
+.live-rec-card-artefacts .live-rec-card-row::before { content: "▸ "; color: var(--accent, #ff6b35); }
+.live-rec-card-row a { color: var(--accent, #ff6b35); word-break: break-all; }
+.live-rec-card-empty { margin: 0; font-size: 13px; color: var(--live-text-dim); }
+.live-rec-card-md {
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--live-text-dim);
+  background: var(--live-surface);
+  border: 1px solid var(--live-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  max-height: 160px;
+  overflow-y: auto;
+}
+.live-rec-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.live-rec-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--live-text);
+  background: var(--live-surface);
+  border: 1px solid var(--live-border);
+  transition: background var(--dur-fast, .12s) var(--ease-out-quint);
+}
+.live-rec-btn:hover { background: color-mix(in srgb, var(--accent, #ff6b35) 12%, transparent); }
+.live-rec-btn.is-primary {
+  color: #fff;
+  border-color: transparent;
+  background: var(--accent-gradient, linear-gradient(135deg, #ff6b35, #f7c948));
+}
+
+/* Player */
+.live-rec-player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(680px, 94vw);
+  max-height: min(86vh, 760px);
+  padding: var(--space-4);
+  border-radius: 20px;
+  background: var(--live-modal-bg);
+  border: 1px solid var(--live-modal-border);
+  box-shadow: var(--shadow-lg);
+  animation: vision-slide-up .25s cubic-bezier(.16, 1, .3, 1);
+}
+.live-rec-player-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.live-rec-player-title { font-size: 13px; color: var(--live-text); font-weight: 600; }
+.live-rec-player-sub { color: var(--live-text-dim); font-weight: 400; }
+.live-rec-player-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
+  gap: var(--space-3);
+  min-height: 280px;
+  flex: 1;
+  min-height: 0;
+}
+.live-rec-stage {
+  position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  min-height: 180px;
+  background: #0b1120;
+  border: 1px solid var(--live-border);
+  display: grid;
+  place-items: center;
+}
+.live-rec-frame { width: 100%; height: 100%; object-fit: contain; display: block; }
+.live-rec-frame-empty { background: repeating-linear-gradient(45deg, rgba(255,255,255,.04) 0 12px, transparent 12px 24px); }
+.live-rec-stage-time {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  color: var(--live-text);
+  background: var(--live-surface);
+  border: 1px solid var(--live-border);
+}
+.live-rec-stage-note {
+  position: absolute;
+  bottom: var(--space-2);
+  left: var(--space-2);
+  right: var(--space-2);
+  margin: 0;
+  font-size: 11px;
+  color: var(--live-text-dim);
+}
+.live-rec-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.live-rec-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--live-text);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.live-rec-row:hover { background: var(--live-surface); }
+.live-rec-row.is-active { background: color-mix(in srgb, var(--accent, #ff6b35) 14%, transparent); }
+.live-rec-row-who { font-weight: 600; font-size: 11px; color: var(--live-text-dim); flex: none; }
+.live-rec-row-text { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.live-rec-row-time { margin-left: auto; font-size: 10px; color: var(--live-text-dim); flex: none; }
+.live-rec-rail-note { margin: 0; font-size: 12px; color: var(--live-text-dim); }
+
+/* Timeline scrubber + markers */
+.live-rec-track-wrap { position: relative; height: 28px; display: flex; align-items: center; }
+.live-rec-track {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--live-surface);
+  border: 1px solid var(--live-border);
+  outline-offset: 3px;
+}
+.live-rec-track:focus-visible { outline: 2px solid var(--accent, #ff6b35); }
+.live-rec-track-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent-gradient, linear-gradient(135deg, #ff6b35, #f7c948));
+  opacity: .55;
+}
+.live-rec-tick {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: var(--radius-pill);
+  background: var(--live-text-dim);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.live-rec-marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.live-rec-marker-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent, #ff6b35);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent, #ff6b35) 55%, transparent);
+}
+.live-rec-marker.is-result .live-rec-marker-dot { background: #38bdf8; }
+
+@media (max-width: 640px) {
+  .live-rec-player-body { grid-template-columns: 1fr; }
+  .live-rec-stage { min-height: 140px; }
+}

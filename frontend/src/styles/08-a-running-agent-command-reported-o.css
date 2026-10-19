@@ -630,132 +630,10 @@
   }
 }
 
-/* ── Floating Live Pill Overlay ────────────────────────────────────────── */
-.live-pill-container {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 9999;
-  max-width: 480px;
-  min-width: 320px;
-  animation: livePillSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  pointer-events: auto;
-}
-
-.live-pill-container.collapsed {
-  min-width: unset;
-  max-width: unset;
-}
-
-.live-pill-glass {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: rgba(17, 24, 32, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 107, 53, 0.25);
-  border-radius: 9999px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 0 24px rgba(255, 107, 53, 0.12);
-  transition: all 0.2s ease;
-}
-
-.live-pill-orb {
-  position: relative;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  cursor: pointer;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.15s ease-out;
-}
-
-.live-orb-core {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--accent-gradient);
-  z-index: 2;
-  box-shadow: 0 0 10px var(--accent);
-}
-
-.live-orb-glow {
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 107, 53, 0.4) 0%, transparent 70%);
-  animation: orbPulse 2s infinite ease-in-out;
-}
-
-.live-pill-orb.status-speaking .live-orb-core {
-  background: linear-gradient(135deg, #22c55e, #10b981);
-  box-shadow: 0 0 12px #22c55e;
-}
-
-.live-pill-orb.status-thinking .live-orb-core {
-  background: linear-gradient(135deg, #8b5cf6, #ec4899);
-  box-shadow: 0 0 12px #8b5cf6;
-  animation: orbSpin 1.5s linear infinite;
-}
-
-.live-pill-content {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.live-pill-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.72rem;
-  margin-bottom: 2px;
-}
-
-.live-pill-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-weight: 600;
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.live-pill-role-tag {
-  background: rgba(255, 255, 255, 0.08);
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 0.65rem;
-  color: var(--text-secondary);
-}
-
-.live-pill-subtitle {
-  font-size: 0.82rem;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 500;
-}
-
-.live-pill-hint {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.live-pill-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
+/* LivePill.jsx retirement (2026-10-18): its 13 overlay rules (.live-pill-*)
+   and the livePillSlideUp/orbPulse/orbSpin keyframes that only they used were
+   deleted together with the component — the .live-btn rules BELOW this banner
+   stay: the .live-btn-* variants are still referenced by the live cockpit. */
 .live-btn {
   display: inline-flex;
   align-items: center;
@@ -799,21 +677,6 @@
 .live-btn.btn-end-call:hover {
   background: #b91c1c;
   transform: scale(1.05);
-}
-
-@keyframes livePillSlideUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes orbPulse {
-  0%, 100% { transform: scale(1); opacity: 0.6; }
-  50% { transform: scale(1.25); opacity: 0.9; }
-}
-
-@keyframes orbSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 
 @keyframes scanLaser {

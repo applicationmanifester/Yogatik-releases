@@ -1234,6 +1234,33 @@
 
     <button class="nav-btn" id="new-tab-btn" title="New tab (Ctrl+T)">+</button>
 
+    <!-- [chromium-privacy] Containers & privacy-audit popover (minimal UI;
+         heavy UI is a deliberate follow-up). New-tab-in-container dropdown
+         plus a per-origin storage audit with wipe. -->
+    <div class="popover-wrap" id="privacy-wrap">
+      <button class="nav-btn" id="privacy-btn" title="Containers &amp; Privacy">&#129540;</button>
+      <div class="menu-dropdown" id="privacy-menu" hidden>
+        <div class="menu-header">
+          <span>Containers &amp; Privacy</span>
+        </div>
+        <div class="site-perm-header" style="padding:6px 10px 2px;">
+          <span>New tab in container</span>
+        </div>
+        <div id="privacy-container-list"></div>
+        <div class="stat-row" style="padding:4px 10px;">
+          <button class="site-perm-toggle" id="privacy-container-new-btn">+ New Container</button>
+        </div>
+        <div class="site-perm-divider"></div>
+        <div class="site-perm-header" style="padding:2px 10px;">
+          <span>Stored Data (this profile)</span>
+        </div>
+        <div id="privacy-storage-audit" class="site-perm-empty">Open a few sites to see stored data.</div>
+        <div class="stat-row" style="padding:4px 10px;">
+          <button class="site-perm-toggle" id="privacy-audit-refresh-btn">Refresh</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Inline Find Bar -->
     <div id="find-group">
       <input id="find-input" placeholder="Find in page..." autocomplete="off" spellcheck="false">
@@ -2616,6 +2643,111 @@ let anyVisible = false
       newGroup: () => newTabGroupBtn.click(),
       getState: () => ({ enabled: verticalTabsEnabled, collapsed: sidebarCollapsed })
     }
+  </script>
+
+  <script>
+    // [chromium-privacy] Minimal containers + storage-audit wiring. Uses only
+    // the __privacy bridge (ids/origins validated main-side). Heavy UI —
+    // per-tab container badges, audit charts — is a deliberate follow-up.
+    (function () {
+      const privacy = window.__privacy
+      const wrap = document.getElementById('privacy-wrap')
+      const menu = document.getElementById('privacy-menu')
+      const listEl = document.getElementById('privacy-container-list')
+      const auditEl = document.getElementById('privacy-storage-audit')
+      if (!privacy || !wrap || !menu || !listEl || !auditEl) return
+
+      function fmtBytes(n) {
+        if (!Number.isFinite(n) || n <= 0) return '0 B'
+        const units = ['B', 'KB', 'MB', 'GB']
+        let i = 0
+        while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
+        return n.toFixed(i ? 1 : 0) + ' ' + units[i]
+      }
+
+      function containerRow(c) {
+        const row = document.createElement('div')
+        row.className = 'site-perm-row'
+        const btn = document.createElement('button')
+        btn.className = 'site-perm-toggle'
+        btn.style.width = '100%'
+        btn.textContent = (c.label || c.id) + ' →'
+        btn.title = 'New tab in container "' + (c.label || c.id) + '" (' + c.partition + ')'
+        btn.onclick = () => { menu.hidden = true; privacy.containers.open(c.id) }
+        row.appendChild(btn)
+        return row
+      }
+
+      function renderContainers() {
+        privacy.containers.list().then((res) => {
+          listEl.textContent = ''
+          const containers = (res && res.containers) || []
+          if (!containers.length) {
+            const empty = document.createElement('div')
+            empty.className = 'site-perm-empty'
+            empty.textContent = 'No containers yet — create one to isolate its cookies.'
+            listEl.appendChild(empty)
+            return
+          }
+          for (const c of containers) listEl.appendChild(containerRow(c))
+        }).catch(() => {})
+      }
+
+      document.getElementById('privacy-container-new-btn').onclick = () => {
+        const id = prompt('Container id (letters, numbers, "-" or "_", max 32):')
+        if (!id) return
+        const label = prompt('Label (optional):', '') || undefined
+        privacy.containers.create(id.trim(), label).then((res) => {
+          if (res && res.success === false) window.__setToast && window.__setToast(res.error || 'Could not create container')
+          else renderContainers()
+        }).catch(() => {})
+      }
+
+      function renderAudit() {
+        auditEl.textContent = 'Reading stored data…'
+        privacy.storageAudit().then((res) => {
+          auditEl.textContent = ''
+          if (!res || res.success === false) {
+            auditEl.textContent = (res && res.error) || 'Storage audit unavailable.'
+            return
+          }
+          const head = document.createElement('div')
+          head.className = 'site-perm-empty'
+          const storage = res.storage && res.storage.usage ? ' · ' + fmtBytes(res.storage.usage) + ' storage' : ''
+          head.textContent = res.totalCookies + ' cookies across ' + res.origins.length + ' sites' + storage
+          auditEl.appendChild(head)
+          if (!res.origins.length) return
+          const originsEl = document.createElement('div')
+          for (const o of res.origins.slice(0, 12)) {
+            const row = document.createElement('div')
+            row.className = 'stat-row'
+            row.style.padding = '2px 10px'
+            const label = document.createElement('span')
+            label.textContent = o.domain + ' (' + o.count + ')'
+            const wipe = document.createElement('button')
+            wipe.className = 'site-perm-toggle'
+            wipe.textContent = 'Wipe'
+            wipe.title = 'Remove all cookies/storage for ' + o.domain
+            wipe.onclick = () => {
+              privacy.wipeOrigin(o.domain).then(renderAudit).catch(() => {})
+            }
+            row.appendChild(label)
+            row.appendChild(wipe)
+            originsEl.appendChild(row)
+          }
+          auditEl.appendChild(originsEl)
+        }).catch(() => { auditEl.textContent = 'Storage audit unavailable.' })
+      }
+
+      document.getElementById('privacy-audit-refresh-btn').onclick = renderAudit
+      document.getElementById('privacy-btn').onclick = () => {
+        menu.hidden = !menu.hidden
+        if (!menu.hidden) { renderContainers(); renderAudit() }
+      }
+      document.addEventListener('mousedown', (e) => {
+        if (!wrap.contains(e.target)) menu.hidden = true
+      })
+    })()
   </script>
 </body>
 </html>

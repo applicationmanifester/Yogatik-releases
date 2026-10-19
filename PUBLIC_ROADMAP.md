@@ -1,5 +1,9 @@
 # Yogatik Public Roadmap
 
+## Sprint 3 — Reach & Insight (shipped 2026-10-15): WCAG 2.1 AA + opt-in analytics ✅
+- Streaming completion announced once via polite live region (never per token); picker/panels keyboard + label audit; audited high-contrast theme; `?` shortcut map.
+- Analytics OFF by default with transparent Settings toggle; PostHog-compatible self-hosted sink loads lazily only after consent; only anonymised counts/timings (tool, ok, bucketed latency) — never content.
+
 ## Q4 2026: Stability & Trust
 - **Theme**: Solidify core reliability and enterprise readiness
 - **Goals**:

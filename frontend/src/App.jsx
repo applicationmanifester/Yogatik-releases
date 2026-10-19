@@ -6,6 +6,7 @@ import { isDesktop, addRoot, listRoots, removeRoot, setPrimaryRoot, rebindChatRo
 import { getFavoriteLocations, addFavoriteLocation, removeFavoriteLocation, isFavoriteLocation, toggleFavoriteLocation, getRecentLocations, recordRecentLocation } from './tools/favoriteLocations'
 import { setUserQuestionHandler } from './tools/askUser'
 import { useToast } from './hooks/useToast'
+import { useKeyboard, useKeyboardBodyClass } from './hooks/useKeyboard.jsx'
 import { copyChatScope, rebindChatScope } from './chatScope'
 import { playCue, configureSoundCues } from './soundCues'
 import { runMultiAgentDebate } from './multiAgent'
@@ -27,13 +28,15 @@ import { MessageBubble } from './components/MessageBubble'
 import { StreamingMessage } from './components/StreamingMessage'
 import { ArtifactCanvas } from './components/ArtifactCanvas'
 import { VoiceDictationButton } from './components/VoiceDictationButton'
+// [tv-voice] 10-foot hands-free input overlay (self-gates on data-device="tv" + the tvVoice toggle)
+import { TvVoiceOverlay } from './components/TvVoiceOverlay'
 import { Modal } from './components/Modal'
 import { TERMS_VERSION, CONTACT_EMAIL } from './components/TermsModal'
 import { ModelPicker } from './components/ModelPicker'
 import { ProviderPicker } from './components/ProviderPicker'
 import { PersonaPicker } from './components/PersonaPicker'
 import { StylePicker } from './components/StylePicker'
-import { runWorkflow } from './workflows'
+import { getWorkflows } from './workflows' // ── [proactive-scheduler] ── scheduled runs resolve their workflow through here (manual runs go via runWorkflowCore below)
 import { FloatingCompanion } from './components/FloatingCompanion'
 import { ActiveTimerIndicator } from './components/ActiveTimerIndicator'
 import { openDocumentPip, closeDocumentPip, isDocumentPipSupported, getPipMount } from './pipCompanion'
@@ -41,6 +44,7 @@ import { getErrorLog, clearErrorLog, getDiagnosticsReport, diagnoseError, logWat
 import { assessResponse, isRetryableError, retryDelay, continuationPrompt, regenerationPrompt } from './responseWatchdog'
 import { isDbClosedError } from './db'
 import { resolveFeatures, isEnabled } from './features'
+import { registerPrefsApplier } from './prefsSync'
 import { setLocalVLMConsent } from './vision/localVLM'
 import { setSegmentConsent } from './vision/sam'
 import { setDetectorConsent } from './vision/detect'
@@ -58,6 +62,11 @@ import { matchReflex } from './live/reflexEngine'
 import { isInstalledApp, shareYogatik, nativeShareAvailable } from './share'
 import { groupConversations } from './convGroups'
 import { shouldNotifyTurn, notificationBody, notificationTitle, cleanReply } from './desktopNotify'
+// ── [proactive-scheduler] ── runtime for user-approved scheduled workflows.
+// Creation is UI-only (ScheduledPanel); this module wires the drain ticker +
+// completion notifications in ONE delimited effect below.
+import { backgroundWorkers } from './backgroundWorkers'
+import { executeWorkflowAgainstAgent, createAgentPromptRunner } from './runWorkflowCore'
 import { setPermissionPrompt } from './permissions'
 import { setLocaleOverrides, overridesFromPrefs, applyDocumentLocale } from './locale'
 import {
@@ -74,6 +83,7 @@ import { TagModal } from './components/TagModal'
 import { FolderModal } from './components/FolderModal'
 import { safeLazy } from './utils/safeLazy'
 import { prewarmToolsFromInput } from './tools/toolPrewarm'
+import { initDeviceClass } from './deviceClass'
 import { formatLatency, getStatusIcon, formatDirectTimeAnswer, WINDOW_STEP, SUGGESTIONS } from './appHelpers'
 
 // Code-split heavy modals and auxiliary views on demand with auto-retry and cache-bust on new deploys
@@ -348,13 +358,24 @@ export default function App() {
   const [expertiseLevel, setExpertiseLevel] = useState(getExpertiseLevelSync)
   useEffect(() => subscribeExpertise(setExpertiseLevel), [])
 
-  // Global Keyboard Shortcuts (Ctrl+/, Ctrl+N, Ctrl+B, Ctrl+`, Ctrl+Shift+D)
+  // Global Keyboard Shortcuts (Ctrl+/, ?, Ctrl+N, Ctrl+B, Ctrl+`, Ctrl+Shift+D)
+  // Sprint 3: "?" (Shift+/) toggles the shortcut map when focus is NOT in a
+  // text field — see SHORTCUT_MAP in ShortcutsModal.jsx (single source of
+  // truth). Ctrl+/ always works, even while typing.
   useEffect(() => {
     const handleGlobalKey = (e) => {
       // Don't intercept when user is typing in form inputs/modals unless it's Ctrl+/ or Escape
       if ((e.ctrlKey || e.metaKey) && e.key === '/') {
         e.preventDefault()
         setShowShortcutsModal(prev => !prev)
+        return
+      }
+      const tag = (e.target?.tagName || '').toLowerCase()
+      const typing = tag === 'input' || tag === 'textarea' || e.target?.isContentEditable
+      if (e.key === '?' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        setShowShortcutsModal(prev => !prev)
+        return
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n' && !e.shiftKey) {
         e.preventDefault()
@@ -421,6 +442,10 @@ export default function App() {
   // Same signature as before, so every existing call site is unchanged; the
   // second argument is what unlocks actions and progress at new ones.
   const showToast = useCallback((msg, options) => pushToast(msg, options), [pushToast])
+
+  // Mobile keyboard detection for composer positioning
+  useKeyboardBodyClass()
+  const { isOpen: isKeyboardOpen, height: keyboardHeight } = useKeyboard()
   const showConfirm = useCallback((msg, onOk, { okLabel = 'OK', cancelLabel = 'Cancel', onCancel } = {}) => {
     setConfirmModal({ msg, okLabel, cancelLabel, onOk, onCancel })
   }, [])
@@ -1400,6 +1425,12 @@ export default function App() {
       })
       for (const [k, v] of entries) {
         setPref(k, v).catch(() => {})
+        // cloudSyncEnabled() (api.js) reads the snake_case spelling; the
+        // toggle used to write only camelCase — chat_prefs.cloud_sync was
+        // never set, so the Encrypted Sync switch never actually keyed the
+        // sync gate. Persist BOTH: camelCase stays the state mirror the UI
+        // reads, snake_case is the gate the sync engine reads.
+        if (k === 'cloudSync') setPref('cloud_sync', !!v).catch(() => {})
       }
       return
     }
@@ -1417,6 +1448,7 @@ export default function App() {
       return next
     })
     setPref(key, value).catch(() => {})
+    if (key === 'cloudSync') setPref('cloud_sync', !!value).catch(() => {})
   }, [setTemperature])
 
   // Only the tail of a long conversation is mounted; older turns stay in state
@@ -1432,6 +1464,16 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('yogatik_theme', theme)
   }, [theme])
+
+  // Device-class adaptive UI: data-device / data-density on <html>, the
+  // --sat/--sab/--sal/--sar safe-area vars, and the viewport-meta repair
+  // (ios input-focus jitter / notch / user zoom). One init per mount with
+  // dispose on unmount, exactly like the theme effect above — StrictMode
+  // and HMR remounts must not stack resize listeners.
+  useEffect(() => {
+    const controller = initDeviceClass()
+    return controller.dispose
+  }, [])
   // Follow the stream only while the user is already at the bottom. Yanking
   // someone back mid-read is the most annoying thing a chat UI can do.
   const scrollerRef = useRef(null)
@@ -2226,6 +2268,53 @@ export default function App() {
     }
   }, [activeProject, provider, model, temperature, webSearch, tools])
 
+  // ─── Cross-device prefs sync (prefsSync.js) ───
+  // pullPrefs() writes the account's prefs straight into this device's stores
+  // and then fires this applier so the running UI follows (theme, toggles,
+  // chat prefs, active project, provider) without a reload. Registered once;
+  // the ref is refreshed every render so the listener can never act on a
+  // stale conversation loader or stale setters.
+  const applyPrefsRef = useRef(null)
+  applyPrefsRef.current = (applied) => {
+    if (!applied) return
+    try {
+      if (applied.theme) setTheme(applied.theme)
+      if (applied.models?.active_provider) setProvider(applied.models.active_provider)
+      if (applied.activeProjectId !== undefined) {
+        setActiveProjectState(applied.activeProjectId ?? null)
+        loadConversations(applied.activeProjectId ?? null)
+        refreshDocs()
+      }
+      const p = applied.prefs || {}
+      // Raw state setters only: autoApply has already written the values to
+      // Dexie, and the startup loader (getPrefs() below) mirrors rows into
+      // state the same way — no echoing setPref writes, no conversation
+      // rewrites, just show what the account sent.
+      if (p.temperature !== undefined) setTemperatureState(p.temperature)
+      if (p.web_search !== undefined) setWebSearchState(p.web_search)
+      if (p.tools_enabled !== undefined) setToolsEnabledState(p.tools_enabled)
+      if (p.auto_route !== undefined) setAutoRouteState(p.auto_route)
+      if (p.fallback !== undefined) setFallbackState(p.fallback)
+      if (p.persona) setActiveTemplate(p.persona)
+      const prefKeys = Object.keys(p)
+      if (applied.features || prefKeys.length) {
+        setPrefsState(prev => {
+          const next = { ...prev, ...p }
+          if (applied.features) next.features = { ...(prev.features || {}), ...applied.features }
+          if (prefKeys.some(k => k.endsWith('_override'))) {
+            setLocaleOverrides(overridesFromPrefs(next))
+            applyDocumentLocale()
+          }
+          return next
+        })
+      }
+    } catch { /* a pref that cannot apply live must never break the chat */ }
+  }
+  useEffect(
+    () => registerPrefsApplier((applied) => applyPrefsRef.current?.(applied)),
+    []
+  )
+
   // Set when sign-in was started FROM the paywall, so the user lands back on it
   // instead of on the chat screen wondering whether the purchase happened.
   const resumeUpgradeRef = useRef(false)
@@ -2374,6 +2463,14 @@ export default function App() {
       } catch {}
     })
   }, [])
+
+  // Mobile sidebar: prevent body scroll when open
+  useEffect(() => {
+    if (window.innerWidth <= 768) {
+      document.body.classList.toggle('sidebar-open', sidebarOpen)
+    }
+    return () => document.body.classList.remove('sidebar-open')
+  }, [sidebarOpen])
 
   // Per-conversation composer drafts & enhancement toasts
   const chatDraftsRef = useRef(() => {
@@ -3005,16 +3102,15 @@ export default function App() {
   const loadingRef = useRef(null)
   useEffect(() => { loadingRef.current = !!(conv?.clientId && loadingMap[conv.clientId]) }, [loadingMap, conv?.clientId])
 
-  /** Run a workflow: send each (variable-filled) step in order, waiting for the
-   *  previous turn to finish. Steps chain through the conversation history. */
+  // ── [proactive-scheduler] ── Run a workflow: send each (variable-filled) step
+  // in order, waiting for the previous turn to finish. Steps chain through the
+  // conversation history. The step plumbing (send + settle probe) now lives in
+  // runWorkflowCore.js so the SCHEDULED run path (effect near sendRef below)
+  // fires through exactly the same machinery instead of a second copy of it.
   const runWorkflowNow = async (wf, values) => {
-    await runWorkflow(wf, values, (prompt) => new Promise((resolve) => {
-      sendRef.current?.(prompt)
-      const started = Date.now()
-      const iv = setInterval(() => {
-        const settled = !loadingRef.current && Date.now() - started > 900
-        if (settled || Date.now() - started > 180000) { clearInterval(iv); resolve('') }
-      }, 300)
+    await executeWorkflowAgainstAgent(wf, values, createAgentPromptRunner({
+      send: (p) => sendRef.current?.(p),
+      isBusy: () => loadingRef.current,
     }))
   }
 
@@ -3777,6 +3873,27 @@ export default function App() {
         },
         (toolName, toolResult) => {
           const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
+          /* [citations] Hybrid-RAG inline citations: doc_search numbers its
+             result blocks [1..k] for the model to cite. When the model calls
+             doc_search more than once in a turn, the outer runData is keyed by
+             tool name, so a naive overwrite restarts at [1] — colliding with
+             numbers already cited — and drops the earlier call's passages
+             from the UI strip. Renumber IN PLACE (agent.js serialises this
+             same object into the model's tool message, synchronously after
+             this callback) so call 2 reads [k+1]…, and store an ACCUMULATED
+             passages list so every number the model cites keeps its row. */
+          if (toolName === 'doc_search') {
+            const prevDoc = runData.results.doc_search
+            const rows = Array.isArray(toolResult?.passages) ? toolResult.passages : []
+            if (Array.isArray(prevDoc?.passages) && prevDoc.passages.length && rows.length) {
+              const offset = prevDoc.passages.length
+              rows.forEach((p, i) => { p.n = offset + i + 1 })
+              toolResult = {
+                ...toolResult,
+                passages: [...prevDoc.passages, ...rows],
+              }
+            }
+          }
           runData.results[toolName] = toolResult
           toolRunMapRef.current[targetClientId] = runData
           setPendingToolResultsMap(prev => ({ ...prev, [targetClientId]: { ...(prev[targetClientId] || {}), [toolName]: toolResult } }))
@@ -3962,6 +4079,87 @@ export default function App() {
     window.addEventListener('yogatik:submit-prompt', handler)
     return () => window.removeEventListener('yogatik:submit-prompt', handler)
   }, [])
+
+  // ═══ [proactive-scheduler] runtime — makes user-approved schedules FIRE ═══
+  // Schedules are created ONLY in ScheduledPanel (workflow settings) — this is
+  // the single runtime effect behind them (scheduler.js + backgroundWorkers.js):
+  //   • drains due schedules 10 s after boot, then every 60 s, and whenever the
+  //     tab becomes visible again; due units spawn through drainDueSchedules and
+  //     execute via the SAME seam as the manual Run button (runWorkflowCore).
+  //   • subscribes once for completions → desktop notification only when the
+  //     user is not looking (same policy as the turn notification above).
+  // One `[]`-dep effect bound to refs (sendRef/loadingRef) + module functions —
+  // nothing here reads live component state, so it cannot re-render the shell.
+  useEffect(() => {
+    let draining = false
+    const drain = async () => {
+      if (draining) return
+      draining = true
+      try {
+        await backgroundWorkers.drainDueSchedules({
+          // Scheduling is NEVER a bypass: the scheduled step is an ordinary
+          // send() turn, so permissions + action-boundary still apply at run time.
+          runWorkflowById: async (workflowId, payload) => {
+            const wf = (await getWorkflows()).find(w => w.id === workflowId)
+            if (!wf) return null // workflow deleted under a schedule: already marked run, nothing to spawn
+            return executeWorkflowAgainstAgent(wf, payload?.values || {}, createAgentPromptRunner({
+              send: (p) => sendRef.current?.(p),
+              isBusy: () => loadingRef.current,
+            }))
+          },
+        })
+      } catch { /* a bad tick beats a broken app; the next beat retries */ }
+      finally { draining = false }
+    }
+    // First pass 10 s in (past the boot I/O), then every minute; browsers
+    // throttle far-background timers, so returning to the tab also drains.
+    const firstDrain = setTimeout(drain, 10_000)
+    const drainEvery = setInterval(drain, 60_000)
+    const onVisible = () => { if (typeof document !== 'undefined' && !document.hidden) drain() }
+    document.addEventListener('visibilitychange', onVisible)
+    // Finished scheduled task → desktop notification via the SUBSCRIBE path:
+    // a plain listener on backgroundWorkers' Set + a local Set of seen ids,
+    // both out of React state — re-render-safe by construction. Only tasks that
+    // completed during THIS session notify; finished rows already on disk stay
+    // quiet. Policy rides shouldNotifyTurn: no interrupt while the app is
+    // focused on the visible work the panel already surfaces.
+    const seen = new Set()
+    const mountedAt = Date.now()
+    const unsub = backgroundWorkers.subscribe((tasks) => {
+      for (const t of (tasks || [])) {
+        if (t.taskType !== 'scheduled_workflow' || t.status !== 'completed') continue
+        if (seen.has(t.id) || (t.completedAt || t.lastUpdated || 0) < mountedAt) continue
+        seen.add(t.id)
+        try {
+          const res = t.result
+          const summary = Array.isArray(res)
+            ? res.map(r => r?.output || '').filter(Boolean).join(' ')
+            : (res?.summary || res?.message || '')
+          const notify = shouldNotifyTurn({
+            isDesktop: isDesktop(),
+            hidden: typeof document !== 'undefined' && document.hidden,
+            focused: typeof document !== 'undefined' && document.hasFocus(),
+            aborted: false,
+            error: false,
+            hasText: true,
+          })
+          if (notify && typeof window.__YOGATIK_NOTIFY__ === 'function') {
+            window.__YOGATIK_NOTIFY__({
+              title: notificationTitle(`Scheduled: ${t.title}`),
+              body: notificationBody(summary || `${t.title} completed.`),
+            })
+          }
+        } catch { /* notifications are a courtesy; never a barrier to a finished task */ }
+      }
+    })
+    return () => {
+      clearTimeout(firstDrain)
+      clearInterval(drainEvery)
+      document.removeEventListener('visibilitychange', onVisible)
+      unsub()
+    }
+  }, [])
+  // ══ end [proactive-scheduler] ══
 
   // Sync ambient UI context with agent situational awareness
   useEffect(() => {
@@ -5127,7 +5325,7 @@ export default function App() {
         getPipMount() || pipWindow.document.body
       )}
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
-      <aside className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''} ${sidebarOpen ? '' : 'collapsed'}`}>
         <div className="sidebar-header">
           <h2
             onClick={() => setShowOverviewModal(true)}
@@ -5465,6 +5663,18 @@ export default function App() {
           </div>
         </div>
       </aside>
+      <div
+        className={`sidebar-backdrop ${sidebarOpen ? 'visible' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+        aria-hidden="true"
+      />
+
+      {/* Sidebar backdrop for mobile drawer */}
+      <div
+        className={`sidebar-backdrop ${sidebarOpen ? 'visible' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+        aria-hidden="true"
+      />
 
       <input ref={backupInput} type="file" accept="application/json" hidden
         onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleRestore(f) }} />
@@ -5486,15 +5696,15 @@ export default function App() {
         </React.Suspense>
       )}
 
-      <main className="chat-area">
+      <main className="chat-area safe-top safe-bottom">
         <header className="chat-header">
           {/* minWidth was 0, and an inline value outranks the stylesheet: the
               action row took the full width on a phone and this block — the
               chat title AND the hamburger that is the only way to open the
               sidebar — collapsed to 0px, present and focusable but invisible.
               88px is a floor the h1 still ellipsizes inside. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 88, flex: 1, overflow: 'hidden' }}>
-            {!sidebarOpen && <button className="icon-btn" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar"><Menu size={18} /></button>}
+          <div className="chat-header-title" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 88, flex: 1, overflow: 'hidden' }}>
+            {!sidebarOpen && <button className="icon-btn sidebar-toggle" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar"><Menu size={18} /></button>}
             <span
               style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', flexShrink: 0 }}
               onClick={() => setShowOverviewModal(true)}
@@ -5507,7 +5717,7 @@ export default function App() {
               {conv?.title || 'New Chat'}
             </h1>
           </div>
-          <div className="header-actions">
+          <div className="chat-header-actions header-actions">
             {/* Both builds can be installed side by side and confusing them is
                 a real failure mode, so the personal one always says so. */}
             {isPersonalEdition() && <span className="edition-badge" title="Personal build — no licence check">Personal</span>}
@@ -5879,7 +6089,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="messages" ref={scrollerRef} onScroll={onScroll}>
+        <div className="messages chat-messages scrollable" ref={scrollerRef} onScroll={onScroll}>
           {notFoundRoute ? (
             <div className="not-found-view">
               <div className="not-found-icon">🔍</div>
@@ -6345,7 +6555,7 @@ export default function App() {
         <CrisisCard card={crisisCard} onDismiss={() => setCrisisCard(null)} />
         <ToolStatusPanel onRetry={(name) => send(`Please retry the ${name} tool.`)} />
 
-        <div className={`input-area${dragOver ? ' drag-over' : ''}`}
+        <div className={`input-area composer${dragOver ? ' drag-over' : ''}`}
           onDragOver={e => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}>
@@ -6772,6 +6982,7 @@ export default function App() {
               </div>
             )}
             <textarea ref={textareaRef} aria-label="Message" value={input}
+              className="composer-textarea"
               onChange={e => {
                 const val = e.target.value
                 setInput(val)
@@ -6866,7 +7077,7 @@ export default function App() {
               </div>
             ) : (
               <button
-                className="send-btn"
+                className="send-btn composer-send-btn"
                 aria-label="Send message"
                 onClick={() => sendRef.current?.()}
                 disabled={!input.trim() && !attachedFile && !attachedImage}
@@ -6875,6 +7086,21 @@ export default function App() {
               </button>
             )}
           </div>
+
+          {/* [tv-voice] Hands-free input for the 10-foot UI. Spoken utterances
+              are committed through the SAME composer + send() path a typed
+              message takes: set the composer text, then send with explicit
+              text so no stale input closure is trusted. */}
+          <TvVoiceOverlay
+            features={features}
+            onCommit={(text) => {
+              const t = String(text || '').trim()
+              if (!t) return
+              setInput(t)
+              inputRef.current = t
+              sendRef.current?.(t)
+            }}
+          />
 
           <div className="composer-footer">
             <span className="disclaimer">

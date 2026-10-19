@@ -19,6 +19,8 @@ import { ReasoningAccordion } from './ReasoningAccordion'
 import { AgentWorkflowStepper } from './AgentWorkflowStepper'
 import { FollowUpSuggestions } from './FollowUpSuggestions'
 import { CitationHoverCard } from './CitationHoverCard'
+import { CitationsStrip } from './CitationsStrip'
+import { buildSourcesStrip } from '../citations'
 import { summariseToolResults } from '../toolSummary'
 
 /**
@@ -364,6 +366,21 @@ const MessageBubble = React.memo(function MessageBubble({
     }
   }, [msg.content])
 
+  /* [citations] Inline-citation strip — only for answers that produced a
+     doc_search tool result THIS turn. Built at render time from the finished
+     answer text + the per-message tool-result state App already stores
+     (msg.toolResults.doc_search), so it survives reload (the numbered result
+     is persisted with the message) and NEVER mutates msg.content — the raw
+     message text in the db stays byte-identical. null ⇒ nothing renders. */
+  const citationsStrip = useMemo(() => {
+    if (msg.role !== 'assistant') return null
+    const passages = msg.toolResults?.doc_search?.passages
+    if (!Array.isArray(passages) || !passages.length) return null
+    const answerText = (typeof answer === 'string' && answer) ||
+      (adaptiveParts ? adaptiveParts.map(p => p.content || '').join('\n') : '')
+    return buildSourcesStrip(answerText, passages)
+  }, [msg.role, msg.toolResults, answer, adaptiveParts])
+
   // Provenance explanation state — expanded/collapsed
   const [showProvenance, setShowProvenance] = useState(false)
   const [hoveredSourceIdx, setHoveredSourceIdx] = useState(null)
@@ -486,7 +503,7 @@ const MessageBubble = React.memo(function MessageBubble({
 
 
   return (
-    <div className={`message ${msg.role}`}>
+    <div className={`message ${msg.role} message-bubble ${msg.role === 'user' ? 'user' : 'assistant'}`}>
       <div className="message-role">
         <span className="message-who">{msg.role === 'user' ? 'You' : 'Yogatik'}</span>
         {msg.role === 'assistant' && (
@@ -741,6 +758,10 @@ const MessageBubble = React.memo(function MessageBubble({
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{answer}</ReactMarkdown>
           </div>
         ) : null}
+      {/* [citations] Numbered sources this answer actually cited ([1], [2,3], …).
+          Only rendered for assistant messages whose turn produced doc_search
+          results; hidden outright when nothing cited maps to a passage. */}
+      {citationsStrip && <CitationsStrip strip={citationsStrip} />}
       {actionChips?.length > 0 && (
         <div className="message-action-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
           {actionChips.map((chip, idx) => (

@@ -7,6 +7,7 @@
  */
 
 import { getSetting, setSetting } from './db'
+import { getDueSchedules, markScheduleRun } from './scheduler'
 
 const BACKGROUND_TASKS_KEY = 'yogatik_background_tasks_v1'
 
@@ -171,6 +172,31 @@ class BackgroundWorkerManager {
       await setSetting(BACKGROUND_TASKS_KEY, [])
     } catch {}
     this.notifyListeners([])
+  }
+
+  /**
+   * Drain due schedules: for each due user-approved schedule, spawn one
+   * background task carrying the workflowId and mark the schedule run.
+   * `runWorkflowById(workflowId)` is injected by the caller (App/agent) so
+   * this module stays UI-agnostic and testable. Returns spawned count.
+   */
+  async drainDueSchedules({ now = Date.now(), runWorkflowById = null } = {}) {
+    const due = await getDueSchedules(now)
+    let spawned = 0
+    for (const s of due) {
+      await markScheduleRun(s.id, now)
+      spawned++
+      if (typeof runWorkflowById === 'function') {
+        await this.spawnTask({
+          title: `Scheduled: ${s.name || s.workflowId}`,
+          taskType: 'scheduled_workflow',
+          agentPersona: 'Scheduler',
+          payload: { workflowId: s.workflowId, scheduleId: s.id, projectId: s.projectId || null },
+          executorFn: async (payload) => runWorkflowById(payload.workflowId, payload),
+        })
+      }
+    }
+    return { due: due.length, spawned }
   }
 }
 

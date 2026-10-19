@@ -19,34 +19,9 @@ export function LiveArtifactStage({
   if (!current) return null
 
   return (
-    <div
-      className="live-artifact-stage"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        maxHeight: '100%',
-        background: 'var(--live-panel-bg, rgba(15, 23, 42, 0.72))',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
-        border: '1px solid var(--live-panel-border, rgba(56, 189, 248, 0.25))',
-        borderRadius: '16px',
-        overflow: 'hidden',
-        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.18)',
-        animation: 'liveArtifactSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-      }}
-    >
+    <div className="live-artifact-stage">
       {/* Header bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 14px',
-          borderBottom: '1px solid var(--live-border, rgba(255, 255, 255, 0.08))',
-          background: 'var(--live-surface, rgba(15, 23, 42, 0.4))',
-        }}
-      >
+      <div className="live-artifact-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span
             style={{
@@ -79,15 +54,6 @@ export function LiveArtifactStage({
               <button
                 disabled={activeIndex <= 0}
                 onClick={() => onSelectIndex?.(Math.max(0, activeIndex - 1))}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: activeIndex <= 0 ? '#475569' : '#94a3b8',
-                  cursor: activeIndex <= 0 ? 'default' : 'pointer',
-                  padding: 2,
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
                 title="Previous artifact"
               >
                 <ChevronLeft size={16} />
@@ -95,15 +61,6 @@ export function LiveArtifactStage({
               <button
                 disabled={activeIndex >= artifacts.length - 1}
                 onClick={() => onSelectIndex?.(Math.min(artifacts.length - 1, activeIndex + 1))}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: activeIndex >= artifacts.length - 1 ? '#475569' : '#94a3b8',
-                  cursor: activeIndex >= artifacts.length - 1 ? 'default' : 'pointer',
-                  padding: 2,
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
                 title="Next artifact"
               >
                 <ChevronRight size={16} />
@@ -113,19 +70,6 @@ export function LiveArtifactStage({
 
           <button
             onClick={onClose}
-            style={{
-              width: '24px',
-              height: '24px',
-              borderRadius: '50%',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: 'none',
-              color: '#94a3b8',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
             title="Close canvas"
           >
             <X size={14} />
@@ -134,13 +78,7 @@ export function LiveArtifactStage({
       </div>
 
       {/* Main card content */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '12px',
-        }}
-      >
+      <div className="live-artifact-content">
         {(current.type === 'toolResult' || current.type === 'tool' || (current.name && current.result !== undefined)) ? (
           <ToolResultCard
             tool={current.name}
@@ -148,19 +86,7 @@ export function LiveArtifactStage({
             args={current.args || {}}
           />
         ) : (
-          <div
-            style={{
-              padding: '16px',
-              background: 'var(--live-surface, rgba(15, 23, 42, 0.5))',
-              borderRadius: '10px',
-              border: '1px solid var(--live-border, rgba(255, 255, 255, 0.08))',
-              color: 'var(--live-text, #e2e8f0)',
-              fontSize: '12px',
-              fontFamily: 'monospace',
-              lineHeight: 1.6,
-              whiteSpace: 'pre-wrap',
-            }}
-          >
+          <div className="live-artifact-fallback">
             {current.text || JSON.stringify(current, null, 2)}
           </div>
         )}

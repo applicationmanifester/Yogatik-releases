@@ -44,3 +44,13 @@ export function groupConversations(entries, now = Date.now()) {
     .map(label => ({ label, items: buckets.get(label) }))
     .filter(g => g.items.length > 0)
 }
+
+/**
+ * Keep only the entries belonging to one project (null = no project).
+ * Pure companion to db.getConversations(projectId) for already-loaded lists
+ * such as the grouped sidebar entries.
+ */
+export function scopeEntriesToProject(entries, projectId) {
+  const want = projectId ?? null
+  return (entries || []).filter(e => (e?.c?.projectId ?? null) === want)
+}

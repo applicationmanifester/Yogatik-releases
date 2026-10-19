@@ -1,6 +1,11 @@
 // Pyodide — full Python interpreter in the browser via WASM.
-// Stateful: the interpreter and its global namespace persist across calls
-// (variables, imports and installed packages carry over), like a Jupyter kernel.
+//
+// OFF-MAIN-THREAD BY DEFAULT: execution rides the dedicated
+// /worker-pyodide.js Web Worker (postMessage, stateful kernel — variables,
+// imports and installed packages persist across calls like a Jupyter kernel).
+// The old main-thread `window.loadPyodide` path survives ONLY as a fallback
+// for environments without Workers (jsdom tests, rare embeds), because
+// compiling Python on the UI thread janks the composer and drops live frames.
 import { saveMedia } from '../db'
 
 let pyodideReady = null
@@ -58,6 +63,9 @@ async function collectNewFiles(py, before) {
 }
 
 async function getPyodide() {
+  // Main-thread fallback for Worker-less environments only. The live path is
+  // runInWorker() below; this exists so jsdom tests and rare embeds without
+  // `window.Worker` still execute instead of crashing.
   if (pyodideReady) return pyodideReady
   pyodideReady = (async () => {
     if (!window.loadPyodide) {
@@ -69,6 +77,31 @@ async function getPyodide() {
     return await window.loadPyodide()
   })()
   return pyodideReady
+}
+
+/**
+ * Preferred path: run in the dedicated worker's stateful kernel. Returns
+ * `{ viaWorker: true, output }` on success, or `{ viaWorker: false }` when
+ * Workers are unavailable so the caller can use the main-thread fallback.
+ */
+async function runInWorker(code, packages) {
+  let client
+  try {
+    client = await import('../workers/pyodideWorkerClient')
+  } catch {
+    return { viaWorker: false }
+  }
+  if (!client.pyodideWorkerSupported() || !client.getPyodideWorker()) {
+    return { viaWorker: false }
+  }
+  try {
+    const res = await client.runPyodideInWorker(code, packages || [])
+    const text = res?.result == null ? '' : String(res.result)
+    return { viaWorker: true, output: text }
+  } catch (e) {
+    if (e?.workerUnavailable) return { viaWorker: false }
+    throw e
+  }
 }
 
 export function prewarmPyodide() {
@@ -105,6 +138,24 @@ export const codeExecTool = {
     // Guard first: loading Pyodide is a multi-MB download, not something to do
     // for a call that has nothing to run.
     if (typeof code !== 'string' || !code.trim()) return { success: false, tool: 'code_execute', error: 'code is required' }
+
+    // Worker-first: the stateful kernel lives in /worker-pyodide.js, so the
+    // main thread never compiles Python and the UI never janks. stdout is
+    // captured inside the worker protocol; file artefacts need the main-thread
+    // FS snapshot below, which is why the worker path returns early with its
+    // own (file-less) result shape.
+    if (!reset) {
+      try {
+        const w = await runInWorker(code, packages)
+        if (w.viaWorker) {
+          return { success: true, tool: 'code_execute', output: w.output, stateful: true, code, via: 'worker' }
+        }
+      } catch (e) {
+        return { success: false, tool: 'code_execute', error: e?.message || String(e), code, via: 'worker' }
+      }
+      // No worker available → fall through to the main-thread fallback.
+    }
+
     let py
     try {
       py = await getPyodide()
@@ -162,6 +213,9 @@ export const codeExecTool = {
         ...(installed.length ? { installed } : {}),
         ...(files.length ? { files, files_note: `${files.length} file(s) are offered to the user as download buttons in the UI. Tell the user they can download ${files.map(f => f.name).join(', ')} directly — never mention a server/temp file path, which does not exist on their device.` } : {}),
         stateful: true, code,
+        // Main-thread fallback (no Worker available): same shape, labelled so
+        // the UI/tests can tell which path ran.
+        via: 'main-thread',
       }
     } catch (e) {
       return { success: false, tool: 'code_execute', error: e.message, code }

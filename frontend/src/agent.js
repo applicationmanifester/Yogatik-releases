@@ -66,7 +66,7 @@ import { buildUiTelemetryBlock } from './uiContext'
 
 /** Durable memories the user asked to keep, injected so the model recalls them
  *  without needing a memory tool call (like ChatGPT/Claude memory). */
-async function memoryBlock() {
+async function memoryBlock(query = '', projectId = null) {
   try {
     // Structured four-store memory (memory4). If populated, it supersedes the
     // flat block — a salience-ranked companion memory instead of last-20 facts.
@@ -76,6 +76,19 @@ async function memoryBlock() {
       structured = await memoryBlockFromStores('')
     } catch { /* db v5 not ready / empty */ }
     if (structured) return structured
+
+    // Project-scoped companion store (memory.js over Dexie `memories`).
+    // Reachable import keeps buildGuards' esbuild reachability green and
+    // prevents cross-project leakage by construction.
+    try {
+      const { recallMemories } = await import('./memory')
+      const scoped = await recallMemories(query, { projectId, limit: 8 })
+      if (scoped?.length) {
+        return '\n\nPROJECT MEMORY — scoped facts for this project. Use when ' +
+          'relevant; do not recite unprompted.\n' +
+          scoped.map(m => `- ${m.text}`).join('\n')
+      }
+    } catch { /* empty / db not ready */ }
 
     const mem = (await getSetting('user_memory', [])) || []
     if (!mem.length) return ''
@@ -736,8 +749,8 @@ export async function runAgent({
   }
 
   const systemBase = (isLocalProvider
-    ? buildLocalSystemPrompt({ persona, workspaceRootInfo }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock())
-    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode, workspaceRootInfo }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock())
+    ? buildLocalSystemPrompt({ persona, workspaceRootInfo }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock(userMessage, projectId))
+    : buildSystemPrompt({ webEnabled: webAvailable, persona, planMode, workspaceRootInfo }) + skillBlock + agentBlock + styleBlock + projectBlock + taskBlock + mentionedSkillsBlock + capabilityMode + (await memoryBlock(userMessage, projectId))
   ) + mcpBlock + safetyDirective + canaryDirective
 
   // Use dynamic context limits based on conversation complexity

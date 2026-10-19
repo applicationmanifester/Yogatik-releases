@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '12.4.0'
+export const APP_VERSION = '13.0.0'
 export const BUILD_DATE = 'October 2026'
-export const APP_CODENAME = 'Yogatik 12.4.0 — Native Android & iOS Mobile Apps, Mobile Download Hub & Version Sync'
+export const APP_CODENAME = 'Yogatik 13.0.0 — Next-Gen AI Agentic Assistant, Unified Live Studio & Multi-Platform Core'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,64 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "13.0.0",
+    "title": "Yogatik 13.0.0: Next-Gen AI Agentic Assistant, Unified Live Studio & Multi-Platform Core",
+    "date": "October 19, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Live Cockpit Redesign: Unified command bar, streamlined top status strip, secondary controls sheet, and dedicated artifact rail with full keyboard navigation",
+      "Live Capture Quality: Camera torch support, hardware-true digital zoom (1-4x), stride-sampled focus scoring (sharpest-of-3 frames), and real-time battery/thermal monitoring",
+      "Yogatik Browser Security Stack: Encrypted DNS (DoH + ECH), conservative CSP injection, cookie container tabs, and origin storage audit & wipe",
+      "Post-Call Recap & Action Items: Post-call brief card with executive summaries, todo action items, artifacts created, and persistent session recap",
+      "Unified Multi-Platform Suite: Seamless synchronization and standalone desktop, browser, and mobile builds (Windows, macOS, Linux, Android, iOS)"
+    ],
+    "sections": [
+      {
+        "category": "🎙️ Live Studio & Vision Cockpit",
+        "items": [
+          {
+            "title": "Single-Bar Live Cockpit",
+            "description": "Ergonomic command bar at the base of the viewport with secondary controls cleanly housed in an accessible sheaf dialog."
+          },
+          {
+            "title": "Hardware-True Digital Zoom & Torch",
+            "description": "Zoom plan that applies inside the grab canvas so vision models and OCR inspect magnified details directly, plus low-light torch detection."
+          },
+          {
+            "title": "Sharpest-of-3 Auto-Focus",
+            "description": "Laplacian variance stride sampling captures the sharpest frame over a 350ms window to eliminate motion blur and refocus noise."
+          }
+        ]
+      },
+      {
+        "category": "🛡️ Standalone AI Browser & Privacy",
+        "items": [
+          {
+            "title": "DNS over HTTPS (DoH) & ECH",
+            "description": "Strict encrypted DNS queries with Cloudflare & Google fallbacks and Encrypted Client Hello preventing ISP-level SNI snooping."
+          },
+          {
+            "title": "Container Tabs & Storage Audit",
+            "description": "Isolated cookie sessions per container and granular origin storage inspection with targeted origin wipe capabilities."
+          }
+        ]
+      },
+      {
+        "category": "📱 Multi-Platform Releases",
+        "items": [
+          {
+            "title": "Desktop & Mobile Binaries v13.0.0",
+            "description": "Synchronized release binaries for Windows (.exe), macOS (.dmg/.zip), Linux (.AppImage/.deb), Android (.apk), and iOS (.ipa)."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "12.4.0",
     "title": "Yogatik 12.4.0: Native Android & iOS Mobile Apps, Mobile Download Hub & Version Sync",
     "date": "October 3, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Native Android APK & iOS IPA: First official mobile release — Capacitor-powered native apps for Android 7.0+ and iOS 14+, automatically built and published via GitHub Actions on every version tag",
       "Mobile Download Hub (/mobile): Dedicated landing page for Android and iOS with step-by-step installation guides, compatibility matrix, and direct APK/IPA download links",

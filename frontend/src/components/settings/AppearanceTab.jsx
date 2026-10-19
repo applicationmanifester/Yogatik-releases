@@ -32,6 +32,7 @@ export function AppearanceTab({
               <button
                 type="button"
                 onClick={() => onThemeChange?.('dark')}
+                aria-pressed={theme === 'dark'}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -52,6 +53,7 @@ export function AppearanceTab({
               <button
                 type="button"
                 onClick={() => onThemeChange?.('light')}
+                aria-pressed={theme === 'light'}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -68,6 +70,28 @@ export function AppearanceTab({
                 }}
               >
                 <Sun size={13} /> Light Theme
+              </button>
+              <button
+                type="button"
+                onClick={() => onThemeChange?.('contrast')}
+                aria-pressed={theme === 'contrast'}
+                title="High-contrast theme (WCAG 2.1 AA audited: 7:1+ body text)"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: theme === 'contrast' ? '2px solid #ffff00' : 'none',
+                  background: theme === 'contrast' ? '#000' : 'transparent',
+                  color: theme === 'contrast' ? '#ffff00' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                ◐ High Contrast
               </button>
             </div>
           </div>

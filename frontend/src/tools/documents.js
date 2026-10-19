@@ -7,6 +7,7 @@ import { getDocuments, getSetting } from '../db'
 import { buildIndex, search } from '../retrieval'
 import { resolveFeatures } from '../features'
 import { semanticRerank, setSemanticConsent } from '../semantic'
+import { CITE_INSTRUCTION } from '../citations'
 
 /** Is the opt-in on-device semantic re-ranker enabled? */
 async function semanticOn() {
@@ -90,7 +91,18 @@ export const docSearchTool = {
       query,
       retrieval: semantic ? 'hybrid (BM25 + semantic)' : 'BM25',
       documents_searched: docs.map(d => d.name),
-      passages: hits.slice(0, k).map(({ score, semanticScore, text, ...rest }) => rest),
+      passages: hits.slice(0, k).map(({ semanticScore, text, ...rest }, i) => ({
+        ...rest,
+        // Inline citations: each result block carries its bracketed citation
+        // number so the model can cite it naturally (citations.js parses
+        // `[1]`/`[2,3]`/`[citation:1]` back out of the finished answer).
+        n: i + 1,
+        // Score kept (rounded) so the answer-side strip can show match
+        // strength; `text`/`semanticScore` stay stripped to keep the payload lean.
+        score: Math.round((rest.score ?? 0) * 100) / 100,
+      })),
+      // [citations] One appended instruction line so the model cites by number.
+      citation_note: CITE_INSTRUCTION,
     }
   },
 }

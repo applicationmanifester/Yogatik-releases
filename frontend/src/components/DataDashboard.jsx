@@ -4,6 +4,7 @@ import { allMemories, forget, STORES } from '../memory4'
 import { exportFullWorkspaceArchive, importFullWorkspaceArchive } from '../workspaceArchive'
 import { getUsageSummary, clearUsageRecords } from '../usageAnalytics'
 import { storageReport, optimizeAndCleanStorage, formatBytes } from '../storage'
+import BackupNudge from './BackupNudge'
 
 /**
  * Data & Analytics Dashboard — memory control, usage & cost breakdown, and storage optimization.
@@ -22,6 +23,7 @@ export default function DataDashboard({ onClose, onExport, embedded = false }) {
   const [storage, setStorage] = useState(null)
   const [statusMsg, setStatusMsg] = useState('')
   const [optimizing, setOptimizing] = useState(false)
+  const [conversationCount, setConversationCount] = useState(0)
   const fileInputRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -36,6 +38,11 @@ export default function DataDashboard({ onClose, onExport, embedded = false }) {
       const rep = await storageReport()
       setStorage(rep)
     } catch {}
+
+    try {
+      const { db } = await import('../db')
+      setConversationCount(await db.conversations.count())
+    } catch { /* empty is a result, not an outage */ }
 
     setUsage(getUsageSummary())
   }, [])
@@ -221,6 +228,8 @@ export default function DataDashboard({ onClose, onExport, embedded = false }) {
 
           {activeTab === 'memory' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Eviction-safety: best-effort warning + weekly backup nudge */}
+              <BackupNudge conversationCount={conversationCount} />
               {/* Storage Quota Card */}
               {storage && (
                 <div style={{ padding: '12px', borderRadius: 8, background: 'var(--bg-tertiary, rgba(255,255,255,0.04))', border: '1px solid var(--border)' }}>

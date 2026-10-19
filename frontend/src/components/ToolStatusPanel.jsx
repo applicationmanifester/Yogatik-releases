@@ -11,6 +11,14 @@ import { subscribeToolStatus, isLongRunning, friendlyError } from '../toolStatus
  * Purely presentational + subscribed: it never drives the agent, so it is safe
  * to mount anywhere (it renders nothing when idle).
  *
+ * Sprint 3 accessibility: the panel is a single polite live region
+ * (role="status") summarising tool state changes — individual rows are NOT
+ * live regions, so rapid multi-tool turns announce once per render, not per
+ * row. Retry/Fix/Dismiss buttons all carry accessible names. Manual axe
+ * checklist: status-type live region has an accessible label ("Tool
+ * activity"), button-name, color-contrast (row text + badges audited,
+ * incl. high-contrast theme).
+ *
  * @param {(name:string, args:any)=>void} [onRetry] - optional re-run handler.
  */
 export default function ToolStatusPanel({ onRetry }) {
@@ -65,6 +73,7 @@ export default function ToolStatusPanel({ onRetry }) {
                   <button
                     className="tool-status-retry"
                     title="Retry this tool"
+                    aria-label={`Retry ${rec.name}`}
                     onClick={() => onRetry(rec.name, rec.args)}
                   >
                     <RotateCw size={11} /> Retry
@@ -74,6 +83,7 @@ export default function ToolStatusPanel({ onRetry }) {
                   <button
                     className="tool-status-fix"
                     title="Suggested fix"
+                    aria-label={`Suggested fix for ${rec.name} error`}
                     onClick={() => {
                       const fixPrompt = rec.diagnosis.suggestion || `How can I fix this error with the ${rec.name} tool?`;
                       console.log('Fix suggestion triggered:', fixPrompt);

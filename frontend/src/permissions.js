@@ -16,7 +16,6 @@
  */
 
 import { getSetting, setSetting } from './db'
-
 /** Tools that do something worth stopping for. Everything else reads. */
 export const TOOL_RISK = {
   fs_read: 'read',
@@ -179,11 +178,44 @@ export async function clearPermissionRules() {
   try { await setSetting(RULES_KEY, []) } catch { /* ignore */ }
 }
 
+/* ── [audit] tool-permission decisions → local audit trail ──────────────────
+ * requestPermission is THE central choke point for consequential tool
+ * decisions, so every roll lands here — rule-derived, settings-preference,
+ * user choice, or fail-closed. The trail gets the tool NAME + allowed boolean
+ * + a coarse "how" decoded from the decision's own reason string. It NEVER
+ * gets args bodies, command lines, file paths or the diff preview. The reason
+ * strings are app-authored constants, so a drifted wording degrades to
+ * how:'unknown' rather than to a lie. Recording is best-effort: a trail
+ * failure must never change (or even delay) an approval decision.
+ */
+function auditHow(reason = '') {
+  const r = String(reason)
+  if (/saved rule|read-only/i.test(r)) return 'rule'
+  if (/settings|auto-execution|Autonomous|Read Only/i.test(r)) return 'settings'
+  if (/user/i.test(r)) return 'user'
+  if (/approval UI|approval prompt/i.test(r)) return 'fail-closed'
+  return 'unknown'
+}
+
+export async function requestPermission(tool, args, ctx = {}) {
+  const decision = await _requestPermission(tool, args, ctx)
+  try {
+    const { record } = await import('./auditTrail')
+    await record('tool_permission_roll', {
+      tool: String(tool || ''),
+      allowed: !!(decision && decision.allowed),
+      how: auditHow(decision && decision.reason),
+    })
+  } catch { /* [audit] a failing trail never breaks the broker */ }
+  return decision
+}
+
 /**
  * Gate one tool call. Returns {allowed, reason} — never throws, so a refusal
- * flows back to the model as an ordinary tool result.
+ * flows back to the model as an ordinary tool result. (The [audit] wrapper
+ * above adds a best-effort trail entry around this; the decision is untouched.)
  */
-export async function requestPermission(tool, args, ctx = {}) {
+async function _requestPermission(tool, args, ctx = {}) {
   let rules = []
   try { rules = await loadRules() } catch { rules = [] }
 
