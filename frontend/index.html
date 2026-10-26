@@ -1,9 +1,19 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <script>
+    (function () {
+      try {
+        var explicit = localStorage.getItem('yogatik_theme_explicit');
+        var saved = localStorage.getItem('yogatik_theme');
+        var t = (explicit && (saved === 'dark' || saved === 'light')) ? saved : 'light';
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
     if (['localhost', '127.0.0.1'].includes(location.hostname) && 'serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(regs => {
         for (const reg of regs) reg.unregister();

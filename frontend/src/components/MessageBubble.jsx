@@ -353,13 +353,14 @@ const MessageBubble = React.memo(function MessageBubble({
   const { reasoning, answer, actionChips, adaptiveParts } = useMemo(() => {
     const rawText = stripToolCallSyntax(typeof msg.content === 'string' ? msg.content : String(msg.content ?? ''))
     const s = splitReasoning(rawText)
-    const strippedAnswer = stripToolCallSyntax(s.answer || '')
+    const fallbackAnswer = (!s.answer && s.reasoning && s.reasoning.length > 80) ? s.reasoning : ''
+    const strippedAnswer = stripToolCallSyntax(s.answer || fallbackAnswer)
     const { cleanText, chips } = extractActionChips(strippedAnswer)
     // Parse adaptive cards from the cleaned text
     const { parts } = parseAdaptiveCards(cleanText)
     const hasCards = parts.some(p => p.type === 'card')
     return {
-      reasoning: s.reasoning || '',
+      reasoning: (s.answer || !fallbackAnswer) ? (s.reasoning || '') : '',
       answer: hasCards ? null : cleanText,
       adaptiveParts: hasCards ? parts : null,
       actionChips: chips,

@@ -202,8 +202,22 @@ export default function App() {
     const old = localStorage.getItem('bgkai_theme')
     const cur = localStorage.getItem('yogatik_theme')
     if (old && !cur) { localStorage.setItem('yogatik_theme', old); localStorage.removeItem('bgkai_theme') }
-    return localStorage.getItem('yogatik_theme') || 'dark'
+    const explicit = localStorage.getItem('yogatik_theme_explicit')
+    if (explicit && (cur === 'dark' || cur === 'light')) {
+      return cur
+    }
+    return 'light'
   })
+
+  const handleToggleTheme = useCallback(() => {
+    try { localStorage.setItem('yogatik_theme_explicit', 'true') } catch {}
+    setTheme(t => t === 'dark' ? 'light' : 'dark')
+  }, [])
+
+  const handleSetTheme = useCallback((newTheme) => {
+    try { localStorage.setItem('yogatik_theme_explicit', 'true') } catch {}
+    setTheme(newTheme)
+  }, [])
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768)
   const [provider, setProviderState] = useState('local')
   const [model, setModel] = useState('')
@@ -1810,7 +1824,7 @@ export default function App() {
     const handleSettingsChanged = (e) => {
       const { key, value } = e.detail || {}
       if (key === 'theme') {
-        setTheme(value === 'light' ? 'light' : 'dark')
+        handleSetTheme(value === 'light' ? 'light' : 'dark')
       } else if (key === 'temperature') {
         setTemperature(Number(value))
       } else if (key === 'active_provider' || key === 'provider') {
@@ -3577,7 +3591,11 @@ export default function App() {
       return
     }
 
-    const executeStream = async (attempt = 0) => {
+    const executeStream = async (attempt = 0, continuationText = null) => {
+      // Ensure main window streaming UI is active
+      setLoadingMap(prev => ({ ...prev, [targetClientId]: true }))
+      setStreamIdMap(prev => ({ ...prev, [targetClientId]: prev[targetClientId] || `stream-${Date.now()}` }))
+      setHasStreamMap(prev => ({ ...prev, [targetClientId]: true }))
       // Reset stream start callback flag for each attempt (including retries)
       streamStartCallbackCalled = false
       startActivityTurn(targetClientId)
@@ -3587,10 +3605,22 @@ export default function App() {
       // This fixes streaming from modals (Domain Hub, Vision, etc.) where the
       // send is triggered externally and the UI may not be ready yet.
       await Promise.resolve()
+
+      let streamMessages = updated.messages
+      let streamPrompt = finalText
+      if (attempt > 0 && continuationText && content) {
+        streamMessages = [
+          ...updated.messages,
+          { role: 'assistant', content },
+          { role: 'user', content: continuationText },
+        ]
+        streamPrompt = continuationText
+      }
+
       await streamMessage(
         {
-          message: finalText,
-          messages: updated.messages,
+          message: streamPrompt,
+          messages: streamMessages,
           tools: useTools,
           use_tools: useTools,
           use_web_search: useWeb,
@@ -3612,13 +3642,6 @@ export default function App() {
         (token) => { _latTurn.firstToken(); content += token; pushStreamContent(content); ensureStreamStart(); publishStream(content, targetClientId); setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' })); if (window.__YOGATIK_HEADLESS__) window.dispatchEvent(new CustomEvent('yogatik:stream-token', { detail: token })) },
         (s) => { sources = s },
         (_final, meta) => {
-          _latTurn.done()
-          endActivityTurn(targetClientId)
-          setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' }))
-          setStreamIdMap(prev => (prev[targetClientId] == null ? prev : { ...prev, [targetClientId]: null }))
-          setLoadingMap(prev => (!prev[targetClientId] ? prev : (() => { const n = { ...prev }; delete n[targetClientId]; return n })()))
-          if (window.__YOGATIK_HEADLESS__) window.dispatchEvent(new CustomEvent('yogatik:stream-done', { detail: { content, meta } }))
-
           // Tell the user their answer arrived if they looked away. The desktop
           // shell has supported rich notifications since v3.13 and nothing ever
           // called them, so a long question answered into an unfocused window
@@ -3633,10 +3656,6 @@ export default function App() {
               error: meta?.error,
               hasText: !!content.trim(),
             })
-            // The cue rides the SAME decision as the notification: it fires when
-            // the answer landed somewhere the user was not looking. Playing it
-            // for a reply they are already watching stream in is just noise, and
-            // noise is what gets a sound feature switched off for good.
             if (notify) playCue(meta?.error ? 'error' : 'reply')
             if (notify && typeof window.__YOGATIK_NOTIFY__ === 'function') {
               window.__YOGATIK_NOTIFY__({
@@ -3668,7 +3687,11 @@ export default function App() {
           }
 
           if (!content.trim() && meta?.aborted) {
+            _latTurn.done()
             endActivityTurn(targetClientId)
+            setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' }))
+            setStreamIdMap(prev => (prev[targetClientId] == null ? prev : { ...prev, [targetClientId]: null }))
+            setLoadingMap(prev => (!prev[targetClientId] ? prev : (() => { const n = { ...prev }; delete n[targetClientId]; return n })()))
             const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
             const hasActions = (runData.used && runData.used.length > 0) || (Object.keys(runData.results || {}).length > 0) || (meta?.trace?.length > 0)
             if (hasActions) {
@@ -3714,16 +3737,24 @@ export default function App() {
 
               // Auto-continue truncated responses (unclosed code fences, mid-thought cuts, etc.)
               if (watchdogVerdict.action === 'continue' && attempt < 2) {
-                setStatusMap(prev => ({ ...prev, [targetClientId]: `⚡ Output incomplete — continuing response (${attempt + 1}/2)…` }))
+                setStatusMap(prev => ({ ...prev, [targetClientId]: `⚡ Output incomplete — continuing response in main window (${attempt + 1}/2)…` }))
                 const promptContinuation = continuationPrompt(content)
-                // Append the continuation prompt and continue streaming
+                // Append the continuation prompt and continue streaming in the main window
                 setTimeout(() => {
-                  executeStream(attempt + 1).catch(() => {})
+                  executeStream(attempt + 1, promptContinuation).catch(() => {})
                 }, 400)
                 return
               }
             } catch { /* watchdog telemetry never breaks the turn */ }
           }
+
+          // Turn is genuinely finished: clean up streaming indicators
+          _latTurn.done()
+          endActivityTurn(targetClientId)
+          setStatusMap(prev => (prev[targetClientId] === '' ? prev : { ...prev, [targetClientId]: '' }))
+          setStreamIdMap(prev => (prev[targetClientId] == null ? prev : { ...prev, [targetClientId]: null }))
+          setLoadingMap(prev => (!prev[targetClientId] ? prev : (() => { const n = { ...prev }; delete n[targetClientId]; return n })()))
+          if (window.__YOGATIK_HEADLESS__) window.dispatchEvent(new CustomEvent('yogatik:stream-done', { detail: { content, meta } }))
 
           const runData = toolRunMapRef.current[targetClientId] || { results: {}, used: [] }
           const channelTrace = traceMapRef.current[targetClientId] || []
@@ -4701,7 +4732,7 @@ export default function App() {
       },
       { id: 'backup', group: 'Data', label: 'Export all data (backup)', run: handleBackup },
       { id: 'import', group: 'Data', label: 'Import a backup file', run: () => backupInput.current?.click() },
-      { id: 'theme', group: 'View', label: `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`, run: () => setTheme(t => t === 'dark' ? 'light' : 'dark') },
+      { id: 'theme', group: 'View', label: `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`, run: handleToggleTheme },
       { id: 'settings', group: 'View', label: 'Providers & API keys', run: () => { setSidebarOpen(true); navigateDashboard('providers') } },
       { id: 'account', group: 'View', label: 'Account — sign-in, plan & this device', run: () => navigateDashboard('account') },
       { id: 'privacy', group: 'View', label: 'Privacy & backup', run: () => navigateDashboard('privacy') },
@@ -6078,7 +6109,7 @@ export default function App() {
               {/* Must not be `onClick={handleExport}`: React would pass the click
                   event as the format argument. */}
               <button className="icon-btn" onClick={() => handleExport('md')} title="Export chat as Markdown (Ctrl+K for HTML / PDF)" aria-label="Export chat"><Download size={17} /></button>
-              <button className="icon-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
+              <button className="icon-btn" onClick={handleToggleTheme} aria-label="Toggle theme">
                 {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
               </button>
             </div>
@@ -7141,7 +7172,7 @@ export default function App() {
           prefs={prefs}
           onPrefChange={(k, v) => updatePref(k, v)}
           theme={theme}
-          onThemeChange={setTheme}
+          onThemeChange={handleSetTheme}
           user={user}
           onSignIn={requestSignIn}
         />
@@ -7160,7 +7191,7 @@ export default function App() {
           disabledTools={liveConfig.disabledTools}
           features={features}
           theme={theme}
-          onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+          onToggleTheme={handleToggleTheme}
           conversationId={conv?.id || null}
           projectId={activeProject?.id || null}
           onTranscript={saveLiveTurn}

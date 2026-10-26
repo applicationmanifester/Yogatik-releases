@@ -63,6 +63,7 @@ import {
 } from './independentTools'
 import { visualVerifyTool } from './visualVerify'
 import { askUserTool, setUserQuestionHandler } from './askUser'
+import { conceptGraphTool } from './conceptGraphTool'
 import { fsPatchTool } from './fsPatch'
 import { codeOutlineTool } from './codeOutline'
 import { codeValidateTool } from './codeValidate'
@@ -182,6 +183,7 @@ import { scraplingTool } from './scrapling'
 import { researchBriefingTool } from './researchBriefing'
 import { appSettingsTool } from './appSettings'
 import { artemisAndroidTool, executeArtemisAndroid } from './artemisAndroid'
+import { selfRefineTool } from './selfRefineTool'
 
 export const screenInspectTool = {
   schema: {
@@ -538,6 +540,10 @@ const ALL_TOOLS = {
   app_settings: appSettingsTool,
   // Google Artemis: Autonomous Android & Emulator Testing Suite (Pixel Test Engineering)
   artemis_android: artemisAndroidTool,
+  // Self-Improvement Loop
+  self_refine: selfRefineTool,
+  // Cross-Session Concept Graph
+  concept_graph: conceptGraphTool,
 }
 
 /** Common LLM hallucinated tool names mapped to their canonical Yogatik tool */
@@ -694,6 +700,11 @@ export const TOOL_ALIASES = {
   spawn_subagent: 'spawn_agents',
   parallel_agents: 'spawn_agents',
   view_file: 'fs_read',
+  // Self-Refine aliases
+  self_reflect: 'self_refine',
+  self_improve: 'self_refine',
+  auto_improve: 'self_refine',
+  reflect: 'self_refine',
   write_file: 'fs_write',
   create_file: 'fs_write',
   edit_file: 'fs_edit',

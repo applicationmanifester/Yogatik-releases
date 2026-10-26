@@ -65,13 +65,40 @@ export function splitReasoning(content) {
   }
 
   let reasoning = ''
-  const answer = content
+  let answer = content
     .replace(/<(?:think|thought|reasoning)\b[^>]*>([\s\S]*?)<\/(?:think|thought|reasoning)>/gi, (_, r) => { reasoning += r + '\n'; return '' })
-    // An unclosed block is reasoning still being written while streaming.
-    .replace(/<(?:think|thought|reasoning)\b[^>]*>([\s\S]*)$/i, (_, r) => { reasoning += r; return '' })
+
+  // Check for an unclosed <think> tag
+  const unclosedMatch = answer.match(/<(?:think|thought|reasoning)\b[^>]*>([\s\S]*)$/i)
+  if (unclosedMatch) {
+    const rawUnclosed = unclosedMatch[1]
+    // Check if the unclosed block transitioned into an answer (e.g. model didn't emit </think>)
+    const transitionRegex = /\n\s*\n(?:(?:\*{0,2}(?:Final Answer|Answer|Response|Conclusion|Summary)\*{0,2}:?)|(?=#{1,4}\s)|(?=(?:\d+\.|\*\*\d+\.)\s)|(?=(?:Here is|Here are|To answer|In summary|Regarding your)\b))/i
+    const transitionMatch = rawUnclosed.search(transitionRegex)
+
+    if (transitionMatch !== -1 && transitionMatch > 20) {
+      reasoning += rawUnclosed.slice(0, transitionMatch)
+      const extractedAnswer = rawUnclosed.slice(transitionMatch).replace(/^\n+/, '')
+      answer = answer.slice(0, unclosedMatch.index) + extractedAnswer
+    } else {
+      reasoning += rawUnclosed
+      answer = answer.slice(0, unclosedMatch.index)
+    }
+  }
 
   const cleanReasoning = deduplicateRepetitions(reasoning.trim())
-  const cleanAnswer = deduplicateRepetitions(answer.trim())
+  let cleanAnswer = deduplicateRepetitions(answer.trim())
+
+  // If answer is empty but reasoning contains structured response output (e.g. model put response inside think tag)
+  if (!cleanAnswer && cleanReasoning) {
+    const hasExplicitClose = /<\/(?:think|thought|reasoning)>/i.test(content)
+    if (!hasExplicitClose) {
+      const hasStructure = (/\n\s*\n|#{1,3}\s|\d+\.\s|\*\*[^*]+\*\*/.test(cleanReasoning)) && cleanReasoning.length > 80
+      if (hasStructure) {
+        cleanAnswer = cleanReasoning
+      }
+    }
+  }
 
   const res = { reasoning: cleanReasoning, answer: cleanAnswer }
   if (reasoningCache.size > 200) {

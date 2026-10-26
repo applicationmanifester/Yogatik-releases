@@ -14,11 +14,21 @@
   var STORAGE_KEY = 'yogatik_theme'
 
   function getTheme() {
-    try { return localStorage.getItem(STORAGE_KEY) || 'dark' } catch (e) { return 'dark' }
+    try {
+      var explicit = localStorage.getItem('yogatik_theme_explicit')
+      var saved = localStorage.getItem(STORAGE_KEY)
+      if (explicit && (saved === 'dark' || saved === 'light')) return saved
+      return 'light'
+    } catch (e) {
+      return 'light'
+    }
   }
 
   function setTheme(t) {
-    try { localStorage.setItem(STORAGE_KEY, t) } catch (e) {}
+    try {
+      localStorage.setItem('yogatik_theme_explicit', 'true')
+      localStorage.setItem(STORAGE_KEY, t)
+    } catch (e) {}
     document.documentElement.setAttribute('data-theme', t)
     // Keep any toggle buttons in sync
     document.querySelectorAll('.theme-toggle-btn').forEach(function (btn) {

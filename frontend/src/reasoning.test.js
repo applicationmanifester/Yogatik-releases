@@ -44,6 +44,21 @@ describe('splitReasoning', () => {
     expect(visibleAnswer('<think>hmm</think>Done.')).toBe('Done.')
     expect(visibleAnswer('<reasoning>hmm</reasoning>Done.')).toBe('Done.')
   })
+
+  it('recovers answer from unclosed think block when answer transition is detected', () => {
+    const raw = '<think>I am analyzing how to transform this into super AI\n\n1. Autonomous agency\n2. Cross-session memory'
+    const { reasoning, answer } = splitReasoning(raw)
+    expect(reasoning).toContain('analyzing how to transform')
+    expect(answer).toContain('1. Autonomous agency')
+    expect(answer).toContain('2. Cross-session memory')
+  })
+
+  it('promotes long structured text in unclosed think block so main window gets answer', () => {
+    const raw = '<think>Here is the breakdown:\n\n### Core Capabilities\n- Autonomous agent loops\n- Distributed bursts\n- Self-improving code'
+    const { answer } = splitReasoning(raw)
+    expect(answer).toContain('### Core Capabilities')
+    expect(answer).toContain('Autonomous agent loops')
+  })
 })
 
 describe('createReasoningTagger', () => {

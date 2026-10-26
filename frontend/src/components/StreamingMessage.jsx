@@ -129,8 +129,10 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
   const { reasoning, answer } = splitReasoning(sanitizedText)
   
   // Directly use answer/text when typewriter is disabled for zero-latency 60fps streaming
+  // Ensure that if answer is empty during extended thinking/continuation, it surfaces in main window
+  const effectiveAnswer = answer || (reasoning && (isComplete || reasoning.length > 120) ? reasoning : '')
   const displayContent = !typewriterEnabled || isComplete 
-    ? (answer || (reasoning ? '' : sanitizedText)) 
+    ? (effectiveAnswer || (reasoning ? '' : sanitizedText)) 
     : stripToolCallSyntax(displayedText || '')
 
   const { cleanText, chips } = extractActionChips(displayContent || '')
