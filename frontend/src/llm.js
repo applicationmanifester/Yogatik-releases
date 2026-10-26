@@ -1352,7 +1352,9 @@ export async function fetchLiveModels(providerId, apiKey) {
           }
         } catch {}
       }
-      console.warn(`[fetchLiveModels] ${providerId} error:`, err?.message)
+      if (providerId !== 'ollama') {
+        console.warn(`[fetchLiveModels] ${providerId} error:`, err?.message)
+      }
       return []
     }
   })().finally(() => {
