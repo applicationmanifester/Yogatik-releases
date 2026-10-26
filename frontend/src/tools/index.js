@@ -64,6 +64,8 @@ import {
 import { visualVerifyTool } from './visualVerify'
 import { askUserTool, setUserQuestionHandler } from './askUser'
 import { conceptGraphTool } from './conceptGraphTool'
+import { driveCycleTool } from './driveCycleTool'
+import { calibrationTool } from './calibrationTool'
 import { fsPatchTool } from './fsPatch'
 import { codeOutlineTool } from './codeOutline'
 import { codeValidateTool } from './codeValidate'
@@ -544,6 +546,10 @@ const ALL_TOOLS = {
   self_refine: selfRefineTool,
   // Cross-Session Concept Graph
   concept_graph: conceptGraphTool,
+  // Proactive Autonomous Drive Cycle
+  drive_cycle: driveCycleTool,
+  // Meta-Cognition & Calibration
+  calibration: calibrationTool,
 }
 
 /** Common LLM hallucinated tool names mapped to their canonical Yogatik tool */
@@ -705,6 +711,11 @@ export const TOOL_ALIASES = {
   self_improve: 'self_refine',
   auto_improve: 'self_refine',
   reflect: 'self_refine',
+  // Drive Cycle aliases
+  drive_cycle_run: 'drive_cycle',
+  autonomous_cycle: 'drive_cycle',
+  background_work: 'drive_cycle',
+  proactive_agent: 'drive_cycle',
   write_file: 'fs_write',
   create_file: 'fs_write',
   edit_file: 'fs_edit',

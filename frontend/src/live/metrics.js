@@ -383,3 +383,7 @@ export function report(list = finished) {
 
 const rate = (n, d) => (d ? round(n / d) : null)
 const round = (n) => (Number.isFinite(n) ? Math.round(n * 100) / 100 : null)
+
+export function recordStepModeStart() {}
+export function recordStepAdvance() {}
+export function recordStepComplete() {}

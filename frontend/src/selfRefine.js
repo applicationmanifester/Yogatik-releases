@@ -7,7 +7,8 @@
  */
 
 import { db } from './db'
-import { fsReadTool, fsWriteTool, fsPatchTool, fsFileTreeTool } from './tools/localFs'
+import { fsReadTool, fsWriteTool, fsFileTreeTool } from './tools/localFs'
+import { fsPatchTool } from './tools/fsPatch'
 import { testAndHealTool } from './tools/testAndHeal'
 import { spawnAgentsTool } from './tools/spawnAgents'
 import { getSetting, setSetting } from './db'
