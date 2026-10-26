@@ -13,8 +13,6 @@
  */
 
 import { db } from './db'
-import { spawnAgentsTool } from './tools/spawnAgents'
-import { entityExtractTool } from './tools/independentTools'
 
 const GRAPH_STORE = 'concept_graph_nodes'
 const EDGE_STORE = 'concept_graph_edges'

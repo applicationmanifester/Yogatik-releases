@@ -6,12 +6,7 @@
  * Runs nightly via scheduler or on-demand via selfRefineTool.
  */
 
-import { db } from './db'
-import { fsReadTool, fsWriteTool, fsFileTreeTool } from './tools/localFs'
-import { fsPatchTool } from './tools/fsPatch'
-import { testAndHealTool } from './tools/testAndHeal'
-import { spawnAgentsTool } from './tools/spawnAgents'
-import { getSetting, setSetting } from './db'
+import { db, getSetting, setSetting } from './db'
 
 const REFLECTION_STORE = 'self_reflections'
 const CONSTITUTION_KEY = 'agent_constitution'
@@ -97,7 +92,7 @@ export async function generateProposals(reflections = null) {
   // Pattern detection: group by error type, tool, task category
   const errorPatterns = {}
   const toolFailures = {}
-  const stagnationEvents = 0
+  let stagnationEvents = 0
 
   for (const r of reflections) {
     if (r.error) {

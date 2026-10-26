@@ -6,11 +6,7 @@
  * Logs calibration curves per tool for continuous improvement.
  */
 
-import { db } from './db'
-import { spawnAgentsTool } from './tools/spawnAgents'
-import { askUserTool } from './tools/askUser'
-import { researchTool } from './tools/research'
-import { getSetting, setSetting } from './db'
+import { db, getSetting, setSetting } from './db'
 
 const CALIBRATION_STORE = 'tool_calibration'
 const CONFIDENCE_LOG = 'confidence_log'
