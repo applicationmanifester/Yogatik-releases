@@ -182,26 +182,85 @@
   .palette-empty-title, .modal-header h2 { font-size: var(--font-lg); }
 }
 
-/* ── 8.2 Chat column: 72ch measure on pointer devices, full-bleed on touch */
+/* ── 8.2 Chat column: responsive width that expands to occupy available area as needed */
+:root {
+  --chat-max-width: min(96%, 860px);
+}
+
 @media (min-width: 769px) {
-  .message-bubble { max-width: 72ch; }
+  :root {
+    --chat-max-width: min(94%, 980px);
+  }
 }
-@media (hover: none) and (pointer: coarse) {
-  .message-bubble { max-width: 100%; }
+
+@media (min-width: 1024px) {
+  :root {
+    --chat-max-width: min(92%, 1140px);
+  }
 }
-/* Attribute-escalated twins (equal specificity to 15-device-adaptive.css,
-   later import wins): touch densities go full-bleed, desk classes get the
-   72ch reading measure instead of the px widths that layer set. */
+
+@media (min-width: 1280px) {
+  :root {
+    --chat-max-width: min(92%, 1300px);
+  }
+}
+
+@media (min-width: 1536px) {
+  :root {
+    --chat-max-width: min(94%, 1460px);
+  }
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --chat-max-width: min(94%, 1660px);
+  }
+}
+
+/* When there is NO side panel open ("if thers nothing it can ocupy the area as needed") */
+.chat-area.no-side-panel {
+  --chat-max-width: min(94vw, 1200px);
+}
+
+@media (min-width: 1200px) {
+  .chat-area.no-side-panel {
+    --chat-max-width: min(94vw, 1380px);
+  }
+}
+
+@media (min-width: 1440px) {
+  .chat-area.no-side-panel {
+    --chat-max-width: min(94vw, 1540px);
+  }
+}
+
+@media (min-width: 1750px) {
+  .chat-area.no-side-panel {
+    --chat-max-width: min(95vw, 1740px);
+  }
+}
+
+/* When a side panel IS open (ActivityPanel, WorkspaceDock, BrowserPanel) */
+.chat-area.has-side-panel {
+  --chat-max-width: min(96%, 1060px);
+}
+
+.message,
+.message-bubble {
+  width: 100%;
+  max-width: var(--chat-max-width);
+  box-sizing: border-box;
+}
+
 [data-device="mobile"] .message-bubble,
 [data-device="tablet"] .message-bubble,
-[data-density="touch"] .message-bubble {
-  max-width: 100%;
-}
+[data-density="touch"] .message-bubble,
 [data-device="laptop"] .message-bubble,
 [data-device="desktop"] .message-bubble {
-  max-width: 72ch;
+  max-width: var(--chat-max-width);
 }
-/* Long tokens/URLs must wrap inside the reduced measure, not overflow it. */
+
+/* Long tokens/URLs must wrap inside the measure, not overflow it. */
 .message-bubble { overflow-wrap: break-word; }
 
 /* ── 8.3 8px rhythm — retire stray 6/10/14px offsets ─────────────────── */

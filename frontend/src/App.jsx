@@ -5723,7 +5723,7 @@ export default function App() {
         </React.Suspense>
       )}
 
-      <main className="chat-area safe-top safe-bottom">
+      <main className={`chat-area safe-top safe-bottom ${showActivity || showWorkspace || browserPanel ? 'has-side-panel' : 'no-side-panel'}`}>
         <header className="chat-header">
           {/* minWidth was 0, and an inline value outranks the stylesheet: the
               action row took the full width on a phone and this block — the
@@ -6852,6 +6852,9 @@ export default function App() {
                 gap: '6px',
                 marginBottom: '8px',
                 width: '100%',
+                maxWidth: 'var(--chat-max-width)',
+                margin: '0 auto 8px',
+                boxSizing: 'border-box'
               }}>
                 {currentQueue.map((item, qIdx) => (
                   <div
@@ -6920,6 +6923,10 @@ export default function App() {
               gap: '8px',
               padding: '6px 12px',
               marginBottom: '6px',
+              maxWidth: 'var(--chat-max-width)',
+              margin: '0 auto 6px',
+              width: '100%',
+              boxSizing: 'border-box',
               background: 'rgba(56, 189, 248, 0.08)',
               border: '1px solid rgba(56, 189, 248, 0.25)',
               borderRadius: '8px',
@@ -6963,15 +6970,17 @@ export default function App() {
               composer, folding the draft in cheaply — the user sees the
               meter turn amber/red BEFORE the model truncates or compacts.
               Clickable to open the detailed Context Breakdown & Token Usage window. */}
-          <ContextMeter
-            messages={conv?.messages || []}
-            systemPrompt={activeSystemPrompt}
-            input={input}
-            provider={conv?.provider || provider}
-            model={conv?.model !== undefined ? conv.model : model}
-            onOpenContextModal={() => setShowContextModal(true)}
-            onQuickCompact={handleCompactHistory}
-          />
+          <div style={{ width: '100%', maxWidth: 'var(--chat-max-width)', margin: '0 auto 6px', boxSizing: 'border-box' }}>
+            <ContextMeter
+              messages={conv?.messages || []}
+              systemPrompt={activeSystemPrompt}
+              input={input}
+              provider={conv?.provider || provider}
+              model={conv?.model !== undefined ? conv.model : model}
+              onOpenContextModal={() => setShowContextModal(true)}
+              onQuickCompact={handleCompactHistory}
+            />
+          </div>
 
           <div className="input-wrapper" style={{ position: 'relative' }}>
             {showSlashMenu && (
