@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '14.0.0'
+export const APP_VERSION = '15.0.0'
 export const BUILD_DATE = 'October 2026'
-export const APP_CODENAME = 'Yogatik 14.0.0 — Free Unrestricted Pro & Open Community Development'
+export const APP_CODENAME = 'Yogatik 15.0.0 — Adaptive Screen-Responsive Chat & Multi-Platform Suite'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,46 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "15.0.0",
+    "title": "Yogatik 15.0.0: Adaptive Screen-Responsive Chat & Multi-Platform Suite",
+    "date": "October 26, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Adaptive Fluid Chat Responses: Chat window responses dynamically expand to occupy full available width on wide/ultrawide displays when side panels are closed",
+      "Unified Responsive Composer: Perfectly centered and aligned persona bar, context usage meter, suggestions, and input controls matching message width",
+      "Multi-Platform 15.0.0 Synchronized Suite: Coordinated release binaries across Web, Windows, macOS, Linux, Android, and iOS",
+      "Clean Console & Stability: Resolved all import TDZs and silenced background Ollama connection polling on Web"
+    ],
+    "sections": [
+      {
+        "category": "🎨 UI & Responsive Experience",
+        "items": [
+          {
+            "title": "Adaptive Full-Width Chat Canvas",
+            "description": "Messages fluidly adapt up to 1740px on large viewports when panels are tucked away, and gracefully slim down when side panels are docked."
+          },
+          {
+            "title": "Centered Symmetrical Controls",
+            "description": "Composer buttons, token meters, model switchers, and queued message banners maintain crisp horizontal alignment with the chat column."
+          }
+        ]
+      },
+      {
+        "category": "📱 Multi-Platform Releases",
+        "items": [
+          {
+            "title": "Desktop & Mobile Binaries v15.0.0",
+            "description": "Synchronized release binaries for Windows (.exe), macOS (.dmg/.zip), Linux (.AppImage/.deb), Android (.apk), and iOS (.ipa)."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "14.0.0",
     "title": "Yogatik 14.0.0: Free Unrestricted Pro & Open Community Development",
     "date": "October 26, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "100% Free Unrestricted Pro for Everyone: Filesystem access, native terminal & shell execution, browser automation, sub-agents, and zero ads unlocked for all users without payment",
       "Voluntary Development Charity: Replaced mandatory paywalls with voluntary developer support donations via UPI, Card, and PayPal",

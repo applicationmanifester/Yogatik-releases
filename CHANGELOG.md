@@ -1,5 +1,15 @@
 # Changelog
 
+## [15.0.0] — 2026-10-26: Adaptive Screen-Responsive Chat & Multi-Platform Suite
+
+Major release introducing responsive chat and composer scaling that automatically occupies the full viewport when no side panels are open, with clean console stability and synchronized multi-platform binaries.
+
+### 🚀 Highlights
+- **Adaptive Screen-Responsive Chat Canvas**: Chat messages and responses dynamically scale up to 1740px on large and ultrawide viewports when side panels are closed, adapting flexibly when panels are docked.
+- **Symmetrical Aligned Composer**: Fully centered and aligned persona selector, context tokens usage meter, prompt textarea, and queued prompt cards matching the message width.
+- **Console & Build Resilience**: Resolved tool registry circular dependency import TDZs and silenced background Ollama connection polling on Web environments.
+- **Multi-Platform Deployment & CI/CD**: Unified version 15.0.0 rollout across Web, Windows NSIS, macOS DMG, Linux AppImage/deb, Android APK, and iOS IPA.
+
 ## [14.0.0] — 2026-10-26: Free Unrestricted Pro & Open Community Development
 
 Major milestone release unlocking all Yogatik Pro capabilities for all users without required payment or paywall restrictions, reframing payments as voluntary charity/donations to fund ongoing development.
