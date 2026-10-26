@@ -817,13 +817,9 @@ export default function App() {
     const b = typeof window !== 'undefined' ? window.__YOGATIK_BROWSER__ : null
     if (b?.navigate) {
       try {
-        const res = await b.navigate({ url: url || '', display: 'window' })
-        if (res?.locked) {
-          showToast('Yogatik Pro is required for the built-in browser')
-          setShowUpgrade(true)
-          return
-        }
+        await b.navigate({ url: url || '', display: 'window' })
         showToast('Opened Yogatik Browser')
+
       } catch (err) {
         showToast(err?.message || 'Could not open browser')
       }

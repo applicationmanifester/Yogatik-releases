@@ -122,36 +122,24 @@ export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked, 
   if (!open) return null
 
   return (
-    <Modal onClose={onClose} title="Yogatik Pro" icon={<Sparkles size={16} />} className="upgrade-modal">
+    <Modal onClose={onClose} title="Support Yogatik Development" icon={<Sparkles size={16} />} className="upgrade-modal">
       <div className="up-wrap">
-        {ent.state === 'trial' && ent.daysLeft > 0 && (
-          <div className="up-banner">
-            <Sparkles size={14} />
-            {ent.daysLeft} {ent.daysLeft === 1 ? 'day' : 'days'} left in your trial.
-          </div>
-        )}
-        {ent.state === 'locked' && (
-          <div className="up-banner warn">
-            <Lock size={14} />
-            Your trial has ended. Chat and every browser-based tool still work — file, shell,
-            browser and screen tools are locked.
-          </div>
-        )}
-        {ent.surface === 'web' && (
-          <div className="up-banner">
-            <Sparkles size={14} />
-            One subscription, both apps: no ads here, and full file, shell and browser
-            access in the Yogatik desktop app on the same account.
-          </div>
-        )}
+        <div className="up-banner" style={{ background: 'rgba(34, 197, 94, 0.15)', borderColor: 'rgba(34, 197, 94, 0.3)', color: '#4ade80' }}>
+          <Sparkles size={14} />
+          <strong>Yogatik Pro is 100% Free with Zero Restrictions!</strong>
+        </div>
+
+        <p style={{ fontSize: 13, color: 'var(--text-secondary, #aaa)', lineHeight: 1.5, margin: '8px 0 16px' }}>
+          All Pro capabilities are unlocked on both Web and Desktop with zero paywalls. If you enjoy using Yogatik, consider making a voluntary charity donation to support ongoing development, maintenance, and server costs.
+        </p>
 
         <ul className="up-caps">
           {Object.entries(CAPABILITY_COPY).map(([k, text]) => (
-            <li key={k}><Check size={13} /> {text}</li>
+            <li key={k}><Check size={13} /> {text} (Unlocked)</li>
           ))}
         </ul>
 
-        <div className="up-tabs" role="tablist" aria-label="Billing region">
+        <div className="up-tabs" role="tablist" aria-label="Donation region">
           {Object.entries(PLANS).map(([key, p]) => (
             <button
               key={key}
@@ -186,41 +174,30 @@ export default function UpgradeModal({ open, onClose, idToken, uid, onUnlocked, 
           <div className="up-waiting">
             <Loader2 size={16} className="ws-spin" />
             <div>
-              <strong>Finish the payment in your browser.</strong>
-              <span>This window unlocks by itself once it goes through — you do not need to restart.</span>
+              <strong>Complete contribution in your browser.</strong>
+              <span>Thank you for supporting open AI development!</span>
             </div>
             <button className="ws-ghost-btn sm" onClick={() => refreshEntitlement({ idToken, uid })}>
               Check now
             </button>
           </div>
         ) : !uid ? (
-          // Signed out, the checkout button was DISABLED with a line of text
-          // telling the user to sign in — and no way to do it from here. A
-          // paywall whose only instruction is "go somewhere else and come back"
-          // is where a funnel loses people. Offer the actual action instead.
           <button className="ws-primary-btn up-buy" onClick={() => onSignIn?.()}>
             <LogIn size={14} />
-            Sign in to continue
+            Sign in to contribute
           </button>
         ) : (
           <button className="ws-primary-btn up-buy" disabled={busy} onClick={buy}>
             {busy ? <Loader2 size={14} className="ws-spin" /> : <ExternalLink size={14} />}
-            Continue to checkout · {sku.label}
+            Contribute {sku.label} / {sku.per}
           </button>
         )}
 
-        {!uid && (
-          <p className="up-note">
-            The subscription attaches to your account, so it works in the web app and the
-            desktop app on any machine you sign in to.
-          </p>
-        )}
-
         <p className="up-fine">
-          Cancel any time. If a payment lapses the app returns to the free tier — nothing is
-          deleted, your folders stay granted, and your chats, keys and documents are untouched.
+          Voluntary developer support &amp; charity fund. All features remain 100% unlocked and unrestricted forever.
         </p>
       </div>
     </Modal>
   )
 }
+

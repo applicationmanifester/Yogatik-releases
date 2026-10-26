@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '13.0.0'
+export const APP_VERSION = '14.0.0'
 export const BUILD_DATE = 'October 2026'
-export const APP_CODENAME = 'Yogatik 13.0.0 — Next-Gen AI Agentic Assistant, Unified Live Studio & Multi-Platform Core'
+export const APP_CODENAME = 'Yogatik 14.0.0 — Free Unrestricted Pro & Open Community Development'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,47 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "14.0.0",
+    "title": "Yogatik 14.0.0: Free Unrestricted Pro & Open Community Development",
+    "date": "October 26, 2026",
+    "isLatest": true,
+    "highlights": [
+      "100% Free Unrestricted Pro for Everyone: Filesystem access, native terminal & shell execution, browser automation, sub-agents, and zero ads unlocked for all users without payment",
+      "Voluntary Development Charity: Replaced mandatory paywalls with voluntary developer support donations via UPI, Card, and PayPal",
+      "Zero Restrictions Architecture: Removed all trial expiration gates and locks across both web and native desktop environments",
+      "Multi-Platform 14.0.0 Synchronized Suite: Coordinated release binaries across Web, Windows, macOS, Linux, Android, and iOS"
+    ],
+    "sections": [
+      {
+        "category": "✨ Unrestricted Pro Tier",
+        "items": [
+          {
+            "title": "Zero-Cost Pro Access",
+            "description": "Every user now has immediate, permanent access to all Pro features with no credit card or payment required."
+          },
+          {
+            "title": "Voluntary Charity Donations",
+            "description": "Optional development support via UPI Autopay, Card, and PayPal to fund server costs and open-source models."
+          }
+        ]
+      },
+      {
+        "category": "📱 Multi-Platform Releases",
+        "items": [
+          {
+            "title": "Desktop & Mobile Binaries v14.0.0",
+            "description": "Synchronized release binaries for Windows (.exe), macOS (.dmg/.zip), Linux (.AppImage/.deb), Android (.apk), and iOS (.ipa)."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "13.0.0",
     "title": "Yogatik 13.0.0: Next-Gen AI Agentic Assistant, Unified Live Studio & Multi-Platform Core",
     "date": "October 19, 2026",
-    "isLatest": true,
+    "isLatest": false,
+
     "highlights": [
       "Live Cockpit Redesign: Unified command bar, streamlined top status strip, secondary controls sheet, and dedicated artifact rail with full keyboard navigation",
       "Live Capture Quality: Camera torch support, hardware-true digital zoom (1-4x), stride-sampled focus scoring (sharpest-of-3 frames), and real-time battery/thermal monitoring",

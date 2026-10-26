@@ -25,46 +25,13 @@ const TRIAL_DAYS = 30
 const ENTITLEMENT_CACHE_KEY = 'yogatik_entitlement_v1'
 
 function getInitialSnapshot() {
-  if (isStudioEnv) {
-    return {
-      state: 'pro',
-      edition: 'studio',
-      reason: 'studio-edition',
-      endsAt: 0,
-      daysLeft: 0,
-      loaded: true,
-    }
-  }
-
-  // Fast optimistic load from localStorage for instant 0ms render on refresh/revisit
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      const raw = window.localStorage.getItem(ENTITLEMENT_CACHE_KEY)
-      if (raw) {
-        const cached = JSON.parse(raw)
-        const now = Date.now()
-        const endsAt = Number(cached?.endsAt) || 0
-        if (cached?.state === 'pro' && (endsAt === 0 || endsAt > now)) {
-          return {
-            state: 'pro',
-            edition: cached.edition || 'store',
-            reason: cached.reason || 'cached-pro',
-            endsAt,
-            daysLeft: endsAt > now ? Math.max(0, Math.ceil((endsAt - now) / DAY)) : 0,
-            loaded: true,
-          }
-        }
-      }
-    } catch {}
-  }
-
   return {
-    state: 'anonymous',
-    edition: 'store',
-    reason: 'boot',
+    state: 'pro',
+    edition: 'personal',
+    reason: 'pro-unrestricted-charity',
     endsAt: 0,
     daysLeft: 0,
-    loaded: false,
+    loaded: true,
   }
 }
 
@@ -78,51 +45,33 @@ export function isDesktopBuild() {
 }
 
 /**
- * Synchronous snapshot for callers that cannot await (system prompt assembly,
- * a render pass).
- *
- * ONE SUBSCRIPTION, TWO SURFACES. The subscription belongs to the ACCOUNT, not
- * to the machine: buy it on the website and the desktop app unlocks; buy it in
- * the desktop app and the website stops showing ads. Both read the same
- * `accounts/{uid}` document, which only the webhook writes.
- *
- * `locked` still means only one thing — "the desktop app must refuse privileged
- * IPC" — and stays FALSE on the web, because the web build has no privileged
- * tools to lock and gating there would remove features people already have for
- * free. What the web uses instead is `isPro()`, which is about what a paying
- * customer GAINS (no ads) rather than what a non-paying one loses.
+ * Synchronous snapshot for callers that cannot await.
+ * Pro plan is granted to all users without payment.
+ * All capabilities (file, terminal, browser, screen, sub-agents) are unrestricted.
  */
 export function entitlement() {
-  if (isUnrestrictedEdition()) return { ...snapshot, state: 'pro', edition: snapshot.edition || 'studio', locked: false }
-  if (!isDesktopBuild()) return { ...snapshot, locked: false, surface: 'web' }
-  return { ...snapshot, locked: isLocked(), surface: 'desktop' }
+  return { ...snapshot, state: 'pro', edition: 'personal', locked: false, surface: isDesktopBuild() ? 'desktop' : 'web' }
 }
 
 /**
- * Is this account on a paid plan right now?
- *
- * Deliberately NOT the inverse of `isLocked()`: a trial is unlocked but not
- * paid, so a trialling desktop user still sees ads on the website. Ads are the
- * free tier's price; the trial is a preview of Pro's capabilities, not of its
- * ad-free-ness.
+ * Yogatik Pro is enabled for everyone without payment.
+ * Payments are voluntary charity contributions to develop and maintain the app.
  */
 export function isPro() {
-  if (isUnrestrictedEdition()) return true
-  return snapshot.state === 'pro'
+  return true
 }
 
 export function isLocked() {
-  if (!isDesktopBuild()) return false
-  if (isUnrestrictedEdition()) return false
-  return snapshot.state === 'locked' || snapshot.state === 'anonymous'
+  return false
 }
 
-export function isUnlocked() { return !isLocked() }
+export function isUnlocked() { return true }
 
-/** True for the author's own build, where the gate does not exist at all. */
-export function isStudioEdition() { return snapshot.edition === 'studio' || isStudioEnv }
-export function isPersonalEdition() { return snapshot.edition === 'personal' || snapshot.edition === 'studio' || isStudioEnv }
-export function isUnrestrictedEdition() { return isPersonalEdition() || isStudioEdition() }
+/** Unrestricted Pro edition active across all builds. */
+export function isStudioEdition() { return true }
+export function isPersonalEdition() { return true }
+export function isUnrestrictedEdition() { return true }
+
 
 function emit() {
   for (const fn of listeners) { try { fn(entitlement()) } catch { /* a bad listener is not our problem */ } }
@@ -390,28 +339,20 @@ export const PLANS = {
     region: 'India',
     currency: '₹',
     provider: 'razorpay',
-    note: 'UPI Autopay or card · billed by Yogatik',
-    monthly: { id: 'in_monthly', price: 99, label: '₹99', per: 'month' },
-    yearly: { id: 'in_yearly', price: 999, label: '₹999', per: 'year', saveLabel: 'Save ₹189' },
+    note: 'Voluntary charity contribution · Support Yogatik development via UPI / Card',
+    monthly: { id: 'in_monthly', price: 99, label: '₹99', per: 'month', desc: 'Support App Development' },
+    yearly: { id: 'in_yearly', price: 999, label: '₹999', per: 'year', saveLabel: 'Annual Contribution', desc: 'Support App Development' },
   },
   intl: {
     region: 'International',
     currency: '$',
     provider: 'paddle',
-    note: 'Card or PayPal · billed by Paddle, taxes included',
-    // $9/$99, not $2/$12. Paddle takes 5% + a FIXED $0.50, which ate a quarter
-    // of a $2 charge before anything else — and $2/month needs ~50,000 paying
-    // customers to reach $1.2M ARR where $9 needs ~11,000. The annual plan is
-    // twelve months for the price of eleven, which is also two fewer chances
-    // for a card to decline.
-    //
-    // India stays at ₹99/₹999: it is priced for its market, Razorpay is
-    // percentage-only with no fixed fee, and UPI Autopay makes small recurring
-    // amounts viable there in a way cards do not.
-    monthly: { id: 'intl_monthly', price: 9.99, label: '$9.99', per: 'month' },
-    yearly: { id: 'intl_yearly', price: 99.99, label: '$99.99', per: 'year', saveLabel: 'Save $19.89' },
+    note: 'Voluntary charity contribution · Support Yogatik development via Card / PayPal',
+    monthly: { id: 'intl_monthly', price: 9.99, label: '$9.99', per: 'month', desc: 'Support App Development' },
+    yearly: { id: 'intl_yearly', price: 99.99, label: '$99.99', per: 'year', saveLabel: 'Annual Contribution', desc: 'Support App Development' },
   },
 }
+
 
 /**
  * Which pricing table to SHOW FIRST. A hint only — both are always reachable,

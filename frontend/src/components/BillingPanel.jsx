@@ -87,61 +87,39 @@ export default function BillingPanel({ onClose, onUpgrade, embedded = false }) {
             <div style={{
               margin: '14px 18px 0', borderRadius: 10,
               background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)',
-              borderLeft: `3px solid ${PLAN_ACCENT[planKey] || 'var(--text-muted)'}`,
+              borderLeft: '3px solid #10b981',
               padding: '12px 14px',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap',
             }}>
-              {account ? (() => {
-                const now = Date.now()
-                const daysLeft = account.currentPeriodEnd > now
-                  ? Math.max(0, Math.ceil((account.currentPeriodEnd - now) / (24 * 60 * 60 * 1000)))
-                  : 0
-                return (
-                <>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {PLAN_LABEL[planKey] || planKey}
-                      </span>
-                      {planKey === 'pro' && daysLeft > 0 && (
-                        <span style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: 999,
-                          background: 'rgba(255, 107, 53, 0.15)',
-                          color: 'var(--accent, #ff6b35)',
-                          border: '1px solid rgba(255, 107, 53, 0.3)',
-                        }}>
-                          {daysLeft} {daysLeft === 1 ? 'day' : 'days'} left
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                      {planKey === 'pro' && account.currentPeriodEnd
-                        ? (['cancelled', 'canceled'].includes(account.status)
-                            ? `Active until ${formatDate(account.currentPeriodEnd)} (${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} remaining · Auto-renew off)`
-                            : `Renews ${formatDate(account.currentPeriodEnd)} (${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} remaining)`)
-                        : planKey === 'trial' && account.trialEndsAt
-                          ? `Trial ends ${formatDate(account.trialEndsAt)}`
-                          : 'No active subscription'}
-                      {account.provider && ` · billed by ${account.provider === 'razorpay' ? 'Razorpay' : 'Paddle'}`}
-                    </div>
-                  </div>
-                  {planKey !== 'pro' && onUpgrade && (
-                    <button className="ws-primary-btn sm" onClick={onUpgrade}>Upgrade</button>
-                  )}
-                </>
-                )
-              })() : (
-                <>
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                    No account on file yet — you're on the free tier.
-                  </div>
-                  {onUpgrade && <button className="ws-ghost-btn sm" onClick={onUpgrade}>Upgrade</button>}
-                </>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Yogatik Pro (Free &amp; Unrestricted)
+                  </span>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: '#10b981',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                  }}>
+                    Active · No payment required
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                  All Pro features (filesystem, terminal, browser control, sub-agents) are 100% unlocked with zero restrictions.
+                  {account?.provider && ` · Past contributions processed by ${account.provider === 'razorpay' ? 'Razorpay' : 'Paddle'}`}
+                </div>
+              </div>
+              {onUpgrade && (
+                <button className="ws-primary-btn sm" onClick={onUpgrade}>
+                  Support Development
+                </button>
               )}
             </div>
+
 
             {error && error !== 'signed-out' && (
               <div style={{

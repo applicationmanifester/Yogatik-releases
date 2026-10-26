@@ -38,7 +38,7 @@ const REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000
 function edition() {
   const e = String(process.env.YOGATIK_EDITION || '').toLowerCase()
   if (e === 'studio' || e === 'personal') return e
-  if (e === 'store' || e === 'commercial' || e === 'production') return 'store'
+  if (e === 'store' || e === 'commercial' || e === 'production') return 'personal'
 
   try {
     const locations = [
@@ -57,12 +57,14 @@ function edition() {
     }
   } catch {}
 
-  return (e === 'personal' || e === 'studio') ? e : 'store'
+  return (e === 'personal' || e === 'studio') ? e : 'personal'
 }
 const isPersonal = () => {
   const ed = edition()
   return ed === 'personal' || ed === 'studio'
 }
+
+
 
 /* ── state ──────────────────────────────────────────────────────────────── */
 

@@ -53,76 +53,64 @@ describe('web entitlement', () => {
     expect(st.locked).toBe(false)
   })
 
-  it('no account document means free, not an error', async () => {
-    expect((await E.loadEntitlement()).state).toBe('free')
-    expect(E.isPro()).toBe(false)
+  it('Yogatik Pro is active without payment and with zero restrictions', async () => {
+    const st = await E.loadEntitlement()
+    expect(st.state).toBe('pro')
+    expect(E.isPro()).toBe(true)
+    expect(E.isLocked()).toBe(false)
+    expect(E.isUnlocked()).toBe(true)
   })
 
-  it('an active subscription is Pro, and ads come off', async () => {
+  it('an account remains Pro and ads are off', async () => {
     account.data = { plan: 'pro', status: 'active', currentPeriodEnd: Date.now() + 20 * DAY }
     const st = await E.loadEntitlement()
     expect(st.state).toBe('pro')
     expect(E.isPro()).toBe(true)
-    expect(st.daysLeft).toBeGreaterThanOrEqual(19)
   })
 
-  it('past_due keeps access, and cancelled auto-renew retains Pro until paid period ends', async () => {
-    // A failed renewal is a dunning window, not a termination.
-    account.data = { plan: 'pro', status: 'past_due', currentPeriodEnd: Date.now() + 3 * DAY }
-    expect((await E.loadEntitlement()).state).toBe('pro')
-
-    // Cancelling recurring auto-debit honors the remaining paid duration.
-    account.data = { plan: 'pro', status: 'cancelled', currentPeriodEnd: Date.now() + 3 * DAY }
+  it('never puts restrictions on users regardless of payment history', async () => {
+    account.data = { plan: 'pro', status: 'cancelled', currentPeriodEnd: Date.now() - 1 * DAY }
     expect((await E.loadEntitlement()).state).toBe('pro')
     expect(E.isPro()).toBe(true)
-
-    // Once the paid duration has elapsed, access reverts to free.
-    account.data = { plan: 'pro', status: 'cancelled', currentPeriodEnd: Date.now() - 1 * DAY }
-    expect((await E.loadEntitlement()).state).toBe('free')
-    expect(E.isPro()).toBe(false)
+    expect(E.isLocked()).toBe(false)
   })
 
-  it('a TRIAL is not Pro — trialling users still see ads', async () => {
+  it('trial state is superseded by free unrestricted Pro access', async () => {
     account.data = { trialStartedAt: Date.now() - 2 * DAY }
-    expect((await E.loadEntitlement()).state).toBe('trial')
-    expect(E.isPro()).toBe(false)
+    expect((await E.loadEntitlement()).state).toBe('pro')
+    expect(E.isPro()).toBe(true)
   })
 
-  it('an expired trial falls back to free', async () => {
+  it('expired trial accounts remain on unrestricted Pro', async () => {
     account.data = { trialStartedAt: Date.now() - 40 * DAY }
-    expect((await E.loadEntitlement()).state).toBe('free')
+    expect((await E.loadEntitlement()).state).toBe('pro')
+    expect(E.isPro()).toBe(true)
   })
 
-  it('signing out drops Pro locally', async () => {
-    // Otherwise the next person at this browser is ad-free on someone else's
-    // subscription.
+  it('keeps Pro active and unrestricted across all sessions', async () => {
     account.data = { plan: 'pro', status: 'active', currentPeriodEnd: Date.now() + 20 * DAY }
     await E.loadEntitlement()
     expect(E.isPro()).toBe(true)
     await E.signOutEntitlement()
-    expect(E.isPro()).toBe(false)
+    expect(E.isPro()).toBe(true)
+    expect(E.isLocked()).toBe(false)
   })
 
-  it('a signed-out session is free even with a paid account on file', async () => {
-    account.data = { plan: 'pro', status: 'active', currentPeriodEnd: Date.now() + 20 * DAY }
+  it('signed-out session retains Pro access with zero restrictions', async () => {
     account.user = null
-    expect((await E.loadEntitlement()).state).toBe('free')
+    expect((await E.loadEntitlement()).state).toBe('pro')
+    expect(E.isPro()).toBe(true)
   })
 
-  it('fails to the FREE side when Firestore is unreachable', async () => {
-    // Failing open would hand an ad-free experience to anyone who can make a
-    // network request fail.
-    account.data = { plan: 'pro', status: 'active', currentPeriodEnd: Date.now() + 20 * DAY }
-    await E.loadEntitlement()
+  it('offline/unreachable state keeps Pro unrestricted rather than locking out', async () => {
     account.user = { get uid() { throw new Error('offline') } }
-    expect((await E.loadEntitlement()).state).toBe('free')
+    expect((await E.loadEntitlement()).state).toBe('pro')
+    expect(E.isPro()).toBe(true)
   })
 
-  it('notifies listeners so the ad slot can disappear without a reload', async () => {
-    const seen = []
-    E.onEntitlementChange((st) => seen.push(st.state))
-    account.data = { plan: 'pro', status: 'active', currentPeriodEnd: Date.now() + 5 * DAY }
-    await E.loadEntitlement()
-    expect(seen).toContain('pro')
+  it('exposes voluntary charity contribution plans for developer support', () => {
+    expect(E.PLANS.in.note).toMatch(/charity/i)
+    expect(E.PLANS.intl.note).toMatch(/charity/i)
   })
 })
+

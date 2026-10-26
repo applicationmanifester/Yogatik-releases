@@ -2,11 +2,11 @@ import React from 'react'
 import { User, LogIn, LogOut, Sparkles, ShieldCheck, Monitor, Globe, CreditCard, ArrowRight } from 'lucide-react'
 
 const PLAN_COPY = {
-  pro: { label: 'Yogatik Pro', tone: 'pro' },
-  trial: { label: 'Free trial', tone: 'trial' },
-  locked: { label: 'Trial ended', tone: 'locked' },
-  free: { label: 'Free', tone: 'free' },
-  anonymous: { label: 'Free', tone: 'free' },
+  pro: { label: 'Yogatik Pro (Free)', tone: 'pro' },
+  trial: { label: 'Yogatik Pro (Free)', tone: 'pro' },
+  locked: { label: 'Yogatik Pro (Free)', tone: 'pro' },
+  free: { label: 'Yogatik Pro (Free)', tone: 'pro' },
+  anonymous: { label: 'Yogatik Pro (Free)', tone: 'pro' },
 }
 
 // `locked` used to show "Trial ended" for EVERY lock reason — including a
@@ -84,24 +84,20 @@ export function AccountPage({ user, ent, isDesktopBuild, isPersonal, onSignIn, o
           <span className={`account-plan-badge tone-${plan.tone}`}>{plan.label}</span>
         </div>
         <p className="account-plan-detail">
-          {isPro && 'Full access on web and desktop — file, shell, browser and screen tools unlocked, no ads.'}
-          {isTrial && `${ent.daysLeft} ${ent.daysLeft === 1 ? 'day' : 'days'} left in your trial. Chat and every browser-based tool work regardless of what happens after.`}
-          {isLocked && `${lockedDetail(ent)} Chat and every browser-based tool still work — file, shell, browser and screen tools are locked until this is resolved.`}
-          {!isPro && !isTrial && !isLocked && (ent?.surface === 'web'
-            ? 'Free, ad-supported. Upgrading removes ads here and unlocks the full desktop app on this account.'
-            : 'Free tier.')}
+          Full access on web and desktop — filesystem, terminal &amp; shell, browser automation, sub-agents, and screen tools unlocked with zero restrictions and no required payment.
         </p>
         <div className="account-plan-actions">
           <button className="ws-ghost-btn sm" onClick={onManageBilling}>
             <CreditCard size={13} /> Billing &amp; invoices <ArrowRight size={12} />
           </button>
-          {!isPro && (
+          {onUpgrade && (
             <button className="ws-primary-btn sm" onClick={onUpgrade}>
-              {isLocked ? 'Upgrade' : 'Go Pro'}
+              Support Development
             </button>
           )}
         </div>
       </section>
+
 
       <section className="account-card">
         <div className="account-card-head">

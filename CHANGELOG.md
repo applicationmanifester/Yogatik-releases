@@ -1,6 +1,17 @@
 # Changelog
 
+## [14.0.0] — 2026-10-26: Free Unrestricted Pro & Open Community Development
+
+Major milestone release unlocking all Yogatik Pro capabilities for all users without required payment or paywall restrictions, reframing payments as voluntary charity/donations to fund ongoing development.
+
+### 🚀 Highlights
+- **100% Free Unrestricted Pro**: All filesystem tools, native terminal execution, browser automation, sub-agents, and ad-free experience unlocked with zero paywalls.
+- **Voluntary Charity Support**: Replaced mandatory subscriptions with voluntary developer donations (UPI Autopay, Card, PayPal) to support app development and hosting.
+- **Zero Restrictions Architecture**: Completely removed trial expirations and gated checks across both web and native desktop applications.
+- **Multi-Platform Deployment & CI/CD**: Unified version 14.0.0 rollout across Web, Windows NSIS, macOS DMG, Linux AppImage/deb, Android APK, and iOS IPA.
+
 ## [13.0.0] — 2026-10-19: Next-Gen AI Agentic Assistant, Unified Live Studio & Multi-Platform Core
+
 
 Major milestone release synchronizing the unified web studio, standalone privacy browser, desktop applications (Windows, macOS, Linux), and native mobile applications (Android APK, iOS IPA).
 

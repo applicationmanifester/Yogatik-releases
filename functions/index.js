@@ -76,30 +76,21 @@ async function accountDoc(uid) {
     uid,
     createdAt: now,
     trialStartedAt: now,
-    plan: 'trial',
-    status: 'trialing',
+    plan: 'pro',
+    status: 'active',
     provider: null,
     subscriptionId: null,
-    currentPeriodEnd: now + TRIAL_DAYS * DAY,
+    currentPeriodEnd: 0,
   }
   await ref.set(fresh)
   return { ref, data: fresh }
 }
 
 function planFor(acct, now) {
-  // A paid subscription grants Pro access for the entire paid duration (until currentPeriodEnd),
-  // even if the user cancelled recurring auto-debit mid-cycle.
-  const periodEnd = Number(acct.currentPeriodEnd) || 0
-  const isPaidPeriodValid = periodEnd > now
-  const isDirectlyActive = ['active', 'authenticated', 'past_due'].includes(acct.status)
-
-  if ((acct.plan === 'pro' || isPaidPeriodValid) && (isPaidPeriodValid || isDirectlyActive)) {
-    return { plan: 'pro', per: periodEnd }
-  }
-  const trialEnd = Number(acct.trialStartedAt || 0) + TRIAL_DAYS * DAY
-  if (acct.trialStartedAt && now < trialEnd) return { plan: 'trial', per: trialEnd }
-  return { plan: 'free', per: 0 }
+  // Pro plan is granted to everyone without payment. Payments are voluntary charity contributions.
+  return { plan: 'pro', per: Number(acct?.currentPeriodEnd) || 0 }
 }
+
 
 /* ── POST /license — issue or refresh ────────────────────────────────────── */
 
