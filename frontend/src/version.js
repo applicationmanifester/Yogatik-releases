@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '15.0.0'
-export const BUILD_DATE = 'October 2026'
-export const APP_CODENAME = 'Yogatik 15.0.0 — Adaptive Screen-Responsive Chat & Multi-Platform Suite'
+export const APP_VERSION = '17.0.0'
+export const BUILD_DATE = 'November 2026'
+export const APP_CODENAME = 'Yogatik 17.0.0 — Intelligent Vision, High-Precision OCR & Multi-Platform Core'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,46 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "17.0.0",
+    "title": "Yogatik 17.0.0: Intelligent Vision, High-Precision OCR & Multi-Platform Core",
+    "date": "November 12, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Format-Aware Image Compression: Canvas 2D image processing with hardware-accelerated willReadFrequently, GIF animation/transparency preservation, and zero-dimension safety guards",
+      "Robust Multi-Model OCR: Enhanced optical character recognition and document data extraction across scanned files, PDFs, and high-resolution images",
+      "Resilient LLM Streaming: Fixed template evaluation ordering for native local Ollama models and robust multi-block Anthropic tool response extraction",
+      "Multi-Platform 17.0.0 Suite: Synchronized release binaries across Web, Windows, macOS, Linux, Android, and iOS with 100% Free Unrestricted Pro"
+    ],
+    "sections": [
+      {
+        "category": "👁️ Vision & Document Intelligence",
+        "items": [
+          {
+            "title": "Hardware-Accelerated Image Pre-Processing",
+            "description": "Canvas 2D image reading operates with willReadFrequently context, preventing GPU readback stalls, and preserves animated GIFs and transparent PNGs intact."
+          },
+          {
+            "title": "Connected Component Object Detection",
+            "description": "Standalone fast pure-pixel object detection and connected-component analysis with bounding boxes for diagrams and UI screenshots."
+          }
+        ]
+      },
+      {
+        "category": "📱 Multi-Platform Releases",
+        "items": [
+          {
+            "title": "Desktop & Mobile Synchronized Suite v17.0.0",
+            "description": "Synchronized release binaries for Windows (.exe), macOS (.dmg/.zip), Linux (.AppImage/.deb), Android (.apk), and iOS (.ipa)."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "15.0.0",
     "title": "Yogatik 15.0.0: Adaptive Screen-Responsive Chat & Multi-Platform Suite",
     "date": "October 26, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Adaptive Fluid Chat Responses: Chat window responses dynamically expand to occupy full available width on wide/ultrawide displays when side panels are closed",
       "Unified Responsive Composer: Perfectly centered and aligned persona bar, context usage meter, suggestions, and input controls matching message width",
