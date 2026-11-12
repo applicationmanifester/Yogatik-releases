@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '17.0.0'
+export const APP_VERSION = '18.0.0'
 export const BUILD_DATE = 'November 2026'
-export const APP_CODENAME = 'Yogatik 17.0.0 — Intelligent Vision, High-Precision OCR & Multi-Platform Core'
+export const APP_CODENAME = 'Yogatik 18.0.0 — Universal Model-Agnostic Vision Pipeline & WebLLM Edge Reasoning'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,59 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "18.0.0",
+    "title": "Yogatik 18.0.0: Universal Model-Agnostic Vision Pipeline, Set-of-Mark Grounding & WebLLM Edge Reasoning",
+    "date": "November 12, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Universal Model-Agnostic Vision: Standardized 0–1000 coordinate grounding, Set-of-Mark (SoM) visual overlays, high-resolution zoomed crops, and power-law gamma shadow/contrast enhancement across all multimodal LLMs",
+      "Edge WebLLM Reasoning Models: Added direct in-browser zero-server execution for DeepSeek-R1-Distill-Qwen, Phi-3.5-mini-instruct, and Qwen2.5-Coder",
+      "Universal Document & File Extraction: Enhanced multi-format parsing with UTF-8/UTF-16 BOM tolerance, subtitle/transcript parsing (SRT, VTT, NDJSON, RST, TeX), and structured spreadsheet streaming",
+      "Multi-Platform 18.0.0 Suite: Synchronized release binaries across Web, Windows, macOS, Linux, Android, and iOS with 100% Free Unrestricted Pro"
+    ],
+    "sections": [
+      {
+        "category": "👁️ Universal Vision & Grounding",
+        "items": [
+          {
+            "title": "Universal Model-Agnostic Vision Pipeline",
+            "description": "Standardized image pre-processing with EXIF auto-orientation, alpha channel flattening, dimension normalization (1024–1568px), and adaptive power-law gamma shadow lifting for dark screenshots."
+          },
+          {
+            "title": "Set-of-Mark (SoM) & Normalized Coordinates",
+            "description": "Automatic visual grounding overlaying numbered markers ([1], [2]) and passing normalized [0-1000] integer bounding boxes as ground-truth context to any vision LLM."
+          }
+        ]
+      },
+      {
+        "category": "⚡ Local AI & File Intelligence",
+        "items": [
+          {
+            "title": "Edge WebLLM Reasoning Suite",
+            "description": "Expanded local in-browser model registry with DeepSeek-R1, Phi-3.5, and Qwen2.5-Coder for private client-side execution."
+          },
+          {
+            "title": "Universal Document & Data Extraction",
+            "description": "Unified document parser supporting multi-encoding BOMs, structured spreadsheets, subtitles, LaTeX, and high-accuracy OCR fallback."
+          }
+        ]
+      },
+      {
+        "category": "📱 Multi-Platform Releases",
+        "items": [
+          {
+            "title": "Desktop & Mobile Synchronized Suite v18.0.0",
+            "description": "Synchronized release binaries for Windows (.exe), macOS (.dmg/.zip), Linux (.AppImage/.deb), Android (.apk), and iOS (.ipa)."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "17.0.0",
     "title": "Yogatik 17.0.0: Intelligent Vision, High-Precision OCR & Multi-Platform Core",
     "date": "November 12, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Format-Aware Image Compression: Canvas 2D image processing with hardware-accelerated willReadFrequently, GIF animation/transparency preservation, and zero-dimension safety guards",
       "Robust Multi-Model OCR: Enhanced optical character recognition and document data extraction across scanned files, PDFs, and high-resolution images",
