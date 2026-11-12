@@ -2,6 +2,8 @@
   "name": "yogatik",
   "private": true,
   "version": "17.0.0",
+  "description": "Yogatik — AI Desktop & Web Application",
+  "author": "applicationmanifester",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -115,7 +117,7 @@
     ],
     "extraResources": [
       {
-        "from": "bin/search_sidecar",
+        "from": "bin/search-sidecar",
         "to": "search-sidecar",
         "filter": [
           "**/*"
@@ -153,7 +155,10 @@
         "AppImage",
         "deb"
       ],
-      "category": "Utility"
+      "category": "Utility",
+      "icon": "electron/icon.png",
+      "maintainer": "applicationmanifester",
+      "artifactName": "Yogatik.${ext}"
     },
     "mac": {
       "target": [
