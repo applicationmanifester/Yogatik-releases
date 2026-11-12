@@ -12,7 +12,7 @@ export const LOCAL_MODELS = {
   'Qwen2.5-0.5B-Instruct-q4f16_1-MLC': {
     label: 'Qwen 2.5 0.5B (Ultra Fast)',
     size: '~350 MB',
-    note: 'Super fast, smart for general questions and fast chat.',
+    note: 'Super fast, basic chat only. Prone to errors on complex queries.',
   },
   'Llama-3.2-1B-Instruct-q4f16_1-MLC': {
     label: 'Llama 3.2 1B (Balanced)',
@@ -20,14 +20,44 @@ export const LOCAL_MODELS = {
     note: 'Fast, good for chat and short tasks. Weakest at code and maths.',
   },
   'Llama-3.2-3B-Instruct-q4f16_1-MLC': {
-    label: 'Llama 3.2 3B',
+    label: 'Llama 3.2 3B (Fast & Capable)',
     size: '~1.7 GB',
-    note: 'Noticeably better answers, slower on integrated GPUs.',
+    note: 'Noticeably better answers, balanced for everyday tasks.',
   },
   'Qwen2.5-1.5B-Instruct-q4f16_1-MLC': {
-    label: 'Qwen 2.5 1.5B',
+    label: 'Qwen 2.5 1.5B (Code & Chat)',
     size: '~950 MB',
     note: 'Stronger at code and other languages than Llama 1B.',
+  },
+  'Phi-3.5-mini-instruct-q4f16_1-MLC': {
+    label: 'Phi 3.5 Mini 3.8B (High IQ & Logic)',
+    size: '~2.2 GB',
+    note: 'Microsoft powerhouse for reasoning, math, and structured logic.',
+  },
+  'DeepSeek-R1-Distill-Qwen-1.5B-q4f16_1-MLC': {
+    label: 'DeepSeek R1 Distill 1.5B (Light Reasoning)',
+    size: '~1.1 GB',
+    note: 'Chain-of-thought reasoning in a compact on-device footprint.',
+  },
+  'DeepSeek-R1-Distill-Qwen-7B-q4f16_1-MLC': {
+    label: 'DeepSeek R1 Distill 7B (Deep Reasoning)',
+    size: '~4.5 GB',
+    note: 'Exceptional step-by-step reasoning and problem solving.',
+  },
+  'Qwen2.5-7B-Instruct-q4f16_1-MLC': {
+    label: 'Qwen 2.5 7B (Flagship All-Rounder)',
+    size: '~4.5 GB',
+    note: 'State-of-the-art open weights: excellent coding, knowledge, and reasoning.',
+  },
+  'Llama-3.1-8B-Instruct-q4f16_1-MLC': {
+    label: 'Llama 3.1 8B (Industry Standard)',
+    size: '~4.6 GB',
+    note: 'Meta flagship open model for broad knowledge and comprehensive replies.',
+  },
+  'Gemma-2-2b-it-q4f16_1-MLC': {
+    label: 'Gemma 2 2B (Google Fast & Smart)',
+    size: '~1.6 GB',
+    note: 'Google lightweight model with high efficiency and sharp responses.',
   },
 }
 
