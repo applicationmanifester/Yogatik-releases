@@ -263,16 +263,6 @@ export async function getSetting(key, fallback = null) {
       } catch {
         cached = fallback
       }
-    } else if (isApiKeySetting(key) && typeof cached === 'string' && isEncrypted(cached)) {
-      // Crypto-js envelope fallback (non-desktop platforms)
-      try {
-        const secret = await dbVaultSecret()
-        const opened = secret ? await decryptSecret(cached, secret) : null
-        cached = opened != null ? opened : fallback
-        _settingsCache.set(key, cached)
-      } catch {
-        cached = fallback
-      }
     }
     return (cached != null) ? cached : fallback
   }
@@ -286,14 +276,6 @@ export async function getSetting(key, fallback = null) {
       const opened = await openKey(value)
       value = opened == null ? fallback : opened
     } catch { /* keychain unavailable */ }
-    // If still ciphertext (fallback-encrypted on a non-desktop machine), decrypt via crypto.js
-    if (typeof value === 'string' && isEncrypted(value)) {
-      try {
-        const secret = await dbVaultSecret()
-        const opened = secret ? await decryptSecret(value, secret) : null
-        value = opened == null ? fallback : opened
-      } catch { /* keep raw value */ }
-    }
   }
   _settingsCache.set(key, value)
   return value

@@ -12,13 +12,14 @@
  */
 
 const CODE_OR_TEXT_EXTS = new Set([
-  'txt', 'text', 'md', 'markdown', 'log', 'rtf', 'csv', 'tsv', 'json', 'jsonl',
-  'xml', 'yaml', 'yml', 'toml', 'ini', 'env', 'conf', 'cfg', 'properties',
+  'txt', 'text', 'md', 'markdown', 'log', 'rtf', 'csv', 'tsv', 'json', 'jsonl', 'ndjson',
+  'xml', 'yaml', 'yml', 'toml', 'ini', 'env', 'conf', 'cfg', 'properties', 'plist',
   'html', 'htm', 'xhtml', 'css', 'scss', 'sass', 'less', 'vue', 'svelte',
   'js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'py', 'pyw', 'java', 'c', 'cpp', 'cc', 'cxx',
   'h', 'hpp', 'hh', 'cs', 'go', 'rs', 'php', 'rb', 'sh', 'bash', 'zsh', 'ps1',
   'bat', 'cmd', 'sql', 'r', 'swift', 'kt', 'kts', 'dart', 'scala', 'lua', 'pl', 'pm',
-  'graphql', 'gql', 'proto', 'diff', 'patch', 'dockerfile', 'makefile'
+  'graphql', 'gql', 'proto', 'diff', 'patch', 'dockerfile', 'makefile',
+  'srt', 'vtt', 'sub', 'rst', 'adoc', 'asciidoc', 'tex', 'latex', 'bib'
 ])
 
 const KNOWN_TEXT_BASENAMES = new Set([
@@ -114,7 +115,8 @@ export async function extractXlsx(file) {
     const sheet = workbook.Sheets[sheetName]
     const csv = XLSX.utils.sheet_to_csv(sheet)
     if (csv && csv.trim()) {
-      sections.push(`=== Sheet: ${sheetName} ===\n${csv.trim()}`)
+      const rowCount = csv.trim().split('\n').length
+      sections.push(`=== Sheet: ${sheetName} (${rowCount} rows) ===\n${csv.trim()}`)
     }
   }
 
@@ -125,39 +127,61 @@ export async function extractXlsx(file) {
   return result
 }
 
-/** Extract text from images via OCR */
+/** Extract text and layout signals from images via OCR */
 export async function extractImage(file) {
   const { ocrTool } = await import('./ocr')
   const url = URL.createObjectURL(file)
   try {
-    // ocrTool.execute destructures `image_url` — using the wrong key `url`
-    // caused every image upload to silently return { success: false, error: 'image_url is required' }.
     const res = await ocrTool.execute({ image_url: url })
-    if (!res?.text?.trim()) {
-      throw new Error(res?.error || 'No readable text found in this image via OCR.')
+    if (res?.text?.trim()) {
+      let output = res.text.trim()
+      if (res.structure) {
+        output = `[Visual Layout: ${res.structure}]\n\n${output}`
+      }
+      return output
     }
-    return res.text.trim()
+    if (res?.low_confidence_text?.trim()) {
+      return `[Low-confidence OCR text detected]:\n${res.low_confidence_text.trim()}`
+    }
+    throw new Error(res?.error || 'No readable text found in this image via OCR.')
   } finally {
     URL.revokeObjectURL(url)
   }
 }
 
-/** Safe reader for text content across modern browsers, Electron, and test environments */
+/** Safe reader for text content across modern browsers, Electron, and test environments with BOM support */
 export async function readBlobAsText(blob) {
-  if (typeof blob.text === 'function') {
-    try {
-      return await blob.text()
-    } catch { /* fallback to FileReader */ }
+  try {
+    const buffer = await readBlobAsArrayBuffer(blob)
+    const bytes = new Uint8Array(buffer)
+    // UTF-8 BOM
+    if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+      return new TextDecoder('utf-8').decode(bytes.subarray(3))
+    }
+    // UTF-16LE BOM
+    if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+      return new TextDecoder('utf-16le').decode(bytes.subarray(2))
+    }
+    // UTF-16BE BOM
+    if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+      return new TextDecoder('utf-16be').decode(bytes.subarray(2))
+    }
+    // Standard UTF-8
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+  } catch {
+    if (typeof blob.text === 'function') {
+      try { return await blob.text() } catch {}
+    }
+    if (typeof FileReader !== 'undefined') {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = () => reject(reader.error || new Error('Failed to read file as text'))
+        reader.readAsText(blob)
+      })
+    }
+    throw new Error('No mechanism available to read file as text.')
   }
-  if (typeof FileReader !== 'undefined') {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result)
-      reader.onerror = () => reject(reader.error || new Error('Failed to read file as text'))
-      reader.readAsText(blob)
-    })
-  }
-  throw new Error('No mechanism available to read file as text.')
 }
 
 /** Safe reader for ArrayBuffer across modern browsers, Electron, and test environments */
@@ -196,12 +220,16 @@ export async function isLikelyTextFile(file) {
     return true
   }
 
-  // Universal fallback: check first 4KB for null bytes
+  // Universal fallback: check first 4KB for null bytes, accounting for UTF-16 BOM
   try {
     const slice = typeof file.slice === 'function' ? file.slice(0, 4096) : file
     const buf = await readBlobAsArrayBuffer(slice)
     const bytes = new Uint8Array(buf)
     if (bytes.length === 0) return true
+    // Detect UTF-16 BOM
+    if (bytes.length >= 2 && ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff))) {
+      return true
+    }
     for (let i = 0; i < bytes.length; i++) {
       if (bytes[i] === 0) return false // null byte indicates binary file
     }

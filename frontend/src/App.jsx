@@ -3706,6 +3706,7 @@ export default function App() {
           conversationId: convId || targetClientId,
           projectId: activeProject?.id || null,
           image: sentImage?.dataUrl || null,
+          visualContext: sentImage?.visualContext || null,
           resumeCheckpoint: resumeCheckpoint || checkpointMapRef.current[targetClientId] || null,
           onCheckpoint: (cp) => {
             checkpointMapRef.current[targetClientId] = cp

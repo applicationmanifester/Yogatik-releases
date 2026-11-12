@@ -251,10 +251,6 @@ export async function ensureFirebaseAuth(f) {
 }
 
 export async function signInWithGoogle({ preferRedirect = false } = {}) {
-  // Generate a CSRF-bound state value before any OAuth flow begins.
-  const state = generateAuthState()
-  f.provider.setCustomParameters({ state, login_hint: '' })
-
   // ─── Electron Desktop Native OAuth Bridge ─────────────────────────────────
   if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.loginWithGoogle) {
     const res = await window.__YOGATIK_DESKTOP__.loginWithGoogle()

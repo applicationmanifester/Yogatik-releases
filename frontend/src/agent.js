@@ -42,6 +42,7 @@ import { buildToolPrompt, parseToolCalls, formatToolResults, stripToolCallSyntax
 import { splitReasoning, visibleAnswer } from './reasoning'
 import { setVisionContext } from './tools/see'
 import { describeWithoutModel } from './vision/source'
+import { formatVisualContextPrompt } from './vision/visualContextPackage'
 import { getSetting, logAgentTrace } from './db'
 import { beginTool, settleTool } from './toolStatus'
 import { assessSafety, crisisResourceCard } from './safety'
@@ -576,7 +577,7 @@ function collectSources(result) {
  * @param {Function} opts.onError - Error callback
  */
 export async function runAgent({
-  provider, apiKey, model, history = [], userMessage, userImage = null,
+  provider, apiKey, model, history = [], userMessage, userImage = null, visualContext = null,
   toolsEnabled = true, webEnabled = true, disabledTools = [], persona = null, temperature = 0.7, maxTokens = null, signal,
   conversationId = null, projectId = null,
   modelCanSee = false, localVisionEnabled = true, maxRounds: explicitMaxRounds = null,
@@ -830,19 +831,36 @@ export async function runAgent({
   // pass the description as text. Never silently drop it.
   if (userImage) {
     const turn = messages[messages.length - 1]
-    if (modelCanSee) {
+    const imageUrl = (typeof userImage === 'object' && userImage?.dataUrl)
+      ? userImage.dataUrl
+      : (typeof userImage === 'string' ? userImage : null)
+    const pkg = visualContext || (typeof userImage === 'object' ? userImage?.visualContext : null)
+    const visualGrounding = pkg ? formatVisualContextPrompt(pkg) : ''
+
+    if (modelCanSee && imageUrl) {
+      const textPrompt = visualGrounding
+        ? `${visualGrounding}\n\n${userMessage || 'Analyze and describe this image in detail.'}`
+        : (userMessage || 'Analyze and describe this image in detail.')
+
       turn.content = [
-        { type: 'image_url', image_url: { url: userImage } },
-        { type: 'text', text: userMessage || 'Analyze and describe this image in detail.' },
+        { type: 'image_url', image_url: { url: imageUrl } },
+        { type: 'text', text: textPrompt },
       ]
     } else {
       onStatus?.('Reading the image on this device…')
       try {
-        const { via, text } = await describeWithoutModel(userImage, userMessage)
-        turn.content = `${userMessage || 'Describe this image.'}\n\n` +
-          `[The attached image was read on-device with ${via === 'ocr' ? 'OCR & layout analysis' : 'a local vision model'} ` +
-          `because ${model || 'this model'} cannot see images natively. Synthesize and analyze the structured content below carefully.]\n\n` +
-          `IMAGE CONTENT:\n${text}`
+        if (visualGrounding) {
+          turn.content = `${userMessage || 'Describe this image.'}\n\n` +
+            `[The attached image was processed with the Universal Visual Context Package (grounded objects, layout, and reading-order text) ` +
+            `because ${model || 'this model'} cannot see images natively. Synthesize and analyze the structured content below carefully.]\n\n` +
+            `${visualGrounding}`
+        } else {
+          const { via, text } = await describeWithoutModel(imageUrl || userImage, userMessage)
+          turn.content = `${userMessage || 'Describe this image.'}\n\n` +
+            `[The attached image was read on-device with ${via === 'ocr' ? 'OCR & layout analysis' : 'a local vision model'} ` +
+            `because ${model || 'this model'} cannot see images natively. Synthesize and analyze the structured content below carefully.]\n\n` +
+            `IMAGE CONTENT:\n${text}`
+        }
       } catch (e) {
         turn.content = `${userMessage || ''}\n\n[An image was attached but could not be read: ${e.message}. ` +
           `Tell the user to switch to a vision-capable model or turn on On-device vision in Personalise.]`

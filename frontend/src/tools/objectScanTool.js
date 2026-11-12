@@ -44,7 +44,7 @@ export const objectScanTool = {
     }
 
     const { rgba, width, height } = loaded
-    const { blobs, count } = connectedComponents(rgba, width, height, {
+    const { blobs, count, background } = connectedComponents(rgba, width, height, {
       minArea,
       maxBlobs,
     })
@@ -56,16 +56,23 @@ export const objectScanTool = {
       width,
       height,
       blobCount: count,
+      background,
       densitySignal: density,
       objects: blobs.map(b => ({
         id: b.id,
+        type: b.type,
         x: b.x,
         y: b.y,
         w: b.w,
         h: b.h,
         area: b.area,
+        aspectRatio: b.aspectRatio,
+        density: b.density,
         centroid: [b.cx, b.cy],
+        box_2d: b.box_2d,
         meanLuma: b.meanLuma,
+        dominantColor: b.dominantColor?.hex,
+        parentId: b.parentId,
       })),
       note:
         count === 0

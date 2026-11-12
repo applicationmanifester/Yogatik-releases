@@ -242,3 +242,117 @@ export function buildOcrVariants(img, analysis = {}) {
 
   return variants
 }
+
+// ── Adaptive Image Enhancement (Auto-Exposure, Dynamic Range & Contrast) ──
+
+/**
+ * Adaptively enhance an RGBA buffer in-place to rescue underexposed/dark images,
+ * dark-mode screenshots with low contrast, and washed-out captures.
+ *
+ * Models (such as Nemotron-VL, Claude-Vision, GPT-4o) frequently refuse dark frames
+ * with "I can't read the attached image — it's too dark to make out any text or UI elements".
+ * This applies a tone-curve (gamma expansion + histogram stretch + edge crisping)
+ * only when exposure/contrast requires it, leaving balanced frames untouched.
+ *
+ * @param {Uint8ClampedArray} rgba
+ * @param {number} width
+ * @param {number} height
+ * @param {object} [opts]
+ * @returns {{enhanced: boolean, reason: string, meanBefore?: number, meanAfter?: number, gamma?: number}}
+ */
+export function adaptiveEnhanceRgba(rgba, width, height, opts = {}) {
+  const n = width * height
+  if (!n || rgba.length < n * 4) return { enhanced: false, reason: 'empty buffer' }
+
+  const { hist, mean, dark, light } = lumaProfile(rgba)
+  const isDark = mean < 112 || dark > 0.38
+  const isOverblown = light > 0.75 && mean > 215
+
+  // Calculate 1st and 99th percentiles
+  const cutLow = n * 0.015
+  const cutHigh = n * 0.015
+  let lo = 0
+  let hi = 255
+  let acc = 0
+  for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= cutLow) { lo = v; break } }
+  acc = 0
+  for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= cutHigh) { hi = v; break } }
+  const dynamicRange = hi - lo
+  const isLowContrast = dynamicRange < 90
+
+  // If already well-exposed and adequate dynamic range, no modification needed
+  if (!isDark && !isLowContrast && !isOverblown && !opts.force) {
+    return { enhanced: false, reason: 'exposure and dynamic range already optimal', meanBefore: Math.round(mean) }
+  }
+
+  // Adaptive gamma: for dark images, gamma < 1.0 lifts deep shadows smoothly
+  // without blowing out highlights.
+  let gamma = 1.0
+  if (isDark) {
+    const ratio = Math.max(0.12, mean / 128)
+    gamma = Math.min(0.85, Math.max(0.42, Math.pow(ratio, 0.55)))
+  } else if (isOverblown) {
+    gamma = 1.25 // Slightly pull down blown highlights
+  }
+
+  // Build a 256-entry lookup table combining tone-curve lifting + dynamic range expansion
+  const span = Math.max(1, hi - lo)
+  const lut = new Uint8Array(256)
+  for (let v = 0; v < 256; v++) {
+    let out = v
+    if (isDark) {
+      // Lift shadows via power-law gamma expansion
+      const norm = v / 255
+      const curved = Math.pow(norm, gamma)
+      out = Math.round(curved * 255 * (isLowContrast ? 1.12 : 1.0))
+    } else if (isLowContrast) {
+      // Pure contrast stretch for flat but normal-brightness images
+      const norm = Math.max(0, Math.min(1, (v - lo) / span))
+      out = Math.round(norm * 255)
+    }
+    lut[v] = Math.max(0, Math.min(255, out))
+  }
+
+  // Apply LUT to RGB channels in place
+  for (let i = 0; i < rgba.length; i += 4) {
+    rgba[i] = lut[rgba[i]]
+    rgba[i + 1] = lut[rgba[i + 1]]
+    rgba[i + 2] = lut[rgba[i + 2]]
+  }
+
+  // For low-contrast or underexposed text/UI, sharpen edges to maximize legibility
+  if ((isDark || isLowContrast) && width >= 4 && height >= 4) {
+    sharpen(rgba, width, height, 0.45)
+  }
+
+  const meanAfter = Math.round(lumaProfile(rgba).mean)
+  const reason = isDark
+    ? `rescued underexposed image (mean luma lifted from ${Math.round(mean)} to ${meanAfter}, gamma=${gamma.toFixed(2)})`
+    : `boosted low-contrast range (stretched ${dynamicRange}px to full 256)`
+
+  return { enhanced: true, reason, meanBefore: Math.round(mean), meanAfter, gamma }
+}
+
+/**
+ * Adaptively enhance a canvas in-place.
+ * @param {HTMLCanvasElement} canvas
+ * @param {object} [opts]
+ * @returns {{canvas: HTMLCanvasElement, enhanced: boolean, reason: string}}
+ */
+export function adaptiveEnhanceCanvas(canvas, opts = {}) {
+  if (!canvas || !canvas.width || !canvas.height) {
+    return { canvas, enhanced: false, reason: 'invalid canvas' }
+  }
+  try {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    if (!ctx) return { canvas, enhanced: false, reason: 'no 2d context' }
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const res = adaptiveEnhanceRgba(imgData.data, canvas.width, canvas.height, opts)
+    if (res.enhanced) {
+      ctx.putImageData(imgData, 0, 0)
+    }
+    return { canvas, ...res }
+  } catch (err) {
+    return { canvas, enhanced: false, reason: err?.message || String(err) }
+  }
+}

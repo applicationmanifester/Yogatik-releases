@@ -39,4 +39,21 @@ describe('docExtractors: file classification and text extraction', () => {
     expect(await isLikelyTextFile(binFile)).toBe(false)
     await expect(extractFileText(binFile)).rejects.toThrow(/Unsupported file type/)
   })
+
+  it('correctly reads text files with UTF-16LE BOM', async () => {
+    // BOM 0xFF 0xFE followed by 'H' (0x48 0x00) and 'i' (0x69 0x00)
+    const utf16Bytes = new Uint8Array([0xff, 0xfe, 0x48, 0x00, 0x69, 0x00])
+    const utf16File = new File([utf16Bytes], 'export.txt', { type: 'text/plain' })
+
+    expect(await isLikelyTextFile(utf16File)).toBe(true)
+    const text = await extractFileText(utf16File)
+    expect(text).toBe('Hi')
+  })
+
+  it('recognizes subtitle and ndjson files', async () => {
+    const srt = new File(['1\n00:00:01,000 --> 00:00:04,000\nHello'], 'captions.srt', { type: '' })
+    const ndjson = new File(['{"id":1}\n{"id":2}'], 'stream.ndjson', { type: '' })
+    expect(await isLikelyTextFile(srt)).toBe(true)
+    expect(await isLikelyTextFile(ndjson)).toBe(true)
+  })
 })

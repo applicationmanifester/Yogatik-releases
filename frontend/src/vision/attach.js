@@ -6,10 +6,14 @@
  * here, so the same bytes go to the model, to OCR and to the stored message.
  */
 
+import { adaptiveEnhanceCanvas } from './preprocess'
+import { normalizeImage, TARGET_MAX_EDGE } from './universalNormalize'
+import { buildVisualContextPackage } from './visualContextPackage'
+
 export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp']
 export const isImageFile = (file) => !!file && IMAGE_TYPES.includes(file.type)
 
-const MAX_EDGE = 1280        // enough to read a serial number; 768 is not
+const MAX_EDGE = TARGET_MAX_EDGE        // safe dimensions (1024-1568px)
 const QUALITY = 0.9
 const THUMB_EDGE = 320       // what the message bubble shows
 
@@ -53,43 +57,75 @@ function draw(img, maxEdge) {
 }
 
 /**
- * @returns {Promise<{dataUrl:string, thumb:string, width:number, height:number, name:string}>}
+ * @returns {Promise<{dataUrl:string, thumb:string, width:number, height:number, name:string, visualContext?:object}>}
  */
 export async function prepareImage(file) {
-  const src = await readAsDataURL(file)
-  const img = await loadImage(src)
+  const isGif = file?.type === 'image/gif'
+  let normalized = null
+  if (!isGif && typeof document !== 'undefined' && typeof Image === 'function') {
+    try {
+      normalized = await normalizeImage(file, {
+        maxEdge: MAX_EDGE,
+        quality: QUALITY,
+        enhance: true,
+      })
+    } catch {
+      // Fallback to canvas draw if direct normalization throws in non-standard DOM
+    }
+  }
 
-  const full = draw(img, MAX_EDGE)
-  const small = draw(img, THUMB_EDGE)
-
-  if (!full.w || !full.h) throw new Error('Image has zero dimensions and cannot be processed.')
-
-  // Format-aware encoding:
-  //   GIF  — toDataURL on a canvas always loses animation; pass the original
-  //           data URL through so the model at least sees the first frame intact.
-  //   PNG/WEBP — preserve lossless format only when the file is small (≤ 300 KB)
-  //              to avoid the 8× size penalty on large screenshots.
-  //   Everything else — JPEG for compact, model-friendly delivery.
-  const isGif  = file.type === 'image/gif'
-  const isPng  = file.type === 'image/png'
-  const isWebp = file.type === 'image/webp'
-  let dataUrl
-  if (isGif) {
-    // Canvas round-trip would freeze animation and lose transparency.
-    dataUrl = src
-  } else if ((isPng || isWebp) && file.size <= 300_000) {
-    dataUrl = full.canvas.toDataURL(file.type)
+  let full, small, src, dataUrl
+  if (normalized?.canvas && normalized.width && normalized.height) {
+    full = { canvas: normalized.canvas, w: normalized.width, h: normalized.height }
+    small = draw(normalized.canvas, THUMB_EDGE)
+    dataUrl = normalized.dataUrl
   } else {
-    dataUrl = full.canvas.toDataURL('image/jpeg', QUALITY)
+    src = await readAsDataURL(file)
+    const img = await loadImage(src)
+
+    full = draw(img, MAX_EDGE)
+    small = draw(img, THUMB_EDGE)
+
+    if (!full.w || !full.h) throw new Error('Image has zero dimensions and cannot be processed.')
+
+    if (!isGif) {
+      const enhanceRes = adaptiveEnhanceCanvas(full.canvas)
+      if (enhanceRes?.enhanced) {
+        adaptiveEnhanceCanvas(small.canvas)
+      }
+    }
+
+    const isPng = file?.type === 'image/png'
+    const isWebp = file?.type === 'image/webp'
+    if (isGif) {
+      dataUrl = src
+    } else if ((isPng || isWebp) && (file.size || 0) <= 300_000) {
+      dataUrl = full.canvas.toDataURL(file.type)
+    } else {
+      dataUrl = full.canvas.toDataURL('image/jpeg', QUALITY)
+    }
+  }
+
+  // Generate Model-Agnostic Visual Context Package (objects, SoM tags, normalized 0-1000 coordinates)
+  let visualContext = null
+  if (full?.canvas) {
+    try {
+      visualContext = await buildVisualContextPackage(
+        { canvas: full.canvas, dataUrl, width: full.w, height: full.h },
+        { includeSoM: true }
+      )
+    } catch {
+      // Safe fallback: package is purely additive
+    }
   }
 
   return {
-    name: file.name || 'image',
+    name: file?.name || 'image',
     width: full.w,
     height: full.h,
     dataUrl,
-    // Tiny JPEG thumbnail for the transcript so history stays small.
-    thumb: small.canvas.toDataURL('image/jpeg', 0.72),
+    thumb: small.canvas?.toDataURL ? small.canvas.toDataURL('image/jpeg', 0.72) : dataUrl,
+    visualContext,
   }
 }
 

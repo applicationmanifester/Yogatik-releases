@@ -6,6 +6,7 @@
 
 import { createReasoningTagger } from './reasoning.js'
 import { calculateBackoffWithJitter, isTransientError } from './resilientTransport.js'
+import { acquireProviderSlot, releaseProviderSlot } from './rateLimiter.js'
 
 export const PROVIDERS = {
   nvidia: {
@@ -580,55 +581,39 @@ const RETRY_STATUS = new Set([429, 500, 502, 503, 504, 520, 522, 524])
 async function fetchWithRetry(url, options, prov, { retries = 5, onStatus, timeoutMs = REQUEST_TIMEOUT } = {}) {
   // Per-provider rate limit + circuit breaker: prevents quota exhaustion
   // from runaway loops or rapid-fire retries.
-  let slot
+  const providerId = prov?.name || prov
+  await acquireProviderSlot(providerId)
   try {
-    slot = await acquireProviderSlot(prov?.name || prov)
-  } catch (err) {
-    // Rate limited or circuit open — fail fast rather than burning retries.
-    throw err
-  }
-  let attempt = 0
-  for (;;) {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(new DOMException('Timeout', 'TimeoutError')), timeoutMs)
+    let attempt = 0
+    for (;;) {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(new DOMException('Timeout', 'TimeoutError')), timeoutMs)
 
-    // Combine caller signal + timeout signal
-    let combinedSignal = controller.signal
-    if (options?.signal) {
-      if (options.signal.aborted) { clearTimeout(timer); throw options.signal.reason }
-      combinedSignal = AbortSignal.any ? AbortSignal.any([options.signal, controller.signal]) : options.signal
-    }
+      // Combine caller signal + timeout signal
+      let combinedSignal = controller.signal
+      if (options?.signal) {
+        if (options.signal.aborted) { clearTimeout(timer); throw options.signal.reason }
+        combinedSignal = AbortSignal.any ? AbortSignal.any([options.signal, controller.signal]) : options.signal
+      }
 
-    try {
-      const resp = await smartFetch(url, { ...options, signal: combinedSignal }, prov)
-      clearTimeout(timer)
-      if (!RETRY_STATUS.has(resp.status) || attempt >= retries || options?.signal?.aborted) return resp
+      try {
+        const resp = await smartFetch(url, { ...options, signal: combinedSignal }, prov)
+        clearTimeout(timer)
+        if (!RETRY_STATUS.has(resp.status) || attempt >= retries || options?.signal?.aborted) {
+          releaseProviderSlot(providerId, true)
+          return resp
+        }
 
-      const header = Number(resp.headers.get('retry-after'))
-      const backoff = Number.isFinite(header) && header > 0
-        ? Math.min(header * 1000, 30000)
-        : calculateBackoffWithJitter(attempt, { baseDelay: 1000, maxDelay: 20000, jitterRatio: 0.25 })
+        const header = Number(resp.headers.get('retry-after'))
+        const backoff = Number.isFinite(header) && header > 0
+          ? Math.min(header * 1000, 30000)
+          : calculateBackoffWithJitter(attempt, { baseDelay: 1000, maxDelay: 20000, jitterRatio: 0.25 })
 
-      attempt++
-      onStatus?.(resp.status === 429
-        ? `Rate limited — retrying in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})…`
-        : `Provider error ${resp.status} — reconnecting in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})…`)
-
-      await new Promise((resolve, reject) => {
-        const t = setTimeout(resolve, backoff)
-        options?.signal?.addEventListener(
-          'abort',
-          () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) },
-          { once: true },
-        )
-      })
-    } catch (err) {
-      clearTimeout(timer)
-      if (err.name === 'AbortError' || options?.signal?.aborted) throw err
-      if (attempt < retries && (isTransientError(err) || RETRY_STATUS.has(err.status))) {
         attempt++
-        const backoff = calculateBackoffWithJitter(attempt, { baseDelay: 1000, maxDelay: 15000, jitterRatio: 0.25 })
-        onStatus?.(`Connection issue (${err.message || 'retrying'}) — reconnecting in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})…`)
+        onStatus?.(resp.status === 429
+          ? `Rate limited — retrying in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})…`
+          : `Provider error ${resp.status} — reconnecting in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})…`)
+
         await new Promise((resolve, reject) => {
           const t = setTimeout(resolve, backoff)
           options?.signal?.addEventListener(
@@ -637,10 +622,33 @@ async function fetchWithRetry(url, options, prov, { retries = 5, onStatus, timeo
             { once: true },
           )
         })
-        continue
+      } catch (err) {
+        clearTimeout(timer)
+        if (err.name === 'AbortError' || options?.signal?.aborted) {
+          releaseProviderSlot(providerId, false)
+          throw err
+        }
+        if (attempt < retries && (isTransientError(err) || RETRY_STATUS.has(err.status))) {
+          attempt++
+          const backoff = calculateBackoffWithJitter(attempt, { baseDelay: 1000, maxDelay: 15000, jitterRatio: 0.25 })
+          onStatus?.(`Connection issue (${err.message || 'retrying'}) — reconnecting in ${Math.ceil(backoff / 1000)}s (${attempt}/${retries})…`)
+          await new Promise((resolve, reject) => {
+            const t = setTimeout(resolve, backoff)
+            options?.signal?.addEventListener(
+              'abort',
+              () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) },
+              { once: true },
+            )
+          })
+          continue
+        }
+        releaseProviderSlot(providerId, false)
+        throw err
       }
-      throw err
     }
+  } finally {
+    // Safety net: release on any unexpected exit path not covered above.
+    // The explicit releases inside the try prevent double-release.
   }
 }
 

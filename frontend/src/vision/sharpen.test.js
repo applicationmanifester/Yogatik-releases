@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sharpen, stretchContrast, toGrayscale } from './preprocess'
+import { sharpen, stretchContrast, toGrayscale, adaptiveEnhanceRgba, adaptiveEnhanceCanvas } from './preprocess'
 
 /**
  * These used to test vision/macroEnhancer.js, a second copy of maths
@@ -57,5 +57,60 @@ describe('macro/engraved-text preprocessing', () => {
     expect(rgba[c]).toBe(rgba[c + 1])
     expect(rgba[c + 1]).toBe(rgba[c + 2])
     expect(rgba[c + 3]).toBe(255) // alpha untouched
+  })
+})
+
+describe('adaptive image enhancement for dark/low-contrast captures', () => {
+  it('detects and rescues an underexposed/dark image', () => {
+    // 4x4 very dark image (mean luminance around 30)
+    const w = 4, h = 4
+    const rgba = new Uint8ClampedArray(w * h * 4)
+    for (let i = 0; i < rgba.length; i += 4) {
+      rgba[i] = 30
+      rgba[i + 1] = 30
+      rgba[i + 2] = 30
+      rgba[i + 3] = 255
+    }
+    // Add subtle text gradient (values 45..50)
+    rgba[0] = rgba[1] = rgba[2] = 50
+
+    const res = adaptiveEnhanceRgba(rgba, w, h)
+    expect(res.enhanced).toBe(true)
+    expect(res.meanAfter).toBeGreaterThan(res.meanBefore)
+    expect(res.gamma).toBeLessThan(1.0) // gamma expansion applied
+  })
+
+  it('leaves a well-balanced image untouched', () => {
+    // 4x4 balanced image (mean luminance 140, spread 0..255)
+    const w = 4, h = 4
+    const rgba = new Uint8ClampedArray(w * h * 4)
+    for (let i = 0; i < w * h; i++) {
+      const v = Math.round((i / (w * h - 1)) * 255)
+      rgba[i * 4] = v
+      rgba[i * 4 + 1] = v
+      rgba[i * 4 + 2] = v
+      rgba[i * 4 + 3] = 255
+    }
+
+    const res = adaptiveEnhanceRgba(rgba, w, h)
+    expect(res.enhanced).toBe(false)
+    expect(res.reason).toContain('already optimal')
+  })
+
+  it('safely handles canvas enhancement', () => {
+    const mockData = new Uint8ClampedArray(4 * 4 * 4).fill(30)
+    const mockImageData = { data: mockData, width: 4, height: 4 }
+    const canvas = {
+      width: 4,
+      height: 4,
+      getContext: () => ({
+        getImageData: () => mockImageData,
+        putImageData: () => {},
+      }),
+    }
+
+    const res = adaptiveEnhanceCanvas(canvas)
+    expect(res.enhanced).toBe(true)
+    expect(res.reason).toContain('rescued underexposed image')
   })
 })
