@@ -9,10 +9,10 @@ export const objectScanTool = {
   schema: {
     name: 'object_scan',
     description:
-      'Scan an image for distinct foreground objects using connected-component
-       analysis. Returns bounding boxes, areas, centroids, and a density signal.
-       Works on UI screenshots, diagrams, line art, and photos with separated
-       subjects. No ML model required — runs in a few milliseconds.',
+      `Scan an image for distinct foreground objects using connected-component ` +
+      `analysis. Returns bounding boxes, areas, centroids, and a density signal. ` +
+      `Works on UI screenshots, diagrams, line art, and photos with separated ` +
+      `subjects. No ML model required — runs in a few milliseconds.`,
     parameters: {
       type: 'object',
       properties: {

@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AdSenseBanner, adsAvailable } from './AdSenseBanner'
+import { isPro } from '../entitlement'
 
 const APP_SRC = fs.readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'App.jsx'),
@@ -33,7 +34,7 @@ describe('AdSenseBanner Component', () => {
       root.render(<AdSenseBanner label="Test Sponsor" />)
     })
 
-    if (adsAvailable) {
+    if (adsAvailable && !isPro()) {
       expect(host.querySelector('.adsbygoogle')).toBeTruthy()
       expect(host.textContent).toContain('Test Sponsor')
     } else {
@@ -42,7 +43,7 @@ describe('AdSenseBanner Component', () => {
   })
 
   it('does not ask for a full-width-responsive unit by default', () => {
-    if (!adsAvailable) return
+    if (!adsAvailable || isPro()) return
     act(() => { root.render(<AdSenseBanner />) })
     // Responsive is what makes adsbygoogle.js walk up the tree rewriting
     // ancestor heights with inline !important — see shellGuard.js.

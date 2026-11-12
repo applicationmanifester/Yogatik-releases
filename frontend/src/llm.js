@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Browser-native LLM client — calls Gemini/Groq/OpenRouter/OpenAI directly,
  * proxies non-CORS providers (NVIDIA etc.) through /api/llm-proxy.
  * API key stored in IndexedDB, never sent to any backend.
@@ -578,6 +578,15 @@ export function toAnthropicMessages(messages = []) {
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504, 520, 522, 524])
 
 async function fetchWithRetry(url, options, prov, { retries = 5, onStatus, timeoutMs = REQUEST_TIMEOUT } = {}) {
+  // Per-provider rate limit + circuit breaker: prevents quota exhaustion
+  // from runaway loops or rapid-fire retries.
+  let slot
+  try {
+    slot = await acquireProviderSlot(prov?.name || prov)
+  } catch (err) {
+    // Rate limited or circuit open — fail fast rather than burning retries.
+    throw err
+  }
   let attempt = 0
   for (;;) {
     const controller = new AbortController()

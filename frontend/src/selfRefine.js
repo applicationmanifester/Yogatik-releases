@@ -7,6 +7,8 @@
  */
 
 import { db, getSetting, setSetting } from './db'
+import { fsWriteTool } from './tools/localFs'
+import { spawnAgentsTool } from './tools/spawnAgents'
 
 const REFLECTION_STORE = 'self_reflections'
 const CONSTITUTION_KEY = 'agent_constitution'

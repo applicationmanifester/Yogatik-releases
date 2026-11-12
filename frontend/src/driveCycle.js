@@ -8,6 +8,7 @@
 
 import { db, getSetting, setSetting } from './db'
 import { memoryBlockFromStores } from './memory4'
+import { schedulerTool } from './tools/scheduler'
 
 const GOAL_STORE = 'drive_goals'
 const CYCLE_LOG = 'drive_cycle_log'

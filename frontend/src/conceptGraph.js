@@ -13,6 +13,7 @@
  */
 
 import { db } from './db'
+import { entityExtractTool } from './tools/independentTools'
 
 const GRAPH_STORE = 'concept_graph_nodes'
 const EDGE_STORE = 'concept_graph_edges'
@@ -130,6 +131,7 @@ export async function extractEntitiesFromText(text, conversationId) {
  */
 export async function processConversation(conversationId, messages) {
   if (!messages?.length) return { nodes: 0, edges: 0 }
+  const dbInstance = await db
 
   // Combine all text for entity extraction
   const fullText = messages
@@ -149,7 +151,6 @@ export async function processConversation(conversationId, messages) {
     
     if (!nodeId) {
       // Check if node already exists in graph
-      const dbInstance = await db
       const existing = await dbInstance.table(GRAPH_STORE)
         .where('label').equalsIgnoreCase(entity.label)
         .and(n => n.type === entity.type)

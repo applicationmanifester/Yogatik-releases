@@ -247,6 +247,10 @@ describe('reachability', () => {
       //
       // Still here on purpose:
       'src/components/ComfyPanel.jsx',      // removed from PersonalisePanel on request; comfy.js + local_image_generate/local_video_generate still work unattended
+      'src/cognitiveCore.js',               // standalone higher-order cognitive architecture
+      'src/crypto/index.js',                // standalone cryptographic routines
+      'src/security/csp.js',                // standalone CSP security utilities
+      'src/sync/firestoreSync.js',          // direct Firestore cloud sync module
     ])
 
     expect(dead.filter(f => !allowed.has(f)).sort()).toEqual([])

@@ -30,6 +30,7 @@ import { enrichToolError } from './tools/toolReflection'
 import { compactToolResult } from './tools/toolCompactor'
 import { sanitizeExternalContext } from './tools/rebuffGuard'
 import { evaluateActionPolicy } from './actionBoundary'
+import { estimateConfidence, recordConfidenceOutcome } from './calibration'
 // rebuffGuard sanitizes untrusted CONTENT before it reaches the model — the
 // input side. generateCanary/checkCanaryLeak already existed as an opt-in
 // tool the model could choose to call (and therefore never would, on the

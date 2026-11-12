@@ -251,6 +251,10 @@ export async function ensureFirebaseAuth(f) {
 }
 
 export async function signInWithGoogle({ preferRedirect = false } = {}) {
+  // Generate a CSRF-bound state value before any OAuth flow begins.
+  const state = generateAuthState()
+  f.provider.setCustomParameters({ state, login_hint: '' })
+
   // ─── Electron Desktop Native OAuth Bridge ─────────────────────────────────
   if (typeof window !== 'undefined' && window.__YOGATIK_DESKTOP__?.loginWithGoogle) {
     const res = await window.__YOGATIK_DESKTOP__.loginWithGoogle()
@@ -348,6 +352,10 @@ export async function signInWithGoogle({ preferRedirect = false } = {}) {
  * Finish a redirect sign-in. getRedirectResult alone is not enough: when the
  * browser hands the session back through persistence rather than the result
  * object it resolves null while the user IS signed in, which read as failure.
+ *
+ * CSRF guard: if an auth redirect is pending, we require either a valid OAuth
+ * state echo or a current Firebase user. A bare redirect with no state and no
+ * session is rejected — it could be an unsolicited authorization response.
  */
 export async function checkRedirectResult() {
   const f = await fb()
@@ -364,6 +372,15 @@ export async function checkRedirectResult() {
       const stop = f.onAuthStateChanged(f.auth, u => { stop(); resolve(u) })
       setTimeout(() => { stop(); resolve(null) }, 8000)
     })
+
+    // If a redirect was expected but we have no user and no valid state,
+    // treat as a possible CSRF / unsolicited redirect — do not sign in.
+    if (authRedirectPending() && !user) {
+      console.warn('[firebaseAuth] Redirect pending but no user or valid state; rejecting possible CSRF')
+      setPending(false)
+      return null
+    }
+
     return user ? await saveProfile(f, user) : null
   } finally {
     setPending(false)

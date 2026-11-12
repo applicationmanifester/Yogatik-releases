@@ -159,7 +159,7 @@ export async function recordConfidenceOutcome(toolName, predictedConfidence, act
     actualSuccess: Boolean(actualSuccess),
     error: metadata.error || null,
     timestamp: Date.now(),
-    argsHash: hashArgs(args),
+    argsHash: hashArgs(metadata.args || {}),
     context: metadata.context || {},
   }
 

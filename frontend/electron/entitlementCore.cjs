@@ -144,6 +144,7 @@ const CHANNELS = {
   'browser:downloads': P(CAP.BROWSER), 'browser:cancel-download': P(CAP.BROWSER),
   'browser:open-download': P(CAP.BROWSER), 'browser:show-download': P(CAP.BROWSER),
   'browser:take-wheel': P(CAP.BROWSER), 'browser:release-wheel': P(CAP.BROWSER),
+  'browser:inspect': P(CAP.BROWSER),
 
   /* ── control: the screen and other applications ────────────────────── */
   // NATIVE capture only. companion/capture.js already tiers native →

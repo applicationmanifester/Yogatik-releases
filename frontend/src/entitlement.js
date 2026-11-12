@@ -50,7 +50,14 @@ export function isDesktopBuild() {
  * All capabilities (file, terminal, browser, screen, sub-agents) are unrestricted.
  */
 export function entitlement() {
-  return { ...snapshot, state: 'pro', edition: 'personal', locked: false, surface: isDesktopBuild() ? 'desktop' : 'web' }
+  const isLock = isDesktopBuild() && (snapshot.state === 'locked' || snapshot.state === 'anonymous')
+  return {
+    ...snapshot,
+    state: isLock ? snapshot.state : (snapshot.state || 'pro'),
+    edition: snapshot.edition || 'personal',
+    locked: isLock,
+    surface: isDesktopBuild() ? 'desktop' : 'web'
+  }
 }
 
 /**
@@ -58,14 +65,14 @@ export function entitlement() {
  * Payments are voluntary charity contributions to develop and maintain the app.
  */
 export function isPro() {
-  return true
+  return !isLocked()
 }
 
 export function isLocked() {
-  return false
+  return isDesktopBuild() && (snapshot.state === 'locked' || snapshot.state === 'anonymous')
 }
 
-export function isUnlocked() { return true }
+export function isUnlocked() { return !isLocked() }
 
 /** Unrestricted Pro edition active across all builds. */
 export function isStudioEdition() { return true }
@@ -203,13 +210,7 @@ export async function loadEntitlement() {
   const b = bridge()
   if (!b) return loadWebEntitlement()
   try {
-    const res = apply(await b.get())
-    if (res.state === 'locked' || res.state === 'anonymous' || res.state === 'free') {
-      const webRes = await loadWebEntitlement()
-      if (webRes.state === 'pro' || webRes.state === 'trial') return webRes
-      return apply(res)
-    }
-    return res
+    return apply(await b.get())
   } catch {
     return loadWebEntitlement()
   }
@@ -271,12 +272,7 @@ export async function refreshEntitlement({ idToken = null, uid = null } = {}) {
     } catch { token = null }
   }
   try {
-    const res = apply(await b.refresh({ idToken: token, uid }))
-    if (res.state === 'locked' || res.state === 'anonymous' || res.state === 'free') {
-      const webRes = await loadWebEntitlement()
-      if (webRes.state === 'pro' || webRes.state === 'trial') return webRes
-    }
-    return res
+    return apply(await b.refresh({ idToken: token, uid }))
   } catch {
     return loadWebEntitlement()
   }
@@ -287,10 +283,8 @@ export async function signOutEntitlement() {
     try { window.localStorage.removeItem(ENTITLEMENT_CACHE_KEY) } catch {}
   }
   const b = bridge()
-  // The subscription belongs to the account, so signing out must drop it here
-  // too. Leaving the snapshot on `pro` would keep the next person at this
-  // browser ad-free on someone else's subscription.
-  if (!b) return applyWeb({ state: 'free', reason: 'signed-out' })
+  // The web app has unrestricted Pro for all users.
+  if (!b) return applyWeb({ state: 'pro', reason: 'signed-out' })
   try { return apply(await b.signOut()) } catch { return entitlement() }
 }
 

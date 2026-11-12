@@ -24,6 +24,7 @@ import { whoisTool } from './whois'
 import { diagramTool } from './diagram'
 import { audioTool } from './audio'
 import { imageInfoTool } from './imageInfo'
+import { objectScanTool } from './objectScanTool'
 import { linkPreviewTool } from './linkPreview'
 import { diffTool } from './diff'
 import { unitConvertTool } from './unitConvert'
@@ -302,6 +303,7 @@ const ALL_TOOLS = {
   diagram: diagramTool,
   audio_edit: audioTool,
   image_info: imageInfoTool,
+  object_scan: objectScanTool,
   link_preview: linkPreviewTool,
   diff: diffTool,
   unit_convert: unitConvertTool,
