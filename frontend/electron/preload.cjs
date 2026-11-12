@@ -283,6 +283,7 @@ contextBridge.exposeInMainWorld('__YOGATIK_DIALOG__', {
 contextBridge.exposeInMainWorld('__YOGATIK_BROWSER__', {
   navigate: (p) => ipcRenderer.invoke('browser:navigate', p || {}),
   read: (p) => ipcRenderer.invoke('browser:read', p || {}),
+  inspect: (p) => ipcRenderer.invoke('browser:inspect', p || {}),
   click: (p) => ipcRenderer.invoke('browser:click', p || {}),
   type: (p) => ipcRenderer.invoke('browser:type', p || {}),
   key: (p) => ipcRenderer.invoke('browser:key', p || {}),

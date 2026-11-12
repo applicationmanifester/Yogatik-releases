@@ -121,7 +121,7 @@ function buildTree(rawNodes, { epoch = 0, maxNodes = MAX_NODES } = {}) {
 }
 
 // Optimized page-side walker with early bailout
-function walkerSource(epoch) {
+function walkerSource(epoch, registerRefs = true) {
   return `(() => {
   const INTERACTIVE_SEL = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[role=switch],[contenteditable=true],[onclick],[tabindex]:not([tabindex="-1"])';
   const roleOf = (el) => {
@@ -210,8 +210,8 @@ function walkerSource(epoch) {
     for (const child of el.children) walk(child, depth + 1);
   };
   walk(document.body, 0);
-  window.__yogatikRefs__ = refs;
-  window.__yogatikRefEpoch__ = ${Number(epoch) || 0};
+  ${registerRefs ? `window.__yogatikRefs__ = refs;
+  window.__yogatikRefEpoch__ = ${Number(epoch) || 0};` : ''}
   return { url: location.href, title: document.title, nodes };
 })()`
 }

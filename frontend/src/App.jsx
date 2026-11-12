@@ -18,6 +18,7 @@ import ToolStatusPanel from './components/ToolStatusPanel'
 import { ContextMeter } from './components/ContextMeter'
 import { forceSettleAll } from './toolStatus'
 import A11yAnnouncer, { announce, announceAssertive } from './components/A11yAnnouncer'
+import { SkipLink } from './a11y/A11yComponents'
 import { trackConversation, trackSlashCommand, trackLiveSession, getExpertiseLevelSync, subscribeExpertise, hiddenForLevel } from './expertiseTracker'
 import CrisisCard from './components/CrisisCard'
 import { getProactiveCheckin, markCheckinShown } from './proactive'
@@ -1585,6 +1586,68 @@ export default function App() {
     [getSystemPrompt],
   )
 
+  const ensureLiveConversation = useCallback(async (session = {}) => {
+    if (liveConvRef.current) return liveConvRef.current
+
+    const current = conversationsRef.current[activeIdxRef.current]
+    if (current?.id) {
+      liveConvRef.current = current.id
+      return current.id
+    }
+
+    const now = new Date()
+    const title = current?.title && current.title !== 'New Chat'
+      ? current.title
+      : `Live — ${now.toLocaleString()}`
+    const providerId = session.provider || current?.provider || provider || 'local'
+    const modelId = session.model ?? current?.model ?? model ?? ''
+    const settings = {
+      systemPrompt: current?.systemPrompt || '',
+      persona: current?.persona || 'default',
+      temperature: current?.temperature ?? temperature,
+      webSearch: current?.webSearch ?? webSearch,
+      tools: current?.tools ?? tools,
+    }
+    const id = await createConversation(
+      title,
+      current?.projectId ?? activeProject?.id ?? null,
+      providerId,
+      modelId,
+      settings,
+    )
+    if (!id) throw new Error('Could not create a conversation for the Live session.')
+
+    liveConvRef.current = id
+    if (current?.clientId) {
+      await Promise.allSettled([
+        rebindChatRoots(current.clientId, id),
+        rebindChatScope(current.clientId, id),
+      ])
+    }
+
+    const liveConversation = {
+      ...(current || {}),
+      id,
+      title,
+      messages: current?.messages || [],
+      provider: providerId,
+      model: modelId,
+      systemPrompt: settings.systemPrompt,
+      persona: settings.persona,
+      temperature: settings.temperature,
+      webSearch: settings.webSearch,
+      tools: settings.tools,
+    }
+    setConversations(prev => {
+      const next = current?.clientId
+        ? prev.map(c => c.clientId === current.clientId ? liveConversation : c)
+        : prev.some(c => c.id === id) ? prev : [...prev, liveConversation]
+      conversationsRef.current = next
+      return next
+    })
+    return id
+  }, [activeProject?.id, model, provider, temperature, tools, webSearch])
+
   /**
    * Start a face-to-face call. Live is a websocket protocol only Gemini speaks,
    * so it is gated on a Gemini key rather than the active chat provider.
@@ -1595,6 +1658,13 @@ export default function App() {
       setErrorModalMsg('Live needs a model to talk to.\n\nAdd a key for any provider in Settings, or add a Gemini key for the realtime engine (lowest latency, true interruption). Free Gemini keys: aistudio.google.com/apikey')
       return
     }
+    let conversationId = null
+    try {
+      conversationId = await ensureLiveConversation(cfg)
+    } catch (error) {
+      console.error('Could not prepare a conversation for Live', error)
+      showToast('Live can start, but this session may not be saved to chat.')
+    }
     if (typeof window !== 'undefined' && window.location.pathname !== '/live' && window.location.hash !== '#live') {
       try {
         if (window.location.protocol === 'file:') {
@@ -1604,21 +1674,25 @@ export default function App() {
         }
       } catch {}
     }
-    setLiveConfig({ ...cfg, persona: getSystemPrompt() })
-  }, [getSystemPrompt])
+    setLiveConfig({ ...cfg, conversationId, projectId: activeProject?.id || null, persona: getSystemPrompt() })
+  }, [activeProject?.id, ensureLiveConversation, getSystemPrompt, showToast])
 
   /** Write each completed spoken turn into the current conversation. */
   const saveLiveTurn = useCallback(async (role, text) => {
     const msg = { role, content: text, sources: [], createdAt: Date.now(), live: true }
     try {
-      let id = liveConvRef.current
-      if (!id) {
-        id = await createConversation(`Live — ${new Date().toLocaleString()}`)
-        liveConvRef.current = id
-      }
+      const id = liveConvRef.current || await ensureLiveConversation(liveConfig || {})
+      if (!id) return
       await saveMessage(id, msg)
+      setConversations(prev => {
+        const next = prev.map(c => c.id === id
+          ? { ...c, messages: [...(c.messages || []), msg] }
+          : c)
+        conversationsRef.current = next
+        return next
+      })
     } catch (e) { console.error('Failed to persist live turn', e) }
-  }, [])
+  }, [ensureLiveConversation, liveConfig])
 
   // When a chat is opened, loaded, or switched, always show the latest prompt and response at the bottom
   const activeChatKey = conv?.id || conv?.clientId || String(activeIdx)
@@ -5325,7 +5399,8 @@ export default function App() {
     // drawer inside it would make it a fourth column, and putting it inside
     // the chat column would leave it fighting the dock for width.
     <div className="app-shell">
-    <div className="app">
+      <SkipLink targetId="main-chat" />
+      <div className="app">
       {pipWindow && ReactDOM.createPortal(
         <FloatingCompanion
           isPip={true}
@@ -5723,7 +5798,7 @@ export default function App() {
         </React.Suspense>
       )}
 
-      <main className={`chat-area safe-top safe-bottom ${showActivity || showWorkspace || browserPanel ? 'has-side-panel' : 'no-side-panel'}`}>
+      <main id="main-chat" tabIndex={-1} className={`chat-area safe-top safe-bottom ${showActivity || showWorkspace || browserPanel ? 'has-side-panel' : 'no-side-panel'}`}>
         <header className="chat-header">
           {/* minWidth was 0, and an inline value outranks the stylesheet: the
               action row took the full width on a phone and this block — the
@@ -7201,8 +7276,8 @@ export default function App() {
           features={features}
           theme={theme}
           onToggleTheme={handleToggleTheme}
-          conversationId={conv?.id || null}
-          projectId={activeProject?.id || null}
+          conversationId={liveConfig.conversationId || liveConvRef.current || conv?.id || null}
+          projectId={liveConfig.projectId || activeProject?.id || null}
           onTranscript={saveLiveTurn}
           availableModels={models[liveConfig.provider]?.models || []}
           allProviders={models}
@@ -7228,16 +7303,36 @@ export default function App() {
               modelCanSee: visionCapable
             } : null)
           }}
-          onEnd={(handoff) => {
+          onEnd={async (handoff) => {
             if (handoff?.recapMarkdown && handoff?.transcripts?.length > 0) {
-              setConversations(prev => prev.map((c, i) => i === activeIdx ? {
-                ...c,
-                messages: [
-                  ...(c.messages || []),
-                  { role: 'assistant', content: handoff.recapMarkdown, id: `live_recap_${Date.now()}` }
-                ]
-              } : c))
-              showToast('🎙️ Live session recap & deliverables saved to chat!')
+              try {
+                const id = liveConvRef.current || await ensureLiveConversation(liveConfig || {})
+                if (id) {
+                  const current = conversationsRef.current.find(c => c.id === id)
+                  const alreadySaved = current?.messages?.some(m => m.content === handoff.recapMarkdown)
+                  if (!alreadySaved) {
+                    const recap = {
+                      role: 'assistant',
+                      content: handoff.recapMarkdown,
+                      sources: [],
+                      createdAt: Date.now(),
+                      live: true,
+                    }
+                    await saveMessage(id, recap)
+                    setConversations(prev => {
+                      const next = prev.map(c => c.id === id
+                        ? { ...c, messages: [...(c.messages || []), recap] }
+                        : c)
+                      conversationsRef.current = next
+                      return next
+                    })
+                  }
+                  showToast('🎙️ Live session recap & deliverables saved to chat!')
+                }
+              } catch (error) {
+                console.error('Failed to save Live session recap', error)
+                showToast('Could not save the Live session recap.')
+              }
             }
             if (typeof window !== 'undefined' && (window.location.pathname === '/live' || window.location.hash === '#live' || window.location.hash === '#/live')) {
               try {
@@ -7251,6 +7346,7 @@ export default function App() {
               } catch {}
             }
             setLiveConfig(null)
+            liveConvRef.current = null
             try { trackLiveSession() } catch {}
           }}
         />

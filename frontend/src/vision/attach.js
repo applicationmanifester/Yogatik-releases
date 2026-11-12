@@ -30,13 +30,23 @@ const readAsDataURL = (file) => new Promise((resolve, reject) => {
 })
 
 function draw(img, maxEdge) {
-  const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight))
-  const w = Math.max(1, Math.round(img.naturalWidth * scale))
-  const h = Math.max(1, Math.round(img.naturalHeight * scale))
+  // Guard: SVGs without explicit dimensions and broken blob URLs can produce
+  // naturalWidth/naturalHeight = 0, making Math.max = 0 → scale = Infinity →
+  // NaN canvas dimensions → browser throw. Treat as 1×1 so the caller gets
+  // a valid (if tiny) result instead of a crash.
+  const natW = img.naturalWidth  || img.width  || 0
+  const natH = img.naturalHeight || img.height || 0
+  if (!natW || !natH) return { canvas: document.createElement('canvas'), w: 0, h: 0 }
+
+  const scale = Math.min(1, maxEdge / Math.max(natW, natH))
+  const w = Math.max(1, Math.round(natW * scale))
+  const h = Math.max(1, Math.round(natH * scale))
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h
-  const ctx = canvas.getContext('2d')
+  // willReadFrequently: true tells the browser to keep a CPU-readable copy,
+  // avoiding a costly GPU→CPU readback stall when toDataURL() is called.
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(img, 0, 0, w, h)
   return { canvas, w, h }
@@ -51,13 +61,34 @@ export async function prepareImage(file) {
 
   const full = draw(img, MAX_EDGE)
   const small = draw(img, THUMB_EDGE)
+
+  if (!full.w || !full.h) throw new Error('Image has zero dimensions and cannot be processed.')
+
+  // Format-aware encoding:
+  //   GIF  — toDataURL on a canvas always loses animation; pass the original
+  //           data URL through so the model at least sees the first frame intact.
+  //   PNG/WEBP — preserve lossless format only when the file is small (≤ 300 KB)
+  //              to avoid the 8× size penalty on large screenshots.
+  //   Everything else — JPEG for compact, model-friendly delivery.
+  const isGif  = file.type === 'image/gif'
+  const isPng  = file.type === 'image/png'
+  const isWebp = file.type === 'image/webp'
+  let dataUrl
+  if (isGif) {
+    // Canvas round-trip would freeze animation and lose transparency.
+    dataUrl = src
+  } else if ((isPng || isWebp) && file.size <= 300_000) {
+    dataUrl = full.canvas.toDataURL(file.type)
+  } else {
+    dataUrl = full.canvas.toDataURL('image/jpeg', QUALITY)
+  }
+
   return {
     name: file.name || 'image',
     width: full.w,
     height: full.h,
-    // JPEG for the model (a screenshot PNG can be 8x larger for no gain),
-    dataUrl: full.canvas.toDataURL('image/jpeg', QUALITY),
-    // and a tiny thumbnail for the transcript, so history stays small.
+    dataUrl,
+    // Tiny JPEG thumbnail for the transcript so history stays small.
     thumb: small.canvas.toDataURL('image/jpeg', 0.72),
   }
 }

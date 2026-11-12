@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Browser-native LLM client — calls Gemini/Groq/OpenRouter/OpenAI directly,
  * proxies non-CORS providers (NVIDIA etc.) through /api/llm-proxy.
  * API key stored in IndexedDB, never sent to any backend.
@@ -671,6 +671,16 @@ export async function streamChat({
 
   // Desktop native Ollama daemon — direct IPC to Node main process (zero browser CORS/CSP issues)
   const isOllamaProvider = provider === 'ollama' || prov?.isOllama || /:11434/i.test(prov?.baseUrl || '')
+
+  // Hoist temperature flags before the Ollama IPC branch — both that branch
+  // and the main HTTP path use them. Declaring them only after the IPC block
+  // caused a ReferenceError for every Electron + Ollama user (bug fix).
+  const isNoTempModel = /(^|\/)(o[13](-mini|-preview)?|deepseek-r1|gpt-4o-realtime)/i.test(cleanModel)
+  const isReasoningModel = /(^|\/)(o[13](-mini|-preview)?|nemotron-.*ultra|deepseek-r1|deepseek-reasoner|claude-3-7)/i.test(cleanModel)
+    || /r1|reasoner|thinking/i.test(cleanModel)
+  const shouldOmitTemp = retriedOmitTemp || isNoTempModel
+  const isFixedTemp = (isReasoningModel && !shouldOmitTemp) || retriedFixedTemp
+
   if (isOllamaProvider && typeof window !== 'undefined' && window.__YOGATIK_OLLAMA__?.chatStream) {
     const reasoningTagger = createReasoningTagger()
     return new Promise((resolve) => {
@@ -732,11 +742,7 @@ export async function streamChat({
     headers['X-Title'] = 'Yogatik'
   }
 
-  const isNoTempModel = /(^|\/)(o[13](-mini|-preview)?|deepseek-r1|gpt-4o-realtime)/i.test(cleanModel)
-  const isReasoningModel = /(^|\/)(o[13](-mini|-preview)?|nemotron-.*ultra|deepseek-r1|deepseek-reasoner|claude-3-7)/i.test(cleanModel)
-    || /r1|reasoner|thinking/i.test(cleanModel)
-  const shouldOmitTemp = retriedOmitTemp || isNoTempModel
-  const isFixedTemp = (isReasoningModel && !shouldOmitTemp) || retriedFixedTemp
+  // Temperature and reasoning flags hoisted above for Ollama IPC & standard chat completion
 
   let endpoint = `${prov.baseUrl}/chat/completions`
   const body = {
@@ -1238,8 +1244,14 @@ export async function chatComplete({ provider, apiKey, model, messages, tools, t
     throw new Error(parseProviderError(resp.status, raw))
   }
   const data = await resp.json()
-  if (prov?.isAnthropic && data.content?.[0]?.text) {
-    return { choices: [{ message: { content: data.content[0].text } }], model: data.model }
+  if (prov?.isAnthropic && Array.isArray(data.content)) {
+    const text = data.content
+      .filter(b => b.type === 'text' && b.text)
+      .map(b => b.text)
+      .join('\n\n')
+    if (text) {
+      return { choices: [{ message: { content: text } }], model: data.model }
+    }
   }
   return data
 }

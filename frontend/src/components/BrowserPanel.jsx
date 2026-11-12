@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
   ExternalLink, X, ArrowLeft, ArrowRight, RotateCw, Plus,
-  ZoomIn, ZoomOut, Search, Download, FolderOpen, Eye, Layers, Copy, Check, Sparkles, Compass,
+  ZoomIn, ZoomOut, Search, Download, FolderOpen, Eye, Layers, Check, Sparkles, Compass, RefreshCw,
 } from 'lucide-react'
 
 const sessionKeyFor = (conversationId) => conversationId || '__default__'
@@ -11,6 +11,32 @@ function formatBytes(n) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function normalizeBrowserAddress(input) {
+  const value = String(input || '').trim()
+  if (!value) return ''
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(value)) return value
+
+  const shortcuts = {
+    youtube: 'https://www.youtube.com',
+    google: 'https://www.google.com',
+    github: 'https://github.com',
+    reddit: 'https://www.reddit.com',
+    wikipedia: 'https://www.wikipedia.org',
+    chatgpt: 'https://chatgpt.com',
+  }
+  const shortcut = shortcuts[value.toLowerCase()]
+  if (shortcut) return shortcut
+
+  const isHost = !/\s/.test(value) && (
+    /^localhost(?::\d+)?(?:\/.*)?$/i.test(value)
+    || /^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:\/.*)?$/.test(value)
+    || /^[a-z\d](?:[a-z\d-]*[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]*[a-z\d])?)+(?:[/:?#].*)?$/i.test(value)
+  )
+  return isHost
+    ? `https://${value}`
+    : `https://duckduckgo.com/?q=${encodeURIComponent(value)}`
 }
 
 // Chrome around a hole. A WebContentsView is an OS-level layer composited above
@@ -58,21 +84,43 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
   // ── Agent Eye / DOM Inspector State ──
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [inspectorTab, setInspectorTab] = useState('tree')
-  const [copiedRef, setCopiedRef] = useState(null)
-  const [domNodes, setDomNodes] = useState([
-    { ref: 'ref_0_0', role: 'searchbox', name: 'Search input query', depth: 1 },
-    { ref: 'ref_0_1', role: 'button', name: 'Submit Query', depth: 1 },
-    { ref: 'ref_0_2', role: 'link', name: 'Documentation Hub', depth: 2 },
-    { ref: 'ref_0_3', role: 'button', name: 'Sign In / Account', depth: 2 },
-    { ref: 'ref_0_4', role: 'textbox', name: 'API Key Input', depth: 3 },
-  ])
-  const [agentActions, setAgentActions] = useState([
-    { id: 1, type: 'navigate', target: url || 'about:blank', time: '10:12:04 AM', status: 'done' },
-    { id: 2, type: 'inspect', target: 'ref_0_0 (searchbox)', time: '10:12:08 AM', status: 'done' },
-    { id: 3, type: 'click', target: 'ref_0_1 (button)', time: '10:12:15 AM', status: 'done' },
-  ])
+  const [domNodes, setDomNodes] = useState([])
+  const [inspectionLoading, setInspectionLoading] = useState(false)
+  const [inspectionError, setInspectionError] = useState('')
+  const inspectorRequestRef = useRef(0)
 
   const br = () => (typeof window !== 'undefined' && window.__YOGATIK_BROWSER__) || null
+
+  const inspectCurrentPage = useCallback(async () => {
+    const b = br()
+    const requestId = ++inspectorRequestRef.current
+    if (!b?.inspect) {
+      setDomNodes([])
+      setInspectionError('Live page inspection is available in the Yogatik desktop browser.')
+      return
+    }
+    setInspectionLoading(true)
+    setInspectionError('')
+    try {
+      const result = await b.inspect({ conversationId, tabId: nav.activeTabId })
+      if (requestId !== inspectorRequestRef.current) return
+      if (!result?.success) throw new Error(result?.error || 'Could not inspect this page.')
+      setDomNodes(result.nodes || [])
+      setInspectionError(result.truncated ? 'Showing the first 160 visible page elements.' : '')
+    } catch (error) {
+      if (requestId !== inspectorRequestRef.current) return
+      setDomNodes([])
+      setInspectionError(error?.message || 'Could not inspect this page.')
+    } finally {
+      if (requestId === inspectorRequestRef.current) setInspectionLoading(false)
+    }
+  }, [conversationId, nav.activeTabId])
+
+  useEffect(() => {
+    if (!inspectorOpen || inspectorTab !== 'tree' || nav.loading) return
+    inspectCurrentPage()
+    return () => { inspectorRequestRef.current++ }
+  }, [inspectorOpen, inspectorTab, nav.activeTabId, nav.url, nav.loading, inspectCurrentPage])
 
   const report = useCallback(() => {
     const b = br()
@@ -243,9 +291,9 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
 
   const submitAddr = (e) => {
     e.preventDefault()
-    const val = addrValue.trim()
-    if (!val) return
-    const targetUrl = val.startsWith('http://') || val.startsWith('https://') ? val : `https://${val}`
+    const targetUrl = normalizeBrowserAddress(addrValue)
+    if (!targetUrl) return
+    setAddrValue(targetUrl)
     if (br()) {
       br()?.navigate({ conversationId, url: targetUrl })
     } else {
@@ -509,7 +557,7 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '11px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                <Eye size={12} /> Agent Eye Live Inspector
+                <Eye size={12} /> Agent Eye Page Inspector
               </span>
               <div style={{ display: 'flex', gap: 4 }}>
                 <button
@@ -540,8 +588,32 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
                     cursor: 'pointer',
                   }}
                 >
-                  Action Log ({agentActions.length})
+                  AI activity
                 </button>
+                {inspectorTab === 'tree' && (
+                  <button
+                    type="button"
+                    onClick={inspectCurrentPage}
+                    disabled={inspectionLoading || nav.loading}
+                    aria-label="Refresh page inspection"
+                    title="Refresh page inspection"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 24,
+                      height: 22,
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 5,
+                      background: 'rgba(255,255,255,0.04)',
+                      color: '#cbd5e1',
+                      cursor: inspectionLoading || nav.loading ? 'wait' : 'pointer',
+                      opacity: inspectionLoading || nav.loading ? 0.55 : 1,
+                    }}
+                  >
+                    <RefreshCw size={12} className={inspectionLoading ? 'spin' : ''} />
+                  </button>
+                )}
               </div>
             </div>
             <button
@@ -555,23 +627,22 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
 
           <div style={{ padding: '8px 12px', fontSize: '11px', flex: 1, overflowY: 'auto' }}>
             {inspectorTab === 'tree' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {domNodes.map((n) => {
-                  const isCopied = copiedRef === n.ref
-                  return (
+              domNodes.length ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {domNodes.map((n, i) => (
                     <div
-                      key={n.ref}
+                      key={`${i}:${n.role}`}
                       style={{
                         display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: 8,
                         padding: '3px 6px',
                         background: 'rgba(255, 255, 255, 0.03)',
                         borderRadius: 4,
-                        marginLeft: `${(n.depth || 1) * 8}px`,
+                        marginLeft: `${Math.min(n.depth || 0, 10) * 8}px`,
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                         <span style={{
                           fontSize: '9.5px',
                           fontWeight: 700,
@@ -583,68 +654,19 @@ export function BrowserPanel({ conversationId, url, onPopOut, onClose, occluded 
                         }}>
                           {n.role}
                         </span>
-                        <span style={{ color: '#f1f5f9' }}>{n.name}</span>
+                        <span style={{ color: '#f1f5f9', overflowWrap: 'anywhere' }}>{n.name}</span>
                       </div>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(n.ref)
-                          setCopiedRef(n.ref)
-                          setTimeout(() => setCopiedRef(null), 1500)
-                        }}
-                        style={{
-                          background: isCopied ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.06)',
-                          border: `1px solid ${isCopied ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
-                          color: isCopied ? '#34d399' : '#cbd5e1',
-                          borderRadius: 4,
-                          padding: '1px 5px',
-                          fontSize: '10px',
-                          fontFamily: 'monospace',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 3,
-                        }}
-                        title="Click to copy accessibility ref"
-                      >
-                        {isCopied ? <Check size={10} /> : <Copy size={10} />}
-                        {n.ref}
-                      </button>
                     </div>
-                  )
-                })}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div role="status" style={{ color: '#94a3b8', lineHeight: 1.5 }}>
+                  {inspectionLoading ? 'Inspecting visible page elements…' : inspectionError || 'No visible page elements were found.'}
+                </div>
+              )
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {agentActions.map((a) => (
-                  <div
-                    key={a.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '4px 6px',
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      borderRadius: 4,
-                      fontSize: '10.5px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{
-                        fontSize: '9.5px',
-                        fontWeight: 700,
-                        background: 'rgba(168, 85, 247, 0.15)',
-                        color: '#c084fc',
-                        padding: '1px 5px',
-                        borderRadius: 3,
-                        textTransform: 'uppercase',
-                      }}>
-                        {a.type}
-                      </span>
-                      <span style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{a.target}</span>
-                    </div>
-                    <span style={{ color: '#64748b', fontSize: '9.5px' }}>{a.time}</span>
-                  </div>
-                ))}
+              <div role="status" style={{ color: '#94a3b8', lineHeight: 1.5 }}>
+                Browser actions are shown in Yogatik AI&apos;s chat activity. This panel does not invent a separate action history.
               </div>
             )}
           </div>

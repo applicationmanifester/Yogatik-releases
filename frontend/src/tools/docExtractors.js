@@ -130,7 +130,9 @@ export async function extractImage(file) {
   const { ocrTool } = await import('./ocr')
   const url = URL.createObjectURL(file)
   try {
-    const res = await ocrTool.execute({ url })
+    // ocrTool.execute destructures `image_url` — using the wrong key `url`
+    // caused every image upload to silently return { success: false, error: 'image_url is required' }.
+    const res = await ocrTool.execute({ image_url: url })
     if (!res?.text?.trim()) {
       throw new Error(res?.error || 'No readable text found in this image via OCR.')
     }

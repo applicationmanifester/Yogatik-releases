@@ -4,6 +4,7 @@ import { stripToolCallSyntax } from '../promptedTools'
 import { extractActionChips } from '../actionChips'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { sanitizeHtmlSync, createSafeMarkdownComponents } from '../utils/sanitize'
 import {
   Volume2, Wrench, Copy, Check, RefreshCw, Pencil, AlertTriangle,
   FileDown, FileText, Download, Zap, Key, Settings, HelpCircle,

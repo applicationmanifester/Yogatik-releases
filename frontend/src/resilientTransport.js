@@ -60,10 +60,10 @@ export function isTransientError(err) {
  * @returns {Promise<any>}
  */
 export async function executeWithRetry(operation, {
-  maxRetries = 10,
-  baseDelay = 1000,
-  maxDelay = 15000,
-  jitterRatio = 0.2,
+ maxRetries = 10,
+ baseDelay = 1000,
+ maxDelay = 15000,
+ jitterRatio = 0.2,
   signal = null,
   onRetry = null,
 } = {}) {

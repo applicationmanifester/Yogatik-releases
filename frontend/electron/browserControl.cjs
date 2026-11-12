@@ -923,6 +923,33 @@ async function readPage(s, tabId) {
   }
 }
 
+// Read-only snapshot for the BrowserPanel inspector. Unlike readPage, this
+// does not advance the agent's ref epoch or replace window.__yogatikRefs__, so
+// opening the UI inspector cannot invalidate a tool call already in flight.
+async function inspectPage(s, tabId) {
+  const t = tabFor(s, tabId)
+  if (!t) return { success: false, error: 'No such tab' }
+  try {
+    const raw = await t.view.webContents.executeJavaScript(walkerSource(0, false), true)
+    const nodes = (raw?.nodes || []).slice(0, 160).map((n) => ({
+      role: n.role || 'node',
+      name: (n.name || n.text || n.role || 'Unnamed element').slice(0, 160),
+      text: (n.text || '').slice(0, 160),
+      depth: Math.max(0, Math.min(Number(n.depth) || 0, 10)),
+      interactive: !!n.interactive,
+    }))
+    return {
+      success: true,
+      url: raw?.url || '',
+      title: raw?.title || '',
+      nodes,
+      truncated: (raw?.nodes || []).length > nodes.length,
+    }
+  } catch (e) {
+    return { success: false, error: e?.message || 'Could not inspect this page' }
+  }
+}
+
 // Adaptive relocation (Scrapling-style): before refusing a ref whose exact DOM
 // node is gone, try to find the SAME logical element again by matching what it
 // looked like (role/name/text) against a fresh scan of the page's current
@@ -1636,6 +1663,7 @@ function registerBrowserControl(getMainWindow) {
   })
 
   ipcMain.handle('browser:read', (_e, p = {}) => readPage(S(p), p.tabId))
+  ipcMain.handle('browser:inspect', (_e, p = {}) => inspectPage(S(p), p.tabId))
   ipcMain.handle('browser:click', (_e, p = {}) => click(S(p), p))
   ipcMain.handle('browser:hover', (_e, p = {}) => hover(S(p), p))
   ipcMain.handle('browser:type', (_e, p = {}) => typeText(S(p), p))

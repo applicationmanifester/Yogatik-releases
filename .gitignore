@@ -68,3 +68,11 @@ yogatik-browser/release/
 functions/.keys/
 openviking/
 .ai_backups/
+
+# Local diagnostic / bump scripts
+bump.*
+check*.js
+fix*.js
+inspect.js
+v.js
+validate*.js

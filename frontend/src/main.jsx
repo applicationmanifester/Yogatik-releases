@@ -12,6 +12,7 @@ import { preconnectProvider } from './live/latencyOptimizer'
 import { prewarmNeuralVoice } from './live/voice'
 import './styles.css'
 import './styles/plugins-replay-cost.css'
+import './styles/17-starter-cards.css'
 import { applyDocumentLocale } from './locale'
 
 // Capture runtime errors/rejections to an on-device ring buffer for diagnostics.

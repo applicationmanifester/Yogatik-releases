@@ -197,7 +197,7 @@ async function loadImageElement(src) {
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = () => resolve(img)
-    img.onerror = reject
+    img.onerror = () => reject(new Error('Failed to load image for detection: ' + String(src).slice(0, 80)))
     img.src = src
   })
 }

@@ -25,3 +25,7 @@ echo.
 echo  https://yogatik.web.app/
 echo  Hard-refresh (Ctrl+Shift+R) to bypass the service worker cache.
 pause
+@echo off
+cd frontend
+npm install --no-audit --no-fund --legacy-peer-deps
+npm run build

@@ -64,7 +64,6 @@ import { initializeTaskPlan, updateTaskPlanItem, renderTaskPlanPrompt } from './
 import { createTaskDag, updateTaskDagItem, getReadyTasks, compileTaskDagToWaves, enrichTaskWithDagContext, planObjectiveToDag, renderTaskDagPrompt, saveTaskDagToStorage, loadTaskDagFromStorage } from './taskDag'
 import { queryConceptGraph, synthesizeInsight, processConversation } from './conceptGraph'
 import { runDriveCycle, createGoal, getActiveGoals, generateAwaySummary, logCycle } from './driveCycle'
-import { estimateConfidence, recordConfidenceOutcome, decideAction, calibratedExecute, DEFAULT_THRESHOLDS } from './calibration'
 import { assessResponse, regenerationPrompt, continuationPrompt as watchdogContinuationPrompt, isToolReceiptStub, isRetryableError, retryDelay } from './responseWatchdog'
 import { buildUiTelemetryBlock } from './uiContext'
 
@@ -1565,47 +1564,6 @@ function safelyParseToolArgs(raw) {
                 note: `You already called ${tc.name} with exactly these arguments in this turn. ` +
                   'This is the result you were given. Do not call it again — use it, try ' +
                   'materially different arguments, or answer with what you have.',
-              }
-            }
-            // Meta-cognition: estimate confidence before executing
-            const calibrationDecision = await decideAction(tc.name, args, {
-              recentErrors: Array.from(executionTracker?.history || []).slice(-5).map(h => ({ tool: h.action, error: h.error, errorSignature: h.error })).filter(h => h.error),
-              userIntent: userMessage,
-            })
-            if (calibrationDecision.action !== 'proceed') {
-              if (calibrationDecision.action === 'ask_user') {
-                const userResult = await executeTool('ask_user', calibrationDecision.suggestedArgs, {
-                  signal,
-                  ...(executionCtx.conversationId || executionCtx.projectId ? { ctx: executionCtx } : {})
-                })
-                if (userResult.success && userResult.user_response) {
-                  const response = userResult.user_response.toLowerCase()
-                  if (!response.includes('yes') && !response.includes('proceed')) {
-                    const blocked = { success: false, blocked: true, error: `User declined: ${userResult.user_response}`, calibrationAction: 'ask_user' }
-                    seenCalls.set(sig, blocked)
-                    return blocked
-                  }
-                } else {
-                  const blocked = { success: false, blocked: true, error: 'User did not confirm', calibrationAction: 'ask_user' }
-                  seenCalls.set(sig, blocked)
-                  return blocked
-                }
-              } else if (calibrationDecision.action === 'research') {
-                const researchResult = await executeTool('deep_research', calibrationDecision.suggestedArgs, {
-                  signal,
-                  ...(executionCtx.conversationId || executionCtx.projectId ? { ctx: executionCtx } : {})
-                })
-                // After research, re-evaluate confidence
-                const recheck = await decideAction(tc.name, args, {
-                  recentErrors: Array.from(executionTracker?.history || []).slice(-5).map(h => ({ tool: h.action, error: h.error, errorSignature: h.error })).filter(h => h.error),
-                  userIntent: userMessage,
-                  researched: true,
-                })
-                if (recheck.action !== 'proceed') {
-                  const blocked = { success: false, blocked: true, error: `Low confidence even after research: ${recheck.reason}`, calibrationAction: 'research' }
-                  seenCalls.set(sig, blocked)
-                  return blocked
-                }
               }
             }
             const decision = await gateAllows(tc.name, args, executionCtx.initiator || 'person')
