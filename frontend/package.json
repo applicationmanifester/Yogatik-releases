@@ -1,0 +1,165 @@
+{
+  "name": "yogatik",
+  "private": true,
+  "version": "16.0.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --configLoader runner",
+    "build": "vite --configLoader runner build",
+    "preview": "vite --configLoader runner preview",
+    "test": "node ./scripts/run-vitest.mjs",
+    "test:watch": "node ./scripts/run-vitest.mjs --watch",
+    "lint": "eslint src",
+    "build:electron": "vite --configLoader runner build --base=./ --outDir dist-electron",
+    "build:desktop": "node ./scripts/build-desktop-app.mjs",
+    "build:studio": "node ./scripts/build-studio.mjs",
+    "build:main": "tsc -p tsconfig.main.json",
+    "electron:dev": "electron .",
+    "electron:dev:studio": "node ./scripts/dev-studio.mjs",
+    "electron:build": "npm run build:electron && npx electron-builder --win nsis --publish never",
+    "electron:build:studio": "node ./scripts/build-studio.mjs",
+    "electron:build:all": "npm run build:electron && npx electron-builder -mwl --publish never",
+    "electron:build:mac": "npm run build:electron && npx electron-builder --mac --publish never",
+    "electron:build:linux": "npm run build:electron && npx electron-builder --linux --publish never",
+    "test:browser": "electron electron/browserHarness/run.cjs",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "test:companion": "electron electron/browserHarness/companion.cjs",
+    "mcp:server": "node mcp-server/server.mjs",
+    "cli": "node bin/yogatik-cli.mjs",
+    "bot": "node bin/bot-gateway.mjs",
+    "bot:telegram": "node bin/bot-gateway.mjs --telegram",
+    "bot:server": "node bin/bot-gateway.mjs --port 8787",
+    "postinstall": "node ./scripts/ensure-native-deps.mjs",
+    "rebuild:pty": "electron-rebuild -f -w node-pty",
+    "mobile:sync": "npm run build && npx cap sync",
+    "mobile:android": "npm run mobile:sync && npx cap open android",
+    "mobile:ios": "npm run mobile:sync && npx cap open ios",
+    "mobile:build-android": "npm run mobile:sync && cd android && .\\gradlew assembleRelease"
+  },
+  "bin": {
+    "yogatik": "bin/yogatik-cli.mjs",
+    "yogatik_mcp": "mcp-server/server.mjs",
+    "yogatik_bot": "bin/bot-gateway.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.11.0",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@codemirror/view": "^6.43.9",
+    "dexie": "^4.0.0",
+    "dompurify": "^3.2.4",
+    "electron_updater": "^6.3.9",
+    "firebase": "^12.17.1",
+    "jspdf": "^4.2.1",
+    "lucide_react": "^0.460.0",
+    "mp4_muxer": "^5.2.2",
+    "node_pty": "^1.0.0",
+    "react": "^18.3.1",
+    "react_dom": "^18.3.1",
+    "react_markdown": "^9.0.1",
+    "react_syntax_highlighter": "^16.1.1",
+    "remark_gfm": "^4.0.1",
+    "webtorrent": "^3.0.21",
+    "zod": "^3.23.8",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.12",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.5.4",
+    "electron": "43.5.0",
+    "electron_builder": "^26.15.3",
+    "electron_rebuild": "^3.2.9",
+    "eslint": "^9.15.0",
+    "eslint_plugin_react": "^7.37.2",
+    "eslint_plugin_react_hooks": "^5.0.0",
+    "fake_indexeddb": "^6.0.0",
+    "globals": "^15.12.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0",
+    "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "app.yogatik.desktop",
+    "productName": "Yogatik",
+    "npmRebuild": false,
+    "directories": {
+      "output": "release-electron"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "electron/**/*",
+      "bin/**/*",
+      "!electron/browserHarness/**"
+    ],
+    "extraResources": [
+      {
+        "from": "bin/search_sidecar",
+        "to": "search_sidecar",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "applicationmanifester",
+        "repo": "Yogatik-releases"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "electron/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Yogatik",
+      "installerIcon": "electron/icon.ico",
+      "uninstallerIcon": "electron/icon.ico",
+      "installerHeaderIcon": "electron/icon.ico",
+      "artifactName": "Yogatik-Setup.exe"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "electron/icon.png"
+    }
+  }
+}
