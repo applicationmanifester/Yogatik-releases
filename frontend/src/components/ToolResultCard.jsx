@@ -23,7 +23,7 @@ import { TradeConfirmationCard } from './TradeConfirmationCard'
 // matter which branch produced it — renders the same way.
 function ToolErrorCard({ Icon, tool, error }) {
   const [open, setOpen] = React.useState(false)
-  const raw = error || 'Unknown error'
+  const raw = typeof error === 'string' ? error : (error ? String(error) : 'Unknown error')
   const d = diagnoseError(raw)
   return (
     <div className="tool-result-card error" role="alert">
@@ -551,6 +551,7 @@ function WorkspaceFileModCard({ result, tool }) {
 }
 
 function BackgroundTaskCard({ result }) {
+  const safe = (v) => (v == null ? '' : String(v))
   return (
     <div className="tool-result-card" style={{ borderLeft: '4px solid #a855f7', padding: 12 }}>
       <div className="tool-result-header" style={{ color: '#a855f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -558,23 +559,24 @@ function BackgroundTaskCard({ result }) {
           <Activity size={14} /> Background Worker Active
         </span>
         <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#d8b4fe', padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600 }}>
-          {result.status?.toUpperCase() || 'RUNNING'}
+          {safe(result?.status).toUpperCase() || 'RUNNING'}
         </span>
       </div>
-      <div style={{ margin: '8px 0', fontSize: 13, fontWeight: 600 }}>{result.title}</div>
-      <div className="tool-detail" style={{ fontSize: 12, opacity: 0.85 }}>{result.message}</div>
+      <div style={{ margin: '8px 0', fontSize: 13, fontWeight: 600 }}>{safe(result?.title)}</div>
+      <div className="tool-detail" style={{ fontSize: 12, opacity: 0.85 }}>{safe(result?.message)}</div>
       <div style={{ marginTop: 8, fontSize: 11, opacity: 0.6, fontFamily: 'monospace' }}>
-        Task ID: {result.taskId}
+        Task ID: {safe(result?.taskId)}
       </div>
     </div>
   )
 }
 
 function TestAndHealCard({ result }) {
+  const safe = (v) => (v == null ? '' : String(v))
   const [showRaw, setShowRaw] = React.useState(false)
   const isPassed = Boolean(result.passed)
-  const passedCount = result.passed_count ?? (isPassed ? 1 : 0)
-  const failedCount = result.failed_count ?? (isPassed ? 0 : 1)
+  const passedCount = safe(result.passed_count ?? (isPassed ? 1 : 0))
+  const failedCount = safe(result.failed_count ?? (isPassed ? 0 : 1))
   const assertions = Array.isArray(result.assertion_failures) ? result.assertion_failures : []
 
   return (
@@ -603,12 +605,12 @@ function TestAndHealCard({ result }) {
       </div>
 
       <div style={{ margin: '8px 0', fontSize: 12, fontFamily: 'monospace', opacity: 0.85 }}>
-        <code>{result.command || 'npm test'}</code>
+        <code>{safe(result.command) || 'npm test'}</code>
       </div>
 
       {result.message && (
         <div style={{ fontSize: 12.5, marginBottom: 8, color: isPassed ? 'var(--text-primary)' : '#fca5a5' }}>
-          {result.message}
+          {safe(result.message)}
         </div>
       )}
 
@@ -629,11 +631,11 @@ function TestAndHealCard({ result }) {
               }}
             >
               <div style={{ fontWeight: 600, color: '#fca5a5' }}>
-                {a.file ? `${a.file}${a.line ? `:${a.line}` : ''}` : 'Failure'} {a.title ? `— ${a.title}` : ''}
+                {safe(a.file) ? `${safe(a.file)}${safe(a.line) ? `:${safe(a.line)}` : ''}` : 'Failure'} {safe(a.title) ? `— ${safe(a.title)}` : ''}
               </div>
               {a.expected && (
                 <div style={{ fontSize: 11, fontFamily: 'monospace', marginTop: 3 }}>
-                  <span style={{ color: '#10b981' }}>Expected: {a.expected}</span> · <span style={{ color: '#f87171' }}>Received: {a.received}</span>
+                  <span style={{ color: '#10b981' }}>Expected: {safe(a.expected)}</span> · <span style={{ color: '#f87171' }}>Received: {safe(a.received)}</span>
                 </div>
               )}
             </div>
@@ -652,7 +654,7 @@ function TestAndHealCard({ result }) {
           </button>
           {showRaw && (
             <pre className="code-output" style={{ maxHeight: 200, overflowY: 'auto', marginTop: 4, fontSize: 11.5 }}>
-              {result.stdout_tail || result.stderr}
+              {safe(result.stdout_tail) || safe(result.stderr)}
             </pre>
           )}
         </div>
@@ -668,29 +670,47 @@ function TestAndHealCard({ result }) {
  * Results are immutable once produced, so identity comparison is enough.
  */
 const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result }) {
-  if (tool === 'test_and_heal' || tool === 'test_runner') {
-    return <TestAndHealCard result={result} />
-  }
-  if (['fs_edit', 'fs_write', 'fs_replace_content', 'fs_patch', 'fs_multi_replace'].includes(tool) && result?.path) {
-    return <WorkspaceFileModCard result={result} tool={tool} />
-  }
-  if ((tool === 'text_to_audio' || tool === 'podcast_generate' || tool === 'audio_overview') && result?.success !== false && (result.audio_url || result.media_id)) {
-    const title = tool === 'podcast_generate' ? 'Generated Multi-Speaker Podcast' : tool === 'audio_overview' ? 'Audio Overview / Briefing' : 'Narrated Audio'
-    return <RenderedAudio result={result} title={title} />
-  }
-  const Icon = TOOL_ICONS[tool] || Wrench
-  if (!result || result.success === false) {
-    return <ToolErrorCard Icon={Icon} tool={tool} error={result?.error} />
-  }
+  try {
+    if (tool === 'test_and_heal' || tool === 'test_runner') {
+      return <TestAndHealCard result={result} />
+    }
+    if (['fs_edit', 'fs_write', 'fs_replace_content', 'fs_patch', 'fs_multi_replace'].includes(tool) && result?.path) {
+      return <WorkspaceFileModCard result={result} tool={tool} />
+    }
+    if ((tool === 'text_to_audio' || tool === 'podcast_generate' || tool === 'audio_overview') && result?.success !== false && (result.audio_url || result.media_id)) {
+      const title = tool === 'podcast_generate' ? 'Generated Multi-Speaker Podcast' : tool === 'audio_overview' ? 'Audio Overview / Briefing' : 'Narrated Audio'
+      return <RenderedAudio result={result} title={title} />
+    }
+    const Icon = TOOL_ICONS[tool] || Wrench
+    if (!result || result.success === false) {
+      return <ToolErrorCard Icon={Icon} tool={tool} error={result?.error} />
+    }
+
+    // Crash containment: coerce any result field to a safe string before
+    // rendering as a React child. Tool results come from 178+ tools, MCP
+    // servers, and model-generated calls — any field can be an object.
+    const safe = (v) => (v == null ? '' : typeof v === 'string' ? v : String(v))
+
+
+  // Wrap result so every field access is coerced to a safe React child.
+  // Functions (e.g. Array.prototype.map) pass through unchanged.
+  const _r = new Proxy(result, {
+    get(target, key) {
+      const v = Reflect.get(target, key)
+      if (typeof v === 'function') return v.bind(target)
+      return safe(v)
+    }
+  })
 
   if (tool === 'spawn_agents' && Array.isArray(result.results)) {
+    const safe = (v) => (v == null ? '' : String(v))
     return (
       <div className="tool-result-card">
-        <div className="tool-result-header"><Users size={14} /> Delegated to {result.delegated} agent{result.delegated === 1 ? '' : 's'}</div>
+        <div className="tool-result-header"><Users size={14} /> Delegated to {safe(result.delegated)} agent{safe(result.delegated) === 1 ? '' : 's'}</div>
         {result.results.map((r, i) => (
           <div key={i} style={{ marginTop: 8 }}>
-            <div className="personalise-sub" style={{ fontWeight: 600, marginBottom: 2 }}>{r.agent} <span style={{ opacity: .6 }}>· {r.role}</span></div>
-            <div className="code-output" style={{ whiteSpace: 'pre-wrap', maxHeight: 180, overflowY: 'auto', padding: 10, fontSize: 13 }}>{r.result}</div>
+            <div className="personalise-sub" style={{ fontWeight: 600, marginBottom: 2 }}>{safe(r.agent)} <span style={{ opacity: .6 }}>· {safe(r.role)}</span></div>
+            <div className="code-output" style={{ whiteSpace: 'pre-wrap', maxHeight: 180, overflowY: 'auto', padding: 10, fontSize: 13 }}>{safe(r.result)}</div>
           </div>
         ))}
       </div>
@@ -745,13 +765,14 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
   }
 
    if (tool === 'code_execute') {
+     const safe = (v) => (v == null ? '' : String(v))
      return (
        <div className="tool-result-card">
          <div className="tool-result-header">
            <Code size={14} /> Code Execution
            {result.execution_time && (
              <span className="tool-result-meta">
-               {(result.execution_time / 1000).toFixed(2)}s
+               {safe((result.execution_time / 1000).toFixed(2))}s
              </span>
            )}
          </div>
@@ -761,12 +782,12 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
                Standard Output:
              </div>
              <div className="code-output" style={{ position: 'relative' }}>
-               <CopyButton text={result.stdout} title="Copy output" style={{
+               <CopyButton text={safe(result.stdout)} title="Copy output" style={{
                    position: 'absolute', top: 4, right: 4,
                    background: 'var(--bg-input)', border: '1px solid var(--border)',
                    borderRadius: 3, padding: '2px 4px', fontSize: 10, cursor: 'pointer'
                  }} />
-               <pre className="code-output" style={{ margin: 0, overflowX: 'auto' }}>{result.stdout}</pre>
+               <pre className="code-output" style={{ margin: 0, overflowX: 'auto' }}>{safe(result.stdout)}</pre>
              </div>
            </>
          )}
@@ -776,12 +797,12 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
                Standard Error:
              </div>
              <div className="code-output error" style={{ position: 'relative' }}>
-               <CopyButton text={result.stderr} title="Copy error" style={{
+               <CopyButton text={safe(result.stderr)} title="Copy error" style={{
                    position: 'absolute', top: 4, right: 4,
                    background: 'var(--bg-input)', border: '1px solid var(--border)',
                    borderRadius: 3, padding: '2px 4px', fontSize: 10, cursor: 'pointer'
                  }} />
-               <pre className="code-output error" style={{ margin: 0, overflowX: 'auto' }}>{result.stderr}</pre>
+               <pre className="code-output error" style={{ margin: 0, overflowX: 'auto' }}>{safe(result.stderr)}</pre>
              </div>
            </>
          )}
@@ -791,12 +812,12 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
          {(result.output && !result.stdout) && (
            <>
              <div className="code-output" style={{ position: 'relative' }}>
-               <CopyButton text={result.output} title="Copy output" style={{
+               <CopyButton text={safe(result.output)} title="Copy output" style={{
                    position: 'absolute', top: 4, right: 4,
                    background: 'var(--bg-input)', border: '1px solid var(--border)',
                    borderRadius: 3, padding: '2px 4px', fontSize: 10, cursor: 'pointer'
                  }} />
-               <pre className="code-output" style={{ margin: 0, overflowX: 'auto' }}>{result.output}</pre>
+               <pre className="code-output" style={{ margin: 0, overflowX: 'auto' }}>{safe(result.output)}</pre>
              </div>
            </>
          )}
@@ -806,28 +827,29 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
    }
 
   if (tool === 'weather' && result.current) {
+    const safe = (v) => (v == null ? '' : String(v))
     const c = result.current
     // Read the units off the RESULT. These were literal "°C" and "km/h" in the
     // markup, which was true only for as long as the request was always metric.
-    const tUnit = result.temperature_unit || '°C'
-    const wUnit = result.wind_unit || 'km/h'
+    const tUnit = safe(result.temperature_unit) || '°C'
+    const wUnit = safe(result.wind_unit) || 'km/h'
     return (
       <div className="tool-result-card weather-card">
-        <div className="tool-result-header"><CloudSun size={14} /> {result.location}</div>
+        <div className="tool-result-header"><CloudSun size={14} /> {safe(result.location)}</div>
         <div className="weather-current">
-          <span className="weather-temp">{c.temperature}{tUnit}</span>
-          <span className="weather-condition">{c.condition}</span>
+          <span className="weather-temp">{safe(c.temperature)}{tUnit}</span>
+          <span className="weather-condition">{safe(c.condition)}</span>
         </div>
         <div className="weather-details">
-          Feels like {c.feels_like}{tUnit} · Humidity {c.humidity}% · Wind {c.wind_speed} {wUnit}
+          Feels like {safe(c.feels_like)}{tUnit} · Humidity {safe(c.humidity)}% · Wind {safe(c.wind_speed)} {wUnit}
         </div>
         {result.forecast && (
           <div className="weather-forecast">
             {result.forecast.slice(0, 5).map((f, i) => (
               <div key={i} className="forecast-day">
-                <span className="forecast-date">{new Date(f.date).toLocaleDateString(undefined, { weekday: 'short' })}</span>
-                <span>{f.low}°–{f.high}°</span>
-                <span className="forecast-cond">{f.condition}</span>
+                <span className="forecast-date">{new Date(safe(f.date)).toLocaleDateString(undefined, { weekday: 'short' })}</span>
+                <span>{safe(f.low)}°–{safe(f.high)}°</span>
+                <span className="forecast-cond">{safe(f.condition)}</span>
               </div>
             ))}
           </div>
@@ -837,50 +859,52 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
   }
 
   if (tool === 'calculator') {
+    const safe = (v) => (v == null ? '' : String(v))
     return (
       <div className="tool-result-card">
         <div className="tool-result-header"><Calculator size={14} /> Calculator</div>
-        <div className="calc-result">{result.formatted || String(result.result)}</div>
+        <div className="calc-result">{safe(result.formatted) || safe(result.result)}</div>
       </div>
     )
   }
 
    if (tool === 'translate') {
+     const safe = (v) => (v == null ? '' : String(v))
      return (
        <div className="tool-result-card">
          <div className="tool-result-header">
-           <Languages size={14} /> Translation ({result.source_lang} → {result.target_lang})
-           {result.source_text && result.translated && (
+           <Languages size={14} /> Translation ({safe(result.source_lang)} → {safe(result.target_lang)})
+           {safe(result.source_text) && safe(result.translated) && (
              <div className="tool-result-meta" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-               {Math.round((1 - (result.translated.length || 0) / (result.source_text.length || 1)) * 100)}% length change
+               {Math.round((1 - (safe(result.translated).length || 0) / (safe(result.source_text).length || 1)) * 100)}% length change
              </div>
            )}
          </div>
          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '12px' }}>
            <div>
              <div className="tool-detail" style={{ marginBottom: '4px', fontSize: 12, color: 'var(--text-secondary)' }}>
-               Original Text ({result.source_lang})
+               Original Text ({safe(result.source_lang)})
              </div>
              <div className="translation-original" style={{ position: 'relative', background: 'var(--bg-input)', borderRadius: 6, padding: '12px', minHeight: '60px' }}>
-               <CopyButton text={result.source_text} title="Copy original" style={{
+               <CopyButton text={safe(result.source_text)} title="Copy original" style={{
                    position: 'absolute', top: 8, right: 8,
                    background: 'var(--bg-tertiary)', border: '1px solid var(--border)',
                    borderRadius: 3, padding: '2px 6px', fontSize: 10, cursor: 'pointer'
                  }} />
-               <p style={{ margin: 0, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{result.source_text}</p>
+               <p style={{ margin: 0, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{safe(result.source_text)}</p>
              </div>
            </div>
            <div>
              <div className="tool-detail" style={{ marginBottom: '4px', fontSize: 12, color: 'var(--text-secondary)' }}>
-               Translated Text ({result.target_lang})
+               Translated Text ({safe(result.target_lang)})
              </div>
              <div className="translation-result" style={{ position: 'relative', background: 'var(--bg-tertiary)', borderRadius: 6, padding: '12px', minHeight: '60px' }}>
-               <CopyButton text={result.translated} title="Copy translation" style={{
+               <CopyButton text={safe(result.translated)} title="Copy translation" style={{
                    position: 'absolute', top: 8, right: 8,
                    background: 'var(--bg-input)', border: '1px solid var(--border)',
                    borderRadius: 3, padding: '2px 6px', fontSize: 10, cursor: 'pointer'
                  }} />
-               <p style={{ margin: 0, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{result.translated}</p>
+               <p style={{ margin: 0, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{safe(result.translated)}</p>
              </div>
            </div>
          </div>
@@ -889,24 +913,25 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
    }
 
    if (tool === 'unit_convert') {
+     const safe = (v) => (v == null ? '' : String(v))
      return (
        <div className="tool-result-card">
          <div className="tool-result-header">
            <Ruler size={14} /> Unit Conversion
            {result.formula && (
              <div className="tool-result-meta" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-               {result.formula}
+               {safe(result.formula)}
              </div>
            )}
          </div>
-         <div className="calc-result">{result.formatted || result.output}</div>
+         <div className="calc-result">{safe(result.formatted || result.output)}</div>
          {result.explanation && (
            <div className="tool-detail" style={{ marginTop: '12px', fontSize: 12, color: 'var(--text-secondary)' }}>
-             {result.explanation}
+             {safe(result.explanation)}
            </div>
          )}
          <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
-           <CopyButton text={result.formatted || result.output} title="Copy Result"
+           <CopyButton text={safe(result.formatted || result.output)} title="Copy Result"
              className="small-btn" iconSize={12} label="Copy Result"
              style={{ padding: '4px 8px', fontSize: 12 }} />
          </div>
@@ -915,24 +940,26 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
    }
 
    if (tool === 'hash') {
+     const safe = (v) => (v == null ? '' : String(v))
      return (
        <div className="tool-result-card">
          <div className="tool-result-header">
-           <Hash size={14} /> {result.algorithm?.toUpperCase()}
+           <Hash size={14} /> {safe(result.algorithm?.toUpperCase())}
            {result.input_length && (
              <div className="tool-result-meta" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-               {result.input_length} characters hashed
+               {safe(result.input_length)} characters hashed
              </div>
            )}
          </div>
          <div className="code-output" style={{ position: 'relative', wordBreak: 'break-all', background: 'var(--code-bg)', padding: '12px', borderRadius: 6, marginTop: '8px' }}>
-           <CopyButton text={result.result} title="Copy hash" style={{
+           <CopyButton text={safe(result.result)} title="Copy hash" style={{
                position: 'absolute', top: 8, right: 8,
                background: 'var(--bg-input)', border: '1px solid var(--border)',
                borderRadius: 3, padding: '2px 6px', fontSize: 10, cursor: 'pointer'
              }} />
-           <div style={{ margin: 0, fontFamily: 'monospace' }}>{result.result}</div>
+           <div style={{ margin: 0, fontFamily: 'monospace' }}>{safe(result.result)}</div>
          </div>
+
          {result.alternatives && result.alternatives.length > 0 && (
            <div className="tool-detail" style={{ marginTop: '12px', fontSize: 12, color: 'var(--text-secondary)' }}>
              Also available as:
@@ -1379,24 +1406,25 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
     )
   }
 
-  if (tool === 'social_search' && result.results) {
+  if (tool === 'social_search' && Array.isArray(result.results)) {
+    const safe = (v) => (v == null ? '' : String(v))
     return (
       <div className="tool-result-card social-search-result-card">
         <div className="tool-result-header">
-          <Share2 size={14} /> Social Intelligence: "{result.query}"
-          <span className="tool-result-meta">{result.platformName} · {result.count} posts</span>
+          <Share2 size={14} /> Social Intelligence: "{safe(result.query)}"
+          <span className="tool-result-meta">{safe(result.platformName)} · {safe(result.count)} posts</span>
         </div>
         <div className="social-search-list">
           {result.results.map((item, i) => (
             <div key={i} className="social-search-item">
               <div className="social-search-item-header">
-                <span className={`platform-pill platform-${item.platform}`}>{item.platformName}</span>
-                {item.published && <span className="social-search-date">{item.published}</span>}
+                <span className={`platform-pill platform-${safe(item.platform)}`}>{safe(item.platformName)}</span>
+                {safe(item.published) && <span className="social-search-date">{safe(item.published)}</span>}
               </div>
-              <a href={item.url} target="_blank" rel="noopener noreferrer" className="social-search-link">
-                <strong>{item.title}</strong>
+              <a href={safe(item.url)} target="_blank" rel="noopener noreferrer" className="social-search-link">
+                <strong>{safe(item.title)}</strong>
               </a>
-              {item.snippet && <p className="social-search-snippet">{item.snippet}</p>}
+              {safe(item.snippet) && <p className="social-search-snippet">{safe(item.snippet)}</p>}
             </div>
           ))}
         </div>
@@ -1404,18 +1432,19 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
     )
   }
 
-  if (tool === 'job_search' && result.jobs) {
+  if (tool === 'job_search' && Array.isArray(result.jobs)) {
+    const safe = (v) => (v == null ? '' : String(v))
     return (
       <div className="tool-result-card job-search-result-card">
         <div className="tool-result-header">
-          <Briefcase size={14} /> Careers & Job Portals: "{result.role}"
-          <span className="tool-result-meta">{result.location} · {result.count} openings</span>
+          <Briefcase size={14} /> Careers & Job Portals: "{safe(result.role)}"
+          <span className="tool-result-meta">{safe(result.location)} · {safe(result.count)} openings</span>
         </div>
         <div className="job-search-list">
           {result.jobs.map((job, i) => {
-            const jobUrl = job.url && job.url.startsWith('http')
-              ? job.url
-              : `https://www.google.com/search?q=${encodeURIComponent(job.title + ' ' + (job.company || '') + ' ' + (job.location || ''))}`
+            const jobUrl = safe(job.url) && safe(job.url).startsWith('http')
+              ? safe(job.url)
+              : `https://www.google.com/search?q=${encodeURIComponent(safe(job.title) + ' ' + safe(job.company) + ' ' + safe(job.location))}`
             return (
               <div key={i} className="job-search-item">
                 <div className="job-search-item-top">
@@ -1432,16 +1461,16 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
                         }
                       }}
                     >
-                      <strong>{job.title}</strong>
+                      <strong>{safe(job.title)}</strong>
                     </a>
                     <div className="job-company-loc">
-                      <span className="job-company">{job.company}</span> · <span className="job-location">{job.location}</span>
-                      {job.experience && <span className="job-exp"> · {job.experience}</span>}
+                      <span className="job-company">{safe(job.company)}</span> · <span className="job-location">{safe(job.location)}</span>
+                      {safe(job.experience) && <span className="job-exp"> · {safe(job.experience)}</span>}
                     </div>
                   </div>
-                  <span className={`portal-badge portal-${job.portal}`}>{job.portalName}</span>
+                  <span className={`portal-badge portal-${safe(job.portal)}`}>{safe(job.portalName)}</span>
                 </div>
-                {job.snippet && <p className="job-snippet">{job.snippet}</p>}
+                {safe(job.snippet) && <p className="job-snippet">{safe(job.snippet)}</p>}
                 <div className="job-action-row">
                   <a
                     href={jobUrl}
@@ -1455,7 +1484,7 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
                       }
                     }}
                   >
-                    View & Apply on {job.portalName} <ExternalLink size={12} />
+                    View & Apply on {safe(job.portalName)} <ExternalLink size={12} />
                   </a>
                 </div>
               </div>
@@ -1467,16 +1496,17 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
   }
 
   if (tool === 'social_post_generator') {
+    const safe = (v) => (v == null ? '' : String(v))
     return (
       <div className="tool-result-card social-post-card">
         <div className="tool-result-header">
-          <MessageSquare size={14} /> Social Content Blueprint: {result.platformName}
-          <span className="tool-result-meta">{((result.contentType ?? '').toString()).replace('_', ' ')} · {result.characterLimit} chars max</span>
+          <MessageSquare size={14} /> Social Content Blueprint: {safe(result?.platformName)}
+          <span className="tool-result-meta">{safe(result?.contentType).replace('_', ' ')} · {safe(result?.characterLimit)} chars max</span>
         </div>
         <div className="social-post-info">
-          <div><strong>Topic:</strong> {result.topic}</div>
-          <div><strong>Tone:</strong> {result.tone} · <strong>Audience:</strong> {result.audience}</div>
-          {result.guidelines && <div className="social-post-guideline">{String(result.guidelines)}</div>}
+          <div><strong>Topic:</strong> {safe(result?.topic)}</div>
+          <div><strong>Tone:</strong> {safe(result?.tone)} · <strong>Audience:</strong> {safe(result?.audience)}</div>
+          {result?.guidelines && <div className="social-post-guideline">{safe(result.guidelines)}</div>}
         </div>
       </div>
     )
@@ -1484,24 +1514,25 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
 
   if (tool === 'spawn_agents' || (tool === 'crew_orchestrator' && Array.isArray(result?.results))) {
     const items = result?.results || []
+    const safe = (v) => (v == null ? '' : String(v))
     return (
       <div className="tool-result-card multi-agent-card">
         <div className="tool-result-header">
           <Users size={14} /> Multi-Agent Execution Graph
           <span className="tool-result-meta">
-            {items.length} specialist{items.length !== 1 ? 's' : ''} {result.wavesCount ? `· ${result.wavesCount} wave${result.wavesCount > 1 ? 's' : ''}` : ''}
+            {items.length} specialist{items.length !== 1 ? 's' : ''} {safe(result?.wavesCount) ? `· ${safe(result.wavesCount)} wave${Number(result.wavesCount) > 1 ? 's' : ''}` : ''}
           </span>
         </div>
         <div className="multi-agent-list" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
           {items.map((ag, i) => {
-            const isErr = ag.error || ag.result?.startsWith('(failed')
+            const isErr = ag.error || safe(ag.result).startsWith('(failed')
             return (
               <details key={i} style={{ border: '1px solid var(--border, rgba(255,255,255,0.1))', borderRadius: 8, padding: '8px 10px', background: 'var(--card-bg, rgba(255,255,255,0.03))' }}>
                 <summary style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none', listStyle: 'none' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{ag.agent || ag.role || `Agent ${i + 1}`}</span>
-                    <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>{ag.role || 'specialist'}</span>
-                    {ag.durationMs ? <span style={{ fontSize: '0.7rem', color: 'var(--text-muted, #888)' }}>⏱️ {ag.durationMs}ms</span> : null}
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{safe(ag.agent) || safe(ag.role) || `Agent ${i + 1}`}</span>
+                    <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>{safe(ag.role) || 'specialist'}</span>
+                    {safe(ag.durationMs) ? <span style={{ fontSize: '0.7rem', color: 'var(--text-muted, #888)' }}>⏱️ {safe(ag.durationMs)}ms</span> : null}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {isErr ? <span style={{ fontSize: '0.75rem', color: '#ef4444' }}>⚠️ Failed</span> : <span style={{ fontSize: '0.75rem', color: '#10b981' }}>✅ Done</span>}
@@ -1509,9 +1540,9 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
                   </div>
                 </summary>
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border, rgba(255,255,255,0.08))', fontSize: '0.8rem', whiteSpace: 'pre-wrap', maxHeight: 240, overflowY: 'auto' }}>
-                  {ag.result}
+                  {safe(ag.result)}
                   <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end' }}>
-                    <CopyButton text={ag.result} label="Copy Output" />
+                    <CopyButton text={safe(ag.result)} label="Copy Output" />
                   </div>
                 </div>
               </details>
@@ -1860,7 +1891,15 @@ const ToolResultCardInner = React.memo(function ToolResultCard({ tool, result })
     )
   }
 
-  return null
+  } catch (err) {
+    logError('crash', `ToolResultCardInner(${tool}): ${err?.message || 'render failed'}`, err?.stack, { tool })
+    return (
+      <div className="tool-result-card error">
+        <div className="tool-result-header"><AlertTriangle size={14} /> {String(tool || 'tool').replace(/_/g, ' ')} — result could not be displayed</div>
+        <p className="tool-detail">The tool ran; this card could not render its output.</p>
+      </div>
+    )
+  }
 })
 
 /**
@@ -1909,3 +1948,5 @@ function ToolResultCard({ tool, result, ...rest }) {
 // ─── Message ───
 
 export { ToolResultCard }
+
+

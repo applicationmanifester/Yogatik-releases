@@ -133,6 +133,36 @@ export function diagnoseCommonError(errorText = '') {
   if (/ENOENT:\s*no such file or directory/i.test(text)) {
     return 'File Not Found: The specified path does not exist. Use fs_find_files or fs_file_tree to verify the exact relative path in the workspace.'
   }
+
+  // React-specific errors
+  if (/Objects are not valid as a React child/i.test(text)) {
+    return 'React Error: An object/array was passed as a child to a component. Wrap with `safe()` from `./safeRender`, use `JSON.stringify()`, or render the value correctly (e.g., `{value.map(...)}` for arrays). Common cause: rendering a Promise, Date, or plain object directly.'
+  }
+  if (/Cannot update a component while rendering|Cannot update during an existing state transition/i.test(text)) {
+    return 'React Error: State update triggered during render. Move side effects to `useEffect`, or wrap in a callback. Avoid calling setState directly in component body or during another render.'
+  }
+  if (/Maximum update depth exceeded/i.test(text)) {
+    return 'React Error: Infinite render loop detected. Check for state updates in `useEffect` without proper dependencies, or components that re-render parent which re-renders child in a cycle.'
+  }
+  if (/Hooks can only be called inside the body of a function component/i.test(text)) {
+    return 'React Error: Hook called outside a function component. Ensure you only call hooks (useState, useEffect, etc.) at the top level of a React function component or custom hook.'
+  }
+  if (/Invalid hook call/i.test(text)) {
+    return 'React Error: Invalid hook call. This usually means multiple React copies in the bundle, or calling a hook conditionally. Ensure hooks follow the Rules of Hooks.'
+  }
+  if (/Each child in a list should have a unique "key" prop/i.test(text)) {
+    return 'React Error: Missing or duplicate `key` prop in a list. Add a stable, unique `key` to each element in `.map()` (e.g., `item.id` or index as last resort).'
+  }
+  if (/Expected onClick listener to be a function|Expected.*to be a function.*instead got/i.test(text)) {
+    return 'React Error: Event handler is not a function. Check that you are passing a function reference (`onClick={handler}`) not the result of calling it (`onClick={handler()}`).'
+  }
+  if (/Can't perform a React state update on an unmounted component/i.test(text)) {
+    return 'React Error: State update on unmounted component. Clean up subscriptions/timers in `useEffect` return function, or check `isMounted` ref pattern.'
+  }
+  if (/Warning:.*styled.*deprecated|styled-components.*deprecated/i.test(text)) {
+    return 'React Warning: Deprecated styled-components API. Update to the current API (e.g., `styled.div` instead of `styled("div")`).'
+  }
+
   return null
 }
 

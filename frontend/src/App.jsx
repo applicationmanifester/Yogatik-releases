@@ -19,6 +19,7 @@ import { ContextMeter } from './components/ContextMeter'
 import { forceSettleAll } from './toolStatus'
 import A11yAnnouncer, { announce, announceAssertive } from './components/A11yAnnouncer'
 import { SkipLink } from './a11y/A11yComponents'
+import { SafeBranch } from './safeRender'
 import { trackConversation, trackSlashCommand, trackLiveSession, getExpertiseLevelSync, subscribeExpertise, hiddenForLevel } from './expertiseTracker'
 import CrisisCard from './components/CrisisCard'
 import { getProactiveCheckin, markCheckinShown } from './proactive'
@@ -5395,10 +5396,19 @@ export default function App() {
   }
 
   return (
-    // A COLUMN wrapper so the terminal can be a full-width bottom drawer.
-    // `.app` is a flex ROW (sidebar | chat | workspace dock); putting the
-    // drawer inside it would make it a fourth column, and putting it inside
-    // the chat column would leave it fighting the dock for width.
+    <SafeBranch
+      fallback={
+        <div className="app-shell" style={{ padding: 20, textAlign: 'center', color: '#ef4444' }}>
+          <h2>Yogatik — Render Error</h2>
+          <p>The main app UI crashed. Check the console for details.</p>
+        </div>
+      }
+      onError={(err) => diagnoseError(err, 'App')}
+    >
+    {/* A COLUMN wrapper so the terminal can be a full-width bottom drawer.
+        `.app` is a flex ROW (sidebar | chat | workspace dock); putting the
+        drawer inside it would make it a fourth column, and putting it inside
+        the chat column would leave it fighting the dock for width. */}
     <div className="app-shell">
       <SkipLink targetId="main-chat" />
       <div className="app">
@@ -7910,5 +7920,6 @@ export default function App() {
         </React.Suspense>
       )}
     </div>
+    </SafeBranch>
   )
 }

@@ -1,7 +1,21 @@
+import 'fake-indexeddb/auto'
 import { JSDOM } from 'jsdom'
 const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', { url: 'http://localhost' })
+if (globalThis.indexedDB) {
+  dom.window.indexedDB = globalThis.indexedDB
+  dom.window.IDBKeyRange = globalThis.IDBKeyRange
+}
 global.window = dom.window;
 globalThis.window = dom.window;
+dom.window.confirm = () => true;
+dom.window.alert = () => {};
+dom.window.prompt = () => '';
+global.confirm = () => true;
+globalThis.confirm = () => true;
+global.alert = () => {};
+globalThis.alert = () => {};
+global.prompt = () => '';
+globalThis.prompt = () => '';
 global.document = dom.window.document;
 globalThis.document = dom.window.document;
 global.DOMParser = dom.window.DOMParser;

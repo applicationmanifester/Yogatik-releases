@@ -10,28 +10,33 @@
  * provider-agnostic (it runs on whatever model the chat already uses).
  */
 
+import {
+  CHARS_PER_TOKEN,
+  estimateTokensFromText,
+  estimateTokensFromMessage,
+  estimateTokensFromHistory,
+} from './tokenEstimator'
+
+/**
+ * Estimate token count from history text or message array.
+ * Uses unified estimator (~3.8 chars per token).
+ */
+export function estimateTokens(textOrTurns) {
+  if (typeof textOrTurns === 'string') {
+    return estimateTokensFromText(textOrTurns)
+  }
+  if (Array.isArray(textOrTurns)) {
+    return estimateTokensFromHistory(textOrTurns)
+  }
+  return 0
+}
+
+// Legacy helper for internal use
 function textOf(msg) {
   const c = msg?.content
   if (typeof c === 'string') return c
   if (Array.isArray(c)) return c.filter(p => p?.type === 'text').map(p => p.text || '').join(' ')
   return ''
-}
-
-/**
- * Estimate token count from history text or message array (~3.8 chars per token).
- */
-export function estimateTokens(textOrTurns) {
-  if (typeof textOrTurns === 'string') {
-    return Math.ceil(textOrTurns.length / 3.8)
-  }
-  if (Array.isArray(textOrTurns)) {
-    let total = 0
-    for (const turn of textOrTurns) {
-      total += Math.ceil(textOf(turn).length / 3.8) + 4
-    }
-    return total
-  }
-  return 0
 }
 
 /**

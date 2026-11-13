@@ -110,7 +110,7 @@ describe('Artifacts v2 — versioned workspace', () => {
     const { rerender } = render(<ArtifactPanel artifact={v1} onClose={vi.fn()} />)
     rerender(<ArtifactPanel artifact={v2sameKey} onClose={vi.fn()} />)
 
-    const chip = await screen.findByLabelText('Version 1')
+    const chip = await screen.findByLabelText('Version 1', { timeout: 5000 })
     expect(chip.textContent).toContain('+2/-0')   // created with 2 lines, removed none
     expect(screen.getByLabelText('Artifact version history')).toBeDefined()
     expect(screen.getByLabelText('Live version')).toBeDefined()

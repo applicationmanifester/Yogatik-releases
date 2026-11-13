@@ -86,7 +86,7 @@ describe('TradingModal Component', () => {
       message: 'Squared off NSE:TCS',
     })
 
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    window.confirm = vi.fn().mockReturnValue(true)
 
     render(<TradingModal isOpen={true} onClose={() => {}} />)
 
@@ -133,7 +133,7 @@ describe('TradingModal Component', () => {
     // Simulate the quick-execute failing
     vi.spyOn(paper, 'executePaperOrder').mockRejectedValue(new Error('insufficient balance'))
 
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    window.confirm = vi.fn().mockReturnValue(true)
 
     render(<TradingModal isOpen={true} onClose={() => {}} />)
 

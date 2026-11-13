@@ -1,6 +1,12 @@
 import React, { useMemo } from 'react'
 import { Activity, Zap } from 'lucide-react'
 import { getModelContextLimits } from '../compaction'
+import {
+  estimateConversationTokens,
+  formatTokenCount,
+  calculateUsagePercent,
+  getUsageColor,
+} from '../tokenEstimator'
 
 /**
  * Approximate context token capacity for the active model.
@@ -16,20 +22,9 @@ export function getModelContextLimit(provider, model) {
   return getModelContextLimits(provider, model).estimatedMaxTokens
 }
 
-/**
- * Rough token estimation: ~4 chars per token for English text & code.
- */
-export function estimateConversationTokens(messages = [], systemPrompt = '', input = '') {
-  let totalChars = (systemPrompt || '').length + (input || '').length
-  for (const msg of messages) {
-    if (msg?.text) totalChars += msg.text.length
-    if (msg?.content && typeof msg.content === 'string') totalChars += msg.content.length
-    if (Array.isArray(msg?.toolResults)) {
-      totalChars += JSON.stringify(msg.toolResults).length
-    }
-  }
-  return Math.ceil(totalChars / 4)
-}
+// estimateConversationTokens, formatTokenCount, calculateUsagePercent, getUsageColor
+// are now re-exported from the unified tokenEstimator.js
+export { estimateConversationTokens, formatTokenCount, calculateUsagePercent, getUsageColor } from '../tokenEstimator'
 
 export function ContextMeter({
   messages = [],
@@ -49,24 +44,16 @@ export function ContextMeter({
   // conversation length. `input` is folded in separately so a keystroke costs a
   // string length rather than a full pass.
   const historyTokens = useMemo(
-    () => estimateConversationTokens(messages, systemPrompt, ''),
+    () => estimateConversationTokens({ messages, systemPrompt, input: '' }),
     [messages, systemPrompt],
   )
-  const estimatedTokens = historyTokens + Math.ceil((input || '').length / 4)
+  const estimatedTokens = historyTokens + estimateConversationTokens({ messages: [], systemPrompt: '', input })
   const limit = useMemo(() => getModelContextLimit(provider, model), [provider, model])
-  const percent = Math.min(100, Math.round((estimatedTokens / limit) * 100))
+  const percent = calculateUsagePercent(estimatedTokens, limit)
 
-  const getColor = () => {
-    if (percent > 85) return '#f87171' // red
-    if (percent > 60) return '#fbbf24' // yellow
-    return '#34d399' // green
-  }
+  const getColor = () => getUsageColor(percent)
 
-  const formatTokens = (num) => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}k`
-    return String(num)
-  }
+  const formatTokens = formatTokenCount
 
   return (
     <div

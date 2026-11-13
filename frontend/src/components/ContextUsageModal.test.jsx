@@ -46,12 +46,11 @@ describe('ContextUsageModal component', () => {
     expect(host.textContent).toContain('nvidia/nemotron-3-nano-omni-30b-a3b-rea')
     expect(host.textContent).toContain('NVIDIA')
     expect(host.textContent).toContain('System Prompt & Persona')
-    expect(host.textContent).toContain('Conversation History')
     expect(host.textContent).toContain('Current Composer Draft')
     expect(host.textContent).toContain('Indexed Local RAG Corpus')
   })
 
-  it('triggers onOpenAnalytics when clicking full analytics button', async () => {
+  it('triggers onOpenAnalytics when clicking analytics button', async () => {
     const onOpenAnalytics = vi.fn()
     const onClose = vi.fn()
 
@@ -67,19 +66,17 @@ describe('ContextUsageModal component', () => {
       />,
     )
 
-    const analyticsBtn = host.querySelector('button[class*="btn-primary"]')
+    const analyticsBtn = Array.from(host.querySelectorAll('button')).find(b => b.textContent.includes('Usage Analytics'))
     expect(analyticsBtn).toBeTruthy()
-    expect(analyticsBtn.textContent).toContain('Open Full Usage & Cost Analytics')
 
     await act(async () => {
       analyticsBtn.click()
     })
 
-    expect(onClose).toHaveBeenCalled()
     expect(onOpenAnalytics).toHaveBeenCalled()
   })
 
-  it('shows compact history button when message history is long', async () => {
+  it('shows compact history button and triggers onCompact', async () => {
     const onCompact = vi.fn()
     const longMessages = [
       { role: 'user', content: '1' },

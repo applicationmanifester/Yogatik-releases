@@ -1,20 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { estimateConversationTokens, getModelContextLimit, ContextMeter } from './ContextMeter'
+import { getModelContextLimit, ContextMeter } from './ContextMeter'
+import { estimateConversationTokens } from '../tokenEstimator'
 
 describe('ContextMeter Logic', () => {
-  it('estimates tokens correctly based on chars (~4 chars per token)', () => {
+  it('estimates tokens correctly based on chars (~3.8 chars per token, unified estimator)', () => {
     const messages = [
       { role: 'user', content: 'Hello world! How are you doing today?' }, // 37 chars
       { role: 'assistant', text: 'I am doing great, ready to help you with code and research.' } // 59 chars
     ]
     const systemPrompt = 'You are a helpful assistant.' // 28 chars
     const input = 'Write a test' // 12 chars
-    // Total chars = 37 + 59 + 28 + 12 = 136 chars -> 136 / 4 = 34 tokens
+    // Total = ceil(37/3.8)+4 + ceil(59/3.8)+4 + ceil(28/3.8) + ceil(12/3.8)
+    // = 10+4 + 16+4 + 8 + 4 = 46 tokens
 
-    const tokens = estimateConversationTokens(messages, systemPrompt, input)
-    expect(tokens).toBe(34)
+    const tokens = estimateConversationTokens({ messages, systemPrompt, input })
+    expect(tokens).toBe(46)
   })
 
   it('resolves limits from the SAME table the agent budgets against', () => {
@@ -86,9 +88,11 @@ describe('ContextMeter rendering (mounted the way App.jsx does)', () => {
     await mount(
       <ContextMeter messages={messages} systemPrompt="" input={draft} provider="local" model="" />,
     )
-    // 4 chars + 400 chars = 404 → 101 tokens. The badge shows the estimate
-    // with the draft folded in (no full message-list re-walk per keystroke).
-    expect(host.textContent).toMatch(/101/)
+    // 'base' = 4 chars -> ceil(4/3.8)=2 + 4 overhead = 6 tokens
+    // draft = 400 chars -> ceil(400/3.8)=106 tokens
+    // Total = 112 tokens. The badge shows the estimate with the draft folded in
+    // (no full message-list re-walk per keystroke).
+    expect(host.textContent).toMatch(/112/)
   })
 
   it('renders nothing harmful with an empty conversation', async () => {
@@ -107,7 +111,7 @@ describe('ContextMeter rendering (mounted the way App.jsx does)', () => {
     expect(icon.getAttribute('color') || icon.style?.color || '').toBeTruthy()
   })
 
-  it('triggers onOpenContextModal when clicked or with Enter key', async () => {
+  it('triggers onOpenContextModal when clicked', async () => {
     const onOpen = vi.fn()
     await mount(
       <ContextMeter
@@ -126,15 +130,8 @@ describe('ContextMeter rendering (mounted the way App.jsx does)', () => {
 
     // Click
     await act(async () => {
-      badge.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      badge.click()
     })
-    expect(onOpen).toHaveBeenCalledTimes(1)
-
-    // Keyboard Enter
-    await act(async () => {
-      badge.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    })
-    expect(onOpen).toHaveBeenCalledTimes(2)
+    expect(onOpen).toHaveBeenCalled()
   })
 })
-

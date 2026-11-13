@@ -7,6 +7,7 @@ import { ReasoningAccordion } from './ReasoningAccordion'
 import { sanitizeHtmlSync } from '../utils/sanitize'
 import { useTypewriter } from '../hooks/useTypewriter'
 import { splitReasoning } from '../reasoning'
+import { SafeBranch } from '../safeRender.jsx'
 
 /**
  * The in-flight assistant reply.
@@ -250,6 +251,14 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
   if (!displayContent && !activeAction && !reasoning) return null
   if (bare) return body
   return (
+    <SafeBranch fallback={
+      <div className="message assistant" role="article">
+        <div className="message-role" aria-hidden="true">Yogatik</div>
+        <div className="message-content" style={{ padding: 8, color: '#ef4444', fontSize: 11, border: '1px solid #fca5a5', borderRadius: 4, background: '#fef2f2' }}>
+          Render error while streaming response.
+        </div>
+      </div>
+    }>
     <div className="message assistant" role="article" aria-busy={completed ? undefined : true}
       aria-label={completed ? 'Assistant response complete' : 'Assistant is responding'}>
       <div className="message-role" aria-hidden="true">Yogatik</div>
@@ -260,6 +269,7 @@ export const StreamingMessage = forwardRef(function StreamingMessage(
         {completed ? 'Assistant response complete.' : ''}
       </span>
     </div>
+    </SafeBranch>
   )
 })
 
