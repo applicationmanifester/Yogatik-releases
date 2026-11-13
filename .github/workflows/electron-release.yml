@@ -40,7 +40,7 @@ jobs:
             name: macOS
             build: npm run electron:build:mac
             browser_build: npm run build:mac
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             name: Linux
             build: npm run electron:build:linux
             browser_build: npm run build:linux
@@ -67,7 +67,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse2 libfuse2t64 || sudo apt-get install -y libfuse2 || true
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64 || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
       # A dispatch builds the BRANCH, not the tag, so publishing it into a
       # release named for a different version silently ships mismatched

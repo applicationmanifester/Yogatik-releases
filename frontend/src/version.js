@@ -3,9 +3,9 @@
  * Tracks current version, build metadata, and itemized release updates/changelog.
  */
 
-export const APP_VERSION = '18.0.0'
+export const APP_VERSION = '19.0.0'
 export const BUILD_DATE = 'November 2026'
-export const APP_CODENAME = 'Yogatik 18.0.0 — Universal Model-Agnostic Vision Pipeline & WebLLM Edge Reasoning'
+export const APP_CODENAME = 'Yogatik 19.0.0 — Unified Crash Resilience, Universal Vision Grounding & Cross-Platform Engine'
 
 const SEEN_VERSION_KEY = 'yogatik:seen_version'
 
@@ -23,10 +23,55 @@ export function markCurrentVersionAsSeen() {
 
 export const APP_RELEASES = [
   {
+    "version": "19.0.0",
+    "title": "Yogatik 19.0.0: Unified Crash Resilience, Universal Vision Grounding & Cross-Platform Engine",
+    "date": "November 13, 2026",
+    "isLatest": true,
+    "highlights": [
+      "Crash Resilience & Safe Error Boundaries: Implemented React error boundaries across all message nodes and panels with automatic crash recovery, zero-blank UI states, and graceful fallback rendering",
+      "Universal Vision Grounding: Standardized 0–1000 coordinate grounding, Set-of-Mark (SoM) overlays, adaptive gamma shadow lifting, and universal context normalization across multimodal LLMs",
+      "Hardened Token Tracking & Context Telemetry: Accurate live token tracking, streaming usage breakdowns, and proactive compact history workflows across local and cloud models",
+      "Multi-Platform 19.0.0 Suite: Synchronized release binaries across Web, Windows (.exe), macOS (.dmg/.zip), Linux (.AppImage/.deb with hardened FUSE2/sandbox configs), Android (.apk), and iOS (.ipa)"
+    ],
+    "sections": [
+      {
+        "category": "🛡️ Crash Resilience & Reliability",
+        "items": [
+          {
+            "title": "React Error Boundary Crash Protection",
+            "description": "SafeBranch Error Boundaries guard all rendered message nodes, tools, and visual components, capturing runtime anomalies and preventing cascade unmounts."
+          },
+          {
+            "title": "Hardened Token Tracking & Context Telemetry",
+            "description": "Cross-platform token calculation with TextEncoder fallback, multi-turn history budget analysis, and one-click compact history triggers."
+          }
+        ]
+      },
+      {
+        "category": "👁️ Universal Vision & Grounding",
+        "items": [
+          {
+            "title": "Set-of-Mark (SoM) Visual Context Package",
+            "description": "Unified bounding box normalization (0–1000 integer coordinates) and high-resolution visual grounding compatible with Claude, GPT, Gemini, and open-source models."
+          }
+        ]
+      },
+      {
+        "category": "📱 Multi-Platform Releases",
+        "items": [
+          {
+            "title": "Desktop & Mobile Synchronized Suite v19.0.0",
+            "description": "Synchronized release binaries for Windows (.exe), macOS (.dmg/.zip), Linux (.AppImage/.deb with hardened Ubuntu 22.04 LTS compatibility), Android (.apk), and iOS (.ipa)."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "version": "18.0.0",
     "title": "Yogatik 18.0.0: Universal Model-Agnostic Vision Pipeline, Set-of-Mark Grounding & WebLLM Edge Reasoning",
     "date": "November 12, 2026",
-    "isLatest": true,
+    "isLatest": false,
     "highlights": [
       "Universal Model-Agnostic Vision: Standardized 0–1000 coordinate grounding, Set-of-Mark (SoM) visual overlays, high-resolution zoomed crops, and power-law gamma shadow/contrast enhancement across all multimodal LLMs",
       "Edge WebLLM Reasoning Models: Added direct in-browser zero-server execution for DeepSeek-R1-Distill-Qwen, Phi-3.5-mini-instruct, and Qwen2.5-Coder",
